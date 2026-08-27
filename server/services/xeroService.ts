@@ -968,6 +968,133 @@ export class XeroService {
    * Returns the existing attachment summaries on a Xero invoice. Used to
    * skip re-uploading files we've already pushed (idempotent attachment sync).
    */
+  // ── Vendor credits (ACCPAYCREDIT) ──────────────────────────────────────────
+  // A supplier credit is its own document type in Xero and lives on
+  // /CreditNotes, not /Invoices. Pushing one as an ACCPAY invoice — which is
+  // what happened before the guard went in — raises payables instead of
+  // reducing them. Amounts go up positive exactly like a bill; the document
+  // type is what makes it a credit.
+  //
+  // Shapes taken from the Xero SDK's own model definitions, not from memory:
+  //   Type          ACCPAYCREDIT | ACCRECCREDIT
+  //   Status        DRAFT | SUBMITTED | DELETED | AUTHORISED | PAID | VOIDED
+  //   response      { CreditNotes: [ { CreditNoteID, CreditNoteNumber, … } ] }
+  // Note there is no Reference field on a payables credit — the SDK documents
+  // Reference as ACCRECCREDIT-only, so the bill push's `Reference` must not be
+  // carried across.
+  private buildCreditNotePayload(billData: XeroBillData, contactId: string): any {
+    const payload: any = {
+      Type: "ACCPAYCREDIT",
+      Contact: { ContactID: contactId },
+      Date: billData.billDate,
+      LineItems: billData.lineItems.map((item) => {
+        const lineItem: any = {
+          Description: item.description,
+          Quantity: item.quantity,
+          UnitAmount: item.unitAmount,
+          TaxType: item.taxType,
+        };
+        if (item.accountCode) lineItem.AccountCode = item.accountCode;
+        if (item.tracking && item.tracking.length > 0) {
+          lineItem.Tracking = item.tracking.map((t) => ({
+            TrackingCategoryID: t.TrackingCategoryID,
+            TrackingOptionID: t.TrackingOptionID,
+          }));
+        }
+        return lineItem;
+      }),
+      LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
+      Status: billData.xeroStatus || "AUTHORISED",
+    };
+    // The supplier's own credit note number, mirroring how billReference maps
+    // to InvoiceNumber on a bill.
+    if (billData.invoiceNumber) payload.CreditNoteNumber = billData.invoiceNumber;
+    return payload;
+  }
+
+  private async creditNoteRequest(
+    connectionId: string,
+    path: string,
+    body: any,
+    label: string,
+  ): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    }, { label });
+
+    if (!response.ok) {
+      // Same shape the bill push raises, so the caller's validation-error
+      // handling (missing account code, locked document, and the rest) works
+      // identically for a credit note.
+      throw await xeroErrorFromResponse(response, `Failed to ${label === "createCreditNote" ? "create" : "update"} Xero credit note`);
+    }
+    const data = (await response.json()) as any;
+    return data.CreditNotes?.[0] || null;
+  }
+
+  async createCreditNote(connectionId: string, billData: XeroBillData): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+    let contactId = billData.supplierXeroContactId;
+    if (!contactId) {
+      const contact = await this.findOrCreateContact(accessToken, connection.tenantId, billData.supplierName);
+      contactId = contact.ContactID;
+    }
+    const payload = this.buildCreditNotePayload(billData, contactId);
+    return this.creditNoteRequest(connectionId, "/CreditNotes", { CreditNotes: [payload] }, "createCreditNote");
+  }
+
+  async updateCreditNote(connectionId: string, creditNoteId: string, billData: XeroBillData): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+    let contactId = billData.supplierXeroContactId;
+    if (!contactId) {
+      const contact = await this.findOrCreateContact(accessToken, connection.tenantId, billData.supplierName);
+      contactId = contact.ContactID;
+    }
+    const payload = { ...this.buildCreditNotePayload(billData, contactId), CreditNoteID: creditNoteId };
+    return this.creditNoteRequest(
+      connectionId,
+      `/CreditNotes/${creditNoteId}`,
+      { CreditNotes: [payload] },
+      "updateCreditNote",
+    );
+  }
+
+  async getCreditNote(connectionId: string, creditNoteId: string): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/CreditNotes/${creditNoteId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    }, { label: "getCreditNote" });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch Xero credit note: ${response.status} ${errorText}`);
+    }
+    const data = (await response.json()) as any;
+    return data.CreditNotes?.[0] || null;
+  }
+
   async getInvoiceAttachments(connectionId: string, xeroInvoiceId: string): Promise<XeroAttachmentSummary[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

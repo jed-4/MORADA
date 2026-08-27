@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ColorPickerPopover } from "@/components/ui/ColorPickerPopover";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -530,24 +531,12 @@ export default function EditContactDialog({
                       <FormItem>
                         <FormLabel>Contact Color</FormLabel>
                         <FormControl>
-                          <div className="flex items-center gap-3">
-                            <Input
-                              type="color"
-                              className="w-12 h-9 p-1 border rounded cursor-pointer"
-                              value={field.value || "#64748b"}
+                            <ColorPickerPopover
+                              value={field.value}
                               onChange={field.onChange}
-                              data-testid="input-contact-color"
+                              data-testid="button-contact-color"
                             />
-                            <Input
-                              type="text"
-                              placeholder="#64748b"
-                              className="flex-1"
-                              value={field.value || ""}
-                              onChange={field.onChange}
-                              data-testid="input-contact-color-hex"
-                            />
-                          </div>
-                        </FormControl>
+                          </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -706,12 +695,12 @@ export default function EditContactDialog({
                   {isTeam ? (
                     <FormField
                       control={form.control}
-                      name="position"
+                      name="role"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Role</FormLabel>
                           <FormControl>
-                            <Input placeholder="e.g., Carpenter, Plumber" {...field} value={field.value || ""} data-testid="input-position" />
+                            <Input placeholder="e.g., Carpenter, Plumber" {...field} value={field.value || ""} data-testid="input-role" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -742,24 +731,12 @@ export default function EditContactDialog({
                     <FormItem>
                       <FormLabel>Contact Color</FormLabel>
                       <FormControl>
-                        <div className="flex items-center gap-3">
-                          <Input
-                            type="color"
-                            className="w-12 h-9 p-1 border rounded cursor-pointer"
-                            value={field.value || "#64748b"}
-                            onChange={field.onChange}
-                            data-testid="input-contact-color"
-                          />
-                          <Input
-                            type="text"
-                            placeholder="#64748b"
-                            className="flex-1"
-                            value={field.value || ""}
-                            onChange={field.onChange}
-                            data-testid="input-contact-color-hex"
-                          />
-                        </div>
-                      </FormControl>
+                            <ColorPickerPopover
+                              value={field.value}
+                              onChange={field.onChange}
+                              data-testid="button-contact-color"
+                            />
+                          </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

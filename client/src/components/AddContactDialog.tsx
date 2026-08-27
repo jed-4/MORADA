@@ -5,6 +5,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ColorPickerPopover } from "@/components/ui/ColorPickerPopover";
+import { randomPaletteColor } from "@/lib/colors";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -81,10 +83,12 @@ function getFormInitials(firstName?: string, lastName?: string, company?: string
   return (company || "").substring(0, 2).toUpperCase() || "??";
 }
 
+type ContactType = "team" | "trade" | "supplier" | "client";
+
 type AddContactDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultContactType?: "trade" | "supplier" | "client";
+  defaultContactType?: ContactType;
 };
 
 export default function AddContactDialog({
@@ -93,7 +97,7 @@ export default function AddContactDialog({
   defaultContactType,
 }: AddContactDialogProps) {
   const { toast } = useToast();
-  const [selectedType, setSelectedType] = useState<"trade" | "supplier" | "client">("trade");
+  const [selectedType, setSelectedType] = useState<ContactType>("trade");
 
   const { data: paymentTermsOptions = [] } = useQuery<PaymentTermsOption[]>({
     queryKey: ["/api/payment-terms-options"],
@@ -126,7 +130,7 @@ export default function AddContactDialog({
       notes: "",
       labels: [],
       projectIds: [],
-      avatarColor: DEFAULT_GREY,
+      avatarColor: randomPaletteColor(),
       portalEnabled: false,
       isArchived: false,
     },
@@ -161,7 +165,7 @@ export default function AddContactDialog({
         notes: "",
         labels: [],
         projectIds: [],
-        avatarColor: DEFAULT_GREY,
+        avatarColor: randomPaletteColor(),
         portalEnabled: false,
         isArchived: false,
       });
@@ -175,7 +179,7 @@ export default function AddContactDialog({
         const validTypes = ["trade", "supplier", "client", "team"] as const;
         const t = value.contactType;
         if (t && validTypes.includes(t as typeof validTypes[number])) {
-          setSelectedType(t as "trade" | "supplier" | "client");
+          setSelectedType(t as ContactType);
         }
       }
     });
@@ -262,6 +266,7 @@ export default function AddContactDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value="team">Team</SelectItem>
                       <SelectItem value="trade">Trade</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
@@ -409,24 +414,12 @@ export default function AddContactDialog({
                       <FormItem>
                         <FormLabel>Contact Color</FormLabel>
                         <FormControl>
-                          <div className="flex items-center gap-3">
-                            <Input
-                              type="color"
-                              className="w-12 h-9 p-1 border rounded cursor-pointer"
-                              value={field.value || DEFAULT_GREY}
+                            <ColorPickerPopover
+                              value={field.value}
                               onChange={field.onChange}
-                              data-testid="input-contact-color"
+                              data-testid="button-contact-color"
                             />
-                            <Input
-                              type="text"
-                              placeholder="#64748b"
-                              className="flex-1"
-                              value={field.value || ""}
-                              onChange={field.onChange}
-                              data-testid="input-contact-color-hex"
-                            />
-                          </div>
-                        </FormControl>
+                          </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -582,24 +575,12 @@ export default function AddContactDialog({
                     <FormItem>
                       <FormLabel>Contact Color</FormLabel>
                       <FormControl>
-                        <div className="flex items-center gap-3">
-                          <Input
-                            type="color"
-                            className="w-12 h-9 p-1 border rounded cursor-pointer"
-                            value={field.value || DEFAULT_GREY}
-                            onChange={field.onChange}
-                            data-testid="input-contact-color"
-                          />
-                          <Input
-                            type="text"
-                            placeholder="#64748b"
-                            className="flex-1"
-                            value={field.value || ""}
-                            onChange={field.onChange}
-                            data-testid="input-contact-color-hex"
-                          />
-                        </div>
-                      </FormControl>
+                            <ColorPickerPopover
+                              value={field.value}
+                              onChange={field.onChange}
+                              data-testid="button-contact-color"
+                            />
+                          </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -1,4 +1,4 @@
-import { BUILDPRO_PALETTE_HEXES } from '@/lib/colors';
+import { MORADA_PALETTE_HEXES } from '@/lib/colors';
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -4440,7 +4440,7 @@ function FieldCategoriesSection() {
     setIsDirty(true);
   };
 
-  const colorOptions = BUILDPRO_PALETTE_HEXES;
+  const colorOptions = MORADA_PALETTE_HEXES;
 
   // Drag and drop sensors
   const sensors = useSensors(

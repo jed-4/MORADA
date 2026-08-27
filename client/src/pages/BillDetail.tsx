@@ -10,6 +10,8 @@ import { formatDate } from "@/lib/formatters";
 import { 
   ArrowLeft, 
   Copy, 
+  MoreHorizontal, 
+  Undo2, 
   Plus, 
   Trash2, 
   Ban,
@@ -77,6 +79,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -100,7 +109,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents, MAX_ROUNDING_CENTS } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -173,10 +182,11 @@ function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
 }
 
-// Fallback copy for the server's CREDIT_NOT_SUPPORTED response (the server
-// sends its own message; this only covers an empty body).
+// Fallback copy for a CREDIT_NOT_SUPPORTED response. Credits push as
+// ACCPAYCREDIT now, so this should no longer be reachable — it is kept so an
+// older server build still produces a sentence rather than an empty toast.
 const CREDIT_NOT_SUPPORTED_COPY =
-  "Vendor credits can't sync to Xero yet — record the credit note in Xero directly.";
+  "This credit couldn't be sent to Xero — record the credit note in Xero directly.";
 
 /**
  * Build a human-readable description for a failed Xero push. When the server
@@ -245,6 +255,45 @@ function CopyableValue({
   );
 }
 
+// An extractor often reports a line's total but not its unit price — receipts
+// that print only a line amount, or dockets where the price sits in a discount
+// column. Storing 0 left the Qty x Unit Cost columns reading "5 @ $0.00" beside
+// a bill whose header total was right, which looks like the amount was lost.
+// The line total is the figure off the document, so treat it as the authority
+// and back-solve the unit price from it.
+function reconcileLineUnitPrice(unitPriceCents: number | null | undefined, totalCents: number, quantity: number) {
+  const qty = quantity || 1;
+  const reconciles =
+    unitPriceCents != null &&
+    unitPriceCents !== 0 &&
+    Math.abs(Math.round(qty * unitPriceCents) - totalCents) <= 1;
+  if (reconciles) return unitPriceCents as number;
+  if (!totalCents) return unitPriceCents ?? 0;
+  return qty !== 0 ? totalCents / qty : totalCents;
+}
+
+// Xero's own wording for an invoice state, so the toast reads the way the Xero
+// screen the user is about to check does.
+const XERO_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  SUBMITTED: "Awaiting Approval",
+  AUTHORISED: "Awaiting Payment",
+  PAID: "Paid",
+  VOIDED: "Voided",
+  DELETED: "Deleted",
+};
+
+// Status chip shown beside the totals in the bill header. Every bill status is
+// covered so the chip is never blank — the header should always say what state
+// the bill you're looking at is in.
+const BILL_STATUS_CHIP: Record<string, { label: string; className: string }> = {
+  draft: { label: "Draft", className: "bg-muted text-muted-foreground" },
+  needs_review: { label: "Needs Review", className: "bg-status-warning-bg text-status-warning" },
+  awaiting_approval: { label: "Awaiting Approval", className: "bg-status-warning-bg text-status-warning" },
+  awaiting_payment: { label: "Awaiting Payment", className: "bg-status-info-bg text-status-info" },
+  paid: { label: "Paid", className: "bg-status-success-bg text-status-success" },
+};
+
 export default function BillDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
@@ -252,7 +301,11 @@ export default function BillDetail() {
   const isEditMode = !!(id && id !== "new");
 
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
+  // Australian supplier invoices quote inc-GST, so that is what a bill being
+  // entered by hand should start as. Saved bills overwrite this on hydration
+  // and both AI extraction paths detect it from the document, so this only
+  // decides where a fresh, empty bill begins.
+  const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("inclusive");
   // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
   // total so it can be nudged to match the supplier invoice — like Xero.
   const [roundingCents, setRoundingCents] = useState(0);
@@ -293,6 +346,21 @@ export default function BillDetail() {
   const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  // Set as soon as a bill is created. Several branches of the create flow stay
+  // on the page after the bill already exists — the Xero contact isn't mapped,
+  // the push failed, the credit can't sync — and hitting Save again from there
+  // used to POST a second time and create a DUPLICATE BILL. It used to fail
+  // loudly instead, because the client resent the same bill number and the
+  // unique index rejected it; now that the server allocates a fresh number per
+  // create, the duplicate goes through cleanly. Once this is set, saving
+  // updates the bill that was created rather than making another.
+  const createdBillIdRef = useRef<string | null>(null);
+  const billIdForWrite = () => id || createdBillIdRef.current;
+  // Only one qty cell can be focused at a time, so a single draft beats a map
+  // keyed by row index (which would go stale on reorder/delete).
+  const [qtyDraft, setQtyDraft] = useState<{ index: number; value: string } | null>(null);
   const dueDateManuallySet = useRef(false);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
   const [colMenuOpen, setColMenuOpen] = useState(false);
@@ -482,9 +550,15 @@ export default function BillDetail() {
     enabled: isEditMode,
   });
 
+  // The global query client sets staleTime: Infinity, which meant the number
+  // fetched for the first new-bill form was reused for every later one in the
+  // session — by then already taken. The server assigns the real number on
+  // create regardless; this just keeps the field from displaying a stale one.
   const { data: nextBillNumberData } = useQuery<{ billNumber: string }>({
     queryKey: ["/api/bills/next-number"],
     enabled: !isEditMode,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const form = useForm<BillFormData>({
@@ -657,14 +731,16 @@ export default function BillDetail() {
     }
   }, [existingLineItemsLoading, existingAllowancesLoading, existingLineItems, existingAllowances, isEditMode]);
 
+  // Only prefill the project when the route already says which one we're in
+  // (i.e. /projects/:projectId/bills/new). Falling back to projects[0] meant
+  // every business-level bill silently arrived tagged to whichever project
+  // happened to sort first — a wrong project that reads exactly like a
+  // deliberate one, so nobody corrects it.
   useEffect(() => {
-    if (!isEditMode && projects.length > 0) {
-      const projectIdToUse = projectId || projects[0]?.id;
-      if (projectIdToUse) {
-        form.setValue("projectId", projectIdToUse);
-      }
+    if (!isEditMode && projectId) {
+      form.setValue("projectId", projectId);
     }
-  }, [projects.length, isEditMode, projectId]);
+  }, [isEditMode, projectId]);
 
   useEffect(() => {
     if (!isEditMode && nextBillNumberData?.billNumber) {
@@ -759,6 +835,47 @@ export default function BillDetail() {
   useEffect(() => {
     baselineRef.current = null;
   }, [id]);
+
+  // "Approve & next" swaps the bill underneath a still-mounted component, and
+  // the preview pane's state is not derived from the bill — so it kept showing
+  // the document of the bill you just approved. Drop it on every id change,
+  // then re-open on the new bill's first previewable attachment so a reviewer
+  // working the queue keeps the pane without ever seeing the wrong invoice.
+  //
+  // The ref is assigned during render rather than in an effect: when the id
+  // effect below runs, the preview state still holds the OUTGOING bill's
+  // document, which is exactly what we need to read before clearing it.
+  const sheetPreviewUrlRef = useRef<string | null>(null);
+  sheetPreviewUrlRef.current = sheetPreviewUrl;
+  const reopenPreviewRef = useRef(false);
+  useEffect(() => {
+    reopenPreviewRef.current = !!sheetPreviewUrlRef.current;
+    setSheetPreviewUrl(null);
+    setSheetPreviewFilename("");
+    setModalPreviewFile(null);
+    setFullscreenPreview(false);
+  }, [id]);
+  useEffect(() => {
+    if (!reopenPreviewRef.current || sheetPreviewUrl || attachmentUrls.length === 0) return;
+    const first = attachmentUrls.find((url) => {
+      const path = url.split("?")[0].split("#")[0];
+      const meta = attachmentMeta[url];
+      const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
+      const mime = meta?.mimeType || "";
+      return (
+        /\.(pdf|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path) ||
+        /^(pdf|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(extFromMeta) ||
+        mime === "application/pdf" ||
+        mime.startsWith("image/")
+      );
+    });
+    if (!first) return;
+    reopenPreviewRef.current = false;
+    setSheetPreviewUrl(first);
+    setSheetPreviewFilename(
+      attachmentMeta[first]?.filename || first.split("?")[0].split("/").pop() || "Attachment",
+    );
+  }, [attachmentUrls, attachmentMeta, sheetPreviewUrl]);
   const currentSnapshotRef = useRef(currentSnapshot);
   currentSnapshotRef.current = currentSnapshot;
   useEffect(() => {
@@ -1195,8 +1312,23 @@ export default function BillDetail() {
       return newBill;
     },
     onSuccess: async (newBill) => {
+      // Before anything that can return early — every path below this point
+      // leaves a real bill behind, so the next Save must update it.
+      if (newBill?.id) createdBillIdRef.current = newBill.id;
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills/next-number"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
+
+      // The server owns the bill number, so it can differ from the one the form
+      // was showing. Say so rather than letting the bill quietly land under a
+      // different reference than the one the user just looked at.
+      const shown = form.getValues("billNumber");
+      if (newBill?.billNumber && shown && newBill.billNumber !== shown) {
+        toast({
+          title: `Saved as ${newBill.billNumber}`,
+          description: `${shown} was already taken, so this bill was given the next free number.`,
+        });
+      }
 
       if (form.getValues("sendToXero") && newBill?.id) {
         try {
@@ -1306,19 +1438,18 @@ export default function BillDetail() {
         // preserve richer metadata and avoid overwriting concurrent uploads.
       };
 
-      const updatedBill = await apiRequest(`/api/bills/${id}`, "PATCH", billData) as Bill;
+      const writeId = billIdForWrite();
+      const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", billData) as Bill;
 
-      const existingIds = existingLineItems.map((item) => item.id);
-      const currentIds = lineItems.map((item) => item.id).filter(Boolean);
-      
-      const toDelete = existingIds.filter((id) => !currentIds.includes(id));
-      for (const itemId of toDelete) {
-        await apiRequest(`/api/bills/${id}/line-items/${itemId}`, "DELETE");
-      }
-
-      for (let i = 0; i < lineItems.length; i++) {
-        const item = lineItems[i];
-        const itemData = {
+      // One request for the whole line-item set. This used to be a sequential
+      // round-trip per line — a DELETE per removed line, a PATCH or POST per
+      // remaining line, and up to one more per allowance link — with the
+      // server running a budget recalc and a Xero auto-push on every one of
+      // them. Round-trip latency to the database region made that the reason
+      // saving a bill took seconds.
+      await apiRequest(`/api/bills/${writeId}/line-items`, "PUT", {
+        lineItems: lineItems.map((item, i) => ({
+          id: item.id || undefined,
           billId: id,
           lineType: item.lineType,
           description: item.description,
@@ -1330,35 +1461,10 @@ export default function BillDetail() {
           account: item.account,
           total: Math.round(item.total * 100),
           order: i,
-        };
-
-        let lineItemId = item.id;
-        if (item.id) {
-          await apiRequest(`/api/bills/${id}/line-items/${item.id}`, "PATCH", itemData);
-        } else {
-          const createdLineItem = await apiRequest(`/api/bills/${id}/line-items`, "POST", itemData);
-          lineItemId = createdLineItem.id;
-        }
-
-        const existingAllowance = existingAllowances.find(a => a.billLineItemId === lineItemId);
-        
-        if (item.appliesToAllowances && item.allowanceItemId) {
-          if (existingAllowance) {
-            await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "PATCH", {
-              estimateItemId: item.allowanceItemId,
-              amount: Math.round(item.total * 100),
-            });
-          } else {
-            await apiRequest("/api/bill-line-item-allowances", "POST", {
-              billLineItemId: lineItemId,
-              estimateItemId: item.allowanceItemId,
-              amount: Math.round(item.total * 100),
-            });
-          }
-        } else if (existingAllowance) {
-          await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "DELETE");
-        }
-      }
+          allowanceItemId:
+            item.appliesToAllowances && item.allowanceItemId ? item.allowanceItemId : null,
+        })),
+      });
 
       return updatedBill;
     },
@@ -1499,14 +1605,33 @@ export default function BillDetail() {
 
   const syncBillPaymentMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as { synced: boolean; xeroStatus: string; amountPaidCents: number };
+      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as {
+        synced: boolean;
+        xeroStatus?: string;
+        amountPaidCents?: number;
+        lineItemsSynced?: number;
+      };
     },
     onSuccess: (data: any) => {
+      // Syncing overwrites the bill from Xero — totals, status, dates, line
+      // items. The refetched record re-hydrates the form, but the dirty
+      // baseline was captured before the sync, so the page then insisted there
+      // were unsaved changes and the user had to press Save on data they had
+      // just pulled from Xero. Worse, that save pushes the pre-sync form back
+      // over the values Xero just gave us. Re-arm it, exactly as approving and
+      // saving already do.
+      baselineRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-items"] });
-      const lineMsg = data.lineItemsSynced > 0 ? ` ${data.lineItemsSynced} line item${data.lineItemsSynced !== 1 ? "s" : ""} updated.` : "";
-      toast({ title: "Synced from Xero", description: `Status: ${data.xeroStatus}.${lineMsg}` });
+      // Every field here is optional on the wire. Reading them unguarded is how
+      // this toast came to say "Status: undefined."
+      const lineCount = data?.lineItemsSynced ?? 0;
+      const lineMsg = lineCount > 0 ? ` ${lineCount} line item${lineCount !== 1 ? "s" : ""} updated.` : "";
+      const statusMsg = data?.xeroStatus
+        ? `Xero says ${XERO_STATUS_LABEL[data.xeroStatus] ?? data.xeroStatus}.`
+        : "This bill now matches Xero.";
+      toast({ title: "Synced from Xero", description: `${statusMsg}${lineMsg}` });
     },
     onError: (error: Error) => {
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
@@ -1521,12 +1646,19 @@ export default function BillDetail() {
       return response;
     },
     onSuccess: () => {
+      // Approving rewrites the bill server-side (status, approver, timestamps).
+      // The refetched record re-hydrates the form, but baselineRef only reset
+      // on an id change — so the post-approval snapshot was compared against a
+      // pre-approval baseline and the page decided you had unsaved changes.
+      // That is what lit up Save and put an "unsaved changes" warning between
+      // the reviewer and the bills list on a bill they had just approved.
+      baselineRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
       toast({
-        title: "Success",
-        description: "Bill approved successfully",
+        title: "Bill approved",
+        description: "Approved and saved.",
       });
     },
     onError: (error: Error) => {
@@ -1549,10 +1681,21 @@ export default function BillDetail() {
     },
     enabled: isEditMode && bill?.status === "awaiting_approval" && canApprove,
   });
+  // Walk the queue in order from where you are. Jumping to remainingInQueue[0]
+  // always sent you back to the TOP of the awaiting-approval list, so any bill
+  // you deliberately skipped was handed straight back to you on the next
+  // "Approve & next" — every time. Once you reach the end of the queue there is
+  // no next bill, so return to the list rather than wrapping around onto the
+  // ones you passed over.
   const remainingInQueue = approvalQueue.filter((b) => b.id !== id);
+  const nextInQueue = (() => {
+    const idx = approvalQueue.findIndex((b) => b.id === id);
+    if (idx === -1) return remainingInQueue[0];
+    return approvalQueue.slice(idx + 1).find((b) => b.id !== id);
+  })();
   const goToNextInQueue = () => {
-    if (remainingInQueue.length === 0) setLocation("/bills?status=awaiting_approval");
-    else setLocation(`/bills/${remainingInQueue[0].id}`);
+    if (!nextInQueue) setLocation("/bills?status=awaiting_approval");
+    else setLocation(`/bills/${nextInQueue.id}`);
   };
 
   // Approve commits whatever is on screen: unsaved edits are saved FIRST, then
@@ -1576,7 +1719,13 @@ export default function BillDetail() {
         return; // save failed — updateMutation.onError already showed the toast
       }
     }
-    approveMutation.mutate(undefined, goNext ? { onSuccess: () => goToNextInQueue() } : undefined);
+    // Approving is the end of the job on this bill either way: "Approve"
+    // returns to the awaiting-approval list, "Approve & next" opens the next
+    // bill in it. Staying put left the reviewer on a bill they were finished
+    // with, with a live Save button and nothing left to do.
+    approveMutation.mutate(undefined, {
+      onSuccess: () => (goNext ? goToNextInQueue() : setLocation("/bills?status=awaiting_approval")),
+    });
   };
   const approveBusy = approveMutation.isPending || updateMutation.isPending;
 
@@ -1591,6 +1740,7 @@ export default function BillDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      baselineRef.current = null;
       setRejectDialogOpen(false);
       setRejectComments("");
       toast({
@@ -1602,6 +1752,63 @@ export default function BillDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to reject bill",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const convertToCreditMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}/convert-to-credit`, "POST");
+    },
+    onSuccess: () => {
+      setConvertDialogOpen(false);
+      // The form still holds billType "bill". PATCH now refuses a type change,
+      // so leaving it stale would make the next Save fail rather than quietly
+      // reverting the conversion — either way the form has to follow the
+      // server. Re-arm the baseline so this doesn't read as an unsaved edit.
+      form.setValue("billType", "credit");
+      baselineRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      toast({
+        title: "Converted to a vendor credit",
+        description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't convert this bill",
+        // The server's refusals are the useful part — already paid, already in
+        // Xero — so show them rather than a generic line.
+        description: error?.message?.replace(/^\d+:\s*/, "") || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      // Drop the dirty baseline before navigating: the bill is gone, so the
+      // unsaved-changes guard has nothing left to protect and would otherwise
+      // be able to prompt on the way out.
+      baselineRef.current = null;
+      setDeleteDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({
+        title: "Bill deleted",
+        description: `${bill?.billNumber || "The bill"} has been deleted.`,
+      });
+      setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't delete this bill",
+        description: error?.message?.replace(/^\d+:\s*/, "") || "Please try again.",
         variant: "destructive",
       });
     },
@@ -1730,7 +1937,14 @@ export default function BillDetail() {
   const ocrFromAttachmentMutation = useMutation({
     mutationFn: async (objectPath: string) => {
       if (id) {
-        return await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", { objectPath });
+        // Clicking the button is an explicit request to read the document, so
+        // always force it. Without this the server short-circuits on
+        // ocrProcessed and returns { skipped: true }, which looks to the user
+        // like a read that did nothing.
+        return await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", {
+          objectPath,
+          forceReprocess: true,
+        });
       }
       const meta = attachmentMeta[objectPath];
       return await apiRequest(`/api/bills/ocr-from-path`, "POST", {
@@ -1743,6 +1957,13 @@ export default function BillDetail() {
       });
     },
     onSuccess: (data: any) => {
+      if (data?.skipped) {
+        toast({
+          title: "Nothing to apply",
+          description: "This bill has already been read and the server skipped the re-run.",
+        });
+        return;
+      }
       if (data.billReference || data.invoiceNumber) {
         form.setValue("billReference", data.billReference || data.invoiceNumber);
       }
@@ -1791,22 +2012,15 @@ export default function BillDetail() {
       // the inc-GST total they are inc-GST (inclusive). Forcing inclusive on an
       // ex-GST invoice made every computed total ~10% off the document — the
       // main source of "the Total ends up being wrong".
+      // Same detector the bulk read uses, so the two extraction paths can't
+      // disagree about how to read the same document.
       let detectedTaxMode: "inclusive" | "exclusive" = "inclusive";
       if (data.lineItems && data.lineItems.length > 0) {
-        const sumLinesCents = data.lineItems.reduce(
-          (s: number, it: any) => s + (it.totalAmount || 0),
-          0,
-        );
-        const docTotal = data.totalAmount as number | null | undefined; // cents inc GST
-        const docSubtotal = data.subtotalAmount as number | null | undefined; // cents ex GST
-        if (
-          docTotal != null &&
-          docSubtotal != null &&
-          docTotal !== docSubtotal &&
-          Math.abs(sumLinesCents - docSubtotal) < Math.abs(sumLinesCents - docTotal)
-        ) {
-          detectedTaxMode = "exclusive";
-        }
+        detectedTaxMode = detectBillTaxMode({
+          lineTotalsCents: data.lineItems.map((it: any) => it.totalAmount || 0),
+          documentSubtotalCents: data.subtotalAmount ?? null,
+          documentTotalCents: data.totalAmount ?? null,
+        });
         const firstCostCode = costCodes[0]?.id;
         const defaultAccount = getSupplierDefaultAccount();
         setTaxMode(detectedTaxMode);
@@ -1815,7 +2029,7 @@ export default function BillDetail() {
           description: item.description || "",
           costCodeId: firstCostCode,
           quantity: item.quantity || 1,
-          unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+          unitPrice: reconcileLineUnitPrice(item.unitPrice, item.totalAmount || 0, item.quantity || 1) / 100,
           unit: "",
           tax: "GST on expenses" as const,
           account: defaultAccount,
@@ -1857,15 +2071,33 @@ export default function BillDetail() {
           })
           .catch((err) => console.error("Failed to persist AI-extracted bill fields:", err));
       }
+      // Same bar the bulk read uses: a total plus either an invoice number or
+      // line items. Below that the AI has effectively read nothing, and
+      // claiming the fields were populated sends the user hunting for changes
+      // that were never applied.
+      const usableRead =
+        (data.totalAmount ?? 0) > 0 &&
+        (!!(data.billReference || data.invoiceNumber) || (data.lineItems?.length ?? 0) > 0);
+      if (!usableRead) {
+        toast({
+          title: "Couldn't read this document",
+          description:
+            "The AI couldn't pull enough off this file — check it's a clear invoice, or fill the bill in manually.",
+        });
+        return;
+      }
       toast({
         title: "Bill updated",
         description: "AI has populated the bill fields. Review and save when ready.",
       });
     },
     onError: (error: any) => {
+      // Server errors here are ours, not the user's — show them something
+      // actionable and keep the detail in the console for debugging.
+      console.error("[Read & Apply] failed:", error);
       toast({
-        title: "AI extraction failed",
-        description: error?.message || "Couldn't extract invoice details. Fill the bill in manually.",
+        title: "Couldn't read this document",
+        description: "The AI read didn't come back. Try again in a moment, or fill the bill in manually.",
         variant: "destructive",
       });
     },
@@ -1877,7 +2109,9 @@ export default function BillDetail() {
   // This prevents unintended re-processing and gives the user full control.
 
   const performSubmit = (data: BillFormData) => {
-    if (isEditMode) {
+    // createdBillIdRef covers the create flows that stay on the page after the
+    // bill exists: saving again must update it, never create a second one.
+    if (isEditMode || createdBillIdRef.current) {
       updateMutation.mutate(data);
     } else {
       createMutation.mutate(data);
@@ -2045,16 +2279,24 @@ export default function BillDetail() {
     if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
       const firstCostCode = costCodes[0]?.id;
       const defaultAccount = getSupplierDefaultAccount();
-      // OCR returns inc-GST line totals (see INVOICE_EXTRACTION_PROMPT). Force
-      // the form into Tax Inclusive mode so the calculator strips GST correctly
-      // instead of adding 10% on top.
-      setTaxMode("inclusive");
+      // Read the document rather than assuming. Inc-GST line totals are the
+      // common case here, which is why this used to hardcode inclusive — but
+      // an ex-GST invoice then had 10% added on top of already-ex figures.
+      // detectBillTaxMode falls back to inclusive when the document gives it
+      // nothing to compare, so the common case is unchanged.
+      setTaxMode(
+        detectBillTaxMode({
+          lineTotalsCents: (ocrResults.lineItems ?? []).map((it: any) => it.totalAmount || 0),
+          documentSubtotalCents: ocrResults.subtotalAmount ?? null,
+          documentTotalCents: ocrResults.totalAmount ?? null,
+        }),
+      );
       const newLineItems = ocrResults.lineItems.map((item: any, index: number) => ({
         lineType: "custom" as const,
         description: item.description || "",
         costCodeId: firstCostCode,
         quantity: item.quantity || 1,
-        unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+        unitPrice: reconcileLineUnitPrice(item.unitPrice, item.totalAmount || 0, item.quantity || 1) / 100,
         unit: "",
         tax: "GST on expenses" as const,
         account: defaultAccount,
@@ -2226,6 +2468,14 @@ export default function BillDetail() {
             </h1>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
+            {isEditMode && bill?.status && (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-data font-medium ${BILL_STATUS_CHIP[bill.status]?.className ?? "bg-muted text-muted-foreground"}`}
+                data-testid="chip-bill-status"
+              >
+                {BILL_STATUS_CHIP[bill.status]?.label ?? bill.status}
+              </span>
+            )}
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">Total:</span>
               <span className="font-semibold" data-testid="text-header-total">
@@ -2248,15 +2498,42 @@ export default function BillDetail() {
                 bar at the bottom, next to Save — they were up here, far from
                 the save controls and easy to miss. */}
             {isEditMode && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                data-testid="button-duplicate"
-                onClick={() => duplicateMutation.mutate()}
-                disabled={duplicateMutation.isPending}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" data-testid="button-bill-actions" aria-label="Bill actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onSelect={() => duplicateMutation.mutate()}
+                    disabled={duplicateMutation.isPending}
+                    data-testid="menu-duplicate-bill"
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-2" />
+                    Duplicate
+                  </DropdownMenuItem>
+                  {bill?.billType === "bill" && (
+                    <DropdownMenuItem
+                      onSelect={() => setConvertDialogOpen(true)}
+                      disabled={convertToCreditMutation.isPending}
+                      data-testid="menu-convert-to-credit"
+                    >
+                      <Undo2 className="h-3.5 w-3.5 mr-2" />
+                      Convert to credit note
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => setDeleteDialogOpen(true)}
+                    data-testid="menu-delete-bill"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
@@ -2422,9 +2699,15 @@ export default function BillDetail() {
                     render={({ field }) => (
                       <FormItem className="space-y-1">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Type</FormLabel>
+                        {/* Locked once the bill exists: changing the type is a
+                            conversion, and it has to go through the endpoint
+                            that checks for recorded payments and Xero links.
+                            On a bill being created there is nothing to check,
+                            so the picker stays live there. */}
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
+                          disabled={isEditMode}
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
@@ -2659,6 +2942,45 @@ export default function BillDetail() {
                             data-testid="input-due-date"
                           />
                         </FormControl>
+                        {/* Terms shortcuts. The due date otherwise had to be
+                            picked off a calendar even though the terms that
+                            decide it — Net 7, end of month, end of next month —
+                            are a fixed, known set. Same vocabulary and same
+                            computeDueDate the supplier-terms auto-fill uses, so
+                            a shortcut and an auto-filled date can't disagree. */}
+                        {(() => {
+                          const billDate = new Date(form.watch("billDate"));
+                          if (isNaN(billDate.getTime())) return null;
+                          return (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {PAYMENT_TERMS_OPTIONS.map((option) => {
+                                const due = computeDueDate(billDate, option.value);
+                                if (!due) return null;
+                                const value = format(due, "yyyy-MM-dd");
+                                const active = field.value === value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => {
+                                      dueDateManuallySet.current = true;
+                                      field.onChange(value);
+                                    }}
+                                    title={`Due ${format(due, "d MMM yyyy")}`}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                                      active
+                                        ? "border-primary text-primary bg-primary/10"
+                                        : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                    }`}
+                                    data-testid={`button-due-terms-${option.value}`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                         {field.value && (() => {
                           const supplier = suppliers.find((s: any) => s.id === form.watch("supplierId"));
                           const supplierTerms = supplier?.paymentTerms;
@@ -2916,7 +3238,11 @@ export default function BillDetail() {
                               type="button"
                               className="w-full"
                               size="sm"
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !!(bill as any)?.ocrProcessed}
+                              // Deliberately NOT disabled on ocrProcessed: a read
+                              // that came back empty still sets that flag, and
+                              // greying the button out left those bills with no way
+                              // to try again.
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >
@@ -2928,7 +3254,7 @@ export default function BillDetail() {
                               ) : (
                                 <>
                                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                                  Read & Apply
+                                  {(bill as any)?.ocrProcessed ? "Read again" : "Read & Apply"}
                                 </>
                               )}
                             </Button>
@@ -3075,21 +3401,28 @@ export default function BillDetail() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-table text-muted-foreground">Amounts are</span>
+                    {/* The selected side used to be bg-background on a bg-muted/30
+                        track — a shade apart, on the control that decides whether
+                        every figure on the bill includes GST. It reads as the
+                        app's primary colour now, because getting this wrong is a
+                        10% error on the whole bill. */}
                     <div className="inline-flex rounded-md border bg-muted/30 p-0.5" data-testid="select-tax-mode">
-                      <button
-                        type="button"
-                        onClick={() => setTaxMode("exclusive")}
-                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "exclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
-                      >
-                        Exclusive
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaxMode("inclusive")}
-                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "inclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
-                      >
-                        Inclusive
-                      </button>
+                      {(["exclusive", "inclusive"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTaxMode(mode)}
+                          aria-pressed={taxMode === mode}
+                          data-testid={`button-tax-mode-${mode}`}
+                          className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${
+                            taxMode === mode
+                              ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {mode === "exclusive" ? "Exclusive" : "Inclusive"}
+                        </button>
+                      ))}
                     </div>
                     <span className="text-table text-muted-foreground">of tax</span>
                   </div>
@@ -3235,8 +3568,19 @@ export default function BillDetail() {
                         cell: (item, index) => (
                           <input
                             type="number"
-                            value={item.quantity}
-                            onChange={(e) => updateLineItem(index, "quantity", parseFloat(e.target.value) || 0)}
+                            // Bound to a draft string while the cell is focused. Binding
+                            // straight to the number meant clearing the field snapped it
+                            // back to 0, so you could only ever type after that 0.
+                            value={qtyDraft?.index === index ? qtyDraft.value : item.quantity}
+                            onFocus={(e) => {
+                              setQtyDraft({ index, value: String(item.quantity ?? "") });
+                              e.currentTarget.select();
+                            }}
+                            onChange={(e) => {
+                              setQtyDraft({ index, value: e.target.value });
+                              updateLineItem(index, "quantity", parseFloat(e.target.value) || 0);
+                            }}
+                            onBlur={() => setQtyDraft(null)}
                             className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-quantity-${index}`}
                           />
@@ -3565,10 +3909,16 @@ export default function BillDetail() {
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
                                   approval.status === "approved"
                                     ? "bg-status-success-bg text-status-success"
+                                    : approval.status === "edited"
+                                    ? "bg-status-info-bg text-status-info"
                                     : "bg-status-danger-bg text-status-danger"
                                 }`}
                               >
-                                {approval.status === "approved" ? "Approved" : "Rejected"}
+                                {approval.status === "approved"
+                                  ? "Approved"
+                                  : approval.status === "edited"
+                                  ? "Edited after approval"
+                                  : "Rejected"}
                               </span>
                             </div>
                             {approval.comments && (
@@ -4007,6 +4357,58 @@ export default function BillDetail() {
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
 
+      <AlertDialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen}>
+        <AlertDialogContent data-testid="dialog-convert-to-credit">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert {bill?.billNumber || "this bill"} to a credit note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It becomes a vendor credit in place — same attachment, line items and history — and its
+              amount starts reducing what you owe this supplier instead of adding to it. Vendor
+              it syncs to Xero as a supplier credit note.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={convertToCreditMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); convertToCreditMutation.mutate(); }}
+              disabled={convertToCreditMutation.isPending}
+              data-testid="button-confirm-convert-credit"
+            >
+              {convertToCreditMutation.isPending ? "Converting..." : "Convert"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent data-testid="dialog-delete-bill">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {bill?.billNumber || "this bill"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the bill, its line items and its attachments. It can't be undone, and
+              the project budget will be recalculated without it.
+              {(bill?.paidAmount ?? 0) > 0 && (
+                <> This bill has {formatCurrency(paid)} recorded against it as paid.</>
+              )}
+              {bill?.xeroInvoiceId && (
+                <> It has already been pushed to Xero — deleting it here does not remove it from Xero.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); deleteMutation.mutate(); }}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete-bill"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete bill"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent data-testid="dialog-reject-bill">
           <DialogHeader>
@@ -4411,7 +4813,7 @@ export default function BillDetail() {
                   setSupplierDefaultsTermsDirty(true);
                 }}
               >
-                <SelectTrigger className="text-xs" data-testid="select-supplier-defaults-terms">
+                <SelectTrigger data-testid="select-supplier-defaults-terms">
                   <SelectValue placeholder="Select payment terms" />
                 </SelectTrigger>
                 <SelectContent>

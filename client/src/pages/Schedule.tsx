@@ -3207,7 +3207,7 @@ export default function Schedule() {
                                           });
                                         }}
                                       >
-                                        <SelectTrigger className="h-6 w-20 text-xs">
+                                        <SelectTrigger className="h-6 w-20">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -3225,7 +3225,7 @@ export default function Schedule() {
                                           });
                                         }}
                                       >
-                                        <SelectTrigger className="h-6 w-24 text-xs">
+                                        <SelectTrigger className="h-6 w-24">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -3659,7 +3659,7 @@ export default function Schedule() {
                       updateWorkingDaysMutation.mutate({ businessAssignStatus: val || null });
                     }}
                   >
-                    <SelectTrigger className="w-[160px] h-8 text-sm">
+                    <SelectTrigger className="w-[160px]">
                       <SelectValue placeholder="None" />
                     </SelectTrigger>
                     <SelectContent>

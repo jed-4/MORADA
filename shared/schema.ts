@@ -1013,6 +1013,13 @@ export const estimateItems = pgTable("estimate_items", {
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
   markupPercent: doublePrecision("markup_percent"), // Optional item-specific markup % (e.g. 10, 7.5). Falls back to project markup if null
+  // Provenance: the catalogue item this line's unit cost was taken from.
+  // INVARIANT: this is set only while unitCostExTax still equals the catalogue price.
+  // Editing the unit cost CLEARS it (the line has left the catalogue and is the
+  // estimator's own number), so a drift warning can only ever mean "the supplier's
+  // book moved" — never "someone edited this on purpose". Renaming the line, or
+  // changing qty/wastage/markup, all keep the link.
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
   // taxAmount and priceIncTax are a denormalised cache of the line price.
   // They are populated ONLY by computeEstimateItemPrice in shared/pricing.ts.
   // Never compute or write these inline — always go through that function.
@@ -1043,6 +1050,7 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   markupPercent: z.number().optional().nullable(),
   shownAs: z.string().optional().nullable(),
   wastagePercent: z.number().default(0),
+  priceListItemId: z.string().optional().nullable(),
 });
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;
@@ -1458,7 +1466,12 @@ export type CostCode = typeof costCodes.$inferSelect;
 // Field Categories (Buildern-style predefined categories)
 export const fieldCategories = pgTable("field_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  key: text("key").notNull().unique(), // e.g., "task.status", "task.priority"
+  // Field Settings are PER COMPANY. They used to be global — one shared list of
+  // units / statuses / rooms for every company on the deployment, so a customer
+  // renaming an option renamed it for everyone. Migration 0056 cloned a set per
+  // company; `key` is now unique per company, not globally.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // e.g., "task.status", "task.priority"
   label: text("label").notNull(), // Display name
   entity: text("entity").notNull(), // "task" | "note" | "project"
   description: text("description"),
@@ -1467,7 +1480,10 @@ export const fieldCategories = pgTable("field_categories", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique: a category key is unique per company, not globally
+  companyKeyUnique: uniqueIndex("field_categories_company_key_unique").on(table.companyId, table.key),
+}));
 
 export const insertFieldCategorySchema = createInsertSchema(fieldCategories).omit({
   id: true,
@@ -1481,7 +1497,16 @@ export type FieldCategory = typeof fieldCategories.$inferSelect;
 // Field Options (configurable options for each category)
 export const fieldOptions = pgTable("field_options", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Denormalised from the parent category so option reads/writes can be
+  // company-scoped without a join. See migration 0056.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
+  // NOTE: this self-reference has no `(): AnyPgColumn` return type, so
+  // TypeScript can't infer the table while inferring the column and fieldOptions
+  // degrades to `any` (TS7022). Annotating it is the right fix, but it exposes
+  // ~17 latent errors in client code that the `any` was hiding — including
+  // reads of a non-existent `.label` on a field option. Left as-is here so that
+  // clean-up is its own change rather than a rider on the company-scoping work.
   parentId: varchar("parent_id").references(() => fieldOptions.id, { onDelete: "cascade" }), // For hierarchical options (e.g., project sub-statuses)
   key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
   name: text("name").notNull(), // Display name (editable by user)
@@ -1531,6 +1556,11 @@ export const selections = pgTable("selections", {
   sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
+  // Client may photograph something they like and add it as an option. Off by
+  // default and set per selection — sensible for "Kitchen splashback", not for
+  // "Structural steel finish". An option added this way is an idea, not a
+  // priced product; the team refines it at the desk.
+  clientCanAddOption: boolean("client_can_add_option").notNull().default(false),
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
   purchaseOrderId: varchar("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Set when converted to a PO
   orderedAt: timestamp("ordered_at"), // Set when status becomes "ordered"
@@ -1672,7 +1702,10 @@ export type SelectionOptionWithAttachments = SelectionOption & {
 export const billTypeEnum = pgEnum("bill_type", ["bill", "credit", "receipt"]);
 export const billStatusEnum = pgEnum("bill_status", ["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]);
 export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
-export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
+// "edited" is an activity row, not an approval decision: it records a change
+// made to a bill AFTER it was approved, so the approval history shows the full
+// story rather than an approval that silently stopped describing the bill.
+export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected", "edited"]);
 export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
 
 // Supplier type enum (supplier = hardware stores, trade = subcontractors)
@@ -1924,7 +1957,11 @@ export const contacts = pgTable("contacts", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Every read is scoped by company_id and getContacts() sorts by name; the FK
+  // alone does not index the referencing side. See migration 0057.
+  companyNameIdx: index("contacts_company_id_name_idx").on(table.companyId, table.name),
+}));
 
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
@@ -2035,6 +2072,11 @@ export const bills = pgTable("bills", {
   xeroVoidedAt: timestamp("xero_voided_at"),
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
+  // Distinct from ocrProcessed, which only says the document was read at import.
+  // This says a human has run the price review over this bill's lines, which is
+  // what stops the same bill being reviewed twice.
+  priceReviewedAt: timestamp("price_reviewed_at"),
+  priceReviewedBy: varchar("price_reviewed_by"),
   ocrData: json("ocr_data"), // Raw OCR results
   gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
   // Confirmed PO match (ID of purchase_orders row). Column name kept for back-compat
@@ -6782,6 +6824,22 @@ export type PriceListItem = typeof priceListItems.$inferSelect;
 
 // Bill Line Item to Price List Item link (for AI review tracking)
 // This tracks which bill line items have been reviewed and linked to price list
+export const billLineItemSkus = pgTable("bill_line_item_skus", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  sku: text("sku").notNull(),
+  /** Where the code came from, so a bad extraction run can be found and cleared. */
+  source: text("source").notNull().default("pdf"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lineUnique: uniqueIndex("bill_line_item_skus_line_unique").on(table.billLineItemId),
+  companyIdx: index("bill_line_item_skus_company_idx").on(table.companyId),
+  skuIdx: index("bill_line_item_skus_sku_idx").on(table.companyId, table.sku),
+}));
+
+export type BillLineItemSku = typeof billLineItemSkus.$inferSelect;
+
 export const billLineItemPriceLinks = pgTable("bill_line_item_price_links", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),

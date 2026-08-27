@@ -128,12 +128,13 @@ export class AutoBillCreatorService {
         }
       }
 
+      // No fallback to "first active project": guessing put every unmatched
+      // invoice on whichever project happened to come back first, which is
+      // indistinguishable from a real match once it's on the bill. If the
+      // email doesn't name a project, leave it unset — the bill lands as a
+      // business-level draft and the reviewer picks the project.
       if (!projectId) {
-        const activeProject = projects.find(p => p.isActive);
-        if (activeProject) {
-          projectId = activeProject.id;
-        }
-        // If still no project, bill will be saved as a business-level bill (projectId = null)
+        console.log("[autoBillCreator] No project matched from the email — leaving the bill unassigned");
       }
     }
 
@@ -210,7 +211,12 @@ export class AutoBillCreatorService {
         tax: 0,
         total: 0,
         paidAmount: 0,
-        sendToXero: false,
+        // Bills that arrive by email are real supplier bills and belong in Xero
+        // like any other. Defaulting this off meant every emailed bill waited
+        // for someone to notice the checkbox, and quietly never synced if
+        // nobody did. The push still only fires once the bill reaches
+        // awaiting_approval, so nothing leaves as an unreviewed draft.
+        sendToXero: true,
         ocrProcessed: false,
         attachmentUrls: [],
         createdById: options.defaultUserId || null,
@@ -236,7 +242,7 @@ export class AutoBillCreatorService {
     // trigger OCR in bulk from the bills list.
     console.log(`[autoBillCreator] Bill ${createdBill.billNumber} saved as draft — AI extraction deferred`);
 
-    const project = await storage.getProject(projectId!);
+    const project = projectId ? await storage.getProject(projectId) : undefined;
     return {
       success: true,
       billId: createdBill.id,

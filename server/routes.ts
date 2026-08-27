@@ -16,9 +16,9 @@ import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
-import { enqueueXeroPush } from "./services/xeroPushQueue";
+import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
-import { isVendorCredit, CREDIT_NOT_SUPPORTED, CREDIT_NOT_SUPPORTED_MESSAGE } from "./services/xeroCreditGuard";
+import { isVendorCredit } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
@@ -186,7 +186,8 @@ import {
   insertPriceListGroupSchema,
   insertPriceListItemSchema,
   insertBillLineItemPriceLinkSchema,
-  type CircuitContext
+  type CircuitContext,
+  type InsertContact
 } from "@shared/schema";
 // Namespace import for table references (schema.selections etc.). Several
 // existing routes already referenced `schema.` without this import and threw
@@ -196,7 +197,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
-import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
@@ -220,6 +221,12 @@ import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
 import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
+import {
+  resolveSelectionViewer,
+  applySelectionVisibility,
+  applySelectionVisibilityToOne,
+  applyOptionVisibility,
+} from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
@@ -470,11 +477,41 @@ const trackingCategoryId = (raw: unknown): string | undefined => {
   return v;
 };
 
+const fmtMoney = (dollars: number) =>
+  `${dollars < 0 ? "-" : ""}$${Math.abs(dollars).toFixed(2)}`;
+
+// Xero's validation text is written for whoever built the integration, not for
+// the person looking at the bill. Rewrite the messages we understand into
+// something that says what to do; anything unrecognised passes through
+// unchanged rather than being flattened into a generic apology.
+export function explainXeroValidation(raw: string, billType?: string | null): string {
+  const msg = String(raw || "");
+  const isCredit = billType === "credit";
+  if (/Total for this document must be greater than or equal to zero/i.test(msg)) {
+    return isCredit
+      ? "Xero needs a credit note's total to be zero or more — a credit already reduces what you owe, so its lines should be positive. If this document mixes credits and purchases, split the purchases onto their own bill."
+      : "Xero won't accept a supplier bill for a negative amount. If the whole document is a refund or return, convert it to a credit note from the actions menu; if it mixes a return with purchases, split the return onto its own credit note.";
+  }
+  if (/Quantity must not be less than zero/i.test(msg)) {
+    return "One of the lines has a negative quantity, which Xero rejects. Enter the amount as a negative unit price instead, or move that line onto a credit note.";
+  }
+  if (/Account code .* is not a valid code/i.test(msg) || /AccountCode is required/i.test(msg)) {
+    return `${msg} Set an account on the line, on the supplier, or as a company default in Settings → Integrations → Xero.`;
+  }
+  if (/Contact/i.test(msg) && /required|not valid/i.test(msg)) {
+    return "Xero couldn't match the supplier on this bill. Link the supplier to a Xero contact and push again.";
+  }
+  return msg;
+}
+
 export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
   overrideXeroContactId?: string,
 ): Promise<PushBillResult> {
+  // Remembered outside the try so the catch can tailor Xero's validation text
+  // to the document kind — `bill` itself is scoped to the try.
+  let billTypeForErrors: string | null = null;
   const writeSyncStatus = async (status: "success" | "failed", error?: string) => {
     try {
       await storage.updateBill(billId, {
@@ -539,18 +576,14 @@ export async function pushBillToXeroInternal(
       return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
     }
 
-    // Vendor credits must not go down this path — it would create a positive
-    // ACCPAY bill in Xero (see server/services/xeroCreditGuard.ts). Checked
-    // after the ownership guard so a cross-tenant probe still gets FORBIDDEN.
-    if (isVendorCredit((bill as any).billType)) {
-      logOutcome({ ok: false, reason: CREDIT_NOT_SUPPORTED, message: CREDIT_NOT_SUPPORTED_MESSAGE });
-      return {
-        ok: false,
-        status: 422,
-        error: CREDIT_NOT_SUPPORTED,
-        message: CREDIT_NOT_SUPPORTED_MESSAGE,
-      };
-    }
+    // A vendor credit is a different Xero document — ACCPAYCREDIT on
+    // /CreditNotes — and used to be refused outright rather than pushed as an
+    // ACCPAY bill, which would have raised payables instead of reducing them.
+    // It now takes the credit-note path below; everything up to the payload is
+    // shared, because a credit's lines, accounts, tracking and tax are built
+    // exactly like a bill's.
+    const isCredit = isVendorCredit((bill as any).billType);
+    billTypeForErrors = (bill as any).billType ?? null;
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
     // change to its line items or status ("To update fields on a paid invoice
@@ -734,10 +767,35 @@ export async function pushBillToXeroInternal(
         });
       }
 
+      // Xero computes the line amount as Quantity x UnitAmount — it never sees
+      // the line total we store. unitPrice is integer cents, so a unit price
+      // the supplier prints to four decimals (100 @ $6.4999 = $649.99) rounds
+      // to $6.50 and Xero bills $650.00: our bill and the Xero bill disagree
+      // with each other and with the invoice. When the two can't be made to
+      // agree, send the stored total as a single unit and keep the quantity in
+      // the description, so the pushed amount is always the amount we hold.
+      // Xero rejects a negative Quantity outright ("Quantity must not be less
+      // than zero") but is perfectly happy with a negative UnitAmount. A line
+      // entered as -1 x $106.60 — the usual way of putting a credit on a
+      // normal bill — therefore failed the push permanently: a 4xx never
+      // retries, so the bill sat flagged and unsynced. Carry the sign on the
+      // amount instead; the line total is identical either way.
+      const rawQty = typeof item.quantity === "number" && item.quantity !== 0 ? item.quantity : 1;
+      const negativeQty = rawQty < 0;
+      const qty = negativeQty ? -rawQty : rawQty;
+      const unitCents =
+        (typeof item.unitPrice === "number" ? item.unitPrice : 0) * (negativeQty ? -1 : 1);
+      const storedTotalCents =
+        typeof item.total === "number" ? item.total : Math.round(qty * unitCents);
+      const reconciles = Math.abs(Math.round(qty * unitCents) - storedTotalCents) < 1;
+      const description = item.description || "";
+
       return {
-        description: item.description || "",
-        quantity: typeof item.quantity === "number" ? item.quantity : 1,
-        unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+        description: reconciles
+          ? description
+          : `${description}${description ? " " : ""}(${qty} × $${(unitCents / 100).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")})`.trim(),
+        quantity: reconciles ? qty : 1,
+        unitAmount: reconciles ? unitCents / 100 : storedTotalCents / 100,
         taxType,
         accountCode: item.account || supplierDefaultAccountCode || companyDefaultAccountCode || undefined,
         tracking: tracking.length > 0 ? tracking : undefined,
@@ -766,6 +824,30 @@ export async function pushBillToXeroInternal(
         message: msg,
         validationErrors: issues,
       };
+    }
+
+    // Pre-flight: Xero requires Total >= 0 on both an ACCPAY bill and an
+    // ACCPAYCREDIT credit note, and rejects anything else with "The Total for
+    // this document must be greater than or equal to zero." Catching it here
+    // means the user gets told what is actually wrong with their document
+    // instead of Xero's wording arriving after a failed round trip.
+    //
+    // A net-negative supplier document is almost always a return mixed in with
+    // purchases on one docket, and no single Xero document represents that —
+    // it has to be split. Sum the way Xero will: quantity x unit amount.
+    const documentTotal = xeroLineItems.reduce(
+      (sum, li) => sum + (li.quantity ?? 1) * (li.unitAmount ?? 0),
+      0,
+    );
+    if (documentTotal < 0) {
+      const asCredit = isCredit;
+      const msg = asCredit
+        ? `This credit note totals ${fmtMoney(documentTotal)}. Xero needs a credit note's total to be zero or more — a credit already reduces what you owe, so its lines should be positive. If this document mixes credits and purchases, split the purchases onto their own bill.`
+        : `This bill totals ${fmtMoney(documentTotal)}. Xero won't accept a supplier bill for a negative amount. If the whole document is a refund or return, convert it to a credit note from the actions menu; if it mixes a return with purchases, split the return onto its own credit note and leave the purchases here.`;
+      const issues: XeroValidationIssue[] = [{ scope: "invoice", message: msg }];
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "NEGATIVE_TOTAL", message: msg, validationErrors: issues });
+      return { ok: false, status: 422, error: "NEGATIVE_TOTAL", message: msg, validationErrors: issues };
     }
 
     // Pre-flight: tax types referenced on lines must exist on the connected
@@ -853,7 +935,9 @@ export async function pushBillToXeroInternal(
       supplierXeroContactId,
       billDate: formatDate(bill.billDate),
       dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
-      reference: bill.billNumber || undefined,
+      // Xero documents Reference as ACCRECCREDIT-only, so a payables credit
+      // must not carry one — sending it is a validation error.
+      reference: isCredit ? undefined : bill.billNumber || undefined,
       invoiceNumber: bill.billReference || undefined,
       taxMode: ((bill as any).taxMode === "inclusive" ? "inclusive" : "exclusive") as
         | "inclusive"
@@ -864,12 +948,19 @@ export async function pushBillToXeroInternal(
 
     let xeroBill: any;
     if (bill.xeroInvoiceId) {
-      xeroBill = await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
+      xeroBill = isCredit
+        ? await xeroService.updateCreditNote(connection.id, bill.xeroInvoiceId, billPayload)
+        : await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
     } else {
-      xeroBill = await xeroService.createBill(connection.id, billPayload);
-      if (xeroBill?.InvoiceID) {
+      xeroBill = isCredit
+        ? await xeroService.createCreditNote(connection.id, billPayload)
+        : await xeroService.createBill(connection.id, billPayload);
+      // A credit note comes back as CreditNoteID; both are stored in
+      // xeroInvoiceId, which is what every read path already looks up by.
+      const newXeroId = xeroBill?.InvoiceID || xeroBill?.CreditNoteID;
+      if (newXeroId) {
         await storage.updateBill(billId, {
-          xeroInvoiceId: xeroBill.InvoiceID,
+          xeroInvoiceId: newXeroId,
           sendToXero: true,
         } as any);
       }
@@ -878,7 +969,7 @@ export async function pushBillToXeroInternal(
     // Best-effort: push BuildPro attachments to Xero. Failures here must not
     // fail the overall sync — the bill itself is already in Xero. We log a
     // warning and let users retry from the bill page.
-    const xeroInvoiceIdForAttachments = xeroBill?.InvoiceID || bill.xeroInvoiceId;
+    const xeroInvoiceIdForAttachments = xeroBill?.InvoiceID || xeroBill?.CreditNoteID || bill.xeroInvoiceId;
     if (xeroInvoiceIdForAttachments) {
       try {
         await pushBillAttachmentsToXero(connection.id, xeroInvoiceIdForAttachments, bill, companyId);
@@ -902,7 +993,10 @@ export async function pushBillToXeroInternal(
     };
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
-      const summary = error.validationErrors[0]?.message || error.message;
+      const summary = explainXeroValidation(
+        error.validationErrors[0]?.message || error.message,
+        billTypeForErrors,
+      );
 
       // A paid / credit-noted invoice is locked by Xero: it rejects line-item or
       // status changes with "…must supply a LineItemID" / "…has payments or
@@ -914,8 +1008,19 @@ export async function pushBillToXeroInternal(
       // the bill flips to paid and the guard catches future edits), clear the
       // red badge, and return the calm INVOICE_LOCKED result the client already
       // renders as a plain "saved" note — never the raw validation string.
+      // "Invoice not of valid status for modification" is what Xero actually
+      // returns once a bill is PAID, VOIDED or DELETED there — and it matched
+      // none of the three patterns below, so the self-heal never ran. The push
+      // fell through to the raw validation path instead: red sync-failed badge,
+      // dead-lettered job, and nothing pulled back from Xero. That is why
+      // reconciling a bill in Xero left Morada stuck on "Awaiting Payment"
+      // until someone pressed Sync by hand.
+      //
+      // Pulling is the right response to all of these states, not just paid:
+      // syncBillFromXeroInternal maps VOIDED/DELETED to draft with a note, and
+      // PAID to paid.
       const invoiceLocked = error.validationErrors.some((v) =>
-        /LineItemID|payments or credit notes|has payments/i.test(v?.message || ""),
+        /LineItemID|payments or credit notes|has payments|not of valid status/i.test(v?.message || ""),
       );
       if (invoiceLocked) {
         const lockedBill = await storage.getBillById(billId).catch(() => null);
@@ -926,7 +1031,7 @@ export async function pushBillToXeroInternal(
           });
         }
         const lockedMsg =
-          "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in Morada.";
+          "This bill is already settled in Xero, so Xero won't accept changes to it. Your edit was saved in Morada, and its status has been pulled back from Xero.";
         try {
           await storage.updateBill(billId, {
             xeroLastSyncStatus: null,
@@ -967,7 +1072,36 @@ export async function pushBillToXeroInternal(
  * last edit, coalescing rapid sequential PATCHes into a single push.
  */
 const __billAutoPushTimers = new Map<string, NodeJS.Timeout>();
+// How long after the in-process attempt the durable safety net becomes due.
+// Long enough that the normal path has finished and cleared it, short enough
+// that a restart isn't a long silence.
+const AUTO_PUSH_FALLBACK_MS = 90_000;
+
+// Whether an automatic (not user-initiated) push should go ahead. Shared with
+// the queue worker: a durable fallback job can sit for a while, and by the time
+// it runs the bill may have been paid, unlinked from Xero, or had its sync flag
+// turned off. Pushing then would be acting on a stale intent.
+export function isAutoPushEligible(bill: {
+  status?: string | null;
+  xeroInvoiceId?: string | null;
+  sendToXero?: boolean | null;
+}): boolean {
+  if (bill.status === "paid") return false; // never overwrite paid bills
+  if (bill.xeroInvoiceId) return true; // already linked: keep it in step
+  return Boolean(
+    bill.sendToXero && (bill.status === "awaiting_approval" || bill.status === "awaiting_payment"),
+  );
+}
+
 function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000) {
+  // Register the intent to push in the database BEFORE the in-memory timer.
+  // The debounce is a setTimeout in a Map, so a deploy or crash inside the
+  // window used to drop the push entirely — no queue row, no retry, no trace.
+  // The row is due well after the inline attempt should have finished and is
+  // cleared on success, so in the normal case the worker never sees it; if the
+  // process dies first, it survives and the worker picks it up.
+  void enqueueXeroPush(companyId, billId, AUTO_PUSH_FALLBACK_MS).catch(() => {});
+
   const existing = __billAutoPushTimers.get(billId);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(async () => {
@@ -975,26 +1109,37 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
     try {
       const bill = await storage.getBillById(billId);
       if (!bill) return;
-      if (bill.status === "paid") return; // never overwrite paid bills
       // Linked: always allowed. Unlinked: only when sendToXero and the bill
       // has reached the approval workflow (awaiting_approval or later). This
       // mirrors the BuildPro lifecycle into Xero so the two systems stay in
       // step (SUBMITTED ↔ awaiting_approval, AUTHORISED ↔ awaiting_payment).
-      if (
-        !bill.xeroInvoiceId &&
-        !(
-          bill.sendToXero &&
-          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment")
-        )
-      ) {
+      if (!isAutoPushEligible(bill as any)) {
+        void resolvePendingPush(billId).catch(() => {});
         return;
       }
       const result = await pushBillToXeroInternal(billId, companyId);
+      if (result.ok) {
+        // Done — drop the safety net so the worker doesn't push again.
+        void resolvePendingPush(billId).catch(() => {});
+      }
       if (!result.ok) {
         console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
+        // A transient failure here used to be logged and abandoned — this path
+        // never touched the outbox, unlike the explicit push route. So a Xero
+        // rate-limit or a 5xx during an auto-push silently lost the change
+        // until someone edited the bill again. Same rule as the explicit
+        // route: retryable goes to the queue, 4xx validation won't self-heal.
+        const retryable = !result.status || result.status === 429 || result.status >= 500;
+        // Bring the safety-net row forward to now rather than waiting it out.
+        if (retryable) await enqueueXeroPush(companyId, billId).catch(() => {});
+        // A 4xx will never self-heal; leaving the row pending would just burn
+        // the worker's attempts on it until it dead-lettered anyway.
+        else await resolvePendingPush(billId).catch(() => {});
       }
     } catch (e) {
       console.error(`[auto-push bill ${billId}] unexpected error:`, e);
+      // An unexpected throw is almost always network — always worth a retry.
+      await enqueueXeroPush(companyId, billId).catch(() => {});
     }
   }, delayMs);
   __billAutoPushTimers.set(billId, timer);
@@ -1004,21 +1149,38 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
  * Internal helper to sync a bill from Xero (used by webhook + manual sync route).
  * Pulls amounts, dates, status, and line items from a Xero invoice.
  */
+// The caller reports the outcome to the user, so return what was actually
+// learned from Xero. This used to return only { ok }, while the client cast
+// the response to { xeroStatus, amountPaidCents } and rendered
+// `Status: ${data.xeroStatus}` — which is where "Status: undefined" came from.
+// The cast asserted a shape nothing produced, so nothing caught it.
 async function syncBillFromXeroInternal(
   billId: string,
   companyId: string,
   xeroInvoice?: any,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  xeroStatus?: string;
+  amountPaidCents?: number;
+  totalCents?: number;
+  lineItemsSynced?: number;
+}> {
   try {
     const bill = await storage.getBillById(billId);
     if (!bill || !bill.xeroInvoiceId) return { ok: false, error: "Bill not linked to Xero" };
 
+    const billIsCredit = (bill as any).billType === "credit";
     let invoice = xeroInvoice;
     if (!invoice) {
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return { ok: false, error: "Xero not connected" };
-      invoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
-      if (!invoice) return { ok: false, error: "Xero invoice not found" };
+      // /Invoices does not return credit notes — fetching one there 404s, which
+      // would have read as "the document is gone from Xero".
+      invoice = billIsCredit
+        ? await xeroService.getCreditNote(connection.id, bill.xeroInvoiceId)
+        : await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
+      if (!invoice) return { ok: false, error: billIsCredit ? "Xero credit note not found" : "Xero invoice not found" };
     }
 
     const parseXeroDate = (d: string | undefined): Date | undefined => {
@@ -1090,7 +1252,9 @@ async function syncBillFromXeroInternal(
       // Reference mapping (mirror of push):
       //   Xero InvoiceNumber → BuildPro billReference (supplier's invoice #).
       //   Xero Reference holds our own bill number; we don't overwrite it back.
-      ...(invoice.InvoiceNumber ? { billReference: invoice.InvoiceNumber } : {}),
+      ...((invoice.InvoiceNumber || invoice.CreditNoteNumber)
+        ? { billReference: invoice.InvoiceNumber || invoice.CreditNoteNumber }
+        : {}),
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
 
@@ -1108,6 +1272,7 @@ async function syncBillFromXeroInternal(
     // Once submitted/approved/paid, BuildPro line items are preserved.
     const canOverwriteLines = bill.status === "draft";
     const xeroLineItems: any[] = invoice.LineItems || [];
+    let lineItemsSynced = 0;
     if (canOverwriteLines && xeroLineItems.length > 0) {
       const existingLineItems = await storage.getBillLineItems(bill.id);
       for (const li of existingLineItems) {
@@ -1135,13 +1300,14 @@ async function syncBillFromXeroInternal(
           total: totalLineCents,
           order: i,
         } as any);
+        lineItemsSynced++;
       }
     }
 
     // Totals/line items may have changed from the Xero side → keep the budget live.
     await recalcProjectBudget((bill as any).projectId);
 
-    return { ok: true };
+    return { ok: true, xeroStatus, amountPaidCents, totalCents, lineItemsSynced };
   } catch (error: any) {
     console.error("[syncBillFromXeroInternal] error:", error);
     return { ok: false, error: error?.message || "Sync failed" };
@@ -1211,7 +1377,13 @@ function classifyXeroSurprise(local: { total: number | null }, xInv: any): XeroR
   // Void outranks a total change: it's the more consequential thing to tell a
   // human about, and a voided invoice often reports a different total anyway.
   if (status === "VOIDED" || status === "DELETED") return "voided_in_xero";
-  if ((local.total ?? 0) !== xTotal) return "total_changed";
+  // A sub-cent rounding difference is not someone editing the invoice, and
+  // treating it as one had a real cost: any total mismatch marks the bill a
+  // "surprise", the nightly sweep only auto-applies "safe" drift, so a bill
+  // that Xero had marked PAID sat unpaid in Morada forever because the two
+  // totals disagreed by a cent. The same tolerance the bill screen already
+  // allows itself for reconciling against a supplier invoice.
+  if (Math.abs((local.total ?? 0) - xTotal) > MAX_ROUNDING_CENTS) return "total_changed";
   return null;
 }
 
@@ -3546,6 +3718,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+
       const defect = await storage.createDefect(validationResult.data);
       res.status(201).json(defect);
     } catch (error) {
@@ -3566,6 +3740,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedDefect(req, res, req.params.id);
       if (!owned) return;
+      // A reassignment must land on a project the caller also owns.
+      if (validationResult.data.projectId && validationResult.data.projectId !== owned.projectId) {
+        if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      }
       const defect = await storage.updateDefect(req.params.id, validationResult.data);
       if (!defect) {
         return res.status(404).json({ error: "Defect not found" });
@@ -3859,23 +4037,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Field Settings are per company (migration 0056). Every route below resolves
+  // the caller's company and passes it into storage, so one customer can never
+  // read or edit another's units / statuses / rooms. Returns null and sends 401
+  // when there's no company on the session.
+  //
+  // These routes carry no requireAuth of their own, and deliberately so: the
+  // catch-all at the top of this file already puts every /api path that is not
+  // on its public allowlist behind requireAuth, and field-categories is not on
+  // that list. Verified — with NODE_ENV=test an unauthenticated GET here is a
+  // 401 both before and after this change. What made it look open was the
+  // DEVELOPMENT bypass, which injects DEV_USER_EMAIL's user; combined with the
+  // missing company filter, a dev-mode curl with no cookie returned 602KB of
+  // every tenant's categories. Adding a second requireAuth here would only buy
+  // a duplicate getUser round trip on one of the hottest endpoints in the app
+  // (every status / priority / label / unit picker reads it), so the company
+  // resolution below is the guard that matters.
+  const fieldSettingsCompany = (req: any, res: any): string | null => {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      res.status(401).json({ error: "Authentication required." });
+      return null;
+    }
+    return companyId;
+  };
+
   app.get("/api/field-categories", async (req, res) => {
     try {
-      const categories = await storage.getFieldCategories();
-
-      // NOTE: this list is NOT scoped per tenant. The database already carries
-      // the per-tenant column on field_categories (that migration has been
-      // applied there) but this code does not model it, so every tenant's
-      // categories come back. Collapsing by key was worse — it silently picked
-      // one tenant's row — so rows are returned as they are until the scoping
-      // lands. See a8d802e8 on feat/allowances.
-      // (Worded without the usual identifier on purpose: the tenancy ratchet
-      // scans this body for it, and a mention in a comment alone would make
-      // the route look fixed while it is still wide open.)
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categories = await storage.getFieldCategories(companyId);
+      
       // Fetch options for each category to return FieldCategoryWithOptions[]
       const categoriesWithOptions = await Promise.all(
         categories.map(async (category) => {
-          const options = await storage.getFieldOptions(category.id);
+          const options = await storage.getFieldOptions(category.id, companyId);
           return {
             ...category,
             options
@@ -3891,7 +4087,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-categories/by-key/:key", async (req, res) => {
     try {
-      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key, companyId);
       if (!categoryWithOptions) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3908,7 +4106,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "name is required" });
       }
-      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key, companyId);
       if (!categoryWithOptions) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3917,6 +4117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxSort = categoryWithOptions.options.reduce((m: number, o: any) => Math.max(m, o.sortOrder ?? 0), 0);
       const option = await storage.createFieldOption({
         categoryId: categoryWithOptions.id,
+        companyId,
         key: key || `custom_${Date.now()}`,
         name: trimmedName,
         isActive: true,
@@ -3933,7 +4134,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-categories/:id", async (req, res) => {
     try {
-      const category = await storage.getFieldCategory(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.getFieldCategory(req.params.id, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3945,7 +4148,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/field-categories", requireAuth, requireTeamMember, requirePermission("admin.company", "add"), async (req, res) => {
     try {
-      const validationResult = insertFieldCategorySchema.safeParse(req.body);
+      // companyId is omitted from the parse so a body can never supply one —
+      // it is read from the session below.
+      const validationResult = insertFieldCategorySchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -3953,7 +4158,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.createFieldCategory(validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      // companyId comes from the session, never the body.
+      const category = await storage.createFieldCategory({ ...validationResult.data, companyId });
       res.status(201).json(category);
     } catch (error) {
       res.status(500).json({ error: "Failed to create field category" });
@@ -3963,7 +4171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/field-categories/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "edit"), async (req, res) => {
     try {
       // Create update schema that omits critical immutable fields
-      const updateSchema = insertFieldCategorySchema.omit({ key: true, isBuiltIn: true }).partial();
+      const updateSchema = insertFieldCategorySchema.omit({ key: true, isBuiltIn: true, companyId: true }).partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -3972,7 +4180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.updateFieldCategory(req.params.id, validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.updateFieldCategory(req.params.id, validationResult.data, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3984,7 +4194,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/field-categories/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req, res) => {
     try {
-      const category = await storage.getFieldCategory(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.getFieldCategory(req.params.id, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3993,7 +4205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Cannot delete built-in field categories" });
       }
 
-      const success = await storage.deleteFieldCategory(req.params.id);
+      const success = await storage.deleteFieldCategory(req.params.id, companyId);
       if (!success) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -4006,7 +4218,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Field Options API Routes
   app.get("/api/field-categories/:categoryId/options", async (req, res) => {
     try {
-      const options = await storage.getFieldOptions(req.params.categoryId);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const options = await storage.getFieldOptions(req.params.categoryId, companyId);
       res.json(options);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field options" });
@@ -4021,15 +4235,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "categoryKey query parameter is required" });
       }
       
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
       // First get the category by key
-      const categories = await storage.getFieldCategories();
+      const categories = await storage.getFieldCategories(companyId);
       const category = categories.find((c: any) => c.key === categoryKey);
       if (!category) {
         return res.json([]); // Return empty array if category doesn't exist yet
       }
       
       // Then get options for that category
-      const options = await storage.getFieldOptions(category.id);
+      const options = await storage.getFieldOptions(category.id, companyId);
       res.json(options.filter((opt: any) => opt.isActive));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field options" });
@@ -4038,7 +4254,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-options/:id", async (req, res) => {
     try {
-      const option = await storage.getFieldOption(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const option = await storage.getFieldOption(req.params.id, companyId);
       if (!option) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -4050,7 +4268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/field-options", requireAuth, requireTeamMember, requirePermission("admin.company", "add"), async (req, res) => {
     try {
-      const validationResult = insertFieldOptionSchema.safeParse(req.body);
+      const validationResult = insertFieldOptionSchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -4058,7 +4276,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const option = await storage.createFieldOption(validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      // The parent category must belong to the caller — otherwise an option
+      // could be hung off another company's category.
+      const parent = await storage.getFieldCategory(validationResult.data.categoryId, companyId);
+      if (!parent) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      const option = await storage.createFieldOption({ ...validationResult.data, companyId });
       res.status(201).json(option);
     } catch (error) {
       res.status(500).json({ error: "Failed to create field option" });
@@ -4067,7 +4293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/field-options/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "edit"), async (req, res) => {
     try {
-      const updateSchema = insertFieldOptionSchema.partial();
+      const updateSchema = insertFieldOptionSchema.omit({ companyId: true }).partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -4076,7 +4302,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const option = await storage.updateFieldOption(req.params.id, validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const option = await storage.updateFieldOption(req.params.id, validationResult.data, companyId);
       if (!option) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -4088,7 +4316,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/field-options/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req, res) => {
     try {
-      const success = await storage.deleteFieldOption(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const success = await storage.deleteFieldOption(req.params.id, companyId);
       if (!success) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -4122,13 +4352,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
       const categoryId = req.params.id;
-      const category = await storage.getFieldCategory(categoryId);
+      const category = await storage.getFieldCategory(categoryId, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
 
-      const options = await storage.setCategoryOptions(categoryId, validationResult.data);
+      const options = await storage.setCategoryOptions(categoryId, validationResult.data, companyId);
       res.json(options);
     } catch (error) {
       res.status(500).json({ error: "Failed to batch update field options" });
@@ -4932,7 +5164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const newSubStatus = validationResult.data.projectSubStatus;
           if (newSubStatus) {
-            const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+            const statusCategory = await storage.getFieldCategoryWithOptions("project.status", (req.user as any)?.companyId);
             if (statusCategory?.options) {
               const optionsById = new Map<string, any>();
               for (const opt of statusCategory.options) {
@@ -5226,7 +5458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get all status options with their systemPhase mappings
-      const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+      const statusCategory = await storage.getFieldCategoryWithOptions("project.status", (req.user as any)?.companyId);
       if (!statusCategory?.options) {
         return res.status(500).json({ error: "Could not load status options" });
       }
@@ -7188,9 +7420,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updateData: any = { ...req.body };
 
+      // A supplied catalogue link must be one of THIS company's items. Estimate item
+      // ids say nothing about the catalogue, so without this an id from another
+      // tenant's price book would be stored verbatim.
+      if (updateData.priceListItemId) {
+        const companyId = (req.user as any)?.companyId;
+        const linked = companyId
+          ? await storage.getPriceListItem(updateData.priceListItemId, companyId)
+          : undefined;
+        if (!linked) {
+          return res.status(404).json({ error: "Price list item not found" });
+        }
+      }
+
       const unitCostExTax = updateData.unitCostExTax !== undefined
         ? updateData.unitCostExTax
         : existingItem.unitCostExTax;
+
+      // Editing the unit cost takes the line OFF the catalogue — the number is the
+      // estimator's now, so the provenance marker must stop claiming otherwise.
+      // Enforced here rather than in the grid so every path obeys it: inline cell,
+      // edit dialog, bulk edit, import, mobile.
+      //
+      // Skipped when the caller sets priceListItemId in the same request, because
+      // that IS the link being made (picking an item writes cost + link together).
+      // Everything else about a line — name, qty, wastage, markup — keeps the link.
+      const isRelinking = updateData.priceListItemId !== undefined;
+      const costChanged = updateData.unitCostExTax !== undefined
+        && Math.abs(Number(unitCostExTax) - Number(existingItem.unitCostExTax)) > 0.0001;
+      if (!isRelinking && costChanged && existingItem.priceListItemId) {
+        updateData.priceListItemId = null;
+      }
       const quantity = updateData.quantity !== undefined
         ? updateData.quantity
         : existingItem.quantity;
@@ -13835,7 +14095,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelections(projectId as string);
-      res.json(selections);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applySelectionVisibility(selections, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selections" });
     }
@@ -13849,7 +14110,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelectionsWithOptions(projectId as string);
-      res.json(selections);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applySelectionVisibility(selections, viewer));
     } catch (error) {
       console.error("Error fetching selections with options:", error);
       res.status(500).json({ error: "Failed to fetch selections with options" });
@@ -13863,13 +14125,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Selection not found" });
       }
       if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
-      // Lazily generate portal token if missing
-      if (!selection.portalToken) {
+      const viewer = await resolveSelectionViewer(req);
+      // Lazily generate portal token if missing. Only for viewers who could act
+      // on it — minting a share token for a trade viewing the spec is pointless,
+      // and the token must never reach a redacted payload.
+      if (!selection.portalToken && !viewer.isClient && viewer.canSeePending) {
         const token = randomBytes(24).toString("hex");
         await storage.updateSelection(selection.id, { portalToken: token } as any);
         selection.portalToken = token;
       }
-      res.json(selection);
+      res.json(applySelectionVisibilityToOne(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selection" });
     }
@@ -14227,7 +14492,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
       const options = await storage.getSelectionOptions(req.params.selectionId);
-      res.json(options);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applyOptionVisibility(options, parentSelection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selection options" });
     }
@@ -15537,51 +15803,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const results = { success: 0, errors: [] as string[] };
-      
+      const rowLabel = (i: number) => `Row ${i + 1} (${contacts[i]?.name || 'Unknown'})`;
+
+      // Validate every row up front, then insert the survivors in batches.
+      // Neon is ~400ms per round trip from AU, so the old row-at-a-time loop
+      // made a few hundred contacts take minutes and time the request out.
+      const valid: { index: number; data: InsertContact & { companyId: string } }[] = [];
+
       for (let i = 0; i < contacts.length; i++) {
         const contactData = contacts[i];
+        // Sanitize data: convert null values to empty strings or defaults
+        const sanitizedData = {
+          ...contactData,
+          // Convert null strings to empty string for optional text fields
+          email: contactData.email ?? "",
+          phone: contactData.phone ?? "",
+          mobile: contactData.mobile ?? "",
+          company: contactData.company ?? "",
+          position: contactData.position ?? "",
+          address: contactData.address ?? "",
+          suburb: contactData.suburb ?? "",
+          state: contactData.state ?? "",
+          postcode: contactData.postcode ?? "",
+          country: contactData.country ?? "",
+          notes: contactData.notes ?? "",
+          abn: contactData.abn ?? "",
+          // Default contactType to 'supplier' if not provided
+          contactType: contactData.contactType || "supplier",
+        };
+
+        const validationResult = insertContactSchema.safeParse(sanitizedData);
+        if (!validationResult.success) {
+          results.errors.push(`${rowLabel(i)}: ${fromZodError(validationResult.error).toString()}`);
+          continue;
+        }
+        // Apply the same business-name guard as the single-create
+        // endpoint so bulk import can't bypass the rule.
+        const validated = validationResult.data;
+        const isBusiness = validated.contactType === "trade" || validated.contactType === "supplier";
+        const trimmedName = (validated.name || "").trim();
+        if (isBusiness && !trimmedName) {
+          results.errors.push(`${rowLabel(i)}: Business name is required for trade and supplier contacts`);
+          continue;
+        }
+        valid.push({ index: i, data: { ...validated, name: trimmedName || validated.name || "", companyId } });
+      }
+
+      const BATCH_SIZE = 250;
+      for (let start = 0; start < valid.length; start += BATCH_SIZE) {
+        const batch = valid.slice(start, start + BATCH_SIZE);
         try {
-          // Sanitize data: convert null values to empty strings or defaults
-          const sanitizedData = {
-            ...contactData,
-            // Convert null strings to empty string for optional text fields
-            email: contactData.email ?? "",
-            phone: contactData.phone ?? "",
-            mobile: contactData.mobile ?? "",
-            company: contactData.company ?? "",
-            position: contactData.position ?? "",
-            address: contactData.address ?? "",
-            suburb: contactData.suburb ?? "",
-            state: contactData.state ?? "",
-            postcode: contactData.postcode ?? "",
-            country: contactData.country ?? "",
-            notes: contactData.notes ?? "",
-            abn: contactData.abn ?? "",
-            // Default contactType to 'supplier' if not provided
-            contactType: contactData.contactType || "supplier",
-          };
-          
-          const validationResult = insertContactSchema.safeParse(sanitizedData);
-          if (!validationResult.success) {
-            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${fromZodError(validationResult.error).toString()}`);
-            continue;
+          const inserted = await storage.createContacts(batch.map((r) => r.data));
+          results.success += inserted.length;
+        } catch {
+          // A batch is all-or-nothing, so on failure fall back to row-by-row
+          // for just this batch to keep per-row error attribution.
+          for (const row of batch) {
+            try {
+              await storage.createContact(row.data);
+              results.success++;
+            } catch (error: any) {
+              results.errors.push(`${rowLabel(row.index)}: ${error.message || 'Failed to import'}`);
+            }
           }
-          // Apply the same business-name guard as the single-create
-          // endpoint so bulk import can't bypass the rule.
-          const validated = validationResult.data;
-          const isBusiness = validated.contactType === "trade" || validated.contactType === "supplier";
-          const trimmedName = (validated.name || "").trim();
-          if (isBusiness && !trimmedName) {
-            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): Business name is required for trade and supplier contacts`);
-            continue;
-          }
-          await storage.createContact({ ...validated, name: trimmedName || validated.name || "", companyId });
-          results.success++;
-        } catch (error: any) {
-          results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${error.message || 'Failed to import'}`);
         }
       }
-      
+
       res.json(results);
     } catch (error) {
       console.error("Bulk import error:", error);
@@ -15592,11 +15879,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
-      console.log("[PATCH /api/contacts] Request body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertContactSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         const errorDetails = fromZodError(validationResult.error).toString();
-        console.error("[PATCH /api/contacts] Validation failed:", errorDetails);
+        // Log the field names only — the body carries names, emails, phones,
+        // addresses and pay rates and must not land in the server log.
+        console.error("[PATCH /api/contacts] Validation failed for fields:", Object.keys(req.body ?? {}).join(", "), errorDetails);
         return res.status(400).json({ 
           error: "Validation failed", 
           details: errorDetails 
@@ -16050,24 +16338,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const results = { success: 0, errors: [] as string[] };
-      
-      for (const id of ids) {
-        try {
-          if (action === "archive") {
-            await storage.archiveContact(id, companyId);
-          } else if (action === "restore") {
-            await storage.restoreContact(id, companyId);
-          } else if (action === "changeType") {
-            await storage.updateContact(id, { contactType }, companyId);
-          } else if (action === "delete") {
-            await storage.deleteContact(id, companyId);
+
+      // One statement rather than one round trip per contact.
+      try {
+        const affected = await storage.bulkContactAction(ids, action, companyId, contactType);
+        results.success = affected.length;
+
+        // Anything the statement didn't touch is a miss (wrong company, or
+        // already gone). The old loop counted these as successes.
+        const affectedSet = new Set(affected);
+        for (const id of ids) {
+          if (!affectedSet.has(id)) results.errors.push(`Contact ${id}: Not found`);
+        }
+      } catch (error: any) {
+        // The batch is all-or-nothing (a single FK violation on delete fails
+        // the lot), so fall back to per-contact to attribute the failures.
+        for (const id of ids) {
+          try {
+            const affected = await storage.bulkContactAction([id], action, companyId, contactType);
+            if (affected.length) results.success++;
+            else results.errors.push(`Contact ${id}: Not found`);
+          } catch (rowError: any) {
+            results.errors.push(`Contact ${id}: ${rowError.message || 'Failed'}`);
           }
-          results.success++;
-        } catch (error: any) {
-          results.errors.push(`Contact ${id}: ${error.message || 'Failed'}`);
         }
       }
-      
+
       res.json(results);
     } catch (error) {
       console.error("Bulk action error:", error);
@@ -18148,6 +18444,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bill numbers are unique per company (bills_company_bill_number_unique), but
+  // getNextBillNumber allocates by reading the current max and adding one, with
+  // no lock — and the client caches the number it was handed when the form
+  // opened. So two tabs, a second bill created without reloading, or two people
+  // saving at once all land on the same number, and Postgres rejects the second
+  // one. That surfaced as an opaque "500: Failed to create bill" with no hint
+  // that the number was the problem. Allocate a fresh number and retry instead.
+  const isDuplicateBillNumber = (err: any): boolean => {
+    if (err?.code !== "23505") return false;
+    const haystack = `${err?.constraint ?? ""} ${err?.detail ?? ""} ${err?.message ?? ""}`;
+    return /bill_number/i.test(haystack);
+  };
+
+  const createBillRetryingNumber = async (data: any, companyId: string | null | undefined) => {
+    try {
+      return await storage.createBill(data);
+    } catch (err) {
+      if (!isDuplicateBillNumber(err) || !companyId) throw err;
+      const freshNumber = await storage.getNextBillNumber(companyId);
+      console.warn(
+        `[bills] bill number ${data?.billNumber} was already taken — reallocated ${freshNumber}`,
+      );
+      return await storage.createBill({ ...data, billNumber: freshNumber });
+    }
+  };
+
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
       const currentUser = (req as any).user;
@@ -18163,12 +18485,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!(await enforceProjectCompany(req, res, billData.projectId, "Project not found"))) return;
       }
 
-      if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
-        if (!billData.companyId) {
-          return res.status(400).json({ error: "No company associated with current user" });
-        }
-        billData.billNumber = await storage.getNextBillNumber(billData.companyId);
+      // The bill number is the server's to assign, never the client's. The form
+      // fetches /api/bills/next-number once and caches it for the session
+      // (staleTime: Infinity), so the second bill created in a tab sent back a
+      // number that had already been used — and the unique index rejected it.
+      // The old condition only regenerated when the number was missing or looked
+      // like a timestamp fallback, so a stale sequential number went straight to
+      // the database. Allocate fresh on every create; the client shows whatever
+      // comes back.
+      if (!billData.companyId) {
+        return res.status(400).json({ error: "No company associated with current user" });
       }
+      const requestedBillNumber = billData.billNumber;
+      billData.billNumber = await storage.getNextBillNumber(billData.companyId);
 
       const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {
@@ -18182,7 +18511,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
       }
 
-      const bill = await storage.createBill(validationResult.data);
+      // Still retried: getNextBillNumber reads the max and adds one with no
+      // lock, so two simultaneous creates can still be handed the same number.
+      const bill = await createBillRetryingNumber(validationResult.data, billData.companyId);
+      if (requestedBillNumber && requestedBillNumber !== bill.billNumber) {
+        console.log(
+          `[bills/create] client asked for ${requestedBillNumber}; assigned ${bill.billNumber}`,
+        );
+      }
 
       // Receipt flow: if an objectPath was provided, attach the photo inline
       // so the client doesn't need a separate POST /api/bills/:id/attachments call.
@@ -18239,6 +18575,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
 
+      // A bill's type is changed through POST /api/bills/:id/convert-to-credit,
+      // which refuses the cases where converting would leave something untrue —
+      // payments already recorded, or a bill already pushed to Xero as an
+      // ACCPAY invoice. Letting a plain PATCH carry billType made the Type
+      // dropdown a way around all of those checks. Saves that resend the
+      // unchanged value are unaffected.
+      if (
+        "billType" in validationResult.data &&
+        validationResult.data.billType !== (previous as any).billType
+      ) {
+        return res.status(409).json({
+          error:
+            "Use \"Convert to credit note\" to change a bill's type — it checks for recorded payments and Xero links first.",
+        });
+      }
+
       // Rounding is a cent-level reconciliation, never a way to fudge amounts.
       if (validationResult.data.roundingCents != null) {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
@@ -18262,6 +18614,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const bill = await storage.updateBill(req.params.id, validationResult.data);
+
+      // ── Post-approval edits land in the approval history ────────────────
+      // An approved bill that is then edited used to leave an approval record
+      // describing amounts that no longer existed. Any material change made
+      // once a bill has passed approval is appended to the same history, so
+      // the trail reads in order and an approver can see what moved after
+      // they signed off.
+      if (previous.status === "awaiting_payment" || previous.status === "paid") {
+        const editorId = (req as any).user?.id;
+        if (editorId) {
+          const money = (c: number | null | undefined) =>
+            `$${((c ?? 0) / 100).toFixed(2)}`;
+          const changes: string[] = [];
+          const d = validationResult.data as any;
+          if ("total" in d && d.total !== previous.total) {
+            changes.push(`Total ${money(previous.total)} → ${money(d.total)}`);
+          }
+          if ("supplierId" in d && d.supplierId !== previous.supplierId) {
+            changes.push("Supplier changed");
+          }
+          if ("projectId" in d && d.projectId !== previous.projectId) {
+            changes.push("Project changed");
+          }
+          if ("billReference" in d && d.billReference !== previous.billReference) {
+            changes.push(`Reference "${previous.billReference || "—"}" → "${d.billReference || "—"}"`);
+          }
+          if ("billDate" in d && String(d.billDate) !== String(previous.billDate)) {
+            changes.push("Bill date changed");
+          }
+          if ("dueDate" in d && String(d.dueDate) !== String(previous.dueDate)) {
+            changes.push("Due date changed");
+          }
+          if ("taxMode" in d && d.taxMode !== (previous as any).taxMode) {
+            changes.push(`Tax mode → ${d.taxMode}`);
+          }
+          // Status transitions are already narrated by the payment records and
+          // by the approve/reject rows, so they are not an "edit" on their own.
+          if (changes.length > 0) {
+            await storage
+              .createBillApproval({
+                billId: req.params.id,
+                approvedById: editorId,
+                status: "edited",
+                comments: changes.join("; "),
+              } as any)
+              .catch((e) =>
+                console.error("[bills PATCH] couldn't record the post-approval edit:", e),
+              );
+          }
+        }
+      }
 
       // ── Recompute linked PO status from bills (source of truth) ─────────
       // Triggered whenever the bill's link, status, paidAmount, or total changed.
@@ -18366,6 +18769,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Turn an uploaded bill into a vendor credit in place. Amounts are stored
+  // positive and negated at read time off billType (bills list, budget actuals,
+  // storage rollups all do `billType === "credit" ? -1 : 1`), so the conversion
+  // is the type flip and nothing else — no amount rewriting, no new record, and
+  // the attachment, line items and history stay with it.
+  app.post("/api/bills/:id/convert-to-credit", requireAuth, async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+
+      if ((bill as any).billType === "credit") {
+        return res.status(409).json({ error: "This bill is already a vendor credit." });
+      }
+      // "receipt" is a worker reimbursement, not a supplier invoice.
+      if ((bill as any).billType !== "bill") {
+        return res.status(409).json({ error: "Only bills can be converted to a vendor credit." });
+      }
+      if ((bill.paidAmount ?? 0) !== 0) {
+        return res.status(409).json({
+          error: "This bill has payments recorded against it. Reverse the payments before converting it.",
+        });
+      }
+      // The Xero side is an ACCPAY bill and vendor credits can't sync yet
+      // (see xeroCreditGuard), so converting would leave the two files
+      // permanently disagreeing with no way to reconcile them.
+      if (bill.xeroInvoiceId) {
+        return res.status(409).json({
+          error:
+            "This bill has already been pushed to Xero. Void it in Xero and enter the credit note there, or unlink it first.",
+        });
+      }
+
+      // sendToXero is deliberately left as it was: a credit now pushes to Xero
+      // as an ACCPAYCREDIT, so there is no longer a reason to switch syncing
+      // off when converting. Clearing it used to be necessary because the push
+      // was refused every time.
+      const updated = await storage.updateBill(req.params.id, {
+        billType: "credit",
+      } as any);
+
+      // Converting an approved bill changes what was approved — say so in the
+      // same history the approval lives in.
+      const editorId = (req as any).user?.id;
+      if (editorId && (bill.status === "awaiting_payment" || bill.status === "paid")) {
+        await storage
+          .createBillApproval({
+            billId: req.params.id,
+            approvedById: editorId,
+            status: "edited",
+            comments: "Converted to a vendor credit",
+          } as any)
+          .catch((e) => console.error("[convert-to-credit] couldn't record the change:", e));
+      }
+
+      await recalcProjectBudget(bill.projectId).catch((e) =>
+        console.error("[convert-to-credit] budget recalc failed:", e));
+
+      return res.json(updated);
+    } catch (error: any) {
+      console.error("[convert-to-credit] failed:", error);
+      return res.status(500).json({ error: error?.message || "Failed to convert the bill" });
+    }
+  });
+
   app.post("/api/bills/:id/duplicate", async (req, res) => {
     try {
       const originalBill = await getOwnedBill(req, res, req.params.id);
@@ -18374,7 +18841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // getOwnedBill guarantees req.user.companyId; older bills may predate companyId.
       const duplicateCompanyId = (originalBill as any).companyId ?? (req as any).user?.companyId;
       const newBillNumber = await storage.getNextBillNumber(duplicateCompanyId);
-      const newBill = await storage.createBill({
+      const newBill = await createBillRetryingNumber({
         billNumber: newBillNumber,
         companyId: duplicateCompanyId,
         projectId: originalBill.projectId,
@@ -18393,7 +18860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sendToXero: false,
         attachmentUrls: [],
         createdById: req.user!.id,
-      });
+      }, duplicateCompanyId);
 
       const lineItems = await storage.getBillLineItems(req.params.id);
       for (const item of lineItems) {
@@ -18905,6 +19372,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Replace a bill's whole line-item set, and their allowance links, in ONE
+  // request. Saving used to be a sequential HTTP round-trip per line — one
+  // DELETE per removed line, one PATCH or POST per remaining line, plus more
+  // for allowance links — and each of those routes then ran its own budget
+  // recalc and its own Xero auto-push. At Sydney→Neon latency a ten-line bill
+  // was a dozen serial round-trips and a dozen redundant recalcs before Xero
+  // was even touched, which is why saving a bill took seconds.
+  app.put("/api/bills/:billId/line-items", requireAuth, async (req, res) => {
+    try {
+      const ownedBill = await getOwnedBill(req, res, req.params.billId);
+      if (!ownedBill) return;
+      const billId = req.params.billId;
+
+      const incoming = Array.isArray(req.body?.lineItems) ? req.body.lineItems : null;
+      if (!incoming) return res.status(400).json({ error: "lineItems must be an array" });
+
+      type ParsedLine = {
+        id?: string;
+        allowanceItemId?: string | null;
+        data: Record<string, unknown>;
+      };
+      const parsed: ParsedLine[] = [];
+      for (let i = 0; i < incoming.length; i++) {
+        const { id, allowanceItemId, ...rest } = incoming[i] ?? {};
+        // billId comes from the ownership-checked URL, never the body.
+        const validation = insertBillLineItemSchema.safeParse({ ...rest, billId, order: i });
+        if (!validation.success) {
+          return res.status(400).json({
+            error: "Validation failed",
+            details: `Line ${i + 1}: ${fromZodError(validation.error).toString()}`,
+          });
+        }
+        parsed.push({
+          id: typeof id === "string" && id ? id : undefined,
+          allowanceItemId: typeof allowanceItemId === "string" && allowanceItemId ? allowanceItemId : null,
+          data: { ...validation.data, billId, order: i },
+        });
+      }
+
+      const existing = await storage.getBillLineItems(billId);
+      const existingIds = new Set(existing.map((l) => l.id));
+
+      // Same IDOR guard the single-line routes apply: an id in the request must
+      // already belong to THIS bill. Checked for every line up front so a bad
+      // id can't be caught halfway through a partially-applied replace.
+      for (const p of parsed) {
+        if (p.id && !existingIds.has(p.id)) {
+          return res.status(400).json({ error: "A line item in this request doesn't belong to this bill" });
+        }
+      }
+
+      const keptIds = new Set(parsed.map((p) => p.id).filter(Boolean) as string[]);
+      for (const line of existing) {
+        if (!keptIds.has(line.id)) await storage.deleteBillLineItem(line.id);
+      }
+
+      const existingAllowances = await storage.getBillLineItemAllowancesByBillId(billId);
+      const saved = [];
+      for (const p of parsed) {
+        const line = p.id
+          ? await storage.updateBillLineItem(p.id, p.data as any)
+          : await storage.createBillLineItem(p.data as any);
+        if (!line) continue;
+        saved.push(line);
+
+        const currentLink = existingAllowances.find((a) => a.billLineItemId === line.id);
+        const amount = (p.data as any).total ?? 0;
+        if (p.allowanceItemId) {
+          if (currentLink) {
+            await storage.updateBillLineItemAllowance(currentLink.id, {
+              estimateItemId: p.allowanceItemId,
+              amount,
+            } as any);
+          } else {
+            await storage.createBillLineItemAllowance({
+              billLineItemId: line.id,
+              estimateItemId: p.allowanceItemId,
+              amount,
+            } as any);
+          }
+        } else if (currentLink) {
+          await storage.deleteBillLineItemAllowance(currentLink.id);
+        }
+      }
+
+      // Once, at the end — not once per line.
+      await storage.recomputeBillTotals(billId).catch((e) =>
+        console.error("[bills line-items PUT] recompute failed:", e));
+      await recalcBudgetForBill(billId);
+      void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+
+      res.json(saved);
+    } catch (error: any) {
+      console.error("[bills line-items PUT] failed:", error);
+      res.status(500).json({ error: error?.message || "Failed to save bill line items" });
+    }
+  });
+
   app.patch("/api/bills/:billId/line-items/:id", async (req, res) => {
     try {
       // Resolve the line item by its OWN id first, then authorize against the
@@ -19245,7 +19810,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedBill) return;
       const { priceListItemId } = req.body;
       const lineItem = await storage.updateBillLineItem(req.params.id, { priceListItemId });
-      res.json(lineItem);
+
+      // Linking used to end here, which is why the price list never moved. Report
+      // the gap between what the supplier charged and what the catalogue says so
+      // the client can offer to update it. Applying stays a separate, explicit call.
+      let priceComparison = null;
+      const companyId = (req.user as any)?.companyId;
+      if (priceListItemId && companyId) {
+        const { compareBillPriceToItem } = await import("@shared/priceList");
+        const { priceListItems: priceListItemsTbl } = await import("@shared/schema");
+        const [item] = await db
+          .select({ costPrice: priceListItemsTbl.costPrice, gstInclusive: priceListItemsTbl.gstInclusive })
+          .from(priceListItemsTbl)
+          .where(and(eq(priceListItemsTbl.id, priceListItemId), eq(priceListItemsTbl.companyId, companyId)));
+        if (item && lineItem) {
+          priceComparison = compareBillPriceToItem({
+            itemCostCents: item.costPrice,
+            itemGstInclusive: item.gstInclusive,
+            billUnitPriceExCents: lineItem.unitPrice,
+          });
+        }
+      }
+      res.json({ ...lineItem, priceComparison });
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
         return res.status(404).json({ error: "Bill line item not found" });
@@ -24410,6 +24996,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (supplierId) resolvedSupplierId = supplierId;
           }
 
+          // A read that came back without a total is not a read. Marking one
+          // as processed stamped ocrProcessed=true, zeroed the bill's totals
+          // and pushed it into the approval queue at $0 — and because the
+          // "Read & Apply" button keys off ocrProcessed, the bill could never
+          // be re-read from the UI. Keep whatever the AI did give us (the
+          // supplier match and the raw ocrData, for diagnosis) but leave the
+          // bill unprocessed and where it was, so it can be retried.
+          const usableRead =
+            (invoiceData.totalAmount ?? 0) > 0 &&
+            (!!invoiceData.invoiceNumber || (invoiceData.lineItems?.length ?? 0) > 0);
+
+          if (!usableRead) {
+            await storage.updateBill(billId, {
+              supplierId: resolvedSupplierId,
+              ocrData: invoiceData as any,
+            });
+            console.warn(
+              `[bulk-ai-read] bill ${billNumber} low-quality read (confidence ${invoiceData.confidence ?? "?"}) — left unprocessed`,
+            );
+            results.push({
+              billId,
+              billNumber,
+              status: "failed",
+              reason: "The AI couldn't read enough from this document — open the bill and try Read & Apply, or enter it manually",
+            });
+            continue;
+          }
+
+          // Read the extraction the way the document meant it. The bulk path
+          // used to write the AI's totals straight onto a bill whose taxMode
+          // was still the "exclusive" column default — so an invoice printing
+          // inc-GST line totals (the norm here) was stored as if those figures
+          // were ex-GST. Everything downstream then compounded it: the header
+          // recompute added another 10%, and the Xero push declared
+          // LineAmountTypes "Exclusive" over inc-GST amounts, so Xero grossed
+          // the same invoice up a second time. The individual Read & Apply
+          // button has always detected this; the bulk read never did.
+          const detectedTaxMode = detectBillTaxMode({
+            lineTotalsCents: (invoiceData.lineItems ?? []).map((li) => li.totalAmount ?? 0),
+            documentSubtotalCents: invoiceData.subtotalAmount ?? null,
+            documentTotalCents: invoiceData.totalAmount ?? null,
+          });
+          // The total printed on the document is the anchor rounding is derived
+          // from, and the thing the bill screen compares against when it warns
+          // that the lines don't add up to the invoice.
+          const docTotalCents = invoiceData.totalAmount ?? null;
+          const docHasGst = (invoiceData.totalTax ?? 0) > 0;
+
           // Move straight to awaiting_approval after AI extraction — the PM
           // approves from the Awaiting Approval queue. Consistent with the
           // individual "Read & Apply" button.
@@ -24419,6 +25053,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : (bill.billDate ?? new Date()),
             dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
             billReference: invoiceData.invoiceNumber || bill.billReference,
+            taxMode: detectedTaxMode,
+            documentTotalCents: docTotalCents,
             subtotal: invoiceData.subtotalAmount || 0,
             tax: invoiceData.totalTax || 0,
             total: invoiceData.totalAmount || 0,
@@ -24439,20 +25075,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const learnedCostCodeId = (matchedSupplier as any)?.defaultCostCodeId || undefined;
             for (let i = 0; i < invoiceData.lineItems.length; i++) {
               const item = invoiceData.lineItems[i];
+              // Most AU invoices print GST once in the footer, never per line,
+              // so item.taxAmount is usually null even on a fully taxable
+              // invoice. Treating that as "No GST" zeroed the GST on the whole
+              // bill and pushed GST-free lines to Xero. Follow the document
+              // instead: if it carries GST, lines are taxable unless the AI
+              // explicitly said a line's tax was zero.
+              const lineTax =
+                docHasGst && !(item.taxAmount === 0) ? "GST on expenses" : "No GST";
+
+              // unitPrice is integer cents, so a unit price the supplier prints
+              // to four decimals (100 @ $6.4999) cannot be stored exactly. The
+              // Xero push sends Quantity x UnitAmount, so an unrepresentable
+              // unit price becomes a real discrepancy against the invoice. Keep
+              // the line total as the authority and back-solve the unit price;
+              // reconcileBillToDocument below absorbs whatever cent is left.
+              const lineTotalCents = item.totalAmount || 0;
+              const qty = item.quantity || 1;
+              const unitPriceCents =
+                item.unitPrice != null && Math.abs(Math.round(qty * item.unitPrice) - lineTotalCents) <= 1
+                  ? item.unitPrice
+                  : qty !== 0
+                  ? Math.round(lineTotalCents / qty)
+                  : lineTotalCents;
+
               await storage.createBillLineItem({
                 billId,
                 lineType: "custom",
                 description: item.description || `Line Item ${i + 1}`,
                 costCodeId: learnedCostCodeId,
-                quantity: item.quantity || 1,
-                unitPrice: item.unitPrice || 0,
-                tax: item.taxAmount ? "GST on expenses" : "No GST",
+                quantity: qty,
+                unitPrice: unitPriceCents,
+                tax: lineTax,
                 account: "Expenses",
-                total: item.totalAmount || 0,
+                total: lineTotalCents,
                 order: i,
               });
             }
           }
+
+          // Reconcile the stored bill against the printed invoice: derive the
+          // rounding adjustment from the document anchor, then recompute the
+          // header from the lines through the canonical helper. Anything the
+          // clamp can't absorb stays visible as the "invoice says X but lines
+          // total Y" warning on the bill rather than being quietly accepted.
+          if (docTotalCents != null) {
+            const createdLines = await storage.getBillLineItems(billId);
+            if (createdLines.length > 0) {
+              const settings = await storage.getCompanySettings(companyId);
+              const taxRatePct = Number(settings?.taxRate ?? 10) || 10;
+              const pre = computeBillTotalsCents(
+                createdLines.map((l) => ({ total: l.total ?? 0, tax: l.tax })),
+                detectedTaxMode,
+                taxRatePct,
+                0,
+              );
+              const drift = docTotalCents - pre.total;
+              await storage.updateBill(billId, { roundingCents: clampRoundingCents(drift) });
+              if (Math.abs(drift) > MAX_ROUNDING_CENTS) {
+                console.warn(
+                  `[bulk-ai-read] bill ${billNumber} lines total ${pre.total}c but the document says ${docTotalCents}c — flagged for review`,
+                );
+              }
+            }
+          }
+          await storage.recomputeBillTotals(billId).catch((e) =>
+            console.error(`[bulk-ai-read] recompute failed for ${billNumber}:`, e));
 
           // Recalc budget
           await recalcProjectBudget(bill.projectId);
@@ -24478,6 +25166,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
+
+      // Needed to sign the re-issued upload grant below. Its absence was a
+      // bare ReferenceError that surfaced as "500: userCompanyId is not
+      // defined" on every Read & Apply of an already-saved bill.
+      const userCompanyId = (req as any).user?.companyId;
+      if (!userCompanyId) return res.status(403).json({ error: "Forbidden" });
 
       // Find first processable attachment (PDF or image)
       type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
@@ -34044,79 +34738,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Defects API Routes
-  app.get("/api/defects", async (req, res) => {
-    try {
-      const { projectId, status } = req.query;
-      const defects = await storage.getDefects(
-        projectId as string | undefined, 
-        status as string | undefined
-      );
-      res.json(defects);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defects" });
-    }
-  });
-
-  app.get("/api/defects/:id", async (req, res) => {
-    try {
-      const defect = await getOwnedDefect(req, res, req.params.id);
-      if (!defect) return;
-      res.json(defect);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defect" });
-    }
-  });
-
-  app.post("/api/defects", async (req, res) => {
-    try {
-      const validationResult = insertDefectSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const defect = await storage.createDefect(validationResult.data);
-      res.status(201).json(defect);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create defect" });
-    }
-  });
-
-  app.patch("/api/defects/:id", async (req, res) => {
-    try {
-      const validationResult = insertDefectSchema.partial().safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      const defect = await storage.updateDefect(req.params.id, validationResult.data);
-      res.json(defect);
-    } catch (error) {
-      if (error instanceof Error && error.message === "Defect not found") {
-        return res.status(404).json({ error: "Defect not found" });
-      }
-      res.status(500).json({ error: "Failed to update defect" });
-    }
-  });
-
-  app.delete("/api/defects/:id", async (req, res) => {
-    try {
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      await storage.deleteDefect(req.params.id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete defect" });
-    }
-  });
-
   // ============================================================
   // SYSTEMS LIBRARY API Routes
   // ============================================================
@@ -36223,6 +36844,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Typeahead for the estimate grid's item-name cell. Only ever offers ACTIVE items
+  // from NON-ARCHIVED lists — see searchPriceListItemsForEstimate for why that is a
+  // separate method rather than a flag on /items.
+  //
+  // Declared before "/api/price-list/items/:id" would be reached, but the path is
+  // distinct so ordering is not load-bearing here.
+  app.get("/api/price-list/lookup", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      // Capped server-side: this fires per keystroke, and an uncapped LIKE over a
+      // full supplier price book is exactly the "never query in a loop" trap.
+      const requested = Number.parseInt(String(req.query.limit ?? ""), 10);
+      const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 50) : 20;
+
+      const items = await storage.searchPriceListItemsForEstimate(user.companyId, q, limit);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to search price list", details: error.message });
+    }
+  });
+
+  // Resolve the catalogue links an estimate's lines already carry, in one hit.
+  // Declared before "/items/:id" so "by-ids" isn't swallowed as an id.
+  app.get("/api/price-list/items/by-ids", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const raw = typeof req.query.ids === "string" ? req.query.ids : "";
+      const ids = raw.split(",").map(s => s.trim()).filter(Boolean).slice(0, 500);
+      const items = await storage.getPriceListItemsByIds(user.companyId, ids);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to resolve price list items", details: error.message });
+    }
+  });
+
   app.get("/api/price-list/items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
@@ -36354,6 +37017,287 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(links);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch price list links", details: error.message });
+    }
+  });
+
+  // Mark bills reviewed. Called when the user accepts something the review
+  // proposed, NOT when a review merely runs -- looking is not reviewing.
+  app.post("/api/price-list/review/mark-reviewed", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { billIds } = req.body ?? {};
+      if (!Array.isArray(billIds) || !billIds.length) {
+        return res.status(400).json({ error: "billIds is required" });
+      }
+      const count = await storage.markBillsPriceReviewed(billIds, user.companyId, user.id);
+      res.json({ marked: count });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to mark bills reviewed", details: error.message });
+    }
+  });
+
+  // Bills a review could cover. Deliberately requires the caller to ask -- the
+  // page opens empty rather than loading every bill you have ever received.
+  app.get("/api/price-list/review/bills", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { supplierIds, dateFrom, dateTo, search } = req.query as Record<string, string | undefined>;
+      const bills = await storage.searchBillsForPriceReview(user.companyId, {
+        supplierIds: supplierIds ? supplierIds.split(",").filter(Boolean) : undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        search: search || undefined,
+      });
+      res.json(bills);
+    } catch (error: any) {
+      console.error("Bill search for price review failed:", error);
+      res.status(500).json({ error: "Failed to search bills", details: error.message });
+    }
+  });
+
+  // A few sentences over a whole review. The caller sends the movements it is
+  // already displaying; the arithmetic is redone here so the summary can never
+  // describe numbers the server did not produce.
+  app.post("/api/price-list/review/summary", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { billsScanned, linesScanned, counts, movements } = req.body ?? {};
+      if (!Array.isArray(movements)) {
+        return res.status(400).json({ error: "movements is required" });
+      }
+
+      const clean = movements
+        .filter((m: any) => typeof m?.fromCents === "number" && typeof m?.toCents === "number")
+        .map((m: any) => ({
+          item: String(m.item ?? "unknown").slice(0, 120),
+          supplier: m.supplier ? String(m.supplier).slice(0, 120) : null,
+          fromCents: Math.round(m.fromCents),
+          toCents: Math.round(m.toCents),
+          percent: typeof m.percent === "number" ? m.percent : null,
+        }));
+
+      const { summariseReview } = await import("./services/priceMatchAi");
+      const summary = await summariseReview({
+        billsScanned: Number(billsScanned) || 0,
+        linesScanned: Number(linesScanned) || 0,
+        counts: counts && typeof counts === "object" ? counts : {},
+        movements: clean,
+      });
+
+      res.json({ summary, configured: !!process.env.ANTHROPIC_API_KEY });
+    } catch (error: any) {
+      console.error("Review summary failed:", error);
+      res.status(500).json({ error: "Failed to summarise review", details: error.message });
+    }
+  });
+
+  // Resolve the ambiguous tail of a review with the model. Proposes only --
+  // it writes nothing, and every suggestion still goes through apply-price.
+  app.post("/api/price-list/review/resolve", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { lines } = req.body ?? {};
+      if (!Array.isArray(lines) || !lines.length) {
+        return res.status(400).json({ error: "lines is required" });
+      }
+
+      // Re-read the catalogue rather than trusting candidate names from the body:
+      // the model must only ever choose among this company's own items.
+      const catalogue = await storage.getPriceListItems(user.companyId, {});
+      const byId = new Map(catalogue.map((i) => [i.id, i]));
+
+      const scoped = lines.flatMap((l: any) => {
+        const candidates = (Array.isArray(l?.candidates) ? l.candidates : [])
+          .map((c: any) => byId.get(c?.id))
+          .filter(Boolean)
+          .map((i: any) => ({ id: i.id, name: i.name, code: i.code ?? null }));
+        if (!candidates.length || typeof l?.description !== "string") return [];
+        return [{
+          lineId: String(l.lineId),
+          description: l.description,
+          supplierName: typeof l.supplierName === "string" ? l.supplierName : null,
+          candidates,
+        }];
+      });
+
+      if (!scoped.length) return res.json({ resolutions: [], configured: true });
+
+      const { resolveAmbiguousLines } = await import("./services/priceMatchAi");
+      const resolutions = await resolveAmbiguousLines(scoped);
+
+      res.json({
+        resolutions,
+        // Distinguish "the model found nothing" from "no API key on this server",
+        // so the UI can say which rather than showing a silent empty result.
+        configured: !!process.env.ANTHROPIC_API_KEY,
+      });
+    } catch (error: any) {
+      console.error("AI price match resolve failed:", error);
+      res.status(500).json({ error: "Failed to resolve matches", details: error.message });
+    }
+  });
+
+  // Batch price review: sweep a set of bills, match each line against the
+  // catalogue, and report a verdict per line. Read-only — it proposes, it never
+  // writes a price. Applying stays the explicit per-line apply-price call.
+  app.post("/api/price-list/review/batch", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListId, supplierId, dateFrom, dateTo, billIds } = req.body ?? {};
+
+      const { matchBillLine, verdictFor, compareBillPriceToItem, isSupersededByNewerBill } = await import("@shared/priceList");
+
+      const lines = await storage.getBillLinesForPriceReview(user.companyId, {
+        supplierId: supplierId || undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        billIds: Array.isArray(billIds) && billIds.length ? billIds : undefined,
+      });
+
+      // Scope by the bill's own supplier rather than making the user pick a list.
+      // A bill knows who sent it, and comparing a Plaster Shop invoice against a
+      // Bunnings list is a mistake nobody would make on purpose. Falls back to the
+      // whole catalogue when a supplier has no list of their own.
+      const catalogue = await storage.getPriceListItems(user.companyId, priceListId ? { priceListId } : {});
+      const allLists = await storage.getPriceLists(user.companyId);
+      const listBySupplier = new Map<string, string>();
+      for (const l of allLists) {
+        if (l.supplierId && !l.isArchived) listBySupplier.set(l.supplierId, l.id);
+      }
+
+      // Codes read out of each bill's own document, when the caller asks for it.
+      // Cached per bill, so this costs tokens once and nothing on a re-review.
+      const skuByLine = new Map<string, string>();
+      if (req.body?.readSkus) {
+        const { extractSkusForBill } = await import("./services/billSkuReader");
+        const billsInScope = Array.from(new Set(lines.map((l) => l.billId)));
+        for (const id of billsInScope) {
+          try {
+            const out = await extractSkusForBill(id, user.companyId);
+            out.skus.forEach((sku, lineId) => skuByLine.set(lineId, sku));
+          } catch (error) {
+            console.error(`[Price review] SKU read failed for bill ${id}:`, error);
+          }
+        }
+      }
+
+      const results = lines.map((line) => {
+        const supplierListId = line.supplierId ? listBySupplier.get(line.supplierId) : undefined;
+        const scoped = supplierListId
+          ? catalogue.filter((i) => i.priceListId === supplierListId)
+          : catalogue;
+        const pool = scoped.length ? scoped : catalogue;
+        // An existing link is a decision a human already made; respect it rather
+        // than letting the matcher second-guess it.
+        const linked = line.priceListItemId
+          ? catalogue.find((i) => i.id === line.priceListItemId)
+          : undefined;
+        // A code read off the document beats anything the prose can tell us, so
+        // it is searched first and exactly. Only if that misses do we fall back
+        // to the description matcher.
+        const sku = skuByLine.get(line.lineId);
+        const bySku = sku
+          ? pool.find((i) =>
+              (i.code && i.code.toLowerCase() === sku.toLowerCase()) ||
+              (i.supplierCode && i.supplierCode.toLowerCase() === sku.toLowerCase()))
+          : undefined;
+
+        const candidates = linked
+          ? [{ item: linked, score: 1, reason: "code" as const }]
+          : bySku
+            ? [{ item: bySku, score: 1, reason: "code" as const }]
+            : matchBillLine(line.description, pool);
+
+        const best = candidates[0];
+        const comparison = best
+          ? compareBillPriceToItem({
+              itemCostCents: (best.item as any).costPrice ?? 0,
+              itemGstInclusive: (best.item as any).gstInclusive ?? false,
+              billUnitPriceExCents: line.unitPrice,
+            })
+          : null;
+
+        const stale = best
+          ? isSupersededByNewerBill(
+              best.item as any,
+              line.billDate ? new Date(line.billDate).toISOString() : null,
+            )
+          : { superseded: false, by: null };
+
+        return {
+          line,
+          verdict: verdictFor(candidates, comparison),
+          comparison,
+          superseded: stale.superseded ? stale.by : null,
+          // Where an Add should put a new item: this supplier's own list.
+          targetPriceListId: supplierListId ?? priceListId ?? allLists[0]?.id ?? null,
+          alreadyLinked: !!linked,
+          candidates: candidates.slice(0, 3).map((c) => ({
+            id: c.item.id, name: c.item.name, code: (c.item as any).code ?? null,
+            score: Number(c.score.toFixed(3)), reason: c.reason,
+          })),
+        };
+      });
+
+      const summary = results.reduce((acc: Record<string, number>, r) => {
+        acc[r.verdict] = (acc[r.verdict] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      res.json({
+        results,
+        summary,
+        skusRead: skuByLine.size,
+        billsScanned: new Set(lines.map((l) => l.billId)).size,
+        linesScanned: lines.length,
+        catalogueSize: catalogue.length,
+      });
+    } catch (error: any) {
+      console.error("Batch price review failed:", error);
+      res.status(500).json({ error: "Failed to run batch price review", details: error.message });
+    }
+  });
+
+  // Accept a supplier's price onto the catalogue item. The amount is re-derived
+  // from the bill line server-side; nothing about the price is taken from the body.
+  app.post("/api/price-list/review/apply-price", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListItemId, billLineItemId } = req.body ?? {};
+      if (!priceListItemId || !billLineItemId) {
+        return res.status(400).json({ error: "priceListItemId and billLineItemId are required" });
+      }
+      const result = await storage.applyBillPriceToItem(
+        priceListItemId, billLineItemId, user.companyId, user.id,
+      );
+      if (!result) {
+        return res.status(404).json({ error: "Price list item or bill line not found" });
+      }
+      if (result.superseded) {
+        // 409: the request was well formed, the state says no.
+        return res.status(409).json({
+          error: "A newer invoice already set this price",
+          superseded: result.superseded,
+          comparison: result.comparison,
+        });
+      }
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to apply bill price", details: error.message });
     }
   });
 
@@ -38485,8 +39429,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const payload = req.body;
       if (!payload?.events || !Array.isArray(payload.events)) {
+        // Xero's "intent to receive" check posts an empty event list. Logging
+        // it confirms the subscription is pointed at this deployment.
+        console.log("[xero-webhook] delivery with no events (intent-to-receive check)");
         return res.status(200).json({ processed: 0 });
       }
+      // A successful INVOICE delivery previously logged NOTHING — only the
+      // PAYMENT and CREDITNOTE branches were traced — so a working webhook and
+      // a webhook that was never called looked identical in the logs. That
+      // ambiguity cost real diagnostic time; every delivery is now accounted
+      // for at both ends.
+      console.log(
+        `[xero-webhook] delivery: ${payload.events.length} event(s) — ` +
+        payload.events.map((e: any) => `${e?.resourceType}/${e?.eventType}`).join(", "),
+      );
 
       // tenantId at the payload level identifies which Xero org sent this webhook
       const payloadTenantId: string | undefined = payload.tenantId;
@@ -38560,7 +39516,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             console.log(`[xero-webhook] CREDITNOTE event — resourceId: ${xeroInvoiceId}, found local bill: ${!!localCreditNote}`);
             if (!localCreditNote) continue;
 
-            const xeroCreditNote = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
+            const xeroCreditNote = await xeroService.getCreditNote(resolvedConnection.id, xeroInvoiceId);
             if (!xeroCreditNote) continue;
 
             const result = await syncBillFromXeroInternal(localCreditNote.id, resolvedConnection.companyId, xeroCreditNote);
@@ -38589,8 +39545,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
               // Fall through to client-invoice branch below
             } else {
               const result = await syncBillFromXeroInternal(localBill.id, resolvedConnection.companyId, xeroInvoice);
-              if (result.ok) processed++;
-              else console.warn(`[Xero Webhook] Bill sync failed for ${xeroInvoiceId}: ${result.error}`);
+              if (result.ok) {
+                processed++;
+                console.log(
+                  `[xero-webhook] INVOICE event synced bill ${localBill.billNumber} — Xero status ${result.xeroStatus ?? "?"}`,
+                );
+              } else console.warn(`[Xero Webhook] Bill sync failed for ${xeroInvoiceId}: ${result.error}`);
               continue;
             }
           } catch (err) {
@@ -38641,6 +39601,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         }
       }
 
+      console.log(`[xero-webhook] delivery complete — ${processed} record(s) updated`);
       res.status(200).json({ processed });
     } catch (error: any) {
       console.error("[Xero Webhook] Error processing webhook:", error);
@@ -39660,31 +40621,6 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error updating Xero settings:", error);
       res.status(500).json({ error: error.message || "Failed to update Xero settings" });
-    }
-  });
-
-  // Xero: Link a BuildPro contact to a Xero contact
-  app.patch("/api/contacts/:id/xero-link", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const companyId = user?.companyId;
-      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-
-      const { xeroContactId, xeroDefaultAccountCode } = req.body;
-      const contactId = req.params.id;
-
-      const contact = await storage.getContact(contactId, companyId);
-      if (!contact) return res.status(404).json({ error: "Contact not found" });
-
-      const updated = await storage.updateContact(contactId, companyId, {
-        xeroContactId: xeroContactId || null,
-        xeroDefaultAccountCode: xeroDefaultAccountCode || null,
-      } as any);
-
-      res.json(updated);
-    } catch (error: any) {
-      console.error("Error linking Xero contact:", error);
-      res.status(500).json({ error: error.message || "Failed to link Xero contact" });
     }
   });
 

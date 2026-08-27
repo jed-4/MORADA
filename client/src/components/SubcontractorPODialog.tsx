@@ -306,7 +306,7 @@ export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFil
                     Timesheets span multiple projects. Select which project to create the PO under:
                   </label>
                   <Select value={selectedProject} onValueChange={setSelectedProject}>
-                    <SelectTrigger className="h-8 text-xs">
+                    <SelectTrigger >
                       <SelectValue placeholder="Select project" />
                     </SelectTrigger>
                     <SelectContent>

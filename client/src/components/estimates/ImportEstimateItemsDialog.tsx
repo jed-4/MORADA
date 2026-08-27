@@ -642,7 +642,7 @@ export function ImportEstimateItemsDialog({
                                           }));
                                         }}
                                       >
-                                        <SelectTrigger className="h-7 w-[140px] text-xs border-status-warning bg-status-warning-bg">
+                                        <SelectTrigger className="w-[140px] border-status-warning bg-status-warning-bg">
                                           <SelectValue placeholder="Select type..." />
                                         </SelectTrigger>
                                         <SelectContent>

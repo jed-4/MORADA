@@ -1,14 +1,17 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download, FileSpreadsheet, GripVertical, Pencil } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { resolveSellCents, effectiveMarkup, isSellDerived } from "@shared/priceList";
+import { DndContext, DragOverlay, closestCenter, pointerWithin, useDraggable, useDroppable, KeyboardSensor, PointerSensor, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { ImportPriceListDialog } from "@/components/systems/ImportPriceListDialog";
+import { PriceListItemModal } from "@/components/systems/PriceListItemModal";
 import * as XLSX from "xlsx";
 import { EmptyState } from "@/components/EmptyState";
 import {
@@ -127,6 +130,45 @@ interface PriceListProps {
   onEditList?: () => void;
 }
 
+/** A group card that accepts item drops while edit mode is on. */
+function GroupDropZone({
+  groupId, enabled, children,
+}: { groupId: string; enabled: boolean; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `group-${groupId}`, disabled: !enabled });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`bg-card rounded-md border overflow-hidden transition-colors ${
+        isOver ? "border-primary ring-1 ring-primary/40" : "border-border"
+      }`}
+      style={{ boxShadow: "var(--shadow-card)" }}
+      data-testid={`section-group-${groupId}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The grip that starts an item drag. Only rendered in edit mode. */
+function RowDragHandle({ itemId }: { itemId: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: itemId });
+  return (
+    <span
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ touchAction: "none" }}
+      className={`flex h-full min-h-[28px] w-full select-none items-center justify-center rounded-sm cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-foreground hover:bg-muted ${
+        isDragging ? "opacity-40" : ""
+      }`}
+      data-testid={`drag-handle-${itemId}`}
+      aria-label="Drag to another group"
+    >
+      <GripVertical className="h-4 w-4" />
+    </span>
+  );
+}
+
 export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal", onEditList }, ref) => {
   const { toast } = useToast();
   const [internalSearch, setInternalSearch] = useState("");
@@ -134,6 +176,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  /** Component state on purpose — leaving the list drops back to read-only. */
+  const [editMode, setEditMode] = useState(false);
+  const [draggingItem, setDraggingItem] = useState<PriceListItem | null>(null);
   const [editingItem, setEditingItem] = useState<PriceListItem | null>(null);
   const [filterGroup, setFilterGroup] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
@@ -263,10 +308,12 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     // Typed in dollars, stored in cents — the boundary that caused the original bug.
     cost: { get: (i) => (i.costPrice ? String(centsToDollars(i.costPrice)) : ""), toPayload: (v) => ({ costPrice: v.trim() ? dollarsToCents(v) : 0 }) },
     sell: { get: (i) => (i.sellPrice ? String(centsToDollars(i.sellPrice)) : ""), toPayload: (v) => ({ sellPrice: v.trim() ? dollarsToCents(v) : null }) },
+    markup: { get: (i) => (i.markupPercent ?? ""), toPayload: (v) => ({ markupPercent: v.trim() }) },
     leadTime: { get: (i) => (i.leadTimeDays ? String(i.leadTimeDays) : ""), toPayload: (v) => ({ leadTimeDays: v.trim() ? parseInt(v, 10) : null }) },
   };
 
   const beginEdit = (item: PriceListItem, key: string) => {
+    if (!editMode) return;
     if (!EDITABLE[key]) return;
     setEditing({ id: item.id, key });
     setDraftValue(EDITABLE[key].get(item));
@@ -402,12 +449,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {item.costPrice ? formatCents(incGstFromEx(item.costPrice)) : "—"}
           </p>
         );
-      case "sellInc":
+      case "sellInc": {
+        const sell = resolveSellCents(item);
         return (
           <p className="text-xs text-muted-foreground text-right tabular-nums">
-            {item.sellPrice ? formatCents(incGstFromEx(item.sellPrice)) : "—"}
+            {sell ? formatCents(incGstFromEx(sell)) : "—"}
           </p>
         );
+      }
       case "leadTime":
         return (
           <p className="text-[11px] text-muted-foreground text-right tabular-nums">
@@ -416,14 +465,25 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         );
       case "cost":
         return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
-      case "sell":
-        return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>;
-      case "markup":
+      case "sell": {
+        const derived = isSellDerived(item);
         return (
-          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
-            {getMarkup(item.costPrice, item.sellPrice)}
+          <p
+            className={`text-xs text-right tabular-nums ${derived ? "text-muted-foreground" : "text-foreground"}`}
+            title={derived ? "Derived from cost × markup" : undefined}
+          >
+            {formatCurrency(resolveSellCents(item))}
           </p>
         );
+      }
+      case "markup": {
+        const m = effectiveMarkup(item);
+        return (
+          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
+            {m === null ? "—" : `${m.toFixed(1)}%`}
+          </p>
+        );
+      }
       default:
         return null;
     }
@@ -544,8 +604,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   };
 
   // Trailing 72px is the fixed (non-draggable) actions cell.
-  const gridCols = useResizableColumns("price-list", orderedColumns, 72);
-  const gridTemplate = `32px ${gridCols.gridTemplate}`;
+  const gridCols = useResizableColumns("price-list", orderedColumns);
+  const gridTemplate = `32px ${gridCols.gridTemplate} 1fr 72px`;
 
   /** Export the list as .xlsx using the same headers the importer expects, so a
    *  round trip works without remapping. Money is written in dollars. */
@@ -556,7 +616,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const exportTemplate = () => {
     const headers = [
       "Item name", "SKU", "Group", "Unit",
-      "Cost (ex GST)", "Sell (ex GST)",
+      "Cost (ex GST)", "Sell (ex GST)", "Markup %",
       "Nickname", "Description", "Supplier ref", "Brand", "Lead time (days)",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
@@ -573,7 +633,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       Group: i.groupId ? (groupName.get(i.groupId) ?? "") : "",
       Unit: i.unitType ?? "",
       "Cost (ex GST)": i.costPrice ? centsToDollars(i.costPrice) : 0,
-      "Sell (ex GST)": i.sellPrice ? centsToDollars(i.sellPrice) : "",
+      "Sell (ex GST)": resolveSellCents(i) ? centsToDollars(resolveSellCents(i)!) : "",
+      "Markup %": i.markupPercent ?? "",
       Nickname: i.nickname ?? "",
       Description: i.description ?? "",
       "Supplier ref": i.supplierCode ?? "",
@@ -584,6 +645,43 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Price list");
     XLSX.writeFile(wb, `price-list-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  // Group-level drops only — items have no explicit order within a group, so
+  // there is nothing to sort.
+  const dndSensors = useSensors(
+    // 8px to match the estimate grid, so a drag feels the same in both places and
+    // a slightly shaky click never turns into a move.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  // pointerWithin alone reports no collision whenever the cursor is released
+  // outside every card — the gutter between groups, the page margin — so a
+  // near-miss drop silently did nothing and the whole feature read as broken.
+  // Fall back to closestCenter so a release always resolves to a group. Safe
+  // here because groups are the only droppables: there is no in-group ordering
+  // for a large card to win over, which is the trap the estimate grid hit.
+  const groupCollisionDetection: CollisionDetection = (args) => {
+    const withinPointer = pointerWithin(args);
+    return withinPointer.length > 0 ? withinPointer : closestCenter(args);
+  };
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    setDraggingItem(items.find((i) => i.id === id) ?? null);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    setDraggingItem(null);
+    const overId = e.over ? String(e.over.id) : null;
+    if (!overId || !overId.startsWith("group-")) return;
+    const target = overId.slice("group-".length);
+    const item = items.find((i) => i.id === String(e.active.id));
+    if (!item) return;
+    const groupId = target === "ungrouped" ? null : target;
+    if ((item.groupId ?? null) === groupId) return;
+    patchItem.mutate({ id: item.id, data: { groupId } });
   };
 
   const activeFilterCount =
@@ -817,6 +915,29 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </PopoverContent>
           </Popover>
 
+          {priceListId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => { setEditMode((v) => !v); setEditing(null); }}
+                  className={`h-6 w-6 border rounded-md flex items-center justify-center transition-all hover-elevate active-elevate-2 ${
+                    editMode
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "border-border/50 text-muted-foreground"
+                  }`}
+                  aria-pressed={editMode}
+                  aria-label={editMode ? "Done editing" : "Edit items"}
+                  data-testid="button-edit-mode"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {editMode ? "Done editing" : "Edit cells and drag items between groups"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowAddModal(true)}
@@ -902,16 +1023,16 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             }}
           />
         ) : (
-          <>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={groupCollisionDetection}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          >
             {groups.map((group) => {
               const expanded = groupBy === "none" || expandedGroups.has(group.id);
               return (
-                <div
-                  key={group.id}
-                  className="bg-card rounded-md border border-border overflow-hidden"
-                  style={{ boxShadow: "var(--shadow-card)" }}
-                  data-testid={`section-group-${group.id}`}
-                >
+                <GroupDropZone key={group.id} groupId={group.id} enabled={editMode && groupBy === "group"}>
                   <div className="px-4 py-3">
                     <div className="group/hdr flex items-center justify-between gap-2">
                       <button
@@ -976,7 +1097,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
                     {expanded && (
                       <div className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar">
-                        <div style={{ minWidth: gridCols.minWidth + 32 }}>
+                        <div style={{ minWidth: gridCols.minWidth + 32 + 72 }}>
                           {/* column labels */}
                           <div
                             className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
@@ -1016,6 +1137,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                               </span>
                             ))}
                             <span />
+                            <span />
                           </div>
 
                           {group.items.length === 0 ? null : (
@@ -1028,6 +1150,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                 style={{ gridTemplateColumns: gridTemplate }}
                                 data-testid={`row-item-${item.id}`}
                               >
+                                {editMode && groupBy === "group" ? (
+                                  <RowDragHandle itemId={item.id} />
+                                ) : (
                                 <div className="flex items-center justify-center">
                                   <Checkbox
                                     checked={selected.has(item.id)}
@@ -1040,9 +1165,33 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                     data-testid={`select-row-${item.id}`}
                                   />
                                 </div>
+                                )}
                                 {/* Cells follow the header order, so reordering moves both. */}
                                 {orderedColumns.map((c) => {
                                   const isEditing = editing?.id === item.id && editing.key === c.key;
+                                  if (isEditing && c.key === "unit") {
+                                    return (
+                                      <div
+                                        key={c.key}
+                                        className="min-w-0 ring-1 ring-inset ring-primary/60 rounded-[2px]"
+                                      >
+                                        <UnitSelect
+                                          value={draftValue}
+                                          onValueChange={(v) => {
+                                            setDraftValue(v);
+                                            const spec = EDITABLE.unit;
+                                            setEditing(null);
+                                            if (v !== spec.get(item)) {
+                                              const payload = spec.toPayload(v);
+                                              if (payload) patchItem.mutate({ id: item.id, data: payload });
+                                            }
+                                          }}
+                                          triggerClassName="h-6 px-1 py-0 text-xs border-0 shadow-none focus:ring-0 bg-transparent"
+                                          data-testid={`edit-unit-${item.id}`}
+                                        />
+                                      </div>
+                                    );
+                                  }
                                   if (isEditing) {
                                     return (
                                       <div
@@ -1083,6 +1232,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                     </div>
                                   );
                                 })}
+                                <span />
                                 <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                   <Button
                                     variant="ghost"
@@ -1150,6 +1300,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   className="h-6 px-1 py-0 text-xs border-0 bg-transparent placeholder:text-muted-foreground/60 focus-visible:ring-0"
                                   data-testid={`input-new-item-${group.id}`}
                                 />
+                                <span />
+                                <span />
                               </div>
                             ) : (
                               <button
@@ -1166,11 +1318,18 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                       </div>
                     )}
                   </div>
-                </div>
+                </GroupDropZone>
               );
             })}
 
-          </>
+            <DragOverlay dropAnimation={null}>
+              {draggingItem ? (
+                <div className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold shadow-lg">
+                  {draggingItem.name}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
 
@@ -1202,545 +1361,3 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 });
 
 PriceList.displayName = "PriceList";
-
-interface PriceListItemModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  item: PriceListItem | null;
-  groups: PriceListGroup[];
-  suppliers: Contact[];
-  costCodes: CostCode[];
-  priceListId?: string;
-  kind: "supplier" | "labour" | "internal";
-}
-
-function PriceListItemModal({ open, onOpenChange, item, groups, suppliers, costCodes, priceListId, kind }: PriceListItemModalProps) {
-  const { toast } = useToast();
-  const isEditing = !!item;
-  const [enterIncGst, setEnterIncGst] = useState(false);
-
-  const [formData, setFormData] = useState({
-    name: "",
-    nickname: "",
-    code: "",
-    description: "",
-    groupId: "",
-    costCodeId: "",
-    unitType: "each",
-    costPrice: "",
-    sellPrice: "",
-    markupPercent: "",
-    supplierId: "",
-    supplierCode: "",
-    leadTimeDays: "",
-    brand: "",
-    imageUrl: "",
-    tags: "",
-    notes: "",
-    isActive: true,
-  });
-
-  const updateField = (field: string, value: string | boolean) => {
-    setFormData((prev) => {
-      const newData = { ...prev, [field]: value };
-      
-      if (field === "costPrice" && prev.markupPercent && value) {
-        const cost = parseFloat(value as string);
-        const markup = parseFloat(prev.markupPercent);
-        if (!isNaN(cost) && !isNaN(markup)) {
-          newData.sellPrice = (cost * (1 + markup / 100)).toFixed(2);
-        }
-      }
-      
-      if (field === "markupPercent" && prev.costPrice && value) {
-        const cost = parseFloat(prev.costPrice);
-        const markup = parseFloat(value as string);
-        if (!isNaN(cost) && !isNaN(markup)) {
-          newData.sellPrice = (cost * (1 + markup / 100)).toFixed(2);
-        }
-      }
-      
-      return newData;
-    });
-  };
-
-  useEffect(() => {
-    if (open) {
-      setEnterIncGst(false);
-      if (item) {
-        setFormData({
-          name: item.name || "",
-          nickname: item.nickname || "",
-          code: item.code || "",
-          description: item.description || "",
-          groupId: item.groupId || "",
-          unitType: item.unitType || "each",
-          costPrice: item.costPrice ? String(centsToDollars(item.costPrice)) : "",
-          sellPrice: item.sellPrice ? String(centsToDollars(item.sellPrice)) : "",
-          markupPercent: item.markupPercent || "",
-          supplierId: item.supplierId || "",
-          costCodeId: item.costCodeId || "",
-          supplierCode: item.supplierCode || "",
-          leadTimeDays: item.leadTimeDays?.toString() || "",
-          brand: item.brand || "",
-          imageUrl: item.imageUrl || "",
-          tags: (item.tags as string[] || []).join(", "),
-          notes: item.notes || "",
-          isActive: item.isActive ?? true,
-        });
-        setShowMore(false);
-      } else {
-        setFormData({
-          name: "",
-          nickname: "",
-          code: "",
-          description: "",
-          groupId: "",
-          costCodeId: "",
-          unitType: "each",
-          costPrice: "",
-          sellPrice: "",
-          markupPercent: "",
-          supplierId: "",
-          supplierCode: "",
-          leadTimeDays: "",
-          brand: "",
-          imageUrl: "",
-          tags: "",
-          notes: "",
-          isActive: true,
-        });
-        setShowMore(false);
-      }
-    }
-  }, [open, item]);
-
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/price-list/items", "POST", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
-      toast({ title: "Item created successfully" });
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to create item", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (data: any) => apiRequest(`/api/price-list/items/${item?.id}`, "PATCH", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
-      toast({ title: "Item updated successfully" });
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to update item", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.name.trim()) {
-      toast({ title: "Name is required", variant: "destructive" });
-      return;
-    }
-
-    const data = {
-      // The list this item belongs to — required by the server.
-      ...(priceListId ? { priceListId } : {}),
-      name: formData.name,
-      nickname: formData.nickname || null,
-      code: formData.code || null,
-      description: formData.description || null,
-      groupId: formData.groupId || null,
-      costCodeId: formData.costCodeId || null,
-      unitType: formData.unitType || "each",
-      // Dollars in the form, integer CENTS on the wire. Sending "12.50" to an integer
-      // column was a hard Postgres 22P02 reject; "12" silently stored 12 cents.
-      costPrice: formData.costPrice ? dollarsToCents(formData.costPrice) : 0,
-      sellPrice: formData.sellPrice ? dollarsToCents(formData.sellPrice) : null,
-      markupPercent: formData.markupPercent || null,
-      supplierId: formData.supplierId || null,
-      supplierCode: formData.supplierCode || null,
-      leadTimeDays: formData.leadTimeDays ? parseInt(formData.leadTimeDays) : null,
-      brand: formData.brand || null,
-      imageUrl: formData.imageUrl || null,
-      tags: formData.tags ? formData.tags.split(",").map((t) => t.trim()).filter(Boolean) : null,
-      notes: formData.notes || null,
-      isActive: formData.isActive,
-    };
-
-    if (isEditing) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
-    }
-  };
-
-  const [showMore, setShowMore] = useState(false);
-  
-  const calculatedMarkup = formData.costPrice && formData.sellPrice
-    ? (((parseFloat(formData.sellPrice) - parseFloat(formData.costPrice)) / parseFloat(formData.costPrice)) * 100).toFixed(1)
-    : null;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]" data-testid="modal-price-list-item">
-        <DialogHeader className="pb-2">
-          <DialogTitle className="flex items-center gap-2 text-sm">
-            <Box className="w-4 h-4" />
-            {isEditing ? "Edit Item" : "Add Item"}
-          </DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-2">
-          {/* Name Row - Most Important */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <span className="text-table text-muted-foreground w-16">Name *</span>
-            <Input
-              value={formData.name}
-              onChange={(e) => updateField("name", e.target.value)}
-              placeholder="Item name"
-              className="h-7 text-table flex-1 ml-2"
-              data-testid="input-name"
-            />
-          </div>
-
-          {/* Nickname Row */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <span className="text-table text-muted-foreground w-16">Nickname</span>
-            <Input
-              value={formData.nickname}
-              onChange={(e) => updateField("nickname", e.target.value)}
-              placeholder="Team terminology"
-              className="h-7 text-table flex-1 ml-2"
-              data-testid="input-nickname"
-            />
-          </div>
-
-          {/* Category, Code, Unit - Compact Grid */}
-          <div className="grid grid-cols-3 gap-1.5">
-            <div>
-              <Label className="text-data text-muted-foreground">Group</Label>
-              <Select value={formData.groupId} onValueChange={(v) => updateField("groupId", v)}>
-                <SelectTrigger className="h-7 text-table" data-testid="select-group">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id} className="text-table">
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-data text-muted-foreground">Code</Label>
-              <Input
-                value={formData.code}
-                onChange={(e) => updateField("code", e.target.value)}
-                placeholder="SKU"
-                className="h-7 text-table"
-                data-testid="input-code"
-              />
-            </div>
-
-            <div>
-              <Label className="text-data text-muted-foreground">Unit</Label>
-              {/* Units come from Field Settings, not a hardcoded list. The old inline
-                  dropdown offered 19 options against a 14-value pgEnum — 12 of them
-                  were guaranteed insert errors. */}
-              <UnitSelect
-                value={formData.unitType}
-                onValueChange={(v) => updateField("unitType", v)}
-                triggerClassName="h-7 text-table"
-                data-testid="select-unit-type"
-              />
-            </div>
-          </div>
-
-          {/* Pricing Row - Highlight Section */}
-          <div className="px-2 py-2 bg-primary/10 border border-primary/20 rounded">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1">
-                <DollarSign className="h-3 w-3 text-primary" />
-                <span className="text-data font-medium text-primary">Pricing</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-label ${!enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Ex GST</span>
-                <Switch
-                  checked={enterIncGst}
-                  onCheckedChange={setEnterIncGst}
-                  className="h-4 w-7 data-[state=checked]:bg-primary"
-                  data-testid="switch-gst-mode"
-                />
-                <span className={`text-label ${enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Inc GST</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <Label className="text-data text-muted-foreground">
-                  {kind === "labour" ? "Cost rate" : "Cost"} {enterIncGst ? '(inc)' : '(ex)'}
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={enterIncGst && formData.costPrice ? (parseFloat(formData.costPrice) * 1.1).toFixed(2) : formData.costPrice}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (enterIncGst && val) {
-                        updateField("costPrice", (parseFloat(val) / 1.1).toFixed(2));
-                      } else {
-                        updateField("costPrice", val);
-                      }
-                    }}
-                    placeholder="0.00"
-                    className="h-7 text-table pl-5"
-                    data-testid="input-cost-price"
-                  />
-                </div>
-                {formData.costPrice && (
-                  <div className="text-label text-muted-foreground mt-0.5 text-right">
-                    {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.costPrice : (parseFloat(formData.costPrice) * 1.1).toFixed(2)}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <Label className="text-data text-muted-foreground">Markup</Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={formData.markupPercent}
-                    onChange={(e) => updateField("markupPercent", e.target.value)}
-                    placeholder="0"
-                    className="h-7 text-table pr-5"
-                    data-testid="input-markup"
-                  />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">%</span>
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-data text-muted-foreground">
-                  {kind === "labour" ? "Charge rate" : "Sell"} {enterIncGst ? '(inc)' : '(ex)'}
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={enterIncGst && formData.sellPrice ? (parseFloat(formData.sellPrice) * 1.1).toFixed(2) : formData.sellPrice}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (enterIncGst && val) {
-                        updateField("sellPrice", (parseFloat(val) / 1.1).toFixed(2));
-                      } else {
-                        updateField("sellPrice", val);
-                      }
-                    }}
-                    placeholder="0.00"
-                    className="h-7 text-table pl-5"
-                    data-testid="input-sell-price"
-                  />
-                </div>
-                {formData.sellPrice && (
-                  <div className="text-label text-muted-foreground mt-0.5 text-right">
-                    {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.sellPrice : (parseFloat(formData.sellPrice) * 1.1).toFixed(2)}
-                  </div>
-                )}
-              </div>
-            </div>
-            {calculatedMarkup && (
-              <div className="mt-1.5 text-data text-muted-foreground text-right">
-                Calculated markup: <span className="font-medium text-foreground">{calculatedMarkup}%</span>
-              </div>
-            )}
-          </div>
-
-          {/* Supplier row. On a supplier list the supplier is inherited from the list
-              itself, so that slot becomes the cost code instead. A labour rate card has
-              no supplier, no supplier code and no lead time at all. */}
-          <div className="grid grid-cols-3 gap-1.5">
-            <div>
-              <Label className="text-data text-muted-foreground">
-                {kind === "supplier" ? "Cost Code" : "Supplier"}
-              </Label>
-              {kind === "supplier" ? (
-                <Select value={formData.costCodeId} onValueChange={(v) => updateField("costCodeId", v)}>
-                  <SelectTrigger className="h-7 text-table" data-testid="select-cost-code">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {costCodes.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id} className="text-table">
-                        {cc.code ? `${cc.code} — ${cc.title}` : cc.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
-                  <SelectTrigger className="h-7 text-table" data-testid="select-supplier">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((sup) => (
-                      <SelectItem key={sup.id} value={sup.id} className="text-table">
-                        {sup.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {kind !== "labour" && (
-            <div>
-              <Label className="text-data text-muted-foreground">Supplier Code</Label>
-              <Input
-                value={formData.supplierCode}
-                onChange={(e) => updateField("supplierCode", e.target.value)}
-                placeholder="Code"
-                className="h-7 text-table"
-                data-testid="input-supplier-code"
-              />
-            </div>
-            )}
-
-            {kind !== "labour" && (
-            <div>
-              <Label className="text-data text-muted-foreground">Lead Time</Label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  value={formData.leadTimeDays}
-                  onChange={(e) => updateField("leadTimeDays", e.target.value)}
-                  placeholder="0"
-                  className="h-7 text-table pr-8"
-                  data-testid="input-lead-time"
-                />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">days</span>
-              </div>
-            </div>
-            )}
-          </div>
-
-          {/* Description - 2 line preview like rapid approval */}
-          <div>
-            <Label className="text-data text-muted-foreground mb-0.5 block">Description</Label>
-            <Textarea
-              value={formData.description}
-              onChange={(e) => updateField("description", e.target.value)}
-              placeholder="Item description"
-              className="text-table min-h-[40px] resize-none"
-              rows={2}
-              data-testid="input-description"
-            />
-          </div>
-
-          {/* Show More Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowMore(!showMore)}
-            className="w-full flex items-center justify-center gap-1 py-1 text-data text-muted-foreground hover:text-foreground"
-            data-testid="button-show-more"
-          >
-            {showMore ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            {showMore ? "Show less" : "More options"}
-          </button>
-
-          {/* Collapsible Additional Details */}
-          {showMore && (
-            <div className="space-y-2 pt-1 border-t">
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <Label className="text-data text-muted-foreground">Brand</Label>
-                  <Input
-                    value={formData.brand}
-                    onChange={(e) => updateField("brand", e.target.value)}
-                    placeholder="Brand name"
-                    className="h-7 text-table"
-                    data-testid="input-brand"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-data text-muted-foreground">Tags</Label>
-                  <Input
-                    value={formData.tags}
-                    onChange={(e) => updateField("tags", e.target.value)}
-                    placeholder="tag1, tag2"
-                    className="h-7 text-table"
-                    data-testid="input-tags"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-data text-muted-foreground">Notes</Label>
-                <Textarea
-                  value={formData.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                  placeholder="Internal notes"
-                  className="text-table min-h-[40px] resize-none"
-                  rows={2}
-                  data-testid="input-notes"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Footer with Active toggle and buttons */}
-          <div className="flex items-center justify-between pt-2 border-t">
-            <label className="flex items-center gap-1.5 text-table cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.isActive}
-                onChange={(e) => updateField("isActive", e.target.checked)}
-                className="h-3.5 w-3.5 rounded"
-                data-testid="checkbox-active"
-              />
-              <span className={formData.isActive ? "text-status-success" : "text-muted-foreground"}>
-                {formData.isActive ? "Active" : "Inactive"}
-              </span>
-            </label>
-            
-            <div className="flex items-center gap-1.5">
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="sm"
-                className="h-7 text-table"
-                onClick={() => onOpenChange(false)} 
-                data-testid="button-cancel"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                className="h-7 text-table"
-                disabled={createMutation.isPending || updateMutation.isPending}
-                data-testid="button-save"
-              >
-                {(createMutation.isPending || updateMutation.isPending) && (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                )}
-                {isEditing ? "Update" : "Create"}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}

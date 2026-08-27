@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { dollarsToCents } from "@shared/money";
+import { normalizeHeader } from "@shared/import";
 
 /** The fields an imported row can fill. `code` is the identity used for matching. */
 const FIELDS = [
@@ -22,6 +23,7 @@ const FIELDS = [
   { key: "unitType", label: "Unit" },
   { key: "costPrice", label: "Cost (ex GST)", money: true },
   { key: "sellPrice", label: "Sell (ex GST)", money: true },
+  { key: "markupPercent", label: "Markup %", percent: true },
   { key: "nickname", label: "Nickname" },
   { key: "description", label: "Description" },
   { key: "supplierCode", label: "Supplier ref" },
@@ -40,6 +42,7 @@ const GUESSES: Record<string, string> = {
   cost: "costPrice", "cost price": "costPrice", price: "costPrice", "unit price": "costPrice",
   "trade price": "costPrice", "ex gst": "costPrice", buy: "costPrice",
   sell: "sellPrice", "sell price": "sellPrice", rrp: "sellPrice", retail: "sellPrice",
+  markup: "markupPercent", "markup %": "markupPercent", margin: "markupPercent",
   nickname: "nickname", brand: "brand", manufacturer: "brand",
   "supplier ref": "supplierCode", "supplier code": "supplierCode",
   "lead time": "leadTimeDays", "lead time days": "leadTimeDays",
@@ -76,7 +79,9 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
       const hdrs = Object.keys(json[0]);
       const guessed: Record<string, string> = {};
       hdrs.forEach((h) => {
-        const field = GUESSES[h.toLowerCase().trim()];
+        // Verbatim first, then normalized — "Cost (ex GST)" has to reach "cost",
+        // otherwise our own exported file cannot be re-imported without remapping.
+        const field = GUESSES[h.toLowerCase().trim()] ?? GUESSES[normalizeHeader(h)];
         // First header wins a field, so a sheet with both "Price" and "Cost"
         // doesn't silently overwrite the earlier guess.
         if (field && !guessed[field]) guessed[field] = h;
@@ -106,6 +111,10 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
           const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/[^0-9.\-]/g, ""));
           if (!Number.isFinite(n)) continue;
           out[f.key] = dollarsToCents(n);
+        } else if ((f as any).percent) {
+          // markup_percent is numeric(10,2) — Drizzle wants it as a string.
+          const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/[^0-9.\-]/g, ""));
+          if (Number.isFinite(n)) out[f.key] = String(n);
         } else if ((f as any).number) {
           const n = typeof raw === "number" ? raw : parseInt(String(raw).replace(/[^0-9\-]/g, ""), 10);
           if (Number.isFinite(n)) out[f.key] = n;
@@ -199,7 +208,7 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
                           })
                         }
                       >
-                        <SelectTrigger className="h-7 text-xs" data-testid={`map-${f.key}`}>
+                        <SelectTrigger data-testid={`map-${f.key}`}>
                           <SelectValue placeholder="Not imported" />
                         </SelectTrigger>
                         <SelectContent>

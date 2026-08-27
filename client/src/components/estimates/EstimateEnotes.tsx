@@ -1336,7 +1336,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
             <div className="space-y-1.5">
               <Label className="text-xs">Select template</Label>
               <Select value={selectedTemplateSetId} onValueChange={setSelectedTemplateSetId}>
-                <SelectTrigger className="h-8 text-sm">
+                <SelectTrigger >
                   <SelectValue placeholder="Choose a template…" />
                 </SelectTrigger>
                 <SelectContent>

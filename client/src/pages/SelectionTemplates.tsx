@@ -985,7 +985,7 @@ export default function SelectionTemplates() {
                 />
               </div>
               <Select value={applyProjectId} onValueChange={setApplyProjectId}>
-                <SelectTrigger className="h-8 text-sm">
+                <SelectTrigger >
                   <SelectValue placeholder="Select a project..." />
                 </SelectTrigger>
                 <SelectContent>

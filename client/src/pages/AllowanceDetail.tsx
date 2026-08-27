@@ -515,7 +515,7 @@ function BillsPickerModal({
               <div className="flex items-center gap-2">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">Display in allowance:</Label>
                 <Select value={displayMode} onValueChange={(v) => setDisplayMode(v as "bill" | "line")}>
-                  <SelectTrigger className="h-7 text-xs w-36" data-testid="select-bill-display">
+                  <SelectTrigger className="w-36" data-testid="select-bill-display">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2580,7 +2580,7 @@ export default function AllowanceDetail() {
               <div className="flex items-center gap-2">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">Display in allowance:</Label>
                 <Select value={timesheetDisplayPref} onValueChange={(v) => setTimesheetDisplayPref(v as TsDisplayPref)}>
-                  <SelectTrigger className="h-7 text-xs w-40" data-testid="select-timesheet-display">
+                  <SelectTrigger className="w-40" data-testid="select-timesheet-display">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

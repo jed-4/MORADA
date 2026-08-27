@@ -3,6 +3,7 @@ import { apiRequest, apiFetch, loadSession, saveSession, clearSession, getSessio
 import { registerForPushNotifications, unregisterPushNotifications } from '../services/pushNotifications';
 import { startSyncService, stopSyncService } from '../services/syncService';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import { clearCachedSelections } from '../services/selectionsOffline';
 
 interface User {
   id: string;
@@ -130,6 +131,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiRequest('/api/auth/logout', 'POST');
     } catch {}
     await clearSession();
+    // The selections spec sheet is cached to disk so it works with no signal —
+    // drop it on the way out so a shared site phone can't serve it to whoever
+    // logs in next.
+    await clearCachedSelections();
     setUser(null);
   };
 

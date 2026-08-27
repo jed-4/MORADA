@@ -31,6 +31,8 @@ import ScheduleScreen from '../screens/ScheduleScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ChecklistsScreen from '../screens/ChecklistsScreen';
 import ScopeScreen from '../screens/ScopeScreen';
+import SelectionsScreen from '../screens/SelectionsScreen';
+import SelectionDetailScreen from '../screens/SelectionDetailScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -111,6 +113,8 @@ function ProjectsStack() {
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
       <Stack.Screen name="Scope" component={ScopeScreen} options={{ title: 'Scope' }} />
+      <Stack.Screen name="Selections" component={SelectionsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="SelectionDetail" component={SelectionDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen

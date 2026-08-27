@@ -114,8 +114,8 @@ async function createTenant(label: string): Promise<Tenant> {
   const password = "TenantTest123!";
 
   const reg = await api("POST", "/api/auth/register", {
-    // agreeToTerms became mandatory on /api/auth/register with the signup
-    // overhaul; without it the harness 400s before any test runs.
+    // agreeToTerms is mandatory since the signup overhaul — without it register
+    // 400s and this whole suite dies in setUp before a single test runs.
     body: { email, password, firstName: label, lastName: "TenantTest", agreeToTerms: true },
   });
   assert.strictEqual(reg.status, 200, `register ${label} failed: ${JSON.stringify(reg.body)}`);
@@ -465,6 +465,84 @@ async function main() {
     await controlOk("GET /api/projects/:projectId/estimate-items", "GET", `/api/projects/${projectA.id}/estimate-items`);
     await controlOk("GET PO import estimate-items", "GET", `/api/purchase-orders/import/estimate-items/${estimateA.id}`);
     await controlOk("GET /api/client-invoices/:id/estimates", "GET", `/api/client-invoices/${clientInvoiceA.id}/estimates`);
+
+    // ---- Field Settings (per company — migration 0056) ----
+    // These were GLOBAL: one shared set of units / statuses / rooms for the
+    // whole deployment, so any customer's admin renamed options for everyone.
+    await test("field settings: each company gets its OWN seeded set", async () => {
+      const ra = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const rb = await api("GET", "/api/field-categories", { cookie: B.cookie });
+      assert.strictEqual(ra.status, 200, `A: expected 200, got ${ra.status}`);
+      assert.strictEqual(rb.status, 200, `B: expected 200, got ${rb.status}`);
+      assert.ok(ra.body.length > 0, "company A has no field categories — seeding did not run");
+      assert.ok(rb.body.length > 0, "company B has no field categories — seeding did not run");
+      const aIds = new Set(ra.body.map((c: any) => c.id));
+      const shared = rb.body.filter((c: any) => aIds.has(c.id));
+      assert.strictEqual(shared.length, 0, `B sees ${shared.length} of A's category rows`);
+      assert.ok(
+        ra.body.every((c: any) => c.companyId === A.companyId),
+        "a category returned to A is stamped with another company",
+      );
+    });
+
+    await test("field settings: company B cannot read A's category by id", async () => {
+      const ra = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const target = ra.body[0];
+      const r = await api("GET", `/api/field-categories/${target.id}`, { cookie: B.cookie });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+
+    await test("field settings: company B cannot rename A's option", async () => {
+      const ra = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const withOptions = ra.body.find((c: any) => c.options?.length > 0);
+      assert.ok(withOptions, "company A has no options to test against");
+      const option = withOptions.options[0];
+      const originalName = option.name;
+
+      const r = await api("PATCH", `/api/field-options/${option.id}`, {
+        cookie: B.cookie, body: { name: "HACKED" },
+      });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+
+      // And prove it really didn't change under A.
+      const after = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const stillThere = after.body
+        .find((c: any) => c.id === withOptions.id)?.options
+        ?.find((o: any) => o.id === option.id);
+      assert.strictEqual(stillThere?.name, originalName, "B's rename leaked into company A");
+    });
+
+    await test("field settings: company B cannot delete A's option", async () => {
+      const ra = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const withOptions = ra.body.find((c: any) => c.options?.length > 0);
+      const option = withOptions.options[0];
+      const r = await api("DELETE", `/api/field-options/${option.id}`, { cookie: B.cookie });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}`);
+      const after = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const survives = after.body
+        .find((c: any) => c.id === withOptions.id)?.options
+        ?.some((o: any) => o.id === option.id);
+      assert.ok(survives, "B deleted an option belonging to company A");
+    });
+
+    await test("field settings: quick-add lands on the CALLER's category only", async () => {
+      const before = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const aUnitBefore = before.body.find((c: any) => c.key === "estimate_item.unit");
+      assert.ok(aUnitBefore, "no estimate_item.unit category seeded for A");
+
+      const r = await api("POST", "/api/field-categories/by-key/estimate_item.unit/options/quick-add", {
+        cookie: B.cookie, body: { name: "lineal metre" },
+      });
+      assert.strictEqual(r.status, 201, `expected 201, got ${r.status}: ${JSON.stringify(r.body)}`);
+      assert.strictEqual(r.body.companyId, B.companyId, "quick-add stamped the wrong company");
+
+      const after = await api("GET", "/api/field-categories", { cookie: A.cookie });
+      const aUnitAfter = after.body.find((c: any) => c.key === "estimate_item.unit");
+      assert.strictEqual(
+        aUnitAfter.options.length, aUnitBefore.options.length,
+        "B's quick-add added an option to company A's unit list",
+      );
+    });
 
     // ---- Selections (enforceProjectCompany) ----
     await crossTenant("GET /api/selections/:id", "GET", `/api/selections/${selectionA.id}`, `/api/selections/${NONE}`);

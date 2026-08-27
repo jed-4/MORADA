@@ -627,22 +627,25 @@ export interface IStorage {
   updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
 
   // Field Categories CRUD (Buildern-style)
-  getFieldCategories(): Promise<FieldCategory[]>;
-  getFieldCategory(id: string): Promise<FieldCategory | undefined>;
-  getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined>;
-  getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined>;
+  // Field Settings are per company (migration 0056) — companyId is REQUIRED on
+  // every read and write, so one customer can never see or edit another's
+  // units / statuses / rooms.
+  getFieldCategories(companyId: string): Promise<FieldCategory[]>;
+  getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined>;
   seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }>;
   createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory>;
-  updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined>;
-  deleteFieldCategory(id: string): Promise<boolean>;
+  updateFieldCategory(id: string, category: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined>;
+  deleteFieldCategory(id: string, companyId: string): Promise<boolean>;
 
   // Field Options CRUD
-  getFieldOptions(categoryId: string): Promise<FieldOption[]>;
-  getFieldOption(id: string): Promise<FieldOption | undefined>;
+  getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]>;
+  getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined>;
   createFieldOption(option: InsertFieldOption): Promise<FieldOption>;
-  updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined>;
-  deleteFieldOption(id: string): Promise<boolean>;
-  setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]>;
+  updateFieldOption(id: string, option: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined>;
+  deleteFieldOption(id: string, companyId: string): Promise<boolean>;
+  setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>, companyId: string): Promise<FieldOption[]>;
 
   // Selections CRUD
   getSelections(projectId: string): Promise<Selection[]>;
@@ -737,11 +740,18 @@ export interface IStorage {
   getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]>;
   getContact(id: string): Promise<Contact | undefined>;
   createContact(contact: InsertContact): Promise<Contact>;
+  createContacts(contacts: (InsertContact & { companyId: string })[]): Promise<Contact[]>;
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
   deleteArchivedContactsOlderThan(date: Date): Promise<number>;
   deleteContact(id: string, companyId: string): Promise<void>;
+  bulkContactAction(
+    ids: string[],
+    action: "archive" | "restore" | "changeType" | "delete",
+    companyId: string,
+    contactType?: string,
+  ): Promise<string[]>;
   mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
   // Supplier Name Mappings (invoice name → contact id learned associations)
@@ -1468,6 +1478,10 @@ export interface IStorage {
   createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
+  applyBillPriceToItem(priceListItemId: string, billLineItemId: string, companyId: string, userId: string): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined>;
+  getBillLinesForPriceReview(companyId: string, filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] }): Promise<Array<{ lineId: string; description: string; unitPrice: number; quantity: number; unit: string | null; priceListItemId: string | null; billId: string; billNumber: string; billDate: Date | null; supplierId: string | null; supplierName: string | null }>>;
+  searchBillsForPriceReview(companyId: string, filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string }): Promise<Array<{ id: string; billNumber: string; billDate: Date | null; total: number; supplierId: string | null; supplierName: string | null; lineCount: number; priceReviewedAt: Date | null; hasAttachment: boolean }>>;
+  markBillsPriceReviewed(billIds: string[], companyId: string, userId: string): Promise<number>;
 
   // Dashboard Views CRUD
   getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]>;
@@ -1714,6 +1728,11 @@ function getDefaultActionsForRole(
   return result;
 }
 
+// MemStorage is the in-memory fallback and has no real company records,
+// but Field Settings are company-scoped since migration 0056, so its seeded
+// categories/options need a stable owner id to satisfy the schema.
+const MEM_COMPANY_ID = "mem-company";
+
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private userRoles: Map<string, UserRole>;
@@ -1814,6 +1833,12 @@ export class MemStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Two view-only keys that narrow what `projects.selections:view` returns.
+      // Without them a role sees the on-site spec only: approved selections,
+      // approved options, no costs. Enforced server-side in
+      // server/selectionVisibility.ts — NOT by hiding fields in the client.
+      { key: "projects.selections.pending", name: "Selections — not yet approved", description: "See selections that have not been approved yet, and the options being considered", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.selections.pricing", name: "Selections — costs", description: "See selection costs, markups and allowances", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -1969,6 +1994,7 @@ export class MemStorage implements IStorage {
     // Task Status Category
     const taskStatusCategory: FieldCategory = {
       id: "cat-task-status",
+      companyId: MEM_COMPANY_ID,
       key: "task.status",
       label: "Task Statuses",
       entity: "task",
@@ -1984,6 +2010,7 @@ export class MemStorage implements IStorage {
     // Task Priority Category  
     const taskPriorityCategory: FieldCategory = {
       id: "cat-task-priority",
+      companyId: MEM_COMPANY_ID,
       key: "task.priority",
       label: "Task Priorities", 
       entity: "task",
@@ -1999,6 +2026,7 @@ export class MemStorage implements IStorage {
     // Task Labels Category
     const taskLabelsCategory: FieldCategory = {
       id: "cat-task-labels",
+      companyId: MEM_COMPANY_ID,
       key: "task.labels",
       label: "Task Labels",
       entity: "task",
@@ -2014,6 +2042,7 @@ export class MemStorage implements IStorage {
     // Trade Categories
     const tradeCategoriesCategory: FieldCategory = {
       id: "cat-trade-types",
+      companyId: MEM_COMPANY_ID,
       key: "task.trade",
       label: "Trade Categories",
       entity: "task", 
@@ -2037,6 +2066,7 @@ export class MemStorage implements IStorage {
     statusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2062,6 +2092,7 @@ export class MemStorage implements IStorage {
     priorityOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-priority-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskPriorityCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2089,6 +2120,7 @@ export class MemStorage implements IStorage {
     labelOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-label-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskLabelsCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2117,6 +2149,7 @@ export class MemStorage implements IStorage {
     tradeOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-trade-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: tradeCategoriesCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2134,6 +2167,7 @@ export class MemStorage implements IStorage {
     // Estimate Item Status Category
     const estimateItemStatusCategory: FieldCategory = {
       id: "cat-estimate-item-status",
+      companyId: MEM_COMPANY_ID,
       key: "estimate_item.status",
       label: "Estimate Item Statuses",
       entity: "estimate_item",
@@ -2158,6 +2192,7 @@ export class MemStorage implements IStorage {
     estimateItemStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-estimate-item-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: estimateItemStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2175,6 +2210,7 @@ export class MemStorage implements IStorage {
     // Estimate Item Unit Category
     const estimateItemUnitCategory: FieldCategory = {
       id: "cat-estimate-item-unit",
+      companyId: MEM_COMPANY_ID,
       key: "estimate_item.unit",
       label: "Estimate Units",
       entity: "estimate_item",
@@ -2205,6 +2241,7 @@ export class MemStorage implements IStorage {
     estimateItemUnitOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-estimate-item-unit-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: estimateItemUnitCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2222,6 +2259,7 @@ export class MemStorage implements IStorage {
     // Selection Categories
     const selectionCategoriesCategory: FieldCategory = {
       id: "cat-selection-categories",
+      companyId: MEM_COMPANY_ID,
       key: "selection.category",
       label: "Selection Categories",
       entity: "selection",
@@ -2237,6 +2275,7 @@ export class MemStorage implements IStorage {
     // Location/Room Categories
     const locationCategory: FieldCategory = {
       id: "cat-locations",
+      companyId: MEM_COMPANY_ID,
       key: "selection.room",
       label: "Locations/Rooms",
       entity: "selection",
@@ -2266,6 +2305,7 @@ export class MemStorage implements IStorage {
     selectionCategoryOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-selection-category-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: selectionCategoriesCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2302,6 +2342,7 @@ export class MemStorage implements IStorage {
     locationOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-location-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: locationCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2319,6 +2360,7 @@ export class MemStorage implements IStorage {
     // Allowance Status Category
     const allowanceStatusCategory: FieldCategory = {
       id: "cat-allowance-status",
+      companyId: MEM_COMPANY_ID,
       key: "allowance.status",
       label: "Allowance Statuses",
       entity: "allowance",
@@ -2341,6 +2383,7 @@ export class MemStorage implements IStorage {
     allowanceStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-allowance-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: allowanceStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2358,6 +2401,7 @@ export class MemStorage implements IStorage {
     // Schedule Item Status Category
     const scheduleItemStatusCategory: FieldCategory = {
       id: "cat-schedule-item-status",
+      companyId: MEM_COMPANY_ID,
       key: "schedule_item.status",
       label: "Schedule Item Statuses",
       entity: "schedule_item",
@@ -2382,6 +2426,7 @@ export class MemStorage implements IStorage {
     scheduleItemStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-schedule-item-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: scheduleItemStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -4306,10 +4351,16 @@ export class MemStorage implements IStorage {
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
     try {
-      // Get default status from field settings if not provided
+      // Get default status from field settings if not provided. Field settings
+      // are company-scoped, so resolve the owning company via the project.
       let defaultStatus = "draft";
       if (!insertEstimate.status) {
-        const statusCategory = await this.getFieldCategoryByKey('estimate.status');
+        const owningProject = insertEstimate.projectId
+          ? await this.getProject(insertEstimate.projectId)
+          : undefined;
+        const statusCategory = owningProject?.companyId
+          ? await this.getFieldCategoryByKey('estimate.status', owningProject.companyId)
+          : undefined;
         if (statusCategory) {
           const statusOptions = await db.select().from(schema.fieldOptions)
             .where(and(
@@ -5768,25 +5819,27 @@ export class MemStorage implements IStorage {
   }
 
   // Field Categories CRUD (Buildern-style)
-  async getFieldCategories(): Promise<FieldCategory[]> {
+  async getFieldCategories(companyId: string): Promise<FieldCategory[]> {
     return Array.from(this.fieldCategories.values())
+      .filter(cat => cat.companyId === companyId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
-    return this.fieldCategories.get(id);
+  async getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined> {
+    const cat = this.fieldCategories.get(id);
+    return cat && cat.companyId === companyId ? cat : undefined;
   }
 
-  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+  async getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined> {
     return Array.from(this.fieldCategories.values())
-      .find(cat => cat.key === key);
+      .find(cat => cat.key === key && cat.companyId === companyId);
   }
 
-  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
-    const category = await this.getFieldCategoryByKey(key);
+  async getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key, companyId);
     if (!category) return undefined;
 
-    const options = await this.getFieldOptions(category.id);
+    const options = await this.getFieldOptions(category.id, companyId);
     return {
       ...category,
       options
@@ -5817,9 +5870,9 @@ export class MemStorage implements IStorage {
     return category;
   }
 
-  async updateFieldCategory(id: string, updates: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> {
+  async updateFieldCategory(id: string, updates: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined> {
     const existing = this.fieldCategories.get(id);
-    if (!existing) return undefined;
+    if (!existing || existing.companyId !== companyId) return undefined;
     
     const updated: FieldCategory = {
       ...existing,
@@ -5831,7 +5884,9 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  async deleteFieldCategory(id: string): Promise<boolean> {
+  async deleteFieldCategory(id: string, companyId: string): Promise<boolean> {
+    const existing = this.fieldCategories.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
     // Also delete all options for this category
     const options = Array.from(this.fieldOptions.values())
       .filter(opt => opt.categoryId === id);
@@ -5841,14 +5896,15 @@ export class MemStorage implements IStorage {
   }
 
   // Field Options CRUD
-  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+  async getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]> {
     return Array.from(this.fieldOptions.values())
-      .filter(opt => opt.categoryId === categoryId)
+      .filter(opt => opt.categoryId === categoryId && opt.companyId === companyId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  async getFieldOption(id: string): Promise<FieldOption | undefined> {
-    return this.fieldOptions.get(id);
+  async getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined> {
+    const opt = this.fieldOptions.get(id);
+    return opt && opt.companyId === companyId ? opt : undefined;
   }
 
   async createFieldOption(insertOption: InsertFieldOption): Promise<FieldOption> {
@@ -5871,9 +5927,9 @@ export class MemStorage implements IStorage {
     return option;
   }
 
-  async updateFieldOption(id: string, updates: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+  async updateFieldOption(id: string, updates: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined> {
     const existing = this.fieldOptions.get(id);
-    if (!existing) return undefined;
+    if (!existing || existing.companyId !== companyId) return undefined;
     
     const updated: FieldOption = {
       ...existing,
@@ -5885,13 +5941,16 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  async deleteFieldOption(id: string): Promise<boolean> {
+  async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
+    const existing = this.fieldOptions.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
     return this.fieldOptions.delete(id);
   }
 
   async setCategoryOptions(
     categoryId: string, 
-    options: Array<Partial<FieldOption> & { key: string; name: string }>
+    options: Array<Partial<FieldOption> & { key: string; name: string }>,
+    companyId: string,
   ): Promise<FieldOption[]> {
     const now = new Date();
     
@@ -6954,6 +7013,12 @@ export class DbStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Two view-only keys that narrow what `projects.selections:view` returns.
+      // Without them a role sees the on-site spec only: approved selections,
+      // approved options, no costs. Enforced server-side in
+      // server/selectionVisibility.ts — NOT by hiding fields in the client.
+      { key: "projects.selections.pending", name: "Selections — not yet approved", description: "See selections that have not been approved yet, and the options being considered", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.selections.pricing", name: "Selections — costs", description: "See selection costs, markups and allowances", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -7012,12 +7077,14 @@ export class DbStorage implements IStorage {
       { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
     ];
 
+    const createdKeys = new Set<string>();
+
     for (const permData of builtInPermissions) {
       // Check if permission exists by key
       const existing = await db.select().from(schema.permissions)
         .where(eq(schema.permissions.key, permData.key))
         .limit(1);
-      
+
       if (existing.length === 0) {
         // Permission doesn't exist, insert it with deterministic ID
         await db.insert(schema.permissions).values({
@@ -7026,7 +7093,70 @@ export class DbStorage implements IStorage {
           actions: permData.actions as PermissionAction[],
           createdAt: now,
         });
+        createdKeys.add(permData.key);
       }
+    }
+
+    await this.backfillSelectionVisibilityGrants(createdKeys);
+  }
+
+  /**
+   * One-time grant for the two selections visibility keys, run only on the boot
+   * that first creates them — so an admin who later UNticks a role never has it
+   * silently re-granted.
+   *
+   * The grant is deliberately narrow: only roles already trusted to APPROVE
+   * selections keep seeing costs and unapproved items. Every other role (site
+   * staff, trades, carpenters) drops to the on-site spec view, which is the
+   * point of the change. Admin/Owner/GM roles bypass permission checks entirely
+   * and so need no row.
+   */
+  private async backfillSelectionVisibilityGrants(createdKeys: Set<string>): Promise<void> {
+    const newKeys = ['projects.selections.pending', 'projects.selections.pricing']
+      .filter((k) => createdKeys.has(k));
+    if (newKeys.length === 0) return;
+
+    try {
+      const [basePerm] = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, 'projects.selections')).limit(1);
+      if (!basePerm) return;
+
+      const newPerms = await db.select().from(schema.permissions)
+        .where(inArray(schema.permissions.key, newKeys));
+      if (newPerms.length === 0) return;
+
+      // Roles that can approve selections today.
+      const approverRolePerms = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, basePerm.id));
+
+      let granted = 0;
+      for (const rp of approverRolePerms) {
+        const actions = Array.isArray(rp.allowedActions) ? rp.allowedActions as string[] : [];
+        if (!actions.includes('approve')) continue;
+
+        for (const perm of newPerms) {
+          const [existing] = await db.select().from(schema.rolePermissions)
+            .where(and(
+              eq(schema.rolePermissions.roleId, rp.roleId),
+              eq(schema.rolePermissions.permissionId, perm.id),
+            )).limit(1);
+          if (existing) continue;
+
+          await db.insert(schema.rolePermissions).values({
+            id: `rp-${rp.roleId}-${perm.id}`,
+            roleId: rp.roleId,
+            permissionId: perm.id,
+            allowedActions: ['view'] as PermissionAction[],
+            viewScope: 'all',
+            viewableRoleIds: [],
+            createdAt: new Date(),
+          });
+          granted++;
+        }
+      }
+      console.log(`[selections visibility] seeded ${newKeys.join(', ')} — ${granted} role grant(s) backfilled to approver roles`);
+    } catch (error) {
+      console.error('[selections visibility] backfill failed:', error);
     }
   }
 
@@ -7282,16 +7412,32 @@ export class DbStorage implements IStorage {
       },
     ];
 
-    for (const categoryData of requiredCategories) {
-      // Check if category exists by key
-      const existing = await db.select().from(schema.fieldCategories)
-        .where(eq(schema.fieldCategories.key, categoryData.key))
-        .limit(1);
-        
-      if (existing.length === 0) {
-        // Category doesn't exist, insert it
+    // Per company, not per deployment. Field Settings are company-scoped since
+    // migration 0056: the existence check used to be `key = ?` with no company,
+    // so the moment ANY company owned a key every other company was treated as
+    // already having it. The hardcoded ids above were the single global row's
+    // id and are replaced with fresh ones here for the same reason.
+    const existingCategories = await db.select({
+      companyId: schema.fieldCategories.companyId,
+      key: schema.fieldCategories.key,
+    }).from(schema.fieldCategories);
+    const keysByCompany = new Map<string, Set<string>>();
+    for (const row of existingCategories) {
+      const set = keysByCompany.get(row.companyId) ?? new Set<string>();
+      set.add(row.key);
+      keysByCompany.set(row.companyId, set);
+    }
+    
+    const companies = await db.select({ id: schema.companies.id }).from(schema.companies);
+    
+    for (const company of companies) {
+      const existingKeys = keysByCompany.get(company.id) ?? new Set<string>();
+      for (const { id: _globalId, ...categoryData } of requiredCategories) {
+        if (existingKeys.has(categoryData.key)) continue;
         await db.insert(schema.fieldCategories).values({
           ...categoryData,
+          id: randomUUID(),
+          companyId: company.id,
           createdAt: now,
           updatedAt: now,
         });
@@ -7331,6 +7477,11 @@ export class DbStorage implements IStorage {
       if (existing.length === 0) {
         await db.insert(schema.fieldOptions).values({
           ...optionData,
+          // The definitions carry hardcoded ids ('opt-estimate-item-unit-ea').
+          // Those were fine when field settings were global; now that every
+          // company gets its own set they would collide on the primary key.
+          id: randomUUID(),
+          companyId: category.companyId,
           isActive: true,
           createdAt: now,
           updatedAt: now,
@@ -7373,6 +7524,8 @@ export class DbStorage implements IStorage {
       try {
         await db.insert(schema.fieldOptions).values({
           ...optionData,
+          id: randomUUID(),
+          companyId: category.companyId,
           parentId: resolvedParentId,
           isActive: true,
           createdAt: now,
@@ -7384,167 +7537,177 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Seed colours come from MORADA_PALETTE (client/src/lib/colors.ts). They were
+  // stock Tailwind hexes until 2026-08-26 — blue-500, gray-500 and so on — which
+  // predated every palette the app has had and matched none of them.
+  //
+  // The remap was authored by hand, not by nearest-colour: an automatic pass over
+  // these values collapses 26 distinct colours onto 13, which would have made
+  // previously-distinct options in the same category render identically. This
+  // mapping preserves both hue family and relative weight (Urgent stays darker
+  // than High, the pale "Awaiting" run stays paler than "In Progress") and was
+  // checked to produce zero within-category merges.
   private getRequiredOptionsForCategory(categoryKey: string, categoryId: string): any[] {
     switch (categoryKey) {
       case 'task.status':
         return [
-          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 3 },
         ];
       case 'task.priority':
         return [
-          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
-          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#82C8A2', isDefault: true, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#DA988A', isDefault: false, sortOrder: 2 },
         ];
       case 'task.labels':
         return [
-          { id: 'opt-label-bug', categoryId, key: 'bug', name: 'Bug', color: '#EF4444', isDefault: false, sortOrder: 0 },
-          { id: 'opt-label-feature', categoryId, key: 'feature', name: 'Feature', color: '#3B82F6', isDefault: false, sortOrder: 1 },
-          { id: 'opt-label-urgent', categoryId, key: 'urgent', name: 'Urgent', color: '#DC2626', isDefault: false, sortOrder: 2 },
-          { id: 'opt-label-review', categoryId, key: 'review', name: 'Review', color: '#F59E0B', isDefault: false, sortOrder: 3 },
-          { id: 'opt-label-documentation', categoryId, key: 'documentation', name: 'Documentation', color: '#8B5CF6', isDefault: false, sortOrder: 4 },
-          { id: 'opt-label-client-request', categoryId, key: 'client-request', name: 'Client Request', color: '#10B981', isDefault: false, sortOrder: 5 },
+          { id: 'opt-label-bug', categoryId, key: 'bug', name: 'Bug', color: '#DA988A', isDefault: false, sortOrder: 0 },
+          { id: 'opt-label-feature', categoryId, key: 'feature', name: 'Feature', color: '#7890C8', isDefault: false, sortOrder: 1 },
+          { id: 'opt-label-urgent', categoryId, key: 'urgent', name: 'Urgent', color: '#C87878', isDefault: false, sortOrder: 2 },
+          { id: 'opt-label-review', categoryId, key: 'review', name: 'Review', color: '#F0B964', isDefault: false, sortOrder: 3 },
+          { id: 'opt-label-documentation', categoryId, key: 'documentation', name: 'Documentation', color: '#8888C4', isDefault: false, sortOrder: 4 },
+          { id: 'opt-label-client-request', categoryId, key: 'client-request', name: 'Client Request', color: '#82C8A2', isDefault: false, sortOrder: 5 },
         ];
       case 'task.trade':
         return [
-          { id: 'opt-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 1 },
-          { id: 'opt-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 2 },
-          { id: 'opt-trade-painting', categoryId, key: 'painting', name: 'Painting & Decorating', color: '#7C3AED', isDefault: false, sortOrder: 3 },
-          { id: 'opt-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 4 },
+          { id: 'opt-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#70CAD0', isDefault: false, sortOrder: 1 },
+          { id: 'opt-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#C89050', isDefault: false, sortOrder: 2 },
+          { id: 'opt-trade-painting', categoryId, key: 'painting', name: 'Painting & Decorating', color: '#A890D4', isDefault: false, sortOrder: 3 },
+          { id: 'opt-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#68B088', isDefault: false, sortOrder: 4 },
         ];
       case 'selection.category':
         return [
-          { id: 'opt-sel-fixtures', categoryId, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8B5CF6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-sel-finishes', categoryId, key: 'finishes', name: 'Finishes', color: '#EC4899', isDefault: false, sortOrder: 1 },
-          { id: 'opt-sel-appliances', categoryId, key: 'appliances', name: 'Appliances', color: '#F59E0B', isDefault: false, sortOrder: 2 },
+          { id: 'opt-sel-fixtures', categoryId, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8888C4', isDefault: true, sortOrder: 0 },
+          { id: 'opt-sel-finishes', categoryId, key: 'finishes', name: 'Finishes', color: '#D484A0', isDefault: false, sortOrder: 1 },
+          { id: 'opt-sel-appliances', categoryId, key: 'appliances', name: 'Appliances', color: '#F0B964', isDefault: false, sortOrder: 2 },
         ];
       case 'selection.room':
         return [
-          { id: 'opt-room-kitchen', categoryId, key: 'kitchen', name: 'Kitchen', color: '#059669', isDefault: true, sortOrder: 0 },
-          { id: 'opt-room-living', categoryId, key: 'living', name: 'Living Room', color: '#DC2626', isDefault: false, sortOrder: 1 },
-          { id: 'opt-room-master', categoryId, key: 'master-bedroom', name: 'Master Bedroom', color: '#7C3AED', isDefault: false, sortOrder: 2 },
-          { id: 'opt-room-bathroom', categoryId, key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
-          { id: 'opt-room-ensuite', categoryId, key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
-          { id: 'opt-room-laundry', categoryId, key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+          { id: 'opt-room-kitchen', categoryId, key: 'kitchen', name: 'Kitchen', color: '#68B088', isDefault: true, sortOrder: 0 },
+          { id: 'opt-room-living', categoryId, key: 'living', name: 'Living Room', color: '#C87878', isDefault: false, sortOrder: 1 },
+          { id: 'opt-room-master', categoryId, key: 'master-bedroom', name: 'Master Bedroom', color: '#A890D4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-room-bathroom', categoryId, key: 'main-bathroom', name: 'Main Bathroom', color: '#70CAD0', isDefault: false, sortOrder: 3 },
+          { id: 'opt-room-ensuite', categoryId, key: 'ensuite', name: 'Ensuite', color: '#58A8B0', isDefault: false, sortOrder: 4 },
+          { id: 'opt-room-laundry', categoryId, key: 'laundry', name: 'Laundry', color: '#96D4A8', isDefault: false, sortOrder: 5 },
         ];
       case 'estimate_item.status':
         return [
-          { id: 'opt-estimate-item-status-pending', categoryId, key: 'pending', name: 'Pending', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-item-status-quoted', categoryId, key: 'quoted', name: 'Quoted', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-item-status-confirmed', categoryId, key: 'confirmed', name: 'Confirmed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-status-pending', categoryId, key: 'pending', name: 'Pending', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-item-status-quoted', categoryId, key: 'quoted', name: 'Quoted', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-status-confirmed', categoryId, key: 'confirmed', name: 'Confirmed', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#7890C8', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
       case 'estimate_item.unit':
         return [
-          { id: 'opt-estimate-item-unit-ea', categoryId, key: 'ea', name: 'ea', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-item-unit-m', categoryId, key: 'm', name: 'm', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-item-unit-m2', categoryId, key: 'm²', name: 'm²', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 2 },
-          { id: 'opt-estimate-item-unit-m3', categoryId, key: 'm³', name: 'm³', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-estimate-item-unit-item', categoryId, key: 'item', name: 'item', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 4 },
-          { id: 'opt-estimate-item-unit-hr', categoryId, key: 'hr', name: 'hr', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 5 },
-          { id: 'opt-estimate-item-unit-day', categoryId, key: 'day', name: 'day', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 6 },
-          { id: 'opt-estimate-item-unit-load', categoryId, key: 'load', name: 'load', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 7 },
-          { id: 'opt-estimate-item-unit-tonne', categoryId, key: 'tonne', name: 'tonne', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 8 },
-          { id: 'opt-estimate-item-unit-kg', categoryId, key: 'kg', name: 'kg', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 9 },
-          { id: 'opt-estimate-item-unit-set', categoryId, key: 'set', name: 'set', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 10 },
+          { id: 'opt-estimate-item-unit-ea', categoryId, key: 'ea', name: 'ea', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-item-unit-m', categoryId, key: 'm', name: 'm', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-unit-m2', categoryId, key: 'm²', name: 'm²', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-estimate-item-unit-m3', categoryId, key: 'm³', name: 'm³', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-unit-item', categoryId, key: 'item', name: 'item', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-unit-hr', categoryId, key: 'hr', name: 'hr', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 5 },
+          { id: 'opt-estimate-item-unit-day', categoryId, key: 'day', name: 'day', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 6 },
+          { id: 'opt-estimate-item-unit-load', categoryId, key: 'load', name: 'load', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 7 },
+          { id: 'opt-estimate-item-unit-tonne', categoryId, key: 'tonne', name: 'tonne', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 8 },
+          { id: 'opt-estimate-item-unit-kg', categoryId, key: 'kg', name: 'kg', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 9 },
+          { id: 'opt-estimate-item-unit-set', categoryId, key: 'set', name: 'set', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 10 },
         ];
       case 'estimate.status':
         return [
-          { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
           // No "locked" status: locking is the estimates.is_locked flag, set by
           // Mark as Contract and the manual Lock action, not a workflow stage.
-          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       case 'defect.status':
         return [
-          { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#EF4444', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-defect-status-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-defect-status-resolved', categoryId, key: 'resolved', name: 'Resolved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-defect-status-closed', categoryId, key: 'closed', name: 'Closed', color: '#6B7280', isDefault: false, isCompleted: true, sortOrder: 3 },
+          { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#DA988A', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-defect-status-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-defect-status-resolved', categoryId, key: 'resolved', name: 'Resolved', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-defect-status-closed', categoryId, key: 'closed', name: 'Closed', color: '#8A8680', isDefault: false, isCompleted: true, sortOrder: 3 },
         ];
       case 'defect.priority':
         return [
-          { id: 'opt-defect-priority-critical', categoryId, key: 'critical', name: 'Critical', color: '#DC2626', isDefault: false, sortOrder: 0 },
-          { id: 'opt-defect-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 2 },
-          { id: 'opt-defect-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-priority-critical', categoryId, key: 'critical', name: 'Critical', color: '#C87878', isDefault: false, sortOrder: 0 },
+          { id: 'opt-defect-priority-high', categoryId, key: 'high', name: 'High', color: '#DA988A', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F0B964', isDefault: true, sortOrder: 2 },
+          { id: 'opt-defect-priority-low', categoryId, key: 'low', name: 'Low', color: '#82C8A2', isDefault: false, sortOrder: 3 },
         ];
       case 'defect.type':
         return [
-          { id: 'opt-defect-type-builder', categoryId, key: 'builder', name: 'Builder Defect', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-defect-type-subcontractor', categoryId, key: 'subcontractor', name: 'Subcontractor', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-type-client', categoryId, key: 'client', name: 'Client Reported', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-defect-type-warranty', categoryId, key: 'warranty', name: 'Warranty', color: '#EF4444', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-type-builder', categoryId, key: 'builder', name: 'Builder Defect', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-type-subcontractor', categoryId, key: 'subcontractor', name: 'Subcontractor', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-type-client', categoryId, key: 'client', name: 'Client Reported', color: '#8888C4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-type-warranty', categoryId, key: 'warranty', name: 'Warranty', color: '#DA988A', isDefault: false, sortOrder: 3 },
         ];
       case 'defect.trade':
         return [
-          { id: 'opt-defect-trade-general', categoryId, key: 'general', name: 'General', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-defect-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 2 },
-          { id: 'opt-defect-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: false, sortOrder: 3 },
-          { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#7C3AED', isDefault: false, sortOrder: 4 },
-          { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 5 },
-          { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#0891B2', isDefault: false, sortOrder: 6 },
+          { id: 'opt-defect-trade-general', categoryId, key: 'general', name: 'General', color: '#8A8680', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#C89050', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#70CAD0', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#7890C8', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#A890D4', isDefault: false, sortOrder: 4 },
+          { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#68B088', isDefault: false, sortOrder: 5 },
+          { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#58A8B0', isDefault: false, sortOrder: 6 },
         ];
       case 'schedule_item.status':
         return [
-          { id: 'opt-schedule-item-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-schedule-item-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#94A3B8', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-schedule-item-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-schedule-item-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#D8D7D4', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
       case 'project.status':
         return [
           // Parent statuses
-          { id: 'opt-project-status-lead', categoryId, key: 'lead', name: 'Lead', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-project-status-pre-construction', categoryId, key: 'pre_construction', name: 'Pre-Construction', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-project-status-construction', categoryId, key: 'construction', name: 'Construction', color: '#3B82F6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-project-status-post-construction', categoryId, key: 'post_construction', name: 'Post Construction', color: '#10B981', isDefault: false, sortOrder: 3 },
+          { id: 'opt-project-status-lead', categoryId, key: 'lead', name: 'Lead', color: '#8A8680', isDefault: true, sortOrder: 0 },
+          { id: 'opt-project-status-pre-construction', categoryId, key: 'pre_construction', name: 'Pre-Construction', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-project-status-construction', categoryId, key: 'construction', name: 'Construction', color: '#7890C8', isDefault: false, sortOrder: 2 },
+          { id: 'opt-project-status-post-construction', categoryId, key: 'post_construction', name: 'Post Construction', color: '#82C8A2', isDefault: false, sortOrder: 3 },
           
           // Lead sub-statuses
-          { id: 'opt-project-substatus-lead-new', categoryId, key: 'lead_new', name: 'Application Submitted', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 4 },
-          { id: 'opt-project-substatus-lead-contacted', categoryId, key: 'lead_contacted', name: 'On-Site Consultation Booked', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 5 },
-          { id: 'opt-project-substatus-lead-proposal', categoryId, key: 'lead_proposal_sent', name: 'Awaiting Pre-Con', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 6 },
+          { id: 'opt-project-substatus-lead-new', categoryId, key: 'lead_new', name: 'Application Submitted', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 4 },
+          { id: 'opt-project-substatus-lead-contacted', categoryId, key: 'lead_contacted', name: 'On-Site Consultation Booked', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 5 },
+          { id: 'opt-project-substatus-lead-proposal', categoryId, key: 'lead_proposal_sent', name: 'Awaiting Pre-Con', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 6 },
           
           // Pre-Construction sub-statuses
-          { id: 'opt-project-substatus-precon-awaiting-agreement', categoryId, key: 'awaiting_pre-con_agreement', name: 'Awaiting Pre-Con Agreement', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 7 },
-          { id: 'opt-project-substatus-precon-agreement-signed', categoryId, key: 'pre-con_agreement_signed', name: 'Pre-Con Agreement Signed', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 8 },
-          { id: 'opt-project-substatus-precon-awaiting-fdp', categoryId, key: 'awaiting_fdp', name: 'Awaiting FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 9 },
-          { id: 'opt-project-substatus-precon-fdp', categoryId, key: 'fdp', name: 'FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 10 },
-          { id: 'opt-project-substatus-precon-fdp-review', categoryId, key: 'fdp_review', name: 'FDP Review', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 11 },
-          { id: 'opt-project-substatus-precon-planning', categoryId, key: 'precon_planning', name: 'QBE', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 12 },
-          { id: 'opt-project-substatus-precon-awaiting-confirmation', categoryId, key: 'awaiting_confirmation', name: 'Awaiting Confirmation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 13 },
-          { id: 'opt-project-substatus-precon-contract-prep', categoryId, key: 'contract_preparation', name: 'Contract Preparation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 14 },
-          { id: 'opt-project-substatus-precon-scheduling', categoryId, key: 'scheduling', name: 'Scheduling', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 15 },
+          { id: 'opt-project-substatus-precon-awaiting-agreement', categoryId, key: 'awaiting_pre-con_agreement', name: 'Awaiting Pre-Con Agreement', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 7 },
+          { id: 'opt-project-substatus-precon-agreement-signed', categoryId, key: 'pre-con_agreement_signed', name: 'Pre-Con Agreement Signed', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 8 },
+          { id: 'opt-project-substatus-precon-awaiting-fdp', categoryId, key: 'awaiting_fdp', name: 'Awaiting FDP', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 9 },
+          { id: 'opt-project-substatus-precon-fdp', categoryId, key: 'fdp', name: 'FDP', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 10 },
+          { id: 'opt-project-substatus-precon-fdp-review', categoryId, key: 'fdp_review', name: 'FDP Review', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 11 },
+          { id: 'opt-project-substatus-precon-planning', categoryId, key: 'precon_planning', name: 'QBE', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 12 },
+          { id: 'opt-project-substatus-precon-awaiting-confirmation', categoryId, key: 'awaiting_confirmation', name: 'Awaiting Confirmation', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 13 },
+          { id: 'opt-project-substatus-precon-contract-prep', categoryId, key: 'contract_preparation', name: 'Contract Preparation', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 14 },
+          { id: 'opt-project-substatus-precon-scheduling', categoryId, key: 'scheduling', name: 'Scheduling', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 15 },
           
           // Construction sub-statuses
-          { id: 'opt-project-substatus-const-foundation', categoryId, key: 'const_foundation', name: 'Construction', color: '#93C5FD', parentId: 'opt-project-status-construction', sortOrder: 16 },
+          { id: 'opt-project-substatus-const-foundation', categoryId, key: 'const_foundation', name: 'Construction', color: '#80B8D8', parentId: 'opt-project-status-construction', sortOrder: 16 },
           
           // Post Construction sub-statuses
-          { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
-          { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
+          { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#96D4A8', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
+          { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#96D4A8', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
         ];
       case 'timesheet.label':
         return [
-          { id: 'opt-timesheet-label-regular', categoryId, key: 'regular', name: 'Regular Hours', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-timesheet-label-overtime', categoryId, key: 'overtime', name: 'Overtime', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-timesheet-label-travel', categoryId, key: 'travel', name: 'Travel Time', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#06B6D4', isDefault: false, sortOrder: 3 },
-          { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#10B981', isDefault: false, sortOrder: 4 },
-          { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#EC4899', isDefault: false, sortOrder: 5 },
+          { id: 'opt-timesheet-label-regular', categoryId, key: 'regular', name: 'Regular Hours', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-timesheet-label-overtime', categoryId, key: 'overtime', name: 'Overtime', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-timesheet-label-travel', categoryId, key: 'travel', name: 'Travel Time', color: '#8888C4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#70CAD0', isDefault: false, sortOrder: 3 },
+          { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#82C8A2', isDefault: false, sortOrder: 4 },
+          { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#D484A0', isDefault: false, sortOrder: 5 },
         ];
       case 'enote.status':
         return [
-          { id: 'opt-enote-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-enote-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-enote-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-enote-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-enote-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-enote-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       default:
         return [];
@@ -7640,6 +7803,8 @@ export class DbStorage implements IStorage {
     if (optionsToInsert.length > 0) {
       const optionsWithTimestamps = optionsToInsert.map(option => ({
         ...option,
+        id: randomUUID(),
+        companyId: category.companyId,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -7649,10 +7814,11 @@ export class DbStorage implements IStorage {
     }
   }
 
-  private async seedDefaultFieldCategories(): Promise<void> {
-    const now = new Date();
-    
-    const defaultCategories = [
+  // The canonical built-in Field Settings categories. Extracted so a NEW
+  // company can be seeded with the same set — before migration 0056 these
+  // rows were global and seeded exactly once for the whole deployment.
+  private getDefaultCategoryDefinitions(now: Date): any[] {
+    return [
       {
         id: 'cat-task-status',
         key: 'task.status', 
@@ -7726,6 +7892,89 @@ export class DbStorage implements IStorage {
         updatedAt: now,
       },
     ];
+  }
+
+  // Give a brand-new company its own copy of every built-in category and its
+  // options. Ids are generated per company; the hardcoded ids in the
+  // definitions are only meaningful to the pre-0056 global rows.
+  async seedFieldSettingsForCompany(companyId: string): Promise<void> {
+    const now = new Date();
+    try {
+      // Prefer cloning the canonical set from an existing company. The
+      // code-defined defaults below cover only 6 of the 18 built-in categories
+      // that real deployments carry, so seeding purely from them would hand a
+      // new customer a thinner list than everyone else has.
+      // Any other company will do — post-0056 every one carries the same
+      // built-in set, so the first match is as canonical as any.
+      const template = await db
+        .select({ companyId: schema.fieldCategories.companyId })
+        .from(schema.fieldCategories)
+        .where(and(
+          ne(schema.fieldCategories.companyId, companyId),
+          eq(schema.fieldCategories.isBuiltIn, true),
+        ))
+        .limit(1);
+
+      if (template[0]?.companyId) {
+        await this.cloneFieldSettings(template[0].companyId, companyId, now);
+        return;
+      }
+
+      // First company on a fresh instance — fall back to the code definitions.
+      const defs = this.getDefaultCategoryDefinitions(now);
+      for (const def of defs) {
+        const [category] = await db.insert(schema.fieldCategories)
+          .values({ ...def, id: randomUUID(), companyId, createdAt: now, updatedAt: now })
+          .returning();
+        await this.ensureOptionsForCategory(category, now);
+      }
+    } catch (err: any) {
+      // Never block company creation on seeding — the settings screen can
+      // re-seed, and a company with no options is recoverable.
+      console.error(`[seed] field settings for company ${companyId} failed:`, err?.message || err);
+    }
+  }
+
+  /** Copy one company's field categories + options to another, with fresh ids. */
+  private async cloneFieldSettings(fromCompanyId: string, toCompanyId: string, now: Date): Promise<void> {
+    const categories = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.companyId, fromCompanyId));
+    if (categories.length === 0) return;
+
+    const categoryIdMap = new Map<string, string>();
+    for (const c of categories) categoryIdMap.set(c.id, randomUUID());
+
+    await db.insert(schema.fieldCategories).values(categories.map((c) => ({
+      ...c,
+      id: categoryIdMap.get(c.id)!,
+      companyId: toCompanyId,
+      createdAt: now,
+      updatedAt: now,
+    })));
+
+    const options = await db.select().from(schema.fieldOptions)
+      .where(eq(schema.fieldOptions.companyId, fromCompanyId));
+    if (options.length === 0) return;
+
+    // Remap ids first so parentId can point at the CLONE, not the source.
+    const optionIdMap = new Map<string, string>();
+    for (const o of options) optionIdMap.set(o.id, randomUUID());
+
+    await db.insert(schema.fieldOptions).values(options.map((o) => ({
+      ...o,
+      id: optionIdMap.get(o.id)!,
+      companyId: toCompanyId,
+      categoryId: categoryIdMap.get(o.categoryId) ?? o.categoryId,
+      parentId: o.parentId ? (optionIdMap.get(o.parentId) ?? null) : null,
+      createdAt: now,
+      updatedAt: now,
+    })));
+  }
+
+  private async seedDefaultFieldCategories(): Promise<void> {
+    const now = new Date();
+    
+    const defaultCategories = this.getDefaultCategoryDefinitions(now);
 
     await db.insert(schema.fieldCategories).values(defaultCategories);
     
@@ -7784,6 +8033,16 @@ export class DbStorage implements IStorage {
   }
 
   // Seed missing built-in field categories (for production databases that predate new categories)
+  // Repair pass for existing databases — runs at boot and behind
+  // POST /api/field-categories/seed-missing.
+  //
+  // Field Settings are per company (migration 0056). This used to check ONE
+  // global set of keys and insert rows carrying a hardcoded id and no company,
+  // which against the scoped schema is both a primary-key collision and a NOT
+  // NULL violation. It also meant a single company owning a key suppressed
+  // seeding for every other company — which is how companies created after
+  // 0056 ended up with no field settings at all. Missing keys are now resolved
+  // per company, and a company holding nothing gets the whole canonical set.
   async seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
     const now = new Date();
     const addedCategories: string[] = [];
@@ -7791,35 +8050,63 @@ export class DbStorage implements IStorage {
     
     // Define all built-in categories that should exist
     const builtInCategories = [
-      { id: 'cat-task-status', key: 'task.status', label: 'Task Statuses', entity: 'task', description: 'Status options for tasks', sortOrder: 1 },
-      { id: 'cat-task-priority', key: 'task.priority', label: 'Task Priorities', entity: 'task', description: 'Priority levels for tasks', sortOrder: 2 },
-      { id: 'cat-trade-types', key: 'task.trade', label: 'Trade Categories', entity: 'task', description: 'Construction trade categories', sortOrder: 3 },
-      { id: 'cat-selection-categories', key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
-      { id: 'cat-location-rooms', key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
-      { id: 'cat-checklist-type', key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
-      // 'estimate_group.status' belongs here, but field_categories.company_id
-      // is NOT NULL in the database while this code has no companyId to give
-      // it, so the insert fails. EstimateGroupCard falls back to the three
-      // seeded defaults until field settings are company-scoped (a8d802e8).
+      { key: 'task.status', label: 'Task Statuses', entity: 'task', description: 'Status options for tasks', sortOrder: 1 },
+      { key: 'task.priority', label: 'Task Priorities', entity: 'task', description: 'Priority levels for tasks', sortOrder: 2 },
+      { key: 'task.trade', label: 'Trade Categories', entity: 'task', description: 'Construction trade categories', sortOrder: 3 },
+      { key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
+      { key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
+      { key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
+      // 'estimate_group.status' is deliberately NOT here: nothing reads it.
+      // EstimateGroupCard shares estimate_item.status with the lines inside a
+      // section, so seeding a second status list would only be one more list
+      // to keep in step. (seedOptionsForCategory still knows the key, for if
+      // that ever changes.)
     ];
     
-    // Check which categories are missing
-    const existingCategories = await db.select({ key: schema.fieldCategories.key }).from(schema.fieldCategories);
-    const existingKeys = new Set(existingCategories.map(c => c.key));
+    // Which keys does each company already have? Keyed per company — a key
+    // present for one company says nothing about any other.
+    const existingCategories = await db.select({
+      companyId: schema.fieldCategories.companyId,
+      key: schema.fieldCategories.key,
+    }).from(schema.fieldCategories);
+    const keysByCompany = new Map<string, Set<string>>();
+    for (const row of existingCategories) {
+      const set = keysByCompany.get(row.companyId) ?? new Set<string>();
+      set.add(row.key);
+      keysByCompany.set(row.companyId, set);
+    }
     
-    for (const category of builtInCategories) {
-      if (!existingKeys.has(category.key)) {
+    const companies = await db.select({ id: schema.companies.id }).from(schema.companies);
+    
+    for (const company of companies) {
+      const existingKeys = keysByCompany.get(company.id);
+      
+      // Nothing at all: clone a full canonical set from a company that has
+      // one. The six definitions above cover only a fraction of the eighteen
+      // built-in categories a real deployment carries, so seeding from them
+      // alone would hand this company a thinner list than everyone else's.
+      if (!existingKeys || existingKeys.size === 0) {
+        await this.seedFieldSettingsForCompany(company.id);
+        addedCategories.push(`${company.id}: full set`);
+        continue;
+      }
+      
+      for (const category of builtInCategories) {
+        if (existingKeys.has(category.key)) continue;
+        const categoryId = randomUUID();
         await db.insert(schema.fieldCategories).values({
           ...category,
+          id: categoryId,
+          companyId: company.id,
           isBuiltIn: true,
           isActive: true,
           createdAt: now,
           updatedAt: now,
         });
-        addedCategories.push(category.key);
+        addedCategories.push(`${company.id}: ${category.key}`);
         
         // Seed default options for this category
-        const newOptions = await this.seedOptionsForCategory(category.key, category.id, now);
+        const newOptions = await this.seedOptionsForCategory(category.key, categoryId, now, company.id);
         addedOptions.push(...newOptions);
       }
     }
@@ -7827,8 +8114,12 @@ export class DbStorage implements IStorage {
     return { addedCategories, addedOptions };
   }
   
-  private async seedOptionsForCategory(categoryKey: string, categoryId: string, now: Date): Promise<string[]> {
+  private async seedOptionsForCategory(categoryKey: string, categoryId: string, now: Date, companyId: string): Promise<string[]> {
     const addedOptions: string[] = [];
+    // The hardcoded ids below identified the single global row per option
+    // before migration 0056. Every company now owns its own copy, so they are
+    // replaced with fresh ids at insert time — keep them only as readable
+    // labels for what each entry is.
     let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; isCompleted?: boolean; sortOrder: number }[] = [];
     
     switch (categoryKey) {
@@ -7870,6 +8161,8 @@ export class DbStorage implements IStorage {
     if (optionsToInsert.length > 0) {
       const optionsWithTimestamps = optionsToInsert.map(option => ({
         ...option,
+        id: randomUUID(),
+        companyId,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -13894,6 +14187,11 @@ export class DbStorage implements IStorage {
     
     // Seed default roles for the company and get General Manager roleId
     const generalManagerRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
+
+    // Field Settings are per company (migration 0056) — a new company starts
+    // with its own copy of the built-in units / statuses / rooms rather than
+    // sharing one global set with every other customer.
+    await this.seedFieldSettingsForCompany(newCompany.id);
     
     // Update user's companyId and assign General Manager role
     await db.update(schema.users)
@@ -14085,57 +14383,96 @@ export class DbStorage implements IStorage {
       return created;
     }
   }
-  async getFieldCategories(): Promise<FieldCategory[]> {
+  // ── Field Settings (per company — migration 0056) ──────────────────────────
+  // Every method takes companyId and filters on it. Before 0056 these tables
+  // had no company column at all, so one shared list of units / statuses /
+  // rooms served every customer on the deployment.
+
+  async getFieldCategories(companyId: string): Promise<FieldCategory[]> {
     return await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.isActive, true))
+      .where(and(
+        eq(schema.fieldCategories.companyId, companyId),
+        eq(schema.fieldCategories.isActive, true),
+      ))
       .orderBy(schema.fieldCategories.sortOrder);
   }
   
-  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
+  async getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.id, id))
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
       .limit(1);
     return category;
   }
   
-  // field_categories has no company column and the DB holds several rows per
-  // key, so an unordered limit(1) returned an arbitrary copy — meaning the
-  // board could read one copy while Field Settings edited another. Pin the
-  // choice to the oldest row so every caller resolves the same category.
-  // (The real fix is per-company field settings; this just makes the current
-  // behaviour deterministic.)
-  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+  async getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.key, key))
-      .orderBy(schema.fieldCategories.createdAt, schema.fieldCategories.id)
+      .where(and(
+        eq(schema.fieldCategories.key, key),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
       .limit(1);
     return category;
   }
   
-  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
-    const category = await this.getFieldCategoryByKey(key);
+  async getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key, companyId);
     if (!category) return undefined;
 
-    const options = await this.getFieldOptions(category.id);
+    const options = await this.getFieldOptions(category.id, companyId);
     return {
       ...category,
       options
     };
   }
-  async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> { throw new Error("Not implemented"); }
-  async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> { return undefined; }
-  async deleteFieldCategory(id: string): Promise<boolean> { return false; }
-  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+
+  async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> {
+    const [created] = await db.insert(schema.fieldCategories)
+      .values({ ...category, id: randomUUID(), createdAt: new Date(), updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined> {
+    // companyId is part of the WHERE, not the SET — a caller can never move a
+    // category into another company, and can never edit one it doesn't own.
+    const { companyId: _ignored, ...safe } = category as any;
+    const [updated] = await db.update(schema.fieldCategories)
+      .set({ ...safe, updatedAt: new Date() })
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteFieldCategory(id: string, companyId: string): Promise<boolean> {
+    const result = await db.delete(schema.fieldCategories)
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]> {
     return await db.select().from(schema.fieldOptions)
       .where(and(
         eq(schema.fieldOptions.categoryId, categoryId),
+        eq(schema.fieldOptions.companyId, companyId),
         eq(schema.fieldOptions.isActive, true)
       ))
       .orderBy(schema.fieldOptions.sortOrder);
   }
-  async getFieldOption(id: string): Promise<FieldOption | undefined> {
+  async getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined> {
     const [option] = await db.select().from(schema.fieldOptions)
-      .where(eq(schema.fieldOptions.id, id))
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
       .limit(1);
     return option;
   }
@@ -14152,27 +14489,38 @@ export class DbStorage implements IStorage {
     return created;
   }
   
-  async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+  async updateFieldOption(id: string, option: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined> {
+    const { companyId: _ignored, ...safe } = option as any;
     const [updated] = await db.update(schema.fieldOptions)
       .set({
-        ...option,
+        ...safe,
         updatedAt: new Date(),
       })
-      .where(eq(schema.fieldOptions.id, id))
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
       .returning();
     return updated;
   }
   
-  async deleteFieldOption(id: string): Promise<boolean> {
+  async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
     const result = await db.delete(schema.fieldOptions)
-      .where(eq(schema.fieldOptions.id, id));
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ));
     return result.rowCount ? result.rowCount > 0 : false;
   }
-  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> {
+  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>, companyId: string): Promise<FieldOption[]> {
     try {
-      // First, delete existing options for this category
+      // Scoped to the company — a batch write must never clear or replace
+      // another company's options for a same-named category.
       await db.delete(schema.fieldOptions)
-        .where(eq(schema.fieldOptions.categoryId, categoryId));
+        .where(and(
+          eq(schema.fieldOptions.categoryId, categoryId),
+          eq(schema.fieldOptions.companyId, companyId),
+        ));
       
       if (options.length === 0) {
         return [];
@@ -14187,6 +14535,7 @@ export class DbStorage implements IStorage {
       const newOptions = options.map((optData, index) => ({
         id: optData.id || randomUUID(),
         categoryId,
+        companyId,
         key: optData.key,
         name: optData.name,
         description: optData.description ?? null,
@@ -14678,24 +15027,42 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // For business contacts (trade/supplier) `name` is the Business Name and must
+  // be supplied by the caller — never auto-fall-back to the key person, because
+  // that overwrites business identity in lists. For team/client/etc. the
+  // firstName + lastName fallback is fine.
+  private resolveContactName(contact: InsertContact & { companyId: string }): string {
+    const isBusiness = contact.contactType === "trade" || contact.contactType === "supplier";
+    const trimmedName = (contact.name || "").trim();
+    return isBusiness
+      ? trimmedName
+      : trimmedName || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
+  }
+
   async createContact(contact: InsertContact & { companyId: string }): Promise<Contact> {
     try {
-      // For business contacts (trade/supplier) `name` is the Business Name
-      // and must be supplied by the caller — never auto-fall-back to the
-      // key person, because that overwrites business identity in lists.
-      // For team/client/etc. the firstName + lastName fallback is fine.
-      const isBusiness = contact.contactType === "trade" || contact.contactType === "supplier";
-      const trimmedName = (contact.name || "").trim();
-      const name = isBusiness
-        ? trimmedName
-        : trimmedName || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
-
       const newContacts = await db.insert(schema.contacts)
-        .values({ ...contact, name })
+        .values({ ...contact, name: this.resolveContactName(contact) })
         .returning();
       return newContacts[0];
     } catch (error) {
       console.error("Database error in createContact:", error);
+      throw error;
+    }
+  }
+
+  // Batch insert for imports. Neon round trips are ~400ms from AU, so a
+  // per-row loop turns a few hundred contacts into minutes; this is one
+  // statement. Callers validate each row first and handle attribution of
+  // failures, so this deliberately does not swallow errors.
+  async createContacts(contacts: (InsertContact & { companyId: string })[]): Promise<Contact[]> {
+    if (contacts.length === 0) return [];
+    try {
+      return await db.insert(schema.contacts)
+        .values(contacts.map((c) => ({ ...c, name: this.resolveContactName(c) })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createContacts:", error);
       throw error;
     }
   }
@@ -14777,15 +15144,43 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Purging archived contacts used to be a single bulk DELETE. A contact that
+  // is still referenced — by a bill, a PO, a timesheet — raises a foreign key
+  // violation, and because it was one statement that aborted the WHOLE sweep:
+  // nothing was ever purged, and the nightly job logged a stack trace every
+  // run. Delete per row and step over the ones something still points at,
+  // rather than guessing at the full set of referencing tables (which would
+  // silently go stale the next time one is added).
   async deleteArchivedContactsOlderThan(date: Date): Promise<number> {
     try {
-      const deleted = await db.delete(schema.contacts)
+      const candidates = await db.select({ id: schema.contacts.id })
+        .from(schema.contacts)
         .where(and(
           eq(schema.contacts.isArchived, true),
           lte(schema.contacts.archivedAt, date)
-        ))
-        .returning();
-      return deleted.length;
+        ));
+      if (candidates.length === 0) return 0;
+
+      let deleted = 0;
+      let stillReferenced = 0;
+      for (const c of candidates) {
+        try {
+          await db.delete(schema.contacts).where(eq(schema.contacts.id, c.id));
+          deleted++;
+        } catch (err: any) {
+          // 23503 = foreign_key_violation: the contact is archived but still
+          // attached to a record that needs it. Keeping it is correct — the
+          // alternative is orphaning or cascading away real history.
+          if (err?.code === "23503") { stillReferenced++; continue; }
+          throw err;
+        }
+      }
+      if (stillReferenced > 0) {
+        console.log(
+          `[deleteArchivedContactsOlderThan] kept ${stillReferenced} archived contact(s) still referenced by other records`,
+        );
+      }
+      return deleted;
     } catch (error) {
       console.error("Database error in deleteArchivedContactsOlderThan:", error);
       return 0;
@@ -14801,6 +15196,46 @@ export class DbStorage implements IStorage {
         ));
     } catch (error) {
       console.error("Database error in deleteContact:", error);
+      throw error;
+    }
+  }
+
+  // One statement per bulk action instead of one per contact. Returns the ids
+  // that were actually affected, so callers can report a truthful count —
+  // the old per-id loop counted a miss (wrong company, already gone) as a
+  // success because archiveContact() resolves undefined rather than throwing.
+  async bulkContactAction(
+    ids: string[],
+    action: "archive" | "restore" | "changeType" | "delete",
+    companyId: string,
+    contactType?: string,
+  ): Promise<string[]> {
+    if (ids.length === 0) return [];
+    try {
+      const scope = and(
+        inArray(schema.contacts.id, ids),
+        eq(schema.contacts.companyId, companyId),
+      );
+
+      if (action === "delete") {
+        const deleted = await db.delete(schema.contacts).where(scope).returning({ id: schema.contacts.id });
+        return deleted.map((r) => r.id);
+      }
+
+      const patch =
+        action === "archive"
+          ? { isArchived: true, archivedAt: new Date(), updatedAt: new Date() }
+          : action === "restore"
+          ? { isArchived: false, archivedAt: null, updatedAt: new Date() }
+          : { contactType: contactType as Contact["contactType"], updatedAt: new Date() };
+
+      const updated = await db.update(schema.contacts)
+        .set(patch)
+        .where(scope)
+        .returning({ id: schema.contacts.id });
+      return updated.map((r) => r.id);
+    } catch (error) {
+      console.error("Database error in bulkContactAction:", error);
       throw error;
     }
   }
@@ -25652,6 +26087,114 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * Typeahead lookup for pulling a catalogue item onto an estimate line.
+   *
+   * Deliberately NOT getPriceListItems with extra filters: that one powers the price
+   * list page, where you must be able to see inactive items and archived books in
+   * order to manage them. Nothing outside the catalogue should ever offer those.
+   * Two separate switches mean "don't use this" here — the item's own isActive, and
+   * the parent book's isArchived — and filtering only one would let a retired
+   * supplier's list keep feeding new estimates.
+   *
+   * Returns the parent list's name and colour alongside each row so the picker and
+   * the line's provenance marker can say WHICH book a price came from without a
+   * second round trip (Neon is ~400ms from AU — see the perf notes).
+   */
+  async searchPriceListItemsForEstimate(
+    companyId: string,
+    query: string,
+    limit = 20,
+  ): Promise<Array<PriceListItem & { listName: string; listColour: string | null }>> {
+    try {
+      const term = query.trim().toLowerCase();
+      if (!term) return [];
+      const like = `%${term}%`;
+
+      const rows = await db
+        .select({
+          item: schema.priceListItems,
+          listName: schema.priceLists.name,
+          listColour: schema.priceLists.colour,
+        })
+        .from(schema.priceListItems)
+        .innerJoin(schema.priceLists, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          eq(schema.priceListItems.isActive, true),
+          eq(schema.priceLists.isArchived, false),
+          or(
+            sql`LOWER(${schema.priceListItems.name}) LIKE ${like}`,
+            sql`LOWER(${schema.priceListItems.nickname}) LIKE ${like}`,
+            sql`LOWER(${schema.priceListItems.code}) LIKE ${like}`,
+            // The book's name too, so typing a supplier browses their catalogue —
+            // "plaster" found nothing before, even though every item lived in "The
+            // Plaster Shop". Ranked last below, because one list name matching drags
+            // in its whole book and those rows are the weakest kind of hit.
+            sql`LOWER(${schema.priceLists.name}) LIKE ${like}`,
+          )!,
+        ))
+        // A code hit is the strongest signal a builder can give — they typed the SKU
+        // off the invoice. Then names that START with the term, then other item-text
+        // hits, and finally rows that only matched by which book they're in.
+        .orderBy(
+          sql`CASE
+            WHEN LOWER(${schema.priceListItems.code}) = ${term} THEN 0
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${term + '%'} THEN 1
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like}
+              OR LOWER(${schema.priceListItems.nickname}) LIKE ${like}
+              OR LOWER(${schema.priceListItems.code}) LIKE ${like} THEN 2
+            ELSE 3
+          END`,
+          asc(schema.priceListItems.name),
+        )
+        .limit(limit);
+
+      return rows.map(r => ({ ...r.item, listName: r.listName, listColour: r.listColour }));
+    } catch (error) {
+      console.error("Database error in searchPriceListItemsForEstimate:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resolve a batch of catalogue ids to items + their book, for lines that already
+   * carry a link. One query for a whole estimate — resolving these per row would be
+   * the classic query-in-a-loop, and Neon is ~400ms away from AU.
+   *
+   * Unlike the typeahead this does NOT filter out inactive items or archived books:
+   * a line linked before its list was retired must still be able to say where its
+   * price came from. Availability governs what you can newly pick, not what history
+   * you're allowed to read.
+   */
+  async getPriceListItemsByIds(
+    companyId: string,
+    ids: string[],
+  ): Promise<Array<PriceListItem & { listName: string; listColour: string | null }>> {
+    try {
+      const unique = Array.from(new Set(ids.filter(Boolean)));
+      if (unique.length === 0) return [];
+
+      const rows = await db
+        .select({
+          item: schema.priceListItems,
+          listName: schema.priceLists.name,
+          listColour: schema.priceLists.colour,
+        })
+        .from(schema.priceListItems)
+        .innerJoin(schema.priceLists, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          inArray(schema.priceListItems.id, unique),
+        ));
+
+      return rows.map(r => ({ ...r.item, listName: r.listName, listColour: r.listColour }));
+    } catch (error) {
+      console.error("Database error in getPriceListItemsByIds:", error);
+      throw error;
+    }
+  }
+
   async getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined> {
     try {
       const result = await db.select().from(schema.priceListItems)
@@ -25983,6 +26526,216 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateBillLineItemPriceLink:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Accept a supplier's price: copy a bill line's unit price onto the catalogue
+   * item and record why it moved.
+   *
+   * The price is re-derived from the bill line here rather than taken from the
+   * caller — a client-supplied amount would let anyone set any cost by POSTing
+   * a number. Both sides are scoped to companyId, so a link cannot be used to
+   * reach another tenant's bill or item.
+   *
+   * Cost only. sellPrice is left alone deliberately: under markup-wins an item
+   * with a markup re-derives its sell from the new cost automatically, and an
+   * item without one has a sell that was set by hand and is not ours to move.
+   */
+  async applyBillPriceToItem(
+    priceListItemId: string,
+    billLineItemId: string,
+    companyId: string,
+    userId: string,
+  ): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison; superseded?: { billDate: string; billNumber: string | null } } | undefined> {
+    try {
+      const { compareBillPriceToItem, billPriceAsItemCost, isSupersededByNewerBill } = await import("@shared/priceList");
+
+      const [item] = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ));
+      if (!item) return undefined;
+
+      const [line] = await db
+        .select({
+          id: schema.billLineItems.id,
+          unitPrice: schema.billLineItems.unitPrice,
+          billId: schema.billLineItems.billId,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .where(and(
+          eq(schema.billLineItems.id, billLineItemId),
+          eq(schema.bills.companyId, companyId),
+        ));
+      if (!line) return undefined;
+
+      const comparison = compareBillPriceToItem({
+        itemCostCents: item.costPrice,
+        itemGstInclusive: item.gstInclusive,
+        billUnitPriceExCents: line.unitPrice,
+      });
+      if (!comparison.changed) return { item, comparison };
+
+      // The newest invoice wins. Working back through older bills must not
+      // quietly restore a price a later invoice has already superseded.
+      const billDateIso = line.billDate ? new Date(line.billDate).toISOString() : null;
+      const stale = isSupersededByNewerBill(item, billDateIso);
+      if (stale.superseded) return { item, comparison, superseded: stale.by! };
+
+      const now = new Date();
+      const entry = {
+        date: now.toISOString(),
+        costPrice: billPriceAsItemCost({
+          itemGstInclusive: item.gstInclusive,
+          billUnitPriceExCents: line.unitPrice,
+        }),
+        sellPrice: item.sellPrice ?? undefined,
+        source: "bill" as const,
+        billId: line.billId,
+        billNumber: line.billNumber,
+        billLineItemId: line.id,
+        billDate: billDateIso,
+        acceptedBy: userId,
+      };
+
+      const [updated] = await db.update(schema.priceListItems)
+        .set({
+          costPrice: entry.costPrice,
+          lastPriceUpdate: now,
+          updatedAt: now,
+          priceHistory: ((item.priceHistory as any[]) || []).concat(entry),
+        })
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ))
+        .returning();
+
+      if (updated) {
+        await db.update(schema.bills)
+          .set({ priceReviewedAt: now, priceReviewedBy: userId })
+          .where(and(eq(schema.bills.id, line.billId), eq(schema.bills.companyId, companyId)));
+      }
+
+      return updated ? { item: updated, comparison } : undefined;
+    } catch (error) {
+      console.error("Database error in applyBillPriceToItem:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Every bill line in scope for a batch price review, with its bill and
+   * supplier alongside so the matcher can narrow candidates by supplier.
+   *
+   * One query rather than a bill-then-lines loop: at ~400ms per round trip to
+   * Neon from AU, a fifty-bill review would otherwise take most of a minute.
+   */
+  async getBillLinesForPriceReview(
+    companyId: string,
+    filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] },
+  ) {
+    try {
+      const where = [eq(schema.bills.companyId, companyId)];
+      if (filters.supplierId) where.push(eq(schema.bills.supplierId, filters.supplierId));
+      if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
+      if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
+      if (filters.billIds?.length) where.push(inArray(schema.bills.id, filters.billIds));
+
+      return await db
+        .select({
+          lineId: schema.billLineItems.id,
+          description: schema.billLineItems.description,
+          unitPrice: schema.billLineItems.unitPrice,
+          quantity: schema.billLineItems.quantity,
+          unit: schema.billLineItems.unit,
+          priceListItemId: schema.billLineItems.priceListItemId,
+          billId: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+          supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .leftJoin(schema.contacts, eq(schema.contacts.id, schema.bills.supplierId))
+        .where(and(...where))
+        .orderBy(desc(schema.bills.billDate));
+    } catch (error) {
+      console.error("Database error in getBillLinesForPriceReview:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bills a price review could cover, newest first.
+   *
+   * The line count comes back with the row rather than from a second pass, so
+   * the list can show "8 lines" without a query per bill -- at ~400ms to Neon
+   * from AU that difference is the whole page.
+   */
+  async searchBillsForPriceReview(
+    companyId: string,
+    filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string },
+  ) {
+    try {
+      const where = [eq(schema.bills.companyId, companyId)];
+      if (filters.supplierIds?.length) where.push(inArray(schema.bills.supplierId, filters.supplierIds));
+      if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
+      if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
+      if (filters.search?.trim()) {
+        const term = `%${filters.search.trim()}%`;
+        where.push(sql`(${schema.bills.billNumber} ILIKE ${term} OR ${schema.contacts.name} ILIKE ${term})`);
+      }
+
+      const rows = await db
+        .select({
+          id: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+          total: schema.bills.total,
+          supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
+          priceReviewedAt: schema.bills.priceReviewedAt,
+          attachmentUrls: schema.bills.attachmentUrls,
+          lineCount: sql<number>`(
+            SELECT COUNT(*)::int FROM ${schema.billLineItems}
+            WHERE ${schema.billLineItems.billId} = ${schema.bills.id}
+          )`,
+        })
+        .from(schema.bills)
+        .leftJoin(schema.contacts, eq(schema.contacts.id, schema.bills.supplierId))
+        .where(and(...where))
+        .orderBy(desc(schema.bills.billDate))
+        .limit(200);
+
+      return rows.map(({ attachmentUrls, ...r }) => ({
+        ...r,
+        hasAttachment: Array.isArray(attachmentUrls) && attachmentUrls.length > 0,
+      }));
+    } catch (error) {
+      console.error("Database error in searchBillsForPriceReview:", error);
+      throw error;
+    }
+  }
+
+  /** Stamp bills as price-reviewed so the list can show what is already done. */
+  async markBillsPriceReviewed(billIds: string[], companyId: string, userId: string): Promise<number> {
+    if (!billIds.length) return 0;
+    try {
+      const rows = await db.update(schema.bills)
+        .set({ priceReviewedAt: new Date(), priceReviewedBy: userId })
+        .where(and(inArray(schema.bills.id, billIds), eq(schema.bills.companyId, companyId)))
+        .returning({ id: schema.bills.id });
+      return rows.length;
+    } catch (error) {
+      console.error("Database error in markBillsPriceReviewed:", error);
       throw error;
     }
   }
