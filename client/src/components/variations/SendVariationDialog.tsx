@@ -45,7 +45,9 @@ interface SendVariationDialogProps {
   documentStyle?: "style1" | "style2";
   logoUrl?: string | null;
   originalContractCents?: number;
+  currentContractCents?: number;
   revisedContractCents?: number;
+  revisedIsAgreed?: boolean;
   clientEmail?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -67,7 +69,9 @@ export function SendVariationDialog({
   documentStyle = "style1",
   logoUrl,
   originalContractCents,
+  currentContractCents,
   revisedContractCents,
+  revisedIsAgreed,
   clientEmail,
   initialSubject,
   initialBody,
@@ -107,7 +111,9 @@ export function SendVariationDialog({
             documentStyle={documentStyle}
             logoUrl={logoUrl}
             originalContractCents={originalContractCents}
+            currentContractCents={currentContractCents}
             revisedContractCents={revisedContractCents}
+            revisedIsAgreed={revisedIsAgreed}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

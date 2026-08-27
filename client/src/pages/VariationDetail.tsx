@@ -339,8 +339,15 @@ export default function VariationDetail() {
     queryKey: [`/api/variations?projectId=${currentProjectId}`],
     enabled: !!currentProjectId,
   });
+  // Approved value on the project EXCLUDING this variation, so the document can
+  // show "contract as it stands" -> "this variation" -> "revised total" as three
+  // figures that add up, and so an already-approved variation is never counted
+  // twice in the revised figure.
   const approvedVariationsTotal = (projectVariationsForContract as any[]).reduce(
-    (sum: number, v: any) => (isApprovedVariationStatus(v.status) ? sum + (v.totalAmount ?? 0) : sum),
+    (sum: number, v: any) =>
+      v.id !== effectiveVariationId && isApprovedVariationStatus(v.status)
+        ? sum + (v.totalAmount ?? 0)
+        : sum,
     0
   );
   // Original contract price (inc-GST cents) — the frozen contract sum once the
@@ -355,7 +362,15 @@ export default function VariationDetail() {
     variationContractMetrics?.originalContractPriceIncGstCents
     ?? (currentProject as any)?.contractPrice
     ?? 0;
-  const revisedContractCents = originalContractCents + approvedVariationsTotal;
+  // Contract sum as it stands today: original plus every OTHER approved variation.
+  const currentContractCents = originalContractCents + approvedVariationsTotal;
+  // This variation's own value is always part of the revised figure. It used to
+  // be included only once the variation was approved, so every draft PDF showed
+  // a "Revised Total" identical to the contract it was meant to revise.
+  const thisVariationCents = (variation as any)?.totalAmount ?? 0;
+  const revisedContractCents = currentContractCents + thisVariationCents;
+  // Wording follows the document's standing: a proposal until the client agrees.
+  const revisedIsAgreed = isApprovedVariationStatus((variation as any)?.status);
   const varLogoUrl = companySettings?.logoUrl
     ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)
     : undefined;
@@ -1161,7 +1176,9 @@ export default function VariationDetail() {
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
+          currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
+          revisedIsAgreed={revisedIsAgreed}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -2344,7 +2361,9 @@ export default function VariationDetail() {
               documentStyle={varDocStyle}
               logoUrl={varLogoUrl}
               originalContractCents={originalContractCents}
+              currentContractCents={currentContractCents}
               revisedContractCents={revisedContractCents}
+              revisedIsAgreed={revisedIsAgreed}
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
@@ -2368,7 +2387,9 @@ export default function VariationDetail() {
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
+          currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
+          revisedIsAgreed={revisedIsAgreed}
           clientEmail={clientContact?.email}
           initialSubject={sendSubject}
           initialBody={sendBody}

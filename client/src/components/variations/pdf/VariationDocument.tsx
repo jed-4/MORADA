@@ -51,7 +51,12 @@ interface VariationDocumentProps {
   documentStyle?: "style1" | "style2";
   logoUrl?: string | null;
   originalContractCents?: number;
+  /** Contract sum as it stands today: original + every OTHER approved variation. */
+  currentContractCents?: number;
   revisedContractCents?: number;
+  /** True once the client has agreed this variation, which turns the figure from
+   *  a proposal into the actual contract sum. Drives the wording only. */
+  revisedIsAgreed?: boolean;
 }
 
 function formatAUD(dollars: number): string {
@@ -73,7 +78,9 @@ export function VariationDocument({
   documentStyle = "style1",
   logoUrl,
   originalContractCents,
+  currentContractCents,
   revisedContractCents,
+  revisedIsAgreed = false,
 }: VariationDocumentProps) {
   const isS2 = documentStyle === "style2";
   const thBg = isS2 ? brandColor : "#F8F8F8";
@@ -103,6 +110,20 @@ export function VariationDocument({
 
   const showContractCard =
     originalContractCents !== undefined && originalContractCents > 0;
+  // Contract as it stands today. Falls back to the original for callers that
+  // predate the three-figure card.
+  const contractBeforeCents = currentContractCents ?? originalContractCents ?? 0;
+  // Reserves two lines for every caption so a label that wraps ("Proposed
+  // Revised Total") doesn't push its own figure out of line with the others.
+  const cardLabel = {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: "#9ca3af",
+    textTransform: "uppercase" as const,
+    textAlign: "center" as const,
+    minHeight: 18,
+    marginBottom: 4,
+  };
 
   return (
     <Document title={`Variation ${variation.variationNumber}`}>
@@ -204,22 +225,12 @@ export function VariationDocument({
               paddingVertical: 10,
               flexDirection: "row",
               gap: 0,
-              width: showContractCard ? 340 : 160,
+              width: showContractCard ? 380 : 160,
             }}
           >
             {/* Variation amount */}
             <View style={{ flex: 1, alignItems: "center" }}>
-              <Text
-                style={{
-                  fontSize: 7,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
-              >
-                Variation Amount
-              </Text>
+              <Text style={cardLabel}>Variation Amount</Text>
               <Text
                 style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#e8952a" }}
               >
@@ -238,19 +249,9 @@ export function VariationDocument({
                     marginHorizontal: 10,
                   }}
                 />
-                {/* Original contract */}
+                {/* Contract as it stands today */}
                 <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text
-                    style={{
-                      fontSize: 7,
-                      fontFamily: "Helvetica-Bold",
-                      color: "#9ca3af",
-                      textTransform: "uppercase",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Original Contract
-                  </Text>
+                  <Text style={cardLabel}>Current Contract Sum</Text>
                   <Text
                     style={{
                       fontSize: 11,
@@ -258,10 +259,10 @@ export function VariationDocument({
                       textDecorationLine: "line-through",
                     }}
                   >
-                    {formatAUD((originalContractCents ?? 0) / 100)}
+                    {formatAUD(contractBeforeCents / 100)}
                   </Text>
                   <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>
-                    Before variation
+                    Incl. approved variations
                   </Text>
                 </View>
 
@@ -275,16 +276,8 @@ export function VariationDocument({
                 />
                 {/* Revised total */}
                 <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text
-                    style={{
-                      fontSize: 7,
-                      fontFamily: "Helvetica-Bold",
-                      color: "#9ca3af",
-                      textTransform: "uppercase",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Revised Total
+                  <Text style={cardLabel}>
+                    {revisedIsAgreed ? "Revised Total" : "Proposed Revised Total"}
                   </Text>
                   <Text
                     style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#111827" }}
@@ -292,7 +285,7 @@ export function VariationDocument({
                     {formatAUD((revisedContractCents ?? 0) / 100)}
                   </Text>
                   <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>
-                    New contract value
+                    {revisedIsAgreed ? "New contract value" : "If approved"}
                   </Text>
                 </View>
               </>
