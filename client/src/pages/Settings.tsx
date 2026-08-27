@@ -2925,6 +2925,7 @@ function TermsConditionsSection() {
   const documentTypes = [
     { value: "client_invoices", label: "Client Invoices" },
     { value: "purchase_orders", label: "Purchase Orders" },
+    { value: "rfqs", label: "RFQs" },
     { value: "quotes", label: "Quotes" },
     { value: "contracts", label: "Contracts" },
     { value: "variations", label: "Variations" }

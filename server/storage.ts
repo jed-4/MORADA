@@ -766,6 +766,7 @@ export interface IStorage {
 
   // RFQ Quotes CRUD
   getRFQQuotes(rfqId: string): Promise<RfqQuote[]>;
+  getRFQQuotesForRfqs(rfqIds: string[]): Promise<RfqQuote[]>;
   getRFQQuote(id: string): Promise<RfqQuote | undefined>;
   createRFQQuote(quote: InsertRfqQuote): Promise<RfqQuote>;
   updateRFQQuote(id: string, quote: Partial<InsertRfqQuote>): Promise<RfqQuote | undefined>;
@@ -15181,6 +15182,19 @@ export class DbStorage implements IStorage {
       return quotes;
     } catch (error) {
       console.error("Database error in getRFQQuotes:", error);
+      throw error;
+    }
+  }
+
+  async getRFQQuotesForRfqs(rfqIds: string[]): Promise<RfqQuote[]> {
+    if (rfqIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.rfqQuotes)
+        .where(inArray(schema.rfqQuotes.rfqId, rfqIds))
+        .orderBy(asc(schema.rfqQuotes.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQQuotesForRfqs:", error);
       throw error;
     }
   }

@@ -16180,8 +16180,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownerName =
         ownerId === req.user!.id ? callerName : rfqFields.ownerName || (await lookupUserName(req, ownerId));
 
+      // Standard terms, if the company has nominated a T&C template as its RFQ
+      // default (Settings → Terms & Conditions). Applied only when the caller
+      // didn't supply terms of their own, and only at create time — editing an
+      // RFQ's terms later must never be overwritten by a settings change.
+      let defaultTerms: { termsTemplateId?: string; customTerms?: string } = {};
+      if (!rfqFields.customTerms) {
+        try {
+          const settings = await storage.getCompanySettings(companyId);
+          const templates =
+            (settings?.termsTemplates as
+              | Array<{ id: string; name: string; content: string; defaultFor: string[] }>
+              | undefined) ?? [];
+          const preset = templates.find((t) => t.defaultFor?.includes("rfqs"));
+          if (preset) {
+            defaultTerms = { termsTemplateId: preset.id, customTerms: preset.content };
+          }
+        } catch (err) {
+          // Terms are a convenience — never fail the create over them.
+          console.error("Could not resolve default RFQ terms:", err);
+        }
+      }
+
       const baseData = {
         ...rfqFields,
+        ...defaultTerms,
         companyId,
         ownerId,
         ownerName,
@@ -16606,7 +16629,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const senderName =
         `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "";
       const project = rfq.projectId ? await storage.getProject(rfq.projectId) : undefined;
-      const baseUrl = `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+      // Prefer the canonical domain over whatever host this request arrived on.
+      // A portal link is emailed to a supplier and lives for weeks, so building
+      // it from req.host meant sending from a preview/staging host baked that
+      // host into the supplier's link — and the reminder scheduler, which uses
+      // APP_BASE_URL, would then chase them with a different URL for the same
+      // RFQ. Falls back to the request host for local dev.
+      const baseUrl =
+        (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+        `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
 
       const sent: string[] = [];
       const failed: { supplierName: string; error: string }[] = [];
@@ -16712,6 +16743,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rfq-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // insertRfqReminderTemplateSchema already omits companyId at its
+      // definition (shared/schema.ts), and createRFQReminderTemplate takes the
+      // session's companyId as a separate argument and spreads it last — so a
+      // body-supplied companyId cannot reach the insert. The tenancy checker
+      // only inspects the inline chain here, so this is recorded in
+      // scripts/route-tenancy-baseline.json rather than silenced with a
+      // redundant .omit() (which breaks the parsed-data types).
       const parsed = insertRfqReminderTemplateSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
@@ -16872,6 +16910,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const quotes = await storage.getRFQQuotes(req.params.rfqId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Error fetching RFQ quotes:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ quotes" });
+    }
+  });
+
+  // Batched sibling of /api/rfq-recipients. The RFQ list renders each supplier
+  // as a sub-row carrying its quote total, so without this the table would fire
+  // one quotes request per RFQ — ~400ms each from AU against Neon us-east-1.
+  app.get("/api/rfq-quotes", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const rfqs = await storage.getRFQs(req.user!.companyId!, projectId as string | undefined);
+      const quotes = await storage.getRFQQuotesForRfqs(rfqs.map((r) => r.id));
       res.json(quotes);
     } catch (error) {
       console.error("Error fetching RFQ quotes:", error);
@@ -17647,6 +17700,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // resolved server-side against that RFQ's own list so a token can never be
   // used to fetch an arbitrary object path.
   app.get("/api/portal/rfq/:token/attachments/:index", async (req, res) => {
+    // Supplier-facing: deliberately has no session and therefore no companyId
+    // to scope by — the portal token IS the credential. Tenancy is enforced by
+    // the token resolving to exactly one recipient, and the response being
+    // limited to that recipient's own RFQ attachment list (see the three portal
+    // cases in server/__tests__/rfq-lifecycle.test.ts: unknown token, revoked
+    // token, and an index outside the RFQ's own list).
     try {
       const portal = await resolvePortalToken(req.params.token);
       if (!portal || portal.revoked) {
