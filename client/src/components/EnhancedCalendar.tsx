@@ -10,6 +10,7 @@ import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import type { ProjectBand } from "@shared/scheduleVisibility";
+import type { CalendarEvent } from "@shared/calendarEvent";
 import {
   DndContext,
   DragEndEvent,
@@ -41,38 +42,9 @@ const pointerFirstCollision: CollisionDetection = (args) => {
 
 const HOUR_HEIGHT = 60; // pixels per hour in week/day view
 
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  startTime?: string | null;
-  endTime?: string | null;
-  color?: string | null;
-  projectId?: string | null;
-  projectColor?: string | null;
-  projectName?: string | null;
-  assigneeName?: string | null;
-  assigneeId?: string | null;
-  /**
-   * Every *Morada user* this event is assigned to — filter on this, never on
-   * `assigneeId`, which only ever holds the legacy single assignee.
-   *
-   * Empty for schedule items: `scheduleItems.assignedToId` references `contacts`
-   * (subbies and suppliers), so no user owns one. See `shared/taskAssignees.ts`.
-   */
-  assigneeIds?: string[] | null;
-  /** "projected" is a ghost from a recurring template — read-only, never persisted. */
-  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder" | "projected";
-  status?: string;
-  isCompleted?: boolean;
-  description?: string | null;
-  location?: string | null;
-  templateId?: string | null;
-  tagIds?: string[] | null;
-  isModified?: boolean;
-  resource?: any;
-}
+// Re-exported so `@/components/EnhancedCalendar` stays a valid import path for
+// the ~10 files that already take `CalendarEvent` from here.
+export type { CalendarEvent } from "@shared/calendarEvent";
 
 export interface CalendarDisplayOptions {
   showProject?: boolean;

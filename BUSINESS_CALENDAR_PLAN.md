@@ -214,9 +214,9 @@ No migration. No new endpoint.
 
 No migration. Split into two commits, because the risky half should be provably data-neutral. **The verification method is Part 3a**, including the one decision it surfaces that has to be made rather than proven.
 
-#### 1a — Extract the transform (pure refactor)
+#### 1a — Extract the transform (pure refactor) ✅ *(done 27 Aug)*
 
-Lift the `filteredEvents` `useMemo` body verbatim into `shared/businessCalendarEvents.ts` as a pure function:
+Lift the `filteredEvents` `useMemo` body verbatim into [`shared/businessCalendarEvents.ts`](shared/businessCalendarEvents.ts) as a pure function:
 
 ```
 buildBusinessCalendarEvents({
@@ -228,6 +228,10 @@ buildBusinessCalendarEvents({
 **The extraction is genuinely mechanical, and that's been checked, not assumed.** The memo's dependency array lists ten values, and scanning the body for free identifiers turns up nothing outside them — no closure over `currentDate`, `calendarMode`, `displayOptions`, or `user`. So there is no latent staleness bug for the extraction to accidentally "fix", which is the usual way a supposedly pure refactor changes behaviour.
 
 Two freebies while in there: `deterministicProjectColor` is duplicated verbatim in `BusinessCalendar` and `UserCalendar` and moves into the shared module; and `companySettings` is fetched at [`:160`](client/src/pages/BusinessCalendar.tsx:160) and **never read** — a wasted round trip on every page load, deleted.
+
+`CalendarEvent` also moved to [`shared/calendarEvent.ts`](shared/calendarEvent.ts), re-exported from `EnhancedCalendar` so every existing import path still works. Without that, `shared/` would have had to import from `client/`, and the fingerprint harness would drag React into a Node script.
+
+**Result:** `BusinessCalendar.tsx` 1,448 → 1,284 lines, and the harness reports all 34 states identical to the pre-extraction implementation, in four timezones.
 
 #### 1b — Swap the engine
 

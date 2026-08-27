@@ -15,14 +15,9 @@ import {
   Pencil,
   ChevronDown,
 } from "lucide-react";
-import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
-import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
-import {
-  taskAssigneeIds,
-  cachedAssigneeNameById,
-  formatAssigneeLabel,
-  type AssignableTask,
-} from "@shared/taskAssignees";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
+import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
+import { buildBusinessCalendarEvents } from "@shared/businessCalendarEvents";
 import type { CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
 import {
   MoradaCalendar,
@@ -69,25 +64,6 @@ import TaskEditModal from "@/components/TaskEditModal";
 // Module-level flag — survives component remounts for the full browser session,
 // preventing duplicate "All Events" view creation on every navigation.
 let defaultBusinessViewCreated = false;
-
-// Generate a stable, distinct hex colour from any string (fallback when project.color is null)
-function deterministicProjectColor(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  const adjustedHue = hue < 20 || hue > 340 ? (hue + 120) % 360 : hue;
-  // Convert HSL to hex
-  const s = 0.55, l = 0.48;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + adjustedHue / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -154,11 +130,6 @@ export default function BusinessCalendar() {
   // Fetch all projects
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-  });
-
-  // Fetch company settings for brand colour (used for project-less events)
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
   });
 
   // Fetch tasks with date range filtering for calendar performance
@@ -261,157 +232,22 @@ export default function BusinessCalendar() {
   });
 
   // Convert tasks and schedule items to calendar events with filtering
-  const filteredEvents: CalendarEvent[] = useMemo(() => {
-    // Convert tasks to calendar events
-    const taskEvents: CalendarEvent[] = allTasks
-      .filter(task => task.dueDate)
-      .map(task => {
-        const project = projects.find(p => p.id === task.projectId);
-        // Both assignee columns, not just the legacy single one — see shared/taskAssignees.ts.
-        const assigneeIds = taskAssigneeIds(task as AssignableTask);
-        // Resolve per id, not all-or-nothing: someone who has left the company is
-        // no longer in `users`, and the row's cached name is all we have for them.
-        // Falling back for the whole task would have dropped everyone else's name.
-        const cachedNames = cachedAssigneeNameById(task as AssignableTask);
-        const assigneeNames = assigneeIds
-          .map(id => {
-            const u = users.find(candidate => candidate.id === id);
-            const live = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email : null;
-            return live || cachedNames.get(id) || null;
-          })
-          .filter((name): name is string => !!name);
-        const isCompleted = task.status === completedOption?.key;
-
-        return {
-          id: task.id,
-          title: task.title,
-          startDate: new Date(task.dueDate!),
-          endDate: new Date(task.dueDate!),
-          startTime: task.startTime,
-          endTime: task.endTime,
-          color: project?.color || deterministicProjectColor(task.projectId || task.id),
-          projectId: task.projectId,
-          projectColor: project?.color || deterministicProjectColor(task.projectId || task.id),
-          projectName: project?.name || null,
-          assigneeName: formatAssigneeLabel(assigneeNames),
-          assigneeId: task.assigneeId,
-          assigneeIds,
-          type: "task" as const,
-          status: task.status,
-          isCompleted,
-          templateId: task.templateId,
-          resource: task,
-        };
-      });
-
-    // Convert schedule items to calendar events with parent/child visibility toggles
-    const parentItemIds = new Set(
-      allScheduleItems
-        .filter((item: any) => item.parentItemId)
-        .map((item: any) => item.parentItemId)
-    );
-
-    const filteredScheduleItems = allScheduleItems.filter(item => {
-      const isParent = parentItemIds.has(item.id);
-      const isChild = !!(item as any).parentItemId;
-      if (isParent && !showParentItems) return false;
-      if (isChild && !showChildItems) return false;
-      return true;
-    });
-
-    const scheduleEvents: CalendarEvent[] = filteredScheduleItems
-      .map(item => {
-        const schedule = schedules.find(s => s.id === item.scheduleId);
-        const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
-        // `assignedToId` references CONTACTS, not users — a subbie or supplier — so
-        // there is nothing to look up in `users`. The row caches the name already,
-        // and for in-house work it caches the company's name with a null id.
-        const assigneeName = (item as any).assignedToName || null;
-        const isCompleted = item.status === "completed";
-        const projectColor = project?.color || deterministicProjectColor(project?.id || item.id);
-        
-        return {
-          id: item.id,
-          title: item.name,
-          startDate: new Date(item.startDate),
-          endDate: new Date(item.endDate),
-          startTime: item.startTime,
-          endTime: item.endTime,
-          color: projectColor,
-          projectId: project?.id,
-          projectColor: projectColor,
-          projectName: project?.name || null,
-          assigneeName,
-          assigneeId: item.assignedToId,
-          // No Morada user owns a schedule item, so it never belongs to one person's
-          // view. Filtering by person deliberately excludes them.
-          assigneeIds: [],
-          type: "schedule" as const,
-          status: item.status,
-          isCompleted,
-        };
-      });
-
-    const allEvents = [...taskEvents, ...scheduleEvents];
-
-    // Apply filters
-    let filtered = allEvents;
-
-    // Apply "View as User" filter first (separate from assignee multi-select filter).
-    // Matches on `assigneeIds`, which carries both assignee columns — testing
-    // `assigneeId` alone dropped every multi-assignee task.
-    if (selectedViewUserId !== "all") {
-      filtered = filtered.filter(event => (event.assigneeIds ?? []).includes(selectedViewUserId));
-    }
-
-    // Event type filter
-    if (filters.eventTypes && filters.eventTypes.length > 0) {
-      filtered = filtered.filter(event => {
-        if (event.type === "schedule") {
-          return filters.eventTypes!.includes("schedule-item");
-        }
-        return filters.eventTypes!.includes(event.type);
-      });
-    }
-
-    // Project filter
-    if (filters.projects && filters.projects.length > 0) {
-      filtered = filtered.filter(event => 
-        event.projectId && filters.projects!.includes(event.projectId)
-      );
-    }
-
-    // Status filter
-    if (filters.status && filters.status.length > 0) {
-      filtered = filtered.filter(event => 
-        event.status && filters.status!.includes(event.status)
-      );
-    }
-
-    // Assignee filter — same rule as "View as User" above.
-    if (filters.assignees && filters.assignees.length > 0) {
-      filtered = filtered.filter(event =>
-        (event.assigneeIds ?? []).some(id => filters.assignees!.includes(id))
-      );
-    }
-
-    // Date range filter
-    if (filters.dateFrom || filters.dateTo) {
-      filtered = filtered.filter(event => {
-        const eventDate = event.startDate;
-        if (filters.dateFrom && filters.dateTo) {
-          return isWithinInterval(eventDate, { start: filters.dateFrom, end: filters.dateTo });
-        } else if (filters.dateFrom) {
-          return eventDate >= filters.dateFrom;
-        } else if (filters.dateTo) {
-          return eventDate <= filters.dateTo;
-        }
-        return true;
-      });
-    }
-
-    return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems]);
+  const filteredEvents: CalendarEvent[] = useMemo(
+    () =>
+      buildBusinessCalendarEvents({
+        tasks: allTasks,
+        scheduleItems: allScheduleItems,
+        schedules,
+        projects,
+        users,
+        completedStatusKey: completedOption?.key,
+        filters,
+        viewAsUserId: selectedViewUserId,
+        showParentItems,
+        showChildItems,
+      }),
+    [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems],
+  );
 
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "task") {
