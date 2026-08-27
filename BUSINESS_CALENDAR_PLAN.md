@@ -198,7 +198,7 @@ This is the largest single piece of new build in the plan, which is why it's seq
 
 Ordered so each phase ships on its own, and so the two-bug correctness fix lands as a small reviewable diff *before* the engine swap makes the file unrecognisable.
 
-### Phase 0 — Correctness (small diff, current engine)
+### Phase 0 — Correctness (small diff, current engine) ✅ *(done 27 Aug — `b8fe2436`)*
 
 No migration. No new endpoint.
 
@@ -210,18 +210,40 @@ No migration. No new endpoint.
 
 **Verification:** two fixtures — one task assigned only via `assigneeIds`, one schedule item assigned to a contact — must appear under the right person and disappear under the wrong one. Delete fixtures afterwards.
 
-### Phase 1 — Engine swap, behaviour-preserving
+### Phase 1 — Engine swap
 
-No migration.
+No migration. Split into two commits, because the risky half should be provably data-neutral. **The verification method is Part 3a**, including the one decision it surfaces that has to be made rather than proven.
 
-1. Replace `MoradaCalendar` with `EnhancedCalendar` in `BusinessCalendar`, keeping every existing filter, saved view, and display option working identically.
-2. Adopt the user calendar's own header: mini-month jump, keyboard shortcuts (`t` / `←` / `→` / `d` `w` `m`), day view.
-3. Wire `hideInternalHeader` and render the page's own nav, exactly as `UserCalendar` does.
-4. Leave `onEventReschedule` / `onEventResize` unwired — read-only per D6. This is the one place the two surfaces deliberately differ, and not passing the handlers is the whole implementation.
+#### 1a — Extract the transform (pure refactor)
 
-**Ships:** it looks like the user calendar, because it *is* the user calendar's grid.
+Lift the `filteredEvents` `useMemo` body verbatim into `shared/businessCalendarEvents.ts` as a pure function:
 
-**Verification:** fingerprint-diff the rendered event set before and after — same events, same days, same colours — the way PR #43 proved zero behaviour change on `ProjectScope`. Screenshot both surfaces side by side.
+```
+buildBusinessCalendarEvents({
+  tasks, scheduleItems, schedules, projects, users,
+  completedStatusKey, filters, viewAsUserId, showParentItems, showChildItems,
+}): CalendarEvent[]
+```
+
+**The extraction is genuinely mechanical, and that's been checked, not assumed.** The memo's dependency array lists ten values, and scanning the body for free identifiers turns up nothing outside them — no closure over `currentDate`, `calendarMode`, `displayOptions`, or `user`. So there is no latent staleness bug for the extraction to accidentally "fix", which is the usual way a supposedly pure refactor changes behaviour.
+
+Two freebies while in there: `deterministicProjectColor` is duplicated verbatim in `BusinessCalendar` and `UserCalendar` and moves into the shared module; and `companySettings` is fetched at [`:160`](client/src/pages/BusinessCalendar.tsx:160) and **never read** — a wasted round trip on every page load, deleted.
+
+#### 1b — Swap the engine
+
+`MoradaCalendar` → `EnhancedCalendar`, with the transform untouched. Smaller than it sounds — the call site is eight props, and two whole adapter layers disappear:
+
+| Today | After |
+|---|---|
+| `filteredEvents` (`CalendarEvent[]`) → `toMoradaEvent()` → `moradaEvents` | `filteredEvents` passed straight through — `EnhancedCalendar` already takes `CalendarEvent[]` |
+| `displayOptions` hand-rolled into `meta.lines` | `displayOptions` is a native prop |
+| `toMoradaView(calendarMode)` | `calendarMode` used directly |
+
+The `displayOptions` change also fixes the gap Phase 0 hit: `MoradaCalendar`'s `block` chip variant never renders the extra lines, so "Show assignee" is invisible on week-view timed events today. `EnhancedCalendar` renders display options itself.
+
+Then: adopt the user calendar's header (mini-month, keyboard shortcuts `t` / `←` / `→` / `d` `w` `m`), and **leave `onEventReschedule` / `onEventResize` unwired** — read-only per D6. Not passing the handlers is the whole implementation.
+
+---
 
 ### Phase 2 — The band layer
 
@@ -300,12 +322,93 @@ Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `Per
 
 ---
 
+## Part 3a — The Phase 1 fingerprint
+
+### What is actually invariant
+
+Not the pixels. The swap *changes* what the grid looks like — that's the point of it. Screenshot-diffing would fail on every frame and prove nothing.
+
+What must not move is **the event set**: the array the grid is handed. If `buildBusinessCalendarEvents` returns byte-identical output across every filter state before and after, then any visual difference is the renderer doing its job, and no task or schedule item silently appeared, vanished, changed colour, or landed on the wrong day.
+
+1a makes that testable by turning a `useMemo` inside a 1,400-line component into a function you can call from a script.
+
+### The harness
+
+`scripts/calendar-fingerprint.ts`, run with `tsx` (this repo has no test runner; `scripts/` is the convention). For each state in the matrix it calls the transform and writes:
+
+- **`fingerprint.txt`** — one line per state: `state-key  count  hash-ordered  hash-unordered`
+- **`states/<state-key>.json`** — the full serialised event list, so a hash mismatch can be `diff`ed down to the offending event
+
+Run it on `HEAD~1`, run it on `HEAD`, `diff` the two. The diff is the PR's proof.
+
+**Two hashes, deliberately.** Order-insensitive (sorted by `startDate, startTime, id`) answers "is it the same set". Order-sensitive answers "is it in the same order" — which matters, because output order feeds render order and week-view lane layout. If the unordered hash matches and the ordered one doesn't, you know precisely what changed and can decide whether it's benign, instead of staring at one opaque mismatch.
+
+**Serialise the render-relevant subset, not the whole object.** `id`, `title`, `startDate`, `endDate`, `startTime`, `endTime`, `color`, `projectId`, `projectColor`, `projectName`, `assigneeName`, `assigneeId`, `assigneeIds`, `type`, `status`, `isCompleted`, `templateId`. Hashing `resource` — the entire raw task row — would make the fingerprint churn on unrelated schema additions; assert `resource.id === id` separately instead.
+
+**Pin the timezone.** `TZ=Australia/Sydney` for both runs, because `dueDate` is a timestamp at local midnight and date bucketing is local. Then run one extra pass under `TZ=UTC` and `TZ=America/New_York`: if those two disagree with each other in ways the Sydney run doesn't, there is timezone-dependent logic worth knowing about before it reaches a builder in another state.
+
+### The corpus — this is the part that decides whether any of it means anything
+
+**The dev database cannot prove this.** Phase 0 measured it: four dated tasks, all legacy-assignee, and **zero** schedule items. A fingerprint over that would pass whatever we broke.
+
+So the corpus is generated, and generated to hit the axes that actually branch:
+
+**Tasks** — legacy `assigneeId` only / `assigneeIds` only / both / multi-assignee / unassigned; with and without `dueDate`; timed and untimed; project-scoped, business-scoped, and `projectId: null`; a project with `color` set and one without (the `deterministicProjectColor` path); completed and not; every status key.
+
+**Schedule items** — parent, child, and orphan; every `type` (`task` / `milestone` / `inspection` / `delivery` / `meeting`); contact-assigned, unassigned, and business-assigned in **all three storage forms** (`assignedCompanyId`, the `assignedToId: null` + cached-name convention, and the legacy `assignedToId: "company:<uuid>"`); single-day, multi-day, and missing `endDate`.
+
+**Boundaries** — events on the first and last day of the range, events straddling it, a DST changeover, and 31 December.
+
+### The state matrix
+
+`calendarMode` is **not** an axis. `dateRange` derives from `currentDate` alone ([`:152`](client/src/pages/BusinessCalendar.tsx:152)) and mode never reaches the transform, so month/week/agenda produce the same event set. That drops the matrix by two thirds.
+
+What remains: `filters.projects` (none / one / two / all), `filters.status`, `filters.assignees`, `filters.eventTypes` (none / tasks / schedule-items / both), `filters.dateFrom`+`dateTo` (four combinations), `viewAsUserId` (all / a user with events / a user with none), and `showParentItems` × `showChildItems` (four).
+
+Full cartesian is tens of thousands and mostly redundant. Instead: each axis swept against a fixed baseline, plus a hand-picked set of nasty combinations — project filter **and** assignee filter **and** children hidden together, where a filter-ordering bug would show and a single-axis sweep would not. Around 60–100 states. Sub-second in Node.
+
+### Proving the harness can fail
+
+A fingerprint that always passes is worse than none, because it manufactures confidence. So before trusting it: mutate the transform deliberately — invert one filter comparison, drop the legacy `assigneeId` from `taskAssigneeIds`, off-by-one the parent/child test — and confirm each mutation produces a diff, naming the states it moved. Record that output in the PR. If a mutation passes clean, the matrix has a hole and the corpus needs another axis.
+
+### What the fingerprint does not cover
+
+It proves the data is unchanged. It says nothing about the half of the swap that is most likely to break, so that half gets a written checklist instead:
+
+- **Click-through** — task chip opens `TaskEditModal`, schedule chip opens the detail dialog, both with the right record.
+- **Saved views** — load, edit, save, delete; the filters JSON round-trips; the default view still auto-selects.
+- **Mode persistence** — a saved `calendarMode` still restores.
+- **Empty and loading states** — the skeleton, and a filter combination matching nothing.
+- **Mobile** — see below.
+- **Screenshots** — month and week, business calendar beside user calendar, as the evidence that it now looks like one product.
+
+---
+
+### Three things the fingerprint cannot settle, and one is a real decision
+
+**1. The two engines do not have the same views.**
+
+| | month | week | day | agenda | roster |
+|---|---|---|---|---|---|
+| `MoradaCalendar` (today) | ✅ | ✅ | — | ✅ | — |
+| `EnhancedCalendar` (after) | ✅ | ✅ | ✅ | **—** | ✅ |
+
+So the swap **cannot** be behaviour-preserving on modes: it gains day and loses agenda. And `EnhancedCalendar` has no mobile handling at all — no `useIsMobile`, no fallback — whereas `MoradaCalendar` force-switches to agenda below `md`. **On a phone, the business calendar would go from a readable list to a 24-hour time grid.** That's a regression, and it's the kind that only shows up on someone's phone on site.
+
+Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode before swapping.** It's 118 lines, it already consumes this exact event shape, it keeps the mobile fallback, it lets Phase 7 actually delete `components/calendar/`, and the user calendar gains an agenda view on mobile for free — which it does not have today.
+
+**2. Saved views holding `calendarMode: "day"`.** `toMoradaView` maps anything that isn't month or week to agenda, so a legacy `"day"` row currently renders as agenda. After the swap it renders as an actual day view. That is the correct outcome and a silent change of what an existing saved view does — worth a one-line note rather than a migration.
+
+**3. `roster` mode.** `EnhancedCalendar` supports it (week view with infinite horizontal scroll). Not exposed in Phase 1 — it overlaps with the by-person axis in Phase 5 and should be decided there, not inherited by accident.
+
+---
+
 ## Part 4 — Sequencing summary
 
 | Phase | Theme | Migration | Depends on |
 |---|---|---|---|
-| 0 | Correctness — two assignee bugs | — | — |
-| 1 | Engine swap to `EnhancedCalendar` | — | 0 (smaller diff) |
+| 0 | Correctness — two assignee bugs ✅ | — | — |
+| 1 | Engine swap to `EnhancedCalendar` (+ port `AgendaView`) | — | 0 (smaller diff) |
 | 2 | Tiering + project band row | — | 1 |
 | 3 | Sources / layers endpoint | — | 1 |
 | 4 | **Leave** | `leave_entries` | 1 |
