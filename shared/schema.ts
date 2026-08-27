@@ -1949,7 +1949,11 @@ export const contacts = pgTable("contacts", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Every read is scoped by company_id and getContacts() sorts by name; the FK
+  // alone does not index the referencing side. See migration 0057.
+  companyNameIdx: index("contacts_company_id_name_idx").on(table.companyId, table.name),
+}));
 
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
