@@ -26,6 +26,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import { CalendarDateJumper } from "@/components/CalendarDateJumper";
+import { useCalendarShortcuts } from "@/hooks/useCalendarShortcuts";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
@@ -139,7 +141,6 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
-  const [miniMonthOpen, setMiniMonthOpen] = useState(false);
   const weekStartDay = useWeekStartDay();
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
@@ -853,42 +854,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     setCurrentDate(newDate);
   };
 
-  // Keyboard navigation, the way a calendar you live in should work:
-  // t = today, ←/→ = previous/next, d/w/m = day/week/month.
-  //
-  // Deliberately conservative about when it fires — never while typing in a field or
-  // a rich-text editor, never with a modifier held (so browser and OS shortcuts are
-  // untouched), and never while a dialog or menu is open, since the detail and edit
-  // modals sit above this and their own keys must win.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      // instanceof, not a truthiness check: an event dispatched on window has
-      // target === window, which has no tagName or closest() and would throw.
-      const target = e.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
-        if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [contenteditable="true"]')) return;
-      }
-      if (document.querySelector('[role="dialog"]')) return;
-
-      switch (e.key) {
-        case "t": case "T": handleNavigateToday(); break;
-        case "ArrowLeft": handleNavigatePrevious(); break;
-        case "ArrowRight": handleNavigateNext(); break;
-        case "d": case "D": setCalendarMode("day"); break;
-        case "w": case "W": setCalendarMode("week"); break;
-        case "m": case "M": setCalendarMode("month"); break;
-        default: return;
-      }
-      e.preventDefault();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // Re-subscribed each render so the handlers close over the current date/mode.
+  // day/week/month only: this surface's switcher offers no agenda mode, so `a`
+  // must not strand it in a view its toolbar can't show as selected.
+  useCalendarShortcuts({
+    onToday: handleNavigateToday,
+    onPrevious: handleNavigatePrevious,
+    onNext: handleNavigateNext,
+    onViewChange: setCalendarMode,
+    views: ["day", "week", "month"],
   });
 
   // Get status options from field categories instead of hardcoded values
@@ -1377,32 +1350,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             <ChevronRight className="w-3 h-3" />
           </button>
 
-          {/* Current date — click for a mini-month to jump anywhere without
-              stepping a week at a time */}
-          <Popover open={miniMonthOpen} onOpenChange={setMiniMonthOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className="text-xs text-muted-foreground px-2 h-6 rounded-md hover-elevate active-elevate-2"
-                data-testid="text-current-date"
-                title="Jump to a date"
-              >
-                {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-auto p-0">
-              <CalendarComponent
-                mode="single"
-                selected={currentDate}
-                defaultMonth={currentDate}
-                onSelect={(date) => {
-                  if (!date) return;
-                  setCurrentDate(date);
-                  setMiniMonthOpen(false);
-                }}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+          <CalendarDateJumper currentDate={currentDate} onDateChange={setCurrentDate} />
 
           {/* View Mode Selector */}
           <div className="flex items-center gap-0.5">

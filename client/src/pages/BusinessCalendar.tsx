@@ -59,6 +59,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { CalendarDateJumper } from "@/components/CalendarDateJumper";
+import { useCalendarShortcuts } from "@/hooks/useCalendarShortcuts";
 
 import TaskEditModal from "@/components/TaskEditModal";
 
@@ -379,6 +381,17 @@ export default function BusinessCalendar() {
 
   const handleNavigatePrevious = () => stepDate(-1);
   const handleNavigateNext = () => stepDate(1);
+
+  // `a` for agenda as well, since this surface offers it. Suspended on mobile,
+  // where the view is forced to agenda and a keystroke could not change it.
+  useCalendarShortcuts({
+    onToday: handleNavigateToday,
+    onPrevious: handleNavigatePrevious,
+    onNext: handleNavigateNext,
+    onViewChange: setCalendarMode,
+    views: ["day", "week", "month", "agenda"],
+    enabled: !isMobile,
+  });
 
   // Event type options for filtering
   const eventTypeOptions = [
@@ -943,10 +956,7 @@ export default function BusinessCalendar() {
             <ChevronRight className="w-3 h-3" />
           </button>
 
-          {/* Current Date Display */}
-          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
-            {format(currentDate, 'MMM d, yyyy')}
-          </span>
+          <CalendarDateJumper currentDate={currentDate} onDateChange={setCurrentDate} />
 
           {/* View Mode Selector — hidden on mobile, where the calendar forces
               agenda and these buttons would do nothing. The chosen view is still

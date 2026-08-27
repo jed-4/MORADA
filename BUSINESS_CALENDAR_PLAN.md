@@ -247,7 +247,7 @@ The `displayOptions` change also fixes the gap Phase 0 hit: `MoradaCalendar`'s `
 
 Read-only per D6 — but *not* by omitting the handlers, which was the original plan and was wrong. Without them a chip still lifts, follows the cursor, and silently does nothing on drop, and every task carries a completion checkbox that no-ops. `EnhancedCalendar` gained an explicit `readOnly` prop instead.
 
-**Still outstanding from this phase:** the user calendar's mini-month and keyboard shortcuts (`t` / `←` / `→` / `d` `w` `m`). They live in `UserCalendar`, not the engine, so adopting them means extracting a shared hook — deliberately left as a follow-up rather than bloating the swap's diff.
+✅ **Mini-month and keyboard shortcuts adopted** (28 Aug). They lived inline in `UserCalendar`, not the engine, so they were extracted rather than copied: [`useCalendarShortcuts`](client/src/hooks/useCalendarShortcuts.ts) and [`CalendarDateJumper`](client/src/components/CalendarDateJumper.tsx). The hook takes the list of views a surface actually offers, so `a` switches the business calendar to agenda and is inert on the user calendar, whose switcher has no agenda button to show as selected.
 
 **Two bugs the swap surfaced, both fixed here:**
 - `displayOptions.showTime` was shadowed by a local `const showTime = event.startTime || event.endTime`, so the "Time" toggle did nothing. The old engine honoured it, so the swap would have shipped this as a regression.
