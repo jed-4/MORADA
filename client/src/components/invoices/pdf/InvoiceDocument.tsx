@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
 import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface Company {
   name: string;
@@ -115,7 +116,7 @@ export function InvoiceDocument({
   const thTextColor = isS2 ? "#ffffff" : "#374151";
   const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
   const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
-  const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
+  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
   const docBarBorderLeft = isS2 ? 4 : 0;
 
   return (
@@ -477,7 +478,7 @@ export function InvoiceDocument({
           <View
             style={{
               borderBottomWidth: 1,
-              borderBottomColor: isS2 ? brandColor + "33" : "#e5e7eb",
+              borderBottomColor: isS2 ? tintOnWhite(brandColor, "33") : "#e5e7eb",
               marginTop: 16,
               marginBottom: 12,
             }}

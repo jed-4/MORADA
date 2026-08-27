@@ -3,6 +3,7 @@ import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@sh
 import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -239,7 +240,7 @@ export function EstimateSection({
       padding: 6,
       fontFamily: "Helvetica-Bold",
       fontSize: 9,
-      borderBottom: `1px solid ${isS2 ? resolvedColor + "40" : "#cccccc"}`,
+      borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : "#cccccc"}`,
     },
     tableRow: {
       flexDirection: "row",

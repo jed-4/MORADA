@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
 import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface Company {
   name: string;
@@ -90,7 +91,7 @@ export function PurchaseOrderDocument({
   const thTextColor = isS2 ? "#ffffff" : "#374151";
   const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
   const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
-  const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
+  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
 
   return (
     <Document title={`Purchase Order ${purchaseOrder.poNumber}`}>
