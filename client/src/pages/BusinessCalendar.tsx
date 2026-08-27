@@ -20,6 +20,11 @@ import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOp
 import { buildBusinessCalendarEvents } from "@shared/businessCalendarEvents";
 import type { ProjectBand } from "@shared/scheduleVisibility";
 import {
+  BUSINESS_CALENDAR_LAYERS,
+  getLayer,
+  type BusinessCalendarLayerEvent,
+} from "@shared/businessCalendarLayers";
+import {
   EnhancedCalendar,
   type CalendarEvent,
   type CalendarDisplayOptions,
@@ -290,6 +295,67 @@ export default function BusinessCalendar() {
         showChildItems,
       }),
     [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems],
+  );
+
+  // Optional layers — off unless switched on, so the default calendar is unchanged
+  // and each extra source is a deliberate choice. One request for all of them; see
+  // the endpoint's note on why this isn't one query per layer.
+  const layerKeys = [...(filters.layers ?? [])].sort();
+  const layerKey = layerKeys.join(",");
+  const { data: layerData } = useQuery<{ events: BusinessCalendarLayerEvent[]; denied: string[] }>({
+    queryKey: ["/api/business-calendar/events", { startDate: dateRange.startDate, endDate: dateRange.endDate, layerKey }],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/business-calendar/events?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}&layers=${encodeURIComponent(layerKey)}`,
+      );
+      if (!response.ok) throw new Error('Failed to fetch calendar layers');
+      const result = await response.json();
+      return {
+        events: Array.isArray(result?.events) ? result.events : [],
+        denied: Array.isArray(result?.denied) ? result.denied : [],
+      };
+    },
+    enabled: layerKeys.length > 0,
+  });
+  // Layers the server withheld for lack of permission. Shown as a disabled toggle
+  // rather than an empty layer, which would read as "nothing due".
+  const deniedLayers = new Set(layerData?.denied ?? []);
+
+  const layerEvents: CalendarEvent[] = useMemo(() => {
+    const rows = layerData?.events ?? [];
+    return rows
+      // The project filter applies to layers too. Status and assignee do not: a
+      // layer row has no Morada assignee, and each source's statuses are their own
+      // vocabulary rather than the task ones the Status filter lists.
+      .filter(row => !filters.projects?.length || (row.projectId && filters.projects.includes(row.projectId)))
+      .map(row => {
+        const layer = getLayer(row.layer);
+        const date = new Date(row.date);
+        return {
+          id: row.id,
+          title: row.title,
+          startDate: date,
+          endDate: date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          color: layer?.color ?? null,
+          projectId: row.projectId,
+          projectColor: layer?.color ?? null,
+          projectName: row.projectName,
+          assigneeIds: [],
+          type: "layer" as const,
+          status: row.status ?? undefined,
+          // Lookback layers record what already happened, so they are never
+          // outstanding — marking them complete stops them reading as overdue.
+          isCompleted: layer?.lookback ?? false,
+          resource: row,
+        };
+      });
+  }, [layerData, filters.projects]);
+
+  const eventsWithLayers = useMemo(
+    () => [...filteredEvents, ...layerEvents],
+    [filteredEvents, layerEvents],
   );
 
   // Bands respect the project filter as well — filtering to one job should not
@@ -788,6 +854,78 @@ export default function BusinessCalendar() {
             </Popover>
           )}
 
+          {/* Layers — the optional sources. Off by default; each one is another
+              query, and nine at once is a wall rather than a calendar. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-filter-layers"
+              >
+                <span>Layers</span>
+                {filters.layers && filters.layers.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
+                    {filters.layers.length}
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Layers</div>
+                  {filters.layers && filters.layers.length > 0 && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setFilters({ ...filters, layers: undefined })}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {BUSINESS_CALENDAR_LAYERS.map((layer) => {
+                    const denied = deniedLayers.has(layer.key);
+                    return (
+                      <label
+                        key={layer.key}
+                        className={`flex items-start gap-2 ${denied ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                        title={denied ? "You don't have permission to see this layer" : layer.description}
+                      >
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={filters.layers?.includes(layer.key) || false}
+                          disabled={denied}
+                          onCheckedChange={() => {
+                            const current = filters.layers || [];
+                            const updated = current.includes(layer.key)
+                              ? current.filter(l => l !== layer.key)
+                              : [...current, layer.key];
+                            setFilters({ ...filters, layers: updated.length > 0 ? updated : undefined });
+                          }}
+                          data-testid={`layer-toggle-${layer.key}`}
+                        />
+                        <span className="min-w-0">
+                          <span className="text-xs flex items-center gap-1.5">
+                            <span
+                              className="h-2 w-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: layer.color }}
+                            />
+                            {layer.label}
+                            {denied && <span className="text-data text-muted-foreground">(no access)</span>}
+                          </span>
+                          <span className="text-data text-muted-foreground block leading-tight">
+                            {layer.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           {/* Event Types Filter */}
           <Popover>
             <PopoverTrigger asChild>
@@ -1075,7 +1213,7 @@ export default function BusinessCalendar() {
           lines on month and all-day chips.
         */}
         <EnhancedCalendar
-          events={filteredEvents}
+          events={eventsWithLayers}
           onEventClick={handleEventClick}
           currentDate={currentDate}
           onCurrentDateChange={setCurrentDate}

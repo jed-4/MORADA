@@ -265,13 +265,15 @@ No migration.
 
 **Ships:** the flood goes away, and the "which jobs are running this week" strip appears. Biggest single perceived improvement — same as Phase 1 was on the user calendar.
 
-### Phase 3 — Sources
+### Phase 3 — Sources ✅ *(done 28 Aug)*
 
 No migration. Every column listed in D4 already exists.
 
 1. New endpoint `GET /api/business-calendar/events?startDate=&endDate=&layers=`, project-access scoped, the invoice layer permission-gated. One round trip per navigation, not one per layer.
 2. The optional layers behind toggles in the filter bar, persisted per saved view.
-3. Port the timesheet / site-diary lookback rendering out of `PersonalCalendar` before Phase 7 deletes that page.
+3. Port the timesheet / site-diary lookback rendering out of `PersonalCalendar` before Phase 7 deletes that page. ✅ — both are layers now, and company-wide rather than one user's.
+
+⚠️ **`checkUserPermission` returns `true` for every key when the caller holds a built-in admin / owner / general-manager role.** So the invoices gate protects the layer from ordinary team members, not from an owner. That is the app's existing model, not something this endpoint chose, but it means "gated" here does not mean "hidden from everyone without the KPI permission".
 
 **Ships:** "all things within the business" — as layers you switch on, not a wall of chips.
 
@@ -420,7 +422,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 0 | Correctness — two assignee bugs ✅ | — | — |
 | 1 | Engine swap to `EnhancedCalendar` (+ port `AgendaView`) | — | 0 (smaller diff) |
 | 2 | Tiering + project band row ✅ | — | 1 |
-| 3 | Sources / layers endpoint | — | 1 |
+| 3 | Sources / layers endpoint ✅ | — | 1 |
 | 4 | **Leave** | `leave_entries` | 1 |
 | 5 | People axis / by-person day view | — | 0, reads 4 |
 | 6 | Shared + company-default views | 1 column | — |

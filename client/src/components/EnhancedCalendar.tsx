@@ -199,6 +199,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
     timesheet:         TYPE_COLORS_HEX.milestone,   // amber (widget-local)
     "google-calendar": TYPE_COLORS_HEX.delivery,    // teal (widget-local)
     site_diary:        TYPE_COLORS_HEX.inspection,  // sage (widget-local)
+    // Business-calendar layers always carry their own colour from the layer
+    // registry; this only covers a row that somehow arrives without one.
+    layer:             TYPE_COLORS_HEX.task,
   };
   const typeFallback = TYPE_FALLBACK_HEX[event.type as string] ?? TYPE_COLORS_HEX.task;
   const baseColor = event.color || event.projectColor || typeFallback;

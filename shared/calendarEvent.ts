@@ -41,7 +41,9 @@ export interface CalendarEvent {
     | "timesheet"
     | "site_diary"
     | "reminder"
-    | "projected";
+    | "projected"
+    /** An optional business-calendar layer row — see shared/businessCalendarLayers.ts. */
+    | "layer";
   status?: string;
   isCompleted?: boolean;
   description?: string | null;
