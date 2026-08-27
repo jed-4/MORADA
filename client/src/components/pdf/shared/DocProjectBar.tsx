@@ -1,4 +1,5 @@
 import { View, Text } from "@react-pdf/renderer";
+import { tintOnWhite } from "./pdfColor";
 
 interface DocProjectBarProps {
   clientName?: string | null;
@@ -21,7 +22,7 @@ export function DocProjectBar({
 }: DocProjectBarProps) {
   const isS2 = docStyle === "style2";
   const bgColor = isS2 ? brandColor + "14" : "#F8F8F8";
-  const borderColor = isS2 ? brandColor + "26" : "#e5e7eb";
+  const borderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
   const labelColor = isS2 ? brandColor : "#9ca3af";
 
   const hasClient = clientName || clientEmail || clientPhone;

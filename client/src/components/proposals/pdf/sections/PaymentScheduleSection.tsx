@@ -3,6 +3,7 @@ import type { Proposal, ProposalSection, ProposalPaymentMilestone } from '@share
 import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface PaymentScheduleSectionProps {
   proposal: Proposal;
@@ -37,7 +38,7 @@ export function PaymentScheduleSection({
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.scheduleText as string) || '';
 
-  const headerBorderColor = isS2 ? resolvedColor + '60' : resolvedColor;
+  const headerBorderColor = isS2 ? tintOnWhite(resolvedColor, '60') : resolvedColor;
 
   const styles = StyleSheet.create({
     headerRow: {

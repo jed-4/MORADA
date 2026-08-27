@@ -1,4 +1,5 @@
 import { View, Text, Image } from "@react-pdf/renderer";
+import { tintOnWhite } from "./pdfColor";
 
 interface DocProposalInnerHeaderProps {
   companyName?: string;
@@ -33,7 +34,7 @@ export function DocProposalInnerHeader({
         borderTopWidth: 3,
         borderTopColor: brandColor,
         borderBottomWidth: 1,
-        borderBottomColor: isS2 ? brandColor + "30" : "#e5e7eb",
+        borderBottomColor: isS2 ? tintOnWhite(brandColor, "30") : "#e5e7eb",
         ...(isS2 ? { borderLeftWidth: 3, borderLeftColor: brandColor } : {}),
       }}
     >
