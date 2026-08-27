@@ -33,6 +33,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || "test";
 
 import assert from "node:assert";
 import { computeVariationTotals } from "@shared/variationTotals";
+import { buildVariationDocumentModel } from "../../client/src/components/variations/variationDocumentModel";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -180,6 +181,52 @@ check("subtotal + gst == total at every percentage, mixed inputs", () => {
     assert.ok(Number.isInteger(t.subtotalCents), `subtotal must be whole cents at ${pct}%`);
     assert.ok(Number.isInteger(t.gstCents), `gst must be whole cents at ${pct}%`);
   }
+});
+
+// The client document promises that the inc-GST rows a client reads add up to
+// the Total they are asked to approve. The markup row is inc-GST and derived as
+// the remainder for exactly this reason — grossing the banked ex-GST figure up
+// by 1.1 would break the page whenever the base is not wholly taxable.
+check("the document's visible rows sum to the Total, mixed tax treatment", () => {
+  const items = [
+    { id: "a", totalPrice: 100000, taxable: true, itemType: "cost_line", type: "Material", showInPdf: true },
+    { id: "b", totalPrice: 100000, taxable: false, itemType: "cost_line", type: "Labour", showInPdf: true },
+  ];
+  const totals = computeVariationTotals({ items, globalMarkupPercent: 10 });
+  const model = buildVariationDocumentModel({
+    variation: {
+      subtotal: totals.subtotalCents,
+      gstAmount: totals.gstCents,
+      totalAmount: totals.totalCents,
+      globalMarkupAmount: totals.globalMarkupCents,
+      globalMarkupPercent: 10,
+    },
+    items,
+  });
+  const rows =
+    model.costGroups.reduce((sum, g) => sum + g.totalIncCents, 0) +
+    model.globalMarkupIncCents +
+    model.notItemisedIncCents;
+  assert.strictEqual(rows, model.totalCents);
+  // Grossing up by 1.1 would give 22000 here; only half the base is taxable.
+  assert.notStrictEqual(model.globalMarkupIncCents, Math.round(totals.globalMarkupCents * 1.1));
+  assert.strictEqual(model.globalMarkupIncCents, 21000);
+});
+
+check("no markup means no phantom margin row", () => {
+  const items = [{ id: "a", totalPrice: 100000, taxable: true, itemType: "cost_line", type: "Material", showInPdf: true }];
+  const totals = computeVariationTotals({ items });
+  const model = buildVariationDocumentModel({
+    variation: {
+      subtotal: totals.subtotalCents,
+      gstAmount: totals.gstCents,
+      totalAmount: totals.totalCents,
+      globalMarkupAmount: 0,
+      globalMarkupPercent: 0,
+    },
+    items,
+  });
+  assert.strictEqual(model.globalMarkupIncCents, 0);
 });
 
 console.log(`\nvariation-global-markup: ${passed} checks passed\n`);

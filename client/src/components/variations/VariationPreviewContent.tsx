@@ -454,6 +454,24 @@ export function VariationPreviewContent({
                 </div>
               ))}
 
+              {/* Document-level markup, inc GST, kept with the rows rather than
+                  in the ex-GST summary — every amount in this table is inc-GST
+                  and the table has to add up to the Total. */}
+              {docModel.globalMarkupIncCents !== 0 && (
+                <div className="grid px-3 py-2 border-t border-border text-sm bg-white" style={{ gridTemplateColumns: "1fr 80px 100px 100px" }}>
+                  <span className="text-foreground">
+                    {docModel.globalMarkupPercent
+                      ? `Margin (${docModel.globalMarkupPercent}%)`
+                      : "Margin"}
+                  </span>
+                  <span />
+                  <span />
+                  <span className="text-right text-foreground font-medium text-xs tabular-nums">
+                    {formatCents(docModel.globalMarkupIncCents)}
+                  </span>
+                </div>
+              )}
+
               {/* Value the builder chose not to itemise — shown so the rows
                   above still add up to the Total below. */}
               {docModel.notItemisedIncCents !== 0 && (
@@ -585,18 +603,6 @@ export function VariationPreviewContent({
         <div className="flex justify-end">
           <div className="w-72 border border-border rounded-lg overflow-hidden">
             <div className="px-4 py-3 space-y-2">
-              {docModel.globalMarkupExCents !== 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">
-                    {docModel.globalMarkupPercent
-                      ? `Margin (${docModel.globalMarkupPercent}%)`
-                      : "Margin"}
-                  </span>
-                  <span className="font-medium tabular-nums">
-                    {formatCents(docModel.globalMarkupExCents)}
-                  </span>
-                </div>
-              )}
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Subtotal (ex. GST)</span>
                 <span className="font-medium tabular-nums">{formatCents(subtotalCents)}</span>
