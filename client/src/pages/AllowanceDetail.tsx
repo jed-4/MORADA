@@ -15,6 +15,7 @@ import { useMemo, useRef, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { SectionCard } from "@/components/detail/SectionCard";
 import {
   LineItemsTable,
   LineItemColumnsButton,
@@ -587,61 +588,6 @@ function ModalLoading({ label }: { label: string }) {
     <div className="flex flex-col items-center justify-center py-12 gap-3" data-testid="modal-loading">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-function SectionCard({
-  accentColor,
-  iconBg,
-  iconText,
-  title,
-  subtitle,
-  actionLabel,
-  onAction,
-  headerExtra,
-  children,
-}: {
-  accentColor: string;
-  iconBg: string;
-  iconText: string;
-  title: string;
-  subtitle: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  /** Rendered in the header row, above the divider (e.g. a column picker). */
-  headerExtra?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="relative bg-card rounded-xl border border-border overflow-hidden">
-      <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: accentColor }} />
-      <div className="px-5 py-4 pl-6">
-        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: iconBg, color: accentColor }}
-            >
-              {iconText}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">{title}</p>
-              <p className="text-xs text-muted-foreground">{subtitle}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {headerExtra}
-            {actionLabel && onAction && (
-              <Button size="sm" onClick={onAction} className="text-xs h-7 px-3">
-                {actionLabel}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="mt-3 border-t border-border" />
-        {children}
-      </div>
     </div>
   );
 }
@@ -1591,13 +1537,15 @@ export default function AllowanceDetail() {
           <>
             {/* Bills */}
             <SectionCard
-              accentColor="hsl(var(--amber))"
-              iconBg="hsl(var(--amber-light))"
-              iconText="$"
+              accent="amber"
+              icon="$"
               title="Bills"
               subtitle="Supplier invoices for this allowance"
-              actionLabel="+ Add Bills"
-              onAction={() => setIsPsBillModalOpen(true)}
+              actions={
+                <Button size="sm" onClick={() => setIsPsBillModalOpen(true)} className="text-xs h-7 px-3">
+                  + Add Bills
+                </Button>
+              }
             >
               {allocatedBills.length === 0 && pendingPsBillItems.length === 0 ? (
                 <EmptyState
@@ -1747,13 +1695,15 @@ export default function AllowanceDetail() {
 
             {/* Timesheets */}
             <SectionCard
-              accentColor="hsl(var(--teal))"
-              iconBg="hsl(var(--teal-light))"
-              iconText="T"
+              accent="teal"
+              icon="T"
               title="Timesheets"
               subtitle={`Labour entries · ${timesheetDisplayPref === "date" ? "grouped by date" : timesheetDisplayPref === "person-summary" ? "one line per person" : "grouped by person"}`}
-              actionLabel="+ Add Timesheets"
-              onAction={() => setIsTimesheetModalOpen(true)}
+              actions={
+                <Button size="sm" onClick={() => setIsTimesheetModalOpen(true)} className="text-xs h-7 px-3">
+                  + Add Timesheets
+                </Button>
+              }
             >
               {sectionTimesheetRows.length === 0 ? (
                 <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
@@ -1948,12 +1898,11 @@ export default function AllowanceDetail() {
 
             {/* Custom Lines */}
             <SectionCard
-              accentColor="hsl(var(--sage))"
-              iconBg="hsl(var(--sage-light))"
-              iconText="+"
+              accent="sage"
+              icon="+"
               title="Custom Lines"
               subtitle="Manual line items not covered above"
-              headerExtra={<LineItemColumnsButton columns={customLineColumns} />}
+              actions={<LineItemColumnsButton columns={customLineColumns} />}
             >
               <div className="pt-2">
                 <LineItemsTable
@@ -1981,9 +1930,8 @@ export default function AllowanceDetail() {
           <>
             {/* Linked selection */}
             <SectionCard
-              accentColor="hsl(var(--primary))"
-              iconBg="hsl(var(--primary) / 0.12)"
-              iconText="S"
+              accent="primary"
+              icon="S"
               title="Linked Selection"
               subtitle="Client selection driving this Prime Cost item"
             >
@@ -2086,12 +2034,11 @@ export default function AllowanceDetail() {
 
             {/* Cost entries */}
             <SectionCard
-              accentColor="hsl(var(--sage))"
-              iconBg="hsl(var(--sage-light))"
-              iconText="$"
+              accent="sage"
+              icon="$"
               title="Cost Entries"
               subtitle="Actual costs recorded against this Prime Cost item"
-              headerExtra={<LineItemColumnsButton columns={pcEntryColumns} />}
+              actions={<LineItemColumnsButton columns={pcEntryColumns} />}
             >
               <div className="pt-2">
                 <LineItemsTable
@@ -2146,13 +2093,15 @@ export default function AllowanceDetail() {
 
             {/* Bills */}
             <SectionCard
-              accentColor="hsl(var(--amber))"
-              iconBg="hsl(var(--amber-light))"
-              iconText="$"
+              accent="amber"
+              icon="$"
               title="Bills"
               subtitle="Supplier invoices allocated to this Prime Cost item"
-              actionLabel="+ Select from Bills"
-              onAction={() => setIsBillModalOpen(true)}
+              actions={
+                <Button size="sm" onClick={() => setIsBillModalOpen(true)} className="text-xs h-7 px-3">
+                  + Select from Bills
+                </Button>
+              }
             >
               {allocatedBills.length === 0 && pendingPcBillItems.length === 0 ? (
                 <EmptyState

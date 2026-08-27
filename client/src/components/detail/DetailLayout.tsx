@@ -21,9 +21,9 @@ export function DetailLayout({
 }) {
   return (
     <div className={cn("flex-1 overflow-hidden flex min-h-0", className)}>
-      <div className="flex-1 overflow-auto p-3 space-y-2 min-w-0">{children}</div>
+      <div className="flex-1 overflow-auto px-6 py-5 space-y-7 min-w-0">{children}</div>
       {sidebar && (
-        <div className={cn("border-l overflow-auto p-3 space-y-2 bg-muted/10 flex-shrink-0", sidebarWidth)}>
+        <div className={cn("border-l overflow-auto px-4 py-5 space-y-6 bg-muted/10 flex-shrink-0", sidebarWidth)}>
           {sidebar}
         </div>
       )}

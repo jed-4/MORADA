@@ -1,17 +1,19 @@
-import { useState, type ReactNode } from "react";
+import { Children, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * The card-with-a-coloured-dot-header used by the detail pages.
+ * The section card used by the detail pages: a 3px left accent stripe, an icon
+ * badge, and a title/subtitle pair over a divider.
  *
- * This pattern was hand-rolled 27 times across RFQDetail and
- * ClientInvoiceDetail and absent entirely from BillDetail, VariationDetail,
- * AllowanceDetail and PurchaseOrderDetail — so the six detail pages did not
- * look like the same product. Extracted here as the first shared piece; new
- * detail work should use it and the others migrate onto it over time.
+ * This visual is the one CLAUDE.md documents ("Section cards use a 3px left
+ * accent border in the section colour"). It lived as a private component inside
+ * AllowanceDetail while the RFQ pages used a denser dot-header version of this
+ * file, which is why the two pages did not look like the same product. Promoted
+ * here so there is one card; the collapse/count/actions API the RFQ pages rely
+ * on is preserved.
  *
  * `accent` names a Morada design token (see client/src/index.css), not a raw
  * colour, so section colours stay consistent across pages.
@@ -24,17 +26,39 @@ export type SectionAccent =
   | "coral"
   | "muted";
 
-const ACCENT_CLASS: Record<SectionAccent, string> = {
-  primary: "bg-primary/80",
-  amber: "bg-amber/70",
-  teal: "bg-teal/70",
-  sage: "bg-sage/70",
-  coral: "bg-coral/70",
-  muted: "bg-muted-foreground/40",
+interface AccentPaint {
+  /** The 3px stripe and the icon glyph. */
+  stripe: string;
+  /** The icon badge fill — the token's -light pair, which is defined for both themes. */
+  iconBg: string;
+}
+
+const ACCENT_PAINT: Record<SectionAccent, AccentPaint> = {
+  primary: { stripe: "hsl(var(--primary))", iconBg: "hsl(var(--primary-light))" },
+  amber: { stripe: "hsl(var(--amber))", iconBg: "hsl(var(--amber-light))" },
+  teal: { stripe: "hsl(var(--teal))", iconBg: "hsl(var(--teal-light))" },
+  sage: { stripe: "hsl(var(--sage))", iconBg: "hsl(var(--sage-light))" },
+  coral: { stripe: "hsl(var(--coral))", iconBg: "hsl(var(--coral-light))" },
+  muted: { stripe: "hsl(var(--muted-foreground) / 0.5)", iconBg: "hsl(var(--muted))" },
 };
 
 export interface SectionCardProps {
   title: string;
+  /**
+   * "card" is the bordered card with the 3px accent stripe and icon badge that
+   * CLAUDE.md prescribes, still used by the allowance detail page.
+   * "editorial" drops the card chrome entirely — a small uppercase title over a
+   * hairline rule, no stripe, no badge — so a page made almost entirely of
+   * sections reads as a document rather than a wall of tinted panels.
+   */
+  variant?: "card" | "editorial";
+  /** One line under the title explaining what the section is for. */
+  subtitle?: string;
+  /**
+   * Glyph for the badge beside the title — a short string ("$", "S") or a
+   * lucide icon. Omitted renders the title without a badge.
+   */
+  icon?: ReactNode;
   accent?: SectionAccent;
   /** Count pill beside the title. Hidden when 0 so empty sections stay quiet. */
   count?: number;
@@ -56,6 +80,9 @@ export interface SectionCardProps {
 
 export function SectionCard({
   title,
+  variant = "card",
+  subtitle,
+  icon,
   accent = "primary",
   count,
   actions,
@@ -78,57 +105,142 @@ export function SectionCard({
     onCollapsedChange?.(next);
   };
 
-  return (
-    <Card className={cn("overflow-hidden", className)} data-testid={testId}>
-      <div
-        className={cn(
-          "h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40",
-          collapsible && "cursor-pointer hover-elevate",
-        )}
-        onClick={collapsible ? toggle : undefined}
-        {...(collapsible
-          ? {
-              role: "button",
-              tabIndex: 0,
-              "aria-expanded": !isCollapsed,
-              onKeyDown: (e: React.KeyboardEvent) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  toggle();
-                }
-              },
-            }
-          : {})}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", ACCENT_CLASS[accent])} />
-          <span className="text-xs font-medium truncate">{title}</span>
-          {!!count && (
-            <Badge variant="secondary" className="text-xs h-4 px-1.5">
-              {count}
-            </Badge>
-          )}
-        </div>
+  const paint = ACCENT_PAINT[accent];
+  // Children.toArray drops null/undefined/false, so a body made entirely of
+  // unmet conditionals collapses to an empty list rather than a truthy node.
+  const hasBody = Children.toArray(children).length > 0;
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Stops action clicks from toggling the section. A previous version
-              of this passed onClick to a Radix <Select>, which is not a DOM
-              prop, so opening the dropdown also collapsed the card. */}
-          {actions && (
-            <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              {actions}
+  const headerInteractive = collapsible
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        "aria-expanded": !isCollapsed,
+        onClick: toggle,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle();
+          }
+        },
+      }
+    : {};
+
+  if (variant === "editorial") {
+    return (
+      <section className={cn("min-w-0", className)} data-testid={testId}>
+        <div
+          className={cn(
+            "flex items-end justify-between gap-2 pb-1.5 border-b border-border",
+            collapsible && "cursor-pointer",
+          )}
+          {...headerInteractive}
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
+                {title}
+              </h3>
+              {!!count && (
+                <Badge variant="secondary" className="text-xs h-4 px-1.5 flex-shrink-0">
+                  {count}
+                </Badge>
+              )}
             </div>
-          )}
-          {collapsible &&
-            (isCollapsed ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-            ))}
+            {subtitle && (
+              <p className="text-xs text-muted-foreground/70 truncate mt-0.5">{subtitle}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {actions && (
+              <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                {actions}
+              </div>
+            )}
+            {collapsible &&
+              (isCollapsed ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+              ))}
+          </div>
         </div>
-      </div>
+        {!isCollapsed && hasBody && <div className={bodyClassName}>{children}</div>}
+      </section>
+    );
+  }
 
-      {!isCollapsed && <div className={bodyClassName}>{children}</div>}
+  return (
+    <Card className={cn("relative rounded-xl overflow-hidden", className)} data-testid={testId}>
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ background: paint.stripe }}
+        aria-hidden
+      />
+      <div className="px-5 py-4 pl-6">
+        <div
+          className={cn(
+            // Deliberately not flex-wrap: in the 320px detail rail a long
+            // title/subtitle would wrap the actions onto their own line, which
+            // stranded the Reminders switch under its own card. The title block
+            // truncates instead.
+            "flex items-center justify-between gap-2",
+            collapsible && "cursor-pointer",
+          )}
+          {...headerInteractive}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {icon != null && (
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                style={{ background: paint.iconBg, color: paint.stripe }}
+                aria-hidden
+              >
+                {icon}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{title}</p>
+                {!!count && (
+                  <Badge variant="secondary" className="text-xs h-4 px-1.5 flex-shrink-0">
+                    {count}
+                  </Badge>
+                )}
+              </div>
+              {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Stops action clicks from toggling the section. A previous version
+                of this passed onClick to a Radix <Select>, which is not a DOM
+                prop, so opening the dropdown also collapsed the card. */}
+            {actions && (
+              <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                {actions}
+              </div>
+            )}
+            {collapsible &&
+              (isCollapsed ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              ))}
+          </div>
+        </div>
+
+        {/* A trailing rule under nothing reads as a missing body rather than a
+            closed section, so the divider follows the content — not just the
+            collapse state. Sections whose body is entirely conditional (a card
+            that is only a header plus a switch until the switch is on) render
+            as header-only rather than header-plus-empty-rule. */}
+        {!isCollapsed && hasBody && (
+          <>
+            <div className="mt-3 border-t border-border" />
+            <div className={bodyClassName}>{children}</div>
+          </>
+        )}
+      </div>
     </Card>
   );
 }
