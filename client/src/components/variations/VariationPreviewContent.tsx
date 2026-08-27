@@ -9,6 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { Variation, VariationItem } from "@shared/schema";
 import {
+  DEFAULT_VARIATION_DOCUMENT_COLUMNS,
+  type VariationDocumentColumns,
+} from "@shared/variationDocumentColumns";
+import {
   buildVariationDocumentModel,
   variationStatusPresentation,
   type VariationDocAttachment,
@@ -70,6 +74,10 @@ export interface VariationPreviewProps {
   company?: Company | null;
   companySettings?: CompanySettings | null;
   project?: Project | null;
+  /** Which columns/sections the client sees. Defaults to everything. On the
+   *  portal this only hides what the payload still contains — the server has
+   *  already stripped the fields it was told to hide. */
+  columns?: VariationDocumentColumns;
   mode: "preview" | "portal";
   portalToken?: string;
   onSigned?: (data: { signerType: "client" | "builder"; name: string; action: "approve" | "reject" }) => void;
@@ -226,12 +234,23 @@ export function VariationPreviewContent({
   company,
   companySettings,
   project,
+  columns,
   mode,
   portalToken,
   onSigned,
 }: VariationPreviewProps) {
   const { toast } = useToast();
   const primaryColor = companySettings?.brandColor || "#6d28d9";
+  const cols = columns ?? DEFAULT_VARIATION_DOCUMENT_COLUMNS;
+  // Description always takes the slack; the money column is always last.
+  const gridCols = [
+    "1fr",
+    cols.quantity ? "80px" : null,
+    cols.unitPrice ? "100px" : null,
+    "100px",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   // Shared with the PDF so both documents group, label and total identically.
   const docModel = buildVariationDocumentModel({
@@ -403,20 +422,18 @@ export function VariationPreviewContent({
               {/* Header */}
               <div
                 className="grid text-xs font-semibold text-white px-3 py-2"
-                style={{
-                  backgroundColor: primaryColor,
-                  gridTemplateColumns: "1fr 80px 100px 100px",
-                }}
+                style={{ backgroundColor: primaryColor, gridTemplateColumns: gridCols }}
               >
                 <span>Description</span>
-                <span className="text-right">Qty</span>
-                <span className="text-right">Unit Price</span>
+                {cols.quantity && <span className="text-right">Qty</span>}
+                {cols.unitPrice && <span className="text-right">Unit Price</span>}
                 <span className="text-right">Amt inc. GST</span>
               </div>
 
               {docModel.costGroups.map((group) => (
                 <div key={group.type}>
                   {/* Type header row */}
+                  {cols.grouping && (
                   <div className="px-3 py-1.5 bg-muted border-t border-border flex items-center justify-between">
                     <span className="text-xs font-semibold text-muted uppercase tracking-wide">
                       {group.label}
@@ -425,6 +442,7 @@ export function VariationPreviewContent({
                       {formatCents(group.totalIncCents)}
                     </span>
                   </div>
+                  )}
 
                   {group.lines.map((line, idx) => (
                     <div
@@ -432,7 +450,7 @@ export function VariationPreviewContent({
                       className="grid px-3 py-2 border-t border-border text-sm"
                       style={{
                         backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff",
-                        gridTemplateColumns: "1fr 80px 100px 100px",
+                        gridTemplateColumns: gridCols,
                       }}
                     >
                       <div className="pr-2 min-w-0">
@@ -440,12 +458,16 @@ export function VariationPreviewContent({
                         {line.description && <span className="block text-muted text-xs truncate">{line.description}</span>}
                         {!line.name && !line.description && <span className="text-muted">—</span>}
                       </div>
-                      <span className="text-right text-secondary text-xs tabular-nums">
-                        {line.quantity} {line.unitType || ""}
-                      </span>
-                      <span className="text-right text-secondary text-xs tabular-nums">
-                        {formatCents(line.unitPriceExCents)}
-                      </span>
+                      {cols.quantity && (
+                        <span className="text-right text-secondary text-xs tabular-nums">
+                          {line.quantity} {line.unitType || ""}
+                        </span>
+                      )}
+                      {cols.unitPrice && (
+                        <span className="text-right text-secondary text-xs tabular-nums">
+                          {formatCents(line.unitPriceExCents)}
+                        </span>
+                      )}
                       <span className="text-right text-foreground font-medium text-xs tabular-nums">
                         {formatCents(line.amountIncCents)}
                       </span>
@@ -458,14 +480,14 @@ export function VariationPreviewContent({
                   in the ex-GST summary — every amount in this table is inc-GST
                   and the table has to add up to the Total. */}
               {docModel.globalMarkupIncCents !== 0 && (
-                <div className="grid px-3 py-2 border-t border-border text-sm bg-white" style={{ gridTemplateColumns: "1fr 80px 100px 100px" }}>
+                <div className="grid px-3 py-2 border-t border-border text-sm bg-white" style={{ gridTemplateColumns: gridCols }}>
                   <span className="text-foreground">
                     {docModel.globalMarkupPercent
                       ? `Margin (${docModel.globalMarkupPercent}%)`
                       : "Margin"}
                   </span>
-                  <span />
-                  <span />
+                  {cols.quantity && <span />}
+                  {cols.unitPrice && <span />}
                   <span className="text-right text-foreground font-medium text-xs tabular-nums">
                     {formatCents(docModel.globalMarkupIncCents)}
                   </span>
@@ -511,7 +533,7 @@ export function VariationPreviewContent({
         )}
 
         {/* Bills */}
-        {docModel.bills.length > 0 && (
+        {cols.bills && docModel.bills.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Linked Bills</h2>
             <div className="border border-border rounded-lg overflow-hidden">

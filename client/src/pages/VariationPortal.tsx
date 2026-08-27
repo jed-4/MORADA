@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { PortalLayout } from "@/components/portal/PortalLayout";
 import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
+import { normaliseVariationDocumentColumns } from "@shared/variationDocumentColumns";
 
 export default function VariationPortal() {
   const { token } = useParams<{ token: string }>();
@@ -17,6 +18,7 @@ export default function VariationPortal() {
     labourTotalCents: number;
     project: any;
     company: any;
+    columns?: Record<string, boolean>;
   }>({
     queryKey: ["/api/portal/variation", token],
     queryFn: async () => {
@@ -68,6 +70,7 @@ export default function VariationPortal() {
           company={data.company}
           companySettings={companySettings}
           project={data.project}
+          columns={data.columns ? normaliseVariationDocumentColumns(data.columns) : undefined}
           mode="portal"
           portalToken={token}
           onSigned={handleSigned}

@@ -8,6 +8,10 @@ import {
   buildVariationDocumentModel,
   variationStatusPresentation,
 } from "../variationDocumentModel";
+import {
+  DEFAULT_VARIATION_DOCUMENT_COLUMNS,
+  type VariationDocumentColumns,
+} from "@shared/variationDocumentColumns";
 
 interface Company {
   name: string;
@@ -57,6 +61,8 @@ interface VariationDocumentProps {
   /** True once the client has agreed this variation, which turns the figure from
    *  a proposal into the actual contract sum. Drives the wording only. */
   revisedIsAgreed?: boolean;
+  /** Which columns/sections the client sees. Defaults to everything. */
+  columns?: VariationDocumentColumns;
 }
 
 function formatAUD(dollars: number): string {
@@ -81,6 +87,7 @@ export function VariationDocument({
   currentContractCents,
   revisedContractCents,
   revisedIsAgreed = false,
+  columns = DEFAULT_VARIATION_DOCUMENT_COLUMNS,
 }: VariationDocumentProps) {
   const isS2 = documentStyle === "style2";
   const thBg = isS2 ? brandColor : "#F8F8F8";
@@ -109,7 +116,9 @@ export function VariationDocument({
     : [];
 
   const showContractCard =
-    originalContractCents !== undefined && originalContractCents > 0;
+    columns.contractSummary &&
+    originalContractCents !== undefined &&
+    originalContractCents > 0;
   // Contract as it stands today. Falls back to the original for callers that
   // predate the three-figure card.
   const contractBeforeCents = currentContractCents ?? originalContractCents ?? 0;
@@ -362,12 +371,16 @@ export function VariationDocument({
                 <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
                   Description
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
-                  Qty
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
-                  Unit Price
-                </Text>
+                {columns.quantity && (
+                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
+                    Qty
+                  </Text>
+                )}
+                {columns.unitPrice && (
+                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
+                    Unit Price
+                  </Text>
+                )}
                 <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
                   Amt inc. GST
                 </Text>
@@ -375,6 +388,7 @@ export function VariationDocument({
 
               {docModel.costGroups.map((group) => (
                 <View key={group.type}>
+                  {columns.grouping && (
                   <View
                     style={{
                       flexDirection: "row",
@@ -393,6 +407,7 @@ export function VariationDocument({
                       {formatAUD(group.totalIncCents / 100)}
                     </Text>
                   </View>
+                  )}
                   {group.lines.map((line, idx) => (
                     <View
                       key={line.id}
@@ -418,12 +433,16 @@ export function VariationDocument({
                           <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
                         ) : null}
                       </View>
-                      <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
-                        {line.quantity} {line.unitType || ""}
-                      </Text>
-                      <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
-                        {formatAUD(line.unitPriceExCents / 100)}
-                      </Text>
+                      {columns.quantity && (
+                        <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
+                          {line.quantity} {line.unitType || ""}
+                        </Text>
+                      )}
+                      {columns.unitPrice && (
+                        <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
+                          {formatAUD(line.unitPriceExCents / 100)}
+                        </Text>
+                      )}
                       <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
                         {formatAUD(line.amountIncCents / 100)}
                       </Text>
@@ -518,7 +537,7 @@ export function VariationDocument({
           )}
 
           {/* Bills */}
-          {docModel.bills.length > 0 && (
+          {columns.bills && docModel.bills.length > 0 && (
             <View style={{ marginBottom: 12 }}>
               <Text
                 style={{

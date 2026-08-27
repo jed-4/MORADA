@@ -12,6 +12,13 @@ interface DocumentPreviewModalProps {
   document: React.ReactElement;
   filename: string;
   onSend?: () => void;
+  /** Optional panel down the left of the preview (e.g. column visibility).
+   *  Callers that don't pass one get exactly the previous layout. */
+  sidebar?: React.ReactNode;
+  /** Changes to this value re-render the PDF while the modal stays open.
+   *  Without it the preview is generated once on open and a sidebar toggle
+   *  appears to do nothing until the modal is closed and reopened. */
+  documentKey?: string;
 }
 
 export function DocumentPreviewModal({
@@ -20,6 +27,8 @@ export function DocumentPreviewModal({
   document: pdfElement,
   filename,
   onSend,
+  sidebar,
+  documentKey,
 }: DocumentPreviewModalProps) {
   ensurePdfWorker();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -27,28 +36,41 @@ export function DocumentPreviewModal({
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
+  // Rendering a PDF is expensive, so a re-render is debounced: toggling three
+  // checkboxes in quick succession should produce one render, not three.
+  // `cancelled` guards against a slow earlier render resolving after a later
+  // one and putting a stale document on screen.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     setCurrentPage(1);
     let url: string | null = null;
+    let cancelled = false;
 
-    pdf(pdfElement)
-      .toBlob()
-      .then((blob) => {
-        url = URL.createObjectURL(blob);
-        setBlobUrl(url);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+    const timer = setTimeout(() => {
+      pdf(pdfElement)
+        .toBlob()
+        .then((blob) => {
+          if (cancelled) return;
+          url = URL.createObjectURL(blob);
+          setBlobUrl(url);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, documentKey === undefined ? 0 : 250);
 
     return () => {
+      cancelled = true;
+      clearTimeout(timer);
       if (url) URL.revokeObjectURL(url);
       setBlobUrl(null);
     };
-  }, [open]);
+    // pdfElement is a fresh element every render, so it cannot be a dependency
+    // — callers signal "the document actually changed" via documentKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, documentKey]);
 
   const handleDownload = () => {
     if (!blobUrl) return;
@@ -62,7 +84,9 @@ export function DocumentPreviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent
+        className={`${sidebar ? "max-w-6xl" : "max-w-4xl"} w-full h-[90vh] flex flex-col p-0 gap-0 overflow-hidden`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b shrink-0">
           <p className="text-sm text-muted-foreground">
@@ -91,8 +115,14 @@ export function DocumentPreviewModal({
           </div>
         </div>
 
-        {/* PDF canvas area */}
-        <div className="flex-1 overflow-y-auto bg-muted/50 flex flex-col items-center py-6 px-4">
+        <div className="flex-1 flex min-h-0">
+          {sidebar && (
+            <aside className="w-64 shrink-0 border-r overflow-y-auto bg-background">
+              {sidebar}
+            </aside>
+          )}
+          {/* PDF canvas area */}
+          <div className="flex-1 overflow-y-auto bg-muted/50 flex flex-col items-center py-6 px-4">
           {loading ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-3 text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin" />
@@ -112,6 +142,7 @@ export function DocumentPreviewModal({
               />
             </PdfDocument>
           ) : null}
+          </div>
         </div>
 
         {/* Page navigation */}

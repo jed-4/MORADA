@@ -41,6 +41,11 @@ import {
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
+import { VariationColumnSidebar } from "@/components/variations/VariationColumnSidebar";
+import {
+  resolveVariationDocumentColumns,
+  type VariationDocumentColumns,
+} from "@shared/variationDocumentColumns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -244,6 +249,9 @@ export default function VariationDetail() {
 
   // T003: Preview / PDF / Send state
   const [previewOpen, setPreviewOpen] = useState(false);
+  // Which columns the client document shows. null until the variation and the
+  // company default have loaded, so the sidebar never flashes the wrong state.
+  const [docColumns, setDocColumns] = useState<VariationDocumentColumns | null>(null);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendSubject, setSendSubject] = useState("");
   const [sendBody, setSendBody] = useState("");
@@ -309,6 +317,26 @@ export default function VariationDetail() {
     staleTime: Infinity,
     gcTime: 1000 * 60 * 30,
   });
+
+  const saveDocColumnsMutation = useMutation({
+    mutationFn: async (cols: VariationDocumentColumns) =>
+      apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { pdfColumns: cols }),
+    onError: () => {
+      toast({
+        title: "Couldn't save which columns the client sees",
+        description: "The preview is up to date, but reopen it to confirm before sending.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  /** Applied to the preview straight away and written in the background — the
+   *  preview doubles as the send surface, so the choice has to be banked before
+   *  "Send to client" is pressed rather than on the next form save. */
+  const updateDocColumns = (next: VariationDocumentColumns) => {
+    setDocColumns(next);
+    if (isEditMode && effectiveVariationId) saveDocColumnsMutation.mutate(next);
+  };
 
   const saveColumnPreferencesMutation = useMutation({
     mutationFn: async (cols: VariationColumnConfig[]) => {
@@ -425,6 +453,12 @@ export default function VariationDetail() {
         termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
+      setDocColumns(
+        resolveVariationDocumentColumns(
+          (variation as any).pdfColumns,
+          (companySettings as any)?.variationPdfColumns,
+        ),
+      );
       const storedGlobalMarkup = (variation as any).globalMarkupPercent;
       setGlobalMarkup(
         storedGlobalMarkup === null || storedGlobalMarkup === undefined
@@ -437,7 +471,7 @@ export default function VariationDetail() {
         setAttachments(storedAttachments);
       }
     }
-  }, [variation, isEditMode, form]);
+  }, [variation, isEditMode, form, companySettings]);
 
   // Initialise selectedTemplateId when editing a variation that already has T&C content
   useEffect(() => {
@@ -1209,6 +1243,7 @@ export default function VariationDetail() {
           currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
           revisedIsAgreed={revisedIsAgreed}
+          columns={docColumns ?? undefined}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -2422,10 +2457,25 @@ export default function VariationDetail() {
               currentContractCents={currentContractCents}
               revisedContractCents={revisedContractCents}
               revisedIsAgreed={revisedIsAgreed}
+              columns={docColumns ?? undefined}
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
           onSend={() => { setPreviewOpen(false); setSendModalOpen(true); }}
+          sidebar={
+            docColumns && (
+              <VariationColumnSidebar
+                columns={docColumns}
+                onChange={updateDocColumns}
+                disabled={(variation as any).status === "approved"}
+                disabledReason="This variation is approved, so what the client sees is locked."
+              />
+            )
+          }
+          // Signals a genuine content change so the preview re-renders while
+          // open. Without it the PDF is generated once and every toggle looks
+          // like it did nothing until the modal is closed and reopened.
+          documentKey={JSON.stringify(docColumns)}
         />
       )}
 
@@ -2448,6 +2498,7 @@ export default function VariationDetail() {
           currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
           revisedIsAgreed={revisedIsAgreed}
+          columns={docColumns ?? undefined}
           clientEmail={clientContact?.email}
           initialSubject={sendSubject}
           initialBody={sendBody}

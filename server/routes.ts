@@ -199,6 +199,7 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -20890,17 +20891,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
         : undefined;
 
+      // Which columns this document shows. Enforced HERE, not just in the
+      // renderer: the portal hands the client JSON, so a builder who turns off
+      // "Unit price" to stop a client seeing their rates needs the rates to
+      // never leave the server. Hiding them client-side would leave them one
+      // devtools panel away.
+      const documentColumns = resolveVariationDocumentColumns(
+        (variation as any).pdfColumns,
+        (settings as any)?.variationPdfColumns,
+      );
+
       // Lines the builder marked "hide from client" are dropped server-side;
-      // remaining lines expose only client-price fields.
+      // remaining lines expose only client-price fields, minus any the column
+      // config hides.
       const publicItems = items
         .filter((item: any) => item.showInPdf !== false)
         .map((item: any) => ({
           id: item.id,
           name: item.name,
           description: item.description,
-          quantity: item.quantity,
-          unitType: item.unitType,
-          unitPrice: item.unitPrice,
+          ...(documentColumns.quantity
+            ? { quantity: item.quantity, unitType: item.unitType }
+            : {}),
+          ...(documentColumns.unitPrice ? { unitPrice: item.unitPrice } : {}),
+          // totalPrice always ships: it is the amount being approved, and the
+          // visible rows have to sum to the Total either way.
           totalPrice: item.totalPrice,
           taxable: item.taxable,
           itemType: item.itemType,
@@ -20916,7 +20931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? computeVariationTotals({ items: hiddenItems }).totalCents
         : 0;
 
-      const publicBills = bills.map((bill: any) => ({
+      const publicBills = (documentColumns.bills ? bills : []).map((bill: any) => ({
         id: bill.id,
         billNumber: bill.billNumber,
         supplierName: bill.supplierName ?? null,
@@ -20960,6 +20975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments: publicAttachments,
         notItemisedIncCents,
         labourTotalCents,
+        columns: documentColumns,
         project: project
           ? {
               id: project.id,

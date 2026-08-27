@@ -1168,6 +1168,8 @@ export const companySettings = pgTable("company_settings", {
   
   // Client invoice terms & conditions (company-wide default)
   termsAndConditions: text("terms_and_conditions"),
+  // Default column/section visibility new variation documents inherit.
+  variationPdfColumns: jsonb("variation_pdf_columns"),
   termsTemplates: jsonb("terms_templates").$type<Array<{ id: string; name: string; content: string; defaultFor: string[] }>>().default([]), // Array of { id, name, content } T&C templates
   
   // Insurance expiry reminder settings
@@ -2383,6 +2385,9 @@ export const variations = pgTable("variations", {
   // on-charged (cost lines + bills + labour, NOT allowance adjustments), on top
   // of any per-line markup. Shown as its own row on the client document.
   // null/0 = none. double precision so 12.5% doesn't truncate.
+  // Which columns/sections this document shows the client. null = inherit the
+  // company default. See shared/variationDocumentColumns.ts.
+  pdfColumns: jsonb("pdf_columns"),
   globalMarkupPercent: doublePrecision("global_markup_percent"),
   // Resulting ex-GST cents. Server-derived on every write and already inside
   // `subtotal`; stored so the client document renders the banked figure rather
@@ -2428,6 +2433,7 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
   clientSignedDate: z.coerce.date().optional(),
   builderSignedDate: z.coerce.date().optional(),
   portalSentAt: z.coerce.date().optional(),
+  pdfColumns: z.record(z.boolean()).nullable().optional(),
   globalMarkupPercent: z.number().min(0).max(1000).nullable().optional(),
   // Optional, not .default(0): it is derived by recomputeVariationTotals and
   // guarded out of the create/update schemas, so no caller should have to
