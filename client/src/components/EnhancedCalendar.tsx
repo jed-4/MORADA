@@ -103,6 +103,15 @@ interface EnhancedCalendarProps {
    * what gets persisted, so it comes back on a wider screen.
    */
   mobileFallbackView?: EnhancedCalendarView;
+  /**
+   * Show the calendar without offering to change anything: no drag, no resize, no
+   * completion checkbox.
+   *
+   * Not the same as omitting `onEventReschedule` — without those handlers a chip
+   * still lifts, follows the cursor, and then silently does nothing on drop, which
+   * reads as a broken app rather than a read-only one. Say so explicitly instead.
+   */
+  readOnly?: boolean;
   hideInternalHeader?: boolean;
   displayOptions?: CalendarDisplayOptions;
   focusBlocks?: FocusBlockData[];
@@ -137,14 +146,16 @@ interface DraggableEventProps {
   showCompletionCheckbox: boolean;
   showResizeHandles?: boolean;
   displayOptions?: CalendarDisplayOptions;
+  /** Whole-calendar read-only mode — see `EnhancedCalendarProps.readOnly`. */
+  readOnly?: boolean;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions, readOnly = false }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const isLookbackEvent = event.type === "timesheet" || event.type === "site_diary";
   // A projection has no row behind it, so there is nothing to drag or resize.
   const isProjected = event.type === "projected";
-  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent || isProjected;
+  const isReadOnlyEvent = readOnly || isGoogleCalendarEvent || isLookbackEvent || isProjected;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event, type: 'move' },
@@ -166,7 +177,10 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
   const isRecurring = !!event.templateId;
-  const showTime = event.startTime || event.endTime;
+  // `displayOptions.showTime` is the user's "Display on Cards" choice; default on.
+  // Previously this was just "does the event have a time", which silently ignored
+  // the option.
+  const showTime = displayOptions?.showTime !== false && !!(event.startTime || event.endTime);
 
   // Event colour priority: explicit per-event color → inherited project colour → schedule type
   // colour → brand lavender fallback. event.color (set on this specific event) wins over the
@@ -257,7 +271,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             >
               {event.title}
             </span>
-            {event.startTime && (
+            {showTime && event.startTime && (
               <span
                 className="shrink-0 whitespace-nowrap"
                 style={{ color: notionColors.darkText, fontSize: '10px', opacity: 0.65, lineHeight: 1 }}
@@ -276,8 +290,13 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           </span>
         )}
 
-        {/* Project, assignee, status — only in month/all-day views */}
-        {!showResizeHandles && displayOptions?.showProject && event.projectName && (
+        {/*
+          Project, assignee, status. Rendered in timed blocks too — the block is
+          overflow-hidden, so a 15-minute one clips instead of growing. Suppressing
+          them here is why "Show assignee" appeared to do nothing in week and day
+          view.
+        */}
+        {displayOptions?.showProject && event.projectName && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
@@ -285,7 +304,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             {event.projectName}
           </div>
         )}
-        {!showResizeHandles && displayOptions?.showAssignee && event.assigneeName && (
+        {displayOptions?.showAssignee && event.assigneeName && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
@@ -293,7 +312,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             {event.assigneeName}
           </div>
         )}
-        {!showResizeHandles && displayOptions?.showStatus && event.status && (
+        {displayOptions?.showStatus && event.status && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight capitalize"
             style={{ color: notionColors.darkText }}
@@ -441,7 +460,7 @@ export function EnhancedCalendar({
   onEventReschedule,
   onEventResize,
   onDateClick,
-  showCompletionCheckbox = true,
+  showCompletionCheckbox: showCompletionCheckboxProp = true,
   initialView = "month",
   currentDate: externalCurrentDate,
   onCurrentDateChange,
@@ -458,8 +477,11 @@ export function EnhancedCalendar({
   onEventUnschedule,
   onTaskDropInFocusBlock,
   mobileFallbackView,
+  readOnly = false,
 }: EnhancedCalendarProps) {
   const isMobile = useIsMobile();
+  // A read-only surface must not render a control that does nothing when clicked.
+  const showCompletionCheckbox = showCompletionCheckboxProp && !readOnly;
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
@@ -1305,6 +1327,7 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                               displayOptions={displayOptions}
                             />
                           ))}
@@ -1495,6 +1518,7 @@ export function EnhancedCalendar({
                       onEventClick={onEventClick}
                       onToggleComplete={handleToggleComplete}
                       showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                       displayOptions={displayOptions}
                     />
                   ))}
@@ -1794,6 +1818,7 @@ export function EnhancedCalendar({
                                   onEventClick={onEventClick}
                                   onToggleComplete={handleToggleComplete}
                                   showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                                   showResizeHandles={true}
                                   displayOptions={displayOptions}
                                 />

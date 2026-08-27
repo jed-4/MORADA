@@ -233,7 +233,7 @@ Two freebies while in there: `deterministicProjectColor` is duplicated verbatim 
 
 **Result:** `BusinessCalendar.tsx` 1,448 → 1,284 lines, and the harness reports all 34 states identical to the pre-extraction implementation, in four timezones.
 
-#### 1b — Swap the engine
+#### 1b — Swap the engine ✅ *(done 27 Aug)*
 
 `MoradaCalendar` → `EnhancedCalendar`, with the transform untouched. Smaller than it sounds — the call site is eight props, and two whole adapter layers disappear:
 
@@ -245,7 +245,13 @@ Two freebies while in there: `deterministicProjectColor` is duplicated verbatim 
 
 The `displayOptions` change also fixes the gap Phase 0 hit: `MoradaCalendar`'s `block` chip variant never renders the extra lines, so "Show assignee" is invisible on week-view timed events today. `EnhancedCalendar` renders display options itself.
 
-Then: adopt the user calendar's header (mini-month, keyboard shortcuts `t` / `←` / `→` / `d` `w` `m`), and **leave `onEventReschedule` / `onEventResize` unwired** — read-only per D6. Not passing the handlers is the whole implementation.
+Read-only per D6 — but *not* by omitting the handlers, which was the original plan and was wrong. Without them a chip still lifts, follows the cursor, and silently does nothing on drop, and every task carries a completion checkbox that no-ops. `EnhancedCalendar` gained an explicit `readOnly` prop instead.
+
+**Still outstanding from this phase:** the user calendar's mini-month and keyboard shortcuts (`t` / `←` / `→` / `d` `w` `m`). They live in `UserCalendar`, not the engine, so adopting them means extracting a shared hook — deliberately left as a follow-up rather than bloating the swap's diff.
+
+**Two bugs the swap surfaced, both fixed here:**
+- `displayOptions.showTime` was shadowed by a local `const showTime = event.startTime || event.endTime`, so the "Time" toggle did nothing. The old engine honoured it, so the swap would have shipped this as a regression.
+- Project / assignee / status lines were gated behind `!showResizeHandles`, so "Show assignee" did nothing on week- and day-view timed blocks — on *either* engine. Now rendered there too; a short block clips rather than growing.
 
 ---
 

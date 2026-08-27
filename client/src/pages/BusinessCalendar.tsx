@@ -18,12 +18,12 @@ import {
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { buildBusinessCalendarEvents } from "@shared/businessCalendarEvents";
-import type { CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
 import {
-  MoradaCalendar,
-  type MoradaCalendarEvent,
-} from "@/components/calendar/MoradaCalendar";
-import { toMoradaEvent, toMoradaView } from "@/components/calendar/legacy";
+  EnhancedCalendar,
+  type CalendarEvent,
+  type CalendarDisplayOptions,
+  type EnhancedCalendarView,
+} from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
@@ -58,12 +58,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import TaskEditModal from "@/components/TaskEditModal";
 
 // Module-level flag — survives component remounts for the full browser session,
 // preventing duplicate "All Events" view creation on every navigation.
 let defaultBusinessViewCreated = false;
+
+/**
+ * `calendar_views.calendar_mode` is free text and holds whatever the page wrote at
+ * the time. Rows predating this surface can carry values the calendar no longer
+ * has — anything unrecognised falls back to week.
+ *
+ * Note a legacy `"day"` row used to render as *agenda*, because the previous engine
+ * had no day view and mapped everything unknown onto agenda. It now renders as a
+ * real day view, which is what it always said it was.
+ */
+const CALENDAR_VIEWS: EnhancedCalendarView[] = ["month", "week", "day", "agenda", "roster"];
+function toCalendarView(mode: string | null | undefined): EnhancedCalendarView {
+  return CALENDAR_VIEWS.includes(mode as EnhancedCalendarView)
+    ? (mode as EnhancedCalendarView)
+    : "week";
+}
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -84,8 +101,9 @@ export default function BusinessCalendar() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const isMobile = useIsMobile();
   const [filters, setFilters] = useState<CalendarFiltersType>({});
-  const [calendarMode, setCalendarMode] = useState<string>("week");
+  const [calendarMode, setCalendarMode] = useState<EnhancedCalendarView>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
@@ -214,7 +232,7 @@ export default function BusinessCalendar() {
       if (defaultView) {
         setSelectedViewId(defaultView.id);
         setFilters(normalizeFilterDates(defaultView.filters || {}));
-        setCalendarMode(defaultView.calendarMode || "week");
+        setCalendarMode(toCalendarView(defaultView.calendarMode));
       }
     }
   }, [views, selectedViewId]);
@@ -263,26 +281,6 @@ export default function BusinessCalendar() {
         setShowScheduleItemDialog(true);
       }
     }
-  };
-
-  // Convert to the MoradaCalendar event model, honouring the "Display on Cards"
-  // options via extra chip lines / time visibility.
-  const moradaEvents: MoradaCalendarEvent[] = useMemo(() => {
-    return filteredEvents.map((event) => {
-      const lines: string[] = [];
-      if (displayOptions.showProject && event.projectName) lines.push(event.projectName);
-      if (displayOptions.showAssignee && event.assigneeName) lines.push(event.assigneeName);
-      if (displayOptions.showStatus && event.status) lines.push(event.status.replace(/[_-]+/g, " "));
-      return toMoradaEvent(event, {
-        lines,
-        hideTime: displayOptions.showTime === false,
-      });
-    });
-  }, [filteredEvents, displayOptions]);
-
-  const handleMoradaEventClick = (event: MoradaCalendarEvent) => {
-    const original = event.meta?.original as CalendarEvent | undefined;
-    if (original) handleEventClick(original);
   };
 
   const createViewMutation = useMutation({
@@ -347,7 +345,7 @@ export default function BusinessCalendar() {
   const handleViewSelect = (view: CalendarView) => {
     setSelectedViewId(view.id);
     setFilters(normalizeFilterDates(view.filters || {}));
-    setCalendarMode(view.calendarMode || "week");
+    setCalendarMode(toCalendarView(view.calendarMode));
   };
 
   const handleEditView = (view: CalendarView) => {
@@ -366,25 +364,21 @@ export default function BusinessCalendar() {
     setCurrentDate(new Date());
   };
 
-  const handleNavigatePrevious = () => {
+  /** Step by whatever the current view shows: a day, a week, or a month. */
+  const stepDate = (direction: -1 | 1) => {
     const newDate = new Date(currentDate);
-    if (toMoradaView(calendarMode) === "week") {
-      newDate.setDate(newDate.getDate() - 7);
+    if (calendarMode === "day") {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (calendarMode === "week" || calendarMode === "roster") {
+      newDate.setDate(newDate.getDate() + 7 * direction);
     } else {
-      newDate.setMonth(newDate.getMonth() - 1);
+      newDate.setMonth(newDate.getMonth() + direction);
     }
     setCurrentDate(newDate);
   };
 
-  const handleNavigateNext = () => {
-    const newDate = new Date(currentDate);
-    if (toMoradaView(calendarMode) === "week") {
-      newDate.setDate(newDate.getDate() + 7);
-    } else {
-      newDate.setMonth(newDate.getMonth() + 1);
-    }
-    setCurrentDate(newDate);
-  };
+  const handleNavigatePrevious = () => stepDate(-1);
+  const handleNavigateNext = () => stepDate(1);
 
   // Event type options for filtering
   const eventTypeOptions = [
@@ -954,18 +948,22 @@ export default function BusinessCalendar() {
             {format(currentDate, 'MMM d, yyyy')}
           </span>
 
-          {/* View Mode Selector */}
+          {/* View Mode Selector — hidden on mobile, where the calendar forces
+              agenda and these buttons would do nothing. The chosen view is still
+              saved, so it comes back on a wider screen. */}
+          {!isMobile && (
           <div className="flex items-center gap-0.5">
-            {[
-              { value: 'agenda', label: 'Agenda' },
+            {([
+              { value: 'day', label: 'Day' },
               { value: 'week', label: 'Week' },
               { value: 'month', label: 'Month' },
-            ].map((mode) => (
+              { value: 'agenda', label: 'Agenda' },
+            ] as Array<{ value: EnhancedCalendarView; label: string }>).map((mode) => (
               <button
                 key={mode.value}
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  toMoradaView(calendarMode) === mode.value
+                  calendarMode === mode.value
                     ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -975,6 +973,7 @@ export default function BusinessCalendar() {
               </button>
             ))}
           </div>
+          )}
 
           {/* Add Event Button */}
           <button
@@ -992,14 +991,30 @@ export default function BusinessCalendar() {
 
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
       <div className="flex-1 min-h-0">
-        <MoradaCalendar
-          events={moradaEvents}
-          onEventClick={handleMoradaEventClick}
-          date={currentDate}
-          onDateChange={setCurrentDate}
-          view={toMoradaView(calendarMode)}
-          onViewChange={(newView) => setCalendarMode(newView)}
-          hideHeader
+        {/*
+          Read-only on purpose (D6). Dragging someone else's schedule item here
+          would cascade the Gantt, and your own tasks are better dragged on your own
+          calendar. Click a chip to open it and change the date there.
+
+          `readOnly` rather than just omitting the handlers: without it a chip still
+          lifts and follows the cursor before doing nothing on drop, and every task
+          carries a completion checkbox that silently no-ops.
+
+          `displayOptions` is a native prop now, so "Show assignee" finally works on
+          week-view timed events — the previous engine only rendered those extra
+          lines on month and all-day chips.
+        */}
+        <EnhancedCalendar
+          events={filteredEvents}
+          onEventClick={handleEventClick}
+          currentDate={currentDate}
+          onCurrentDateChange={setCurrentDate}
+          view={calendarMode}
+          onViewChange={setCalendarMode}
+          displayOptions={displayOptions}
+          mobileFallbackView="agenda"
+          readOnly
+          hideInternalHeader
         />
       </div>
      </div>
