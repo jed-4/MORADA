@@ -41,6 +41,11 @@ import {
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
+import { VariationColumnSidebar } from "@/components/variations/VariationColumnSidebar";
+import {
+  resolveVariationDocumentColumns,
+  type VariationDocumentColumns,
+} from "@shared/variationDocumentColumns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -193,7 +198,13 @@ export default function VariationDetail() {
   // Cost lines state
   const [costLines, setCostLines] = useState<CostLine[]>([]);
   const [allowanceLines, setAllowanceLines] = useState<AllowanceLine[]>([]);
+  // Document-level markup, persisted on the variation. Held as a string so the
+  // input can be empty (= none) rather than forced to 0 while being typed.
   const [globalMarkup, setGlobalMarkup] = useState<string>("");
+  // Separate, transient value for the "set every line's markup" bulk action.
+  // Deliberately NOT the same field: one is a stored margin on the document,
+  // the other overwrites per-line data and cannot be undone.
+  const [bulkLineMarkup, setBulkLineMarkup] = useState<string>("");
 
   // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -238,6 +249,9 @@ export default function VariationDetail() {
 
   // T003: Preview / PDF / Send state
   const [previewOpen, setPreviewOpen] = useState(false);
+  // Which columns the client document shows. null until the variation and the
+  // company default have loaded, so the sidebar never flashes the wrong state.
+  const [docColumns, setDocColumns] = useState<VariationDocumentColumns | null>(null);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendSubject, setSendSubject] = useState("");
   const [sendBody, setSendBody] = useState("");
@@ -304,6 +318,26 @@ export default function VariationDetail() {
     gcTime: 1000 * 60 * 30,
   });
 
+  const saveDocColumnsMutation = useMutation({
+    mutationFn: async (cols: VariationDocumentColumns) =>
+      apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { pdfColumns: cols }),
+    onError: () => {
+      toast({
+        title: "Couldn't save which columns the client sees",
+        description: "The preview is up to date, but reopen it to confirm before sending.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  /** Applied to the preview straight away and written in the background — the
+   *  preview doubles as the send surface, so the choice has to be banked before
+   *  "Send to client" is pressed rather than on the next form save. */
+  const updateDocColumns = (next: VariationDocumentColumns) => {
+    setDocColumns(next);
+    if (isEditMode && effectiveVariationId) saveDocColumnsMutation.mutate(next);
+  };
+
   const saveColumnPreferencesMutation = useMutation({
     mutationFn: async (cols: VariationColumnConfig[]) => {
       return await apiRequest("/api/user-view-preferences", "POST", {
@@ -339,8 +373,15 @@ export default function VariationDetail() {
     queryKey: [`/api/variations?projectId=${currentProjectId}`],
     enabled: !!currentProjectId,
   });
+  // Approved value on the project EXCLUDING this variation, so the document can
+  // show "contract as it stands" -> "this variation" -> "revised total" as three
+  // figures that add up, and so an already-approved variation is never counted
+  // twice in the revised figure.
   const approvedVariationsTotal = (projectVariationsForContract as any[]).reduce(
-    (sum: number, v: any) => (isApprovedVariationStatus(v.status) ? sum + (v.totalAmount ?? 0) : sum),
+    (sum: number, v: any) =>
+      v.id !== effectiveVariationId && isApprovedVariationStatus(v.status)
+        ? sum + (v.totalAmount ?? 0)
+        : sum,
     0
   );
   // Original contract price (inc-GST cents) — the frozen contract sum once the
@@ -355,7 +396,15 @@ export default function VariationDetail() {
     variationContractMetrics?.originalContractPriceIncGstCents
     ?? (currentProject as any)?.contractPrice
     ?? 0;
-  const revisedContractCents = originalContractCents + approvedVariationsTotal;
+  // Contract sum as it stands today: original plus every OTHER approved variation.
+  const currentContractCents = originalContractCents + approvedVariationsTotal;
+  // This variation's own value is always part of the revised figure. It used to
+  // be included only once the variation was approved, so every draft PDF showed
+  // a "Revised Total" identical to the contract it was meant to revise.
+  const thisVariationCents = (variation as any)?.totalAmount ?? 0;
+  const revisedContractCents = currentContractCents + thisVariationCents;
+  // Wording follows the document's standing: a proposal until the client agrees.
+  const revisedIsAgreed = isApprovedVariationStatus((variation as any)?.status);
   const varLogoUrl = companySettings?.logoUrl
     ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)
     : undefined;
@@ -404,13 +453,25 @@ export default function VariationDetail() {
         termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
+      setDocColumns(
+        resolveVariationDocumentColumns(
+          (variation as any).pdfColumns,
+          (companySettings as any)?.variationPdfColumns,
+        ),
+      );
+      const storedGlobalMarkup = (variation as any).globalMarkupPercent;
+      setGlobalMarkup(
+        storedGlobalMarkup === null || storedGlobalMarkup === undefined
+          ? ""
+          : String(storedGlobalMarkup),
+      );
       // T002: Load attachments
       const storedAttachments = (variation as any).attachments;
       if (Array.isArray(storedAttachments) && storedAttachments.length > 0) {
         setAttachments(storedAttachments);
       }
     }
-  }, [variation, isEditMode, form]);
+  }, [variation, isEditMode, form, companySettings]);
 
   // Initialise selectedTemplateId when editing a variation that already has T&C content
   useEffect(() => {
@@ -585,8 +646,10 @@ export default function VariationDetail() {
     setCostLines(costLines.filter((_, i) => i !== index));
   };
 
-  const applyGlobalMarkup = () => {
-    const pct = parseFloat(globalMarkup);
+  /** Overwrites EVERY line's own markup. Distinct from the document-level
+   *  global markup, which leaves line data alone. */
+  const applyBulkLineMarkup = () => {
+    const pct = parseFloat(bulkLineMarkup);
     if (isNaN(pct)) return;
     setCostLines(costLines.map((line) => ({ ...line, markupPercent: pct })));
   };
@@ -784,22 +847,36 @@ export default function VariationDetail() {
   const calculateLabourTotal = () =>
     getSelectedTimesheets().reduce((sum: number, t: any) => sum + toNumber(t.total), 0);
 
+  /** The document-level markup as a number. Empty or unparseable = none.
+   *  parseFloat, not parseInt: a 12.5% margin must survive the round trip. */
+  const globalMarkupValue = (): number => {
+    const n = parseFloat(globalMarkup);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const calculateTotals = () =>
     computeVariationTotals({
       items: [
         ...costLines.map((line) => ({
           totalPrice: dollarsToCents(getCostLineAmountExTax(line)),
           taxable: line.taxable,
+          itemType: "cost_line",
         })),
+        // itemType matters here: allowances are excluded from the markup base
+        // server-side, so omitting it would make this preview disagree with the
+        // figure that actually gets saved.
         ...allowanceLines.map((line) => ({
           totalPrice: dollarsToCents(line.amount),
           taxable: line.taxable,
+          itemType: "allowance",
         })),
       ],
       bills: getSelectedBills(),
       timesheets: getSelectedTimesheets(),
     });
 
+  const calculateGlobalMarkupAmount = () => centsToDollars(calculateTotals().globalMarkupCents);
+  const calculateMarkupBase = () => centsToDollars(calculateTotals().markupBaseCents);
   const calculateSubtotal = () => centsToDollars(calculateTotals().subtotalCents);
   const calculateGST = () => centsToDollars(calculateTotals().gstCents);
   const calculateTotal = () => centsToDollars(calculateTotals().totalCents);
@@ -822,6 +899,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
+        globalMarkupPercent: globalMarkup === "" ? null : globalMarkupValue(),
         // subtotal/gstAmount/totalAmount/paidAmount/balanceAmount are
         // server-maintained — recomputed from items/bills/timesheets on every
         // write and from invoice payments; never sent from the client.
@@ -894,6 +972,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
+        globalMarkupPercent: globalMarkup === "" ? null : globalMarkupValue(),
         // Money totals + paid/balance are server-maintained; see createMutation.
       };
 
@@ -1161,7 +1240,10 @@ export default function VariationDetail() {
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
+          currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
+          revisedIsAgreed={revisedIsAgreed}
+          columns={docColumns ?? undefined}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -1982,27 +2064,27 @@ export default function VariationDetail() {
                       </div>
                       {costLines.length > 0 && (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Global markup</span>
+                          <span className="text-xs text-muted-foreground">Set every line to</span>
                           <Input
                             type="number"
                             min="0"
                             step="1"
                             placeholder="0"
-                            value={globalMarkup}
-                            onChange={(e) => setGlobalMarkup(e.target.value)}
+                            value={bulkLineMarkup}
+                            onChange={(e) => setBulkLineMarkup(e.target.value)}
                             onFocus={(e) => e.target.select()}
                             className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
-                            data-testid="input-global-markup"
+                            data-testid="input-bulk-line-markup"
                           />
                           <span className="text-xs text-muted-foreground">%</span>
                           <button
                             type="button"
-                            onClick={applyGlobalMarkup}
-                            disabled={globalMarkup === "" || isNaN(parseFloat(globalMarkup))}
+                            onClick={applyBulkLineMarkup}
+                            disabled={bulkLineMarkup === "" || isNaN(parseFloat(bulkLineMarkup))}
                             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                            data-testid="button-apply-global-markup"
+                            data-testid="button-apply-bulk-line-markup"
                           >
-                            Apply to all lines
+                            Overwrite line markups
                           </button>
                         </div>
                       )}
@@ -2022,7 +2104,10 @@ export default function VariationDetail() {
                             const blendedPct = base > 0 ? Math.round((markupAmt / base) * 100) : 0;
                             return (
                               <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Markup ({blendedPct}%)</span>
+                                {/* Blended across the lines, and already inside
+                                    the line amounts. Named to distinguish it
+                                    from the document-level markup below. */}
+                                <span className="text-muted-foreground">Line markup ({blendedPct}%)</span>
                                 <span className="font-medium tabular-nums">{formatCurrency(markupAmt)}</span>
                               </div>
                             );
@@ -2045,6 +2130,31 @@ export default function VariationDetail() {
                               <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-status-danger" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
                             </div>
                           )}
+                          {/* Document-level markup. Sits on the ex-GST value of
+                              cost lines + bills + labour (never allowances) and
+                              prints as its own row on the client's document. */}
+                          <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-muted-foreground">Global markup</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="0"
+                                value={globalMarkup}
+                                onChange={(e) => setGlobalMarkup(e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
+                                data-testid="input-global-markup"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                % of {formatCurrency(calculateMarkupBase())}
+                              </span>
+                            </div>
+                            <span className="font-medium tabular-nums" data-testid="text-global-markup-amount">
+                              {formatCurrency(calculateGlobalMarkupAmount())}
+                            </span>
+                          </div>
                           <div className="flex justify-between text-sm pt-1 border-t border-border/50">
                             <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
                             <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
@@ -2344,11 +2454,28 @@ export default function VariationDetail() {
               documentStyle={varDocStyle}
               logoUrl={varLogoUrl}
               originalContractCents={originalContractCents}
+              currentContractCents={currentContractCents}
               revisedContractCents={revisedContractCents}
+              revisedIsAgreed={revisedIsAgreed}
+              columns={docColumns ?? undefined}
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
           onSend={() => { setPreviewOpen(false); setSendModalOpen(true); }}
+          sidebar={
+            docColumns && (
+              <VariationColumnSidebar
+                columns={docColumns}
+                onChange={updateDocColumns}
+                disabled={(variation as any).status === "approved"}
+                disabledReason="This variation is approved, so what the client sees is locked."
+              />
+            )
+          }
+          // Signals a genuine content change so the preview re-renders while
+          // open. Without it the PDF is generated once and every toggle looks
+          // like it did nothing until the modal is closed and reopened.
+          documentKey={JSON.stringify(docColumns)}
         />
       )}
 
@@ -2368,7 +2495,10 @@ export default function VariationDetail() {
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
+          currentContractCents={currentContractCents}
           revisedContractCents={revisedContractCents}
+          revisedIsAgreed={revisedIsAgreed}
+          columns={docColumns ?? undefined}
           clientEmail={clientContact?.email}
           initialSubject={sendSubject}
           initialBody={sendBody}

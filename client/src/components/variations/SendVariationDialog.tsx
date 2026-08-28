@@ -15,6 +15,7 @@ import { Mail, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { VariationDocument } from "./pdf/VariationDocument";
+import { type VariationDocumentColumns } from "@shared/variationDocumentColumns";
 import type { Variation, VariationItem } from "@shared/schema";
 
 interface Company {
@@ -45,7 +46,10 @@ interface SendVariationDialogProps {
   documentStyle?: "style1" | "style2";
   logoUrl?: string | null;
   originalContractCents?: number;
+  currentContractCents?: number;
   revisedContractCents?: number;
+  revisedIsAgreed?: boolean;
+  columns?: VariationDocumentColumns;
   clientEmail?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -67,7 +71,10 @@ export function SendVariationDialog({
   documentStyle = "style1",
   logoUrl,
   originalContractCents,
+  currentContractCents,
   revisedContractCents,
+  revisedIsAgreed,
+  columns,
   clientEmail,
   initialSubject,
   initialBody,
@@ -107,7 +114,10 @@ export function SendVariationDialog({
             documentStyle={documentStyle}
             logoUrl={logoUrl}
             originalContractCents={originalContractCents}
+            currentContractCents={currentContractCents}
             revisedContractCents={revisedContractCents}
+            revisedIsAgreed={revisedIsAgreed}
+            columns={columns}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

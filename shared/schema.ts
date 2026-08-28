@@ -1168,6 +1168,8 @@ export const companySettings = pgTable("company_settings", {
   
   // Client invoice terms & conditions (company-wide default)
   termsAndConditions: text("terms_and_conditions"),
+  // Default column/section visibility new variation documents inherit.
+  variationPdfColumns: jsonb("variation_pdf_columns"),
   termsTemplates: jsonb("terms_templates").$type<Array<{ id: string; name: string; content: string; defaultFor: string[] }>>().default([]), // Array of { id, name, content } T&C templates
   
   // Insurance expiry reminder settings
@@ -2379,7 +2381,19 @@ export const variations = pgTable("variations", {
   closingText: text("closing_text"),
   approvalDeadline: timestamp("approval_deadline"),
   daysChanged: integer("days_changed"),
-  subtotal: integer("subtotal").notNull().default(0), // Amount in cents
+  // Document-level markup applied once to the ex-GST value of everything being
+  // on-charged (cost lines + bills + labour, NOT allowance adjustments), on top
+  // of any per-line markup. Shown as its own row on the client document.
+  // null/0 = none. double precision so 12.5% doesn't truncate.
+  // Which columns/sections this document shows the client. null = inherit the
+  // company default. See shared/variationDocumentColumns.ts.
+  pdfColumns: jsonb("pdf_columns"),
+  globalMarkupPercent: doublePrecision("global_markup_percent"),
+  // Resulting ex-GST cents. Server-derived on every write and already inside
+  // `subtotal`; stored so the client document renders the banked figure rather
+  // than one recomputed at render time. Guarded against client writes.
+  globalMarkupAmount: integer("global_markup_amount").notNull().default(0),
+  subtotal: integer("subtotal").notNull().default(0), // Amount in cents (ex GST, INCLUDING global markup)
   gstAmount: integer("gst_amount").notNull().default(0), // GST amount in cents
   totalAmount: integer("total_amount").notNull().default(0), // Total amount in cents
   paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
@@ -2419,6 +2433,12 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
   clientSignedDate: z.coerce.date().optional(),
   builderSignedDate: z.coerce.date().optional(),
   portalSentAt: z.coerce.date().optional(),
+  pdfColumns: z.record(z.boolean()).nullable().optional(),
+  globalMarkupPercent: z.number().min(0).max(1000).nullable().optional(),
+  // Optional, not .default(0): it is derived by recomputeVariationTotals and
+  // guarded out of the create/update schemas, so no caller should have to
+  // supply it just to satisfy the type.
+  globalMarkupAmount: z.number().optional(),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),

@@ -92,6 +92,14 @@ export interface VariationDocModel {
   /** Value of lines the builder chose not to itemise, shown as one row so the
    *  visible breakdown still reconciles with the Total. */
   notItemisedIncCents: Cents;
+  /** Document-level markup in EX-GST cents, as banked by the server. Already
+   *  inside subtotalCents; surfaced separately so it can print as its own row.
+   *  Read, never recomputed, so the document can't drift from the Total the
+   *  client is asked to approve. */
+  globalMarkupExCents: Cents;
+  /** The same markup INC GST, derived so the visible rows sum to totalCents. */
+  globalMarkupIncCents: Cents;
+  globalMarkupPercent: number;
   subtotalCents: Cents;
   gstCents: Cents;
   totalCents: Cents;
@@ -151,24 +159,55 @@ export function buildVariationDocumentModel(input: {
       .filter((i: any) => i?.showInPdf === false)
       .reduce((sum: number, i: any) => sum + lineIncCents(i), 0);
 
+  const costGroups = Array.from(groupsByType.values());
+  const allowanceLines = allowanceItems.map((item: any) => ({
+    id: item.id,
+    description: item.description,
+    amountIncCents: lineIncCents(item),
+  }));
+  const docBills = bills.map((bill: any) => ({
+    id: bill.id,
+    billNumber: bill.billNumber,
+    supplierName: bill.supplierName ?? null,
+    invoiceDate: bill.invoiceDate ?? bill.billDate ?? null,
+    totalIncCents: bill.totalAmountCents ?? bill.total ?? bill.totalAmount ?? 0,
+  }));
+  const labourIncCents = labourExCents + Math.round(labourExCents * GST_MULTIPLIER);
+  const totalCents = variation?.totalAmount ?? 0;
+
+  // The global markup shown to the client is INC GST and is DERIVED as the gap
+  // between the rows on the page and the Total, rather than grossed up from the
+  // banked ex-GST figure.
+  //
+  // Every row a client reads is inc-GST, and this document promises those rows
+  // add up to the Total being approved. The banked markup is ex-GST, and its
+  // GST is pro-rata across the taxable and non-taxable parts of the base — so
+  // markupEx * 1.1 is simply wrong whenever a variation mixes both, and would
+  // leave the page not adding up by exactly that error.
+  //
+  // Defining it as the remainder makes the arithmetic true by construction.
+  const itemisedIncCents =
+    costGroups.reduce((sum, g) => sum + g.totalIncCents, 0) +
+    allowanceLines.reduce((sum, l) => sum + l.amountIncCents, 0) +
+    docBills.reduce((sum, b) => sum + b.totalIncCents, 0) +
+    labourIncCents +
+    notItemisedIncCents;
+  // Gated on the banked ex-GST flag so ordinary rounding noise on a variation
+  // with no markup can never surface a phantom row.
+  const hasGlobalMarkup = (variation?.globalMarkupAmount ?? 0) !== 0;
+  const globalMarkupIncCents = hasGlobalMarkup ? totalCents - itemisedIncCents : 0;
+
   return {
-    costGroups: Array.from(groupsByType.values()),
-    allowanceLines: allowanceItems.map((item: any) => ({
-      id: item.id,
-      description: item.description,
-      amountIncCents: lineIncCents(item),
-    })),
-    bills: bills.map((bill: any) => ({
-      id: bill.id,
-      billNumber: bill.billNumber,
-      supplierName: bill.supplierName ?? null,
-      invoiceDate: bill.invoiceDate ?? bill.billDate ?? null,
-      totalIncCents: bill.totalAmountCents ?? bill.total ?? bill.totalAmount ?? 0,
-    })),
-    labourIncCents: labourExCents + Math.round(labourExCents * GST_MULTIPLIER),
+    costGroups,
+    allowanceLines,
+    bills: docBills,
+    labourIncCents,
     notItemisedIncCents,
+    globalMarkupIncCents,
+    globalMarkupExCents: variation?.globalMarkupAmount ?? 0,
+    globalMarkupPercent: variation?.globalMarkupPercent ?? 0,
     subtotalCents: variation?.subtotal ?? 0,
     gstCents: variation?.gstAmount ?? 0,
-    totalCents: variation?.totalAmount ?? 0,
+    totalCents,
   };
 }
