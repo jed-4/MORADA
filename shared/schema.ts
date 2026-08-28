@@ -7409,10 +7409,15 @@ export const focusBlocks = pgTable("focus_blocks", {
  * decision; what a shared calendar needs is "who is not in this week", and
  * building the rest first would have delayed the part people actually asked for.
  *
- * Day-granular: `startDate`/`endDate` are inclusive dates at local midnight, in
- * the same convention as `notes.dueDate`. A half day carries a period rather than
- * a time, because "Tuesday afternoon off" is what people say — nobody books leave
- * from 13:00 to 17:00.
+ * Day-granular and inclusive. The UI posts a plain `yyyy-MM-dd`, which coerces to
+ * UTC midnight, so the date part round-trips exactly and every consumer compares
+ * `String(date).slice(0, 10)`. That is deliberately NOT the local-midnight
+ * convention `notes.dueDate` uses: a day-granular field has no business carrying a
+ * timezone, and posting a local-midnight ISO string here would store the previous
+ * day east of UTC.
+ *
+ * A half day carries a period rather than a time, because "Tuesday afternoon off"
+ * is what people say — nobody books leave from 13:00 to 17:00.
  */
 export const leaveEntries = pgTable("leave_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

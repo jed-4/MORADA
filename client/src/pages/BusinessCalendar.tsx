@@ -67,6 +67,7 @@ import {
 import { useLocation } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CalendarDateJumper } from "@/components/CalendarDateJumper";
+import { PeopleDayView, type PeopleDayLeave } from "@/components/calendar-people/PeopleDayView";
 import { useCalendarShortcuts } from "@/hooks/useCalendarShortcuts";
 
 import TaskEditModal from "@/components/TaskEditModal";
@@ -84,10 +85,16 @@ let defaultBusinessViewCreated = false;
  * had no day view and mapped everything unknown onto agenda. It now renders as a
  * real day view, which is what it always said it was.
  */
-const CALENDAR_VIEWS: EnhancedCalendarView[] = ["month", "week", "day", "agenda", "roster"];
-function toCalendarView(mode: string | null | undefined): EnhancedCalendarView {
-  return CALENDAR_VIEWS.includes(mode as EnhancedCalendarView)
-    ? (mode as EnhancedCalendarView)
+/**
+ * `people` is this page's own mode — a day with a column per person, rendered by
+ * PeopleDayView rather than by the shared calendar. It rides in `calendarMode` so
+ * it persists in a saved view like any other choice of view.
+ */
+type BusinessCalendarMode = EnhancedCalendarView | "people";
+const CALENDAR_VIEWS: BusinessCalendarMode[] = ["month", "week", "day", "agenda", "roster", "people"];
+function toCalendarView(mode: string | null | undefined): BusinessCalendarMode {
+  return CALENDAR_VIEWS.includes(mode as BusinessCalendarMode)
+    ? (mode as BusinessCalendarMode)
     : "week";
 }
 
@@ -112,7 +119,7 @@ export default function BusinessCalendar() {
   const [, navigate] = useLocation();
   const isMobile = useIsMobile();
   const [filters, setFilters] = useState<CalendarFiltersType>({});
-  const [calendarMode, setCalendarMode] = useState<EnhancedCalendarView>("week");
+  const [calendarMode, setCalendarMode] = useState<BusinessCalendarMode>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
@@ -398,6 +405,23 @@ export default function BusinessCalendar() {
     });
   }, [leaveEntries, leaveTypeOptions]);
 
+  // The people axis needs leave per person for the day on screen, rather than the
+  // spans the band lane draws.
+  const peopleDayLeave: PeopleDayLeave[] = useMemo(() => {
+    const day = format(currentDate, "yyyy-MM-dd");
+    return leaveEntries
+      .filter((e: any) => String(e.startDate).slice(0, 10) <= day && String(e.endDate).slice(0, 10) >= day)
+      .map((e: any) => {
+        const option = leaveTypeOptions.find((o: any) => o.key === e.leaveType);
+        return {
+          userId: e.userId,
+          label: option?.name ?? e.leaveType,
+          color: option?.color ?? null,
+          halfDayPeriod: e.isHalfDay ? (e.halfDayPeriod as "am" | "pm") : null,
+        };
+      });
+  }, [leaveEntries, leaveTypeOptions, currentDate]);
+
   // Bands respect the project filter as well — filtering to one job should not
   // leave other projects' bands stranded above an empty grid.
   const filteredProjectBands = useMemo(() => {
@@ -561,7 +585,7 @@ export default function BusinessCalendar() {
   /** Step by whatever the current view shows: a day, a week, or a month. */
   const stepDate = (direction: -1 | 1) => {
     const newDate = new Date(currentDate);
-    if (calendarMode === "day") {
+    if (calendarMode === "day" || calendarMode === "people") {
       newDate.setDate(newDate.getDate() + direction);
     } else if (calendarMode === "week" || calendarMode === "roster") {
       newDate.setDate(newDate.getDate() + 7 * direction);
@@ -1261,7 +1285,8 @@ export default function BusinessCalendar() {
               { value: 'week', label: 'Week' },
               { value: 'month', label: 'Month' },
               { value: 'agenda', label: 'Agenda' },
-            ] as Array<{ value: EnhancedCalendarView; label: string }>).map((mode) => (
+              { value: 'people', label: 'People' },
+            ] as Array<{ value: BusinessCalendarMode; label: string }>).map((mode) => (
               <button
                 key={mode.value}
                 onClick={() => setCalendarMode(mode.value)}
@@ -1305,12 +1330,26 @@ export default function BusinessCalendar() {
           week-view timed events — the previous engine only rendered those extra
           lines on month and all-day chips.
         */}
+        {/* A column per person needs width. On a phone the mobile fallback takes
+            over, the same as it does for the grid views. */}
+        {calendarMode === "people" && !isMobile ? (
+          <PeopleDayView
+            date={currentDate}
+            people={availableAssignees}
+            events={eventsWithLayers}
+            leave={peopleDayLeave}
+            onEventClick={handleEventClick}
+            onPersonClick={(id) => navigate(`/users/${id}/calendar`)}
+          />
+        ) : (
         <EnhancedCalendar
           events={eventsWithLayers}
           onEventClick={handleEventClick}
           currentDate={currentDate}
           onCurrentDateChange={setCurrentDate}
-          view={calendarMode}
+          // `people` only reaches here on mobile, where the fallback overrides it
+          // anyway; day is the nearest shared view to hand it.
+          view={calendarMode === "people" ? "day" : calendarMode}
           onViewChange={setCalendarMode}
           displayOptions={displayOptions}
           projectBands={filteredProjectBands}
@@ -1321,6 +1360,7 @@ export default function BusinessCalendar() {
           readOnly
           hideInternalHeader
         />
+        )}
       </div>
      </div>
 

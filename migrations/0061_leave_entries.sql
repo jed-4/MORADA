@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS leave_entries (
   company_id      VARCHAR NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   user_id         VARCHAR NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
 
-  -- Inclusive dates at local midnight, matching the notes.due_date convention.
+  -- Inclusive dates at UTC midnight: the UI posts a plain yyyy-MM-dd, so the date
+  -- part round-trips exactly and consumers compare the first 10 characters. NOT
+  -- the local-midnight convention notes.due_date uses — a day-granular field has
+  -- no business carrying a timezone.
   -- A single day has start_date = end_date.
   start_date      TIMESTAMP NOT NULL,
   end_date        TIMESTAMP NOT NULL,

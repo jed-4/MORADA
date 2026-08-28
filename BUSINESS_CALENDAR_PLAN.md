@@ -291,7 +291,7 @@ No migration. Every column listed in D4 already exists.
 
 **Explicitly not in scope:** requests, approvals, balances, accrual, payroll or Xero sync.
 
-### Phase 5 — People axis
+### Phase 5 — People axis ✅ *(done 29 Aug)*
 
 No migration.
 
@@ -424,7 +424,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 2 | Tiering + project band row ✅ | — | 1 |
 | 3 | Sources / layers endpoint ✅ | — | 1 |
 | 4 | **Leave** ✅ | `leave_entries` (0061, prod-pending) | 1 |
-| 5 | People axis / by-person day view | — | 0, reads 4 |
+| 5 | People axis / by-person day view ✅ | — | 0, reads 4 |
 | 6 | Shared + company-default views | 1 column | — |
 | 7 | Delete the dead engines ✅ | — | 1, 3 |
 | 8 | **Meetings** | `meetings` + FK | 1 |
