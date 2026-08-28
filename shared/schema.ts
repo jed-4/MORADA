@@ -4395,6 +4395,12 @@ export const calendarViews = pgTable("calendar_views", {
   // Sharing
   sharedWith: json("shared_with").default([]), // Array of user IDs or role IDs who can access this view
   isDefault: boolean("is_default").notNull().default(false), // Is this the default view for the user
+  /**
+   * The company's default business view — one row per company, shown to everyone
+   * in it. Replaces the per-user "All Events" copy the page used to auto-create,
+   * which gave a company of fifteen fifteen private copies of the same view.
+   */
+  isCompanyDefault: boolean("is_company_default").notNull().default(false),
   
   // Metadata
   sortOrder: integer("sort_order").notNull().default(0), // For ordering tabs

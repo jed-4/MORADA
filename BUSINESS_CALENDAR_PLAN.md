@@ -302,13 +302,13 @@ No migration.
 
 **Ships:** "who's on what today" in one glance — the answer Business → Schedule can't give at day granularity.
 
-### Phase 6 — Shared views
+### Phase 6 — Shared views ✅ *(done 29 Aug — migration 0062, dev only)*
 
 Migration: likely one column (`isCompanyDefault` on `calendar_views`).
 
 1. Company-level default view instead of per-user auto-creation.
 2. Wire the existing `SavedViews` sharing UI.
-3. Seed the three starter views.
+3. ~~Seed the three starter views.~~ **Dropped.** Seeding *Site This Week* / *Deliveries & Inspections* / *Client-facing* means writing opinionated content into 14 companies' tab strips from a migration. The company default is justified because it replaces something the client was already auto-creating; named starter views are a content decision for whoever owns the calendar, not a schema change.
 4. Clean up the orphaned per-user "All Events" rows already in prod.
 
 **Ships:** a calendar the team shares rather than fifteen private copies of the same thing.
@@ -425,7 +425,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 3 | Sources / layers endpoint ✅ | — | 1 |
 | 4 | **Leave** ✅ | `leave_entries` (0061, prod-pending) | 1 |
 | 5 | People axis / by-person day view ✅ | — | 0, reads 4 |
-| 6 | Shared + company-default views | 1 column | — |
+| 6 | Shared + company-default views ✅ | 0062, prod-pending | — |
 | 7 | Delete the dead engines ✅ | — | 1, 3 |
 | 8 | **Meetings** | `meetings` + FK | 1 |
 

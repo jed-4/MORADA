@@ -7169,7 +7169,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // through computeEstimateItemPrice so taxAmount/priceIncTax stay correct.
   app.patch("/api/estimates/:estimateId/items/bulk-update", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const companyId = req.user!.companyId!;
+      const actor = req.user as any;
+      const companyId = actor.companyId as string;
       const { estimateId } = req.params;
       const { itemIds, patch } = req.body;
 
@@ -35131,10 +35132,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid calendar type. Must be 'personal' or 'business'" });
       }
       
+      const actor = req.user as any;
+      const companyId = actor.companyId as string;
+
+      // The business calendar needs a default view to open on. It used to be
+      // created by the client, once per user, which gave a company of fifteen
+      // fifteen private copies of the same view. Seeded here instead: one per
+      // company, everyone sees it. The unique partial index makes the race
+      // between two people opening the page at once harmless.
+      if (calendarType === "business") {
+        const [existing] = await db.select({ id: schema.calendarViews.id })
+          .from(schema.calendarViews)
+          .where(and(
+            eq(schema.calendarViews.companyId, companyId),
+            eq(schema.calendarViews.calendarType, "business"),
+            eq(schema.calendarViews.isCompanyDefault, true),
+            eq(schema.calendarViews.isArchived, false),
+          ))
+          .limit(1);
+        if (!existing) {
+          await db.insert(schema.calendarViews).values({
+            companyId,
+            userId: actor.id,
+            name: "All Events",
+            calendarType: "business",
+            calendarMode: "week",
+            filters: {},
+            isDefault: true,
+            isCompanyDefault: true,
+            sortOrder: 0,
+          }).onConflictDoNothing();
+        }
+      }
+
       const views = await storage.getCalendarViews(
-        req.user!.id,
+        actor.id,
         calendarType as "personal" | "business",
-        req.user!.companyId!
+        companyId
       );
       res.json(views);
     } catch (error: any) {

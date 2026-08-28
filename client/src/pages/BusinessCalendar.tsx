@@ -72,10 +72,6 @@ import { useCalendarShortcuts } from "@/hooks/useCalendarShortcuts";
 
 import TaskEditModal from "@/components/TaskEditModal";
 
-// Module-level flag — survives component remounts for the full browser session,
-// preventing duplicate "All Events" view creation on every navigation.
-let defaultBusinessViewCreated = false;
-
 /**
  * `calendar_views.calendar_mode` is free text and holds whatever the page wrote at
  * the time. Rows predating this surface can carry values the calendar no longer
@@ -128,6 +124,7 @@ export default function BusinessCalendar() {
   const [viewToEdit, setViewToEdit] = useState<CalendarView | null>(null);
   const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
+  const [sharedWithUsers, setSharedWithUsers] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
@@ -244,36 +241,17 @@ export default function BusinessCalendar() {
     enabled: !!user,
   });
 
-  const createDefaultViewMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("/api/calendar-views", "POST", {
-        name: "All Events",
-        calendarType: "business",
-        filters: {},
-        calendarMode: "week",
-        isDefault: true,
-      });
-    },
-    onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setSelectedViewId(newView.id);
-    },
-  });
-
-  useEffect(() => {
-    if (!user || isLoadingViews || defaultBusinessViewCreated) return;
-    if (createDefaultViewMutation.isPending) return;
-    
-    if (views.length === 0) {
-      defaultBusinessViewCreated = true;
-      createDefaultViewMutation.mutate();
-    }
-  }, [user, isLoadingViews, views.length]);
+  // The default view is seeded by the server, once per company, so there is no
+  // client-side auto-create here any more — that is what produced a private "All
+  // Events" copy per person, and needed a module-level flag to stop it firing
+  // again on every remount.
 
   // Set selected view to default on load
   useEffect(() => {
     if (views.length > 0 && !selectedViewId) {
-      const defaultView = views.find((v: CalendarView) => v.isDefault);
+      const defaultView =
+        views.find((v: CalendarView) => (v as any).isCompanyDefault) ??
+        views.find((v: CalendarView) => v.isDefault);
       if (defaultView) {
         setSelectedViewId(defaultView.id);
         setFilters(normalizeFilterDates(defaultView.filters || {}));
@@ -501,6 +479,45 @@ export default function BusinessCalendar() {
     }
   };
 
+  /**
+   * Who else can see this view.
+   *
+   * The column and the read path have existed since the table was created, and
+   * SavedViews.tsx has carried an unused UI for it just as long — a shared
+   * calendar whose views were all private. This is the control that connects them.
+   */
+  const renderShareWith = () => {
+    // Test the list actually rendered, not the one before you are removed from it —
+    // otherwise a one-person company gets an empty box instead of an explanation.
+    const shareable = availableAssignees.filter((a: any) => a.id !== user?.id);
+    return (
+    <div className="grid gap-2">
+      <Label>Share with</Label>
+      <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border p-2">
+        {shareable.length === 0 && (
+          <p className="text-xs text-muted-foreground">No one else on the team yet.</p>
+        )}
+        {shareable
+          .map((a: any) => (
+            <label key={a.id} className="flex cursor-pointer items-center gap-2">
+              <Checkbox
+                checked={sharedWithUsers.includes(a.id)}
+                onCheckedChange={() => setSharedWithUsers(current =>
+                  current.includes(a.id) ? current.filter(id => id !== a.id) : [...current, a.id]
+                )}
+                data-testid={`share-with-${a.id}`}
+              />
+              <span className="text-xs">{a.name}</span>
+            </label>
+          ))}
+      </div>
+      <p className="text-data text-muted-foreground">
+        Everyone already sees the company's default view. This shares this one on top of it.
+      </p>
+    </div>
+    );
+  };
+
   const createViewMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
       return await apiRequest("/api/calendar-views", "POST", {
@@ -508,6 +525,7 @@ export default function BusinessCalendar() {
         calendarType: "business",
         filters,
         calendarMode,
+        sharedWith: sharedWithUsers,
       });
     },
     onSuccess: (newView) => {
@@ -515,6 +533,7 @@ export default function BusinessCalendar() {
       setSelectedViewId(newView.id);
       setShowCreateViewDialog(false);
       setNewViewName("");
+      setSharedWithUsers([]);
       toast({ title: "View created", description: `"${newView.name}" has been saved.` });
     },
     onError: () => {
@@ -523,11 +542,12 @@ export default function BusinessCalendar() {
   });
 
   const updateViewMutation = useMutation({
-    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string }) => {
+    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string; sharedWith?: string[] }) => {
       return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.filters !== undefined && { filters: data.filters }),
         ...(data.calendarMode !== undefined && { calendarMode: data.calendarMode }),
+        ...(data.sharedWith !== undefined && { sharedWith: data.sharedWith }),
       });
     },
     onSuccess: (updatedView) => {
@@ -569,12 +589,15 @@ export default function BusinessCalendar() {
   const handleEditView = (view: CalendarView) => {
     setViewToEdit(view);
     setEditViewName(view.name);
+    // Load who it is already shared with, so opening the dialog and saving does
+    // not silently unshare it.
+    setSharedWithUsers(Array.isArray(view.sharedWith) ? view.sharedWith : []);
     setShowEditViewDialog(true);
   };
 
   const handleUpdateView = () => {
     if (!viewToEdit || !editViewName.trim()) return;
-    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode });
+    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode, sharedWith: sharedWithUsers });
   };
 
   // Navigation handlers
@@ -751,7 +774,7 @@ export default function BusinessCalendar() {
             ))}
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => setShowCreateViewDialog(true)}
+              onClick={() => { setSharedWithUsers([]); setShowCreateViewDialog(true); }}
               data-testid="button-add-view"
             >
               <Plus className="w-3 h-3" />
@@ -1518,6 +1541,7 @@ export default function BusinessCalendar() {
                 data-testid="input-view-name"
               />
             </div>
+            {renderShareWith()}
           </div>
           <div className="flex justify-end gap-2">
             <Button
@@ -1558,6 +1582,7 @@ export default function BusinessCalendar() {
                 data-testid="input-edit-view-name"
               />
             </div>
+            {renderShareWith()}
           </div>
           <div className="flex justify-end gap-2">
             <Button
