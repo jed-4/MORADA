@@ -138,6 +138,13 @@ export default function BusinessCalendar() {
     userId: "", startDate: "", endDate: "", leaveType: "",
     isHalfDay: false, halfDayPeriod: "am" as "am" | "pm", note: "",
   };
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const EMPTY_MEETING_FORM = {
+    title: "", date: "", startTime: "09:00", endTime: "10:00",
+    location: "", videoUrl: "", agenda: "", projectId: "", attendeeUserIds: [] as string[],
+  };
+  const [meetingForm, setMeetingForm] = useState(EMPTY_MEETING_FORM);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
   const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
@@ -346,9 +353,49 @@ export default function BusinessCalendar() {
       });
   }, [layerData, filters.projects]);
 
+  // Meetings. A core source, not an optional layer: a meeting is the most
+  // calendar-shaped thing the business has.
+  const { data: meetings = [] } = useQuery<any[]>({
+    queryKey: ["/api/meetings", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/meetings?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch meetings');
+      return response.json();
+    },
+  });
+
+  const meetingEvents: CalendarEvent[] = useMemo(() => {
+    return meetings
+      .filter((m: any) => !filters.projects?.length || (m.projectId && filters.projects.includes(m.projectId)))
+      .map((m: any) => {
+        const start = new Date(m.startsAt);
+        const end = new Date(m.endsAt);
+        const project = projects.find((p: any) => p.id === m.projectId);
+        const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        return {
+          id: `meeting-${m.id}`,
+          title: m.title,
+          startDate: start,
+          endDate: end,
+          // The grid takes times as strings alongside the date, so a real
+          // timestamp has to be split back into the two.
+          startTime: hhmm(start),
+          endTime: hhmm(end),
+          color: TYPE_COLORS_HEX.meeting,
+          projectId: m.projectId ?? null,
+          projectColor: TYPE_COLORS_HEX.meeting,
+          projectName: project?.name ?? null,
+          assigneeIds: m.attendeeUserIds ?? [],
+          type: "meeting" as const,
+          location: m.location ?? m.videoUrl ?? null,
+          resource: m,
+        };
+      });
+  }, [meetings, projects, filters.projects]);
+
   const eventsWithLayers = useMemo(
-    () => [...filteredEvents, ...layerEvents],
-    [filteredEvents, layerEvents],
+    () => [...filteredEvents, ...meetingEvents, ...layerEvents],
+    [filteredEvents, meetingEvents, layerEvents],
   );
 
   // Who is away. Leave is duration, like a work bar — five all-day chips per
@@ -408,6 +455,67 @@ export default function BusinessCalendar() {
     return projectBands.filter((band) => wanted.has(band.projectId));
   }, [projectBands, filters.projects]);
 
+  const resetMeetingForm = () => { setEditingMeetingId(null); setMeetingForm(EMPTY_MEETING_FORM); };
+
+  const saveMeetingMutation = useMutation({
+    mutationFn: async () => {
+      // The form keeps a date and two times because that is how people think about
+      // a meeting; the API takes real timestamps.
+      const body = {
+        title: meetingForm.title,
+        startsAt: new Date(`${meetingForm.date}T${meetingForm.startTime}`).toISOString(),
+        endsAt: new Date(`${meetingForm.date}T${meetingForm.endTime}`).toISOString(),
+        location: meetingForm.location || null,
+        videoUrl: meetingForm.videoUrl || null,
+        agenda: meetingForm.agenda || null,
+        projectId: meetingForm.projectId || null,
+        attendeeUserIds: meetingForm.attendeeUserIds,
+      };
+      return editingMeetingId
+        ? apiRequest(`/api/meetings/${editingMeetingId}`, "PATCH", body)
+        : apiRequest("/api/meetings", "POST", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      setMeetingDialogOpen(false);
+      resetMeetingForm();
+      toast({ title: editingMeetingId ? "Meeting updated" : "Meeting scheduled" });
+    },
+    onError: (e: any) => toast({ title: "Couldn't save meeting", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteMeetingMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest(`/api/meetings/${id}`, "DELETE"); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      setMeetingDialogOpen(false);
+      resetMeetingForm();
+      toast({ title: "Meeting removed" });
+    },
+  });
+
+  // Clicking a meeting opens it pre-filled.
+  useEffect(() => {
+    if (!editingMeetingId) return;
+    const m = meetings.find((x: any) => x.id === editingMeetingId);
+    if (!m) return;
+    const start = new Date(m.startsAt);
+    const end = new Date(m.endsAt);
+    const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    setMeetingForm({
+      title: m.title,
+      date: format(start, "yyyy-MM-dd"),
+      startTime: hhmm(start),
+      endTime: hhmm(end),
+      location: m.location ?? "",
+      videoUrl: m.videoUrl ?? "",
+      agenda: m.agenda ?? "",
+      projectId: m.projectId ?? "",
+      attendeeUserIds: m.attendeeUserIds ?? [],
+    });
+    setMeetingDialogOpen(true);
+  }, [editingMeetingId, meetings]);
+
   const resetLeaveForm = () => { setEditingLeaveId(null); setLeaveForm(EMPTY_LEAVE_FORM); };
 
   const saveLeaveMutation = useMutation({
@@ -464,6 +572,10 @@ export default function BusinessCalendar() {
   }, [editingLeaveId, leaveEntries]);
 
   const handleEventClick = (event: CalendarEvent) => {
+    if (event.type === "meeting") {
+      setEditingMeetingId(event.resource?.id ?? null);
+      return;
+    }
     if (event.type === "task") {
       const task = allTasks.find(t => t.id === event.id);
       if (task) {
@@ -1326,15 +1438,36 @@ export default function BusinessCalendar() {
           </div>
           )}
 
-          {/* Add Event Button */}
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
-            onClick={() => { resetLeaveForm(); setLeaveDialogOpen(true); }}
-            title="Mark leave"
-            data-testid="button-mark-leave"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
+          {/* Two things can be added to this calendar now, so the + is a menu. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
+                data-testid="button-calendar-add"
+                title="Add to the calendar"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  resetMeetingForm();
+                  setMeetingForm({ ...EMPTY_MEETING_FORM, date: format(currentDate, "yyyy-MM-dd") });
+                  setMeetingDialogOpen(true);
+                }}
+                data-testid="menu-schedule-meeting"
+              >
+                Schedule a meeting
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => { resetLeaveForm(); setLeaveDialogOpen(true); }}
+                data-testid="menu-mark-leave"
+              >
+                Mark leave
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -1386,6 +1519,148 @@ export default function BusinessCalendar() {
         )}
       </div>
      </div>
+
+      {/* Schedule a meeting. The forward half of D9: minutes record what happened,
+          this is the thing you can still turn up to. */}
+      <Dialog open={meetingDialogOpen} onOpenChange={(open) => { setMeetingDialogOpen(open); if (!open) resetMeetingForm(); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{editingMeetingId ? "Edit meeting" : "Schedule a meeting"}</DialogTitle>
+            <DialogDescription>
+              It shows on the business calendar and on every attendee's own calendar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Title</Label>
+              <Input
+                className="h-8 text-xs"
+                value={meetingForm.title}
+                onChange={(e) => setMeetingForm({ ...meetingForm, title: e.target.value })}
+                placeholder="e.g., Site walkthrough"
+                data-testid="input-meeting-title"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date</Label>
+                <Input type="date" className="h-8 text-xs" value={meetingForm.date}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, date: e.target.value })}
+                  data-testid="input-meeting-date" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">From</Label>
+                <Input type="time" className="h-8 text-xs" value={meetingForm.startTime}
+                  onChange={(e) => {
+                    const startTime = e.target.value;
+                    // Keep the window valid as you type rather than failing on save.
+                    setMeetingForm(f => ({
+                      ...f,
+                      startTime,
+                      endTime: f.endTime && f.endTime < startTime ? startTime : f.endTime,
+                    }));
+                  }}
+                  data-testid="input-meeting-start" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">To</Label>
+                <Input type="time" className="h-8 text-xs" min={meetingForm.startTime} value={meetingForm.endTime}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, endTime: e.target.value })}
+                  data-testid="input-meeting-end" />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Attendees</Label>
+              <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-md border p-2">
+                {availableAssignees.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No team members yet.</p>
+                )}
+                {availableAssignees.map((a: any) => (
+                  <label key={a.id} className="flex cursor-pointer items-center gap-2">
+                    <Checkbox
+                      checked={meetingForm.attendeeUserIds.includes(a.id)}
+                      onCheckedChange={() => setMeetingForm(f => ({
+                        ...f,
+                        attendeeUserIds: f.attendeeUserIds.includes(a.id)
+                          ? f.attendeeUserIds.filter(id => id !== a.id)
+                          : [...f.attendeeUserIds, a.id],
+                      }))}
+                      data-testid={`meeting-attendee-${a.id}`}
+                    />
+                    <span className="text-xs">{a.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Project <span className="text-muted-foreground">(optional)</span></Label>
+                <Select
+                  value={meetingForm.projectId || "none"}
+                  onValueChange={(v) => setMeetingForm({ ...meetingForm, projectId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-meeting-project">
+                    <SelectValue placeholder="No project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No project</SelectItem>
+                    {projects.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Where <span className="text-muted-foreground">(optional)</span></Label>
+                <Input className="h-8 text-xs" value={meetingForm.location}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, location: e.target.value })}
+                  placeholder="Site office" data-testid="input-meeting-location" />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Video link <span className="text-muted-foreground">(optional)</span></Label>
+              <Input className="h-8 text-xs" value={meetingForm.videoUrl}
+                onChange={(e) => setMeetingForm({ ...meetingForm, videoUrl: e.target.value })}
+                placeholder="https://…" data-testid="input-meeting-video" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {editingMeetingId && (
+              <>
+                <Button
+                  variant="outline"
+                  className="mr-auto text-destructive"
+                  onClick={() => deleteMeetingMutation.mutate(editingMeetingId)}
+                  data-testid="button-delete-meeting"
+                >
+                  Delete
+                </Button>
+                {/* The backward half: whether this meeting has been written up yet. */}
+                {(() => {
+                  const m = meetings.find((x: any) => x.id === editingMeetingId);
+                  return m?.minutesId ? (
+                    <Button variant="outline" onClick={() => navigate(`/business/minutes/${m.minutesId}`)} data-testid="button-open-minutes">
+                      Open minutes
+                    </Button>
+                  ) : null;
+                })()}
+              </>
+            )}
+            <Button variant="outline" onClick={() => { setMeetingDialogOpen(false); resetMeetingForm(); }}>Cancel</Button>
+            <Button
+              onClick={() => saveMeetingMutation.mutate()}
+              disabled={!meetingForm.title.trim() || !meetingForm.date || saveMeetingMutation.isPending}
+              data-testid="button-save-meeting"
+            >
+              {editingMeetingId ? "Save" : "Schedule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mark leave. Deliberately minimal: who, when, what kind, and a note.
           There is no request or approval step — this records that someone is

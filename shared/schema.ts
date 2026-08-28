@@ -4526,6 +4526,11 @@ export const minutes = pgTable("minutes", {
   transcription: text("transcription"), // AI transcription of recording
   transcriptionStatus: text("transcription_status"), // pending, processing, completed, failed
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  /**
+   * The meeting these minutes record, when they came from a scheduled one.
+   * SET NULL on delete: removing a meeting must never destroy the record of it.
+   */
+  meetingId: varchar("meeting_id"),
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -7487,6 +7492,70 @@ const withLeaveRules = <T extends z.ZodTypeAny>(schema: T) => schema
     message: "Say whether the half day is morning or afternoon",
     path: ["halfDayPeriod"],
   });
+
+/**
+ * A meeting you have scheduled.
+ *
+ * Distinct from `minutes`, which records a meeting that has already happened, and
+ * from a `schedule_item` of type "meeting", which is a Gantt row inside a project
+ * schedule. A Tuesday management meeting is neither.
+ *
+ * `minutes.meetingId` points back here, so writing up a meeting attaches the
+ * record to the thing it was a record of.
+ */
+export const meetings = pgTable("meetings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  /** Real timestamps, unlike leave's day-granular dates: a meeting is a time. */
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  location: text("location"),
+  videoUrl: text("video_url"),
+  agenda: text("agenda"),
+  /** Optional — a management meeting belongs to no job. */
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  attendeeUserIds: text("attendee_user_ids").array().notNull().default(sql`'{}'`),
+  attendeeContactIds: text("attendee_contact_ids").array().notNull().default(sql`'{}'`),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("meetings_company_idx").on(table.companyId),
+  companyRangeIdx: index("meetings_company_range_idx").on(table.companyId, table.startsAt, table.endsAt),
+  projectIdx: index("meetings_project_idx").on(table.projectId),
+}));
+
+export const meetingFieldsSchema = createInsertSchema(meetings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  location: z.string().nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
+  agenda: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  attendeeUserIds: z.array(z.string()).default([]),
+  attendeeContactIds: z.array(z.string()).default([]),
+});
+
+/** Same shape/rules split as leave: `.refine` yields a ZodEffects, which PATCH cannot `.partial()`. */
+const withMeetingRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endsAt >= v.startsAt, {
+    message: "A meeting cannot end before it starts",
+    path: ["endsAt"],
+  });
+
+export const insertMeetingSchema = withMeetingRules(meetingFieldsSchema);
+export const patchMeetingSchema = meetingFieldsSchema.partial();
+export const meetingRulesSchema = withMeetingRules(meetingFieldsSchema);
+
+export type Meeting = typeof meetings.$inferSelect;
+export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
 
 export const insertLeaveEntrySchema = withLeaveRules(leaveEntryFieldsSchema);
 export const patchLeaveEntrySchema = leaveEntryFieldsSchema.partial();

@@ -25,6 +25,9 @@ import {
   insertNoteSchema,
   insertTaskSchema,
   insertLeaveEntrySchema,
+  insertMeetingSchema,
+  patchMeetingSchema,
+  meetingRulesSchema,
   patchLeaveEntrySchema,
   leaveEntryRulesSchema,
   insertCustomFieldDefSchema,
@@ -218,7 +221,7 @@ import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shar
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
@@ -31706,6 +31709,179 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+
+  /**
+   * Every id on a meeting has to belong to the caller's company. Without this a
+   * valid session could invite another tenant's users, or file a meeting against
+   * their project. Returns a message when something is wrong, null when it is fine.
+   */
+  async function meetingRefsOutsideCompany(
+    data: { projectId?: string | null; attendeeUserIds?: string[]; attendeeContactIds?: string[] },
+    companyId: string,
+  ): Promise<string | null> {
+    if (data.projectId) {
+      const [project] = await db.select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(and(eq(schema.projects.id, data.projectId), eq(schema.projects.companyId, companyId)));
+      if (!project) return "Project not found in this company";
+    }
+    if (data.attendeeUserIds?.length) {
+      const found = await db.select({ id: schema.users.id })
+        .from(schema.users)
+        .where(and(inArray(schema.users.id, data.attendeeUserIds), eq(schema.users.companyId, companyId)));
+      if (found.length !== new Set(data.attendeeUserIds).size) return "An attendee is not in this company";
+    }
+    if (data.attendeeContactIds?.length) {
+      const found = await db.select({ id: schema.contacts.id })
+        .from(schema.contacts)
+        .where(and(inArray(schema.contacts.id, data.attendeeContactIds), eq(schema.contacts.companyId, companyId)));
+      if (found.length !== new Set(data.attendeeContactIds).size) return "A contact is not in this company";
+    }
+    return null;
+  }
+
+  // Meetings — scheduled, not recorded after the fact.
+  //
+  // `minutes` is the record of a meeting that already happened, so a calendar
+  // built on it can only ever show the past. These are the ones you can still
+  // turn up to. Every read and write is scoped to the caller's company.
+  app.get("/api/meetings", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const { startDate, endDate, attendeeId } = req.query;
+      const conditions = [eq(schema.meetings.companyId, companyId)];
+      if (startDate && endDate) {
+        const from = new Date(String(startDate));
+        const to = new Date(String(endDate));
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+          return res.status(400).json({ error: "startDate and endDate must be valid dates" });
+        }
+        to.setHours(23, 59, 59, 999);
+        // Overlap, not containment: a meeting that starts before the window and
+        // runs into it is still in the window.
+        conditions.push(lte(schema.meetings.startsAt, to));
+        conditions.push(gte(schema.meetings.endsAt, from));
+      }
+      if (attendeeId) {
+        conditions.push(arrayContains(schema.meetings.attendeeUserIds, [String(attendeeId)]));
+      }
+
+      const rows = await db.select()
+        .from(schema.meetings)
+        .where(and(...conditions))
+        .orderBy(asc(schema.meetings.startsAt));
+
+      // Whether each meeting has been written up yet — the forward and backward
+      // halves of the same thing, on one round trip.
+      const ids = rows.map(r => r.id);
+      const written = ids.length
+        ? await db.select({ id: schema.minutes.id, meetingId: schema.minutes.meetingId })
+            .from(schema.minutes)
+            .where(inArray(schema.minutes.meetingId, ids))
+        : [];
+      const minutesByMeeting = new Map(written.map(m => [m.meetingId, m.id]));
+
+      res.json(rows.map(r => ({ ...r, minutesId: minutesByMeeting.get(r.id) ?? null })));
+    } catch (error: any) {
+      console.error("[GET /api/meetings] Error:", error);
+      res.status(500).json({ error: "Failed to fetch meetings", details: error.message });
+    }
+  });
+
+  app.post("/api/meetings", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const actorId = String(req.user?.dbUser?.id || req.user?.id || "");
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = insertMeetingSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const invalid = await meetingRefsOutsideCompany(parsed.data, companyId);
+      if (invalid) return res.status(404).json({ error: invalid });
+
+      const [created] = await db.insert(schema.meetings)
+        .values({ ...parsed.data, companyId, createdBy: actorId || null })
+        .returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[POST /api/meetings] Error:", error);
+      res.status(500).json({ error: "Failed to create meeting", details: error.message });
+    }
+  });
+
+  app.patch("/api/meetings/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = patchMeetingSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      const [existing] = await db.select().from(schema.meetings).where(and(
+        eq(schema.meetings.id, req.params.id),
+        eq(schema.meetings.companyId, companyId),
+      ));
+      if (!existing) return res.status(404).json({ error: "Meeting not found" });
+
+      const invalid = await meetingRefsOutsideCompany(parsed.data, companyId);
+      if (invalid) return res.status(404).json({ error: invalid });
+
+      // Validate the merged meeting, not the patch: moving only the end time
+      // still has to be checked against the stored start.
+      const merged = meetingRulesSchema.safeParse({
+        title: parsed.data.title ?? existing.title,
+        startsAt: parsed.data.startsAt ?? existing.startsAt,
+        endsAt: parsed.data.endsAt ?? existing.endsAt,
+        location: parsed.data.location ?? existing.location,
+        videoUrl: parsed.data.videoUrl ?? existing.videoUrl,
+        agenda: parsed.data.agenda ?? existing.agenda,
+        projectId: parsed.data.projectId ?? existing.projectId,
+        attendeeUserIds: parsed.data.attendeeUserIds ?? existing.attendeeUserIds,
+        attendeeContactIds: parsed.data.attendeeContactIds ?? existing.attendeeContactIds,
+      });
+      if (!merged.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(merged.error).toString() });
+      }
+
+      // companyId in the WHERE, never the SET.
+      const [updated] = await db.update(schema.meetings)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.meetings.id, req.params.id),
+          eq(schema.meetings.companyId, companyId),
+        ))
+        .returning();
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PATCH /api/meetings/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update meeting", details: error.message });
+    }
+  });
+
+  app.delete("/api/meetings/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+      const [deleted] = await db.delete(schema.meetings)
+        .where(and(
+          eq(schema.meetings.id, req.params.id),
+          eq(schema.meetings.companyId, companyId),
+        ))
+        .returning();
+      if (!deleted) return res.status(404).json({ error: "Meeting not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[DELETE /api/meetings/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete meeting", details: error.message });
+    }
+  });
 
   // Leave — who is away.
   //

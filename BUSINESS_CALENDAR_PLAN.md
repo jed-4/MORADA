@@ -321,12 +321,12 @@ Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `Per
 
 **Ships:** one calendar engine instead of three. Every future fix lands everywhere.
 
-### Phase 8 — Meetings
+### Phase 8 — Meetings ✅ *(done 29 Aug — migration 0063, dev only)*
 
 **Migration:** new `meetings` table plus `minutes.meeting_id` (D9). The largest build in the plan.
 
 1. `meetings` table — `startsAt` / `endsAt`, attendee users and contacts, location or video link, optional `projectId`.
-2. Create and edit a meeting from the business calendar; it lands on every attendee's own calendar too.
+2. Create and edit a meeting from the business calendar. ✅ — the attendee list is stored and queryable (`GET /api/meetings?attendeeId=`), but **surfacing meetings on the user calendar is not done**: that is a source addition to `UserCalendar`, a different surface, and it belongs in its own change rather than bolted onto this one.
 3. `minutes.meetingId` FK — recording minutes attaches them to the meeting, and a meeting shows whether its minutes exist yet.
 4. Backfill is optional: existing `minutes` rows keep working with a null `meetingId`.
 
@@ -427,7 +427,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 5 | People axis / by-person day view ✅ | — | 0, reads 4 |
 | 6 | Shared + company-default views ✅ | 0062, prod-pending | — |
 | 7 | Delete the dead engines ✅ | — | 1, 3 |
-| 8 | **Meetings** | `meetings` + FK | 1 |
+| 8 | **Meetings** ✅ | 0063, prod-pending | 1 |
 
 Phases 0–2 change how the page feels and touch no schema — that's the first shippable chunk. Phase 3 makes it the whole business. Phases 4 and 8 are the two real builds. Phases 6–7 are the tidy-up that stops this drifting apart again.
 
