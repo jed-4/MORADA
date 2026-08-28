@@ -43,7 +43,9 @@ import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { VariationColumnSidebar } from "@/components/variations/VariationColumnSidebar";
 import {
+  normaliseVariationColumnTemplates,
   resolveVariationDocumentColumns,
+  type VariationColumnTemplate,
   type VariationDocumentColumns,
 } from "@shared/variationDocumentColumns";
 import { Button } from "@/components/ui/button";
@@ -204,7 +206,6 @@ export default function VariationDetail() {
   // Separate, transient value for the "set every line's markup" bulk action.
   // Deliberately NOT the same field: one is a stored margin on the document,
   // the other overwrites per-line data and cannot be undone.
-  const [bulkLineMarkup, setBulkLineMarkup] = useState<string>("");
 
   // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -296,6 +297,7 @@ export default function VariationDetail() {
     termsTemplates?: Array<{ id: string; name: string; content: string }>;
     brandColor?: string;
     documentStyle?: string;
+    variationColumnTemplates?: unknown;
     logoUrl?: string;
   }>({
     queryKey: ["/api/company-settings"],
@@ -317,6 +319,35 @@ export default function VariationDetail() {
     staleTime: Infinity,
     gcTime: 1000 * 60 * 30,
   });
+
+  const docColumnTemplates: VariationColumnTemplate[] = normaliseVariationColumnTemplates(
+    (companySettings as any)?.variationColumnTemplates,
+  );
+
+  /** Templates live on company settings, so every variation and every user in
+   *  the company sees the same list. The whole array is written back each time
+   *  — it is a handful of rows, and a read-modify-write keeps the server free
+   *  of template-specific endpoints. */
+  const saveTemplatesMutation = useMutation({
+    mutationFn: async (next: VariationColumnTemplate[]) =>
+      apiRequest("/api/company-settings", "PATCH", { variationColumnTemplates: next }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+    },
+    onError: () => {
+      toast({ title: "Couldn't save the column template", variant: "destructive" });
+    },
+  });
+
+  const addDocColumnTemplate = (name: string) => {
+    if (!docColumns) return;
+    const id = `vct-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    saveTemplatesMutation.mutate([...docColumnTemplates, { id, name, columns: docColumns }]);
+  };
+
+  const removeDocColumnTemplate = (id: string) => {
+    saveTemplatesMutation.mutate(docColumnTemplates.filter((t) => t.id !== id));
+  };
 
   const saveDocColumnsMutation = useMutation({
     mutationFn: async (cols: VariationDocumentColumns) =>
@@ -646,14 +677,6 @@ export default function VariationDetail() {
     setCostLines(costLines.filter((_, i) => i !== index));
   };
 
-  /** Overwrites EVERY line's own markup. Distinct from the document-level
-   *  global markup, which leaves line data alone. */
-  const applyBulkLineMarkup = () => {
-    const pct = parseFloat(bulkLineMarkup);
-    if (isNaN(pct)) return;
-    setCostLines(costLines.map((line) => ({ ...line, markupPercent: pct })));
-  };
-
   // ── Cost-line column handlers (resize / reorder / visibility) ──────────────
 
   const toggleColumn = (columnId: string) => {
@@ -823,9 +846,6 @@ export default function VariationDetail() {
   // unless noted; bills are stored inc-GST cents, timesheets ex-GST dollar
   // strings (see shared/money.ts).
 
-  const calculateCostLinesBaseTotal = () =>
-    costLines.reduce((sum, item) => sum + item.quantity * item.unitCostExTax, 0);
-
   const calculateCostLinesSubtotal = () =>
     costLines.reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
 
@@ -876,7 +896,6 @@ export default function VariationDetail() {
     });
 
   const calculateGlobalMarkupAmount = () => centsToDollars(calculateTotals().globalMarkupCents);
-  const calculateMarkupBase = () => centsToDollars(calculateTotals().markupBaseCents);
   const calculateSubtotal = () => centsToDollars(calculateTotals().subtotalCents);
   const calculateGST = () => centsToDollars(calculateTotals().gstCents);
   const calculateTotal = () => centsToDollars(calculateTotals().totalCents);
@@ -2062,56 +2081,20 @@ export default function VariationDetail() {
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                         <span className="text-xs font-medium">Variation Summary</span>
                       </div>
-                      {costLines.length > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Set every line to</span>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="0"
-                            value={bulkLineMarkup}
-                            onChange={(e) => setBulkLineMarkup(e.target.value)}
-                            onFocus={(e) => e.target.select()}
-                            className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
-                            data-testid="input-bulk-line-markup"
-                          />
-                          <span className="text-xs text-muted-foreground">%</span>
-                          <button
-                            type="button"
-                            onClick={applyBulkLineMarkup}
-                            disabled={bulkLineMarkup === "" || isNaN(parseFloat(bulkLineMarkup))}
-                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                            data-testid="button-apply-bulk-line-markup"
-                          >
-                            Overwrite line markups
-                          </button>
-                        </div>
-                      )}
                     </div>
                     <div className="px-4 py-3">
                       <div className="grid grid-cols-5 gap-6">
                         {/* Left: Breakdown */}
                         <div className="col-span-3 space-y-1.5">
+                          {/* Carries each line's own markup, because that is
+                              what the line is worth and what the client is
+                              shown. Only the document-level markup below is
+                              broken out, since it is the only one charged on
+                              top rather than inside a line. */}
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Cost Lines</span>
-                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesBaseTotal())}</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
                           </div>
-                          {(() => {
-                            const base = calculateCostLinesBaseTotal();
-                            const markupAmt = calculateCostLinesSubtotal() - base;
-                            if (markupAmt <= 0) return null;
-                            const blendedPct = base > 0 ? Math.round((markupAmt / base) * 100) : 0;
-                            return (
-                              <div className="flex justify-between text-sm">
-                                {/* Blended across the lines, and already inside
-                                    the line amounts. Named to distinguish it
-                                    from the document-level markup below. */}
-                                <span className="text-muted-foreground">Line markup ({blendedPct}%)</span>
-                                <span className="font-medium tabular-nums">{formatCurrency(markupAmt)}</span>
-                              </div>
-                            );
-                          })()}
                           {calculateBillsTotal() > 0 && (
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
@@ -2147,9 +2130,7 @@ export default function VariationDetail() {
                                 className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
                                 data-testid="input-global-markup"
                               />
-                              <span className="text-xs text-muted-foreground">
-                                % of {formatCurrency(calculateMarkupBase())}
-                              </span>
+                              <span className="text-xs text-muted-foreground">%</span>
                             </div>
                             <span className="font-medium tabular-nums" data-testid="text-global-markup-amount">
                               {formatCurrency(calculateGlobalMarkupAmount())}
@@ -2467,6 +2448,10 @@ export default function VariationDetail() {
               <VariationColumnSidebar
                 columns={docColumns}
                 onChange={updateDocColumns}
+                templates={docColumnTemplates}
+                onSaveTemplate={addDocColumnTemplate}
+                onDeleteTemplate={removeDocColumnTemplate}
+                savingTemplate={saveTemplatesMutation.isPending}
                 disabled={(variation as any).status === "approved"}
                 disabledReason="This variation is approved, so what the client sees is locked."
               />

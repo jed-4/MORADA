@@ -1170,6 +1170,8 @@ export const companySettings = pgTable("company_settings", {
   termsAndConditions: text("terms_and_conditions"),
   // Default column/section visibility new variation documents inherit.
   variationPdfColumns: jsonb("variation_pdf_columns"),
+  // Named column presets: [{ id, name, columns }]. See shared/variationDocumentColumns.ts.
+  variationColumnTemplates: jsonb("variation_column_templates"),
   termsTemplates: jsonb("terms_templates").$type<Array<{ id: string; name: string; content: string; defaultFor: string[] }>>().default([]), // Array of { id, name, content } T&C templates
   
   // Insurance expiry reminder settings

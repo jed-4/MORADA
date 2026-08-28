@@ -242,13 +242,28 @@ export function VariationPreviewContent({
   const { toast } = useToast();
   const primaryColor = companySettings?.brandColor || "#6d28d9";
   const cols = columns ?? DEFAULT_VARIATION_DOCUMENT_COLUMNS;
-  // Description always takes the slack; the money column is always last.
-  const gridCols = [
-    "1fr",
-    cols.quantity ? "80px" : null,
-    cols.unitPrice ? "100px" : null,
-    "100px",
-  ]
+  // Same column set and order as the PDF, so the portal and the document a
+  // client is emailed never disagree about what is on the page.
+  type PortalLineCol = {
+    key: string;
+    label: string;
+    width: string;
+    align: "left" | "right";
+    value: (l: any) => string;
+  };
+  const lineCols: PortalLineCol[] = ([
+    { key: "costCode", label: "Cost Code", width: "90px", align: "left", value: (l) => l.costCode || "" },
+    { key: "quantity", label: "Qty", width: "60px", align: "right", value: (l) => String(l.quantity ?? "") },
+    { key: "unit", label: "Unit", width: "60px", align: "right", value: (l) => l.unitType || "" },
+    { key: "unitCost", label: "Unit Cost", width: "90px", align: "right", value: (l) => formatCents(l.unitCostExCents) },
+    { key: "unitPrice", label: "Unit Price", width: "90px", align: "right", value: (l) => formatCents(l.unitPriceExCents) },
+    { key: "markupPercent", label: "Mkup %", width: "70px", align: "right", value: (l) => (l.markupPercent == null ? "" : `${l.markupPercent}%`) },
+    { key: "markupAmount", label: "Markup", width: "90px", align: "right", value: (l) => formatCents(l.markupAmountExCents) },
+    { key: "amountEx", label: "Amt ex. GST", width: "100px", align: "right", value: (l) => formatCents(l.amountExCents) },
+    { key: "amountInc", label: "Amt inc. GST", width: "100px", align: "right", value: (l) => formatCents(l.amountIncCents) },
+  ] as PortalLineCol[]).filter((c) => (cols as any)[c.key]);
+  const showTextCell = cols.name || cols.description;
+  const gridCols = [showTextCell ? "1fr" : null, ...lineCols.map((c) => c.width)]
     .filter(Boolean)
     .join(" ");
 
@@ -424,10 +439,12 @@ export function VariationPreviewContent({
                 className="grid text-xs font-semibold text-white px-3 py-2"
                 style={{ backgroundColor: primaryColor, gridTemplateColumns: gridCols }}
               >
-                <span>Description</span>
-                {cols.quantity && <span className="text-right">Qty</span>}
-                {cols.unitPrice && <span className="text-right">Unit Price</span>}
-                <span className="text-right">Amt inc. GST</span>
+                {showTextCell && <span>{cols.description ? "Description" : "Name"}</span>}
+                {lineCols.map((c) => (
+                  <span key={c.key} className={c.align === "right" ? "text-right" : ""}>
+                    {c.label}
+                  </span>
+                ))}
               </div>
 
               {docModel.costGroups.map((group) => (
@@ -453,24 +470,21 @@ export function VariationPreviewContent({
                         gridTemplateColumns: gridCols,
                       }}
                     >
-                      <div className="pr-2 min-w-0">
-                        {line.name && <span className="block text-foreground font-semibold truncate">{line.name}</span>}
-                        {line.description && <span className="block text-muted text-xs truncate">{line.description}</span>}
-                        {!line.name && !line.description && <span className="text-muted">—</span>}
-                      </div>
-                      {cols.quantity && (
-                        <span className="text-right text-secondary text-xs tabular-nums">
-                          {line.quantity} {line.unitType || ""}
-                        </span>
+                      {showTextCell && (
+                        <div className="pr-2 min-w-0">
+                          {cols.name && line.name && <span className="block text-foreground font-semibold truncate">{line.name}</span>}
+                          {cols.description && line.description && <span className="block text-muted text-xs truncate">{line.description}</span>}
+                          {!(cols.name && line.name) && !(cols.description && line.description) && <span className="text-muted">—</span>}
+                        </div>
                       )}
-                      {cols.unitPrice && (
-                        <span className="text-right text-secondary text-xs tabular-nums">
-                          {formatCents(line.unitPriceExCents)}
+                      {lineCols.map((c) => (
+                        <span
+                          key={c.key}
+                          className={`text-xs tabular-nums text-secondary ${c.align === "right" ? "text-right" : ""}`}
+                        >
+                          {c.value(line)}
                         </span>
-                      )}
-                      <span className="text-right text-foreground font-medium text-xs tabular-nums">
-                        {formatCents(line.amountIncCents)}
-                      </span>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -486,8 +500,9 @@ export function VariationPreviewContent({
                       ? `Margin (${docModel.globalMarkupPercent}%)`
                       : "Margin"}
                   </span>
-                  {cols.quantity && <span />}
-                  {cols.unitPrice && <span />}
+                  {lineCols.slice(0, -1).map((c) => (
+                    <span key={c.key} />
+                  ))}
                   <span className="text-right text-foreground font-medium text-xs tabular-nums">
                     {formatCents(docModel.globalMarkupIncCents)}
                   </span>
