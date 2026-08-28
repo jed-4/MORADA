@@ -18,6 +18,7 @@
 process.env.NODE_ENV = process.env.NODE_ENV || "test";
 
 import assert from "node:assert";
+import { buildVariationDocumentModel } from "../../client/src/components/variations/variationDocumentModel";
 import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   MARGIN_REVEALING_COLUMNS,
@@ -118,6 +119,39 @@ check("variationColumnsEqual compares every key", () => {
   assert.ok(variationColumnsEqual(a, b));
   b.costCode = !b.costCode;
   assert.ok(!variationColumnsEqual(a, b), "a single differing key must not compare equal");
+});
+
+// variation_items.cost_code stores the ID chosen in CostCodeSelect, not a label
+// — the column comment saying "free-text cost code label" is wrong. Rendering it
+// raw put a UUID in front of the client.
+check("a cost-code id resolves to its label", () => {
+  const model = buildVariationDocumentModel({
+    variation: { subtotal: 0, gstAmount: 0, totalAmount: 0 },
+    items: [{ id: "a", costCode: "8f3a1c22-9d4e", type: "Material", quantity: 1, totalPrice: 0, taxable: true }],
+    costCodeLabels: { "8f3a1c22-9d4e": "4.20 - Wall & Floor Tiling" },
+  });
+  assert.strictEqual(model.costGroups[0].lines[0].costCode, "4.20 - Wall & Floor Tiling");
+});
+
+check("a legacy free-text cost code passes through unchanged", () => {
+  const model = buildVariationDocumentModel({
+    variation: { subtotal: 0, gstAmount: 0, totalAmount: 0 },
+    items: [{ id: "a", costCode: "4.20 Tiling", type: "Material", quantity: 1, totalPrice: 0, taxable: true }],
+    costCodeLabels: { "some-other-id": "irrelevant" },
+  });
+  assert.strictEqual(model.costGroups[0].lines[0].costCode, "4.20 Tiling");
+});
+
+check("no lookup supplied still renders something rather than throwing", () => {
+  const model = buildVariationDocumentModel({
+    variation: { subtotal: 0, gstAmount: 0, totalAmount: 0 },
+    items: [
+      { id: "a", costCode: "abc", type: "Material", quantity: 1, totalPrice: 0, taxable: true },
+      { id: "b", costCode: null, type: "Material", quantity: 1, totalPrice: 0, taxable: true },
+    ],
+  });
+  assert.strictEqual(model.costGroups[0].lines[0].costCode, "abc");
+  assert.strictEqual(model.costGroups[0].lines[1].costCode, null);
 });
 
 console.log(`\nvariation-document-columns: ${passed} checks passed\n`);

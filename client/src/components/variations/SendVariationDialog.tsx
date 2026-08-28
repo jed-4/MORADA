@@ -50,6 +50,7 @@ interface SendVariationDialogProps {
   revisedContractCents?: number;
   revisedIsAgreed?: boolean;
   columns?: VariationDocumentColumns;
+  costCodeLabels?: Record<string, string>;
   clientEmail?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -75,6 +76,7 @@ export function SendVariationDialog({
   revisedContractCents,
   revisedIsAgreed,
   columns,
+  costCodeLabels,
   clientEmail,
   initialSubject,
   initialBody,
@@ -118,6 +120,7 @@ export function SendVariationDialog({
             revisedContractCents={revisedContractCents}
             revisedIsAgreed={revisedIsAgreed}
             columns={columns}
+            costCodeLabels={costCodeLabels}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

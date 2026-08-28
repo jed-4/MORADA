@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
@@ -319,6 +319,16 @@ export default function VariationDetail() {
     staleTime: Infinity,
     gcTime: 1000 * 60 * 30,
   });
+
+  // variation_items.cost_code stores the cost code's ID, not its label, so the
+  // document has to resolve it or the client reads a UUID.
+  const { data: allCostCodes = [] } = useQuery<Array<{ id: string; code: string; title: string }>>({
+    queryKey: ["/api/cost-codes"],
+  });
+  const costCodeLabels = useMemo(
+    () => Object.fromEntries(allCostCodes.map((c) => [c.id, `${c.code} - ${c.title}`])),
+    [allCostCodes],
+  );
 
   const docColumnTemplates: VariationColumnTemplate[] = normaliseVariationColumnTemplates(
     (companySettings as any)?.variationColumnTemplates,
@@ -1263,6 +1273,7 @@ export default function VariationDetail() {
           revisedContractCents={revisedContractCents}
           revisedIsAgreed={revisedIsAgreed}
           columns={docColumns ?? undefined}
+          costCodeLabels={costCodeLabels}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -2439,6 +2450,7 @@ export default function VariationDetail() {
               revisedContractCents={revisedContractCents}
               revisedIsAgreed={revisedIsAgreed}
               columns={docColumns ?? undefined}
+              costCodeLabels={costCodeLabels}
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
@@ -2484,6 +2496,7 @@ export default function VariationDetail() {
           revisedContractCents={revisedContractCents}
           revisedIsAgreed={revisedIsAgreed}
           columns={docColumns ?? undefined}
+          costCodeLabels={costCodeLabels}
           clientEmail={clientContact?.email}
           initialSubject={sendSubject}
           initialBody={sendBody}
