@@ -18576,6 +18576,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
 
+      // A save must not quietly walk a bill's total away from the invoice it
+      // came from. BILL-1483 lost $4.43 exactly this way: a single Save flipped
+      // its tax mode and inflated the total 10% above the printed docket, and
+      // nothing surfaced it — the bill screen showed a mismatch banner, but a
+      // banner does not stop a save.
+      //
+      // Only a save that moves the bill FROM matching the document TO not
+      // matching it is refused. A bill already out of step with its invoice —
+      // usually because the AI missed a line — stays freely editable, which is
+      // exactly when someone is fixing it. Sending acknowledgeDocumentMismatch
+      // is the deliberate override for a genuinely different figure.
+      {
+        const d = validationResult.data as any;
+        const priorAnchor = (previous as any).documentTotalCents as number | null | undefined;
+        const anchor = "documentTotalCents" in d ? d.documentTotalCents : priorAnchor;
+        const acknowledged = (req.body as any)?.acknowledgeDocumentMismatch === true;
+        if (!acknowledged && anchor != null && priorAnchor != null && "total" in d) {
+          const wasMatching = Math.abs((previous.total ?? 0) - priorAnchor) <= MAX_ROUNDING_CENTS;
+          const nowOff = Math.abs((d.total ?? 0) - anchor);
+          if (wasMatching && nowOff > MAX_ROUNDING_CENTS) {
+            const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+            return res.status(409).json({
+              error: "DOCUMENT_TOTAL_MISMATCH",
+              message: `This change makes the bill total ${money(d.total ?? 0)}, but the invoice says ${money(anchor)}. Check the tax mode and the line amounts before saving.`,
+              billTotalCents: d.total ?? 0,
+              documentTotalCents: anchor,
+            });
+          }
+        }
+      }
+
       // A bill's type is changed through POST /api/bills/:id/convert-to-credit,
       // which refuses the cases where converting would leave something untrue —
       // payments already recorded, or a bill already pushed to Xero as an
