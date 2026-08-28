@@ -313,11 +313,11 @@ Migration: likely one column (`isCompanyDefault` on `calendar_views`).
 
 **Ships:** a calendar the team shares rather than fifteen private copies of the same thing.
 
-### Phase 7 — Retire the dead engines
+### Phase 7 — Retire the dead engines ✅ *(done 28 Aug)*
 
 No migration. Once Phases 1–3 have landed and been eyeballed in prod.
 
-Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `PersonalCalendar.tsx`. **Keep the `/my-calendar` route as a redirect** to the user's own calendar, and repoint the Quick Actions "Schedule" button at the same place — see the note on this in Part 5, it dissolves the "is anyone using it" question rather than answering it.
+Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `PersonalCalendar.tsx` — 2,697 lines. **Keep the `/my-calendar` route as a redirect** to the user's own calendar, and repoint the Quick Actions "Schedule" button at the same place — see the note on this in Part 5, it dissolves the "is anyone using it" question rather than answering it.
 
 **Ships:** one calendar engine instead of three. Every future fix lands everywhere.
 
@@ -426,7 +426,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 4 | **Leave** ✅ | `leave_entries` (0061, prod-pending) | 1 |
 | 5 | People axis / by-person day view | — | 0, reads 4 |
 | 6 | Shared + company-default views | 1 column | — |
-| 7 | Delete the dead engines | — | 1, 3 |
+| 7 | Delete the dead engines ✅ | — | 1, 3 |
 | 8 | **Meetings** | `meetings` + FK | 1 |
 
 Phases 0–2 change how the page feels and touch no schema — that's the first shippable chunk. Phase 3 makes it the whole business. Phases 4 and 8 are the two real builds. Phases 6–7 are the tidy-up that stops this drifting apart again.
