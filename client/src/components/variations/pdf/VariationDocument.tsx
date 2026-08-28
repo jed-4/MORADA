@@ -7,6 +7,7 @@ import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import {
   buildVariationDocumentModel,
   variationStatusPresentation,
+  type VariationDocLine,
 } from "../variationDocumentModel";
 import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
@@ -66,6 +67,31 @@ interface VariationDocumentProps {
   columns?: VariationDocumentColumns;
 }
 
+// Fixed-width numeric columns, in render order. Name/description share the one
+// flexible cell to their left, so they are not in here.
+//
+// Widths are deliberately tight: A4 leaves 515pt between the margins and a
+// builder who enables every column at once has little room left for the
+// description. That is their call to make — the alternative is silently
+// refusing a column they asked for.
+const LINE_COLUMN_SPECS: Array<{
+  key: "costCode" | "quantity" | "unit" | "unitCost" | "unitPrice" | "markupPercent" | "markupAmount" | "amountEx" | "amountInc";
+  label: string;
+  width: number;
+  align: "left" | "right";
+  value: (line: VariationDocLine) => string;
+}> = [
+  { key: "costCode", label: "Cost Code", width: 52, align: "left", value: (l) => l.costCode || "" },
+  { key: "quantity", label: "Qty", width: 34, align: "right", value: (l) => String(l.quantity ?? "") },
+  { key: "unit", label: "Unit", width: 32, align: "right", value: (l) => l.unitType || "" },
+  { key: "unitCost", label: "Unit Cost", width: 56, align: "right", value: (l) => formatAUD(l.unitCostExCents / 100) },
+  { key: "unitPrice", label: "Unit Price", width: 56, align: "right", value: (l) => formatAUD(l.unitPriceExCents / 100) },
+  { key: "markupPercent", label: "Mkup %", width: 38, align: "right", value: (l) => (l.markupPercent == null ? "" : `${l.markupPercent}%`) },
+  { key: "markupAmount", label: "Markup", width: 56, align: "right", value: (l) => formatAUD(l.markupAmountExCents / 100) },
+  { key: "amountEx", label: "Amt ex. GST", width: 60, align: "right", value: (l) => formatAUD(l.amountExCents / 100) },
+  { key: "amountInc", label: "Amt inc. GST", width: 64, align: "right", value: (l) => formatAUD(l.amountIncCents / 100) },
+];
+
 function formatAUD(dollars: number): string {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -98,6 +124,14 @@ export function VariationDocument({
   const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
 
   const statusCfg = variationStatusPresentation(variation.status);
+
+  // Which fixed-width columns this document shows, and whether the flexible
+  // text cell has anything to put in it.
+  const activeLineCols = LINE_COLUMN_SPECS.filter((c) => columns[c.key]);
+  const showTextCell = columns.name || columns.description;
+  // The trailing money column the group subtotals and the margin row have to
+  // line up with. Falls back to the last column when no amount is shown.
+  const trailingCol = activeLineCols[activeLineCols.length - 1];
 
   // Shared with the portal page so both documents group, label and total
   // identically (they previously diverged on both wording and grouping).
@@ -369,22 +403,26 @@ export function VariationDocument({
                   paddingVertical: 5,
                 }}
               >
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
-                  Description
-                </Text>
-                {columns.quantity && (
-                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
-                    Qty
+                {showTextCell && (
+                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
+                    {columns.description ? "Description" : "Name"}
                   </Text>
                 )}
-                {columns.unitPrice && (
-                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
-                    Unit Price
+                {activeLineCols.map((col) => (
+                  <Text
+                    key={col.key}
+                    style={{
+                      fontSize: 8,
+                      color: thTextColor,
+                      fontFamily: "Helvetica-Bold",
+                      width: col.width,
+                      textAlign: col.align,
+                      paddingLeft: col.align === "left" ? 6 : 0,
+                    }}
+                  >
+                    {col.label}
                   </Text>
-                )}
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
-                  Amt inc. GST
-                </Text>
+                ))}
               </View>
 
               {docModel.costGroups.map((group) => (
@@ -421,32 +459,35 @@ export function VariationDocument({
                         backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                       }}
                     >
-                      <View style={{ flex: 1 }}>
-                        {line.name ? (
-                          <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#111827" }}>
-                            {line.name}
-                          </Text>
-                        ) : null}
-                        {line.description ? (
-                          <Text style={{ fontSize: 8, color: "#6b7280" }}>{line.description}</Text>
-                        ) : null}
-                        {!line.name && !line.description ? (
-                          <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
-                        ) : null}
-                      </View>
-                      {columns.quantity && (
-                        <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
-                          {line.quantity} {line.unitType || ""}
-                        </Text>
+                      {showTextCell && (
+                        <View style={{ flex: 1 }}>
+                          {columns.name && line.name ? (
+                            <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+                              {line.name}
+                            </Text>
+                          ) : null}
+                          {columns.description && line.description ? (
+                            <Text style={{ fontSize: 8, color: "#6b7280" }}>{line.description}</Text>
+                          ) : null}
+                          {!(columns.name && line.name) && !(columns.description && line.description) ? (
+                            <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
+                          ) : null}
+                        </View>
                       )}
-                      {columns.unitPrice && (
-                        <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
-                          {formatAUD(line.unitPriceExCents / 100)}
+                      {activeLineCols.map((col) => (
+                        <Text
+                          key={col.key}
+                          style={{
+                            fontSize: 9,
+                            color: "#374151",
+                            width: col.width,
+                            textAlign: col.align,
+                            paddingLeft: col.align === "left" ? 6 : 0,
+                          }}
+                        >
+                          {col.value(line)}
                         </Text>
-                      )}
-                      <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
-                        {formatAUD(line.amountIncCents / 100)}
-                      </Text>
+                      ))}
                     </View>
                   ))}
                 </View>

@@ -56,9 +56,17 @@ export interface VariationDocLine {
   id: string;
   name?: string | null;
   description?: string | null;
+  costCode?: string | null;
   quantity: number;
   unitType?: string | null;
+  /** Builder's buy price per unit, ex GST. Only ever reaches the client when
+   *  the document's column config explicitly asks for it. */
+  unitCostExCents: Cents;
   unitPriceExCents: Cents;
+  markupPercent: number | null;
+  /** Per-line markup in ex-GST cents: line total minus (cost x quantity). */
+  markupAmountExCents: Cents;
+  amountExCents: Cents;
   amountIncCents: Cents;
 }
 
@@ -141,13 +149,26 @@ export function buildVariationDocumentModel(input: {
       groupsByType.set(type, group);
     }
     const amountIncCents = lineIncCents(item);
+    const quantity = item.quantity ?? 1;
+    const amountExCents =
+      typeof item.totalPrice === "number"
+        ? item.totalPrice
+        : Math.round(quantity * (item.unitPrice ?? 0));
+    // unitCostExTax is DOLLARS (doublePrecision) while everything else here is
+    // cents — convert once, at the boundary.
+    const unitCostExCents = Math.round((Number(item.unitCostExTax) || 0) * 100);
     group.lines.push({
       id: item.id,
       name: item.name,
       description: item.description,
-      quantity: item.quantity ?? 1,
+      costCode: item.costCode ?? null,
+      quantity,
       unitType: item.unitType,
+      unitCostExCents,
       unitPriceExCents: item.unitPrice ?? 0,
+      markupPercent: item.markupPercent ?? null,
+      markupAmountExCents: amountExCents - Math.round(unitCostExCents * quantity),
+      amountExCents,
       amountIncCents,
     });
     group.totalIncCents += amountIncCents;

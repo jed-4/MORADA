@@ -20908,14 +20908,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter((item: any) => item.showInPdf !== false)
         .map((item: any) => ({
           id: item.id,
-          name: item.name,
-          description: item.description,
-          ...(documentColumns.quantity
-            ? { quantity: item.quantity, unitType: item.unitType }
+          ...(documentColumns.name ? { name: item.name } : {}),
+          ...(documentColumns.description ? { description: item.description } : {}),
+          ...(documentColumns.costCode ? { costCode: item.costCode } : {}),
+          ...(documentColumns.quantity ? { quantity: item.quantity } : {}),
+          ...(documentColumns.unit ? { unitType: item.unitType } : {}),
+          // The two that expose the builder's buy price and margin. These are
+          // the reason this stripping exists at all — off by default, and when
+          // off they must not appear in the payload at any price.
+          ...(documentColumns.unitCost ? { unitCostExTax: item.unitCostExTax } : {}),
+          ...(documentColumns.markupPercent || documentColumns.markupAmount
+            ? { markupPercent: item.markupPercent }
             : {}),
           ...(documentColumns.unitPrice ? { unitPrice: item.unitPrice } : {}),
-          // totalPrice always ships: it is the amount being approved, and the
-          // visible rows have to sum to the Total either way.
+          // totalPrice always ships, even with both amount columns hidden: the
+          // group subtotals, the derived margin row and the Total are all
+          // computed from it, so withholding it would stop the document adding
+          // up. Turning the amount columns off is therefore presentational
+          // here, unlike cost and markup above. A builder who wants a line's
+          // money to genuinely not reach the client should clear that line's
+          // "PDF" checkbox instead, which collapses it into the single
+          // "Additional works (not itemised)" figure.
           totalPrice: item.totalPrice,
           taxable: item.taxable,
           itemType: item.itemType,
