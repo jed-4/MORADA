@@ -348,6 +348,9 @@ export default function BillDetail() {
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [documentMismatch, setDocumentMismatch] = useState<
+    { billTotalCents: number; documentTotalCents: number; pending: any } | null
+  >(null);
   // Set as soon as a bill is created. Several branches of the create flow stay
   // on the page after the bill already exists — the Xero contact isn't mapped,
   // the push failed, the credit can't sync — and hitting Save again from there
@@ -1416,7 +1419,7 @@ export default function BillDetail() {
   const updateMutation = useMutation({
     // __stayOnPage: save without navigating away afterwards — used by
     // save-then-approve so the approve call runs against the just-saved bill.
-    mutationFn: async (data: BillFormData & { __stayOnPage?: boolean }) => {
+    mutationFn: async (data: BillFormData & { __stayOnPage?: boolean; __acknowledgeDocumentMismatch?: boolean }) => {
       // paidAmount is payment-managed (set only by recording payments + syncBillPaidStatus)
       // and has no input in this form — it is merely carried in defaultValues as DOLLARS.
       // Spreading it back unconverted sent e.g. $47.50 -> 47.5 into the integer "paid_amount"
@@ -1439,7 +1442,12 @@ export default function BillDetail() {
       };
 
       const writeId = billIdForWrite();
-      const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", billData) as Bill;
+      const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", {
+        ...billData,
+        // Set only after the user confirms the total really does differ from
+        // the invoice; the server refuses the save otherwise.
+        ...(data.__acknowledgeDocumentMismatch ? { acknowledgeDocumentMismatch: true } : {}),
+      }) as Bill;
 
       // One request for the whole line-item set. This used to be a sequential
       // round-trip per line — a DELETE per removed line, a PATCH or POST per
@@ -1555,7 +1563,18 @@ export default function BillDetail() {
       }
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
-    onError: (error: Error) => {
+    onError: (error: any, variables) => {
+      // The server blocks a save that would walk the total away from the
+      // invoice the bill came from. That is worth a question, not a refusal:
+      // sometimes the invoice really is different and the user knows it.
+      if (error?.payload?.error === "DOCUMENT_TOTAL_MISMATCH") {
+        setDocumentMismatch({
+          billTotalCents: error.payload.billTotalCents ?? 0,
+          documentTotalCents: error.payload.documentTotalCents ?? 0,
+          pending: variables,
+        });
+        return;
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to update bill",
@@ -4356,6 +4375,37 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      <AlertDialog open={!!documentMismatch} onOpenChange={(o) => { if (!o) setDocumentMismatch(null); }}>
+        <AlertDialogContent data-testid="dialog-document-mismatch">
+          <AlertDialogHeader>
+            <AlertDialogTitle>This doesn't match the invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Saving would make this bill{" "}
+              <strong>{formatCurrency((documentMismatch?.billTotalCents ?? 0) / 100)}</strong>, but the
+              invoice says{" "}
+              <strong>{formatCurrency((documentMismatch?.documentTotalCents ?? 0) / 100)}</strong>.
+              That gap is usually the tax mode being wrong — check whether the amounts are meant to
+              be inclusive or exclusive of GST before saving.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateMutation.isPending}>Go back and check</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                const pending = documentMismatch?.pending;
+                setDocumentMismatch(null);
+                if (pending) updateMutation.mutate({ ...pending, __acknowledgeDocumentMismatch: true });
+              }}
+              disabled={updateMutation.isPending}
+              data-testid="button-confirm-document-mismatch"
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen}>
         <AlertDialogContent data-testid="dialog-convert-to-credit">
