@@ -122,6 +122,9 @@ interface EnhancedCalendarProps {
    * so other people's multi-day work bars don't compete with real appointments.
    */
   projectBands?: ProjectBand[];
+  /** Who is away, as a second band lane. Same shape; `projectName` carries the person. */
+  leaveBands?: ProjectBand[];
+  onLeaveBandClick?: (band: ProjectBand) => void;
   onProjectBandClick?: (band: ProjectBand) => void;
   /**
    * Tasks that are due but not yet given a time. They sit in a side tray rather
@@ -475,6 +478,8 @@ export function EnhancedCalendar({
   onFocusBlockClick,
   onFocusBlockUpdate,
   projectBands = [],
+  leaveBands = [],
+  onLeaveBandClick,
   onProjectBandClick,
   unscheduledEvents = [],
   onEventUnschedule,
@@ -555,6 +560,7 @@ export function EnhancedCalendar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const bandScrollRef = useRef<HTMLDivElement>(null);
+  const leaveScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
   const monthScrollRef = useRef<HTMLDivElement>(null);
   const monthScrolledToToday = useRef(false);
@@ -680,7 +686,7 @@ export function EnhancedCalendar({
   }, []);
 
   // Synchronize horizontal scroll across date header, all-day, and time grid
-  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band') => {
+  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band' | 'leaveBand') => {
     return (e: React.UIEvent<HTMLDivElement>) => {
       const element = e.currentTarget;
       const scrollLeft = element.scrollLeft;
@@ -696,6 +702,9 @@ export function EnhancedCalendar({
       }
       if (source !== 'band' && bandScrollRef.current) {
         bandScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'leaveBand' && leaveScrollRef.current) {
+        leaveScrollRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'timeGrid' && timeGridScrollRef.current) {
         timeGridScrollRef.current.scrollLeft = scrollLeft;
@@ -1222,6 +1231,96 @@ export function EnhancedCalendar({
     );
   };
 
+  /**
+   * A lane of day-spanning bands under the date headers.
+   *
+   * Two of these render: project work spans, and who is away. They are separate
+   * lanes rather than one mixed row because they answer different questions —
+   * "which jobs are running" and "who is not in" — and a single gutter label
+   * could only ever be honest about one of them.
+   */
+  const renderBandRow = ({ bands, label, testId, scrollRef, source, onBandClick }: {
+    bands: ProjectBand[];
+    label: string;
+    testId: string;
+    scrollRef: React.RefObject<HTMLDivElement>;
+    source: 'band' | 'leaveBand';
+    onBandClick?: (band: ProjectBand) => void;
+  }) => {
+    if (bands.length === 0) return null;
+    // Same sizing rule as the week grid: day and week columns flex, wider views
+    // use a fixed column so the lane stays aligned with the headers.
+    const DAY_WIDTH = (view === "day" || view === "week") ? undefined : 140;
+    return (
+      <div className="flex border-b border-border" data-testid={testId}>
+        <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+          {label}
+        </div>
+        <div
+          className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
+          ref={scrollRef}
+          onScroll={handleHorizontalScroll(source)}
+        >
+          {dateRange.map((date, idx) => {
+            const dayKey = format(date, "yyyy-MM-dd");
+            const covering = bands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
+            const MAX_BANDS = 3;
+            return (
+              <div
+                key={idx}
+                className={cn(
+                  "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
+                  (view === "day" || view === "week") && "flex-1"
+                )}
+                style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
+                data-testid={`${testId.replace("-row", "")}-${dayKey}`}
+              >
+                {covering.slice(0, MAX_BANDS).map(band => {
+                  const bandColors = generateNotionColors(band.projectColor || undefined);
+                  // Label on the band's first day, or the first visible day when it
+                  // started before this week — otherwise the run reads as anonymous colour.
+                  const showLabel =
+                    dayKey === band.startDate ||
+                    (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
+                  const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
+                  return (
+                    <div
+                      key={`${band.projectId}-${band.startDate}`}
+                      className={cn(
+                        "h-2.5 flex items-center overflow-hidden",
+                        onBandClick && "cursor-pointer"
+                      )}
+                      style={{
+                        backgroundColor: bandColors.pastelBg,
+                        borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
+                      }}
+                      title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
+                      onClick={() => onBandClick?.(band)}
+                    >
+                      {showLabel && (
+                        <span
+                          className="text-2xs leading-none px-1 truncate font-semibold"
+                          style={{ color: bandColors.darkText }}
+                        >
+                          {detail}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {covering.length > MAX_BANDS && (
+                  <div className="text-2xs leading-none px-1 text-muted-foreground">
+                    +{covering.length - MAX_BANDS}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // Render month view
   const renderMonthView = () => {
     // Group dates into weeks for each month
@@ -1413,74 +1512,22 @@ export function EnhancedCalendar({
 
         {/* Project phase band — one slim segment per project per contiguous run of
             other people's work, so it reads at a glance without crowding the grid. */}
-        {projectBands.length > 0 && (
-          <div className="flex border-b border-border" data-testid="project-band-row">
-            <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
-              Projects
-            </div>
-            <div
-              className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
-              ref={bandScrollRef}
-              onScroll={handleHorizontalScroll('band')}
-            >
-              {dateRange.map((date, idx) => {
-                const dayKey = format(date, "yyyy-MM-dd");
-                const covering = projectBands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
-                const MAX_BANDS = 3;
-                return (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
-                      (view === "day" || view === "week") && "flex-1"
-                    )}
-                    style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
-                    data-testid={`project-band-${dayKey}`}
-                  >
-                    {covering.slice(0, MAX_BANDS).map(band => {
-                      const bandColors = generateNotionColors(band.projectColor || undefined);
-                      // Label on the band's first day, or the first visible day when it
-                      // started before this week — otherwise the run reads as anonymous colour.
-                      const showLabel =
-                        dayKey === band.startDate ||
-                        (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
-                      const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
-                      return (
-                        <div
-                          key={`${band.projectId}-${band.startDate}`}
-                          className={cn(
-                            "h-2.5 flex items-center overflow-hidden",
-                            onProjectBandClick && "cursor-pointer"
-                          )}
-                          style={{
-                            backgroundColor: bandColors.pastelBg,
-                            borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
-                          }}
-                          title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
-                          onClick={() => onProjectBandClick?.(band)}
-                        >
-                          {showLabel && (
-                            <span
-                              className="text-2xs leading-none px-1 truncate font-semibold"
-                              style={{ color: bandColors.darkText }}
-                            >
-                              {detail}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {covering.length > MAX_BANDS && (
-                      <div className="text-2xs leading-none px-1 text-muted-foreground">
-                        +{covering.length - MAX_BANDS}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+{renderBandRow({
+          bands: leaveBands,
+          label: "Away",
+          testId: "leave-band-row",
+          scrollRef: leaveScrollRef,
+          source: "leaveBand",
+          onBandClick: onLeaveBandClick,
+        })}
+        {renderBandRow({
+          bands: projectBands,
+          label: "Projects",
+          testId: "project-band-row",
+          scrollRef: bandScrollRef,
+          source: "band",
+          onBandClick: onProjectBandClick,
+        })}
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">

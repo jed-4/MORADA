@@ -130,6 +130,13 @@ export default function BusinessCalendar() {
   const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
   const [showParentItems, setShowParentItems] = useState(true);
   const [showChildItems, setShowChildItems] = useState(true);
+  const EMPTY_LEAVE_FORM = {
+    userId: "", startDate: "", endDate: "", leaveType: "",
+    isHalfDay: false, halfDayPeriod: "am" as "am" | "pm", note: "",
+  };
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
+  const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
 
   const [displayOptions, setDisplayOptions] = useState<CalendarDisplayOptions>(() => {
     try {
@@ -359,6 +366,38 @@ export default function BusinessCalendar() {
     [filteredEvents, layerEvents],
   );
 
+  // Who is away. Leave is duration, like a work bar — five all-day chips per
+  // person per week would swamp the grid — so it draws as its own band lane
+  // rather than as events.
+  const { data: leaveEntries = [] } = useQuery<any[]>({
+    queryKey: ["/api/leave-entries", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/leave-entries?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch leave');
+      return response.json();
+    },
+  });
+
+  const leaveTypeOptions = fieldCategories.find(c => c.key === "leave.type")?.options ?? [];
+
+  const leaveBands: ProjectBand[] = useMemo(() => {
+    return leaveEntries.map((entry: any) => {
+      const option = leaveTypeOptions.find((o: any) => o.key === entry.leaveType);
+      const half = entry.isHalfDay ? ` (${entry.halfDayPeriod === "pm" ? "PM" : "AM"})` : "";
+      // Reusing the band shape: `projectId` keys the lane, `projectName` carries
+      // the person, and the label carries what kind of leave it is.
+      return {
+        projectId: entry.id,
+        projectName: entry.userName,
+        projectColor: option?.color ?? null,
+        startDate: String(entry.startDate).slice(0, 10),
+        endDate: String(entry.endDate).slice(0, 10),
+        label: `${option?.name ?? entry.leaveType}${half}`,
+        itemCount: 1,
+      };
+    });
+  }, [leaveEntries, leaveTypeOptions]);
+
   // Bands respect the project filter as well — filtering to one job should not
   // leave other projects' bands stranded above an empty grid.
   const filteredProjectBands = useMemo(() => {
@@ -366,6 +405,61 @@ export default function BusinessCalendar() {
     const wanted = new Set(filters.projects);
     return projectBands.filter((band) => wanted.has(band.projectId));
   }, [projectBands, filters.projects]);
+
+  const resetLeaveForm = () => { setEditingLeaveId(null); setLeaveForm(EMPTY_LEAVE_FORM); };
+
+  const saveLeaveMutation = useMutation({
+    mutationFn: async () => {
+      const body = {
+        userId: leaveForm.userId,
+        startDate: leaveForm.startDate,
+        endDate: leaveForm.endDate,
+        leaveType: leaveForm.leaveType,
+        isHalfDay: leaveForm.isHalfDay,
+        // Sent as null rather than omitted: the server's CHECK requires a period
+        // exactly when isHalfDay is set, so clearing it has to be explicit.
+        halfDayPeriod: leaveForm.isHalfDay ? leaveForm.halfDayPeriod : null,
+        note: leaveForm.note || null,
+      };
+      return editingLeaveId
+        ? apiRequest(`/api/leave-entries/${editingLeaveId}`, "PATCH", body)
+        : apiRequest("/api/leave-entries", "POST", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-entries"] });
+      setLeaveDialogOpen(false);
+      resetLeaveForm();
+      toast({ title: editingLeaveId ? "Leave updated" : "Leave marked" });
+    },
+    onError: (e: any) => toast({ title: "Couldn't save leave", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteLeaveMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest(`/api/leave-entries/${id}`, "DELETE"); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-entries"] });
+      setLeaveDialogOpen(false);
+      resetLeaveForm();
+      toast({ title: "Leave removed" });
+    },
+  });
+
+  // Clicking a band opens it for editing, pre-filled from the entry it drew.
+  useEffect(() => {
+    if (!editingLeaveId) return;
+    const entry = leaveEntries.find((l: any) => l.id === editingLeaveId);
+    if (!entry) return;
+    setLeaveForm({
+      userId: entry.userId,
+      startDate: String(entry.startDate).slice(0, 10),
+      endDate: String(entry.endDate).slice(0, 10),
+      leaveType: entry.leaveType,
+      isHalfDay: !!entry.isHalfDay,
+      halfDayPeriod: (entry.halfDayPeriod as "am" | "pm") ?? "am",
+      note: entry.note ?? "",
+    });
+    setLeaveDialogOpen(true);
+  }, [editingLeaveId, leaveEntries]);
 
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "task") {
@@ -1187,11 +1281,9 @@ export default function BusinessCalendar() {
           {/* Add Event Button */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
-            onClick={() => {
-              // TODO: Open event creation dialog
-              toast({ title: "Add Event", description: "Event creation coming soon!" });
-            }}
-            data-testid="button-add-event"
+            onClick={() => { resetLeaveForm(); setLeaveDialogOpen(true); }}
+            title="Mark leave"
+            data-testid="button-mark-leave"
           >
             <Plus className="w-3 h-3" />
           </button>
@@ -1222,6 +1314,8 @@ export default function BusinessCalendar() {
           onViewChange={setCalendarMode}
           displayOptions={displayOptions}
           projectBands={filteredProjectBands}
+          leaveBands={leaveBands}
+          onLeaveBandClick={(band) => setEditingLeaveId(band.projectId)}
           onProjectBandClick={(band) => navigate(`/projects/${band.projectId}/schedule`)}
           mobileFallbackView="agenda"
           readOnly
@@ -1229,6 +1323,140 @@ export default function BusinessCalendar() {
         />
       </div>
      </div>
+
+      {/* Mark leave. Deliberately minimal: who, when, what kind, and a note.
+          There is no request or approval step — this records that someone is
+          away, which is what the calendar needs. */}
+      <Dialog open={leaveDialogOpen} onOpenChange={(open) => { setLeaveDialogOpen(open); if (!open) resetLeaveForm(); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>{editingLeaveId ? "Edit leave" : "Mark leave"}</DialogTitle>
+            <DialogDescription>
+              Record that someone is away. It shows on the business calendar as a band.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Who</Label>
+              <Select value={leaveForm.userId} onValueChange={(v) => setLeaveForm({ ...leaveForm, userId: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-leave-user">
+                  <SelectValue placeholder="Select a team member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableAssignees.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">From</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={leaveForm.startDate}
+                  onChange={(e) => {
+                    const startDate = e.target.value;
+                    // Keep the range valid as you type rather than rejecting it on save.
+                    setLeaveForm(f => ({
+                      ...f,
+                      startDate,
+                      endDate: !f.endDate || f.endDate < startDate ? startDate : f.endDate,
+                    }));
+                  }}
+                  data-testid="input-leave-start"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">To</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  min={leaveForm.startDate || undefined}
+                  value={leaveForm.endDate}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, endDate: e.target.value, isHalfDay: false })}
+                  data-testid="input-leave-end"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Type</Label>
+              <Select value={leaveForm.leaveType} onValueChange={(v) => setLeaveForm({ ...leaveForm, leaveType: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-leave-type">
+                  <SelectValue placeholder="Select a leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaveTypeOptions.map((o: any) => (
+                    <SelectItem key={o.key} value={o.key}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* A half day only makes sense on a single day — the server enforces
+                it too, but offering it on a range would be a trap. */}
+            {leaveForm.startDate && leaveForm.startDate === leaveForm.endDate && (
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={leaveForm.isHalfDay}
+                    onCheckedChange={(c) => setLeaveForm({ ...leaveForm, isHalfDay: !!c })}
+                    data-testid="checkbox-leave-half-day"
+                  />
+                  <span className="text-xs">Half day</span>
+                </label>
+                {leaveForm.isHalfDay && (
+                  <Select
+                    value={leaveForm.halfDayPeriod}
+                    onValueChange={(v) => setLeaveForm({ ...leaveForm, halfDayPeriod: v as "am" | "pm" })}
+                  >
+                    <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-leave-period">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="am">Morning</SelectItem>
+                      <SelectItem value="pm">Afternoon</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Note <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                className="h-8 text-xs"
+                value={leaveForm.note}
+                onChange={(e) => setLeaveForm({ ...leaveForm, note: e.target.value })}
+                data-testid="input-leave-note"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {editingLeaveId && (
+              <Button
+                variant="outline"
+                className="mr-auto text-destructive"
+                onClick={() => deleteLeaveMutation.mutate(editingLeaveId)}
+                data-testid="button-delete-leave"
+              >
+                Delete
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => { setLeaveDialogOpen(false); resetLeaveForm(); }}>Cancel</Button>
+            <Button
+              onClick={() => saveLeaveMutation.mutate()}
+              disabled={!leaveForm.userId || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.leaveType || saveLeaveMutation.isPending}
+              data-testid="button-save-leave"
+            >
+              {editingLeaveId ? "Save" : "Mark leave"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save / Create View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={(open) => { setShowCreateViewDialog(open); if (!open) setNewViewName(""); }}>

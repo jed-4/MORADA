@@ -277,7 +277,7 @@ No migration. Every column listed in D4 already exists.
 
 **Ships:** "all things within the business" — as layers you switch on, not a wall of chips.
 
-### Phase 4 — Leave
+### Phase 4 — Leave ✅ *(done 28 Aug — migration 0061, dev only)*
 
 **Migration:** one new table, `leave_entries` (D8). Take the next free number at implementation time — `0054` is in use on `feat/contacts-revamp`. Apply by hand via `psql`, dev then prod.
 
@@ -423,7 +423,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 1 | Engine swap to `EnhancedCalendar` (+ port `AgendaView`) | — | 0 (smaller diff) |
 | 2 | Tiering + project band row ✅ | — | 1 |
 | 3 | Sources / layers endpoint ✅ | — | 1 |
-| 4 | **Leave** | `leave_entries` | 1 |
+| 4 | **Leave** ✅ | `leave_entries` (0061, prod-pending) | 1 |
 | 5 | People axis / by-person day view | — | 0, reads 4 |
 | 6 | Shared + company-default views | 1 column | — |
 | 7 | Delete the dead engines | — | 1, 3 |
