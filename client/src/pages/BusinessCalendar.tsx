@@ -24,6 +24,7 @@ import {
   getLayer,
   type BusinessCalendarLayerEvent,
 } from "@shared/businessCalendarLayers";
+import { TYPE_COLORS_HEX } from "@/lib/taskColors";
 import {
   EnhancedCalendar,
   type CalendarEvent,
@@ -338,9 +339,9 @@ export default function BusinessCalendar() {
           endDate: date,
           startTime: row.startTime,
           endTime: row.endTime,
-          color: layer?.color ?? null,
+          color: layer ? TYPE_COLORS_HEX[layer.colorToken] : null,
           projectId: row.projectId,
-          projectColor: layer?.color ?? null,
+          projectColor: layer ? TYPE_COLORS_HEX[layer.colorToken] : null,
           projectName: row.projectName,
           assigneeIds: [],
           type: "layer" as const,
@@ -909,7 +910,7 @@ export default function BusinessCalendar() {
                           <span className="text-xs flex items-center gap-1.5">
                             <span
                               className="h-2 w-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: layer.color }}
+                              style={{ backgroundColor: TYPE_COLORS_HEX[layer.colorToken] }}
                             />
                             {layer.label}
                             {denied && <span className="text-data text-muted-foreground">(no access)</span>}

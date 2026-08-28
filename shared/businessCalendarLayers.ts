@@ -10,9 +10,14 @@
  * One registry, shared, so the toggle the user clicks, the layer the server
  * queries, and the colour the chip draws in cannot drift apart.
  *
- * Colours come from the app's type palette (`TYPE_COLORS_HEX`) rather than new
- * hues — a calendar with fifteen distinct colours reads as noise. Layers that mean
- * similar things deliberately share one.
+ * Layers name a palette *token* rather than a hex. Colour is presentation: the
+ * server has no business knowing it, and hard-coding hexes here would drift the
+ * moment the palette moves — which it did, in #94. The client resolves the token
+ * through `TYPE_COLORS_HEX`.
+ *
+ * Tokens come from the existing type palette rather than new hues — a calendar
+ * with fifteen distinct colours reads as noise — so layers that mean similar
+ * things deliberately share one.
  */
 
 export type BusinessCalendarLayerKey =
@@ -31,7 +36,8 @@ export interface BusinessCalendarLayer {
   label: string;
   /** What the date on the chip actually means — shown as the toggle's tooltip. */
   description: string;
-  color: string;
+  /** A key of `TYPE_COLORS_HEX`, resolved to a hex by the client. */
+  colorToken: "task" | "milestone" | "inspection" | "delivery" | "meeting" | "leave";
   /**
    * True for layers that record what already happened rather than what is coming.
    * They read as history on the grid, and are never "overdue".
@@ -49,37 +55,37 @@ export const BUSINESS_CALENDAR_LAYERS: BusinessCalendarLayer[] = [
     key: "deliveries",
     label: "Deliveries",
     description: "Purchase orders by their required-by date",
-    color: "#4a90d4",
+    colorToken: "delivery",
   },
   {
     key: "rfqs",
     label: "RFQs closing",
     description: "Quote requests by the date responses are due",
-    color: "#e8952a",
+    colorToken: "milestone",
   },
   {
     key: "rfis",
     label: "RFIs owed",
     description: "Information requests by the date an answer is due",
-    color: "#e8952a",
+    colorToken: "milestone",
   },
   {
     key: "selections",
     label: "Client selections",
     description: "Selections by the date the client has to decide",
-    color: "#a890d4",
+    colorToken: "task",
   },
   {
     key: "defects",
     label: "Defects",
     description: "Defects by the date they are due to be resolved",
-    color: "#e85b5b",
+    colorToken: "meeting",
   },
   {
     key: "invoices",
     label: "Invoices due",
     description: "Client invoices by their due date",
-    color: "#68b088",
+    colorToken: "inspection",
     // Commercial figures on a screen the whole team opens — gated behind the same
     // permission as the revenue KPIs rather than merely hidden in the UI.
     permission: { key: "dashboard.financial", action: "view" },
@@ -88,14 +94,14 @@ export const BUSINESS_CALENDAR_LAYERS: BusinessCalendarLayer[] = [
     key: "timesheets",
     label: "Timesheets",
     description: "Hours actually worked — planned against actual",
-    color: "#e8952a",
+    colorToken: "milestone",
     lookback: true,
   },
   {
     key: "site_diary",
     label: "Site diary",
     description: "Site diary entries, on the day they record",
-    color: "#68b088",
+    colorToken: "inspection",
     lookback: true,
   },
 ];
