@@ -3,6 +3,7 @@ import type { Proposal, ProposalSection, ProposalItem } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface AllowanceRow {
   name: string;
@@ -59,7 +60,7 @@ export function AllowancesSection({
     0,
   );
 
-  const headerBorderColor = isS2 ? resolvedColor + '60' : resolvedColor;
+  const headerBorderColor = isS2 ? tintOnWhite(resolvedColor, '60') : resolvedColor;
 
   const styles = StyleSheet.create({
     headerRow: {

@@ -12,6 +12,7 @@ import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   type VariationDocumentColumns,
 } from "@shared/variationDocumentColumns";
+import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface Company {
   name: string;
@@ -94,7 +95,7 @@ export function VariationDocument({
   const thTextColor = isS2 ? "#ffffff" : "#374151";
   const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
   const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
-  const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
+  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
 
   const statusCfg = variationStatusPresentation(variation.status);
 
@@ -713,7 +714,7 @@ export function VariationDocument({
           <View
             style={{
               borderBottomWidth: 1,
-              borderBottomColor: isS2 ? brandColor + "33" : "#e5e7eb",
+              borderBottomColor: isS2 ? tintOnWhite(brandColor, "33") : "#e5e7eb",
               marginBottom: 12,
             }}
           />
