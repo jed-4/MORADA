@@ -116,11 +116,6 @@ export function DocumentPreviewModal({
         </div>
 
         <div className="flex-1 flex min-h-0">
-          {sidebar && (
-            <aside className="w-64 shrink-0 border-r overflow-y-auto bg-background">
-              {sidebar}
-            </aside>
-          )}
           {/* PDF canvas area */}
           <div className="flex-1 overflow-y-auto bg-muted/50 flex flex-col items-center py-6 px-4">
           {loading ? (
@@ -143,6 +138,14 @@ export function DocumentPreviewModal({
             </PdfDocument>
           ) : null}
           </div>
+          {/* Controls sit to the RIGHT of the document: the page itself is what
+              the builder is reading, so it keeps the left edge and a stable
+              position when the panel opens. */}
+          {sidebar && (
+            <aside className="w-64 shrink-0 border-l bg-background flex flex-col min-h-0">
+              {sidebar}
+            </aside>
+          )}
         </div>
 
         {/* Page navigation */}
