@@ -24,6 +24,9 @@ import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
   insertNoteSchema,
   insertTaskSchema,
+  insertLeaveEntrySchema,
+  patchLeaveEntrySchema,
+  leaveEntryRulesSchema,
   insertCustomFieldDefSchema,
   insertCustomFieldOptionSchema,
   insertNoteTemplateSchema,
@@ -31699,6 +31702,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("[GET /api/business-calendar/events] Error:", error);
       res.status(500).json({ error: "Failed to fetch calendar layers", details: error.message });
+    }
+  });
+
+
+  // Leave — who is away.
+  //
+  // Marking, not managing: no requests, no approvals, no balances. Every read and
+  // write is scoped to the caller's company, and a leave entry always belongs to a
+  // user in that company — checked on write rather than trusted from the body.
+  app.get("/api/leave-entries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const { startDate, endDate, userId } = req.query;
+      const conditions = [eq(schema.leaveEntries.companyId, companyId)];
+      if (userId) conditions.push(eq(schema.leaveEntries.userId, String(userId)));
+      if (startDate && endDate) {
+        const from = new Date(String(startDate));
+        const to = new Date(String(endDate));
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+          return res.status(400).json({ error: "startDate and endDate must be valid dates" });
+        }
+        to.setHours(23, 59, 59, 999);
+        // Overlap, not containment: leave that starts before the window and ends
+        // inside it is still leave you need to see.
+        conditions.push(lte(schema.leaveEntries.startDate, to));
+        conditions.push(gte(schema.leaveEntries.endDate, from));
+      }
+
+      const rows = await db.select({
+        entry: schema.leaveEntries,
+        firstName: schema.users.firstName,
+        lastName: schema.users.lastName,
+        email: schema.users.email,
+      })
+        .from(schema.leaveEntries)
+        .innerJoin(schema.users, eq(schema.leaveEntries.userId, schema.users.id))
+        .where(and(...conditions))
+        .orderBy(asc(schema.leaveEntries.startDate));
+
+      res.json(rows.map(r => ({
+        ...r.entry,
+        userName: [r.firstName, r.lastName].filter(Boolean).join(" ").trim() || r.email || "Unknown",
+      })));
+    } catch (error: any) {
+      console.error("[GET /api/leave-entries] Error:", error);
+      res.status(500).json({ error: "Failed to fetch leave", details: error.message });
+    }
+  });
+
+  app.post("/api/leave-entries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const actorId = String(req.user?.dbUser?.id || req.user?.id || "");
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = insertLeaveEntrySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      // The subject must be in the caller's company. Without this, a valid session
+      // could mark leave against anyone's user id.
+      const subject = await storage.getUser(parsed.data.userId);
+      if (!subject || subject.companyId !== companyId) {
+        return res.status(404).json({ error: "User not found in this company" });
+      }
+
+      const [created] = await db.insert(schema.leaveEntries)
+        .values({ ...parsed.data, companyId, createdBy: actorId || null })
+        .returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[POST /api/leave-entries] Error:", error);
+      res.status(500).json({ error: "Failed to create leave", details: error.message });
+    }
+  });
+
+  app.patch("/api/leave-entries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = patchLeaveEntrySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      if (parsed.data.userId) {
+        const subject = await storage.getUser(parsed.data.userId);
+        if (!subject || subject.companyId !== companyId) {
+          return res.status(404).json({ error: "User not found in this company" });
+        }
+      }
+
+      // Load first so the cross-field rules see the whole entry: moving only the
+      // end date still has to be checked against the stored start date.
+      const [existing] = await db.select().from(schema.leaveEntries).where(and(
+        eq(schema.leaveEntries.id, req.params.id),
+        eq(schema.leaveEntries.companyId, companyId),
+      ));
+      if (!existing) return res.status(404).json({ error: "Leave entry not found" });
+
+      const merged = leaveEntryRulesSchema.safeParse({
+        userId: parsed.data.userId ?? existing.userId,
+        startDate: parsed.data.startDate ?? existing.startDate,
+        endDate: parsed.data.endDate ?? existing.endDate,
+        isHalfDay: parsed.data.isHalfDay ?? existing.isHalfDay,
+        halfDayPeriod: parsed.data.halfDayPeriod ?? existing.halfDayPeriod,
+        leaveType: parsed.data.leaveType ?? existing.leaveType,
+        note: parsed.data.note ?? existing.note,
+      });
+      if (!merged.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(merged.error).toString() });
+      }
+
+      // companyId is in the WHERE, not the SET: another tenant's row simply does
+      // not match, so this 404s rather than reassigning it.
+      const [updated] = await db.update(schema.leaveEntries)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.leaveEntries.id, req.params.id),
+          eq(schema.leaveEntries.companyId, companyId),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Leave entry not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PATCH /api/leave-entries/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update leave", details: error.message });
+    }
+  });
+
+  app.delete("/api/leave-entries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+      const [deleted] = await db.delete(schema.leaveEntries)
+        .where(and(
+          eq(schema.leaveEntries.id, req.params.id),
+          eq(schema.leaveEntries.companyId, companyId),
+        ))
+        .returning();
+      if (!deleted) return res.status(404).json({ error: "Leave entry not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[DELETE /api/leave-entries/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete leave", details: error.message });
     }
   });
 

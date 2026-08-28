@@ -7401,6 +7401,89 @@ export const focusBlocks = pgTable("focus_blocks", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/**
+ * Someone is away.
+ *
+ * Deliberately *marking* leave, not managing it — there is no request, no
+ * approval, no balance and no accrual here. Those are a separate product
+ * decision; what a shared calendar needs is "who is not in this week", and
+ * building the rest first would have delayed the part people actually asked for.
+ *
+ * Day-granular: `startDate`/`endDate` are inclusive dates at local midnight, in
+ * the same convention as `notes.dueDate`. A half day carries a period rather than
+ * a time, because "Tuesday afternoon off" is what people say — nobody books leave
+ * from 13:00 to 17:00.
+ */
+export const leaveEntries = pgTable("leave_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Inclusive. A single day has startDate === endDate. */
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  /** Only meaningful on a single-day entry; a half day across a range is not a thing. */
+  isHalfDay: boolean("is_half_day").notNull().default(false),
+  halfDayPeriod: text("half_day_period"), // "am" | "pm", null unless isHalfDay
+  /**
+   * A `field_options.key` from the `leave.type` category — annual, sick, unpaid,
+   * rdo, public_holiday — so the list is editable in Field Settings rather than
+   * needing a migration to add "long service".
+   */
+  leaveType: text("leave_type").notNull(),
+  note: text("note"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("leave_entries_company_idx").on(table.companyId),
+  // The calendar's only query shape: this company, overlapping this range.
+  companyRangeIdx: index("leave_entries_company_range_idx").on(table.companyId, table.startDate, table.endDate),
+  userIdx: index("leave_entries_user_idx").on(table.userId),
+}));
+
+/** The shape, without the cross-field rules — `.refine` returns a ZodEffects, which
+ *  cannot be `.partial()`ed, and PATCH needs the partial. */
+export const leaveEntryFieldsSchema = createInsertSchema(leaveEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  halfDayPeriod: z.enum(["am", "pm"]).nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
+/**
+ * The cross-field rules, applied to a whole entry.
+ *
+ * PATCH validates the *merged* entry rather than the patch body: changing only
+ * the end date still has to be checked against the stored start date, and a
+ * partial body can't answer that on its own.
+ */
+const withLeaveRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endDate >= v.startDate, {
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  })
+  .refine((v: any) => !v.isHalfDay || v.startDate.getTime() === v.endDate.getTime(), {
+    message: "A half day has to be a single day",
+    path: ["isHalfDay"],
+  })
+  .refine((v: any) => !v.isHalfDay || !!v.halfDayPeriod, {
+    message: "Say whether the half day is morning or afternoon",
+    path: ["halfDayPeriod"],
+  });
+
+export const insertLeaveEntrySchema = withLeaveRules(leaveEntryFieldsSchema);
+export const patchLeaveEntrySchema = leaveEntryFieldsSchema.partial();
+export const leaveEntryRulesSchema = withLeaveRules(leaveEntryFieldsSchema);
+
+export type LeaveEntry = typeof leaveEntries.$inferSelect;
+export type InsertLeaveEntry = z.infer<typeof insertLeaveEntrySchema>;
+
 export const insertFocusBlockSchema = createInsertSchema(focusBlocks).omit({
   id: true,
   createdAt: true,
