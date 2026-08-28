@@ -133,8 +133,18 @@ export function buildVariationDocumentModel(input: {
   /** Portal payloads arrive with hidden lines already stripped, so the value
    *  is supplied. Builder-side renders pass all items and let it be derived. */
   notItemisedIncCents?: number;
+  /** cost-code id -> "code - title". variation_items.cost_code holds the id
+   *  chosen in CostCodeSelect, NOT a label, despite the column comment saying
+   *  otherwise — rendering it raw shows the client a UUID. Portal payloads
+   *  arrive already resolved, so an unmatched value falls through unchanged
+   *  and legacy free-text rows keep working. */
+  costCodeLabels?: Record<string, string>;
 }): VariationDocModel {
-  const { variation, items = [], bills = [], labourExCents = 0 } = input;
+  const { variation, items = [], bills = [], labourExCents = 0, costCodeLabels } = input;
+  const costCodeLabel = (raw: unknown): string | null => {
+    if (typeof raw !== "string" || raw === "") return null;
+    return costCodeLabels?.[raw] ?? raw;
+  };
 
   const costItems = items.filter((i: any) => i?.itemType !== "allowance");
   const allowanceItems = items.filter((i: any) => i?.itemType === "allowance");
@@ -161,7 +171,7 @@ export function buildVariationDocumentModel(input: {
       id: item.id,
       name: item.name,
       description: item.description,
-      costCode: item.costCode ?? null,
+      costCode: costCodeLabel(item.costCode),
       quantity,
       unitType: item.unitType,
       unitCostExCents,

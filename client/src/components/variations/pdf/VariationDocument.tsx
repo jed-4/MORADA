@@ -65,6 +65,9 @@ interface VariationDocumentProps {
   revisedIsAgreed?: boolean;
   /** Which columns/sections the client sees. Defaults to everything. */
   columns?: VariationDocumentColumns;
+  /** cost-code id -> "code - title". Without it the Cost Code column renders
+   *  the stored UUID. */
+  costCodeLabels?: Record<string, string>;
 }
 
 // Fixed-width numeric columns, in render order. Name/description share the one
@@ -115,6 +118,7 @@ export function VariationDocument({
   revisedContractCents,
   revisedIsAgreed = false,
   columns = DEFAULT_VARIATION_DOCUMENT_COLUMNS,
+  costCodeLabels,
 }: VariationDocumentProps) {
   const isS2 = documentStyle === "style2";
   const thBg = isS2 ? brandColor : "#F8F8F8";
@@ -140,6 +144,7 @@ export function VariationDocument({
     items,
     bills,
     labourExCents: labourTotalCents,
+    costCodeLabels,
   });
 
   const subtotalCents = docModel.subtotalCents;

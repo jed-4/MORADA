@@ -20901,6 +20901,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (settings as any)?.variationPdfColumns,
       );
 
+      // variation_items.cost_code holds the cost code's ID, so the portal must
+      // resolve it to "code - title" before sending. Shipping the raw value
+      // would both show the client a UUID and hand out internal ids. Only
+      // fetched when the column is actually shown.
+      const costCodeLabels: Record<string, string> = {};
+      if (documentColumns.costCode && project?.companyId) {
+        const codes = await storage.getCostCodes(project.companyId).catch(() => []);
+        for (const c of codes as any[]) costCodeLabels[c.id] = `${c.code} - ${c.title}`;
+      }
+
       // Lines the builder marked "hide from client" are dropped server-side;
       // remaining lines expose only client-price fields, minus any the column
       // config hides.
@@ -20910,7 +20920,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: item.id,
           ...(documentColumns.name ? { name: item.name } : {}),
           ...(documentColumns.description ? { description: item.description } : {}),
-          ...(documentColumns.costCode ? { costCode: item.costCode } : {}),
+          ...(documentColumns.costCode
+            ? { costCode: item.costCode ? costCodeLabels[item.costCode] ?? item.costCode : null }
+            : {}),
           ...(documentColumns.quantity ? { quantity: item.quantity } : {}),
           ...(documentColumns.unit ? { unitType: item.unitType } : {}),
           // The two that expose the builder's buy price and margin. These are
