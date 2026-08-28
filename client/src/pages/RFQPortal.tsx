@@ -276,10 +276,13 @@ export default function RFQPortal() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-2">
-                {rfq.attachmentUrls.map((url, index) => (
+                {/* Routed through the token rather than linking the raw object
+                    path: the objects route is requireAuth, so these links 401'd
+                    for the very people they exist for. */}
+                {rfq.attachmentUrls.map((_url, index) => (
                   <a
                     key={index}
-                    href={url}
+                    href={`/api/portal/rfq/${token}/attachments/${index}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-3 p-3 rounded-lg border hover-elevate active-elevate-2"

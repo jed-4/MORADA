@@ -121,6 +121,8 @@ import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, 
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
+import { deriveRfqStatus } from "@shared/rfqStatus";
+import { DEFAULT_RFQ_REMINDER_TEMPLATES } from "@shared/schema";
 import { timesheetTotalExGstCents } from "@shared/money";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import type { CircuitContext } from "@shared/schema";
@@ -761,6 +763,7 @@ export interface IStorage {
   getRFQs(companyId: string, projectId?: string): Promise<Rfq[]>;
   getRFQ(id: string): Promise<Rfq | undefined>;
   createRFQ(rfq: InsertRfq): Promise<Rfq>;
+  allocateRfqNumber(companyId: string, startNumber: number): Promise<number>;
   updateRFQ(id: string, rfq: Partial<InsertRfq>): Promise<Rfq | undefined>;
   deleteRFQ(id: string): Promise<boolean>;
 
@@ -773,6 +776,7 @@ export interface IStorage {
 
   // RFQ Quotes CRUD
   getRFQQuotes(rfqId: string): Promise<RfqQuote[]>;
+  getRFQQuotesForRfqs(rfqIds: string[]): Promise<RfqQuote[]>;
   getRFQQuote(id: string): Promise<RfqQuote | undefined>;
   createRFQQuote(quote: InsertRfqQuote): Promise<RfqQuote>;
   updateRFQQuote(id: string, quote: Partial<InsertRfqQuote>): Promise<RfqQuote | undefined>;
@@ -783,6 +787,37 @@ export interface IStorage {
   createRFQFollowUp(followUp: InsertRfqFollowUp): Promise<RfqFollowUp>;
   updateRFQFollowUp(id: string, followUp: Partial<InsertRfqFollowUp>): Promise<RfqFollowUp>;
   deleteRFQFollowUp(id: string): Promise<boolean>;
+
+  // RFQ Recipients CRUD (one row per supplier per RFQ)
+  getRFQRecipients(rfqId: string): Promise<import("@shared/schema").RfqRecipient[]>;
+  getRFQRecipientsForRfqs(rfqIds: string[]): Promise<import("@shared/schema").RfqRecipient[]>;
+  getRFQRecipient(id: string): Promise<import("@shared/schema").RfqRecipient | undefined>;
+  getRFQRecipientByToken(token: string): Promise<import("@shared/schema").RfqRecipient | undefined>;
+  createRFQRecipient(recipient: import("@shared/schema").InsertRfqRecipient): Promise<import("@shared/schema").RfqRecipient>;
+  updateRFQRecipient(id: string, recipient: Partial<import("@shared/schema").InsertRfqRecipient> & { portalToken?: string | null; portalTokenExpiresAt?: Date | null; remindersSent?: number }): Promise<import("@shared/schema").RfqRecipient | undefined>;
+  deleteRFQRecipient(id: string): Promise<boolean>;
+  syncRfqSupplierArrays(rfqId: string): Promise<void>;
+  recomputeRfqStatus(rfqId: string): Promise<string | undefined>;
+
+  // RFQ Quote Items CRUD (per-line supplier pricing)
+  getRFQQuoteItems(quoteId: string): Promise<import("@shared/schema").RfqQuoteItem[]>;
+  getRFQQuoteItemsForQuotes(quoteIds: string[]): Promise<import("@shared/schema").RfqQuoteItem[]>;
+  getRFQQuoteItem(id: string): Promise<import("@shared/schema").RfqQuoteItem | undefined>;
+  createRFQQuoteItem(item: import("@shared/schema").InsertRfqQuoteItem): Promise<import("@shared/schema").RfqQuoteItem>;
+  replaceRFQQuoteItems(quoteId: string, items: Omit<import("@shared/schema").InsertRfqQuoteItem, "quoteId">[]): Promise<import("@shared/schema").RfqQuoteItem[]>;
+  updateRFQQuoteItem(id: string, item: Partial<import("@shared/schema").InsertRfqQuoteItem>): Promise<import("@shared/schema").RfqQuoteItem | undefined>;
+  deleteRFQQuoteItem(id: string): Promise<boolean>;
+
+  // RFQ Reminder templates + log
+  getRFQReminderTemplates(companyId: string): Promise<import("@shared/schema").RfqReminderTemplate[]>;
+  getRFQReminderTemplate(id: string): Promise<import("@shared/schema").RfqReminderTemplate | undefined>;
+  createRFQReminderTemplate(companyId: string, template: import("@shared/schema").InsertRfqReminderTemplate): Promise<import("@shared/schema").RfqReminderTemplate>;
+  updateRFQReminderTemplate(id: string, template: Partial<import("@shared/schema").InsertRfqReminderTemplate>): Promise<import("@shared/schema").RfqReminderTemplate | undefined>;
+  deleteRFQReminderTemplate(id: string): Promise<boolean>;
+  getRFQReminderLog(rfqId: string): Promise<import("@shared/schema").RfqReminderLogEntry[]>;
+  getRfqsAwaitingReminders(): Promise<Rfq[]>;
+  claimRFQReminder(entry: import("@shared/schema").InsertRfqReminderLog): Promise<import("@shared/schema").RfqReminderLogEntry | null>;
+  markRFQReminderFailed(id: string, error: string): Promise<void>;
 
   // RFQ Portal Tokens CRUD
   getRFQPortalTokens(rfqId: string): Promise<RfqPortalToken[]>;
@@ -15443,6 +15478,28 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Claim the next RFQ sequence number for a company. Single atomic statement:
+  // concurrent creates each get their own number, and because the counter only
+  // ever moves forward a deleted RFQ's number is never handed out again.
+  // GREATEST pulls the counter up to the configured start number the first time
+  // (and if that setting is later raised).
+  async allocateRfqNumber(companyId: string, startNumber: number): Promise<number> {
+    try {
+      const result = await db.execute(sql`
+        UPDATE companies
+        SET rfq_last_number = GREATEST(rfq_last_number, ${startNumber - 1}) + 1
+        WHERE id = ${companyId}
+        RETURNING rfq_last_number
+      `);
+      const row = (result as any).rows?.[0];
+      if (!row) throw new Error(`Company ${companyId} not found`);
+      return Number(row.rfq_last_number);
+    } catch (error) {
+      console.error("Database error in allocateRfqNumber:", error);
+      throw error;
+    }
+  }
+
   async createRFQ(rfq: InsertRfq): Promise<Rfq> {
     try {
       const newRfqs = await db.insert(schema.rfqs)
@@ -15564,6 +15621,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getRFQQuotesForRfqs(rfqIds: string[]): Promise<RfqQuote[]> {
+    if (rfqIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.rfqQuotes)
+        .where(inArray(schema.rfqQuotes.rfqId, rfqIds))
+        .orderBy(asc(schema.rfqQuotes.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQQuotesForRfqs:", error);
+      throw error;
+    }
+  }
+
   async getRFQQuote(id: string): Promise<RfqQuote | undefined> {
     try {
       const quotes = await db.select()
@@ -15581,9 +15651,49 @@ export class DbStorage implements IStorage {
       const newQuotes = await db.insert(schema.rfqQuotes)
         .values(quote)
         .returning();
-      return newQuotes[0];
+      const created = newQuotes[0];
+      // A quote arriving is what moves its supplier to "quoted" and, through
+      // that, the RFQ off "out for quote". Doing it here means it holds for
+      // every entry path — the upload dialog, the portal, and (later) an
+      // emailed quote read by the AI reader.
+      await this.linkQuoteToRecipient(created);
+      await this.recomputeRfqStatus(created.rfqId);
+      return created;
     } catch (error) {
       console.error("Database error in createRFQQuote:", error);
+      throw error;
+    }
+  }
+
+  // Attach a quote to its recipient row and advance that recipient's state.
+  // Matches on supplierId first and falls back to a case-insensitive name match
+  // for ad-hoc recipients that were never linked to a contact.
+  private async linkQuoteToRecipient(quote: RfqQuote): Promise<void> {
+    try {
+      const recipients = await this.getRFQRecipients(quote.rfqId);
+      if (recipients.length === 0) return;
+
+      const match =
+        (quote.supplierId && recipients.find((r) => r.supplierId === quote.supplierId)) ||
+        (quote.supplierName &&
+          recipients.find(
+            (r) => r.supplierName.trim().toLowerCase() === quote.supplierName!.trim().toLowerCase(),
+          ));
+      if (!match) return;
+
+      const status =
+        quote.status === "declined" ? "declined" : "quoted";
+
+      await db.update(schema.rfqRecipients)
+        .set({
+          status: status as any,
+          quoteId: quote.id,
+          respondedAt: match.respondedAt ?? new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.rfqRecipients.id, match.id));
+    } catch (error) {
+      console.error("Database error in linkQuoteToRecipient:", error);
       throw error;
     }
   }
@@ -15594,10 +15704,36 @@ export class DbStorage implements IStorage {
         .set({ ...quote, updatedAt: new Date() })
         .where(eq(schema.rfqQuotes.id, id))
         .returning();
-      return updatedQuotes[0];
+      const updated = updatedQuotes[0];
+      if (updated) {
+        // Accepting one quote declines the rest: only one supplier can win an
+        // RFQ, and leaving the others "pending" forever is what kept the
+        // reminder logic chasing suppliers who had already lost.
+        if (quote.status === "accepted") {
+          await this.declineOtherQuotes(updated.rfqId, updated.id);
+        }
+        if (quote.status) await this.linkQuoteToRecipient(updated);
+        await this.recomputeRfqStatus(updated.rfqId);
+      }
+      return updated;
     } catch (error) {
       console.error("Database error in updateRFQQuote:", error);
       throw error;
+    }
+  }
+
+  private async declineOtherQuotes(rfqId: string, acceptedQuoteId: string): Promise<void> {
+    const now = new Date();
+    const others = await db.update(schema.rfqQuotes)
+      .set({ status: "declined", declinedAt: now, updatedAt: now })
+      .where(and(
+        eq(schema.rfqQuotes.rfqId, rfqId),
+        ne(schema.rfqQuotes.id, acceptedQuoteId),
+        ne(schema.rfqQuotes.status, "declined"),
+      ))
+      .returning();
+    for (const other of others) {
+      await this.linkQuoteToRecipient(other);
     }
   }
 
@@ -15662,6 +15798,355 @@ export class DbStorage implements IStorage {
       console.error("Database error in deleteRFQFollowUp:", error);
       throw error;
     }
+  }
+
+  // ── RFQ Recipient Methods ────────────────────────────────────────────────
+  async getRFQRecipients(rfqId: string): Promise<schema.RfqRecipient[]> {
+    try {
+      return await db.select()
+        .from(schema.rfqRecipients)
+        .where(eq(schema.rfqRecipients.rfqId, rfqId))
+        .orderBy(asc(schema.rfqRecipients.displayOrder), asc(schema.rfqRecipients.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQRecipients:", error);
+      throw error;
+    }
+  }
+
+  // Batched so the list page can render every RFQ's supplier roll-up without a
+  // query per row (Neon is us-east-1 and the app is used from AU — a per-row
+  // round trip is ~400ms).
+  async getRFQRecipientsForRfqs(rfqIds: string[]): Promise<schema.RfqRecipient[]> {
+    if (rfqIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.rfqRecipients)
+        .where(inArray(schema.rfqRecipients.rfqId, rfqIds))
+        .orderBy(asc(schema.rfqRecipients.displayOrder), asc(schema.rfqRecipients.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQRecipientsForRfqs:", error);
+      throw error;
+    }
+  }
+
+  async getRFQRecipient(id: string): Promise<schema.RfqRecipient | undefined> {
+    try {
+      const [row] = await db.select().from(schema.rfqRecipients)
+        .where(eq(schema.rfqRecipients.id, id)).limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getRFQRecipient:", error);
+      throw error;
+    }
+  }
+
+  async getRFQRecipientByToken(token: string): Promise<schema.RfqRecipient | undefined> {
+    try {
+      const [row] = await db.select().from(schema.rfqRecipients)
+        .where(eq(schema.rfqRecipients.portalToken, token)).limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getRFQRecipientByToken:", error);
+      throw error;
+    }
+  }
+
+  async createRFQRecipient(recipient: schema.InsertRfqRecipient): Promise<schema.RfqRecipient> {
+    try {
+      const [row] = await db.insert(schema.rfqRecipients).values(recipient as any).returning();
+      await this.syncRfqSupplierArrays(recipient.rfqId);
+      await this.recomputeRfqStatus(recipient.rfqId);
+      return row;
+    } catch (error) {
+      console.error("Database error in createRFQRecipient:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQRecipient(
+    id: string,
+    recipient: Partial<schema.InsertRfqRecipient> & {
+      portalToken?: string | null;
+      portalTokenExpiresAt?: Date | null;
+      remindersSent?: number;
+    },
+  ): Promise<schema.RfqRecipient | undefined> {
+    try {
+      const [row] = await db.update(schema.rfqRecipients)
+        .set({ ...(recipient as any), updatedAt: new Date() })
+        .where(eq(schema.rfqRecipients.id, id))
+        .returning();
+      if (row) {
+        await this.syncRfqSupplierArrays(row.rfqId);
+        await this.recomputeRfqStatus(row.rfqId);
+      }
+      return row;
+    } catch (error) {
+      console.error("Database error in updateRFQRecipient:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQRecipient(id: string): Promise<boolean> {
+    try {
+      const [row] = await db.delete(schema.rfqRecipients)
+        .where(eq(schema.rfqRecipients.id, id))
+        .returning();
+      if (row) {
+        await this.syncRfqSupplierArrays(row.rfqId);
+        await this.recomputeRfqStatus(row.rfqId);
+      }
+      return !!row;
+    } catch (error) {
+      console.error("Database error in deleteRFQRecipient:", error);
+      throw error;
+    }
+  }
+
+  // rfqs.supplierIds/supplierNames are now a derived mirror of the recipient
+  // rows, kept in sync so the PDF, the send dialog and the quote upload dialog
+  // keep working while they are migrated off the arrays. Once nothing reads
+  // them the columns can be dropped.
+  async syncRfqSupplierArrays(rfqId: string): Promise<void> {
+    try {
+      const recipients = await this.getRFQRecipients(rfqId);
+      await db.update(schema.rfqs)
+        .set({
+          supplierIds: recipients.map((r) => r.supplierId ?? ""),
+          supplierNames: recipients.map((r) => r.supplierName),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.rfqs.id, rfqId));
+    } catch (error) {
+      console.error("Database error in syncRfqSupplierArrays:", error);
+      throw error;
+    }
+  }
+
+  // Status is a roll-up of the recipients, not something a client sets. See
+  // shared/rfqStatus.ts for the rules.
+  async recomputeRfqStatus(rfqId: string): Promise<string | undefined> {
+    try {
+      const [rfq] = await db.select().from(schema.rfqs)
+        .where(eq(schema.rfqs.id, rfqId)).limit(1);
+      if (!rfq) return undefined;
+
+      const [recipients, quotes] = await Promise.all([
+        this.getRFQRecipients(rfqId),
+        this.getRFQQuotes(rfqId),
+      ]);
+
+      const next = deriveRfqStatus({ recipients, quotes, dueDate: rfq.dueDate });
+      if (next === rfq.status) return rfq.status;
+
+      await db.update(schema.rfqs)
+        .set({ status: next as any, updatedAt: new Date() })
+        .where(eq(schema.rfqs.id, rfqId));
+      return next;
+    } catch (error) {
+      console.error("Database error in recomputeRfqStatus:", error);
+      throw error;
+    }
+  }
+
+  // ── RFQ Quote Item Methods ───────────────────────────────────────────────
+  async getRFQQuoteItems(quoteId: string): Promise<schema.RfqQuoteItem[]> {
+    try {
+      return await db.select().from(schema.rfqQuoteItems)
+        .where(eq(schema.rfqQuoteItems.quoteId, quoteId))
+        .orderBy(asc(schema.rfqQuoteItems.displayOrder), asc(schema.rfqQuoteItems.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQQuoteItems:", error);
+      throw error;
+    }
+  }
+
+  async getRFQQuoteItemsForQuotes(quoteIds: string[]): Promise<schema.RfqQuoteItem[]> {
+    if (quoteIds.length === 0) return [];
+    try {
+      return await db.select().from(schema.rfqQuoteItems)
+        .where(inArray(schema.rfqQuoteItems.quoteId, quoteIds))
+        .orderBy(asc(schema.rfqQuoteItems.displayOrder), asc(schema.rfqQuoteItems.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQQuoteItemsForQuotes:", error);
+      throw error;
+    }
+  }
+
+  async getRFQQuoteItem(id: string): Promise<schema.RfqQuoteItem | undefined> {
+    try {
+      const [row] = await db.select().from(schema.rfqQuoteItems)
+        .where(eq(schema.rfqQuoteItems.id, id)).limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getRFQQuoteItem:", error);
+      throw error;
+    }
+  }
+
+  async createRFQQuoteItem(item: schema.InsertRfqQuoteItem): Promise<schema.RfqQuoteItem> {
+    try {
+      const [row] = await db.insert(schema.rfqQuoteItems).values(item as any).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createRFQQuoteItem:", error);
+      throw error;
+    }
+  }
+
+  // Replace-in-one-transaction rather than diffing: a quote's lines always
+  // arrive as a complete set (typed in the dialog, or extracted from a
+  // document), and partial application would leave a half-priced quote.
+  async replaceRFQQuoteItems(
+    quoteId: string,
+    items: Omit<schema.InsertRfqQuoteItem, "quoteId">[],
+  ): Promise<schema.RfqQuoteItem[]> {
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.delete(schema.rfqQuoteItems).where(eq(schema.rfqQuoteItems.quoteId, quoteId));
+        if (items.length === 0) return [];
+        return await tx.insert(schema.rfqQuoteItems)
+          .values(items.map((item, index) => ({
+            ...(item as any),
+            quoteId,
+            displayOrder: item.displayOrder ?? index,
+          })))
+          .returning();
+      });
+    } catch (error) {
+      console.error("Database error in replaceRFQQuoteItems:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQQuoteItem(id: string, item: Partial<schema.InsertRfqQuoteItem>): Promise<schema.RfqQuoteItem | undefined> {
+    try {
+      const [row] = await db.update(schema.rfqQuoteItems)
+        .set({ ...(item as any), updatedAt: new Date() })
+        .where(eq(schema.rfqQuoteItems.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateRFQQuoteItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQQuoteItem(id: string): Promise<boolean> {
+    try {
+      const rows = await db.delete(schema.rfqQuoteItems)
+        .where(eq(schema.rfqQuoteItems.id, id))
+        .returning();
+      return rows.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQQuoteItem:", error);
+      throw error;
+    }
+  }
+
+  // ── RFQ Reminder Methods ─────────────────────────────────────────────────
+  // Templates are company-level and seeded lazily on first read, so a company
+  // never opens an empty reminders list and every RFQ chases the same way.
+  async getRFQReminderTemplates(companyId: string): Promise<schema.RfqReminderTemplate[]> {
+    try {
+      const existing = await db.select().from(schema.rfqReminderTemplates)
+        .where(eq(schema.rfqReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.rfqReminderTemplates.displayOrder), asc(schema.rfqReminderTemplates.createdAt));
+      if (existing.length > 0) return existing;
+
+      const seeded = await db.insert(schema.rfqReminderTemplates)
+        .values(DEFAULT_RFQ_REMINDER_TEMPLATES.map((t) => ({ ...t, companyId })))
+        .onConflictDoNothing()
+        .returning();
+      if (seeded.length > 0) return seeded;
+
+      // Lost a seeding race with a concurrent request — re-read.
+      return await db.select().from(schema.rfqReminderTemplates)
+        .where(eq(schema.rfqReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.rfqReminderTemplates.displayOrder), asc(schema.rfqReminderTemplates.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQReminderTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getRFQReminderTemplate(id: string): Promise<schema.RfqReminderTemplate | undefined> {
+    const [row] = await db.select().from(schema.rfqReminderTemplates)
+      .where(eq(schema.rfqReminderTemplates.id, id)).limit(1);
+    return row;
+  }
+
+  async createRFQReminderTemplate(
+    companyId: string,
+    template: schema.InsertRfqReminderTemplate,
+  ): Promise<schema.RfqReminderTemplate> {
+    const [row] = await db.insert(schema.rfqReminderTemplates)
+      .values({ ...(template as any), companyId })
+      .returning();
+    return row;
+  }
+
+  async updateRFQReminderTemplate(
+    id: string,
+    template: Partial<schema.InsertRfqReminderTemplate>,
+  ): Promise<schema.RfqReminderTemplate | undefined> {
+    const [row] = await db.update(schema.rfqReminderTemplates)
+      .set({ ...(template as any), updatedAt: new Date() })
+      .where(eq(schema.rfqReminderTemplates.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteRFQReminderTemplate(id: string): Promise<boolean> {
+    const rows = await db.delete(schema.rfqReminderTemplates)
+      .where(eq(schema.rfqReminderTemplates.id, id))
+      .returning();
+    return rows.length > 0;
+  }
+
+  // The scheduler's work list: RFQs actually out with suppliers, with chasing
+  // switched on. Anything draft, awarded, declined or opted out has nothing to
+  // remind about, so it never reaches the sweep.
+  async getRfqsAwaitingReminders(): Promise<Rfq[]> {
+    try {
+      return await db.select().from(schema.rfqs)
+        .where(and(
+          eq(schema.rfqs.status, "sent"),
+          eq(schema.rfqs.followUpEnabled, true),
+        ))
+        .orderBy(asc(schema.rfqs.companyId));
+    } catch (error) {
+      console.error("Database error in getRfqsAwaitingReminders:", error);
+      throw error;
+    }
+  }
+
+  async getRFQReminderLog(rfqId: string): Promise<schema.RfqReminderLogEntry[]> {
+    return await db.select().from(schema.rfqReminderLog)
+      .where(eq(schema.rfqReminderLog.rfqId, rfqId))
+      .orderBy(desc(schema.rfqReminderLog.sentAt));
+  }
+
+  // Claim-then-send: the unique (recipient, template) index means the insert IS
+  // the lock. A second scheduler pass — or a second process — gets null here
+  // rather than emailing the supplier twice.
+  async claimRFQReminder(entry: schema.InsertRfqReminderLog): Promise<schema.RfqReminderLogEntry | null> {
+    try {
+      const [row] = await db.insert(schema.rfqReminderLog)
+        .values(entry as any)
+        .onConflictDoNothing()
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      console.error("Database error in claimRFQReminder:", error);
+      throw error;
+    }
+  }
+
+  async markRFQReminderFailed(id: string, error: string): Promise<void> {
+    await db.update(schema.rfqReminderLog)
+      .set({ status: "failed", error: error.slice(0, 500) })
+      .where(eq(schema.rfqReminderLog.id, id));
   }
 
   // RFQ Portal Token Methods

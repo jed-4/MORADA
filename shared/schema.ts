@@ -29,7 +29,15 @@ export const companies = pgTable("companies", {
   logo: text("logo"),
   ownerId: varchar("owner_id"), // User who created/owns the company
   isActive: boolean("is_active").notNull().default(true),
-  
+
+  // Monotonic RFQ sequence. Held here rather than derived from max(existing)
+  // so deleting an RFQ never frees its number for reuse — an RFQ number is
+  // emailed to suppliers, so it has to keep meaning one document forever.
+  // Allocated with a single atomic UPDATE ... RETURNING, which also removes
+  // the create-race the old count-based generator had.
+  rfqLastNumber: integer("rfq_last_number").notNull().default(0),
+
+
   // Google Drive integration - company-level OAuth credentials
   googleDriveClientId: text("google_drive_client_id"), // Company's own OAuth Client ID
   googleDriveClientSecret: text("google_drive_client_secret"), // Company's own OAuth Client Secret (encrypted)
@@ -5103,10 +5111,21 @@ export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "rem
 // RFQs table
 export const rfqs = pgTable("rfqs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  rfqNumber: text("rfq_number").notNull(), // e.g., "4504-RFQ-001"
-  projectId: varchar("project_id").notNull().references(() => projects.id),
+  rfqNumber: text("rfq_number").notNull(), // e.g., "RFQ-001"
+  // Nullable: the RFQ list is a company-wide registry, so a general supplier
+  // enquiry ("what would you charge for X?") can be logged and chased before
+  // there is a job to hang it off. Numbering is company-scoped, so an RFQ with
+  // no project still gets a stable number.
+  projectId: varchar("project_id").references(() => projects.id),
   companyId: varchar("company_id").notNull().references(() => companies.id),
-  
+
+  // Who is chasing this. Distinct from createdBy — the person who logs an RFQ
+  // is often not the person who owns getting an answer, and a registry the
+  // whole team reads needs a name against each row.
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+
+
   title: text("title").notNull(), // e.g., "Concrete Pour - Slab"
   description: text("description"), // Brief description
   scope: text("scope"), // Wunderbuild-style rich-text scope of work (6-line auto-grow)
@@ -5163,10 +5182,20 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   followUpSentAt: true,
 }).extend({
   title: z.string().min(1, "Title is required"),
+  // Optional so a registry entry can exist before there is a job. Empty string
+  // normalises to null — the project pickers emit "" for "no project", and a
+  // bare "" would fail the projects FK.
+  projectId: z.string().nullable().optional().transform((v) => v || null),
+  ownerId: z.string().nullable().optional().transform((v) => v || null),
+  ownerName: z.string().nullable().optional(),
   description: z.string().optional().nullable(),
   scope: z.string().optional().nullable(),
-  dueDate: z.string().optional().nullable(),
-  deadline: z.string().optional().nullable(),
+  // Coerced, not z.string(): the clients all send ISO strings, and Drizzle's
+  // timestamp mapper calls .toISOString() on whatever it is handed — so a bare
+  // string reached the driver and threw, 500-ing every create/save that carried
+  // a date. Coercing here keeps the wire format and hands Drizzle a Date.
+  dueDate: z.coerce.date().optional().nullable(),
+  deadline: z.coerce.date().optional().nullable(),
   supplierIds: z.array(z.string()).optional(),
   supplierNames: z.array(z.string()).optional(),
   attachmentUrls: z.array(z.string()).optional(),
@@ -5180,6 +5209,24 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   followUpDaysBefore: z.number().optional().nullable(),
 });
 
+// Update schema. insertRfqSchema deliberately omits the lifecycle fields so a
+// client can't set them at create time, but PATCH legitimately needs them —
+// and because Zod strips unknown keys rather than rejecting them, the send
+// flow's { status, sentAt } PATCH silently parsed to {} and every RFQ stayed
+// on "draft" forever.
+//
+// projectId IS accepted here, but the route only honours it when the RFQ does
+// not have one yet: attaching a registry enquiry to a job once it becomes real
+// is a normal move, whereas re-parenting an RFQ that suppliers have already
+// quoted against is not.
+export const updateRfqSchema = insertRfqSchema.partial().extend({
+  status: z.enum(rfqStatusEnum.enumValues).optional(),
+  sentAt: z.coerce.date().optional().nullable(),
+  followUpSentAt: z.coerce.date().optional().nullable(),
+  pdfUrl: z.string().optional().nullable(),
+});
+
+export type UpdateRfq = z.infer<typeof updateRfqSchema>;
 export type InsertRfq = z.infer<typeof insertRfqSchema>;
 export type Rfq = typeof rfqs.$inferSelect;
 
@@ -5205,6 +5252,23 @@ export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // quantity is numeric(10,2), which drizzle-zod types as a string, but every
+  // caller sends a JS number (parseFloat from the add-item form,
+  // estimate_items.quantity from the bulk push). That mismatch 400'd every
+  // single item create. Accept both and normalise to the string the driver
+  // wants.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+// Line items supplied inline when creating an RFQ. The create page and the
+// estimate bulk-push both send these nested under the RFQ; previously they
+// were stripped by Zod and the user's items were silently discarded.
+export const insertRfqSchemaWithItems = insertRfqSchema.extend({
+  items: z.array(insertRfqItemSchema.omit({ rfqId: true })).optional(),
 });
 
 export type InsertRfqItem = z.infer<typeof insertRfqItemSchema>;
@@ -5251,6 +5315,13 @@ export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
     url: z.string(),
     size: z.number().optional(),
   })).optional(),
+  // Same ISO-string-vs-z.date() mismatch as the RFQ dates: the accept/decline
+  // actions send timestamps as strings, which failed validation outright and
+  // made both buttons return 400.
+  validUntil: z.coerce.date().optional().nullable(),
+  acceptedAt: z.coerce.date().optional().nullable(),
+  declinedAt: z.coerce.date().optional().nullable(),
+  submittedAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
@@ -5275,6 +5346,9 @@ export const rfqFollowUps = pgTable("rfq_follow_ups", {
 export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
   id: true,
   createdAt: true,
+}).extend({
+  scheduledFor: z.coerce.date(),
+  sentAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
@@ -5303,10 +5377,269 @@ export const rfqPortalTokens = pgTable("rfq_portal_tokens", {
 export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).omit({
   id: true,
   createdAt: true,
+}).extend({
+  expiresAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
 export type RfqPortalToken = typeof rfqPortalTokens.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Recipients — one row per supplier per RFQ.
+//
+// Replaces the index-coupled rfqs.supplierIds[] / rfqs.supplierNames[] pair and
+// absorbs rfq_portal_tokens. A supplier's participation previously lived in
+// three places at once (two parallel arrays, an optional token row, an optional
+// quote row) with nothing tying them together but array position — so removing
+// a supplier matched by *name* desynced the arrays permanently whenever two
+// suppliers shared a name.
+//
+// This is also what makes "one RFQ, several requests under it" representable:
+// the RFQ is the document, each recipient is a request with its own state.
+// ---------------------------------------------------------------------------
+export const rfqRecipientStatusEnum = pgEnum("rfq_recipient_status", [
+  "not_sent",
+  "sent",
+  "viewed",
+  "quoted",
+  "declined",
+  "no_response",
+]);
+
+export const rfqRecipients = pgTable("rfq_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+
+  // supplierId is nullable so an ad-hoc recipient (someone not yet in Contacts)
+  // can still be tracked; supplierName is the display anchor either way.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
+  supplierName: text("supplier_name").notNull(),
+  supplierEmail: text("supplier_email"),
+
+  status: rfqRecipientStatusEnum("status").notNull().default("not_sent"),
+
+  // Recipient contacted outside Morada (phone, personal email). Never gets a
+  // portal token or an automated reminder; the user drives its status by hand.
+  isExternal: boolean("is_external").notNull().default(false),
+
+  sentAt: timestamp("sent_at"),
+  viewedAt: timestamp("viewed_at"),
+  respondedAt: timestamp("responded_at"),
+
+  // Portal access, absorbed from rfq_portal_tokens so a supplier's link lives
+  // with the rest of their state instead of in a side table nothing created.
+  portalToken: text("portal_token").unique(),
+  portalTokenExpiresAt: timestamp("portal_token_expires_at"),
+  portalTokenRevoked: boolean("portal_token_revoked").notNull().default(false),
+
+  quoteId: varchar("quote_id"), // set when this recipient submits a quote
+
+  // Reminder bookkeeping (the scheduler lands in PR 4).
+  lastRemindedAt: timestamp("last_reminded_at"),
+  remindersSent: integer("reminders_sent").notNull().default(0),
+
+  notes: text("notes"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqRecipientSchema = createInsertSchema(rfqRecipients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  portalToken: true,
+  portalTokenExpiresAt: true,
+  remindersSent: true,
+}).extend({
+  supplierName: z.string().min(1, "Supplier name is required"),
+  sentAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
+  respondedAt: z.coerce.date().optional().nullable(),
+  lastRemindedAt: z.coerce.date().optional().nullable(),
+});
+
+export const updateRfqRecipientSchema = insertRfqRecipientSchema.partial().omit({ rfqId: true });
+
+export type InsertRfqRecipient = z.infer<typeof insertRfqRecipientSchema>;
+export type UpdateRfqRecipient = z.infer<typeof updateRfqRecipientSchema>;
+export type RfqRecipient = typeof rfqRecipients.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Quote Items — a supplier's price against each line of the RFQ.
+//
+// rfq_quotes only ever carried a single totalAmount, so "compare quotes line by
+// line" was unimplementable and an accepted quote could not be written back to
+// the estimate per line. rfqItemId is nullable because a supplier can quote
+// something we didn't ask for, and because AI extraction from a quote PDF
+// won't always match a line confidently.
+//
+// Money: cents, matching rfq_items.unitPrice and the dominant convention.
+// ---------------------------------------------------------------------------
+export const rfqQuoteItems = pgTable("rfq_quote_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => rfqQuotes.id, { onDelete: "cascade" }),
+  rfqItemId: varchar("rfq_item_id").references(() => rfqItems.id, { onDelete: "set null" }),
+
+  description: text("description").notNull(), // as quoted, may differ from ours
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  unitPrice: integer("unit_price"), // cents
+  lineTotal: integer("line_total"), // cents; stored rather than derived so a
+                                    // supplier's own rounding survives intact
+  notes: text("notes"),
+
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqQuoteItemSchema = createInsertSchema(rfqQuoteItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Same numeric-column-vs-JS-number mismatch as rfq_items.quantity.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+export type InsertRfqQuoteItem = z.infer<typeof insertRfqQuoteItemSchema>;
+export type RfqQuoteItem = typeof rfqQuoteItems.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Reminder Templates — company-level, not per-RFQ.
+//
+// Every RFQ chases the same way, so the wording lives once per company and each
+// RFQ opts in or out. (The old design wrote four hard-coded follow-up rows per
+// RFQ at send time and nothing ever read them — there was no scheduler at all.)
+//
+// Two triggers, because both are natural: "chase 3 days after I sent it" works
+// even when there is no due date, and "chase 2 days before it's due" is how a
+// deadline actually gets managed.
+// ---------------------------------------------------------------------------
+export const rfqReminderTriggerEnum = pgEnum("rfq_reminder_trigger", ["after_send", "before_due"]);
+
+export const rfqReminderTemplates = pgTable("rfq_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(), // shown in the reminders list, e.g. "First chase"
+  trigger: rfqReminderTriggerEnum("trigger").notNull().default("after_send"),
+  offsetDays: integer("offset_days").notNull(),
+
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderTemplateSchema = createInsertSchema(rfqReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+
+export const updateRfqReminderTemplateSchema = insertRfqReminderTemplateSchema.partial();
+
+export type InsertRfqReminderTemplate = z.infer<typeof insertRfqReminderTemplateSchema>;
+export type RfqReminderTemplate = typeof rfqReminderTemplates.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Reminder Log — what was actually sent, to whom, off which template.
+//
+// The unique (recipient, template) index is what stops the scheduler double-
+// sending: a reminder is claimed by inserting its log row, so a second pass —
+// or a second process — hits the constraint instead of emailing twice.
+// ---------------------------------------------------------------------------
+export const rfqReminderLog = pgTable("rfq_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  recipientId: varchar("recipient_id").notNull().references(() => rfqRecipients.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => rfqReminderTemplates.id, { onDelete: "set null" }),
+
+  subject: text("subject"),
+  body: text("body"),
+  toEmail: text("to_email"),
+
+  status: text("status").notNull().default("sent"), // "sent" | "failed" | "skipped"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderLogSchema = createInsertSchema(rfqReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertRfqReminderLog = z.infer<typeof insertRfqReminderLogSchema>;
+export type RfqReminderLogEntry = typeof rfqReminderLog.$inferSelect;
+
+/** Placeholders offered as chips in the reminder editor, and substituted on send. */
+export const RFQ_REMINDER_PLACEHOLDERS = [
+  { token: "{{supplier_name}}", label: "Supplier name" },
+  { token: "{{rfq_number}}", label: "RFQ number" },
+  { token: "{{rfq_title}}", label: "RFQ title" },
+  { token: "{{due_date}}", label: "Response due" },
+  { token: "{{days_remaining}}", label: "Days remaining" },
+  { token: "{{portal_link}}", label: "Portal link" },
+  { token: "{{sender_name}}", label: "Your name" },
+  { token: "{{company_name}}", label: "Company name" },
+  { token: "{{project_name}}", label: "Project name" },
+] as const;
+
+/** Defaults seeded for a company the first time its reminders are opened. */
+export const DEFAULT_RFQ_REMINDER_TEMPLATES = [
+  {
+    name: "First chase",
+    trigger: "after_send" as const,
+    offsetDays: 3,
+    subject: "Following up: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "Just following up on the quote request we sent through for {{rfq_title}}.\n\n" +
+      "You can review it and send your price back here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 0,
+  },
+  {
+    name: "Due date approaching",
+    trigger: "before_due" as const,
+    offsetDays: 2,
+    subject: "Closing soon: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "A reminder that quotes for {{rfq_title}} close on {{due_date}} ({{days_remaining}} days away).\n\n" +
+      "Send your price through here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 1,
+  },
+  {
+    name: "Final chase",
+    trigger: "after_send" as const,
+    offsetDays: 14,
+    subject: "Last call: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "We haven't heard back on {{rfq_title}} and are about to award it.\n\n" +
+      "If you'd still like to quote, please send it through here: {{portal_link}}\n\n" +
+      "If it's not one for you, just let us know and we'll stop chasing.\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 2,
+  },
+];
 
 // ============================================
 // RFI (Request for Information) System

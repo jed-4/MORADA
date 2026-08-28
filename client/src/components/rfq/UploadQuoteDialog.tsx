@@ -11,13 +11,20 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, X } from "lucide-react";
+import { Loader2, Upload, X } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
 import type { Rfq } from "@shared/schema";
 
 const uploadQuoteFormSchema = z.object({
   supplierId: z.string().optional(),
   supplierName: z.string().min(1, "Supplier name is required"),
   totalAmount: z.string().min(1, "Total amount is required"),
+  // Australian supplier quotes are inconsistent about whether the headline
+  // figure includes GST, and the PO converter assumes ex — so make the user
+  // say which it is rather than guessing and being 10% out.
+  gstMode: z.enum(["inclusive", "exclusive"]).default("inclusive"),
+  leadTime: z.string().optional(),
+  validUntil: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -32,6 +39,7 @@ interface UploadQuoteDialogProps {
 export function UploadQuoteDialog({ rfq, open, onOpenChange }: UploadQuoteDialogProps) {
   const { toast } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const { uploadFile } = useUpload();
 
   const form = useForm<UploadQuoteFormValues>({
     resolver: zodResolver(uploadQuoteFormSchema),
@@ -39,32 +47,43 @@ export function UploadQuoteDialog({ rfq, open, onOpenChange }: UploadQuoteDialog
       supplierId: "",
       supplierName: "",
       totalAmount: "",
+      gstMode: "inclusive",
+      leadTime: "",
+      validUntil: "",
       notes: "",
     },
   });
 
   const uploadMutation = useMutation({
     mutationFn: async (values: UploadQuoteFormValues) => {
-      // Convert dollar amount to cents
-      const totalCents = Math.round(parseFloat(values.totalAmount) * 100);
+      // Files are uploaded for real now. This used to synthesise
+      // `/uploads/quotes/<name>` — a path that does not exist — and persist it,
+      // so the RFQ list rendered those as genuine attachments and the preview
+      // showed a broken frame.
+      const attachments: { name: string; url: string; size: number }[] = [];
+      for (const file of selectedFiles) {
+        const result = await uploadFile(file);
+        if (!result) {
+          throw new Error(`Could not upload ${file.name}`);
+        }
+        attachments.push({ name: file.name, url: result.objectPath, size: file.size });
+      }
 
-      // TODO: Implement actual file upload to object storage
-      // This requires:
-      // 1. Backend multipart/form-data handling
-      // 2. File storage service (S3, Cloudflare R2, etc.)
-      // 3. Signed URL generation for secure access
-      // For MVP: users can upload quotes without attachments or reference external files in notes
-      const attachments = selectedFiles.map(file => ({
-        name: file.name,
-        url: `/uploads/quotes/${file.name}`, // Placeholder - not accessible
-        size: file.size,
-      }));
+      // Stored inc GST, matching the app-wide convention. A supplier quoting
+      // ex GST is grossed up here so downstream comparison and PO conversion
+      // are apples to apples.
+      const entered = parseFloat(values.totalAmount);
+      const totalCents = Math.round(
+        (values.gstMode === "exclusive" ? entered * 1.1 : entered) * 100,
+      );
 
       return apiRequest("/api/rfq-quotes", "POST", {
         rfqId: rfq.id,
         supplierId: values.supplierId || null,
         supplierName: values.supplierName,
         totalAmount: totalCents,
+        leadTime: values.leadTime || null,
+        validUntil: values.validUntil || null,
         notes: values.notes || "",
         attachments,
         status: "pending",
@@ -175,13 +194,64 @@ export function UploadQuoteDialog({ rfq, open, onOpenChange }: UploadQuoteDialog
                       />
                     </div>
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="gstMode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Is that figure inc or ex GST?</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-quote-gst-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="inclusive">Includes GST</SelectItem>
+                      <SelectItem value="exclusive">Excludes GST (add 10%)</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormDescription>
-                    Enter the total amount quoted by the supplier
+                    Quotes are stored inc GST so suppliers can be compared like for like.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="leadTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lead time (optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g. 2-3 weeks" data-testid="input-quote-lead-time" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="validUntil"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Valid until (optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" data-testid="input-quote-valid-until" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}

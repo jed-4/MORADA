@@ -11,6 +11,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { renderReminderText } from "@shared/rfqReminders";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
@@ -121,9 +122,15 @@ import {
   insertChannelSchema,
   insertChannelMemberSchema,
   insertMessageSchema,
-  insertRfqSchema,
+  insertRfqSchemaWithItems,
+  updateRfqSchema,
   insertRfqItemSchema,
   insertRfqQuoteSchema,
+  insertRfqRecipientSchema,
+  updateRfqRecipientSchema,
+  insertRfqQuoteItemSchema,
+  insertRfqReminderTemplateSchema,
+  updateRfqReminderTemplateSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -16426,33 +16433,150 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertRfqSchema.safeParse(req.body);
+      const validationResult = insertRfqSchemaWithItems.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
       const companyId = req.user!.companyId!;
-      
-      // Generate RFQ number (format: PROJ-RFQ-001)
-      const project = await storage.getProject(validationResult.data.projectId);
-      const existingRFQs = await storage.getRFQs(companyId, validationResult.data.projectId);
-      const rfqCount = existingRFQs.length + 1;
-      const rfqNumber = `${project?.name.substring(0, 4).toUpperCase() || 'PROJ'}-RFQ-${String(rfqCount).padStart(3, '0')}`;
+      const { items: nestedItems, ...rfqFields } = validationResult.data;
 
-      const rfqData = {
-        ...validationResult.data,
+      // The target project must belong to the caller's company. Without this an
+      // RFQ could be created against another company's project and then stamped
+      // with the caller's companyId, which hides the mismatch from every later
+      // ownership check. Skipped when there is no project: the registry allows
+      // an enquiry that isn't tied to a job yet.
+      if (rfqFields.projectId) {
+        if (!(await enforceProjectCompany(req, res, rfqFields.projectId, "Project not found"))) return;
+      }
+
+      // Numbering comes from Settings (rfqPrefix/rfqStartNumber — previously
+      // dead config while the generator used the project name) off a monotonic
+      // per-company counter. Company-scoped rather than per-project because an
+      // RFQ number identifies a document sent to a supplier, and the registry
+      // spans projects. The counter never goes backwards, so deleting an RFQ
+      // does not free its number the way the old count-based scheme did.
+      const generateRfqNumber = async (): Promise<string> => {
+        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const prefix = (config as any)?.rfqPrefix || "RFQ-";
+        const startNumber = (config as any)?.rfqStartNumber ?? 1;
+        const seq = await storage.allocateRfqNumber(companyId, startNumber);
+        return `${prefix}${String(seq).padStart(3, "0")}`;
+      };
+
+      const callerName =
+        `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim() || req.user!.email || 'Unknown';
+
+      // Owner defaults to the creator so no row in the registry is unowned —
+      // "who is chasing this" is the whole point of the column.
+      const ownerId = (await resolveTeamUserId(req, rfqFields.ownerId)) ?? req.user!.id;
+      const ownerName =
+        ownerId === req.user!.id ? callerName : rfqFields.ownerName || (await lookupUserName(req, ownerId));
+
+      // Standard terms, if the company has nominated a T&C template as its RFQ
+      // default (Settings → Terms & Conditions). Applied only when the caller
+      // didn't supply terms of their own, and only at create time — editing an
+      // RFQ's terms later must never be overwritten by a settings change.
+      let defaultTerms: { termsTemplateId?: string; customTerms?: string } = {};
+      if (!rfqFields.customTerms) {
+        try {
+          const settings = await storage.getCompanySettings(companyId);
+          const templates =
+            (settings?.termsTemplates as
+              | Array<{ id: string; name: string; content: string; defaultFor: string[] }>
+              | undefined) ?? [];
+          const preset = templates.find((t) => t.defaultFor?.includes("rfqs"));
+          if (preset) {
+            defaultTerms = { termsTemplateId: preset.id, customTerms: preset.content };
+          }
+        } catch (err) {
+          // Terms are a convenience — never fail the create over them.
+          console.error("Could not resolve default RFQ terms:", err);
+        }
+      }
+
+      const baseData = {
+        ...rfqFields,
+        ...defaultTerms,
         companyId,
-        rfqNumber,
+        ownerId,
+        ownerName,
         createdBy: req.user!.id,
-        createdByName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim(),
+        createdByName: callerName,
         status: 'draft' as const,
       };
 
-      const rfq = await storage.createRFQ(rfqData);
-      res.status(201).json(rfq);
+      let rfq;
+      for (let attempt = 0; ; attempt++) {
+        const rfqNumber = await generateRfqNumber();
+        // Assigned to a local first: rfqNumber is omitted from InsertRfq (the
+        // server owns it), so passing the literal inline trips TS's excess
+        // property check.
+        const payload = { ...baseData, rfqNumber };
+        try {
+          rfq = await storage.createRFQ(payload);
+          break;
+        } catch (err: any) {
+          // The counter makes collisions impossible for RFQs created after this
+          // change, but legacy rows carry project-name-derived numbers that
+          // could coincide with a generated one. Retry claims the next number.
+          if (err?.code === "23505" && attempt < 3) continue;
+          if (err?.code === "23505") {
+            return res.status(409).json({ error: `RFQ number ${rfqNumber} is already in use` });
+          }
+          throw err;
+        }
+      }
+
+      // Line items sent inline with the RFQ (the create page and the estimate
+      // bulk push both do this). These used to be stripped by Zod and lost.
+      if (nestedItems?.length) {
+        await Promise.all(
+          nestedItems.map((item, index) =>
+            storage.createRFQItem({
+              ...item,
+              rfqId: rfq!.id,
+              displayOrder: item.displayOrder ?? index,
+            } as any)
+          )
+        );
+      }
+
+      // Turn the supplierIds/supplierNames the clients still send into recipient
+      // rows, which are now the source of truth. Deduped by id (and by name for
+      // ad-hoc entries) because the old array pair could hold repeats.
+      const names = rfqFields.supplierNames ?? [];
+      const ids = rfqFields.supplierIds ?? [];
+      const seen = new Set<string>();
+      const recipients = names
+        .map((name, index) => ({ name, supplierId: ids[index] || null }))
+        .filter(({ name, supplierId }) => {
+          const key = (supplierId || name || "").trim().toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      for (let index = 0; index < recipients.length; index++) {
+        const { name, supplierId } = recipients[index];
+        await storage.createRFQRecipient({
+          rfqId: rfq!.id,
+          // Resolved rather than trusted: the arrays accepted any string, so a
+          // stale or foreign id would now hit the contacts FK and 500 the whole
+          // create. An unresolvable id degrades to an ad-hoc recipient carrying
+          // just the name, and a contact from another company never links.
+          supplierId: await resolveSupplierId(req, supplierId),
+          supplierName: name,
+          displayOrder: index,
+        } as any);
+      }
+
+      // createRFQRecipient re-syncs the mirrored arrays and the derived status,
+      // so re-read rather than returning the pre-recipient row.
+      const created = (await storage.getRFQ(rfq!.id)) ?? rfq;
+      res.status(201).json(created);
     } catch (error: any) {
       console.error("Error creating RFQ:", error);
       res.status(500).json({ error: "Failed to create RFQ", details: error.message });
@@ -16470,16 +16594,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const updateSchema = insertRfqSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
+      const validationResult = updateRfqSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const rfq = await storage.updateRFQ(req.params.id, validationResult.data);
+      const { projectId: requestedProjectId, ownerId: requestedOwnerId, ...rest } = validationResult.data;
+      const patch: Record<string, unknown> = { ...rest };
+
+      // Attaching a registry enquiry to a job is allowed once. Re-parenting an
+      // RFQ that already belongs to a project is not — suppliers have quoted
+      // against it in that context.
+      if (requestedProjectId && !existingRFQ.projectId) {
+        if (!(await enforceProjectCompany(req, res, requestedProjectId, "Project not found"))) return;
+        patch.projectId = requestedProjectId;
+      }
+
+      if (requestedOwnerId !== undefined) {
+        const ownerId = await resolveTeamUserId(req, requestedOwnerId);
+        patch.ownerId = ownerId;
+        patch.ownerName = ownerId ? await lookupUserName(req, ownerId) : null;
+      }
+
+      const rfq = await storage.updateRFQ(req.params.id, patch as any);
       if (!rfq) {
         return res.status(404).json({ error: "RFQ not found" });
       }
@@ -16601,6 +16741,458 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resolve an RFQ owner to a user in the caller's own company. Returns null
+  // for anything unknown or foreign, so a bad id falls back to a sensible
+  // default rather than assigning an RFQ to another tenant's user.
+  const resolveTeamUserId = async (req: any, userId?: string | null): Promise<string | null> => {
+    if (!userId) return null;
+    try {
+      const user = await storage.getUser(userId);
+      return user && user.companyId === req.user!.companyId ? userId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const lookupUserName = async (req: any, userId: string): Promise<string | null> => {
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) return null;
+      return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Resolve a supplier id to one the caller's company actually owns. Returns
+  // null for anything unknown or foreign, so the recipient degrades to a
+  // name-only entry rather than either 500-ing on the contacts FK or silently
+  // linking to another tenant's contact.
+  const resolveSupplierId = async (req: any, supplierId?: string | null): Promise<string | null> => {
+    if (!supplierId) return null;
+    try {
+      const contact = await storage.getContact(supplierId, req.user!.companyId!);
+      return contact ? supplierId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── RFQ Recipients API Routes ─────────────────────────────────────────────
+  // One row per supplier per RFQ. Replaces the supplierIds/supplierNames arrays
+  // on the RFQ, which the server now maintains as a derived mirror.
+  app.get("/api/rfqs/:rfqId/recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQRecipients(req.params.rfqId));
+    } catch (error) {
+      console.error("Error fetching RFQ recipients:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ recipients" });
+    }
+  });
+
+  // Batched roll-up for the list page — one query for every RFQ on screen
+  // rather than one per row (Neon is us-east-1, the app is used from AU).
+  app.get("/api/rfq-recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const rfqs = await storage.getRFQs(req.user!.companyId!, projectId as string | undefined);
+      const recipients = await storage.getRFQRecipientsForRfqs(rfqs.map((r) => r.id));
+      res.json(recipients);
+    } catch (error) {
+      console.error("Error fetching RFQ recipients:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ recipients" });
+    }
+  });
+
+  app.post("/api/rfq-recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqRecipientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const owned = await getOwnedRFQ(req, res, validationResult.data.rfqId);
+      if (!owned) return;
+
+      // A supplier can only be on an RFQ once. Caught here so the user gets a
+      // sentence rather than a unique-violation 500.
+      const existing = await storage.getRFQRecipients(validationResult.data.rfqId);
+      const dupe = existing.find((r) =>
+        validationResult.data.supplierId
+          ? r.supplierId === validationResult.data.supplierId
+          : r.supplierName.trim().toLowerCase() ===
+            validationResult.data.supplierName.trim().toLowerCase(),
+      );
+      if (dupe) {
+        return res.status(409).json({ error: `${dupe.supplierName} is already on this RFQ` });
+      }
+
+      const recipient = await storage.createRFQRecipient({
+        ...validationResult.data,
+        supplierId: await resolveSupplierId(req, validationResult.data.supplierId),
+        displayOrder: validationResult.data.displayOrder ?? existing.length,
+      });
+      res.status(201).json(recipient);
+    } catch (error: any) {
+      console.error("Error creating RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to add supplier", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfq-recipients/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = updateRfqRecipientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const existing = await storage.getRFQRecipient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Recipient not found" });
+      const owned = await getOwnedRFQ(req, res, existing.rfqId);
+      if (!owned) return;
+
+      const recipient = await storage.updateRFQRecipient(req.params.id, {
+        ...validationResult.data,
+        ...(validationResult.data.supplierId !== undefined
+          ? { supplierId: await resolveSupplierId(req, validationResult.data.supplierId) }
+          : {}),
+      });
+      res.json(recipient);
+    } catch (error: any) {
+      console.error("Error updating RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to update supplier" });
+    }
+  });
+
+  app.delete("/api/rfq-recipients/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getRFQRecipient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Recipient not found" });
+      const owned = await getOwnedRFQ(req, res, existing.rfqId);
+      if (!owned) return;
+
+      await storage.deleteRFQRecipient(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to remove supplier" });
+    }
+  });
+
+  // ── Send an RFQ ───────────────────────────────────────────────────────────
+  // One server-side operation: mint a portal token per recipient, email them
+  // with the PDF and their own link, and stamp sentAt. Previously the client
+  // orchestrated four separate calls, none of which sent anything — there was a
+  // literal "TODO: implement actual email sending" — while still toasting
+  // "RFQ sent to N suppliers".
+  app.post("/api/rfqs/:id/send", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await getOwnedRFQ(req, res, req.params.id);
+      if (!rfq) return;
+
+      const bodySchema = z.object({
+        recipientIds: z.array(z.string()).optional(),
+        subject: z.string().optional(),
+        message: z.string().optional(),
+        pdfBase64: z.string().optional(),
+        pdfFilename: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+
+      const allRecipients = await storage.getRFQRecipients(rfq.id);
+      const targets = parsed.data.recipientIds?.length
+        ? allRecipients.filter((r) => parsed.data.recipientIds!.includes(r.id))
+        : allRecipients;
+
+      if (targets.length === 0) {
+        return res.status(400).json({ error: "Add at least one supplier before sending" });
+      }
+
+      const settings = await storage.getCompanySettings(req.user!.companyId!);
+      const companyName = settings?.companyName || "Morada";
+      const senderName =
+        `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "";
+      const project = rfq.projectId ? await storage.getProject(rfq.projectId) : undefined;
+      // Prefer the canonical domain over whatever host this request arrived on.
+      // A portal link is emailed to a supplier and lives for weeks, so building
+      // it from req.host meant sending from a preview/staging host baked that
+      // host into the supplier's link — and the reminder scheduler, which uses
+      // APP_BASE_URL, would then chase them with a different URL for the same
+      // RFQ. Falls back to the request host for local dev.
+      const baseUrl =
+        (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+        `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+
+      const sent: string[] = [];
+      const failed: { supplierName: string; error: string }[] = [];
+      const skipped: { supplierName: string; reason: string }[] = [];
+
+      for (const recipient of targets) {
+        // External recipients are contacted outside Morada by definition — they
+        // get marked sent for tracking but never emailed or tokenised.
+        if (recipient.isExternal) {
+          await storage.updateRFQRecipient(recipient.id, {
+            status: "sent" as const,
+            sentAt: recipient.sentAt ?? new Date(),
+          });
+          skipped.push({ supplierName: recipient.supplierName, reason: "external" });
+          continue;
+        }
+
+        // One durable token per recipient, reused on re-send so a supplier's
+        // link keeps working rather than silently dying when you chase them.
+        const portalToken = recipient.portalToken ?? randomUUID().replace(/-/g, "");
+        const now = new Date();
+
+        try {
+          await storage.updateRFQRecipient(recipient.id, {
+            status: "sent" as const,
+            sentAt: recipient.sentAt ?? now,
+            portalToken,
+            portalTokenRevoked: false,
+          } as any);
+
+          if (recipient.supplierEmail) {
+            const ctx = {
+              rfq,
+              recipient: { ...recipient, portalToken },
+              senderName,
+              companyName,
+              projectName: project?.name ?? null,
+              baseUrl,
+            };
+            const subject = renderReminderText(
+              parsed.data.subject || "Request for quote: {{rfq_number}} — {{rfq_title}}",
+              ctx,
+            );
+            const message = renderReminderText(
+              parsed.data.message ||
+                "Hi {{supplier_name}},\n\nWe'd like a price for {{rfq_title}}.\n\n" +
+                  "You can review the details and send your quote back here: {{portal_link}}\n\n" +
+                  "Thanks,\n{{sender_name}}\n{{company_name}}",
+              ctx,
+            );
+
+            await sendGenericEmail({
+              to: recipient.supplierEmail,
+              subject,
+              html: message.replace(/\n/g, "<br>"),
+              from: `${companyName} via Morada <noreply@moradaco.com.au>`,
+              replyTo: req.user!.email,
+              userId: req.user!.id,
+              attachments: parsed.data.pdfBase64
+                ? [{
+                    filename: parsed.data.pdfFilename || `RFQ-${rfq.rfqNumber}.pdf`,
+                    content: parsed.data.pdfBase64,
+                    mimeType: "application/pdf",
+                  }]
+                : undefined,
+            });
+            sent.push(recipient.supplierName);
+          } else {
+            // No address on file: the token still exists, so the user can copy
+            // the portal link from the supplier row and send it themselves.
+            skipped.push({ supplierName: recipient.supplierName, reason: "no email address" });
+          }
+        } catch (err: any) {
+          console.error(`Failed to send RFQ ${rfq.rfqNumber} to ${recipient.supplierName}:`, err);
+          failed.push({ supplierName: recipient.supplierName, error: err?.message || "Send failed" });
+        }
+      }
+
+      await storage.updateRFQ(rfq.id, { sentAt: rfq.sentAt ?? new Date() } as any);
+      await storage.recomputeRfqStatus(rfq.id);
+
+      res.json({
+        sent,
+        failed,
+        skipped,
+        rfq: await storage.getRFQ(rfq.id),
+      });
+    } catch (error: any) {
+      console.error("Error sending RFQ:", error);
+      res.status(500).json({ error: "Failed to send RFQ", details: error.message });
+    }
+  });
+
+  // ── RFQ Reminder Templates (company-level) ───────────────────────────────
+  app.get("/api/rfq-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      res.json(await storage.getRFQReminderTemplates(req.user!.companyId!));
+    } catch (error) {
+      console.error("Error fetching reminder templates:", error);
+      res.status(500).json({ error: "Failed to fetch reminder templates" });
+    }
+  });
+
+  app.post("/api/rfq-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // insertRfqReminderTemplateSchema already omits companyId at its
+      // definition (shared/schema.ts), and createRFQReminderTemplate takes the
+      // session's companyId as a separate argument and spreads it last — so a
+      // body-supplied companyId cannot reach the insert. The tenancy checker
+      // only inspects the inline chain here, so this is recorded in
+      // scripts/route-tenancy-baseline.json rather than silenced with a
+      // redundant .omit() (which breaks the parsed-data types).
+      const parsed = insertRfqReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      res.status(201).json(await storage.createRFQReminderTemplate(req.user!.companyId!, parsed.data));
+    } catch (error: any) {
+      console.error("Error creating reminder template:", error);
+      res.status(500).json({ error: "Failed to create reminder" });
+    }
+  });
+
+  app.patch("/api/rfq-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = updateRfqReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const existing = await storage.getRFQReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(await storage.updateRFQReminderTemplate(req.params.id, parsed.data));
+    } catch (error: any) {
+      console.error("Error updating reminder template:", error);
+      res.status(500).json({ error: "Failed to update reminder" });
+    }
+  });
+
+  app.delete("/api/rfq-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getRFQReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      await storage.deleteRFQReminderTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting reminder template:", error);
+      res.status(500).json({ error: "Failed to delete reminder" });
+    }
+  });
+
+  // What has already gone out for this RFQ, so the modal can show state per row.
+  app.get("/api/rfqs/:rfqId/reminder-log", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQReminderLog(req.params.rfqId));
+    } catch (error) {
+      console.error("Error fetching reminder log:", error);
+      res.status(500).json({ error: "Failed to fetch reminder history" });
+    }
+  });
+
+  // Fire one reminder now, for the "Send now" action on a reminder row.
+  app.post("/api/rfqs/:rfqId/reminders/:templateId/send", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!rfq) return;
+      const template = await storage.getRFQReminderTemplate(req.params.templateId);
+      if (!template || template.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+
+      const { sendRfqReminder, remindableRecipients } = await import("./services/rfqReminderScheduler");
+      const recipients = remindableRecipients(await storage.getRFQRecipients(rfq.id));
+      if (recipients.length === 0) {
+        return res.status(400).json({ error: "No suppliers are still awaiting a response" });
+      }
+
+      const baseUrl = `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+      const results = [];
+      for (const recipient of recipients) {
+        results.push(await sendRfqReminder({ rfq, recipient, template, baseUrl, force: true }));
+      }
+      res.json({ results });
+    } catch (error: any) {
+      console.error("Error sending reminder:", error);
+      res.status(500).json({ error: "Failed to send reminder", details: error.message });
+    }
+  });
+
+  // ── RFQ Quote Items API Routes ────────────────────────────────────────────
+  app.get("/api/rfq-quotes/:quoteId/items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const quote = await storage.getRFQQuote(req.params.quoteId);
+      if (!quote) return res.status(404).json({ error: "Quote not found" });
+      const owned = await getOwnedRFQ(req, res, quote.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQQuoteItems(req.params.quoteId));
+    } catch (error) {
+      console.error("Error fetching quote items:", error);
+      res.status(500).json({ error: "Failed to fetch quote items" });
+    }
+  });
+
+  // Batched: the comparison view needs every quote's lines at once.
+  app.get("/api/rfqs/:rfqId/quote-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      const quotes = await storage.getRFQQuotes(req.params.rfqId);
+      res.json(await storage.getRFQQuoteItemsForQuotes(quotes.map((q) => q.id)));
+    } catch (error) {
+      console.error("Error fetching quote items:", error);
+      res.status(500).json({ error: "Failed to fetch quote items" });
+    }
+  });
+
+  // Whole-set replace: a quote's lines always arrive complete (typed in, or
+  // extracted from a document), and a partial apply would leave it half priced.
+  app.put("/api/rfq-quotes/:quoteId/items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const quote = await storage.getRFQQuote(req.params.quoteId);
+      if (!quote) return res.status(404).json({ error: "Quote not found" });
+      const owned = await getOwnedRFQ(req, res, quote.rfqId);
+      if (!owned) return;
+
+      const bodySchema = z.object({
+        items: z.array(insertRfqQuoteItemSchema.omit({ quoteId: true })),
+      });
+      const validationResult = bodySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+
+      // Every referenced rfqItemId must belong to this quote's RFQ — otherwise
+      // a caller could staple their pricing onto another company's line.
+      const rfqItems = await storage.getRFQItems(quote.rfqId);
+      const validItemIds = new Set(rfqItems.map((i) => i.id));
+      for (const item of validationResult.data.items) {
+        if (item.rfqItemId && !validItemIds.has(item.rfqItemId)) {
+          return res.status(400).json({ error: "Quote line references an item from a different RFQ" });
+        }
+      }
+
+      const items = await storage.replaceRFQQuoteItems(req.params.quoteId, validationResult.data.items);
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error replacing quote items:", error);
+      res.status(500).json({ error: "Failed to save quote lines", details: error.message });
+    }
+  });
+
   // RFQ Quotes API Routes
   app.get("/api/rfqs/:rfqId/quotes", requireAuth, requireTeamMember, async (req, res) => {
     try {
@@ -16614,6 +17206,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const quotes = await storage.getRFQQuotes(req.params.rfqId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Error fetching RFQ quotes:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ quotes" });
+    }
+  });
+
+  // Batched sibling of /api/rfq-recipients. The RFQ list renders each supplier
+  // as a sub-row carrying its quote total, so without this the table would fire
+  // one quotes request per RFQ — ~400ms each from AU against Neon us-east-1.
+  app.get("/api/rfq-quotes", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const rfqs = await storage.getRFQs(req.user!.companyId!, projectId as string | undefined);
+      const quotes = await storage.getRFQQuotesForRfqs(rfqs.map((r) => r.id));
       res.json(quotes);
     } catch (error) {
       console.error("Error fetching RFQ quotes:", error);
@@ -17290,29 +17897,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public RFQ Portal (no auth required for suppliers)
+  // Resolve a portal token to its recipient. Falls back to the legacy
+  // rfq_portal_tokens table for any token issued before recipients existed.
+  const resolvePortalToken = async (token: string) => {
+    const recipient = await storage.getRFQRecipientByToken(token);
+    if (recipient) {
+      return {
+        rfqId: recipient.rfqId,
+        recipientId: recipient.id,
+        supplierEmail: recipient.supplierEmail,
+        supplierName: recipient.supplierName,
+        expiresAt: recipient.portalTokenExpiresAt,
+        revoked: recipient.portalTokenRevoked,
+        viewedAt: recipient.viewedAt,
+        alreadySubmitted: !!recipient.quoteId,
+      };
+    }
+    const legacy = await storage.getRFQPortalTokenByToken(token);
+    if (!legacy) return null;
+    return {
+      rfqId: legacy.rfqId,
+      recipientId: null as string | null,
+      legacyTokenId: legacy.id,
+      supplierEmail: legacy.supplierEmail,
+      supplierName: null as string | null,
+      expiresAt: legacy.expiresAt,
+      // isActive was never checked, so deactivating a token did nothing.
+      revoked: !legacy.isActive,
+      viewedAt: legacy.viewedAt,
+      alreadySubmitted: !!legacy.quoteSubmittedId,
+    };
+  };
+
   app.get("/api/portal/rfq/:token", async (req, res) => {
     try {
-      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
-      if (!portalToken) {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
         return res.status(404).json({ error: "Invalid or expired link" });
       }
-      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
         return res.status(410).json({ error: "This link has expired" });
       }
 
-      // Mark as viewed if first time
-      if (!portalToken.viewedAt) {
-        await storage.updateRFQPortalToken(portalToken.id, { viewedAt: new Date() });
+      // First view moves the recipient from "sent" to "viewed", which is what
+      // the list page's per-supplier state reads.
+      if (!portal.viewedAt) {
+        const now = new Date();
+        if (portal.recipientId) {
+          const recipient = await storage.getRFQRecipient(portal.recipientId);
+          await storage.updateRFQRecipient(portal.recipientId, {
+            viewedAt: now,
+            ...(recipient?.status === "sent" ? { status: "viewed" as const } : {}),
+          });
+        } else if ((portal as any).legacyTokenId) {
+          await storage.updateRFQPortalToken((portal as any).legacyTokenId, { viewedAt: now });
+        }
       }
 
-      const rfq = await storage.getRFQ(portalToken.rfqId);
+      const rfq = await storage.getRFQ(portal.rfqId);
       if (!rfq) {
         return res.status(404).json({ error: "RFQ not found" });
       }
 
       const items = await storage.getRFQItems(rfq.id);
-      
-      // Return limited RFQ info for supplier
+
+      // Return limited RFQ info for supplier. internalNotes and externalNotes
+      // stay out by design; customTerms is included because the supplier is
+      // being asked to quote against them.
       res.json({
         rfq: {
           id: rfq.id,
@@ -17321,12 +17972,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: rfq.description,
           scope: rfq.scope,
           dueDate: rfq.dueDate,
+          customTerms: rfq.customTerms,
           attachmentUrls: rfq.attachmentUrls,
           attachmentFileNames: rfq.attachmentFileNames,
         },
         items,
-        supplierEmail: portalToken.supplierEmail,
-        alreadySubmitted: !!portalToken.quoteSubmittedId,
+        supplierName: portal.supplierName,
+        supplierEmail: portal.supplierEmail,
+        alreadySubmitted: portal.alreadySubmitted,
       });
     } catch (error) {
       console.error("Error fetching portal RFQ:", error);
@@ -17334,42 +17987,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/portal/rfq/:token/submit-quote", async (req, res) => {
+  // Attachment download for a supplier on the portal.
+  //
+  // The portal lists the RFQ's attachments, but the objects route behind them
+  // is requireAuth — so a supplier clicking a plan got a 401. Attachments exist
+  // precisely so suppliers have what they need to quote, which makes that the
+  // whole feature. The portal token is the authorisation here, and the index is
+  // resolved server-side against that RFQ's own list so a token can never be
+  // used to fetch an arbitrary object path.
+  app.get("/api/portal/rfq/:token/attachments/:index", async (req, res) => {
+    // Supplier-facing: deliberately has no session and therefore no companyId
+    // to scope by — the portal token IS the credential. Tenancy is enforced by
+    // the token resolving to exactly one recipient, and the response being
+    // limited to that recipient's own RFQ attachment list (see the three portal
+    // cases in server/__tests__/rfq-lifecycle.test.ts: unknown token, revoked
+    // token, and an index outside the RFQ's own list).
     try {
-      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
-      if (!portalToken) {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
         return res.status(404).json({ error: "Invalid or expired link" });
       }
-      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
         return res.status(410).json({ error: "This link has expired" });
       }
-      if (portalToken.quoteSubmittedId) {
+
+      const rfq = await storage.getRFQ(portal.rfqId);
+      if (!rfq) return res.status(404).json({ error: "Not found" });
+
+      const index = Number(req.params.index);
+      const urls = rfq.attachmentUrls ?? [];
+      if (!Number.isInteger(index) || index < 0 || index >= urls.length) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Strip the company prefix the same way the authenticated route does;
+      // the bucket is flat.
+      const stored = urls[index];
+      const objectPath = stored.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+
+      const name = rfq.attachmentFileNames?.[index];
+      if (name) {
+        res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      console.error("Error serving portal attachment:", error);
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
+  app.post("/api/portal/rfq/:token/submit-quote", async (req, res) => {
+    try {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "This link has expired" });
+      }
+      if (portal.alreadySubmitted) {
         return res.status(400).json({ error: "Quote already submitted via this link" });
       }
 
       const { totalAmount, leadTime, validUntil, notes, supplierName, supplierEmail } = req.body;
-      
+
       if (!totalAmount || totalAmount <= 0) {
         return res.status(400).json({ error: "Quote amount is required" });
       }
 
-      const quote = await storage.createRFQQuote({
-        rfqId: portalToken.rfqId,
-        supplierId: portalToken.supplierId || null,
-        supplierName: supplierName || "",
-        supplierEmail: supplierEmail || portalToken.supplierEmail || "",
-        totalAmount: Math.round(totalAmount * 100), // Convert to cents
+      const recipient = portal.recipientId
+        ? await storage.getRFQRecipient(portal.recipientId)
+        : undefined;
+
+      // createRFQQuote links the quote to its recipient, moves that recipient
+      // to "quoted" and recomputes the RFQ status — so a portal submission now
+      // advances the RFQ instead of leaving it stuck where it was.
+      await storage.createRFQQuote({
+        rfqId: portal.rfqId,
+        supplierId: recipient?.supplierId || null,
+        supplierName: supplierName || recipient?.supplierName || "",
+        supplierEmail: supplierEmail || portal.supplierEmail || "",
+        totalAmount: Math.round(totalAmount * 100), // dollars → cents
         leadTime: leadTime || null,
         validUntil: validUntil ? new Date(validUntil) : null,
         notes: notes || null,
         submittedViaPortal: true,
         submittedAt: new Date(),
         status: "pending",
-      });
-
-      // Mark token as used
-      await storage.updateRFQPortalToken(portalToken.id, { 
-        quoteSubmittedId: quote.id 
       });
 
       res.status(201).json({ success: true, message: "Quote submitted successfully" });
