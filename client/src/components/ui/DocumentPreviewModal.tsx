@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Document as PdfDocument, Page as PdfPage } from "react-pdf";
 import { ensurePdfWorker } from "@/lib/pdfWorker";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Download, Send, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Send, Loader2, X } from "lucide-react";
 
 interface DocumentPreviewModalProps {
   open: boolean;
@@ -85,14 +85,15 @@ export function DocumentPreviewModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        hideCloseButton
         className={`${sidebar ? "max-w-6xl" : "max-w-4xl"} w-full h-[90vh] flex flex-col p-0 gap-0 overflow-hidden`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b shrink-0">
-          <p className="text-sm text-muted-foreground">
+        <div className="flex items-center justify-between gap-4 px-5 py-3 border-b shrink-0">
+          <p className="text-sm text-muted-foreground truncate">
             This is what your client will receive
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -103,15 +104,34 @@ export function DocumentPreviewModal({
               Download
             </Button>
             {onSend && (
-              <Button
-                size="sm"
-                onClick={onSend}
-                style={{ backgroundColor: "#a890d4", borderColor: "#a890d4", color: "#fff" }}
-              >
+              // The brand colour, not a hardcoded hex. This was #a890d4 — the
+              // lavender from the design file, which the app stopped shipping
+              // when --primary became the deeper plum, so the one button a
+              // builder is meant to reach for was the only off-brand thing on
+              // the screen.
+              <Button size="sm" onClick={onSend}>
                 <Send className="h-3.5 w-3.5 mr-1.5" />
                 Send to client
               </Button>
             )}
+            {/* Close lives in the header row, not floating over it.
+                DialogContent pins its own X at absolute right-4 top-4, which
+                put "dismiss" hard against "send this document to the client" —
+                two actions with very different consequences sharing a hit zone,
+                on a control you reach for in a hurry. In the flow it can never
+                overlap, and the divider gives it its own lane. */}
+            <div className="w-px h-5 bg-border mx-0.5" aria-hidden="true" />
+            <DialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground"
+                aria-label="Close preview"
+                data-testid="button-close-preview"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogClose>
           </div>
         </div>
 
