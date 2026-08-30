@@ -58,7 +58,7 @@ export function ScopeItemDetailPanel({
     content: item.description || '',
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[160px] p-3',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[160px] p-3',
       },
     },
     onUpdate: ({ editor }) => {

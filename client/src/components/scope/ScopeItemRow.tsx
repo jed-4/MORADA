@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RichText, richTextToPlain } from "@/components/RichText";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -294,9 +295,9 @@ export function ScopeItemRow({ item, onUpdate, onDelete, onToggleSelect, isSelec
               className="text-xs text-muted-foreground hover:text-foreground flex-1 break-words"
             >
               {item.description ? (
-                <div
-                  className="text-xs leading-relaxed whitespace-normal [&_*]:!text-inherit [&_*]:!text-xs"
-                  dangerouslySetInnerHTML={{ __html: item.description }}
+                <RichText
+                  html={item.description}
+                  className="text-xs leading-relaxed whitespace-normal"
                 />
               ) : (
                 <span className="italic">-</span>
@@ -309,7 +310,7 @@ export function ScopeItemRow({ item, onUpdate, onDelete, onToggleSelect, isSelec
                   className="text-xs text-muted-foreground truncate hover:text-foreground flex-1"
                 >
                   {item.description ? (
-                    <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
+                    <span className="line-clamp-1">{richTextToPlain(item.description)}</span>
                   ) : (
                     <span className="italic">-</span>
                   )}
@@ -324,9 +325,9 @@ export function ScopeItemRow({ item, onUpdate, onDelete, onToggleSelect, isSelec
                 >
                   <div className="space-y-2">
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
-                    <div
-                      className="text-sm leading-relaxed text-foreground [&_*]:!text-inherit [&_*]:!opacity-100"
-                      dangerouslySetInnerHTML={{ __html: item.description }}
+                    <RichText
+                      html={item.description}
+                      className="text-sm leading-relaxed text-foreground max-h-72 overflow-y-auto"
                     />
                   </div>
                 </HoverCardContent>
