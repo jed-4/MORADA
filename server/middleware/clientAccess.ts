@@ -78,6 +78,22 @@ const projectViaSelectionOption: ProjectResolver = async (req) => {
   return selection?.projectId ?? null;
 };
 
+/**
+ * /reviews/:id/... — resolve the project a review item belongs to.
+ *
+ * Company-scoped at the lookup: a client quoting another tenant's review id
+ * resolves to nothing and the gate denies, rather than leaking the fact that
+ * the id exists by returning a project the client then fails on.
+ */
+const projectViaReviewItem: ProjectResolver = async (req) => {
+  const m = req.path.match(/^\/reviews\/([^/]+)/);
+  if (!m) return null;
+  const companyId = (req as any).__clientAccessUser?.companyId;
+  if (!companyId) return null;
+  const item = await storage.getReviewItem(m[1], companyId);
+  return item?.projectId ?? null;
+};
+
 const projectViaVariation: ProjectResolver = async (req) => {
   const m = req.path.match(/^\/variations\/([^/]+)/);
   if (!m) return null;
@@ -196,6 +212,35 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/projects\/[^/]+\/allowances\/[^/]+\/detail$/,
     permission: ["projects.selections", "view"],
     project: projectParam,
+  },
+
+  // --- Client Reviews ---
+  // Reads are gated on projects.reviews:view; posting a comment needs :add and
+  // recording a decision needs :approve, so a read-only client can follow a
+  // review without being able to answer it.
+  {
+    methods: ["GET"],
+    pattern: /^\/reviews$/,
+    permission: ["projects.reviews", "view"],
+    project: projectFromQuery,
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/reviews\/[^/]+$/,
+    permission: ["projects.reviews", "view"],
+    project: projectViaReviewItem,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/reviews\/[^/]+\/comments$/,
+    permission: ["projects.reviews", "add"],
+    project: projectViaReviewItem,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/reviews\/[^/]+\/decision$/,
+    permission: ["projects.reviews", "approve"],
+    project: projectViaReviewItem,
   },
 
   // --- Variations ---
@@ -353,6 +398,8 @@ export async function clientAccessGate(
     }
 
     if (rule.project) {
+      // Some resolvers need the acting user's company to scope their lookup.
+      (req as any).__clientAccessUser = user;
       const projectId = await rule.project(req);
       if (!projectId) {
         // A project-scoped route we cannot scope is not safe to serve.
