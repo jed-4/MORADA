@@ -4,9 +4,9 @@
 -- accrual, no payroll. Those are a separate product decision. This is the table a
 -- shared calendar needs to answer "who is not in this week".
 --
--- Numbering: this branch was cut when main was at 0054, and main has since
--- reached 0058. 0059 and 0060 are taken by feat/variations-2, so this takes the
--- next genuinely free number rather than the next one after its own base.
+-- Numbering: main reached 0062 while this branch was in flight (0059, 0060 and
+-- 0062 are the variations work). 0061 was never claimed, so this keeps it; the
+-- other two migrations on this branch are 0063 and 0064.
 --
 -- Per project convention: apply BY HAND via psql — dev first, then prod. Never
 -- db:push (it has proposed DROPs on this schema before).

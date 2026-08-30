@@ -13,6 +13,9 @@
 -- schedule with Gantt semantics, dependencies and working-day snapping. A Tuesday
 -- management meeting is not a Gantt row.
 --
+-- Renumbered from 0063 alongside the migration before it — see its header.
+-- Already applied to dev under the old name; nothing to re-run there.
+--
 -- Per project convention: apply BY HAND via psql — dev first, then prod. Never
 -- db:push.
 

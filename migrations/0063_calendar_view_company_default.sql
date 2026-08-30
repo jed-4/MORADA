@@ -8,6 +8,11 @@
 -- This adds a company-level default, and collapses the existing per-user rows
 -- into one per company.
 --
+-- Renumbered from 0062: main merged 0062_variation_column_templates (#99) while
+-- this branch was in flight, and two migrations sharing a number is how the wrong
+-- one gets applied. Already applied to dev under the old name — the column is the
+-- same, so there is nothing to re-run there.
+--
 -- Per project convention: apply BY HAND via psql — dev first, then prod. Never
 -- db:push.
 

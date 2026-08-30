@@ -302,7 +302,7 @@ No migration.
 
 **Ships:** "who's on what today" in one glance — the answer Business → Schedule can't give at day granularity.
 
-### Phase 6 — Shared views ✅ *(done 29 Aug — migration 0062, dev only)*
+### Phase 6 — Shared views ✅ *(done 29 Aug — migration 0063, dev only)*
 
 Migration: likely one column (`isCompanyDefault` on `calendar_views`).
 
@@ -321,7 +321,7 @@ Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `Per
 
 **Ships:** one calendar engine instead of three. Every future fix lands everywhere.
 
-### Phase 8 — Meetings ✅ *(done 29 Aug — migration 0063, dev only)*
+### Phase 8 — Meetings ✅ *(done 29 Aug — migration 0064, dev only)*
 
 **Migration:** new `meetings` table plus `minutes.meeting_id` (D9). The largest build in the plan.
 
@@ -425,9 +425,9 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 | 3 | Sources / layers endpoint ✅ | — | 1 |
 | 4 | **Leave** ✅ | `leave_entries` (0061, prod-pending) | 1 |
 | 5 | People axis / by-person day view ✅ | — | 0, reads 4 |
-| 6 | Shared + company-default views ✅ | 0062, prod-pending | — |
+| 6 | Shared + company-default views ✅ | 0063, prod-pending | — |
 | 7 | Delete the dead engines ✅ | — | 1, 3 |
-| 8 | **Meetings** ✅ | 0063, prod-pending | 1 |
+| 8 | **Meetings** ✅ | 0064, prod-pending | 1 |
 
 Phases 0–2 change how the page feels and touch no schema — that's the first shippable chunk. Phase 3 makes it the whole business. Phases 4 and 8 are the two real builds. Phases 6–7 are the tidy-up that stops this drifting apart again.
 
