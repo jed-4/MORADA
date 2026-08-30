@@ -59,7 +59,7 @@ import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskEditModal from "@/components/TaskEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import { EnhancedCalendar, CalendarEvent, type EnhancedCalendarView } from "@/components/EnhancedCalendar";
 import type { User, Task, Project, FieldCategoryWithOptions, TaskView, Company } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
@@ -221,7 +221,9 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   });
   
   const [calendarDate, setCalendarDate] = useState(new Date());
-  const [calendarMode, setCalendarMode] = useState<"day" | "week" | "month">("week");
+  // Typed as the calendar's full view union, not the three this page's own switcher
+  // offers — `onViewChange` hands back whatever the component supports.
+  const [calendarMode, setCalendarMode] = useState<EnhancedCalendarView>("week");
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: user.id }],

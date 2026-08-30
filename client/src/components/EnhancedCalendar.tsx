@@ -7,8 +7,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import type { ProjectBand } from "@shared/scheduleVisibility";
+import type { CalendarEvent } from "@shared/calendarEvent";
 import {
   DndContext,
   DragEndEvent,
@@ -40,30 +42,9 @@ const pointerFirstCollision: CollisionDetection = (args) => {
 
 const HOUR_HEIGHT = 60; // pixels per hour in week/day view
 
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  startTime?: string | null;
-  endTime?: string | null;
-  color?: string | null;
-  projectId?: string | null;
-  projectColor?: string | null;
-  projectName?: string | null;
-  assigneeName?: string | null;
-  assigneeId?: string | null;
-  /** "projected" is a ghost from a recurring template — read-only, never persisted. */
-  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder" | "projected";
-  status?: string;
-  isCompleted?: boolean;
-  description?: string | null;
-  location?: string | null;
-  templateId?: string | null;
-  tagIds?: string[] | null;
-  isModified?: boolean;
-  resource?: any;
-}
+// Re-exported so `@/components/EnhancedCalendar` stays a valid import path for
+// the ~10 files that already take `CalendarEvent` from here.
+export type { CalendarEvent } from "@shared/calendarEvent";
 
 export interface CalendarDisplayOptions {
   showProject?: boolean;
@@ -92,6 +73,13 @@ interface FocusBlockData {
   tasks?: FocusBlockTask[];
 }
 
+/**
+ * `agenda` is a flat chronological list rather than a grid — the only view that
+ * stays readable on a phone, and the right shape for "what's on" scanning.
+ * `roster` is the week grid with infinite horizontal scroll.
+ */
+export type EnhancedCalendarView = "month" | "week" | "day" | "roster" | "agenda";
+
 interface EnhancedCalendarProps {
   events: CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
@@ -100,11 +88,30 @@ interface EnhancedCalendarProps {
   onEventResize?: (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => void;
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
-  initialView?: "month" | "week" | "day" | "roster";
+  initialView?: EnhancedCalendarView;
   currentDate?: Date;
   onCurrentDateChange?: (date: Date) => void;
-  view?: "month" | "week" | "day" | "roster";
-  onViewChange?: (view: "month" | "week" | "day" | "roster") => void;
+  view?: EnhancedCalendarView;
+  onViewChange?: (view: EnhancedCalendarView) => void;
+  /**
+   * Below `md`, render this view instead of the requested one. A 24-hour time
+   * grid squeezed into a phone is unreadable, so a surface people open on site
+   * should pass `"agenda"`.
+   *
+   * Opt-in rather than automatic: existing consumers keep the view they ask for,
+   * and switching one over stays a deliberate decision. The *requested* view is
+   * what gets persisted, so it comes back on a wider screen.
+   */
+  mobileFallbackView?: EnhancedCalendarView;
+  /**
+   * Show the calendar without offering to change anything: no drag, no resize, no
+   * completion checkbox.
+   *
+   * Not the same as omitting `onEventReschedule` — without those handlers a chip
+   * still lifts, follows the cursor, and then silently does nothing on drop, which
+   * reads as a broken app rather than a read-only one. Say so explicitly instead.
+   */
+  readOnly?: boolean;
   hideInternalHeader?: boolean;
   displayOptions?: CalendarDisplayOptions;
   focusBlocks?: FocusBlockData[];
@@ -115,6 +122,9 @@ interface EnhancedCalendarProps {
    * so other people's multi-day work bars don't compete with real appointments.
    */
   projectBands?: ProjectBand[];
+  /** Who is away, as a second band lane. Same shape; `projectName` carries the person. */
+  leaveBands?: ProjectBand[];
+  onLeaveBandClick?: (band: ProjectBand) => void;
   onProjectBandClick?: (band: ProjectBand) => void;
   /**
    * Tasks that are due but not yet given a time. They sit in a side tray rather
@@ -139,14 +149,16 @@ interface DraggableEventProps {
   showCompletionCheckbox: boolean;
   showResizeHandles?: boolean;
   displayOptions?: CalendarDisplayOptions;
+  /** Whole-calendar read-only mode — see `EnhancedCalendarProps.readOnly`. */
+  readOnly?: boolean;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions, readOnly = false }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const isLookbackEvent = event.type === "timesheet" || event.type === "site_diary";
   // A projection has no row behind it, so there is nothing to drag or resize.
   const isProjected = event.type === "projected";
-  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent || isProjected;
+  const isReadOnlyEvent = readOnly || isGoogleCalendarEvent || isLookbackEvent || isProjected;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event, type: 'move' },
@@ -168,7 +180,10 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
   const isRecurring = !!event.templateId;
-  const showTime = event.startTime || event.endTime;
+  // `displayOptions.showTime` is the user's "Display on Cards" choice; default on.
+  // Previously this was just "does the event have a time", which silently ignored
+  // the option.
+  const showTime = displayOptions?.showTime !== false && !!(event.startTime || event.endTime);
 
   // Event colour priority: explicit per-event color → inherited project colour → schedule type
   // colour → brand lavender fallback. event.color (set on this specific event) wins over the
@@ -187,6 +202,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
     timesheet:         TYPE_COLORS_HEX.milestone,   // amber (widget-local)
     "google-calendar": TYPE_COLORS_HEX.delivery,    // teal (widget-local)
     site_diary:        TYPE_COLORS_HEX.inspection,  // sage (widget-local)
+    // Business-calendar layers always carry their own colour from the layer
+    // registry; this only covers a row that somehow arrives without one.
+    layer:             TYPE_COLORS_HEX.task,
   };
   const typeFallback = TYPE_FALLBACK_HEX[event.type as string] ?? TYPE_COLORS_HEX.task;
   const baseColor = event.color || event.projectColor || typeFallback;
@@ -259,7 +277,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             >
               {event.title}
             </span>
-            {event.startTime && (
+            {showTime && event.startTime && (
               <span
                 className="shrink-0 whitespace-nowrap"
                 style={{ color: notionColors.darkText, fontSize: '10px', opacity: 0.65, lineHeight: 1 }}
@@ -278,8 +296,13 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           </span>
         )}
 
-        {/* Project, assignee, status — only in month/all-day views */}
-        {!showResizeHandles && displayOptions?.showProject && event.projectName && (
+        {/*
+          Project, assignee, status. Rendered in timed blocks too — the block is
+          overflow-hidden, so a 15-minute one clips instead of growing. Suppressing
+          them here is why "Show assignee" appeared to do nothing in week and day
+          view.
+        */}
+        {displayOptions?.showProject && event.projectName && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
@@ -287,7 +310,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             {event.projectName}
           </div>
         )}
-        {!showResizeHandles && displayOptions?.showAssignee && event.assigneeName && (
+        {displayOptions?.showAssignee && event.assigneeName && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
@@ -295,7 +318,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             {event.assigneeName}
           </div>
         )}
-        {!showResizeHandles && displayOptions?.showStatus && event.status && (
+        {displayOptions?.showStatus && event.status && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight capitalize"
             style={{ color: notionColors.darkText }}
@@ -443,7 +466,7 @@ export function EnhancedCalendar({
   onEventReschedule,
   onEventResize,
   onDateClick,
-  showCompletionCheckbox = true,
+  showCompletionCheckbox: showCompletionCheckboxProp = true,
   initialView = "month",
   currentDate: externalCurrentDate,
   onCurrentDateChange,
@@ -455,15 +478,22 @@ export function EnhancedCalendar({
   onFocusBlockClick,
   onFocusBlockUpdate,
   projectBands = [],
+  leaveBands = [],
+  onLeaveBandClick,
   onProjectBandClick,
   unscheduledEvents = [],
   onEventUnschedule,
   onTaskDropInFocusBlock,
+  mobileFallbackView,
+  readOnly = false,
 }: EnhancedCalendarProps) {
+  const isMobile = useIsMobile();
+  // A read-only surface must not render a control that does nothing when clicked.
+  const showCompletionCheckbox = showCompletionCheckboxProp && !readOnly;
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
-  const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
+  const [internalView, setInternalView] = useState<EnhancedCalendarView>(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const [trayOpen, setTrayOpen] = useState(true);
   // Track resize preview state for real-time visual feedback
@@ -498,9 +528,12 @@ export function EnhancedCalendar({
     
   // Use controlled view if provided, otherwise use internal state
   const isViewControlled = externalView !== undefined;
-  const view = isViewControlled ? externalView : internalView;
+  const requestedView = isViewControlled ? externalView : internalView;
+  // Applied here, at the single point `view` is derived, so everything downstream
+  // — range, navigation, header, drag — agrees on which view is actually showing.
+  const view = isMobile && mobileFallbackView ? mobileFallbackView : requestedView;
   const setView = isViewControlled
-    ? (newView: "month" | "week" | "day" | "roster") => {
+    ? (newView: EnhancedCalendarView) => {
         onViewChange?.(newView);
       }
     : setInternalView;
@@ -527,6 +560,7 @@ export function EnhancedCalendar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const bandScrollRef = useRef<HTMLDivElement>(null);
+  const leaveScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
   const monthScrollRef = useRef<HTMLDivElement>(null);
   const monthScrolledToToday = useRef(false);
@@ -587,6 +621,11 @@ export function EnhancedCalendar({
     } else if (view === "roster") {
       // Roster view uses infinite scrolling range
       return eachDayOfInterval({ start: weekRangeStart, end: weekRangeEnd });
+    } else if (view === "agenda") {
+      // A calendar month exactly — not the month grid's week-aligned, infinitely
+      // expanded range. A list has no columns to line up, and padding it with the
+      // neighbouring months' days would put events under the wrong heading.
+      return eachDayOfInterval({ start: startOfMonth(currentDate), end: endOfMonth(currentDate) });
     } else {
       return [currentDate];
     }
@@ -613,7 +652,7 @@ export function EnhancedCalendar({
 
   // Navigate calendar
   const navigate = useCallback((direction: "prev" | "next") => {
-    if (view === "month") {
+    if (view === "month" || view === "agenda") {
       setCurrentDate(direction === "next" ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
     } else if (view === "week") {
       setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
@@ -647,7 +686,7 @@ export function EnhancedCalendar({
   }, []);
 
   // Synchronize horizontal scroll across date header, all-day, and time grid
-  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band') => {
+  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band' | 'leaveBand') => {
     return (e: React.UIEvent<HTMLDivElement>) => {
       const element = e.currentTarget;
       const scrollLeft = element.scrollLeft;
@@ -663,6 +702,9 @@ export function EnhancedCalendar({
       }
       if (source !== 'band' && bandScrollRef.current) {
         bandScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'leaveBand' && leaveScrollRef.current) {
+        leaveScrollRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'timeGrid' && timeGridScrollRef.current) {
         timeGridScrollRef.current.scrollLeft = scrollLeft;
@@ -1061,6 +1103,224 @@ export function EnhancedCalendar({
     window.addEventListener('mouseup', onMouseUp);
   }, [onFocusBlockUpdate]);
 
+  /**
+   * Agenda — a flat chronological list of the days that actually have something on.
+   *
+   * Deliberately not a grid: no drag, no resize, no all-day lane, no empty days.
+   * It is the readable view on a phone, and the one you scan when the question is
+   * "what's coming up" rather than "how does the week lay out".
+   */
+  const renderAgendaView = () => {
+    const daysWithEvents = dateRange
+      .map((date) => ({ date, events: getEventsForDate(date) }))
+      .filter(({ events }) => events.length > 0);
+
+    if (daysWithEvents.length === 0) {
+      return (
+        <div
+          className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground"
+          data-testid="agenda-empty"
+        >
+          No events in this period
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="agenda-view">
+        {daysWithEvents.map(({ date, events: dayEvents }) => {
+          const key = format(date, "yyyy-MM-dd");
+          const today = isTodayInTimezone(date, effectiveTimezone);
+
+          return (
+            <div key={key} data-testid={`agenda-day-${key}`} className="border-b border-border last:border-b-0">
+              <button
+                type="button"
+                onClick={() => onDateClick?.(date)}
+                className="flex w-full items-center gap-2 px-3 pb-1 pt-2.5 text-left"
+              >
+                <span
+                  className={cn(
+                    "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-sm font-medium tabular-nums",
+                    today ? "bg-primary text-primary-foreground" : "text-foreground",
+                  )}
+                >
+                  {format(date, "d")}
+                </span>
+                <span className="text-data font-medium uppercase tracking-wide text-muted-foreground">
+                  {format(date, "EEEE, MMMM yyyy")}
+                </span>
+              </button>
+
+              <div className="pb-1.5">
+                {dayEvents.map((event) => {
+                  const isCompleted =
+                    event.status === "done" || event.status === "completed" || event.isCompleted;
+                  const colors = generateNotionColors(
+                    event.color || event.projectColor || TYPE_COLORS_HEX.task,
+                  );
+                  // Multi-day spans have no single time to show, so they read as
+                  // all-day here rather than claiming their first day's start.
+                  const spansDays = !isSameDay(event.startDate, event.endDate);
+                  const timeLabel = event.startTime && !spansDays ? event.startTime : "All day";
+
+                  return (
+                    <div
+                      key={event.id}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`agenda-event-${event.id}`}
+                      onClick={() => onEventClick?.(event)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onEventClick?.(event);
+                        }
+                      }}
+                      className="flex cursor-pointer items-center gap-2.5 px-3 py-1 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <span className="w-16 shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {timeLabel}
+                      </span>
+                      {showCompletionCheckbox && event.type === "task" ? (
+                        <button
+                          type="button"
+                          data-testid={`agenda-complete-${event.id}`}
+                          onClick={(e) => handleToggleComplete(e, event)}
+                          className={cn(
+                            "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-colors",
+                            isCompleted ? "border-transparent" : "border-muted-foreground/40",
+                          )}
+                          style={isCompleted ? { backgroundColor: colors.originalHex } : undefined}
+                          aria-label={isCompleted ? "Mark incomplete" : "Mark complete"}
+                        >
+                          {isCompleted && <Check className="h-2.5 w-2.5 text-white" />}
+                        </button>
+                      ) : (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: colors.originalHex }}
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-xs font-medium",
+                          isCompleted && "line-through opacity-60",
+                        )}
+                      >
+                        {event.title}
+                      </span>
+                      {displayOptions?.showProject && event.projectName && (
+                        <span className="shrink-0 truncate text-data text-muted-foreground max-w-[8rem]">
+                          {event.projectName}
+                        </span>
+                      )}
+                      {displayOptions?.showAssignee && event.assigneeName && (
+                        <span className="shrink-0 truncate text-data text-muted-foreground max-w-[8rem]">
+                          {event.assigneeName}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  /**
+   * A lane of day-spanning bands under the date headers.
+   *
+   * Two of these render: project work spans, and who is away. They are separate
+   * lanes rather than one mixed row because they answer different questions —
+   * "which jobs are running" and "who is not in" — and a single gutter label
+   * could only ever be honest about one of them.
+   */
+  const renderBandRow = ({ bands, label, testId, scrollRef, source, onBandClick }: {
+    bands: ProjectBand[];
+    label: string;
+    testId: string;
+    scrollRef: React.RefObject<HTMLDivElement>;
+    source: 'band' | 'leaveBand';
+    onBandClick?: (band: ProjectBand) => void;
+  }) => {
+    if (bands.length === 0) return null;
+    // Same sizing rule as the week grid: day and week columns flex, wider views
+    // use a fixed column so the lane stays aligned with the headers.
+    const DAY_WIDTH = (view === "day" || view === "week") ? undefined : 140;
+    return (
+      <div className="flex border-b border-border" data-testid={testId}>
+        <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+          {label}
+        </div>
+        <div
+          className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
+          ref={scrollRef}
+          onScroll={handleHorizontalScroll(source)}
+        >
+          {dateRange.map((date, idx) => {
+            const dayKey = format(date, "yyyy-MM-dd");
+            const covering = bands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
+            const MAX_BANDS = 3;
+            return (
+              <div
+                key={idx}
+                className={cn(
+                  "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
+                  (view === "day" || view === "week") && "flex-1"
+                )}
+                style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
+                data-testid={`${testId.replace("-row", "")}-${dayKey}`}
+              >
+                {covering.slice(0, MAX_BANDS).map(band => {
+                  const bandColors = generateNotionColors(band.projectColor || undefined);
+                  // Label on the band's first day, or the first visible day when it
+                  // started before this week — otherwise the run reads as anonymous colour.
+                  const showLabel =
+                    dayKey === band.startDate ||
+                    (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
+                  const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
+                  return (
+                    <div
+                      key={`${band.projectId}-${band.startDate}`}
+                      className={cn(
+                        "h-2.5 flex items-center overflow-hidden",
+                        onBandClick && "cursor-pointer"
+                      )}
+                      style={{
+                        backgroundColor: bandColors.pastelBg,
+                        borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
+                      }}
+                      title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
+                      onClick={() => onBandClick?.(band)}
+                    >
+                      {showLabel && (
+                        <span
+                          className="text-2xs leading-none px-1 truncate font-semibold"
+                          style={{ color: bandColors.darkText }}
+                        >
+                          {detail}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {covering.length > MAX_BANDS && (
+                  <div className="text-2xs leading-none px-1 text-muted-foreground">
+                    +{covering.length - MAX_BANDS}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // Render month view
   const renderMonthView = () => {
     // Group dates into weeks for each month
@@ -1169,6 +1429,7 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                               displayOptions={displayOptions}
                             />
                           ))}
@@ -1251,74 +1512,22 @@ export function EnhancedCalendar({
 
         {/* Project phase band — one slim segment per project per contiguous run of
             other people's work, so it reads at a glance without crowding the grid. */}
-        {projectBands.length > 0 && (
-          <div className="flex border-b border-border" data-testid="project-band-row">
-            <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
-              Projects
-            </div>
-            <div
-              className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
-              ref={bandScrollRef}
-              onScroll={handleHorizontalScroll('band')}
-            >
-              {dateRange.map((date, idx) => {
-                const dayKey = format(date, "yyyy-MM-dd");
-                const covering = projectBands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
-                const MAX_BANDS = 3;
-                return (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
-                      (view === "day" || view === "week") && "flex-1"
-                    )}
-                    style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
-                    data-testid={`project-band-${dayKey}`}
-                  >
-                    {covering.slice(0, MAX_BANDS).map(band => {
-                      const bandColors = generateNotionColors(band.projectColor || undefined);
-                      // Label on the band's first day, or the first visible day when it
-                      // started before this week — otherwise the run reads as anonymous colour.
-                      const showLabel =
-                        dayKey === band.startDate ||
-                        (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
-                      const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
-                      return (
-                        <div
-                          key={`${band.projectId}-${band.startDate}`}
-                          className={cn(
-                            "h-2.5 flex items-center overflow-hidden",
-                            onProjectBandClick && "cursor-pointer"
-                          )}
-                          style={{
-                            backgroundColor: bandColors.pastelBg,
-                            borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
-                          }}
-                          title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
-                          onClick={() => onProjectBandClick?.(band)}
-                        >
-                          {showLabel && (
-                            <span
-                              className="text-2xs leading-none px-1 truncate font-semibold"
-                              style={{ color: bandColors.darkText }}
-                            >
-                              {detail}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {covering.length > MAX_BANDS && (
-                      <div className="text-2xs leading-none px-1 text-muted-foreground">
-                        +{covering.length - MAX_BANDS}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+{renderBandRow({
+          bands: leaveBands,
+          label: "Away",
+          testId: "leave-band-row",
+          scrollRef: leaveScrollRef,
+          source: "leaveBand",
+          onBandClick: onLeaveBandClick,
+        })}
+        {renderBandRow({
+          bands: projectBands,
+          label: "Projects",
+          testId: "project-band-row",
+          scrollRef: bandScrollRef,
+          source: "band",
+          onBandClick: onProjectBandClick,
+        })}
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">
@@ -1359,6 +1568,7 @@ export function EnhancedCalendar({
                       onEventClick={onEventClick}
                       onToggleComplete={handleToggleComplete}
                       showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                       displayOptions={displayOptions}
                     />
                   ))}
@@ -1658,6 +1868,7 @@ export function EnhancedCalendar({
                                   onEventClick={onEventClick}
                                   onToggleComplete={handleToggleComplete}
                                   showCompletionCheckbox={showCompletionCheckbox}
+                              readOnly={readOnly}
                                   showResizeHandles={true}
                                   displayOptions={displayOptions}
                                 />
@@ -1795,10 +2006,15 @@ export function EnhancedCalendar({
               {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: weekStartDay }), "MMM d")}`}
               {view === "day" && format(currentDate, "MMMM d, yyyy")}
               {view === "roster" && `Roster - Week of ${format(startOfWeek(currentDate, { weekStartsOn: weekStartDay }), "MMM d")}`}
+              {view === "agenda" && format(currentDate, "MMMM yyyy")}
             </h2>
           </div>
           
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Hidden while the mobile fallback is forcing a view: the buttons would
+                look interactive and do nothing. The requested view is still what gets
+                persisted, so it returns on a wider screen. */}
+            {!(isMobile && mobileFallbackView) && (
             <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
               <Button
                 data-testid="button-view-month"
@@ -1856,7 +2072,22 @@ export function EnhancedCalendar({
               >
                 Roster
               </Button>
+              <Button
+                data-testid="button-view-agenda"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium",
+                  view === "agenda"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-transparent"
+                )}
+                onClick={() => setView("agenda")}
+              >
+                Agenda
+              </Button>
             </div>
+            )}
             
             {/* Quick filter toggles */}
             <div className="flex items-center gap-1.5 ml-4">
@@ -1930,6 +2161,7 @@ export function EnhancedCalendar({
         {view === "week" && renderWeekView()}
         {view === "day" && renderWeekView()}
         {view === "roster" && renderWeekView()}
+        {view === "agenda" && renderAgendaView()}
       </div>
 
       {/* Drag preview. Without this the source chip just dims and nothing follows

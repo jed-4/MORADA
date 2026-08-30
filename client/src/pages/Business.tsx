@@ -12,6 +12,7 @@ const BusinessOverview = lazy(() => import("@/components/BusinessOverview"));
 const BusinessProjects = lazy(() => import("./BusinessProjects"));
 const BusinessTasks = lazy(() => import("./BusinessTasks"));
 const BusinessCalendar = lazy(() => import("./BusinessCalendar"));
+const BusinessLeave = lazy(() => import("./BusinessLeave"));
 const BusinessFiles = lazy(() => import("./BusinessFiles"));
 const Timesheets = lazy(() => import("./Timesheets"));
 const Minutes = lazy(() => import("./Minutes"));
@@ -86,7 +87,7 @@ export default function Business() {
       case "notes":
         return <Notes projectId={null} />;
       case "leave":
-        return <ComingSoonPage section="business-leave" />;
+        return <BusinessLeave />;
       case "team":
         return <TeamManagement />;
       case "metrics":

@@ -4395,6 +4395,12 @@ export const calendarViews = pgTable("calendar_views", {
   // Sharing
   sharedWith: json("shared_with").default([]), // Array of user IDs or role IDs who can access this view
   isDefault: boolean("is_default").notNull().default(false), // Is this the default view for the user
+  /**
+   * The company's default business view — one row per company, shown to everyone
+   * in it. Replaces the per-user "All Events" copy the page used to auto-create,
+   * which gave a company of fifteen fifteen private copies of the same view.
+   */
+  isCompanyDefault: boolean("is_company_default").notNull().default(false),
   
   // Metadata
   sortOrder: integer("sort_order").notNull().default(0), // For ordering tabs
@@ -4520,6 +4526,11 @@ export const minutes = pgTable("minutes", {
   transcription: text("transcription"), // AI transcription of recording
   transcriptionStatus: text("transcription_status"), // pending, processing, completed, failed
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  /**
+   * The meeting these minutes record, when they came from a scheduled one.
+   * SET NULL on delete: removing a meeting must never destroy the record of it.
+   */
+  meetingId: varchar("meeting_id"),
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -7400,6 +7411,158 @@ export const focusBlocks = pgTable("focus_blocks", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * Someone is away.
+ *
+ * Deliberately *marking* leave, not managing it — there is no request, no
+ * approval, no balance and no accrual here. Those are a separate product
+ * decision; what a shared calendar needs is "who is not in this week", and
+ * building the rest first would have delayed the part people actually asked for.
+ *
+ * Day-granular and inclusive. The UI posts a plain `yyyy-MM-dd`, which coerces to
+ * UTC midnight, so the date part round-trips exactly and every consumer compares
+ * `String(date).slice(0, 10)`. That is deliberately NOT the local-midnight
+ * convention `notes.dueDate` uses: a day-granular field has no business carrying a
+ * timezone, and posting a local-midnight ISO string here would store the previous
+ * day east of UTC.
+ *
+ * A half day carries a period rather than a time, because "Tuesday afternoon off"
+ * is what people say — nobody books leave from 13:00 to 17:00.
+ */
+export const leaveEntries = pgTable("leave_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Inclusive. A single day has startDate === endDate. */
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  /** Only meaningful on a single-day entry; a half day across a range is not a thing. */
+  isHalfDay: boolean("is_half_day").notNull().default(false),
+  halfDayPeriod: text("half_day_period"), // "am" | "pm", null unless isHalfDay
+  /**
+   * A `field_options.key` from the `leave.type` category — annual, sick, unpaid,
+   * rdo, public_holiday — so the list is editable in Field Settings rather than
+   * needing a migration to add "long service".
+   */
+  leaveType: text("leave_type").notNull(),
+  note: text("note"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("leave_entries_company_idx").on(table.companyId),
+  // The calendar's only query shape: this company, overlapping this range.
+  companyRangeIdx: index("leave_entries_company_range_idx").on(table.companyId, table.startDate, table.endDate),
+  userIdx: index("leave_entries_user_idx").on(table.userId),
+}));
+
+/** The shape, without the cross-field rules — `.refine` returns a ZodEffects, which
+ *  cannot be `.partial()`ed, and PATCH needs the partial. */
+export const leaveEntryFieldsSchema = createInsertSchema(leaveEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  halfDayPeriod: z.enum(["am", "pm"]).nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
+/**
+ * The cross-field rules, applied to a whole entry.
+ *
+ * PATCH validates the *merged* entry rather than the patch body: changing only
+ * the end date still has to be checked against the stored start date, and a
+ * partial body can't answer that on its own.
+ */
+const withLeaveRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endDate >= v.startDate, {
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  })
+  .refine((v: any) => !v.isHalfDay || v.startDate.getTime() === v.endDate.getTime(), {
+    message: "A half day has to be a single day",
+    path: ["isHalfDay"],
+  })
+  .refine((v: any) => !v.isHalfDay || !!v.halfDayPeriod, {
+    message: "Say whether the half day is morning or afternoon",
+    path: ["halfDayPeriod"],
+  });
+
+/**
+ * A meeting you have scheduled.
+ *
+ * Distinct from `minutes`, which records a meeting that has already happened, and
+ * from a `schedule_item` of type "meeting", which is a Gantt row inside a project
+ * schedule. A Tuesday management meeting is neither.
+ *
+ * `minutes.meetingId` points back here, so writing up a meeting attaches the
+ * record to the thing it was a record of.
+ */
+export const meetings = pgTable("meetings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  /** Real timestamps, unlike leave's day-granular dates: a meeting is a time. */
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  location: text("location"),
+  videoUrl: text("video_url"),
+  agenda: text("agenda"),
+  /** Optional — a management meeting belongs to no job. */
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  attendeeUserIds: text("attendee_user_ids").array().notNull().default(sql`'{}'`),
+  attendeeContactIds: text("attendee_contact_ids").array().notNull().default(sql`'{}'`),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("meetings_company_idx").on(table.companyId),
+  companyRangeIdx: index("meetings_company_range_idx").on(table.companyId, table.startsAt, table.endsAt),
+  projectIdx: index("meetings_project_idx").on(table.projectId),
+}));
+
+export const meetingFieldsSchema = createInsertSchema(meetings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  location: z.string().nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
+  agenda: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  attendeeUserIds: z.array(z.string()).default([]),
+  attendeeContactIds: z.array(z.string()).default([]),
+});
+
+/** Same shape/rules split as leave: `.refine` yields a ZodEffects, which PATCH cannot `.partial()`. */
+const withMeetingRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endsAt >= v.startsAt, {
+    message: "A meeting cannot end before it starts",
+    path: ["endsAt"],
+  });
+
+export const insertMeetingSchema = withMeetingRules(meetingFieldsSchema);
+export const patchMeetingSchema = meetingFieldsSchema.partial();
+export const meetingRulesSchema = withMeetingRules(meetingFieldsSchema);
+
+export type Meeting = typeof meetings.$inferSelect;
+export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
+
+export const insertLeaveEntrySchema = withLeaveRules(leaveEntryFieldsSchema);
+export const patchLeaveEntrySchema = leaveEntryFieldsSchema.partial();
+export const leaveEntryRulesSchema = withLeaveRules(leaveEntryFieldsSchema);
+
+export type LeaveEntry = typeof leaveEntries.$inferSelect;
+export type InsertLeaveEntry = z.infer<typeof insertLeaveEntrySchema>;
 
 export const insertFocusBlockSchema = createInsertSchema(focusBlocks).omit({
   id: true,

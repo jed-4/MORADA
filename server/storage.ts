@@ -22405,14 +22405,23 @@ export class DbStorage implements IStorage {
           ))
           .orderBy(asc(schema.calendarViews.sortOrder));
 
-        const sharedViews = allCompanyViews.filter(v => {
+        // Two ways someone else's business view reaches you: the company default,
+        // which everyone sees, and a view explicitly shared with you.
+        const visible = allCompanyViews.filter(v => {
+          if (v.isCompanyDefault) return true;
           const sharedWith = v.sharedWith as string[] | null;
-          return sharedWith && Array.isArray(sharedWith) && sharedWith.includes(userId);
+          return Array.isArray(sharedWith) && sharedWith.includes(userId);
         });
 
         const ownIds = new Set(ownViews.map(v => v.id));
-        const uniqueShared = sharedViews.filter(v => !ownIds.has(v.id));
-        return [...ownViews, ...uniqueShared];
+        const unique = visible.filter(v => !ownIds.has(v.id));
+        // Company default first: it is the shared starting point, and the tab
+        // strip should open on it rather than on whatever someone made last.
+        const ordered = [...ownViews, ...unique].sort((a, b) => {
+          if (a.isCompanyDefault !== b.isCompanyDefault) return a.isCompanyDefault ? -1 : 1;
+          return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        });
+        return ordered;
       }
 
       return ownViews;
