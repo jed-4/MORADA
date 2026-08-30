@@ -216,6 +216,7 @@ import {
   validateCostEstimate, isTerminalReviewStatus, costImpactBannerText,
   requiresVariationAcknowledgement, statusAfterDecision,
   REVIEW_DECISION_VALUES, REVIEW_BANNER_VERSION, VARIATION_ACKNOWLEDGEMENT_LABEL,
+  REVIEWER_VISIBLE_STATUSES,
 } from "@shared/reviewCostImpact";
 import { createReviewerResolver, attributeComment, attributeDecision } from "./reviews/reviewerResolver";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
@@ -42261,6 +42262,19 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const { projectId, status } = req.query as Record<string, string>;
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       const items = await storage.getReviewItems(companyId, projectId || undefined, status || undefined);
+
+      // A draft has not been issued to anyone. The detail route already 404s
+      // one for a reviewer; without the same rule here the list would still
+      // show its name, which is the leak that matters — an unfinished review
+      // the builder is not ready to discuss.
+      //
+      // Allow-list, not a subtraction: a status added later is invisible to the
+      // reviewer until someone deliberately admits it.
+      if (req.user?.userCategory === "client") {
+        const REVIEWER_VISIBLE = new Set(REVIEWER_VISIBLE_STATUSES);
+        return res.json(items.filter((i) => REVIEWER_VISIBLE.has(i.status as any)));
+      }
+
       res.json(items);
     } catch (error) {
       console.error("Error fetching reviews:", error);

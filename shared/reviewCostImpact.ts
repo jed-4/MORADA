@@ -183,6 +183,21 @@ export const REVIEW_ITEM_STATUSES = [
   "closed",
 ] as const;
 
+/**
+ * Statuses a REVIEWER may see.
+ *
+ * An allow-list, not "everything except draft": a status added later stays
+ * invisible to the reviewer until someone deliberately admits it here, which is
+ * the safe direction to fail.
+ */
+export const REVIEWER_VISIBLE_STATUSES: ReviewItemStatus[] = [
+  "awaiting_review",
+  "changes_requested",
+  "approved",
+  "rejected",
+  "closed",
+];
+
 /** A reviewer's decision on one revision. The DB column is a pgEnum of these. */
 export type ReviewDecision = "approved" | "changes_requested" | "rejected";
 
