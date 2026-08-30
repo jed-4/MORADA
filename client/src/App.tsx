@@ -251,6 +251,8 @@ function Router() {
       <Route path="/projects/:projectId/calendar" component={Dashboard} />
       <Route path="/projects/:projectId/estimates" component={Dashboard} />
       <Route path="/projects/:projectId/selections" component={Dashboard} />
+      <Route path="/projects/:projectId/reviews" component={Dashboard} />
+      <Route path="/projects/:projectId/reviews/:reviewId" component={Dashboard} />
       <Route path="/projects/:projectId/schedule" component={Dashboard} />
       <Route path="/projects/:projectId/takeoff" component={Dashboard} />
       <Route path="/projects/:projectId/rfqs" component={Dashboard} />
