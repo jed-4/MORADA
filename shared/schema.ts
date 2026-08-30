@@ -7738,6 +7738,10 @@ export const insertReviewItemSchema = createInsertSchema(reviewItems).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // Coerce strings to dates for JSON compatibility — a JSON client sends an
+  // ISO string, and the raw Drizzle timestamp schema only accepts a Date.
+  dueDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertReviewItem = z.infer<typeof insertReviewItemSchema>;
