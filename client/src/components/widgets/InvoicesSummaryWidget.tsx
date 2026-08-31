@@ -16,6 +16,7 @@ import { useLocation } from "wouter";
 type RowKey = "total" | "paid" | "outstanding" | "partial" | "draft" | "remaining";
 
 const ROW_CONFIG: { key: RowKey; configKey: string; label: string }[] = [
+  // "Total invoiced" is ISSUED invoices only — drafts get their own row below.
   { key: "total", configKey: "showTotal", label: "Total invoiced" },
   { key: "paid", configKey: "showPaid", label: "Paid" },
   { key: "outstanding", configKey: "showOutstanding", label: "Outstanding" },
@@ -158,7 +159,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
         key="total"
         label="Total invoiced"
         count={metrics.nonCancelledInvoicesCount}
-        hint={`${formatPercentage(metrics.invoicedPercentage)} of contract`}
+        hint={`${formatPercentage(metrics.invoicedPercentage)} of contract · inc GST`}
         value={formatCurrency(metrics.invoicedAmount)}
         testId="row-invoices-total"
       />
@@ -179,6 +180,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
         key="outstanding"
         label="Outstanding"
         count={metrics.sentInvoicesCount}
+        hint="unpaid balance"
         value={formatCurrency(metrics.sentAmount)}
         valueStyle={AMBER_TEXT}
         dot={DOT.amber}

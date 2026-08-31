@@ -46,6 +46,7 @@ import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
 import { effectiveInvoiceStatus } from "@/lib/invoiceStatus";
+import { summariseInvoices } from "@shared/invoiceMetrics";
 import { EmptyState } from "@/components/EmptyState";
 
 // ── Status chip colours ────────────────────────────────────────────────────
@@ -212,11 +213,17 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
   [invoices]);
 
   const financials = useMemo(() => {
-    const invoicedTotal = filteredInvoices.reduce((s, i) => s + i.totalAmount, 0);
+    // Canonical invoice money (shared with the CASH Invoices Summary widget).
+    // "Invoiced" counts ISSUED invoices only — a draft has not been sent to the
+    // client, so counting it drove "% of contract" to 100% and "To Invoice" to
+    // $0.00 on jobs with real money still to bill.
+    const summary = summariseInvoices(filteredInvoices);
+    const invoicedTotal = summary.invoicedCents;
+    const draftTotal    = summary.draftCents;
     const paidTotal     = filteredInvoices.reduce((s, i) => s + i.paidAmount, 0);
     // Only issued invoices are a real receivable — drafts (not yet owed) and paid
     // (zero balance) are excluded so this reconciles with the per-row "Due" column.
-    const balanceTotal  = filteredInvoices.reduce((s, i) => s + (isIssuedInvoice(i.status) ? i.balanceAmount : 0), 0);
+    const balanceTotal  = summary.outstandingCents;
 
     // Original contract = LIVE total from the selected estimate (inc-GST cents),
     // falling back to the stamped snapshot if metrics haven't loaded.
@@ -229,12 +236,17 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
       .filter((v) => v.status === "approved" || v.status === "released")
       .reduce((s, v) => s + (v.totalAmount ?? 0), 0);
 
+    // getProjectAllowances re-resolves each line and returns item.priceIncTax
+    // already in CENTS (server/storage.ts: `priceIncTax: priceInCents`). It was
+    // being multiplied by 100 again here as if it were dollars, rendering
+    // allowances 100x too large in the header.
+    const allowanceCents = (a: any) => Math.round(Number(a?.item?.priceIncTax ?? 0));
     const finalizedAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus === "finalized")
-      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * 100), 0);
+      .reduce((s, a) => s + allowanceCents(a), 0);
     const pendingAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus !== "finalized")
-      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * 100), 0);
+      .reduce((s, a) => s + allowanceCents(a), 0);
     const allowancesTotal    = finalizedAllowances + pendingAllowances;
     const allowancesVariation = finalizedAllowances - pendingAllowances;
 
@@ -244,9 +256,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     // costs (labour/bills/selections + margin), not contract scope, so they
     // must not reduce the contract remainder — only progress-payment invoices
     // count against the contract + approved variations total.
-    const contractInvoicedTotal = filteredInvoices
-      .filter((i) => (i as any).invoicingMethod !== "cost_plus")
-      .reduce((s, i) => s + i.totalAmount, 0);
+    const contractInvoicedTotal = summary.contractInvoicedCents;
     // Defensive net on top of the per-invoice closing-claim true-up: percentage
     // progress claims are rounded per cent, so a few stray cents can remain even
     // after trueing up. When the project is effectively fully invoiced, treat a
@@ -264,7 +274,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
     return {
       count: filteredInvoices.length,
-      invoicedTotal, paidTotal, balanceTotal, toInvoiceTotal,
+      invoicedTotal, draftTotal, paidTotal, balanceTotal, toInvoiceTotal,
       contractPriceCents, approvedVariationsTotal,
       allowancesTotal, finalizedAllowances, pendingAllowances, allowancesVariation,
       projectTotal, paidPct, invoicedPct, remainingPct,
@@ -606,7 +616,9 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
                 <span className="text-2xl font-bold tabular-nums leading-tight">
                   {formatCurrency(financials.projectTotal)}
                 </span>
-                <span className="text-table text-muted-foreground mt-0.5">Total</span>
+                {/* Invoice money is inc GST throughout; /budget shows the same
+                    contract ex GST, so the basis is stated on both. */}
+                <span className="text-table text-muted-foreground mt-0.5">Total <span className="text-muted-foreground/70">inc GST</span></span>
               </div>
 
               {/* Middle — breakdown lines with dot separators */}

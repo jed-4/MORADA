@@ -20776,6 +20776,26 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * Builder COST ex GST (integer cents) of a set of variations.
+   *
+   * The Budget page is a pure cost view, so variations must enter the budget at
+   * what they cost to build, not at what the client is charged. variation_items
+   * mirrors estimate_items: unitCostExTax is DOLLARS ex tax, quantity is a
+   * count. Rounded per line before summing, like the estimate baseline.
+   */
+  private async variationBuilderCostExGstCents(exec: any, variationIds: string[]): Promise<number> {
+    if (variationIds.length === 0) return 0;
+    const items = await exec.select()
+      .from(schema.variationItems)
+      .where(inArray(schema.variationItems.variationId, variationIds));
+    return items.reduce((sum: number, item: any) => {
+      const unitCost = Number(item.unitCostExTax) || 0;
+      const qty = item.quantity == null ? 1 : Number(item.quantity) || 0;
+      return sum + Math.round(unitCost * qty * 100);
+    }, 0);
+  }
+
   async calculateBudget(projectId: string, tx?: any): Promise<Budget | undefined> {
     const exec = tx ?? db;
     try {
@@ -20839,11 +20859,22 @@ export class DbStorage implements IStorage {
         : [];
       const billByIdForActual = new Map<string, Bill>(bills.map((b) => [b.id, b]));
 
-      const billsActualAmount = billLineItemsForActual.reduce((sum, li) => {
+      let billsActualAmount = billLineItemsForActual.reduce((sum, li) => {
         const bill = billByIdForActual.get(li.billId);
         const exGst = billLineExGstCents(li.total || 0, li.tax, bill?.taxMode);
         return sum + (bill?.billType === 'credit' ? -exGst : exGst);
       }, 0);
+
+      // Bills carrying no line items would contribute $0 and drop out of cost
+      // entirely. Fall back to the stored ex-GST subtotal for those only, so
+      // this can never double count a bill that does have lines. Mirrors the
+      // same guard in GET /api/projects/:id/actual-costs.
+      const billIdsWithLines = new Set(billLineItemsForActual.map((li) => li.billId));
+      for (const bill of bills) {
+        if (billIdsWithLines.has(bill.id)) continue;
+        const exGst = (bill as any).subtotal || 0;
+        billsActualAmount += bill.billType === 'credit' ? -exGst : exGst;
+      }
 
       // Approved timesheet labour is a real project cost (ex GST — wages carry
       // no GST), so it belongs in the actual alongside the ex-GST bill costs.
@@ -20860,7 +20891,14 @@ export class DbStorage implements IStorage {
 
       const actualAmount = billsActualAmount + labourActualAmount;
 
-      // Calculate variations
+      // Approved variations, as BUILDER COST ex-GST.
+      //
+      // This used to sum variations.subtotal — the client SELL price ex GST,
+      // global markup included. Adding a sell figure to a cost-only baseline
+      // mixed bases and inflated the budget by the margin on every variation,
+      // which is why the CASH "Budget vs Actual" widget read well above the
+      // Budget page's cost-code total. Cost is qty x unitCostExTax (dollars),
+      // matching how the dashboard derives change-order costs.
       const variations: Variation[] = await exec.select()
         .from(schema.variations)
         .where(and(
@@ -20868,7 +20906,10 @@ export class DbStorage implements IStorage {
           eq(schema.variations.status, "approved")
         ));
 
-      const variationAmount = variations.reduce((sum, v) => sum + (v.subtotal || 0), 0);
+      const variationAmount = await this.variationBuilderCostExGstCents(
+        exec,
+        variations.map((v) => v.id),
+      );
 
       const revisedAmount = baselineAmount + variationAmount;
       const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
@@ -21026,6 +21067,27 @@ export class DbStorage implements IStorage {
           const bucket = getBucket("uncategorized", null, "Uncategorized", "");
           bucket.budgeted += amount;
         }
+      }
+
+      // Approved variations enter the cost table as their own bucket, at BUILDER
+      // COST ex GST. Without this the cost-code BUDGETED total was the bare
+      // estimate baseline while budgets.revisedAmount included variations, so
+      // the Budget page and the CASH "Budget vs Actual" widget disagreed by the
+      // whole variation value. variation_items.costCode is free text (not an FK
+      // to cost_codes), so it cannot be bucketed per code reliably — one honest
+      // "Variations" row is used instead.
+      const approvedVariations: Variation[] = await exec.select()
+        .from(schema.variations)
+        .where(and(
+          eq(schema.variations.projectId, projectId),
+          eq(schema.variations.status, "approved"),
+        ));
+      const variationBudgetCents = await this.variationBuilderCostExGstCents(
+        exec,
+        approvedVariations.map((v) => v.id),
+      );
+      if (variationBudgetCents !== 0) {
+        getBucket("variations", null, "Variations", "").budgeted += variationBudgetCents;
       }
 
       // Actuals from bill line items. Bill line totals are stored INC-GST for
