@@ -30,7 +30,9 @@ export interface TaskLike {
 }
 
 export function isTaskDone(status: string | null | undefined): boolean {
-  return status === "done";
+  // Task list filters treat "complete" as done too; without it here a task in
+  // that state was hidden from the list while never rendering struck through.
+  return status === "done" || status === "complete";
 }
 
 /** Day-boundary comparison — a task due today is not overdue until tomorrow. */

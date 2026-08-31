@@ -1489,20 +1489,25 @@ export function EnhancedCalendar({
                 <div
                   key={idx}
                   className={cn(
-                    "py-2 px-1 text-center border-r border-border/50 flex-shrink-0",
+                    "py-1 px-1 text-center border-r border-border/50 flex-shrink-0",
                     isToday(date) ? "bg-primary/10" : !isWeekday && "bg-muted/50",
                     (view === "day" || view === "week") && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
-                  <div className="text-data text-muted-foreground uppercase font-semibold">
-                    {format(date, "EEE")}
-                  </div>
-                  <div className={cn(
-                    "text-sm font-semibold mt-0.5",
-                    isToday(date) && "inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs"
-                  )}>
-                    {format(date, "d")}
+                  {/* Day and date on one line. Stacked, this row cost ~52px of
+                      every calendar before a single event was drawn — most of a
+                      dashboard tile's usable height. */}
+                  <div className="flex items-center justify-center gap-1.5 leading-none">
+                    <span className="text-data text-muted-foreground uppercase font-semibold">
+                      {format(date, "EEE")}
+                    </span>
+                    <span className={cn(
+                      "text-sm font-semibold leading-none",
+                      isToday(date) && "inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs"
+                    )}>
+                      {format(date, "d")}
+                    </span>
                   </div>
                 </div>
               );

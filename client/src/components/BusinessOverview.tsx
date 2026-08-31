@@ -290,7 +290,16 @@ function SortableWidget({
         }
         dragHandleProps={{ ...attributes, ...listeners }}
         onResizeEnd={handleResizeEnd}
-        dimensions={widget.dimensions}
+        // Same per-field fallback as the personal dashboard: the default
+        // layouts and any saved one carry columns but no height, so without
+        // this the registry's defaultRowSpan only ever applied to widgets
+        // added by hand from the picker.
+        dimensions={{
+          columns: widget.dimensions?.columns ?? definition.defaultColumns,
+          height:
+            widget.dimensions?.height ??
+            (definition.defaultRowSpan ? definition.defaultRowSpan * 120 : undefined),
+        }}
         isResizing={isResizing}
         setIsResizing={setIsResizing}
         themeClassName={themeStyle?.className}
