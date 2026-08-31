@@ -1131,6 +1131,27 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return { globalItemMap: itemMap, itemRowIndexMap: rowIndexMap };
   }, [allItems, orderedItems]);
 
+  // Decrement the drag batch's in-flight counter and, once it hits 0, fire the
+  // single reconciling GET.  Every write a drag issues must be counted through
+  // here — including the dependency-lag PATCH, which does not go through
+  // updateItemMutation.  An uncounted write that invalidates on its own
+  // completion starts a GET while the date PATCHes are still running, and that
+  // GET reads back the pre-drag dates and overwrites the optimistic cache; the
+  // bar then snaps back to where it started when the drag visual clears.
+  const settleBatchWrite = useCallback(() => {
+    pendingMutationCountRef.current = Math.max(0, pendingMutationCountRef.current - 1);
+    if (pendingMutationCountRef.current === 0) {
+      // Invalidate ONLY the active key (the one updateCacheOptimistically wrote
+      // to) so the reconciling GET never overwrites an unrelated cache entry.
+      const activeKey = scheduleIdRef.current
+        ? `/api/schedules/${scheduleIdRef.current}/items`
+        : `/api/projects/${projectIdRef.current}/schedule-items`;
+      queryClient.invalidateQueries({ queryKey: [activeKey] });
+    }
+  }, []);
+  const settleBatchWriteRef = useRef(settleBatchWrite);
+  settleBatchWriteRef.current = settleBatchWrite;
+
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
     mutationKey: ['updateScheduleItem'],
@@ -1147,19 +1168,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     },
     // Only refetch once the ENTIRE cascade batch has settled.  We use a
     // ref-based counter (incremented before each mutate.mutate() call and
-    // decremented here) rather than the racey isMutating check.  When the
-    // counter reaches 0 we know every mutation in the batch is done.
-    // Crucially we invalidate ONLY the active key (the one updateCacheOptimistically
-    // wrote to) so the reconciling GET never overwrites an unrelated cache entry.
-    onSettled: () => {
-      pendingMutationCountRef.current = Math.max(0, pendingMutationCountRef.current - 1);
-      if (pendingMutationCountRef.current === 0) {
-        const activeKey = scheduleIdRef.current
-          ? `/api/schedules/${scheduleIdRef.current}/items`
-          : `/api/projects/${projectIdRef.current}/schedule-items`;
-        queryClient.invalidateQueries({ queryKey: [activeKey] });
-      }
-    },
+    // decremented in settleBatchWrite) rather than the racey isMutating check.
+    onSettled: () => settleBatchWriteRef.current(),
   });
 
   const createDependencyMutation = useMutation({
@@ -1730,9 +1740,11 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         return diffDays - 1;
       };
 
-      const recalcLagForItem = (itemId: string | number, itemNewStart: Date, items: ScheduleItem[]) => {
+      // Returns the promise for the lag PATCH (if one is needed) so the caller
+      // can add it to the batch and await it with everything else.
+      const recalcLagForItem = (itemId: string | number, itemNewStart: Date, items: ScheduleItem[]): Promise<any>[] => {
         const item = items.find(i => i.id === itemId);
-        if (!item?.dependencies || (item.dependencies as any[]).length === 0) return;
+        if (!item?.dependencies || (item.dependencies as any[]).length === 0) return [];
         const deps = item.dependencies as any[];
         const MS_PER_DAY = 1000 * 60 * 60 * 24;
         const updatedDeps = deps.map((dep: any) => {
@@ -1750,11 +1762,21 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           return dep;
         });
         const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
-        if (changed) {
+        if (!changed) return [];
+
+        // Counted into the drag batch like every other write.  This PATCH is
+        // tiny — no dates, so the server runs no cascade — and used to resolve
+        // well before the date PATCHes and invalidate on its own; the GET that
+        // started then read back the pre-drag dates and clobbered the
+        // optimistic cache, which is what made the bar snap back.  The lag is
+        // bookkeeping, so a failure here must not roll back dates that saved
+        // fine: swallow the error but still let the batch wait for it.
+        pendingMutationCountRef.current++;
+        return [
           apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { dependencies: updatedDeps })
-            .then(() => invalidateScheduleItems())
-            .catch(() => {});
-        }
+            .catch(() => {})
+            .finally(() => settleBatchWriteRef.current()),
+        ];
       };
 
       // When a child item is dragged and its new end date changes the parent's
@@ -1869,7 +1891,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             }));
           }
 
-          recalcLagForItem(drag.id, newStart, currentItems);
+          batchPromises.push(...recalcLagForItem(drag.id, newStart, currentItems));
           batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
         }
       } else if (drag.type === 'resize-left') {
@@ -1887,7 +1909,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               endDate: format(drag.originalEnd, 'yyyy-MM-dd') as any,
             }));
 
-            recalcLagForItem(drag.id, newStart, currentItems);
+            batchPromises.push(...recalcLagForItem(drag.id, newStart, currentItems));
 
             // Propagate start-date change to SS successors
             const snapStartDelta = differenceInDays(newStart, drag.originalStart);
@@ -1995,6 +2017,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           });
         }
       }
+
+      // Drop the drag visual now, before the network wait below.  The cache
+      // already holds the new dates, so the bar re-renders where it was
+      // dropped.  Clearing this in `finally` instead left the bar pinned to the
+      // raw cursor offset for the whole round trip — a second or two against a
+      // us-east-1 DB — so the commit looked like it landed and then moved.
+      setDragging(null);
+      setHoveredAnchor(null);
 
       // Await every bar-date PATCH that was queued in this drag batch.
       // Promise.allSettled waits for all of them regardless of success/failure.

@@ -15,14 +15,22 @@ import {
   Pencil,
   ChevronDown,
 } from "lucide-react";
-import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
-import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
-import type { CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
+import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
+import { buildBusinessCalendarEvents } from "@shared/businessCalendarEvents";
+import type { ProjectBand } from "@shared/scheduleVisibility";
 import {
-  MoradaCalendar,
-  type MoradaCalendarEvent,
-} from "@/components/calendar/MoradaCalendar";
-import { toMoradaEvent, toMoradaView } from "@/components/calendar/legacy";
+  BUSINESS_CALENDAR_LAYERS,
+  getLayer,
+  type BusinessCalendarLayerEvent,
+} from "@shared/businessCalendarLayers";
+import { TYPE_COLORS_HEX } from "@/lib/taskColors";
+import {
+  EnhancedCalendar,
+  type CalendarEvent,
+  type CalendarDisplayOptions,
+  type EnhancedCalendarView,
+} from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
@@ -57,30 +65,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { CalendarDateJumper } from "@/components/CalendarDateJumper";
+import { PeopleDayView, type PeopleDayLeave } from "@/components/calendar-people/PeopleDayView";
+import { useCalendarShortcuts } from "@/hooks/useCalendarShortcuts";
 
 import TaskEditModal from "@/components/TaskEditModal";
 
-// Module-level flag — survives component remounts for the full browser session,
-// preventing duplicate "All Events" view creation on every navigation.
-let defaultBusinessViewCreated = false;
-
-// Generate a stable, distinct hex colour from any string (fallback when project.color is null)
-function deterministicProjectColor(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  const adjustedHue = hue < 20 || hue > 340 ? (hue + 120) % 360 : hue;
-  // Convert HSL to hex
-  const s = 0.55, l = 0.48;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + adjustedHue / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
+/**
+ * `calendar_views.calendar_mode` is free text and holds whatever the page wrote at
+ * the time. Rows predating this surface can carry values the calendar no longer
+ * has — anything unrecognised falls back to week.
+ *
+ * Note a legacy `"day"` row used to render as *agenda*, because the previous engine
+ * had no day view and mapped everything unknown onto agenda. It now renders as a
+ * real day view, which is what it always said it was.
+ */
+/**
+ * `people` is this page's own mode — a day with a column per person, rendered by
+ * PeopleDayView rather than by the shared calendar. It rides in `calendarMode` so
+ * it persists in a saved view like any other choice of view.
+ */
+type BusinessCalendarMode = EnhancedCalendarView | "people";
+const CALENDAR_VIEWS: BusinessCalendarMode[] = ["month", "week", "day", "agenda", "roster", "people"];
+function toCalendarView(mode: string | null | undefined): BusinessCalendarMode {
+  return CALENDAR_VIEWS.includes(mode as BusinessCalendarMode)
+    ? (mode as BusinessCalendarMode)
+    : "week";
 }
 
 // Helper function to normalize filter dates from API responses
@@ -102,8 +113,9 @@ export default function BusinessCalendar() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const isMobile = useIsMobile();
   const [filters, setFilters] = useState<CalendarFiltersType>({});
-  const [calendarMode, setCalendarMode] = useState<string>("week");
+  const [calendarMode, setCalendarMode] = useState<BusinessCalendarMode>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
@@ -112,6 +124,7 @@ export default function BusinessCalendar() {
   const [viewToEdit, setViewToEdit] = useState<CalendarView | null>(null);
   const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
+  const [sharedWithUsers, setSharedWithUsers] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
@@ -121,6 +134,20 @@ export default function BusinessCalendar() {
   const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
   const [showParentItems, setShowParentItems] = useState(true);
   const [showChildItems, setShowChildItems] = useState(true);
+  const EMPTY_LEAVE_FORM = {
+    userId: "", startDate: "", endDate: "", leaveType: "",
+    isHalfDay: false, halfDayPeriod: "am" as "am" | "pm", note: "",
+  };
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const EMPTY_MEETING_FORM = {
+    title: "", date: "", startTime: "09:00", endTime: "10:00",
+    location: "", videoUrl: "", agenda: "", projectId: "", attendeeUserIds: [] as string[],
+  };
+  const [meetingForm, setMeetingForm] = useState(EMPTY_MEETING_FORM);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
+  const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
 
   const [displayOptions, setDisplayOptions] = useState<CalendarDisplayOptions>(() => {
     try {
@@ -150,11 +177,6 @@ export default function BusinessCalendar() {
     queryKey: ["/api/projects"],
   });
 
-  // Fetch company settings for brand colour (used for project-less events)
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
-  });
-
   // Fetch tasks with date range filtering for calendar performance
   const { data: allTasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
@@ -165,15 +187,37 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Fetch schedule items with date range filtering for calendar performance
-  const { data: allScheduleItems = [], isLoading: isLoadingSchedule } = useQuery<ScheduleItem[]>({
-    queryKey: ["/api/schedule-items/all", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+  // Schedule items, split by the server into chips and collapsed per-project bands.
+  //
+  // The whole company's schedule as chips is unreadable — every active job's every
+  // work bar competing with the things people actually have to turn up to. `mode=
+  // business` keeps milestones, inspections, deliveries, meetings and anything with
+  // a clock time on the grid, and collapses the rest into one slim band per project.
+  // Opting a project into "Full" sends it through untouched.
+  const fullScheduleKey = [...(filters.fullScheduleProjects ?? [])].sort().join(",");
+  const { data: scheduleCalendar, isLoading: isLoadingSchedule } = useQuery<{
+    events: ScheduleItem[];
+    bands: ProjectBand[];
+  }>({
+    queryKey: ["/api/schedule-items/calendar", { startDate: dateRange.startDate, endDate: dateRange.endDate, fullScheduleKey }],
     queryFn: async () => {
-      const response = await fetch(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      const qs = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        mode: "business",
+      });
+      if (fullScheduleKey) qs.set("fullScheduleProjects", fullScheduleKey);
+      const response = await fetch(`/api/schedule-items/calendar?${qs}`);
       if (!response.ok) throw new Error('Failed to fetch schedule items');
-      return response.json();
+      const result = await response.json();
+      return {
+        events: Array.isArray(result?.events) ? result.events : [],
+        bands: Array.isArray(result?.bands) ? result.bands : [],
+      };
     },
   });
+  const allScheduleItems = scheduleCalendar?.events ?? [];
+  const projectBands = scheduleCalendar?.bands ?? [];
 
   // Fetch all schedules to map schedule items to projects
   const { data: schedules = [] } = useQuery<Schedule[]>({
@@ -204,40 +248,21 @@ export default function BusinessCalendar() {
     enabled: !!user,
   });
 
-  const createDefaultViewMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("/api/calendar-views", "POST", {
-        name: "All Events",
-        calendarType: "business",
-        filters: {},
-        calendarMode: "week",
-        isDefault: true,
-      });
-    },
-    onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setSelectedViewId(newView.id);
-    },
-  });
-
-  useEffect(() => {
-    if (!user || isLoadingViews || defaultBusinessViewCreated) return;
-    if (createDefaultViewMutation.isPending) return;
-    
-    if (views.length === 0) {
-      defaultBusinessViewCreated = true;
-      createDefaultViewMutation.mutate();
-    }
-  }, [user, isLoadingViews, views.length]);
+  // The default view is seeded by the server, once per company, so there is no
+  // client-side auto-create here any more — that is what produced a private "All
+  // Events" copy per person, and needed a module-level flag to stop it firing
+  // again on every remount.
 
   // Set selected view to default on load
   useEffect(() => {
     if (views.length > 0 && !selectedViewId) {
-      const defaultView = views.find((v: CalendarView) => v.isDefault);
+      const defaultView =
+        views.find((v: CalendarView) => (v as any).isCompanyDefault) ??
+        views.find((v: CalendarView) => v.isDefault);
       if (defaultView) {
         setSelectedViewId(defaultView.id);
         setFilters(normalizeFilterDates(defaultView.filters || {}));
-        setCalendarMode(defaultView.calendarMode || "week");
+        setCalendarMode(toCalendarView(defaultView.calendarMode));
       }
     }
   }, [views, selectedViewId]);
@@ -255,138 +280,302 @@ export default function BusinessCalendar() {
   });
 
   // Convert tasks and schedule items to calendar events with filtering
-  const filteredEvents: CalendarEvent[] = useMemo(() => {
-    // Convert tasks to calendar events
-    const taskEvents: CalendarEvent[] = allTasks
-      .filter(task => task.dueDate)
-      .map(task => {
-        const project = projects.find(p => p.id === task.projectId);
-        const assignee = users.find(u => u.id === task.assigneeId);
-        const isCompleted = task.status === completedOption?.key;
-        
+  const filteredEvents: CalendarEvent[] = useMemo(
+    () =>
+      buildBusinessCalendarEvents({
+        tasks: allTasks,
+        scheduleItems: allScheduleItems,
+        schedules,
+        projects,
+        users,
+        completedStatusKey: completedOption?.key,
+        filters,
+        viewAsUserId: selectedViewUserId,
+        showParentItems,
+        showChildItems,
+      }),
+    [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems],
+  );
+
+  // Optional layers — off unless switched on, so the default calendar is unchanged
+  // and each extra source is a deliberate choice. One request for all of them; see
+  // the endpoint's note on why this isn't one query per layer.
+  const layerKeys = [...(filters.layers ?? [])].sort();
+  const layerKey = layerKeys.join(",");
+  const { data: layerData } = useQuery<{ events: BusinessCalendarLayerEvent[]; denied: string[] }>({
+    queryKey: ["/api/business-calendar/events", { startDate: dateRange.startDate, endDate: dateRange.endDate, layerKey }],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/business-calendar/events?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}&layers=${encodeURIComponent(layerKey)}`,
+      );
+      if (!response.ok) throw new Error('Failed to fetch calendar layers');
+      const result = await response.json();
+      return {
+        events: Array.isArray(result?.events) ? result.events : [],
+        denied: Array.isArray(result?.denied) ? result.denied : [],
+      };
+    },
+    enabled: layerKeys.length > 0,
+  });
+  // Layers the server withheld for lack of permission. Shown as a disabled toggle
+  // rather than an empty layer, which would read as "nothing due".
+  const deniedLayers = new Set(layerData?.denied ?? []);
+
+  const layerEvents: CalendarEvent[] = useMemo(() => {
+    const rows = layerData?.events ?? [];
+    return rows
+      // The project filter applies to layers too. Status and assignee do not: a
+      // layer row has no Morada assignee, and each source's statuses are their own
+      // vocabulary rather than the task ones the Status filter lists.
+      .filter(row => !filters.projects?.length || (row.projectId && filters.projects.includes(row.projectId)))
+      .map(row => {
+        const layer = getLayer(row.layer);
+        const date = new Date(row.date);
         return {
-          id: task.id,
-          title: task.title,
-          startDate: new Date(task.dueDate!),
-          endDate: new Date(task.dueDate!),
-          startTime: task.startTime,
-          endTime: task.endTime,
-          color: project?.color || deterministicProjectColor(task.projectId || task.id),
-          projectId: task.projectId,
-          projectColor: project?.color || deterministicProjectColor(task.projectId || task.id),
-          projectName: project?.name || null,
-          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
-          assigneeId: task.assigneeId,
-          type: "task" as const,
-          status: task.status,
-          isCompleted,
-          templateId: task.templateId,
-          resource: task,
+          id: row.id,
+          title: row.title,
+          startDate: date,
+          endDate: date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          color: layer ? TYPE_COLORS_HEX[layer.colorToken] : null,
+          projectId: row.projectId,
+          projectColor: layer ? TYPE_COLORS_HEX[layer.colorToken] : null,
+          projectName: row.projectName,
+          assigneeIds: [],
+          type: "layer" as const,
+          status: row.status ?? undefined,
+          // Lookback layers record what already happened, so they are never
+          // outstanding — marking them complete stops them reading as overdue.
+          isCompleted: layer?.lookback ?? false,
+          resource: row,
         };
       });
+  }, [layerData, filters.projects]);
 
-    // Convert schedule items to calendar events with parent/child visibility toggles
-    const parentItemIds = new Set(
-      allScheduleItems
-        .filter((item: any) => item.parentItemId)
-        .map((item: any) => item.parentItemId)
-    );
+  // Meetings. A core source, not an optional layer: a meeting is the most
+  // calendar-shaped thing the business has.
+  const { data: meetings = [] } = useQuery<any[]>({
+    queryKey: ["/api/meetings", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/meetings?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch meetings');
+      return response.json();
+    },
+  });
 
-    const filteredScheduleItems = allScheduleItems.filter(item => {
-      const isParent = parentItemIds.has(item.id);
-      const isChild = !!(item as any).parentItemId;
-      if (isParent && !showParentItems) return false;
-      if (isChild && !showChildItems) return false;
-      return true;
+  const meetingEvents: CalendarEvent[] = useMemo(() => {
+    return meetings
+      .filter((m: any) => !filters.projects?.length || (m.projectId && filters.projects.includes(m.projectId)))
+      .map((m: any) => {
+        const start = new Date(m.startsAt);
+        const end = new Date(m.endsAt);
+        const project = projects.find((p: any) => p.id === m.projectId);
+        const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        return {
+          id: `meeting-${m.id}`,
+          title: m.title,
+          startDate: start,
+          endDate: end,
+          // The grid takes times as strings alongside the date, so a real
+          // timestamp has to be split back into the two.
+          startTime: hhmm(start),
+          endTime: hhmm(end),
+          color: TYPE_COLORS_HEX.meeting,
+          projectId: m.projectId ?? null,
+          projectColor: TYPE_COLORS_HEX.meeting,
+          projectName: project?.name ?? null,
+          assigneeIds: m.attendeeUserIds ?? [],
+          type: "meeting" as const,
+          location: m.location ?? m.videoUrl ?? null,
+          resource: m,
+        };
+      });
+  }, [meetings, projects, filters.projects]);
+
+  const eventsWithLayers = useMemo(
+    () => [...filteredEvents, ...meetingEvents, ...layerEvents],
+    [filteredEvents, meetingEvents, layerEvents],
+  );
+
+  // Who is away. Leave is duration, like a work bar — five all-day chips per
+  // person per week would swamp the grid — so it draws as its own band lane
+  // rather than as events.
+  const { data: leaveEntries = [] } = useQuery<any[]>({
+    queryKey: ["/api/leave-entries", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/leave-entries?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch leave');
+      return response.json();
+    },
+  });
+
+  const leaveTypeOptions = fieldCategories.find(c => c.key === "leave.type")?.options ?? [];
+
+  const leaveBands: ProjectBand[] = useMemo(() => {
+    return leaveEntries.map((entry: any) => {
+      const option = leaveTypeOptions.find((o: any) => o.key === entry.leaveType);
+      const half = entry.isHalfDay ? ` (${entry.halfDayPeriod === "pm" ? "PM" : "AM"})` : "";
+      // Reusing the band shape: `projectId` keys the lane, `projectName` carries
+      // the person, and the label carries what kind of leave it is.
+      return {
+        projectId: entry.id,
+        projectName: entry.userName,
+        projectColor: option?.color ?? null,
+        startDate: String(entry.startDate).slice(0, 10),
+        endDate: String(entry.endDate).slice(0, 10),
+        label: `${option?.name ?? entry.leaveType}${half}`,
+        itemCount: 1,
+      };
     });
+  }, [leaveEntries, leaveTypeOptions]);
 
-    const scheduleEvents: CalendarEvent[] = filteredScheduleItems
-      .map(item => {
-        const schedule = schedules.find(s => s.id === item.scheduleId);
-        const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
-        const assignee = item.assignedToId ? users.find(u => u.id === item.assignedToId) : undefined;
-        const isCompleted = item.status === "completed";
-        const projectColor = project?.color || deterministicProjectColor(project?.id || item.id);
-        
+  // The people axis needs leave per person for the day on screen, rather than the
+  // spans the band lane draws.
+  const peopleDayLeave: PeopleDayLeave[] = useMemo(() => {
+    const day = format(currentDate, "yyyy-MM-dd");
+    return leaveEntries
+      .filter((e: any) => String(e.startDate).slice(0, 10) <= day && String(e.endDate).slice(0, 10) >= day)
+      .map((e: any) => {
+        const option = leaveTypeOptions.find((o: any) => o.key === e.leaveType);
         return {
-          id: item.id,
-          title: item.name,
-          startDate: new Date(item.startDate),
-          endDate: new Date(item.endDate),
-          startTime: item.startTime,
-          endTime: item.endTime,
-          color: projectColor,
-          projectId: project?.id,
-          projectColor: projectColor,
-          projectName: project?.name || null,
-          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
-          assigneeId: item.assignedToId,
-          type: "schedule" as const,
-          status: item.status,
-          isCompleted,
+          userId: e.userId,
+          label: option?.name ?? e.leaveType,
+          color: option?.color ?? null,
+          halfDayPeriod: e.isHalfDay ? (e.halfDayPeriod as "am" | "pm") : null,
         };
       });
+  }, [leaveEntries, leaveTypeOptions, currentDate]);
 
-    const allEvents = [...taskEvents, ...scheduleEvents];
+  // Bands respect the project filter as well — filtering to one job should not
+  // leave other projects' bands stranded above an empty grid.
+  const filteredProjectBands = useMemo(() => {
+    if (!filters.projects?.length) return projectBands;
+    const wanted = new Set(filters.projects);
+    return projectBands.filter((band) => wanted.has(band.projectId));
+  }, [projectBands, filters.projects]);
 
-    // Apply filters
-    let filtered = allEvents;
+  const resetMeetingForm = () => { setEditingMeetingId(null); setMeetingForm(EMPTY_MEETING_FORM); };
 
-    // Apply "View as User" filter first (separate from assignee multi-select filter)
-    if (selectedViewUserId !== "all") {
-      filtered = filtered.filter(event => event.assigneeId === selectedViewUserId);
-    }
+  const saveMeetingMutation = useMutation({
+    mutationFn: async () => {
+      // The form keeps a date and two times because that is how people think about
+      // a meeting; the API takes real timestamps.
+      const body = {
+        title: meetingForm.title,
+        startsAt: new Date(`${meetingForm.date}T${meetingForm.startTime}`).toISOString(),
+        endsAt: new Date(`${meetingForm.date}T${meetingForm.endTime}`).toISOString(),
+        location: meetingForm.location || null,
+        videoUrl: meetingForm.videoUrl || null,
+        agenda: meetingForm.agenda || null,
+        projectId: meetingForm.projectId || null,
+        attendeeUserIds: meetingForm.attendeeUserIds,
+      };
+      return editingMeetingId
+        ? apiRequest(`/api/meetings/${editingMeetingId}`, "PATCH", body)
+        : apiRequest("/api/meetings", "POST", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      setMeetingDialogOpen(false);
+      resetMeetingForm();
+      toast({ title: editingMeetingId ? "Meeting updated" : "Meeting scheduled" });
+    },
+    onError: (e: any) => toast({ title: "Couldn't save meeting", description: e?.message, variant: "destructive" }),
+  });
 
-    // Event type filter
-    if (filters.eventTypes && filters.eventTypes.length > 0) {
-      filtered = filtered.filter(event => {
-        if (event.type === "schedule") {
-          return filters.eventTypes!.includes("schedule-item");
-        }
-        return filters.eventTypes!.includes(event.type);
-      });
-    }
+  const deleteMeetingMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest(`/api/meetings/${id}`, "DELETE"); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      setMeetingDialogOpen(false);
+      resetMeetingForm();
+      toast({ title: "Meeting removed" });
+    },
+  });
 
-    // Project filter
-    if (filters.projects && filters.projects.length > 0) {
-      filtered = filtered.filter(event => 
-        event.projectId && filters.projects!.includes(event.projectId)
-      );
-    }
+  // Clicking a meeting opens it pre-filled.
+  useEffect(() => {
+    if (!editingMeetingId) return;
+    const m = meetings.find((x: any) => x.id === editingMeetingId);
+    if (!m) return;
+    const start = new Date(m.startsAt);
+    const end = new Date(m.endsAt);
+    const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    setMeetingForm({
+      title: m.title,
+      date: format(start, "yyyy-MM-dd"),
+      startTime: hhmm(start),
+      endTime: hhmm(end),
+      location: m.location ?? "",
+      videoUrl: m.videoUrl ?? "",
+      agenda: m.agenda ?? "",
+      projectId: m.projectId ?? "",
+      attendeeUserIds: m.attendeeUserIds ?? [],
+    });
+    setMeetingDialogOpen(true);
+  }, [editingMeetingId, meetings]);
 
-    // Status filter
-    if (filters.status && filters.status.length > 0) {
-      filtered = filtered.filter(event => 
-        event.status && filters.status!.includes(event.status)
-      );
-    }
+  const resetLeaveForm = () => { setEditingLeaveId(null); setLeaveForm(EMPTY_LEAVE_FORM); };
 
-    // Assignee filter
-    if (filters.assignees && filters.assignees.length > 0) {
-      filtered = filtered.filter(event => 
-        event.assigneeId && filters.assignees!.includes(event.assigneeId)
-      );
-    }
+  const saveLeaveMutation = useMutation({
+    mutationFn: async () => {
+      const body = {
+        userId: leaveForm.userId,
+        startDate: leaveForm.startDate,
+        endDate: leaveForm.endDate,
+        leaveType: leaveForm.leaveType,
+        isHalfDay: leaveForm.isHalfDay,
+        // Sent as null rather than omitted: the server's CHECK requires a period
+        // exactly when isHalfDay is set, so clearing it has to be explicit.
+        halfDayPeriod: leaveForm.isHalfDay ? leaveForm.halfDayPeriod : null,
+        note: leaveForm.note || null,
+      };
+      return editingLeaveId
+        ? apiRequest(`/api/leave-entries/${editingLeaveId}`, "PATCH", body)
+        : apiRequest("/api/leave-entries", "POST", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-entries"] });
+      setLeaveDialogOpen(false);
+      resetLeaveForm();
+      toast({ title: editingLeaveId ? "Leave updated" : "Leave marked" });
+    },
+    onError: (e: any) => toast({ title: "Couldn't save leave", description: e?.message, variant: "destructive" }),
+  });
 
-    // Date range filter
-    if (filters.dateFrom || filters.dateTo) {
-      filtered = filtered.filter(event => {
-        const eventDate = event.startDate;
-        if (filters.dateFrom && filters.dateTo) {
-          return isWithinInterval(eventDate, { start: filters.dateFrom, end: filters.dateTo });
-        } else if (filters.dateFrom) {
-          return eventDate >= filters.dateFrom;
-        } else if (filters.dateTo) {
-          return eventDate <= filters.dateTo;
-        }
-        return true;
-      });
-    }
+  const deleteLeaveMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest(`/api/leave-entries/${id}`, "DELETE"); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-entries"] });
+      setLeaveDialogOpen(false);
+      resetLeaveForm();
+      toast({ title: "Leave removed" });
+    },
+  });
 
-    return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems]);
+  // Clicking a band opens it for editing, pre-filled from the entry it drew.
+  useEffect(() => {
+    if (!editingLeaveId) return;
+    const entry = leaveEntries.find((l: any) => l.id === editingLeaveId);
+    if (!entry) return;
+    setLeaveForm({
+      userId: entry.userId,
+      startDate: String(entry.startDate).slice(0, 10),
+      endDate: String(entry.endDate).slice(0, 10),
+      leaveType: entry.leaveType,
+      isHalfDay: !!entry.isHalfDay,
+      halfDayPeriod: (entry.halfDayPeriod as "am" | "pm") ?? "am",
+      note: entry.note ?? "",
+    });
+    setLeaveDialogOpen(true);
+  }, [editingLeaveId, leaveEntries]);
 
   const handleEventClick = (event: CalendarEvent) => {
+    if (event.type === "meeting") {
+      setEditingMeetingId(event.resource?.id ?? null);
+      return;
+    }
     if (event.type === "task") {
       const task = allTasks.find(t => t.id === event.id);
       if (task) {
@@ -402,24 +591,43 @@ export default function BusinessCalendar() {
     }
   };
 
-  // Convert to the MoradaCalendar event model, honouring the "Display on Cards"
-  // options via extra chip lines / time visibility.
-  const moradaEvents: MoradaCalendarEvent[] = useMemo(() => {
-    return filteredEvents.map((event) => {
-      const lines: string[] = [];
-      if (displayOptions.showProject && event.projectName) lines.push(event.projectName);
-      if (displayOptions.showAssignee && event.assigneeName) lines.push(event.assigneeName);
-      if (displayOptions.showStatus && event.status) lines.push(event.status.replace(/[_-]+/g, " "));
-      return toMoradaEvent(event, {
-        lines,
-        hideTime: displayOptions.showTime === false,
-      });
-    });
-  }, [filteredEvents, displayOptions]);
-
-  const handleMoradaEventClick = (event: MoradaCalendarEvent) => {
-    const original = event.meta?.original as CalendarEvent | undefined;
-    if (original) handleEventClick(original);
+  /**
+   * Who else can see this view.
+   *
+   * The column and the read path have existed since the table was created, and
+   * SavedViews.tsx has carried an unused UI for it just as long — a shared
+   * calendar whose views were all private. This is the control that connects them.
+   */
+  const renderShareWith = () => {
+    // Test the list actually rendered, not the one before you are removed from it —
+    // otherwise a one-person company gets an empty box instead of an explanation.
+    const shareable = availableAssignees.filter((a: any) => a.id !== user?.id);
+    return (
+    <div className="grid gap-2">
+      <Label>Share with</Label>
+      <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border p-2">
+        {shareable.length === 0 && (
+          <p className="text-xs text-muted-foreground">No one else on the team yet.</p>
+        )}
+        {shareable
+          .map((a: any) => (
+            <label key={a.id} className="flex cursor-pointer items-center gap-2">
+              <Checkbox
+                checked={sharedWithUsers.includes(a.id)}
+                onCheckedChange={() => setSharedWithUsers(current =>
+                  current.includes(a.id) ? current.filter(id => id !== a.id) : [...current, a.id]
+                )}
+                data-testid={`share-with-${a.id}`}
+              />
+              <span className="text-xs">{a.name}</span>
+            </label>
+          ))}
+      </div>
+      <p className="text-data text-muted-foreground">
+        Everyone already sees the company's default view. This shares this one on top of it.
+      </p>
+    </div>
+    );
   };
 
   const createViewMutation = useMutation({
@@ -429,6 +637,7 @@ export default function BusinessCalendar() {
         calendarType: "business",
         filters,
         calendarMode,
+        sharedWith: sharedWithUsers,
       });
     },
     onSuccess: (newView) => {
@@ -436,6 +645,7 @@ export default function BusinessCalendar() {
       setSelectedViewId(newView.id);
       setShowCreateViewDialog(false);
       setNewViewName("");
+      setSharedWithUsers([]);
       toast({ title: "View created", description: `"${newView.name}" has been saved.` });
     },
     onError: () => {
@@ -444,11 +654,12 @@ export default function BusinessCalendar() {
   });
 
   const updateViewMutation = useMutation({
-    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string }) => {
+    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string; sharedWith?: string[] }) => {
       return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.filters !== undefined && { filters: data.filters }),
         ...(data.calendarMode !== undefined && { calendarMode: data.calendarMode }),
+        ...(data.sharedWith !== undefined && { sharedWith: data.sharedWith }),
       });
     },
     onSuccess: (updatedView) => {
@@ -484,18 +695,21 @@ export default function BusinessCalendar() {
   const handleViewSelect = (view: CalendarView) => {
     setSelectedViewId(view.id);
     setFilters(normalizeFilterDates(view.filters || {}));
-    setCalendarMode(view.calendarMode || "week");
+    setCalendarMode(toCalendarView(view.calendarMode));
   };
 
   const handleEditView = (view: CalendarView) => {
     setViewToEdit(view);
     setEditViewName(view.name);
+    // Load who it is already shared with, so opening the dialog and saving does
+    // not silently unshare it.
+    setSharedWithUsers(Array.isArray(view.sharedWith) ? view.sharedWith : []);
     setShowEditViewDialog(true);
   };
 
   const handleUpdateView = () => {
     if (!viewToEdit || !editViewName.trim()) return;
-    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode });
+    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode, sharedWith: sharedWithUsers });
   };
 
   // Navigation handlers
@@ -503,25 +717,32 @@ export default function BusinessCalendar() {
     setCurrentDate(new Date());
   };
 
-  const handleNavigatePrevious = () => {
+  /** Step by whatever the current view shows: a day, a week, or a month. */
+  const stepDate = (direction: -1 | 1) => {
     const newDate = new Date(currentDate);
-    if (toMoradaView(calendarMode) === "week") {
-      newDate.setDate(newDate.getDate() - 7);
+    if (calendarMode === "day" || calendarMode === "people") {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (calendarMode === "week" || calendarMode === "roster") {
+      newDate.setDate(newDate.getDate() + 7 * direction);
     } else {
-      newDate.setMonth(newDate.getMonth() - 1);
+      newDate.setMonth(newDate.getMonth() + direction);
     }
     setCurrentDate(newDate);
   };
 
-  const handleNavigateNext = () => {
-    const newDate = new Date(currentDate);
-    if (toMoradaView(calendarMode) === "week") {
-      newDate.setDate(newDate.getDate() + 7);
-    } else {
-      newDate.setMonth(newDate.getMonth() + 1);
-    }
-    setCurrentDate(newDate);
-  };
+  const handleNavigatePrevious = () => stepDate(-1);
+  const handleNavigateNext = () => stepDate(1);
+
+  // `a` for agenda as well, since this surface offers it. Suspended on mobile,
+  // where the view is forced to agenda and a keystroke could not change it.
+  useCalendarShortcuts({
+    onToday: handleNavigateToday,
+    onPrevious: handleNavigatePrevious,
+    onNext: handleNavigateNext,
+    onViewChange: setCalendarMode,
+    views: ["day", "week", "month", "agenda"],
+    enabled: !isMobile,
+  });
 
   // Event type options for filtering
   const eventTypeOptions = [
@@ -665,7 +886,7 @@ export default function BusinessCalendar() {
             ))}
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => setShowCreateViewDialog(true)}
+              onClick={() => { setSharedWithUsers([]); setShowCreateViewDialog(true); }}
               data-testid="button-add-view"
             >
               <Plus className="w-3 h-3" />
@@ -735,21 +956,50 @@ export default function BusinessCalendar() {
                     )}
                   </div>
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {projects.map((project: any) => (
-                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.projects?.includes(project.id) || false}
-                          onCheckedChange={() => {
-                            const current = filters.projects || [];
-                            const updated = current.includes(project.id)
-                              ? current.filter(p => p !== project.id)
-                              : [...current, project.id];
-                            setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{project.name}</span>
-                      </label>
-                    ))}
+                    {projects.map((project: any) => {
+                      const showsFullSchedule = filters.fullScheduleProjects?.includes(project.id) || false;
+                      return (
+                        <div key={project.id} className="flex items-center gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                            <Checkbox
+                              checked={filters.projects?.includes(project.id) || false}
+                              onCheckedChange={() => {
+                                const current = filters.projects || [];
+                                const updated = current.includes(project.id)
+                                  ? current.filter(p => p !== project.id)
+                                  : [...current, project.id];
+                                setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
+                              }}
+                            />
+                            <span className="text-xs truncate">{project.name}</span>
+                          </label>
+                          {/* Per-project escape hatch from the band: some jobs you do
+                              want to see item by item. Persisted in the saved view. */}
+                          <button
+                            type="button"
+                            className="text-2xs px-1.5 py-0.5 rounded border hover-elevate active-elevate-2 flex-shrink-0"
+                            title={
+                              showsFullSchedule
+                                ? "Showing every schedule item for this project"
+                                : "Work bars are collapsed into the project band"
+                            }
+                            onClick={() => {
+                              const current = filters.fullScheduleProjects || [];
+                              const updated = current.includes(project.id)
+                                ? current.filter(p => p !== project.id)
+                                : [...current, project.id];
+                              setFilters({
+                                ...filters,
+                                fullScheduleProjects: updated.length > 0 ? updated : undefined,
+                              });
+                            }}
+                            data-testid={`full-schedule-toggle-${project.id}`}
+                          >
+                            {showsFullSchedule ? "Full" : "Band"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </PopoverContent>
@@ -857,6 +1107,78 @@ export default function BusinessCalendar() {
               </PopoverContent>
             </Popover>
           )}
+
+          {/* Layers — the optional sources. Off by default; each one is another
+              query, and nine at once is a wall rather than a calendar. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-filter-layers"
+              >
+                <span>Layers</span>
+                {filters.layers && filters.layers.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
+                    {filters.layers.length}
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Layers</div>
+                  {filters.layers && filters.layers.length > 0 && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setFilters({ ...filters, layers: undefined })}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {BUSINESS_CALENDAR_LAYERS.map((layer) => {
+                    const denied = deniedLayers.has(layer.key);
+                    return (
+                      <label
+                        key={layer.key}
+                        className={`flex items-start gap-2 ${denied ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                        title={denied ? "You don't have permission to see this layer" : layer.description}
+                      >
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={filters.layers?.includes(layer.key) || false}
+                          disabled={denied}
+                          onCheckedChange={() => {
+                            const current = filters.layers || [];
+                            const updated = current.includes(layer.key)
+                              ? current.filter(l => l !== layer.key)
+                              : [...current, layer.key];
+                            setFilters({ ...filters, layers: updated.length > 0 ? updated : undefined });
+                          }}
+                          data-testid={`layer-toggle-${layer.key}`}
+                        />
+                        <span className="min-w-0">
+                          <span className="text-xs flex items-center gap-1.5">
+                            <span
+                              className="h-2 w-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: TYPE_COLORS_HEX[layer.colorToken] }}
+                            />
+                            {layer.label}
+                            {denied && <span className="text-data text-muted-foreground">(no access)</span>}
+                          </span>
+                          <span className="text-data text-muted-foreground block leading-tight">
+                            {layer.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           {/* Event Types Filter */}
           <Popover>
@@ -1086,23 +1408,25 @@ export default function BusinessCalendar() {
             <ChevronRight className="w-3 h-3" />
           </button>
 
-          {/* Current Date Display */}
-          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
-            {format(currentDate, 'MMM d, yyyy')}
-          </span>
+          <CalendarDateJumper currentDate={currentDate} onDateChange={setCurrentDate} />
 
-          {/* View Mode Selector */}
+          {/* View Mode Selector — hidden on mobile, where the calendar forces
+              agenda and these buttons would do nothing. The chosen view is still
+              saved, so it comes back on a wider screen. */}
+          {!isMobile && (
           <div className="flex items-center gap-0.5">
-            {[
-              { value: 'agenda', label: 'Agenda' },
+            {([
+              { value: 'day', label: 'Day' },
               { value: 'week', label: 'Week' },
               { value: 'month', label: 'Month' },
-            ].map((mode) => (
+              { value: 'agenda', label: 'Agenda' },
+              { value: 'people', label: 'People' },
+            ] as Array<{ value: BusinessCalendarMode; label: string }>).map((mode) => (
               <button
                 key={mode.value}
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  toMoradaView(calendarMode) === mode.value
+                  calendarMode === mode.value
                     ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -1112,34 +1436,365 @@ export default function BusinessCalendar() {
               </button>
             ))}
           </div>
+          )}
 
-          {/* Add Event Button */}
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
-            onClick={() => {
-              // TODO: Open event creation dialog
-              toast({ title: "Add Event", description: "Event creation coming soon!" });
-            }}
-            data-testid="button-add-event"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
+          {/* Two things can be added to this calendar now, so the + is a menu. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
+                data-testid="button-calendar-add"
+                title="Add to the calendar"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  resetMeetingForm();
+                  setMeetingForm({ ...EMPTY_MEETING_FORM, date: format(currentDate, "yyyy-MM-dd") });
+                  setMeetingDialogOpen(true);
+                }}
+                data-testid="menu-schedule-meeting"
+              >
+                Schedule a meeting
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => { resetLeaveForm(); setLeaveDialogOpen(true); }}
+                data-testid="menu-mark-leave"
+              >
+                Mark leave
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
       <div className="flex-1 min-h-0">
-        <MoradaCalendar
-          events={moradaEvents}
-          onEventClick={handleMoradaEventClick}
-          date={currentDate}
-          onDateChange={setCurrentDate}
-          view={toMoradaView(calendarMode)}
-          onViewChange={(newView) => setCalendarMode(newView)}
-          hideHeader
+        {/*
+          Read-only on purpose (D6). Dragging someone else's schedule item here
+          would cascade the Gantt, and your own tasks are better dragged on your own
+          calendar. Click a chip to open it and change the date there.
+
+          `readOnly` rather than just omitting the handlers: without it a chip still
+          lifts and follows the cursor before doing nothing on drop, and every task
+          carries a completion checkbox that silently no-ops.
+
+          `displayOptions` is a native prop now, so "Show assignee" finally works on
+          week-view timed events — the previous engine only rendered those extra
+          lines on month and all-day chips.
+        */}
+        {/* A column per person needs width. On a phone the mobile fallback takes
+            over, the same as it does for the grid views. */}
+        {calendarMode === "people" && !isMobile ? (
+          <PeopleDayView
+            date={currentDate}
+            people={availableAssignees}
+            events={eventsWithLayers}
+            leave={peopleDayLeave}
+            onEventClick={handleEventClick}
+            onPersonClick={(id) => navigate(`/users/${id}/calendar`)}
+          />
+        ) : (
+        <EnhancedCalendar
+          events={eventsWithLayers}
+          onEventClick={handleEventClick}
+          currentDate={currentDate}
+          onCurrentDateChange={setCurrentDate}
+          // `people` only reaches here on mobile, where the fallback overrides it
+          // anyway; day is the nearest shared view to hand it.
+          view={calendarMode === "people" ? "day" : calendarMode}
+          onViewChange={setCalendarMode}
+          displayOptions={displayOptions}
+          projectBands={filteredProjectBands}
+          leaveBands={leaveBands}
+          onLeaveBandClick={(band) => setEditingLeaveId(band.projectId)}
+          onProjectBandClick={(band) => navigate(`/projects/${band.projectId}/schedule`)}
+          mobileFallbackView="agenda"
+          readOnly
+          hideInternalHeader
         />
+        )}
       </div>
      </div>
+
+      {/* Schedule a meeting. The forward half of D9: minutes record what happened,
+          this is the thing you can still turn up to. */}
+      <Dialog open={meetingDialogOpen} onOpenChange={(open) => { setMeetingDialogOpen(open); if (!open) resetMeetingForm(); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{editingMeetingId ? "Edit meeting" : "Schedule a meeting"}</DialogTitle>
+            <DialogDescription>
+              It shows on the business calendar and on every attendee's own calendar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Title</Label>
+              <Input
+                className="h-8 text-xs"
+                value={meetingForm.title}
+                onChange={(e) => setMeetingForm({ ...meetingForm, title: e.target.value })}
+                placeholder="e.g., Site walkthrough"
+                data-testid="input-meeting-title"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date</Label>
+                <Input type="date" className="h-8 text-xs" value={meetingForm.date}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, date: e.target.value })}
+                  data-testid="input-meeting-date" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">From</Label>
+                <Input type="time" className="h-8 text-xs" value={meetingForm.startTime}
+                  onChange={(e) => {
+                    const startTime = e.target.value;
+                    // Keep the window valid as you type rather than failing on save.
+                    setMeetingForm(f => ({
+                      ...f,
+                      startTime,
+                      endTime: f.endTime && f.endTime < startTime ? startTime : f.endTime,
+                    }));
+                  }}
+                  data-testid="input-meeting-start" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">To</Label>
+                <Input type="time" className="h-8 text-xs" min={meetingForm.startTime} value={meetingForm.endTime}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, endTime: e.target.value })}
+                  data-testid="input-meeting-end" />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Attendees</Label>
+              <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-md border p-2">
+                {availableAssignees.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No team members yet.</p>
+                )}
+                {availableAssignees.map((a: any) => (
+                  <label key={a.id} className="flex cursor-pointer items-center gap-2">
+                    <Checkbox
+                      checked={meetingForm.attendeeUserIds.includes(a.id)}
+                      onCheckedChange={() => setMeetingForm(f => ({
+                        ...f,
+                        attendeeUserIds: f.attendeeUserIds.includes(a.id)
+                          ? f.attendeeUserIds.filter(id => id !== a.id)
+                          : [...f.attendeeUserIds, a.id],
+                      }))}
+                      data-testid={`meeting-attendee-${a.id}`}
+                    />
+                    <span className="text-xs">{a.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Project <span className="text-muted-foreground">(optional)</span></Label>
+                <Select
+                  value={meetingForm.projectId || "none"}
+                  onValueChange={(v) => setMeetingForm({ ...meetingForm, projectId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-meeting-project">
+                    <SelectValue placeholder="No project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No project</SelectItem>
+                    {projects.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Where <span className="text-muted-foreground">(optional)</span></Label>
+                <Input className="h-8 text-xs" value={meetingForm.location}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, location: e.target.value })}
+                  placeholder="Site office" data-testid="input-meeting-location" />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Video link <span className="text-muted-foreground">(optional)</span></Label>
+              <Input className="h-8 text-xs" value={meetingForm.videoUrl}
+                onChange={(e) => setMeetingForm({ ...meetingForm, videoUrl: e.target.value })}
+                placeholder="https://…" data-testid="input-meeting-video" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {editingMeetingId && (
+              <>
+                <Button
+                  variant="outline"
+                  className="mr-auto text-destructive"
+                  onClick={() => deleteMeetingMutation.mutate(editingMeetingId)}
+                  data-testid="button-delete-meeting"
+                >
+                  Delete
+                </Button>
+                {/* The backward half: whether this meeting has been written up yet. */}
+                {(() => {
+                  const m = meetings.find((x: any) => x.id === editingMeetingId);
+                  return m?.minutesId ? (
+                    <Button variant="outline" onClick={() => navigate(`/business/minutes/${m.minutesId}`)} data-testid="button-open-minutes">
+                      Open minutes
+                    </Button>
+                  ) : null;
+                })()}
+              </>
+            )}
+            <Button variant="outline" onClick={() => { setMeetingDialogOpen(false); resetMeetingForm(); }}>Cancel</Button>
+            <Button
+              onClick={() => saveMeetingMutation.mutate()}
+              disabled={!meetingForm.title.trim() || !meetingForm.date || saveMeetingMutation.isPending}
+              data-testid="button-save-meeting"
+            >
+              {editingMeetingId ? "Save" : "Schedule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark leave. Deliberately minimal: who, when, what kind, and a note.
+          There is no request or approval step — this records that someone is
+          away, which is what the calendar needs. */}
+      <Dialog open={leaveDialogOpen} onOpenChange={(open) => { setLeaveDialogOpen(open); if (!open) resetLeaveForm(); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>{editingLeaveId ? "Edit leave" : "Mark leave"}</DialogTitle>
+            <DialogDescription>
+              Record that someone is away. It shows on the business calendar as a band.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Who</Label>
+              <Select value={leaveForm.userId} onValueChange={(v) => setLeaveForm({ ...leaveForm, userId: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-leave-user">
+                  <SelectValue placeholder="Select a team member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableAssignees.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">From</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={leaveForm.startDate}
+                  onChange={(e) => {
+                    const startDate = e.target.value;
+                    // Keep the range valid as you type rather than rejecting it on save.
+                    setLeaveForm(f => ({
+                      ...f,
+                      startDate,
+                      endDate: !f.endDate || f.endDate < startDate ? startDate : f.endDate,
+                    }));
+                  }}
+                  data-testid="input-leave-start"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">To</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  min={leaveForm.startDate || undefined}
+                  value={leaveForm.endDate}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, endDate: e.target.value, isHalfDay: false })}
+                  data-testid="input-leave-end"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Type</Label>
+              <Select value={leaveForm.leaveType} onValueChange={(v) => setLeaveForm({ ...leaveForm, leaveType: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-leave-type">
+                  <SelectValue placeholder="Select a leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaveTypeOptions.map((o: any) => (
+                    <SelectItem key={o.key} value={o.key}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* A half day only makes sense on a single day — the server enforces
+                it too, but offering it on a range would be a trap. */}
+            {leaveForm.startDate && leaveForm.startDate === leaveForm.endDate && (
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={leaveForm.isHalfDay}
+                    onCheckedChange={(c) => setLeaveForm({ ...leaveForm, isHalfDay: !!c })}
+                    data-testid="checkbox-leave-half-day"
+                  />
+                  <span className="text-xs">Half day</span>
+                </label>
+                {leaveForm.isHalfDay && (
+                  <Select
+                    value={leaveForm.halfDayPeriod}
+                    onValueChange={(v) => setLeaveForm({ ...leaveForm, halfDayPeriod: v as "am" | "pm" })}
+                  >
+                    <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-leave-period">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="am">Morning</SelectItem>
+                      <SelectItem value="pm">Afternoon</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Note <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                className="h-8 text-xs"
+                value={leaveForm.note}
+                onChange={(e) => setLeaveForm({ ...leaveForm, note: e.target.value })}
+                data-testid="input-leave-note"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {editingLeaveId && (
+              <Button
+                variant="outline"
+                className="mr-auto text-destructive"
+                onClick={() => deleteLeaveMutation.mutate(editingLeaveId)}
+                data-testid="button-delete-leave"
+              >
+                Delete
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => { setLeaveDialogOpen(false); resetLeaveForm(); }}>Cancel</Button>
+            <Button
+              onClick={() => saveLeaveMutation.mutate()}
+              disabled={!leaveForm.userId || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.leaveType || saveLeaveMutation.isPending}
+              data-testid="button-save-leave"
+            >
+              {editingLeaveId ? "Save" : "Mark leave"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save / Create View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={(open) => { setShowCreateViewDialog(open); if (!open) setNewViewName(""); }}>
@@ -1161,6 +1816,7 @@ export default function BusinessCalendar() {
                 data-testid="input-view-name"
               />
             </div>
+            {renderShareWith()}
           </div>
           <div className="flex justify-end gap-2">
             <Button
@@ -1201,6 +1857,7 @@ export default function BusinessCalendar() {
                 data-testid="input-edit-view-name"
               />
             </div>
+            {renderShareWith()}
           </div>
           <div className="flex justify-end gap-2">
             <Button

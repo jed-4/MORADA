@@ -89,7 +89,6 @@ const Takeoff = lazy(() => import("@/pages/Takeoff"));
 const FieldSettings = lazy(() => import("@/pages/FieldSettings"));
 const TaskSettings = lazy(() => import("@/pages/TaskSettings"));
 const BusinessCalendar = lazy(() => import("@/pages/BusinessCalendar"));
-const PersonalCalendar = lazy(() => import("@/pages/PersonalCalendar"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const BusinessTasks = lazy(() => import("@/pages/BusinessTasks"));
 const Systems = lazy(() => import("@/pages/Systems"));
@@ -212,7 +211,15 @@ function Router() {
       <Route path="/business/notes" component={Business} />
       <Route path="/business/leave" component={Business} />
       <Route path="/business/metrics" component={Business} />
-      <Route path="/my-calendar" component={PersonalCalendar} />
+      {/*
+        /my-calendar was a third calendar page on the retired MoradaCalendar
+        engine. The route stays as a redirect rather than being deleted: it was
+        reachable from the dashboard's Quick Actions and may be bookmarked, and a
+        404 is a worse answer than the calendar that is actually maintained.
+      */}
+      <Route path="/my-calendar">
+        {() => (user ? <Redirect to={`/users/${user.id}/calendar`} /> : <Redirect to="/" />)}
+      </Route>
       <Route path="/systems" component={Systems} />
       <Route path="/business-team" component={Business} />
       <Route path="/business-team/:userId" component={UserProfileView} />
