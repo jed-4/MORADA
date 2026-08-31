@@ -192,6 +192,7 @@ const projectFlatOrder: { section: ProjectFlatSection; title: string }[] = [
   { section: "management", title: "Checklists" },
   { section: "management", title: "RFQs" },
   { section: "management", title: "Selections" },
+  { section: "management", title: "Reviews" },
   { section: "management", title: "Allowances" },
   { section: "finance", title: "Bills" },
   { section: "management", title: "Purchase Orders" },

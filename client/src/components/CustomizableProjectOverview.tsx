@@ -3,7 +3,7 @@ import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus } from "lucide-react";
+import { ClipboardCheck, Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLocation } from "wouter";
@@ -34,6 +34,7 @@ const SelectionDetail = lazy(() => import("@/pages/SelectionDetail"));
 const RFQs = lazy(() => import("@/pages/RFQs"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
 const Allowances = lazy(() => import("@/pages/Allowances"));
+const ProjectReviews = lazy(() => import("@/pages/ProjectReviews"));
 const Defects = lazy(() => import("@/pages/Defects"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
 const Variations = lazy(() => import("@/pages/Variations"));
@@ -132,6 +133,7 @@ const PROJECT_TAB_GROUPS = [
       { id: "rfqs", label: "RFQs", icon: FileSearch, path: "/rfqs" },
       { id: "rfis", label: "RFIs", icon: HelpCircle, path: "/rfis" },
       { id: "selections", label: "Selections", icon: CheckCircle, path: "/selections" },
+      { id: "reviews", label: "Reviews", icon: ClipboardCheck, path: "/reviews" },
       { id: "allowances", label: "Allowances", icon: DollarSign, path: "/allowances" },
       { id: "purchase-orders", label: "Purchase Orders", icon: Receipt, path: "/purchase-orders" },
       { id: "variations", label: "Variations", icon: FileText, path: "/variations" },
@@ -969,6 +971,8 @@ export default function CustomizableProjectOverview() {
             className="h-full"
           />
         );
+      case "reviews":
+        return <ProjectReviews />;
       case "selections": {
         // /selections/<id> renders the detail INSIDE the project shell so it
         // keeps the project header + section tabs like every other section
