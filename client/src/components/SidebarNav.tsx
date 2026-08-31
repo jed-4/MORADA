@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useClientPortal } from "@/hooks/use-client-portal";
 import { Project, User } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import {
+import { ClipboardCheck,
   LayoutDashboard,
   Inbox,
   CheckSquare,
@@ -116,6 +116,7 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
       { title: "RFQs", url: "/rfqs", icon: FileSearch },
       { title: "RFIs", url: "/rfis", icon: HelpCircle },
       { title: "Selections", url: "/selections", icon: CheckCircle },
+      { title: "Reviews", url: "/reviews", icon: ClipboardCheck },
       { title: "Allowances", url: "/allowances", icon: DollarSign },
       { title: "Purchase Orders", url: "/purchase-orders", icon: Receipt },
       { title: "Variations", url: "/variations", icon: FileText },
