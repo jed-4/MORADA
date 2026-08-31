@@ -458,6 +458,11 @@ export interface IStorage {
   reorderLabourEstimateCategories(updates: { id: string; sortOrder: number }[]): Promise<void>;
   getLabourEstimateTasks(categoryId: string): Promise<any[]>;
   createLabourEstimateTask(data: any): Promise<any>;
+  createLabourEstimateTasksBulk(
+    companyId: string,
+    categoryId: string,
+    rows: { description: string; numMen: number; hoursPerMan: number }[],
+  ): Promise<any[] | null>;
   updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any>;
   deleteLabourEstimateTask(id: string): Promise<boolean>;
   reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void>;
@@ -11829,6 +11834,67 @@ export class DbStorage implements IStorage {
       return row;
     } catch (error) {
       console.error("Database error in createLabourEstimateTask:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Appends a pasted block of tasks in ONE insert.
+   *
+   * One statement rather than a loop: the DB is in us-east-1 and this app runs
+   * from AU, so a per-row round trip turns a 20-row paste into ~8 seconds.
+   *
+   * Unlike its single-row sibling this checks ownership. The category id
+   * arrives from the client, and nothing downstream re-checks it, so without
+   * the join below any signed-in user could append rows to another company's
+   * labour estimate. Returns null when the category is not the caller's.
+   */
+  async createLabourEstimateTasksBulk(
+    companyId: string,
+    categoryId: string,
+    rows: { description: string; numMen: number; hoursPerMan: number }[],
+  ): Promise<any[] | null> {
+    try {
+      const [owned] = await db
+        .select({ id: schema.labourEstimateCategories.id })
+        .from(schema.labourEstimateCategories)
+        .innerJoin(
+          schema.labourEstimates,
+          eq(schema.labourEstimateCategories.labourEstimateId, schema.labourEstimates.id),
+        )
+        .where(
+          and(
+            eq(schema.labourEstimateCategories.id, categoryId),
+            eq(schema.labourEstimates.companyId, companyId),
+          ),
+        )
+        .limit(1);
+      if (!owned) return null;
+      if (rows.length === 0) return [];
+
+      // Append: existing rows keep their positions and the block lands after
+      // them, so a paste can never reorder or overwrite what is already there.
+      const existing = await db
+        .select({ sortOrder: schema.labourEstimateTasks.sortOrder })
+        .from(schema.labourEstimateTasks)
+        .where(eq(schema.labourEstimateTasks.categoryId, categoryId));
+      const nextOrder = existing.reduce((max, r) => Math.max(max, (r.sortOrder ?? 0) + 1), 0);
+
+      return await db
+        .insert(schema.labourEstimateTasks)
+        .values(
+          rows.map((r, i) => ({
+            categoryId,
+            description: r.description,
+            numMen: r.numMen,
+            hoursPerMan: r.hoursPerMan,
+            totalHours: r.numMen * r.hoursPerMan,
+            sortOrder: nextOrder + i,
+          })),
+        )
+        .returning();
+    } catch (error) {
+      console.error("Database error in createLabourEstimateTasksBulk:", error);
       throw error;
     }
   }

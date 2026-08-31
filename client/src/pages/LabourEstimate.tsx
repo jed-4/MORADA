@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -50,6 +50,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { LabourEstimate, LabourEstimateCategory, LabourEstimateTask, Project } from "@shared/schema";
+import { parseLabourPaste, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
@@ -361,6 +362,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const suppressBlurRef = useRef(false);
+  const taskListRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -465,6 +467,16 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     onError: () => toast({ title: "Failed to add task", variant: "destructive" }),
   });
 
+  const pasteTasksMutation = useMutation({
+    mutationFn: (rows: { description: string; numMen: number; hoursPerMan: number }[]) =>
+      apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/bulk`, "POST", { rows }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
+    onError: () => toast({ title: "Failed to paste tasks", variant: "destructive" }),
+  });
+
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId: string) => apiRequest(`/api/labour-estimate-tasks/${taskId}`, "DELETE"),
     onSuccess: () => {
@@ -479,12 +491,78 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
   });
 
+  /**
+   * Paste a block of rows straight out of a spreadsheet.
+   *
+   * The listener is on `document` rather than the grid, because after clicking
+   * about the page focus is usually on <body> and a container-scoped handler
+   * would simply never fire — which reads as "paste is broken".
+   *
+   * That breadth needs three guards:
+   *  - an editable target keeps its own paste. Typing into a cell and pasting a
+   *    task name must stay a normal paste, not create rows.
+   *  - the panel must be ON SCREEN. EstimateDetail renders every tab at once and
+   *    hides the inactive ones with `hidden`, so this component is mounted while
+   *    you are on the Estimate tab; without the offsetParent check, pasting over
+   *    there would silently append labour tasks. offsetParent is null under
+   *    display:none.
+   *  - the payload must contain a tab or a newline, i.e. actually be a block.
+   *    Otherwise an incidental Cmd+V of one word becomes a task.
+   */
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!effectiveCatId) return;
+
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (!taskListRef.current || taskListRef.current.offsetParent === null) return;
+
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text.includes("\t") && !text.includes("\n")) return;
+
+      const parsed = parseLabourPaste(text);
+      if (parsed.rows.length === 0) return;
+
+      e.preventDefault();
+
+      if (parsed.rows.length > MAX_PASTE_ROWS) {
+        toast({
+          title: "That paste is too big",
+          description: `${parsed.rows.length} rows — the limit is ${MAX_PASTE_ROWS}. Paste it in a few goes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Say what was dropped. A quietly discarded header row or a fourth column
+      // that did not come across is the kind of thing you only notice later.
+      const notes: string[] = [];
+      if (parsed.skippedHeader) notes.push("header row skipped");
+      if (parsed.skippedBlank) notes.push(`${parsed.skippedBlank} row(s) had no description`);
+      if (parsed.extraColumns > 0) {
+        notes.push(`${parsed.extraColumns} extra column(s) ignored — Total Hrs is calculated`);
+      }
+
+      pasteTasksMutation.mutate(parsed.rows, {
+        onSuccess: () =>
+          toast({
+            title: `Added ${parsed.rows.length} task${parsed.rows.length === 1 ? "" : "s"} to ${selectedCat?.name ?? "the category"}`,
+            description: notes.length ? notes.join(" · ") : undefined,
+          }),
+      });
+    };
+
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [effectiveCatId, selectedCat?.name, pasteTasksMutation, toast]);
+
   const applyTemplateMutation = useMutation({
     mutationFn: () => apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/apply-template`, "POST", { labourEstimateId: estimate!.id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
-      setMode('project');
+      // No setMode here: this panel is project-only (`mode` is a const), so the
+      // call had no binding and threw before the toast ever ran.
       toast({ title: "Template applied" });
     },
     onError: () => toast({ title: "No template tasks for this category", variant: "destructive" }),
@@ -874,7 +952,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           </div>
 
           {/* Task rows */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" ref={taskListRef}>
             {!selectedCat ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
