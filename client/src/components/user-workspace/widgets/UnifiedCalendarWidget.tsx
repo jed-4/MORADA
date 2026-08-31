@@ -13,8 +13,6 @@ import {
   CalendarDays,
   Timer,
   Bell,
-  List,
-  CalendarRange,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
@@ -40,10 +38,12 @@ import type { Task } from "@shared/schema";
  */
 type WidgetCalendarView = "day" | "week" | "agenda";
 
-const VIEW_OPTIONS: { value: WidgetCalendarView; label: string; icon: typeof Calendar; title: string }[] = [
-  { value: "agenda", label: "Agenda", icon: List, title: "Agenda view" },
-  { value: "day", label: "Day", icon: Calendar, title: "Day view" },
-  { value: "week", label: "Week", icon: CalendarRange, title: "Week view" },
+/** Offered in the config panel only — an always-visible switcher inside a tile
+ *  costs a row of chrome to change a setting that rarely changes. */
+const VIEW_OPTIONS: { value: WidgetCalendarView; label: string }[] = [
+  { value: "agenda", label: "Agenda" },
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
 ];
 
 /** Layouts that earlier versions of this widget persisted. */
@@ -82,7 +82,7 @@ function toCalendarEvent(item: CalendarItem): CalendarEvent {
   };
 }
 
-export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
   const { toast } = useToast();
@@ -178,6 +178,62 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
     const end = endOfWeek(currentDate, { weekStartsOn: weekStartDay });
     return `${formatInTimezone(start, effectiveTimezone, { month: "short", day: "numeric" })} - ${formatInTimezone(end, effectiveTimezone, { month: "short", day: "numeric" })}`;
   }, [view, currentDate, effectiveTimezone, weekStartDay]);
+
+  // The nav lives in the widget card's title row rather than in a bar of its
+  // own: a second strip of chrome inside a dashboard tile costs more height
+  // than the content it labels. View switching moves to the config panel.
+  useEffect(() => {
+    onSetHeaderActions?.(
+      <div className="flex items-center gap-0.5">
+        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToPrev} aria-label="Previous">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={goToToday}>
+          {view === "day" ? "Today" : "This week"}
+        </Button>
+        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToNext} aria-label="Next">
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <span className="ml-1 text-[11px] font-medium tabular-nums whitespace-nowrap">{dateLabel}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className={`relative ml-1 p-1 rounded-sm flex items-center justify-center ${
+                isGoogleConnected ? '' : 'hover-elevate active-elevate-2 cursor-pointer'
+              } ${connectingGoogle ? 'opacity-50' : ''}`}
+              disabled={connectingGoogle}
+              onClick={async () => {
+                if (isGoogleConnected || connectingGoogle) return;
+                setConnectingGoogle(true);
+                try {
+                  const response = await fetch("/api/google-calendar/auth-url");
+                  const data = await response.json();
+                  if (data.authUrl) window.location.href = data.authUrl;
+                } catch {
+                  toast({ title: "Could not connect", description: "Failed to start Google Calendar connection. Please try again.", variant: "destructive" });
+                } finally {
+                  setConnectingGoogle(false);
+                }
+              }}
+            >
+              <SiGoogle className={`h-3 w-3 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
+              <span
+                className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background ${
+                  isGoogleConnected ? 'bg-bp-green' : 'bg-muted-foreground/40'
+                }`}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {isGoogleConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
+          </TooltipContent>
+        </Tooltip>
+      </div>,
+    );
+    // Deliberately keyed on values, not identities: a new element every render
+    // would re-fire this against the parent's state and loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, dateLabel, isGoogleConnected, connectingGoogle]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -284,79 +340,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
   }
 
   return (
-    <div className="flex flex-col h-full -m-3 overflow-hidden">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b bg-muted/30">
-        <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToPrev} aria-label="Previous">
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToToday}>
-            {view === "day" ? "Today" : "This Week"}
-          </Button>
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToNext} aria-label="Next">
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
-          <span className="text-xs font-medium ml-1">
-            {dateLabel}
-            {view === "day" && isTodayInTimezone(currentDate, effectiveTimezone) && (
-              <Badge variant="secondary" className="ml-1.5 text-data px-1 py-0">Today</Badge>
-            )}
-            {events.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-data px-1 py-0">{events.length}</Badge>
-            )}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className={`relative p-1 rounded-sm flex items-center justify-center ${
-                  isGoogleConnected ? '' : 'hover-elevate active-elevate-2 cursor-pointer'
-                } ${connectingGoogle ? 'opacity-50' : ''}`}
-                disabled={connectingGoogle}
-                onClick={async () => {
-                  if (isGoogleConnected || connectingGoogle) return;
-                  setConnectingGoogle(true);
-                  try {
-                    const response = await fetch("/api/google-calendar/auth-url");
-                    const data = await response.json();
-                    if (data.authUrl) {
-                      window.location.href = data.authUrl;
-                    }
-                  } catch {
-                    toast({ title: "Could not connect", description: "Failed to start Google Calendar connection. Please try again.", variant: "destructive" });
-                  } finally {
-                    setConnectingGoogle(false);
-                  }
-                }}
-              >
-                <SiGoogle className={`h-3 w-3 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
-                <span
-                  className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background ${
-                    isGoogleConnected ? 'bg-bp-green' : 'bg-muted-foreground/40'
-                  }`}
-                />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {isGoogleConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
-            </TooltipContent>
-          </Tooltip>
-          <div className="flex items-center gap-0.5 border rounded-md p-0.5">
-            {VIEW_OPTIONS.map(({ value, icon: Icon, title }) => (
-              <button
-                key={value}
-                className={`p-1 rounded-sm ${view === value ? 'bg-muted' : ''}`}
-                onClick={() => setView(value)}
-                title={title}
-              >
-                <Icon className="h-3 w-3" />
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
+    <div className="flex flex-col h-full -mx-4 -mb-4 overflow-hidden">
       {isLoading ? (
         <div className="flex-1 px-4 pt-3">
           <WidgetSkeleton rows={4} />

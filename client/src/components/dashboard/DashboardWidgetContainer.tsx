@@ -568,7 +568,7 @@ function PersonalContainer({
   );
 
   const titleNode = (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1">
       <button
         type="button"
         {...dragHandleProps}
@@ -598,9 +598,9 @@ function PersonalContainer({
         accent={accent}
         locked={locked}
         lockedMessage={lockedMessage}
+        headerLeft={titleNode}
         headerRight={
           <div className="flex items-center gap-1">
-            {titleNode}
             {headerActions}
             {headerRight}
           </div>

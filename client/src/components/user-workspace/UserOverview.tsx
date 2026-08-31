@@ -145,12 +145,16 @@ function SortableWidget({
         onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
         dragHandleProps={{ ...attributes, ...listeners }}
         onResizeEnd={handleResizeEnd}
-        dimensions={
-          widget.dimensions ?? {
-            columns: definition.defaultColumns,
-            height: definition.defaultRowSpan ? definition.defaultRowSpan * 120 : undefined,
-          }
-        }
+        // Fall back per field, not on the object: a saved layout carries the
+        // columns it was resized to but usually no height, and `widget.dimensions
+        // ?? {...}` threw the registry's default height away with it — which is
+        // why every widget came up at content height until it was dragged.
+        dimensions={{
+          columns: widget.dimensions?.columns ?? definition.defaultColumns,
+          height:
+            widget.dimensions?.height ??
+            (definition.defaultRowSpan ? definition.defaultRowSpan * 120 : undefined),
+        }}
         isResizing={isResizing}
         setIsResizing={setIsResizing}
         themeClassName={themeStyle?.className}
