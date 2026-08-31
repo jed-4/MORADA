@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { FileText, Plus, ChevronLeft, AlertCircle, Trash2, ExternalLink, ArrowRight } from "lucide-react";
+import { FileText, Plus, ChevronLeft, AlertCircle, Trash2, ExternalLink } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -114,7 +114,7 @@ function EmojiPicker({ value, onChange, large }: { value: string; onChange: (v: 
   );
 }
 
-export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxNotes, setConfigMaxNotes] = useState(widget.config?.maxNotes || 3);
   const [, navigate] = useLocation();
@@ -253,42 +253,30 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
     else if (activeNote) updateNoteMutation.mutate(activeNote);
   };
 
-  // Header row: + opens the drawer on a new note; hover arrow opens all notes
   useEffect(() => {
     onSetHeaderActions?.(
-      <>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="default"
-              className="h-6 w-6"
-              onClick={openNewNote}
-              data-testid="notes-widget-add"
-              aria-label="Add note"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Add note</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={openList}
-              data-testid="notes-widget-open-all"
-              aria-label="View all notes"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All notes</TooltipContent>
-        </Tooltip>
-      </>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="default"
+            className="h-6 w-6"
+            onClick={openNewNote}
+            data-testid="notes-widget-add"
+            aria-label="Add note"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Add note</TooltipContent>
+      </Tooltip>
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.({ label: "All notes", onClick: openList });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

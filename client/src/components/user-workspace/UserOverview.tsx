@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { User, DashboardTheme } from "@shared/schema";
-import type { Widget } from "@/types/widgets";
+import type { Widget, WidgetTitleAction } from "@/types/widgets";
 import DashboardThemeSettings from "../DashboardThemeSettings";
 import { dashboardConfigs, dashboardPersistence } from "../dashboard/DashboardWidgetRegistry";
 import {
@@ -99,6 +99,7 @@ function SortableWidget({
   // component (not lifted) so the setState identity is stable and a widget's
   // registration effect can never loop against a parent's state.
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
+  const [titleAction, setTitleAction] = useState<WidgetTitleAction | null>(null);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id, disabled: isResizing });
@@ -141,6 +142,7 @@ function SortableWidget({
         icon={<definition.icon className="h-3.5 w-3.5" />}
         accent={definition.accent}
         headerActions={headerActions}
+        titleAction={titleAction}
         onRemove={() => onRemove(widget.id)}
         onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
         dragHandleProps={{ ...attributes, ...listeners }}
@@ -167,6 +169,7 @@ function SortableWidget({
           isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
           onSetHeaderActions={setHeaderActions}
+          onSetTitleAction={setTitleAction}
           userId={userId}
         />
       </DashboardWidgetContainer>

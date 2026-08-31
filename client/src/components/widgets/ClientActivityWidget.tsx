@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DollarSign, FileText, MailCheck, ArrowRight } from "lucide-react";
+import { DollarSign, FileText, MailCheck } from "lucide-react";
 import type { Activity } from "@shared/schema";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
@@ -8,7 +8,6 @@ import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget
 import { formatRelativeDistance } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
 const CLIENT_TYPES = new Set(["invoice", "proposal", "estimate", "variation"]);
@@ -35,7 +34,7 @@ function iconFor(type: string) {
   return MailCheck;
 }
 
-export default function ClientActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function ClientActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const [, navigate] = useLocation();
   const limit = (widget.config?.maxItems as number) || 6;
@@ -62,27 +61,9 @@ export default function ClientActivityWidget({ widget, onUpdate, isConfiguring, 
     enabled: !!currentProject?.id,
   });
 
-  // Header row: hover arrow to the project's Activity tab
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(`/projects/${currentProject.id}/activity`)}
-              data-testid="client-activity-open-full"
-              aria-label="Open activity"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All activity</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "All activity", onClick: () => navigate(`/projects/${currentProject.id}/activity`) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

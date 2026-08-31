@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { ArrowRight } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
@@ -10,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
 type RowKey = "total" | "paid" | "outstanding" | "partial" | "draft" | "remaining";
@@ -24,7 +22,7 @@ const ROW_CONFIG: { key: RowKey; configKey: string; label: string }[] = [
   { key: "remaining", configKey: "showRemaining", label: "Remaining to invoice" },
 ];
 
-export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const { metrics, isLoading, isError, formatCurrency, formatPercentage } = useProjectMetrics();
   const allowed = useFinancialPermission();
@@ -46,27 +44,9 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfiguring]);
 
-  // Hover arrow in the widget header → client invoices page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(invoicesPath)}
-              data-testid="invoices-widget-open-full"
-              aria-label="Open invoices"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All invoices</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "All invoices", onClick: () => navigate(invoicesPath) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

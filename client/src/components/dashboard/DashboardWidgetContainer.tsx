@@ -7,7 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Widget, WidgetAccent } from "@/types/widgets";
+import type { Widget, WidgetAccent, WidgetTitleAction } from "@/types/widgets";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState, useRef, useCallback, useEffect, type ReactNode, type CSSProperties } from "react";
@@ -47,6 +47,7 @@ interface ProjectVariantProps {
   onConfigure?: (widgetId: string) => void;
   isConfiguring?: boolean;
   headerActions?: ReactNode;
+  titleAction?: WidgetTitleAction | null;
 }
 
 interface PersonalVariantProps {
@@ -57,6 +58,7 @@ interface PersonalVariantProps {
   children: ReactNode;
   /** Widget-supplied header buttons (matches the project variant). */
   headerActions?: ReactNode;
+  titleAction?: WidgetTitleAction | null;
   onRemove?: () => void;
   onConfigure?: () => void;
   dragHandleProps?: Record<string, unknown>;
@@ -88,6 +90,7 @@ interface BusinessVariantProps {
   locked?: boolean;
   lockedMessage?: string;
   headerExtra?: ReactNode;
+  titleAction?: WidgetTitleAction | null;
   /**
    * Additional menu items rendered inside the ⋯ dropdown, immediately
    * before the Remove entry. Surrounding separators are added automatically.
@@ -246,6 +249,7 @@ function ProjectContainer({
   onConfigure,
   isConfiguring = false,
   headerActions,
+  titleAction,
 }: ProjectVariantProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [currentDimensions, setCurrentDimensions] = useState(widget.dimensions);
@@ -389,6 +393,8 @@ function ProjectContainer({
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
       <WidgetCard
+        onTitleClick={titleAction?.onClick}
+        titleActionLabel={titleAction?.label}
         title={widget.type === "programme" && /programme/i.test(widget.title) ? "Schedule" : widget.title}
         accent={accent}
         headerLeft={headerLeft}
@@ -500,6 +506,7 @@ function PersonalContainer({
   accent = "purple",
   children,
   headerActions,
+  titleAction,
   onRemove,
   onConfigure,
   dragHandleProps,
@@ -567,19 +574,19 @@ function PersonalContainer({
     </DropdownMenu>
   );
 
+  // Grip only — the per-widget icon was decoration that the title already says
+  // in words, and it pushed the title away from the card's edge.
+  void icon;
   const titleNode = (
-    <div className="flex min-w-0 items-center gap-1">
-      <button
-        type="button"
-        {...dragHandleProps}
-        className="-ml-1 cursor-grab rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:bg-muted active:cursor-grabbing"
-        data-testid="widget-drag-handle"
-        aria-label="Drag widget"
-      >
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
-      {icon && <span className="text-bp-muted">{icon}</span>}
-    </div>
+    <button
+      type="button"
+      {...dragHandleProps}
+      className="-ml-1 cursor-grab rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:bg-muted active:cursor-grabbing"
+      data-testid="widget-drag-handle"
+      aria-label="Drag widget"
+    >
+      <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+    </button>
   );
 
   return (
@@ -594,6 +601,8 @@ function PersonalContainer({
       style={{ height: `${heightValue}px`, ...themeStyleOverride }}
     >
       <WidgetCard
+        onTitleClick={titleAction?.onClick}
+        titleActionLabel={titleAction?.label}
         title={title}
         accent={accent}
         locked={locked}
@@ -642,6 +651,7 @@ function BusinessContainer({
   locked = false,
   lockedMessage = "You don't have permission to view this content.",
   headerExtra,
+  titleAction,
   extraMenuItems,
 }: BusinessVariantProps) {
   void icon;
@@ -704,6 +714,8 @@ function BusinessContainer({
       data-testid={`widget-${title.toLowerCase().replace(/\s+/g, "-")}`}
     >
       <WidgetCard
+        onTitleClick={titleAction?.onClick}
+        titleActionLabel={titleAction?.label}
         title={title}
         accent={accent}
         locked={locked}

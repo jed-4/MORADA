@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight } from "lucide-react";
 import type { Budget, Project } from "@shared/schema";
 import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
@@ -139,7 +138,7 @@ export default function ProjectBudgetVsActualWidget({
   onUpdate,
   isConfiguring,
   onCloseConfig,
-  onSetHeaderActions,
+  onSetTitleAction,
 }: WidgetProps) {
   const { currentProject } = useProject();
   const allowed = useFinancialPermission();
@@ -167,27 +166,9 @@ export default function ProjectBudgetVsActualWidget({
     enabled: !!currentProject?.id && allowed,
   });
 
-  // Header row: hover arrow to the budget page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(`/projects/${currentProject.id}/budget`)}
-              data-testid="budget-widget-open-full"
-              aria-label="Open budget"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Budget page</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "Budget page", onClick: () => navigate(`/projects/${currentProject.id}/budget`) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

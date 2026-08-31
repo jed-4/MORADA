@@ -238,7 +238,7 @@ function toggleItemPayload(
   };
 }
 
-export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction }: WidgetProps) {
   const { user: currentUser } = useAuth();
   const maxChecklists = widget.config?.maxChecklists || 10;
   const wrapText = widget.config?.wrapText || false;
@@ -372,68 +372,56 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     onUpdate?.({ ...widget, config: { ...widget.config, [key]: value } });
   };
 
-  // Header row: hide-completed menu + hover arrow opening the drawer
   useEffect(() => {
     onSetHeaderActions?.(
       currentProject ? (
-        <>
-          <Popover open={hideMenuOpen} onOpenChange={setHideMenuOpen}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className={`h-6 w-6 ${anyHideActive ? "text-primary" : ""}`}
-                    data-testid="checklist-widget-toggle-hide-completed"
-                    aria-label="Hide completed"
-                  >
-                    {anyHideActive ? <EyeOff className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  </Button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">Hide completed</TooltipContent>
-            </Tooltip>
-            <PopoverContent className="w-48 p-2" align="end">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Hide completed
-              </p>
-              <div className="space-y-1">
-                {([
-                  { key: "hideCompletedGroups", label: "Groups", value: hideCompletedGroups, set: setHideCompletedGroups },
-                  { key: "hideCompletedChecklists", label: "Checklists", value: hideCompletedChecklists, set: setHideCompletedChecklists },
-                  { key: "hideCompletedItems", label: "Items", value: hideCompletedItems, set: setHideCompletedItems },
-                ] as const).map(opt => (
-                  <div
-                    key={opt.key}
-                    className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
-                    onClick={() => { opt.set(!opt.value); stageHide(opt.key, !opt.value); }}
-                  >
-                    <Checkbox checked={opt.value} className="h-3.5 w-3.5 pointer-events-none" />
-                    <span className="text-xs">{opt.label}</span>
-                  </div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-          <Tooltip>
+        <Popover open={hideMenuOpen} onOpenChange={setHideMenuOpen}>
+        <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-                onClick={openList}
-                data-testid="checklist-widget-view-all"
-                aria-label="Open checklists"
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
+              <PopoverTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`h-6 w-6 ${anyHideActive ? "text-primary" : ""}`}
+                  data-testid="checklist-widget-toggle-hide-completed"
+                  aria-label="Hide completed"
+                >
+                  {anyHideActive ? <EyeOff className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                </Button>
+              </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent side="top">All checklists</TooltipContent>
+            <TooltipContent side="top">Hide completed</TooltipContent>
           </Tooltip>
-        </>
+          <PopoverContent className="w-48 p-2" align="end">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Hide completed
+            </p>
+            <div className="space-y-1">
+              {([
+                { key: "hideCompletedGroups", label: "Groups", value: hideCompletedGroups, set: setHideCompletedGroups },
+                { key: "hideCompletedChecklists", label: "Checklists", value: hideCompletedChecklists, set: setHideCompletedChecklists },
+                { key: "hideCompletedItems", label: "Items", value: hideCompletedItems, set: setHideCompletedItems },
+              ] as const).map(opt => (
+                <div
+                  key={opt.key}
+                  className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
+                  onClick={() => { opt.set(!opt.value); stageHide(opt.key, !opt.value); }}
+                >
+                  <Checkbox checked={opt.value} className="h-3.5 w-3.5 pointer-events-none" />
+                  <span className="text-xs">{opt.label}</span>
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       ) : null,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, hideMenuOpen, hideCompletedGroups, hideCompletedChecklists, hideCompletedItems]);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.({ label: "All checklists", onClick: openList });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id, hideMenuOpen, hideCompletedGroups, hideCompletedChecklists, hideCompletedItems]);
 

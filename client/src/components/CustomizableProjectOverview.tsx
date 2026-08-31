@@ -78,7 +78,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Widget } from "@/types/widgets";
+import { Widget, type WidgetTitleAction } from "@/types/widgets";
 import { dashboardConfigs, dashboardPersistence } from "./dashboard/DashboardWidgetRegistry";
 import DashboardWidgetContainer from "./dashboard/DashboardWidgetContainer";
 
@@ -748,6 +748,7 @@ export default function CustomizableProjectOverview() {
   );
 
   const [widgetHeaderActions, setWidgetHeaderActions] = useState<Record<string, ReactNode>>({});
+  const [widgetTitleActions, setWidgetTitleActions] = useState<Record<string, WidgetTitleAction | null>>({});
 
   const renderWidget = (widget: Widget) => {
     const definition = projectDashboard.getDefinition(widget.type);
@@ -765,6 +766,7 @@ export default function CustomizableProjectOverview() {
         onConfigure={definition.configurable ? setConfiguringWidget : undefined}
         isConfiguring={configuringWidget === widget.id}
         headerActions={widgetHeaderActions[widget.id]}
+        titleAction={widgetTitleActions[widget.id]}
       >
         <ErrorBoundary
           context={`widget:${widget.type}`}
@@ -785,6 +787,9 @@ export default function CustomizableProjectOverview() {
             onCloseConfig={() => setConfiguringWidget(null)}
             onSetHeaderActions={(actions) =>
               setWidgetHeaderActions(prev => ({ ...prev, [widget.id]: actions }))
+            }
+            onSetTitleAction={(action) =>
+              setWidgetTitleActions(prev => ({ ...prev, [widget.id]: action }))
             }
           />
         </ErrorBoundary>

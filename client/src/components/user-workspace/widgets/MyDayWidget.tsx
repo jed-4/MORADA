@@ -176,7 +176,7 @@ function SortableSectionItem({
   );
 }
 
-export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
+export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -228,42 +228,30 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     })
   );
 
-  // Header row: new focus block, collapse/expand all, hover arrow to Tasks
   useEffect(() => {
     onSetHeaderActions?.(
-      <>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6"
-              onClick={() => setShowFocusCreator(true)}
-              data-testid="button-new-focus-block"
-              aria-label="New focus block"
-            >
-              <Clock className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">New focus block</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => setLocation("/tasks")}
-              data-testid="myday-open-tasks"
-              aria-label="Open tasks"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All tasks</TooltipContent>
-        </Tooltip>
-      </>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={() => setShowFocusCreator(true)}
+            data-testid="button-new-focus-block"
+            aria-label="New focus block"
+          >
+            <Clock className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">New focus block</TooltipContent>
+      </Tooltip>
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.({ label: "All tasks", onClick: () => setLocation("/tasks") });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
