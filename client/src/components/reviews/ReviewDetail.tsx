@@ -50,7 +50,7 @@ interface ReviewCmt {
 interface ReviewApproval {
   id: string; decision: string; comment: string | null; decidedByName: string;
   createdAt: string; snapshotCostImpact: string; snapshotBannerText: string | null;
-  acknowledgedVariationRequired: boolean;
+  acknowledgedVariationRequired: boolean; createdVariationId: string | null;
 }
 interface ReviewDetailData {
   id: string; name: string; description: string | null; status: string;
@@ -58,6 +58,7 @@ interface ReviewDetailData {
   costImpactEstimateMode: string | null; costImpactAmountCents: number | null;
   costImpactMinCents: number | null; costImpactMaxCents: number | null;
   costImpactNote: string | null; createVariationOnApproval: boolean;
+  projectId: string;
   currentRevisionId: string | null;
   portalSentAt: string | null;
   portalViewedAt: string | null;
@@ -79,6 +80,18 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
   const { data, isLoading } = useQuery<ReviewDetailData>({
     queryKey: [`/api/reviews/${reviewId}`],
+  });
+
+  // Repair path for the one case the hook cannot recover from itself: the
+  // approval landed but raising the variation failed.
+  const raiseVariation = useMutation({
+    mutationFn: async () => apiRequest(`/api/reviews/${reviewId}/raise-variation`, "POST"),
+    onSuccess: (r: any) => {
+      toast({ title: "Draft variation raised", description: r?.variationNumber ?? undefined });
+      queryClient.invalidateQueries({ queryKey: [`/api/reviews/${reviewId}`] });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Could not raise the variation", description: e.message, variant: "destructive" }),
   });
 
   const commentMutation = useMutation({
@@ -308,6 +321,34 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                       Shown at approval: “{a.snapshotBannerText}”
                       {a.acknowledgedVariationRequired && " · variation acknowledged"}
                     </p>
+                  )}
+                  {a.decision === "approved" && a.createdVariationId && (
+                    <a
+                      href={`/projects/${data.projectId}/variations/${a.createdVariationId}`}
+                      className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                      data-testid="link-created-variation"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Open the draft variation this raised
+                    </a>
+                  )}
+                  {!isClient && a.decision === "approved" && !a.createdVariationId && data.createVariationOnApproval && (
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-destructive" data-testid="variation-missing">
+                        The draft variation was not raised.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs"
+                        onClick={() => raiseVariation.mutate()}
+                        disabled={raiseVariation.isPending}
+                        data-testid="button-raise-variation"
+                      >
+                        {raiseVariation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                        Raise it now
+                      </Button>
+                    </div>
                   )}
                 </li>
               ))}
