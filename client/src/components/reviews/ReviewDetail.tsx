@@ -3,13 +3,18 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft, Paperclip, Send, FileText, Loader2, Upload, Lock,
-  MessageSquare, History, CheckCircle2, Info, Maximize2, Minimize2,
+  MessageSquare, History, CheckCircle2, Info, Maximize2, Minimize2, Archive, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/StatusBadge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { SectionCard } from "@/components/detail/SectionCard";
 import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -87,6 +92,26 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
   // Repair path for the one case the hook cannot recover from itself: the
   // approval landed but raising the variation failed.
+  const closeReview = useMutation({
+    mutationFn: async () => apiRequest(`/api/reviews/${reviewId}/close`, "POST", {}),
+    onSuccess: () => {
+      toast({ title: "Review closed", description: "Filed away without a decision." });
+      queryClient.invalidateQueries({ queryKey: [`/api/reviews/${reviewId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews"] });
+    },
+    onError: (e: Error) => toast({ title: "Could not close the review", description: e.message, variant: "destructive" }),
+  });
+
+  const reopenReview = useMutation({
+    mutationFn: async () => apiRequest(`/api/reviews/${reviewId}/reopen`, "POST", {}),
+    onSuccess: () => {
+      toast({ title: "Review reopened", description: "Issue a revision to send it back to the client." });
+      queryClient.invalidateQueries({ queryKey: [`/api/reviews/${reviewId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews"] });
+    },
+    onError: (e: Error) => toast({ title: "Could not reopen the review", description: e.message, variant: "destructive" }),
+  });
+
   const raiseVariation = useMutation({
     mutationFn: async () => apiRequest(`/api/reviews/${reviewId}/raise-variation`, "POST"),
     onSuccess: (r: any) => {
@@ -185,6 +210,60 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
               {data.portalSentAt ? "Resend link" : "Send link"}
             </button>
           )}
+          {!isClient && terminal && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-reopen-review"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reopen
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reopen this review?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    It goes back to you, not the client — issue a revision to send it out again.
+                    The decision history is kept, and any variation already raised stays raised.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => reopenReview.mutate()}>Reopen</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
+          {!isClient && !terminal && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-close-review"
+                >
+                  <Archive className="w-3 h-3" />
+                  Close
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Close this review?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Files it away without a decision and takes it off the client's list. Nothing is
+                    recorded as approved or declined. You can reopen it later.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => closeReview.mutate()}>Close review</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
           {!isClient && (
             <button
               onClick={() => setIssueOpen(true)}
