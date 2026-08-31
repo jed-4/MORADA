@@ -218,8 +218,13 @@ import {
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
-import { validateCostEstimate, isTerminalReviewStatus } from "@shared/reviewCostImpact";
-import { createReviewerResolver, attributeComment } from "./reviews/reviewerResolver";
+import {
+  validateCostEstimate, isTerminalReviewStatus, costImpactBannerText,
+  requiresVariationAcknowledgement, statusAfterDecision,
+  REVIEW_DECISION_VALUES, REVIEW_BANNER_VERSION, VARIATION_ACKNOWLEDGEMENT_LABEL,
+  REVIEWER_VISIBLE_STATUSES,
+} from "@shared/reviewCostImpact";
+import { createReviewerResolver, attributeComment, attributeDecision } from "./reviews/reviewerResolver";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
@@ -42918,12 +42923,25 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     return false;
   };
 
-  app.get("/api/reviews", requireAuth, requireTeamMember, async (req: any, res) => {
+  app.get("/api/reviews", requireAuth, requireTeamMemberOrClient, async (req: any, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { projectId, status } = req.query as Record<string, string>;
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       const items = await storage.getReviewItems(companyId, projectId || undefined, status || undefined);
+
+      // A draft has not been issued to anyone. The detail route already 404s
+      // one for a reviewer; without the same rule here the list would still
+      // show its name, which is the leak that matters — an unfinished review
+      // the builder is not ready to discuss.
+      //
+      // Allow-list, not a subtraction: a status added later is invisible to the
+      // reviewer until someone deliberately admits it.
+      if (req.user?.userCategory === "client") {
+        const REVIEWER_VISIBLE = new Set(REVIEWER_VISIBLE_STATUSES);
+        return res.json(items.filter((i) => REVIEWER_VISIBLE.has(i.status as any)));
+      }
+
       res.json(items);
     } catch (error) {
       console.error("Error fetching reviews:", error);
@@ -42933,17 +42951,26 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
   // Full detail in one round trip — Neon is ~400ms away, so the detail view
   // must not fan out into four sequential queries.
-  app.get("/api/reviews/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+  app.get("/api/reviews/:id", requireAuth, requireTeamMemberOrClient, async (req: any, res) => {
     try {
       const item = await getOwnedReviewItem(req, res, req.params.id);
       if (!item) return;
 
+      // A draft has not been issued to anyone yet — 404 rather than 403 so the
+      // existence of an unfinished review is not confirmed to the reviewer.
+      if (req.user?.userCategory === "client" && item.status === "draft") {
+        return res.status(404).json({ error: "Review not found" });
+      }
+
+      // A client session is the reviewer. Internal notes are builder-only and
+      // are filtered in the QUERY, not in the projection below — a field the
+      // query never returns cannot be leaked by a later edit to the response.
+      const isReviewer = req.user?.userCategory === "client";
+
       const [revisions, documents, comments, approvals] = await Promise.all([
         storage.getReviewRevisions(item.id),
         storage.getReviewDocuments(item.id),
-        // Team view: internal notes included. Reviewer-facing reads (PR3/PR4)
-        // must NOT pass true here.
-        storage.getReviewComments(item.id, true),
+        storage.getReviewComments(item.id, !isReviewer),
         storage.getReviewApprovals(item.id),
       ]);
 
@@ -43199,7 +43226,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
-  app.post("/api/reviews/:id/comments", requireAuth, requireTeamMember, async (req: any, res) => {
+  app.post("/api/reviews/:id/comments", requireAuth, requireTeamMemberOrClient, async (req: any, res) => {
     try {
       const item = await getOwnedReviewItem(req, res, req.params.id);
       if (!item) return;
@@ -43245,6 +43272,137 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error) {
       console.error("Error posting review comment:", error);
       res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
+  /**
+   * Record the reviewer's decision on the current revision.
+   *
+   * This is the one route where the module's promises are actually kept, so
+   * all four guards live here rather than in the UI:
+   *
+   *   1. THE RED GATE. A 'confirmed' item cannot be approved unless the
+   *      acknowledgement is ticked. The client-side disabled button is UX; this
+   *      is the enforcement, and the ack is persisted so the trail proves it
+   *      was shown.
+   *   2. THE SNAPSHOT. The cost-impact state and the exact banner wording are
+   *      derived HERE from shared/reviewCostImpact.ts and frozen into the row.
+   *      Wording is never accepted from the request — a reviewer could
+   *      otherwise write their own record of what they agreed to.
+   *   3. Decisions are append-only and always name a revision, so "what was
+   *      approved" is never ambiguous.
+   *   4. A terminal item is refused, so a second decision cannot quietly
+   *      overwrite the first.
+   */
+  app.post("/api/reviews/:id/decision", requireAuth, requireTeamMemberOrClient, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const { decision, comment, acknowledgedVariationRequired, decidedByName } = req.body ?? {};
+      if (!REVIEW_DECISION_VALUES.includes(decision)) {
+        return res.status(400).json({ error: "A decision of approved, changes_requested or rejected is required" });
+      }
+      if (!item.currentRevisionId) {
+        return res.status(409).json({ error: "Nothing has been issued for review yet." });
+      }
+      if (isTerminalReviewStatus(item.status)) {
+        return res.status(409).json({
+          error: `This review is already ${item.status}.`,
+          code: "review_terminal",
+        });
+      }
+
+      // ── The red gate ────────────────────────────────────────────────────
+      if (
+        decision === "approved" &&
+        requiresVariationAcknowledgement(item.costImpact) &&
+        acknowledgedVariationRequired !== true
+      ) {
+        return res.status(400).json({
+          error: VARIATION_ACKNOWLEDGEMENT_LABEL,
+          code: "variation_acknowledgement_required",
+        });
+      }
+
+      // ── The snapshot ────────────────────────────────────────────────────
+      // Derived server-side, never taken from the request body.
+      const bannerText = costImpactBannerText(item.costImpact);
+
+      const reviewer = await reviewerResolver.resolveReviewer(item);
+      const attribution = attributeDecision({
+        reviewer,
+        via: "portal_login",
+        sessionUserId: req.user!.id,
+        typedName:
+          typeof decidedByName === "string" && decidedByName.trim()
+            ? decidedByName
+            : [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim() || null,
+      });
+
+      const approval = await storage.createReviewApproval({
+        reviewItemId: item.id,
+        revisionId: item.currentRevisionId,
+        decision,
+        comment: typeof comment === "string" && comment.trim() ? comment.trim().slice(0, 5000) : null,
+        snapshotCostImpact: item.costImpact,
+        snapshotBannerText: bannerText,
+        snapshotBannerVersion: REVIEW_BANNER_VERSION,
+        snapshotEstimateMode: item.costImpactEstimateMode,
+        snapshotEstimateAmountCents: item.costImpactAmountCents,
+        snapshotEstimateMinCents: item.costImpactMinCents,
+        snapshotEstimateMaxCents: item.costImpactMaxCents,
+        snapshotEstimateNote: item.costImpactNote,
+        acknowledgedVariationRequired: acknowledgedVariationRequired === true,
+        ...attribution,
+        decidedIp: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
+        decidedUserAgent: (req.headers["user-agent"] as string)?.slice(0, 500) || null,
+      } as any);
+
+      await storage.updateReviewItem(item.id, companyId, {
+        status: statusAfterDecision(decision),
+        ...(decision === "approved" || decision === "rejected" ? { closedAt: new Date() } : {}),
+      } as any);
+
+      // Audit line + notify the project's team. Non-fatal: the decision is
+      // already recorded and must not be lost to a notification failure.
+      try {
+        const label = decision === "changes_requested" ? "requested changes" : decision;
+        await storage.createReviewComment({
+          reviewItemId: item.id,
+          revisionId: item.currentRevisionId,
+          content: `${attribution.decidedByName} ${label}`,
+          createdByName: "Review log",
+          ...attributeComment({ isSystem: true }),
+          isSystem: true,
+        } as any);
+
+        const team = await storage.getProjectTeamMembers(item.projectId);
+        for (const member of team) {
+          if ((member as any).userCategory && (member as any).userCategory !== "team") continue;
+          const notification = await storage.createNotification({
+            userId: member.id,
+            companyId,
+            type: "review_decision",
+            title: `Client ${label}: ${item.name}`,
+            message: `${attribution.decidedByName} ${label} on ${item.name}`,
+            link: `/projects/${item.projectId}/reviews/${item.id}`,
+            entityType: "review",
+            entityId: item.id,
+            isRead: false,
+            createdByUserId: null,
+          });
+          emitNotification(member.id, notification);
+        }
+      } catch (_notifyErr) {
+        // Non-fatal
+      }
+
+      res.status(201).json(approval);
+    } catch (error) {
+      console.error("Error recording review decision:", error);
+      res.status(500).json({ error: "Failed to record the decision" });
     }
   });
 

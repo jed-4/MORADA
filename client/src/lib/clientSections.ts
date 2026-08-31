@@ -23,6 +23,7 @@ export interface SectionPermission {
 export const TAB_PERMISSIONS: Record<string, SectionPermission> = {
   schedule: { keys: ["projects.schedule"] },
   selections: { keys: ["projects.selections"] },
+  reviews: { keys: ["projects.reviews"] },
   allowances: { keys: ["projects.selections"] },
   variations: { keys: ["projects.variations"] },
   "client-invoices": { keys: ["projects.invoices"] },
@@ -45,6 +46,7 @@ export const TAB_PERMISSIONS: Record<string, SectionPermission> = {
 export const SIDEBAR_TITLE_TO_TAB: Record<string, string> = {
   Schedule: "schedule",
   Selections: "selections",
+  Reviews: "reviews",
   Allowances: "allowances",
   Variations: "variations",
   "Client Invoices": "client-invoices",
@@ -74,6 +76,8 @@ export const SIDEBAR_TITLE_TO_TAB: Record<string, string> = {
  * have permission for is where they land on their project.
  */
 export const CLIENT_LANDING_TAB_ORDER = [
+  // First: the section that is waiting on the client, not just informing them.
+  "reviews",
   "schedule",
   "selections",
   "variations",

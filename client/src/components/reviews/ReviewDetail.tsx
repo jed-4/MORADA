@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { ReviewCostBanner } from "./ReviewCostBanner";
 import { IssueRevisionDialog } from "./IssueRevisionDialog";
 import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCostImpact";
+import { useClientPortal } from "@/hooks/use-client-portal";
+import { ReviewDecisionPanel } from "./ReviewDecisionPanel";
 
 /**
  * The builder's view of one review item.
@@ -26,8 +28,10 @@ import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCo
  * its revisions (each with its documents), comments and approvals in one round
  * trip — Neon is ~400ms away, so the detail view must not fan out.
  *
- * This is the TEAM view: internal comments are visible and marked. The
- * client-facing rendering of the same data is PR3 and deliberately not here.
+ * ONE component serves both sides. The reviewer sees the same revisions,
+ * documents and conversation the builder does, minus the builder-only
+ * controls — and the internal comments are filtered by the SERVER, not hidden
+ * here, so a rendering mistake cannot leak them.
  */
 
 interface ReviewDoc {
@@ -62,6 +66,7 @@ const fmtBytes = (n: number | null) =>
 
 export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: () => void }) {
   const { toast } = useToast();
+  const { isClient } = useClientPortal();
   const [comment, setComment] = useState("");
   const [internal, setInternal] = useState(true);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -75,7 +80,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
     mutationFn: async () =>
       apiRequest(`/api/reviews/${reviewId}/comments`, "POST", {
         content: comment.trim(),
-        isInternal: internal,
+        isInternal: isClient ? false : internal,
       }),
     onSuccess: () => {
       setComment("");
@@ -147,7 +152,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             </Badge>
           )}
           <StatusBadge status={data.status} data-testid="review-detail-status" />
-          <Button
+          {!isClient && <Button
             size="sm"
             onClick={() => setIssueOpen(true)}
             disabled={terminal}
@@ -156,7 +161,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
           >
             {terminal && <Lock className="mr-2 h-3.5 w-3.5" />}
             {data.revisions.length === 0 ? "Issue Rev A" : "Issue next revision"}
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -174,11 +179,15 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
 
-        {data.createVariationOnApproval && (
+        {!isClient && data.createVariationOnApproval && (
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5" />
             A draft variation will be raised when the client approves this.
           </p>
+        )}
+
+        {isClient && data.status === "awaiting_review" && (
+          <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
         )}
 
         <SectionCard
@@ -187,7 +196,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
           icon={<Paperclip className="h-3.5 w-3.5" />}
           accent="teal"
           count={data.revisions.reduce((n, r) => n + r.documents.length, 0)}
-          actions={
+          actions={ isClient ? null : (
             <>
               <input
                 ref={fileRef}
@@ -214,7 +223,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 Attach
               </Button>
             </>
-          }
+          )}
         >
           {current?.documents.length ? (
             <ul className="divide-y">
@@ -337,10 +346,12 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 data-testid="input-review-comment"
               />
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={internal} onCheckedChange={(v) => setInternal(v === true)} data-testid="checkbox-internal-comment" />
-                  <span className="text-xs text-muted-foreground">Internal only — the client never sees this</span>
-                </label>
+                {isClient ? <span /> : (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={internal} onCheckedChange={(v) => setInternal(v === true)} data-testid="checkbox-internal-comment" />
+                    <span className="text-xs text-muted-foreground">Internal only — the client never sees this</span>
+                  </label>
+                )}
                 <Button
                   size="sm"
                   onClick={() => commentMutation.mutate()}
