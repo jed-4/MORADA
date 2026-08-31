@@ -36,7 +36,8 @@ export function SignatureSection({
       flex: 1,
       padding: 12,
       backgroundColor: isS2 ? resolvedColor + '0a' : 'transparent',
-      borderRadius: isS2 ? 4 : 0,
+      // react-pdf throws on a numeric 0 radius — omit it instead
+      borderRadius: isS2 ? 4 : undefined,
     },
     line: {
       borderBottom: `${isS2 ? 2 : 1}px solid ${resolvedColor}`,
