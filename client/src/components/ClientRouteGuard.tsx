@@ -23,6 +23,13 @@ import { useClientPortal } from "@/hooks/use-client-portal";
 const CLIENT_GLOBAL_PATHS = ["/", "/profile", "/privacy", "/terms"];
 
 function deniedSection(pathname: string, canSeeTab: (id: string) => boolean): boolean {
+  // Public portal links are token-authenticated and are not part of the app's
+  // navigation, so they must render for ANY visitor — including a client who
+  // happens to be logged in. Without this, a client who follows an emailed
+  // selection / variation / review link while signed in is told they have no
+  // access to a page that was addressed to them personally.
+  if (pathname.startsWith("/portal/")) return false;
+
   const projectMatch = pathname.match(/^\/projects\/[^/]+(?:\/([^/?#]+))?/);
   if (projectMatch) {
     const section = projectMatch[1];

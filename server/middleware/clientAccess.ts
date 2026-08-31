@@ -379,6 +379,18 @@ export async function clientAccessGate(
   }
 
   const path = req.path;
+
+  // Public, token-authenticated portal endpoints are outside this gate's remit.
+  // It exists to contain what a SESSION can reach; /api/portal/* is reachable
+  // by any anonymous visitor holding the link, so exempting a signed-in client
+  // grants them nothing they could not get by logging out — while without the
+  // exemption a client who follows an emailed link while signed in is refused
+  // the very document that was addressed to them. Each portal route does its
+  // own token lookup and projection.
+  if (path.startsWith("/portal/")) {
+    next();
+    return;
+  }
   const method = req.method.toUpperCase();
   const rule = matchRule(method, path);
 
