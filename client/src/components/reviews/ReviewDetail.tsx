@@ -493,6 +493,25 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
 
   return (
     <div className="space-y-3 pb-1" data-testid="review-information">
+        {/* The page's own title. The toolbar carries the name too, but that is
+            breadcrumb-scale context for when you have scrolled — a page still
+            needs to announce what it is before it starts telling you about it.
+            Status sits with the title because "what is this" and "where is it
+            up to" are one question. */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold leading-tight truncate" data-testid="review-page-title">
+              {data.name}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {current
+                ? `${current.revisionLabel} · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}`
+                : "No revision issued yet"}
+            </p>
+          </div>
+          <StatusBadge status={data.status} className="mt-0.5 flex-shrink-0" data-testid="review-detail-status" />
+        </div>
+
         {data.description && (
           <p className="text-sm text-muted-foreground">{data.description}</p>
         )}
@@ -509,10 +528,6 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
         />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3 pt-1 pb-3 border-b border-border">
-          <Fact label="Status">
-            <StatusBadge status={data.status} data-testid="review-detail-status" />
-          </Fact>
-
           <Fact label="Current revision">
             {current ? (
               <span className="flex items-center gap-1.5">
