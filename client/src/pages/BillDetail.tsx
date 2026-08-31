@@ -852,12 +852,33 @@ export default function BillDetail() {
   const sheetPreviewUrlRef = useRef<string | null>(null);
   sheetPreviewUrlRef.current = sheetPreviewUrl;
   const reopenPreviewRef = useRef(false);
+  const previewBillIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const previousId = previewBillIdRef.current;
+    previewBillIdRef.current = id;
     reopenPreviewRef.current = !!sheetPreviewUrlRef.current;
     setSheetPreviewUrl(null);
     setSheetPreviewFilename("");
     setModalPreviewFile(null);
     setFullscreenPreview(false);
+    // Only on a genuine bill-to-bill swap, never on first mount.
+    //
+    // The attachment list is local state hydrated from the bill query, and that
+    // query is keyed on the id — so the moment the id changes `bill` goes
+    // undefined and the hydration effect stops running, leaving these holding
+    // the OUTGOING bill's paths. Clearing the preview without clearing these
+    // too let the re-open below fire against the previous bill's attachments
+    // and put its document straight back in the pane, which is why "Approve &
+    // next" still showed the invoice you had just approved.
+    //
+    // Guarded on a real id transition because the hydration effect is declared
+    // above this one: on mount it populates the attachments first, so clearing
+    // unconditionally would wipe them for a bill served from cache and nothing
+    // would refill them.
+    if (previousId !== undefined && previousId !== id) {
+      setAttachmentUrls([]);
+      setAttachmentMeta({});
+    }
   }, [id]);
   useEffect(() => {
     if (!reopenPreviewRef.current || sheetPreviewUrl || attachmentUrls.length === 0) return;
