@@ -43486,6 +43486,116 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  /**
+   * File a review away without a decision.
+   *
+   * Not every review ends in an approval — a set of plans gets superseded, a
+   * job changes, the client answers over the phone. Without this the only exits
+   * were "approved" and "rejected", so those items sat in the open list forever
+   * and the builder's "N open" count slowly stopped meaning anything.
+   *
+   * Deliberately NOT a decision: nothing is written to review_approvals, because
+   * closing is the builder's filing, not the client's answer. The status is set
+   * directly here rather than through PATCH, which strips status on purpose so
+   * a status can only ever move through a route that understands the rules.
+   */
+  app.post("/api/reviews/:id/close", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      if (isTerminalReviewStatus(item.status)) {
+        return res.status(409).json({
+          error: `This review is already ${item.status}.`,
+          code: "review_terminal",
+        });
+      }
+
+      const updated = await storage.updateReviewItem(item.id, companyId, {
+        status: "closed",
+        closedAt: new Date(),
+      } as any);
+
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
+      try {
+        await storage.createReviewComment({
+          reviewItemId: item.id,
+          revisionId: item.currentRevisionId,
+          content: reason
+            ? `Closed without a decision — ${reason}`
+            : "Closed without a decision",
+          createdByName: "Review log",
+          ...attributeComment({ isSystem: true }),
+          isSystem: true,
+        } as any);
+      } catch (_logErr) { /* non-fatal */ }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error closing review:", error);
+      res.status(500).json({ error: "Failed to close the review" });
+    }
+  });
+
+  /**
+   * Reopen a terminal review so work can continue.
+   *
+   * Returns it to the BUILDER, not the client: a reopened review goes to
+   * changes_requested, so the next thing that happens is the builder issuing a
+   * revision — which is what moves it back in front of the client. Dropping it
+   * straight into awaiting_review would re-ask the client to decide on a
+   * revision they have already decided on.
+   *
+   * An item closed before anything was issued goes back to draft, since there
+   * is nothing for the client to look at yet.
+   *
+   * The decision history is NOT touched. review_approvals is append-only, and a
+   * past approval remains true — the client did approve that revision, on that
+   * date, against that wording. Reopening adds to the record rather than
+   * editing it, and any variation already raised stays raised.
+   */
+  app.post("/api/reviews/:id/reopen", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      if (!isTerminalReviewStatus(item.status)) {
+        return res.status(409).json({
+          error: `This review is ${item.status} — it is already open.`,
+          code: "review_not_terminal",
+        });
+      }
+
+      const nextStatus = item.currentRevisionId ? "changes_requested" : "draft";
+      const updated = await storage.updateReviewItem(item.id, companyId, {
+        status: nextStatus,
+        closedAt: null,
+      } as any);
+
+      const who = [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim() || "The team";
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
+      try {
+        await storage.createReviewComment({
+          reviewItemId: item.id,
+          revisionId: item.currentRevisionId,
+          content: reason
+            ? `Reopened by ${who} (was ${item.status}) — ${reason}`
+            : `Reopened by ${who} (was ${item.status})`,
+          createdByName: "Review log",
+          ...attributeComment({ isSystem: true }),
+          isSystem: true,
+        } as any);
+      } catch (_logErr) { /* non-fatal */ }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error reopening review:", error);
+      res.status(500).json({ error: "Failed to reopen the review" });
+    }
+  });
+
   app.get("/api/reviews/:id/approvals", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const item = await getOwnedReviewItem(req, res, req.params.id);
