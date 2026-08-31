@@ -226,6 +226,7 @@ import {
 } from "@shared/reviewCostImpact";
 import { createReviewerResolver, attributeComment, attributeDecision, ANONYMOUS_REVIEWER_NAME } from "./reviews/reviewerResolver";
 import { refuseDecision, buildDecisionSnapshot, normaliseDecisionComment, decisionLabel } from "./reviews/decision";
+import { shouldRaiseVariation, buildVariationForReview } from "./reviews/variationHook";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
@@ -42870,6 +42871,37 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   };
 
   /**
+   * Raise the draft variation an approved review promised.
+   *
+   * Called BEFORE the approval row is inserted so createdVariationId can go in
+   * on the insert — review_approvals is append-only by design, and adding an
+   * update path just to backfill one column would give away that guarantee.
+   *
+   * Never throws: the client's approval must not be lost because variation
+   * upkeep failed. It reports instead, and /api/reviews/:id/raise-variation is
+   * the repair path.
+   */
+  const raiseReviewVariation = async (
+    item: any,
+  ): Promise<{ variationId: string | null; error: string | null }> => {
+    try {
+      // Idempotency. The terminal-status check already stops a second decision,
+      // so this is the guard against a genuine double-submit race.
+      const existing = await storage.getReviewApprovals(item.id);
+      const already = existing.find((a) => a.createdVariationId);
+      if (already) return { variationId: already.createdVariationId!, error: null };
+
+      const variation = await storage.createVariation(
+        buildVariationForReview(item, Date.now()) as any,
+      );
+      return { variationId: variation.id, error: null };
+    } catch (error: any) {
+      console.error("Failed to raise the variation for review", item.id, error);
+      return { variationId: null, error: error?.message ?? "unknown error" };
+    }
+  };
+
+  /**
    * Fields the client may never set directly. Token/viewed stamps, the current
    * revision pointer and authorship are all server-owned; status moves through
    * issuing a revision or recording a decision, never through a raw PATCH.
@@ -43327,6 +43359,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             : [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim() || null,
       });
 
+      // The promise the builder ticked. Runs before the insert so the link is
+      // written atomically with the decision rather than backfilled.
+      const raised = shouldRaiseVariation(item, decision)
+        ? await raiseReviewVariation(item)
+        : { variationId: null, error: null };
+
       const approval = await storage.createReviewApproval({
         reviewItemId: item.id,
         revisionId: item.currentRevisionId,
@@ -43335,6 +43373,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         ...buildDecisionSnapshot(item),
         acknowledgedVariationRequired: acknowledgedVariationRequired === true,
         ...attribution,
+        createdVariationId: raised.variationId,
         decidedIp: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
         decidedUserAgent: (req.headers["user-agent"] as string)?.slice(0, 500) || null,
       } as any);
@@ -43351,7 +43390,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         await storage.createReviewComment({
           reviewItemId: item.id,
           revisionId: item.currentRevisionId,
-          content: `${attribution.decidedByName} ${label}`,
+          content: raised.variationId
+            ? `${attribution.decidedByName} ${label} — draft variation raised`
+            : raised.error
+              ? `${attribution.decidedByName} ${label} — the draft variation could not be raised, please add it manually`
+              : `${attribution.decidedByName} ${label}`,
           createdByName: "Review log",
           ...attributeComment({ isSystem: true }),
           isSystem: true,
@@ -43365,7 +43408,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             companyId,
             type: "review_decision",
             title: `Client ${label}: ${item.name}`,
-            message: `${attribution.decidedByName} ${label} on ${item.name}`,
+            message: raised.error
+              ? `${attribution.decidedByName} ${label} on ${item.name} — the draft variation could NOT be raised, add it manually`
+              : raised.variationId
+                ? `${attribution.decidedByName} ${label} on ${item.name} — a draft variation was raised`
+                : `${attribution.decidedByName} ${label} on ${item.name}`,
             link: `/projects/${item.projectId}/reviews/${item.id}`,
             entityType: "review",
             entityId: item.id,
@@ -43382,6 +43429,60 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error) {
       console.error("Error recording review decision:", error);
       res.status(500).json({ error: "Failed to record the decision" });
+    }
+  });
+
+  /**
+   * Repair path: raise the variation an approval should have raised.
+   *
+   * The hook is non-fatal by design — losing a client's approval to a variation
+   * failure would be far worse — but "non-fatal" must not mean "invisible". The
+   * decision log and the builder's notification both say when it failed, and
+   * this is how they fix it without re-approving anything.
+   *
+   * Refuses when a variation already exists, so it cannot be used to raise a
+   * second one.
+   */
+  app.post("/api/reviews/:id/raise-variation", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const approvals = await storage.getReviewApprovals(item.id);
+      const approved = approvals.find((a) => a.decision === "approved");
+      if (!approved) {
+        return res.status(409).json({ error: "This review has not been approved." });
+      }
+      if (approvals.some((a) => a.createdVariationId)) {
+        return res.status(409).json({ error: "A variation has already been raised for this review." });
+      }
+
+      const variation = await storage.createVariation(
+        buildVariationForReview(item, Date.now()) as any,
+      );
+
+      // The approval row is append-only everywhere else; this is the one
+      // deliberate exception, and it only ever fills a column that was null.
+      await db.update(schema.reviewApprovals)
+        .set({ createdVariationId: variation.id })
+        .where(and(
+          eq(schema.reviewApprovals.id, approved.id),
+          isNull(schema.reviewApprovals.createdVariationId),
+        ));
+
+      await storage.createReviewComment({
+        reviewItemId: item.id,
+        revisionId: approved.revisionId,
+        content: `Draft variation raised manually by ${[req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim() || "the team"}`,
+        createdByName: "Review log",
+        ...attributeComment({ isSystem: true }),
+        isSystem: true,
+      } as any);
+
+      res.status(201).json({ variationId: variation.id, variationNumber: variation.variationNumber });
+    } catch (error) {
+      console.error("Error raising the variation for review:", error);
+      res.status(500).json({ error: "Failed to raise the variation" });
     }
   });
 
@@ -43613,6 +43714,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         typedName: typeof clientName === "string" ? clientName : null,
       });
 
+      // Same hook as the logged-in path — an approval from an emailed link
+      // raises the variation exactly as one from a session does.
+      const raised = shouldRaiseVariation(item, decision)
+        ? await raiseReviewVariation(item)
+        : { variationId: null, error: null };
+
       const approval = await storage.createReviewApproval({
         reviewItemId: item.id,
         revisionId: item.currentRevisionId,
@@ -43621,6 +43728,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         ...buildDecisionSnapshot(item),
         acknowledgedVariationRequired: acknowledgedVariationRequired === true,
         ...attribution,
+        createdVariationId: raised.variationId,
         decidedIp: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
         decidedUserAgent: (req.headers["user-agent"] as string)?.slice(0, 500) || null,
       } as any);
@@ -43636,7 +43744,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         await storage.createReviewComment({
           reviewItemId: item.id,
           revisionId: item.currentRevisionId,
-          content: `${attribution.decidedByName} ${label} (via emailed link)`,
+          content: raised.variationId
+            ? `${attribution.decidedByName} ${label} via emailed link — draft variation raised`
+            : raised.error
+              ? `${attribution.decidedByName} ${label} via emailed link — the draft variation could not be raised, please add it manually`
+              : `${attribution.decidedByName} ${label} (via emailed link)`,
           createdByName: "Review log",
           ...attributeComment({ isSystem: true }),
           isSystem: true,
@@ -43650,7 +43762,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             companyId: item.companyId,
             type: "review_decision",
             title: `Client ${label}: ${item.name}`,
-            message: `${attribution.decidedByName} ${label} on ${item.name}`,
+            message: raised.error
+              ? `${attribution.decidedByName} ${label} on ${item.name} — the draft variation could NOT be raised, add it manually`
+              : raised.variationId
+                ? `${attribution.decidedByName} ${label} on ${item.name} — a draft variation was raised`
+                : `${attribution.decidedByName} ${label} on ${item.name}`,
             link: `/projects/${item.projectId}/reviews/${item.id}`,
             entityType: "review",
             entityId: item.id,
