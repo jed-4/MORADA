@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft, Paperclip, Send, FileText, Loader2, Upload, Lock,
-  MessageSquare, History, CheckCircle2, Info,
+  MessageSquare, History, CheckCircle2, Info, Maximize2, Minimize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +78,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
   const [internal, setInternal] = useState(true);
   const [issueOpen, setIssueOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [commentsExpanded, setCommentsExpanded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery<ReviewDetailData>({
@@ -219,9 +220,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         <SectionCard
           title="Documents"
-          variant="card"
-          icon={<Paperclip className="h-3.5 w-3.5" />}
-          accent="teal"
+          variant="editorial"
           count={data.revisions.reduce((n, r) => n + r.documents.length, 0)}
           actions={ isClient ? null : (
             <>
@@ -274,12 +273,32 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         <SectionCard
           title="Comments"
-          variant="card"
-          icon={<MessageSquare className="h-3.5 w-3.5" />}
-          accent="muted"
+          variant="editorial"
           count={visibleComments.length}
+          actions={
+            visibleComments.length > 3 ? (
+              <button
+                onClick={() => setCommentsExpanded((v) => !v)}
+                className="h-6 w-auto px-2 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-toggle-comments"
+              >
+                {commentsExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                {commentsExpanded ? "Collapse" : "Expand"}
+              </button>
+            ) : null
+          }
         >
           <div className="space-y-3">
+            <div
+              className={cn(
+                "space-y-3 pr-1",
+                // Newest is at the bottom, so an uncapped thread buries the
+                // composer under every message ever written. Capped, the reply
+                // box stays one glance away and the history scrolls behind it.
+                commentsExpanded ? "max-h-[70vh] overflow-y-auto" : "max-h-[320px] overflow-y-auto",
+              )}
+              data-testid="review-comment-thread"
+            >
             {visibleComments.length === 0 && (
               <p className="text-sm text-muted-foreground">No comments yet.</p>
             )}
@@ -310,7 +329,9 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
               </div>
             ))}
 
-            <div className="space-y-2 pt-1">
+            </div>
+
+            <div className="space-y-2 pt-1 border-t border-border">
               <Textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -342,7 +363,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         </SectionCard>
 
         {data.approvals.length > 0 && (
-          <SectionCard title="Decisions" variant="card" icon={<CheckCircle2 className="h-3.5 w-3.5" />} accent="sage" count={data.approvals.length}>
+          <SectionCard title="Decisions" variant="editorial" count={data.approvals.length}>
             <ul className="space-y-3">
               {data.approvals.map((a) => (
                 <li key={a.id} className="space-y-1">
@@ -396,9 +417,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         <SectionCard
           title="Revision history"
-          variant="card"
-          icon={<History className="h-3.5 w-3.5" />}
-          accent="primary"
+          variant="editorial"
           count={data.revisions.length}
         >
           {data.revisions.length === 0 ? (
@@ -473,13 +492,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
   const docCount = current?.documents.length ?? 0;
 
   return (
-    <SectionCard
-      title="Review information"
-      variant="card"
-      icon={<Info className="h-3.5 w-3.5" />}
-      accent="primary"
-    >
-      <div className="space-y-3" data-testid="review-information">
+    <div className="space-y-3 pb-1" data-testid="review-information">
         {data.description && (
           <p className="text-sm text-muted-foreground">{data.description}</p>
         )}
@@ -495,7 +508,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
           }}
         />
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 pt-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3 pt-1 pb-3 border-b border-border">
           <Fact label="Status">
             <StatusBadge status={data.status} data-testid="review-detail-status" />
           </Fact>
@@ -562,8 +575,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
               </span>
             </Fact>
           )}
-        </div>
       </div>
-    </SectionCard>
+    </div>
   );
 }
