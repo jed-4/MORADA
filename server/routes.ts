@@ -224,7 +224,8 @@ import {
   REVIEW_DECISION_VALUES, REVIEW_BANNER_VERSION, VARIATION_ACKNOWLEDGEMENT_LABEL,
   REVIEWER_VISIBLE_STATUSES,
 } from "@shared/reviewCostImpact";
-import { createReviewerResolver, attributeComment, attributeDecision } from "./reviews/reviewerResolver";
+import { createReviewerResolver, attributeComment, attributeDecision, ANONYMOUS_REVIEWER_NAME } from "./reviews/reviewerResolver";
+import { refuseDecision, buildDecisionSnapshot, normaliseDecisionComment, decisionLabel } from "./reviews/decision";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
@@ -42981,8 +42982,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         byRevision.set(doc.revisionId, list);
       }
 
+      // The builder needs the reviewer's address to pre-fill the send dialog.
+      // Never resolved for a reviewer session — they do not need to be told
+      // which address the builder holds for them.
+      const reviewer = isReviewer ? null : await reviewerResolver.resolveReviewer(item);
+
       res.json({
         ...item,
+        reviewerName: reviewer?.displayName ?? null,
+        reviewerEmail: reviewer?.email ?? null,
         revisions: revisions.map((rev) => ({ ...rev, documents: byRevision.get(rev.id) ?? [] })),
         comments,
         approvals,
@@ -43301,34 +43309,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!item) return;
 
       const { decision, comment, acknowledgedVariationRequired, decidedByName } = req.body ?? {};
-      if (!REVIEW_DECISION_VALUES.includes(decision)) {
-        return res.status(400).json({ error: "A decision of approved, changes_requested or rejected is required" });
-      }
-      if (!item.currentRevisionId) {
-        return res.status(409).json({ error: "Nothing has been issued for review yet." });
-      }
-      if (isTerminalReviewStatus(item.status)) {
-        return res.status(409).json({
-          error: `This review is already ${item.status}.`,
-          code: "review_terminal",
-        });
-      }
 
-      // ── The red gate ────────────────────────────────────────────────────
-      if (
-        decision === "approved" &&
-        requiresVariationAcknowledgement(item.costImpact) &&
-        acknowledgedVariationRequired !== true
-      ) {
-        return res.status(400).json({
-          error: VARIATION_ACKNOWLEDGEMENT_LABEL,
-          code: "variation_acknowledgement_required",
-        });
-      }
-
-      // ── The snapshot ────────────────────────────────────────────────────
-      // Derived server-side, never taken from the request body.
-      const bannerText = costImpactBannerText(item.costImpact);
+      // The rules live in server/reviews/decision.ts so the portal path (PR4)
+      // enforces exactly the same red gate and freezes exactly the same
+      // snapshot. Two entry points, one rulebook.
+      const refusal = refuseDecision(item, { decision, acknowledgedVariationRequired });
+      if (refusal) return res.status(refusal.status).json(refusal.body);
 
       const reviewer = await reviewerResolver.resolveReviewer(item);
       const attribution = attributeDecision({
@@ -43345,15 +43331,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         reviewItemId: item.id,
         revisionId: item.currentRevisionId,
         decision,
-        comment: typeof comment === "string" && comment.trim() ? comment.trim().slice(0, 5000) : null,
-        snapshotCostImpact: item.costImpact,
-        snapshotBannerText: bannerText,
-        snapshotBannerVersion: REVIEW_BANNER_VERSION,
-        snapshotEstimateMode: item.costImpactEstimateMode,
-        snapshotEstimateAmountCents: item.costImpactAmountCents,
-        snapshotEstimateMinCents: item.costImpactMinCents,
-        snapshotEstimateMaxCents: item.costImpactMaxCents,
-        snapshotEstimateNote: item.costImpactNote,
+        comment: normaliseDecisionComment(comment),
+        ...buildDecisionSnapshot(item),
         acknowledgedVariationRequired: acknowledgedVariationRequired === true,
         ...attribution,
         decidedIp: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
@@ -43368,7 +43347,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       // Audit line + notify the project's team. Non-fatal: the decision is
       // already recorded and must not be lost to a notification failure.
       try {
-        const label = decision === "changes_requested" ? "requested changes" : decision;
+        const label = decisionLabel(decision);
         await storage.createReviewComment({
           reviewItemId: item.id,
           revisionId: item.currentRevisionId,
@@ -43414,6 +43393,365 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error) {
       console.error("Error fetching review approvals:", error);
       res.status(500).json({ error: "Failed to fetch approvals" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CLIENT REVIEWS — emailed direct link + public token portal (PR4)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // One token per ITEM, minted lazily and stable across revisions, so an
+  // emailed link keeps working when the builder issues Rev B. Same model as
+  // selections.portalToken / variations.portalToken.
+  //
+  // Everything below is UNAUTHENTICATED: the token IS the credential. So the
+  // payload is a hand-written projection, never the raw row — see the comment
+  // on projectPortalReview. The same rule the variation portal states.
+
+  /** Load a review by token, or null. Shared by every portal route below. */
+  const reviewByToken = async (token: string) => {
+    if (!token || typeof token !== "string") return null;
+    return (await storage.getReviewItemByPortalToken(token)) ?? null;
+  };
+
+  /**
+   * SECURITY: everything returned here is readable by ANY holder of the link.
+   * Builder-internal data must never be added back — no internal comments, no
+   * reviewer identity beyond what they typed, no other reviews on the project,
+   * and no createVariationOnApproval (that is the builder's own planning).
+   */
+  const projectPortalReview = (item: any) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    status: item.status,
+    dueDate: item.dueDate,
+    costImpact: item.costImpact,
+    costImpactEstimateMode: item.costImpactEstimateMode,
+    costImpactAmountCents: item.costImpactAmountCents,
+    costImpactMinCents: item.costImpactMinCents,
+    costImpactMaxCents: item.costImpactMaxCents,
+    costImpactNote: item.costImpactNote,
+    currentRevisionId: item.currentRevisionId,
+    createdAt: item.createdAt,
+  });
+
+  const portalDocumentView = (doc: any, urlPrefix: string) => ({
+    id: doc.id,
+    revisionId: doc.revisionId,
+    fileName: doc.fileName,
+    mimeType: doc.mimeType,
+    fileSize: doc.fileSize,
+    sortOrder: doc.sortOrder,
+    // Raw /objects/... paths are behind company-authenticated URLs a portal
+    // visitor cannot load, so documents are re-served through the token.
+    filePath: `${urlPrefix}/documents/${doc.id}`,
+  });
+
+  app.get("/api/portal/reviews/:token", async (req, res) => {
+    try {
+      const item = await reviewByToken(req.params.token);
+      if (!item) return res.status(404).json({ error: "Invalid link" });
+      // A draft has not been issued to anyone; the link should not resolve yet.
+      if (item.status === "draft") return res.status(404).json({ error: "Invalid link" });
+
+      const urlPrefix = `/api/portal/reviews/${req.params.token}`;
+      const [revisions, documents, comments, approvals] = await Promise.all([
+        storage.getReviewRevisions(item.id),
+        storage.getReviewDocuments(item.id),
+        storage.getReviewComments(item.id, false), // never internal notes
+        storage.getReviewApprovals(item.id),
+      ]);
+
+      const byRevision = new Map<string, any[]>();
+      for (const doc of documents) {
+        const list = byRevision.get(doc.revisionId) ?? [];
+        list.push(portalDocumentView(doc, urlPrefix));
+        byRevision.set(doc.revisionId, list);
+      }
+
+      // First open. Non-fatal — a failed stamp must not cost the client the page.
+      if (!item.portalViewedAt) {
+        try {
+          await storage.updateReviewItem(item.id, item.companyId, { portalViewedAt: new Date() } as any);
+        } catch (_stampErr) { /* non-fatal */ }
+      }
+
+      const [project, company] = await Promise.all([
+        storage.getProject(item.projectId),
+        storage.getCompany(item.companyId),
+      ]);
+
+      res.json({
+        review: projectPortalReview(item),
+        projectName: project?.name ?? null,
+        companyName: company?.name ?? null,
+        revisions: revisions.map((r) => ({
+          id: r.id,
+          revisionLabel: r.revisionLabel,
+          revisionNumber: r.revisionNumber,
+          notes: r.notes,
+          issuedAt: r.issuedAt,
+          supersededAt: r.supersededAt,
+          documents: byRevision.get(r.id) ?? [],
+        })),
+        comments: comments.map((c) => ({
+          id: c.id,
+          content: c.content,
+          authorType: c.authorType,
+          createdByName: c.createdByName,
+          isSystem: c.isSystem,
+          parentCommentId: c.parentCommentId,
+          createdAt: c.createdAt,
+        })),
+        approvals: approvals.map((a) => ({
+          id: a.id,
+          decision: a.decision,
+          comment: a.comment,
+          decidedByName: a.decidedByName,
+          createdAt: a.createdAt,
+          snapshotBannerText: a.snapshotBannerText,
+          acknowledgedVariationRequired: a.acknowledgedVariationRequired,
+        })),
+      });
+    } catch (error) {
+      console.error("Portal review error:", error);
+      res.status(500).json({ error: "Failed to load the review" });
+    }
+  });
+
+  // Token-scoped document serving.
+  app.get("/api/portal/reviews/:token/documents/:documentId", async (req, res) => {
+    try {
+      // No session, so there is no companyId to scope by — the token IS the
+      // credential, the same model as the selection and variation portals.
+      // Isolation comes from the ownership check below: the document must
+      // belong to the review this token resolves to, so a link holder cannot
+      // read another document — or another tenant's — by quoting its id.
+      const item = await reviewByToken(req.params.token);
+      if (!item || item.status === "draft") return res.status(404).json({ error: "Not found" });
+
+      const doc = await storage.getReviewDocument(req.params.documentId);
+      if (!doc || doc.reviewItemId !== item.id) return res.status(404).json({ error: "Not found" });
+
+      // Stored paths are /objects/company/<cid>/uploads/<id>; the storage
+      // lookup uses the raw form, so strip the company segment.
+      const normalisedPath = (doc.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      console.error("Portal review document error:", error);
+      res.status(500).json({ error: "Failed to load the document" });
+    }
+  });
+
+  app.post("/api/portal/reviews/:token/comments", async (req, res) => {
+    try {
+      // No session, so there is no companyId to scope by — the token is the
+      // credential. The comment can only ever attach to the review this token
+      // resolves to, and isInternal is forced false below so the public
+      // surface cannot author a builder-only note.
+      const item = await reviewByToken(req.params.token);
+      if (!item || item.status === "draft") return res.status(404).json({ error: "Invalid link" });
+
+      const { content, clientName } = req.body ?? {};
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      if (content.length > 5000) return res.status(400).json({ error: "Comment is too long" });
+
+      const comment = await storage.createReviewComment({
+        reviewItemId: item.id,
+        revisionId: item.currentRevisionId,
+        content: content.trim(),
+        createdByName:
+          typeof clientName === "string" && clientName.trim()
+            ? clientName.trim().slice(0, 100)
+            : ANONYMOUS_REVIEWER_NAME,
+        // A token holder is the reviewer; isInternal is forced false so a
+        // builder-only note can never originate from the public surface.
+        isInternal: false,
+        ...attributeComment({ viaToken: true }),
+      } as any);
+
+      res.status(201).json({
+        id: comment.id,
+        content: comment.content,
+        createdByName: comment.createdByName,
+        authorType: comment.authorType,
+        createdAt: comment.createdAt,
+      });
+    } catch (error) {
+      console.error("Portal review comment error:", error);
+      res.status(500).json({ error: "Failed to post the comment" });
+    }
+  });
+
+  /**
+   * A decision made from the emailed link.
+   *
+   * Runs the SAME rulebook as the logged-in route — refuseDecision() and
+   * buildDecisionSnapshot() are shared — so the red gate and the frozen
+   * wording cannot drift between the two entry points. Only the attribution
+   * differs: decidedVia is "portal_token" and there is no session user.
+   */
+  app.post("/api/portal/reviews/:token/decision", async (req, res) => {
+    try {
+      const item = await reviewByToken(req.params.token);
+      if (!item || item.status === "draft") return res.status(404).json({ error: "Invalid link" });
+
+      const { decision, comment, acknowledgedVariationRequired, clientName } = req.body ?? {};
+      const refusal = refuseDecision(item, { decision, acknowledgedVariationRequired });
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+
+      const reviewer = await reviewerResolver.resolveReviewer(item);
+      const attribution = attributeDecision({
+        reviewer,
+        via: "portal_token",
+        sessionUserId: null,
+        typedName: typeof clientName === "string" ? clientName : null,
+      });
+
+      const approval = await storage.createReviewApproval({
+        reviewItemId: item.id,
+        revisionId: item.currentRevisionId,
+        decision,
+        comment: normaliseDecisionComment(comment),
+        ...buildDecisionSnapshot(item),
+        acknowledgedVariationRequired: acknowledgedVariationRequired === true,
+        ...attribution,
+        decidedIp: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
+        decidedUserAgent: (req.headers["user-agent"] as string)?.slice(0, 500) || null,
+      } as any);
+
+      await storage.updateReviewItem(item.id, item.companyId, {
+        status: statusAfterDecision(decision),
+        ...(decision === "approved" || decision === "rejected" ? { closedAt: new Date() } : {}),
+      } as any);
+
+      // Audit line + notify the builder. Non-fatal: the decision is recorded.
+      try {
+        const label = decisionLabel(decision);
+        await storage.createReviewComment({
+          reviewItemId: item.id,
+          revisionId: item.currentRevisionId,
+          content: `${attribution.decidedByName} ${label} (via emailed link)`,
+          createdByName: "Review log",
+          ...attributeComment({ isSystem: true }),
+          isSystem: true,
+        } as any);
+
+        const team = await storage.getProjectTeamMembers(item.projectId);
+        for (const member of team) {
+          if ((member as any).userCategory && (member as any).userCategory !== "team") continue;
+          const notification = await storage.createNotification({
+            userId: member.id,
+            companyId: item.companyId,
+            type: "review_decision",
+            title: `Client ${label}: ${item.name}`,
+            message: `${attribution.decidedByName} ${label} on ${item.name}`,
+            link: `/projects/${item.projectId}/reviews/${item.id}`,
+            entityType: "review",
+            entityId: item.id,
+            isRead: false,
+            createdByUserId: null,
+          });
+          emitNotification(member.id, notification);
+        }
+      } catch (_notifyErr) { /* non-fatal */ }
+
+      res.status(201).json({ id: approval.id, decision: approval.decision });
+    } catch (error) {
+      console.error("Portal review decision error:", error);
+      res.status(500).json({ error: "Failed to record the decision" });
+    }
+  });
+
+  /**
+   * Email the review link to the reviewer.
+   *
+   * Mirrors /api/selections/:id/send-portal: mint the token lazily, build the
+   * URL from the request origin, send as "<Company> via Morada" with the
+   * sender's address as reply-to, then stamp portalSentAt.
+   */
+  app.post("/api/reviews/:id/send", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      if (!item.currentRevisionId) {
+        return res.status(409).json({ error: "Issue a revision before sending the link." });
+      }
+
+      // Default to the assigned reviewer's address; an explicit `to` wins so the
+      // builder can send to a second contact without reassigning the item.
+      const reviewer = await reviewerResolver.resolveReviewer(item);
+      const to = (typeof req.body?.to === "string" && req.body.to.trim()) || reviewer.email || "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) {
+        return res.status(400).json({ error: "A valid recipient email is required" });
+      }
+
+      let token = item.portalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateReviewItem(item.id, companyId, { portalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const url = `${host}/portal/reviews/${token}`;
+
+      const [project, company, revisions] = await Promise.all([
+        storage.getProject(item.projectId),
+        storage.getCompany(companyId),
+        storage.getReviewRevisions(item.id),
+      ]);
+      const current = revisions.find((r) => r.id === item.currentRevisionId) ?? revisions[0];
+      const docCount = (await storage.getReviewDocuments(item.id))
+        .filter((d) => d.revisionId === item.currentRevisionId).length;
+      const fromName = company?.name || "Morada";
+      const banner = costImpactBannerText(item.costImpact);
+      const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+
+      const html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:560px;margin:auto;color:#2C2825">
+          <div style="padding:22px 26px;border:1px solid #EAEAE8;border-radius:12px;background:#FAFAF8">
+            <div style="font-size:13px;color:#7A5FA8;font-weight:700;margin-bottom:14px">${escapeHtml(fromName)}</div>
+            <div style="font-size:19px;font-weight:800;margin-bottom:6px">Ready for your review</div>
+            <div style="font-size:13.5px;color:#6B6560;line-height:1.5;margin-bottom:4px">
+              <b style="color:#2C2825">${escapeHtml(item.name)}</b>${project?.name ? ` — ${escapeHtml(project.name)}` : ""}
+            </div>
+            <div style="font-size:13px;color:#6B6560;margin-bottom:14px">
+              ${escapeHtml(current?.revisionLabel ?? "Rev A")} · ${docCount} document${docCount === 1 ? "" : "s"}${
+                item.dueDate ? ` · please respond by ${new Date(item.dueDate).toLocaleDateString("en-AU")}` : ""
+              }
+            </div>
+            ${banner ? `<div style="font-size:13px;font-weight:600;padding:10px 12px;border-radius:8px;margin-bottom:16px;background:${
+              item.costImpact === "confirmed" ? "#F9EFEC" : "#F8F3E8"
+            };border-left:3px solid ${item.costImpact === "confirmed" ? "#DA998B" : "#D5B772"}">${escapeHtml(banner)}</div>` : ""}
+            ${message
+              ? `<div style="font-size:13.5px;line-height:1.55;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:12px 14px;margin-bottom:18px;white-space:pre-wrap">${escapeHtml(message.slice(0, 2000))}</div>`
+              : ""}
+            <a href="${url}" style="display:inline-block;background:#87749A;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:8px">Open the review</a>
+            <div style="font-size:11px;color:#6B6560;margin-top:16px">Or copy this link: <a href="${url}" style="color:#7A5FA8">${url}</a></div>
+          </div>
+        </div>`;
+
+      await sendGenericEmail({
+        to: to.trim(),
+        subject: `Ready for your review — ${item.name}`,
+        html,
+        from: `${fromName} via Morada <noreply@moradaco.com.au>`,
+        replyTo: req.user.email,
+        userId: req.user.id,
+      });
+
+      const sentAt = new Date();
+      await storage.updateReviewItem(item.id, companyId, { portalSentAt: sentAt } as any);
+      res.json({ success: true, url, sentAt, to: to.trim() });
+    } catch (error) {
+      console.error("Error sending review link:", error);
+      res.status(500).json({ error: "Failed to send the link" });
     }
   });
 

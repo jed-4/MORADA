@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ReviewCostBanner } from "./ReviewCostBanner";
 import { IssueRevisionDialog } from "./IssueRevisionDialog";
+import { SendReviewLinkDialog } from "./SendReviewLinkDialog";
 import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCostImpact";
 import { useClientPortal } from "@/hooks/use-client-portal";
 import { ReviewDecisionPanel } from "./ReviewDecisionPanel";
@@ -58,6 +59,9 @@ interface ReviewDetailData {
   costImpactMinCents: number | null; costImpactMaxCents: number | null;
   costImpactNote: string | null; createVariationOnApproval: boolean;
   currentRevisionId: string | null;
+  portalSentAt: string | null;
+  portalViewedAt: string | null;
+  reviewerEmail?: string | null;
   revisions: ReviewRev[]; comments: ReviewCmt[]; approvals: ReviewApproval[];
 }
 
@@ -70,6 +74,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
   const [comment, setComment] = useState("");
   const [internal, setInternal] = useState(true);
   const [issueOpen, setIssueOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery<ReviewDetailData>({
@@ -152,6 +157,17 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             </Badge>
           )}
           <StatusBadge status={data.status} data-testid="review-detail-status" />
+          {!isClient && data.currentRevisionId && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSendOpen(true)}
+              data-testid="button-send-review-link"
+            >
+              <Send className="mr-2 h-3.5 w-3.5" />
+              {data.portalSentAt ? "Resend link" : "Send link"}
+            </Button>
+          )}
           {!isClient && <Button
             size="sm"
             onClick={() => setIssueOpen(true)}
@@ -368,6 +384,13 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
           </div>
         </SectionCard>
       </div>
+
+      <SendReviewLinkDialog
+        reviewId={reviewId}
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        defaultTo={data.reviewerEmail ?? null}
+      />
 
       <IssueRevisionDialog
         reviewId={reviewId}

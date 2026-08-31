@@ -117,6 +117,7 @@ const RFQPortal = lazy(() => import("@/pages/RFQPortal"));
 const VariationPortal = lazy(() => import("@/pages/VariationPortal"));
 const ProposalPortal = lazy(() => import("@/pages/ProposalPortal"));
 const SelectionPortal = lazy(() => import("@/pages/SelectionPortal"));
+const ReviewPortal = lazy(() => import("@/pages/ReviewPortal"));
 const TradesPortal = lazy(() => import("@/pages/TradesPortal"));
 const ProductLibrary = lazy(() => import("@/pages/ProductLibrary"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
@@ -147,6 +148,7 @@ function Router() {
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
       <Route path="/portal/selections/:token" component={SelectionPortal} />
+      <Route path="/portal/reviews/:token" component={ReviewPortal} />
       <Route path="/portal/project/:token/trades" component={TradesPortal} />
       
       <Route path="/">
@@ -383,6 +385,7 @@ function UnauthenticatedRoutes() {
         <Route path="/portal/variation/:token" component={VariationPortal} />
         <Route path="/portal/proposal/:id" component={ProposalPortal} />
         <Route path="/portal/selections/:token" component={SelectionPortal} />
+        <Route path="/portal/reviews/:token" component={ReviewPortal} />
         <Route path="/portal/project/:token/trades" component={TradesPortal} />
         <Route path="/" component={AuthPage} />
         <Route component={AuthPage} />
