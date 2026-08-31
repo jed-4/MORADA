@@ -22556,6 +22556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const allProjects = await storage.getProjects(req.user.companyId);
       const allCostCodes = await storage.getCostCodes(req.user.companyId);
+      const poProject = allProjects.find((p: any) => p.id === projectId);
 
       for (let i = 0; i < timesheets.length; i++) {
         const ts = timesheets[i];
@@ -22570,8 +22571,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
         const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
         const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
-        // Project is already shown in the PO header (Reference field), so we omit it here
-        // to keep line descriptions clean and avoid stale "Unknown" fallbacks.
+        // The project is named once in the PO's description (set below) rather than
+        // repeated on every line. It used to be omitted here on the grounds that the
+        // header carried it, but nothing ever populated that field, so the project
+        // appeared nowhere and returning subcontractor invoices couldn't be matched
+        // back to a job.
         const descParts = [`${dateStr} -- ${timeRange}${breakStr}`];
         if (costCodeStr) descParts.push(costCodeStr);
         if (ts.description) descParts.push(ts.description);
@@ -22600,6 +22604,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         supplierId: supplierId || null,
         supplierName: supplierName || (subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"),
         title: `Subcontractor Timesheet PO - ${subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"}`,
+        // Names the job on the PO document itself. Without it the subcontractor's
+        // invoice comes back with no indication of which project it belongs to.
+        description: poProject?.name
+          ? `Subcontractor labour — ${poProject.name}${poProject.location ? `, ${poProject.location}` : ""}`
+          : "Subcontractor labour",
         poDate: new Date(),
         gstMode: "exclusive",
         subtotal: subtotalCents,
