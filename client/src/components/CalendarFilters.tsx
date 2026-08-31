@@ -43,6 +43,11 @@ export interface CalendarFilters {
    * see shared/scheduleVisibility.ts.
    */
   fullScheduleProjects?: string[];
+  /**
+   * Business calendar only: which optional layers are switched on. Off unless
+   * asked for — see shared/businessCalendarLayers.ts.
+   */
+  layers?: string[];
 }
 
 interface CalendarFiltersProps {

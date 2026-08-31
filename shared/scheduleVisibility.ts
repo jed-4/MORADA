@@ -1,5 +1,5 @@
 /**
- * Schedule-item visibility rules for personal calendars.
+ * Schedule-item visibility rules for calendars.
  *
  * A project schedule is *project duration* — multi-day spans with dependencies and
  * Gantt semantics. A personal calendar is *appointments*. Dropping every schedule
@@ -15,6 +15,9 @@
  *
  * A project can be opted out of banding per user, in which case its whole schedule
  * comes through as events.
+ *
+ * The business calendar asks a different question and uses a different test — see
+ * `ScheduleVisibilityMode`.
  */
 
 /** Item types that behave like appointments rather than spans of work. */
@@ -22,9 +25,25 @@ export const APPOINTMENT_TYPES = ["milestone", "inspection", "delivery", "meetin
 
 export type ScheduleVisibilityTier = "event" | "band";
 
+/**
+ * Which question the calendar is asking.
+ *
+ * `personal` — "might I need to turn up to this?" In-house work counts, because
+ *   business-assigned means our own crew rather than a subbie.
+ *
+ * `business` — "what is the company doing?" The in-house test inverts here: on a
+ *   company-wide calendar our own work *is* the bulk of the schedule, so promoting
+ *   it would put nearly everything back on the grid as chips and re-create exactly
+ *   the flood the tiers exist to remove. The axis becomes what kind of time an item
+ *   is, not whose: a point-in-time commitment, or a stretch of duration.
+ */
+export type ScheduleVisibilityMode = "personal" | "business";
+
 /** The subset of a schedule item these rules need. */
 export interface TierableScheduleItem {
   type?: string | null;
+  /** "HH:mm", when the item is pinned to a time of day. */
+  startTime?: string | null;
   assignedToId?: string | null;
   assignedToName?: string | null;
   assignedCompanyId?: string | null;
@@ -67,7 +86,8 @@ export function isAppointmentType(item: TierableScheduleItem): boolean {
 export function scheduleItemTier(
   item: TierableScheduleItem,
   companyId?: string | null,
-  fullScheduleProjectIds?: Iterable<string> | null
+  fullScheduleProjectIds?: Iterable<string> | null,
+  mode: ScheduleVisibilityMode = "personal"
 ): ScheduleVisibilityTier {
   if (fullScheduleProjectIds && item.projectId) {
     const optedIn = fullScheduleProjectIds instanceof Set
@@ -76,6 +96,12 @@ export function scheduleItemTier(
     if (optedIn.has(item.projectId)) return "event";
   }
   if (isAppointmentType(item)) return "event";
+  if (mode === "business") {
+    // A clock time is a commitment someone made — "8am Tuesday" is an appointment
+    // whatever the item's type says. Without a time it is a stretch of work, and
+    // belongs in the band whoever owns it.
+    return item.startTime ? "event" : "band";
+  }
   if (isBusinessAssigned(item, companyId)) return "event";
   return "band";
 }

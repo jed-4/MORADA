@@ -24,6 +24,12 @@ import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
   insertNoteSchema,
   insertTaskSchema,
+  insertLeaveEntrySchema,
+  insertMeetingSchema,
+  patchMeetingSchema,
+  meetingRulesSchema,
+  patchLeaveEntrySchema,
+  leaveEntryRulesSchema,
   insertCustomFieldDefSchema,
   insertCustomFieldOptionSchema,
   insertNoteTemplateSchema,
@@ -214,10 +220,11 @@ import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import { validateCostEstimate, isTerminalReviewStatus } from "@shared/reviewCostImpact";
 import { createReviewerResolver, attributeComment } from "./reviews/reviewerResolver";
+import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
@@ -7184,7 +7191,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // through computeEstimateItemPrice so taxAmount/priceIncTax stay correct.
   app.patch("/api/estimates/:estimateId/items/bulk-update", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const companyId = req.user!.companyId!;
+      const actor = req.user as any;
+      const companyId = actor.companyId as string;
       const { estimateId } = req.params;
       const { itemIds, patch } = req.body;
 
@@ -31364,7 +31372,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      const { startDate, endDate, fullScheduleProjects } = req.query;
+      const { startDate, endDate, fullScheduleProjects, mode } = req.query;
+      // Anything but an explicit "business" is the personal calendar's rules, so a
+      // malformed value degrades to the stricter, longer-standing behaviour.
+      const visibilityMode = mode === "business" ? "business" : "personal";
       const dateRange = (startDate || endDate) ? {
         startDate: startDate as string | undefined,
         endDate: endDate as string | undefined
@@ -31399,7 +31410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const events: any[] = [];
       const banded: any[] = [];
       for (const item of items as any[]) {
-        if (scheduleItemTier(item, user.companyId, optedInProjects) === "event") {
+        if (scheduleItemTier(item, user.companyId, optedInProjects, visibilityMode) === "event") {
           events.push(item);
         } else {
           banded.push(item);
@@ -31412,6 +31423,629 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to fetch calendar schedule items",
         details: error.message
       });
+    }
+  });
+
+
+  // Optional layers for the business calendar — the dated things that have never
+  // had a calendar surface: deliveries landing, quotes closing, answers owed,
+  // client decisions due, plus timesheet and site-diary history.
+  //
+  // One endpoint rather than one query per source: Neon is in us-east-1 and the
+  // office is in AU, so nine client-side queries would be nine ~400ms round trips
+  // on every week navigation. Only the requested layers are queried at all.
+  //
+  // Scoping, uniformly: every source is reached through `projects` so the tenancy
+  // predicate is always `projects.company_id = <caller's company>`, never a
+  // nullable denormalised column. `client_invoices.company_id` in particular is
+  // nullable on legacy rows, so scoping on it directly would quietly drop them.
+  // Timesheets have no project when they are business-level, so they scope through
+  // the user who logged them instead.
+  app.get("/api/business-calendar/events", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const companyId = user?.companyId;
+      const userId = String(user?.dbUser?.id || user?.id || "");
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const requested = parseLayerKeys(req.query.layers as string | undefined);
+      if (requested.length === 0) {
+        return res.json({ events: [], denied: [] });
+      }
+
+      const { startDate, endDate } = req.query;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
+      }
+      const from = new Date(String(startDate));
+      const to = new Date(String(endDate));
+      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+        return res.status(400).json({ error: "startDate and endDate must be valid dates" });
+      }
+      // The range arrives as yyyy-MM-dd; take the whole of the last day.
+      to.setHours(23, 59, 59, 999);
+
+      // Withhold layers the caller lacks the permission for, and say so rather than
+      // returning an empty layer that looks like "nothing due".
+      const denied: string[] = [];
+      const allowed: typeof requested = [];
+      for (const key of requested) {
+        const layer = getLayer(key);
+        if (!layer) continue;
+        if (layer.permission) {
+          const ok = await storage
+            .checkUserPermission(userId, layer.permission.key, layer.permission.action)
+            .catch(() => false);
+          if (!ok) { denied.push(key); continue; }
+        }
+        allowed.push(key);
+      }
+      if (allowed.length === 0) {
+        return res.json({ events: [], denied });
+      }
+
+      // Same project-access rule as the other calendar endpoints.
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+      let visibleProjectIds: Set<string> | null = null;
+      if (!isAdmin) {
+        const access = await storage.getUserProjectAccess(userId);
+        const allProjects = await storage.getProjects();
+        visibleProjectIds = new Set([
+          ...access.map(a => a.projectId),
+          ...allProjects.filter(p => p.ownerId === userId).map(p => p.id),
+        ]);
+      }
+
+      const want = (key: string) => allowed.includes(key as any);
+      const events: BusinessCalendarLayerEvent[] = [];
+      const push = (
+        layer: BusinessCalendarLayerEvent["layer"],
+        row: { id: string; title: string; date: Date | string | null; projectId: string | null; projectName: string | null; status?: string | null; startTime?: string | null; endTime?: string | null; href?: string | null },
+      ) => {
+        if (!row.date) return;
+        const date = row.date instanceof Date ? row.date : new Date(row.date);
+        if (isNaN(date.getTime())) return;
+        events.push({
+          id: `${layer}-${row.id}`,
+          layer,
+          title: row.title,
+          date: date.toISOString(),
+          startTime: row.startTime ?? null,
+          endTime: row.endTime ?? null,
+          projectId: row.projectId,
+          projectName: row.projectName,
+          status: row.status ?? null,
+          href: row.href ?? null,
+        });
+      };
+
+      // Every layer below is one query, run only when its toggle is on. They are
+      // independent, so they go out together rather than in sequence.
+      const jobs: Array<Promise<void>> = [];
+
+      if (want("deliveries")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.purchaseOrders.id,
+          number: schema.purchaseOrders.poNumber,
+          title: schema.purchaseOrders.title,
+          date: schema.purchaseOrders.requiredByDate,
+          status: schema.purchaseOrders.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.purchaseOrders)
+          .innerJoin(schema.projects, eq(schema.purchaseOrders.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.purchaseOrders.requiredByDate),
+            gte(schema.purchaseOrders.requiredByDate, from),
+            lte(schema.purchaseOrders.requiredByDate, to),
+          ));
+        for (const r of rows) {
+          push("deliveries", { ...r, title: [r.number, r.title].filter(Boolean).join(" — ") || "Purchase order", href: `/purchase-orders/${r.id}` });
+        }
+      })());
+
+      if (want("rfqs")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.rfqs.id,
+          title: schema.rfqs.title,
+          date: schema.rfqs.dueDate,
+          status: schema.rfqs.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.rfqs)
+          .innerJoin(schema.projects, eq(schema.rfqs.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.rfqs.dueDate),
+            gte(schema.rfqs.dueDate, from),
+            lte(schema.rfqs.dueDate, to),
+          ));
+        for (const r of rows) push("rfqs", { ...r, href: `/rfqs/${r.id}` });
+      })());
+
+      if (want("rfis")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.rfis.id,
+          title: schema.rfis.subject,
+          date: schema.rfis.dueDate,
+          status: schema.rfis.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.rfis)
+          .innerJoin(schema.projects, eq(schema.rfis.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.rfis.dueDate),
+            gte(schema.rfis.dueDate, from),
+            lte(schema.rfis.dueDate, to),
+          ));
+        for (const r of rows) push("rfis", { ...r, href: `/rfis/${r.id}` });
+      })());
+
+      if (want("selections")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.selections.id,
+          title: schema.selections.name,
+          date: schema.selections.deadline,
+          status: schema.selections.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.selections)
+          .innerJoin(schema.projects, eq(schema.selections.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.selections.deadline),
+            gte(schema.selections.deadline, from),
+            lte(schema.selections.deadline, to),
+          ));
+        for (const r of rows) push("selections", { ...r, href: `/projects/${r.projectId}/selections` });
+      })());
+
+      if (want("defects")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.defects.id,
+          title: schema.defects.title,
+          date: schema.defects.dueDate,
+          status: schema.defects.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.defects)
+          .innerJoin(schema.projects, eq(schema.defects.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.defects.dueDate),
+            gte(schema.defects.dueDate, from),
+            lte(schema.defects.dueDate, to),
+          ));
+        for (const r of rows) push("defects", { ...r, href: `/projects/${r.projectId}/defects` });
+      })());
+
+      if (want("invoices")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.clientInvoices.id,
+          number: schema.clientInvoices.invoiceNumber,
+          name: schema.clientInvoices.name,
+          date: schema.clientInvoices.dueDate,
+          status: schema.clientInvoices.status,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.clientInvoices)
+          .innerJoin(schema.projects, eq(schema.clientInvoices.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            isNotNull(schema.clientInvoices.dueDate),
+            gte(schema.clientInvoices.dueDate, from),
+            lte(schema.clientInvoices.dueDate, to),
+          ));
+        for (const r of rows) {
+          push("invoices", { ...r, title: [r.number, r.name].filter(Boolean).join(" — ") || "Invoice", href: `/client-invoices/${r.id}` });
+        }
+      })());
+
+      if (want("timesheets")) jobs.push((async () => {
+        // Scoped through the user, not the project: a business-level timesheet has
+        // no project at all, and scoping on projects would silently drop it.
+        const rows = await db.select({
+          id: schema.timesheets.id,
+          date: schema.timesheets.date,
+          duration: schema.timesheets.duration,
+          startTime: schema.timesheets.startTime,
+          endTime: schema.timesheets.endTime,
+          status: schema.timesheets.status,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          email: schema.users.email,
+          projectId: schema.timesheets.projectId,
+        })
+          .from(schema.timesheets)
+          .innerJoin(schema.users, eq(schema.timesheets.userId, schema.users.id))
+          .where(and(
+            eq(schema.users.companyId, companyId),
+            gte(schema.timesheets.date, from),
+            lte(schema.timesheets.date, to),
+          ));
+        const projectNames = new Map((await storage.getProjects()).map(p => [p.id, p.name]));
+        for (const r of rows) {
+          const who = [r.firstName, r.lastName].filter(Boolean).join(" ").trim() || r.email || "Someone";
+          const hours = Number(r.duration ?? 0);
+          push("timesheets", {
+            id: r.id,
+            title: `${who} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
+            date: r.date,
+            startTime: r.startTime,
+            endTime: r.endTime,
+            status: r.status,
+            projectId: r.projectId,
+            projectName: r.projectId ? projectNames.get(r.projectId) ?? null : null,
+            href: `/business/timesheets`,
+          });
+        }
+      })());
+
+      if (want("site_diary")) jobs.push((async () => {
+        const rows = await db.select({
+          id: schema.siteDiaryEntries.id,
+          title: schema.siteDiaryEntries.title,
+          date: schema.siteDiaryEntries.entryDateTime,
+          projectId: schema.projects.id,
+          projectName: schema.projects.name,
+        })
+          .from(schema.siteDiaryEntries)
+          .innerJoin(schema.projects, eq(schema.siteDiaryEntries.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.projects.companyId, companyId),
+            gte(schema.siteDiaryEntries.entryDateTime, from),
+            lte(schema.siteDiaryEntries.entryDateTime, to),
+          ));
+        for (const r of rows) push("site_diary", { ...r, href: `/projects/${r.projectId}/site-diary` });
+      })());
+
+      await Promise.all(jobs);
+
+      // Project access last, so one predicate covers every layer. A row with no
+      // project (a business-level timesheet) belongs to the company rather than to
+      // any job, so it is not hidden by project access.
+      const visible = visibleProjectIds
+        ? events.filter(e => !e.projectId || visibleProjectIds!.has(e.projectId))
+        : events;
+
+      visible.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+      res.json({ events: visible, denied });
+    } catch (error: any) {
+      console.error("[GET /api/business-calendar/events] Error:", error);
+      res.status(500).json({ error: "Failed to fetch calendar layers", details: error.message });
+    }
+  });
+
+
+
+  /**
+   * Every id on a meeting has to belong to the caller's company. Without this a
+   * valid session could invite another tenant's users, or file a meeting against
+   * their project. Returns a message when something is wrong, null when it is fine.
+   */
+  async function meetingRefsOutsideCompany(
+    data: { projectId?: string | null; attendeeUserIds?: string[]; attendeeContactIds?: string[] },
+    companyId: string,
+  ): Promise<string | null> {
+    if (data.projectId) {
+      const [project] = await db.select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(and(eq(schema.projects.id, data.projectId), eq(schema.projects.companyId, companyId)));
+      if (!project) return "Project not found in this company";
+    }
+    if (data.attendeeUserIds?.length) {
+      const found = await db.select({ id: schema.users.id })
+        .from(schema.users)
+        .where(and(inArray(schema.users.id, data.attendeeUserIds), eq(schema.users.companyId, companyId)));
+      if (found.length !== new Set(data.attendeeUserIds).size) return "An attendee is not in this company";
+    }
+    if (data.attendeeContactIds?.length) {
+      const found = await db.select({ id: schema.contacts.id })
+        .from(schema.contacts)
+        .where(and(inArray(schema.contacts.id, data.attendeeContactIds), eq(schema.contacts.companyId, companyId)));
+      if (found.length !== new Set(data.attendeeContactIds).size) return "A contact is not in this company";
+    }
+    return null;
+  }
+
+  // Meetings — scheduled, not recorded after the fact.
+  //
+  // `minutes` is the record of a meeting that already happened, so a calendar
+  // built on it can only ever show the past. These are the ones you can still
+  // turn up to. Every read and write is scoped to the caller's company.
+  app.get("/api/meetings", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const { startDate, endDate, attendeeId } = req.query;
+      const conditions = [eq(schema.meetings.companyId, companyId)];
+      if (startDate && endDate) {
+        const from = new Date(String(startDate));
+        const to = new Date(String(endDate));
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+          return res.status(400).json({ error: "startDate and endDate must be valid dates" });
+        }
+        to.setHours(23, 59, 59, 999);
+        // Overlap, not containment: a meeting that starts before the window and
+        // runs into it is still in the window.
+        conditions.push(lte(schema.meetings.startsAt, to));
+        conditions.push(gte(schema.meetings.endsAt, from));
+      }
+      if (attendeeId) {
+        conditions.push(arrayContains(schema.meetings.attendeeUserIds, [String(attendeeId)]));
+      }
+
+      const rows = await db.select()
+        .from(schema.meetings)
+        .where(and(...conditions))
+        .orderBy(asc(schema.meetings.startsAt));
+
+      // Whether each meeting has been written up yet — the forward and backward
+      // halves of the same thing, on one round trip.
+      const ids = rows.map(r => r.id);
+      const written = ids.length
+        ? await db.select({ id: schema.minutes.id, meetingId: schema.minutes.meetingId })
+            .from(schema.minutes)
+            .where(inArray(schema.minutes.meetingId, ids))
+        : [];
+      const minutesByMeeting = new Map(written.map(m => [m.meetingId, m.id]));
+
+      res.json(rows.map(r => ({ ...r, minutesId: minutesByMeeting.get(r.id) ?? null })));
+    } catch (error: any) {
+      console.error("[GET /api/meetings] Error:", error);
+      res.status(500).json({ error: "Failed to fetch meetings", details: error.message });
+    }
+  });
+
+  app.post("/api/meetings", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const actorId = String(req.user?.dbUser?.id || req.user?.id || "");
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = insertMeetingSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const invalid = await meetingRefsOutsideCompany(parsed.data, companyId);
+      if (invalid) return res.status(404).json({ error: invalid });
+
+      const [created] = await db.insert(schema.meetings)
+        .values({ ...parsed.data, companyId, createdBy: actorId || null })
+        .returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[POST /api/meetings] Error:", error);
+      res.status(500).json({ error: "Failed to create meeting", details: error.message });
+    }
+  });
+
+  app.patch("/api/meetings/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = patchMeetingSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      const [existing] = await db.select().from(schema.meetings).where(and(
+        eq(schema.meetings.id, req.params.id),
+        eq(schema.meetings.companyId, companyId),
+      ));
+      if (!existing) return res.status(404).json({ error: "Meeting not found" });
+
+      const invalid = await meetingRefsOutsideCompany(parsed.data, companyId);
+      if (invalid) return res.status(404).json({ error: invalid });
+
+      // Validate the merged meeting, not the patch: moving only the end time
+      // still has to be checked against the stored start.
+      const merged = meetingRulesSchema.safeParse({
+        title: parsed.data.title ?? existing.title,
+        startsAt: parsed.data.startsAt ?? existing.startsAt,
+        endsAt: parsed.data.endsAt ?? existing.endsAt,
+        location: parsed.data.location ?? existing.location,
+        videoUrl: parsed.data.videoUrl ?? existing.videoUrl,
+        agenda: parsed.data.agenda ?? existing.agenda,
+        projectId: parsed.data.projectId ?? existing.projectId,
+        attendeeUserIds: parsed.data.attendeeUserIds ?? existing.attendeeUserIds,
+        attendeeContactIds: parsed.data.attendeeContactIds ?? existing.attendeeContactIds,
+      });
+      if (!merged.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(merged.error).toString() });
+      }
+
+      // companyId in the WHERE, never the SET.
+      const [updated] = await db.update(schema.meetings)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.meetings.id, req.params.id),
+          eq(schema.meetings.companyId, companyId),
+        ))
+        .returning();
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PATCH /api/meetings/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update meeting", details: error.message });
+    }
+  });
+
+  app.delete("/api/meetings/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+      const [deleted] = await db.delete(schema.meetings)
+        .where(and(
+          eq(schema.meetings.id, req.params.id),
+          eq(schema.meetings.companyId, companyId),
+        ))
+        .returning();
+      if (!deleted) return res.status(404).json({ error: "Meeting not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[DELETE /api/meetings/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete meeting", details: error.message });
+    }
+  });
+
+  // Leave — who is away.
+  //
+  // Marking, not managing: no requests, no approvals, no balances. Every read and
+  // write is scoped to the caller's company, and a leave entry always belongs to a
+  // user in that company — checked on write rather than trusted from the body.
+  app.get("/api/leave-entries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const { startDate, endDate, userId } = req.query;
+      const conditions = [eq(schema.leaveEntries.companyId, companyId)];
+      if (userId) conditions.push(eq(schema.leaveEntries.userId, String(userId)));
+      if (startDate && endDate) {
+        const from = new Date(String(startDate));
+        const to = new Date(String(endDate));
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+          return res.status(400).json({ error: "startDate and endDate must be valid dates" });
+        }
+        to.setHours(23, 59, 59, 999);
+        // Overlap, not containment: leave that starts before the window and ends
+        // inside it is still leave you need to see.
+        conditions.push(lte(schema.leaveEntries.startDate, to));
+        conditions.push(gte(schema.leaveEntries.endDate, from));
+      }
+
+      const rows = await db.select({
+        entry: schema.leaveEntries,
+        firstName: schema.users.firstName,
+        lastName: schema.users.lastName,
+        email: schema.users.email,
+      })
+        .from(schema.leaveEntries)
+        .innerJoin(schema.users, eq(schema.leaveEntries.userId, schema.users.id))
+        .where(and(...conditions))
+        .orderBy(asc(schema.leaveEntries.startDate));
+
+      res.json(rows.map(r => ({
+        ...r.entry,
+        userName: [r.firstName, r.lastName].filter(Boolean).join(" ").trim() || r.email || "Unknown",
+      })));
+    } catch (error: any) {
+      console.error("[GET /api/leave-entries] Error:", error);
+      res.status(500).json({ error: "Failed to fetch leave", details: error.message });
+    }
+  });
+
+  app.post("/api/leave-entries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const actorId = String(req.user?.dbUser?.id || req.user?.id || "");
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = insertLeaveEntrySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      // The subject must be in the caller's company. Without this, a valid session
+      // could mark leave against anyone's user id.
+      const subject = await storage.getUser(parsed.data.userId);
+      if (!subject || subject.companyId !== companyId) {
+        return res.status(404).json({ error: "User not found in this company" });
+      }
+
+      const [created] = await db.insert(schema.leaveEntries)
+        .values({ ...parsed.data, companyId, createdBy: actorId || null })
+        .returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[POST /api/leave-entries] Error:", error);
+      res.status(500).json({ error: "Failed to create leave", details: error.message });
+    }
+  });
+
+  app.patch("/api/leave-entries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const parsed = patchLeaveEntrySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      if (parsed.data.userId) {
+        const subject = await storage.getUser(parsed.data.userId);
+        if (!subject || subject.companyId !== companyId) {
+          return res.status(404).json({ error: "User not found in this company" });
+        }
+      }
+
+      // Load first so the cross-field rules see the whole entry: moving only the
+      // end date still has to be checked against the stored start date.
+      const [existing] = await db.select().from(schema.leaveEntries).where(and(
+        eq(schema.leaveEntries.id, req.params.id),
+        eq(schema.leaveEntries.companyId, companyId),
+      ));
+      if (!existing) return res.status(404).json({ error: "Leave entry not found" });
+
+      const merged = leaveEntryRulesSchema.safeParse({
+        userId: parsed.data.userId ?? existing.userId,
+        startDate: parsed.data.startDate ?? existing.startDate,
+        endDate: parsed.data.endDate ?? existing.endDate,
+        isHalfDay: parsed.data.isHalfDay ?? existing.isHalfDay,
+        halfDayPeriod: parsed.data.halfDayPeriod ?? existing.halfDayPeriod,
+        leaveType: parsed.data.leaveType ?? existing.leaveType,
+        note: parsed.data.note ?? existing.note,
+      });
+      if (!merged.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(merged.error).toString() });
+      }
+
+      // companyId is in the WHERE, not the SET: another tenant's row simply does
+      // not match, so this 404s rather than reassigning it.
+      const [updated] = await db.update(schema.leaveEntries)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.leaveEntries.id, req.params.id),
+          eq(schema.leaveEntries.companyId, companyId),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Leave entry not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PATCH /api/leave-entries/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update leave", details: error.message });
+    }
+  });
+
+  app.delete("/api/leave-entries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+      const [deleted] = await db.delete(schema.leaveEntries)
+        .where(and(
+          eq(schema.leaveEntries.id, req.params.id),
+          eq(schema.leaveEntries.companyId, companyId),
+        ))
+        .returning();
+      if (!deleted) return res.status(404).json({ error: "Leave entry not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[DELETE /api/leave-entries/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete leave", details: error.message });
     }
   });
 
@@ -34693,10 +35327,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid calendar type. Must be 'personal' or 'business'" });
       }
       
+      const actor = req.user as any;
+      const companyId = actor.companyId as string;
+
+      // The business calendar needs a default view to open on. It used to be
+      // created by the client, once per user, which gave a company of fifteen
+      // fifteen private copies of the same view. Seeded here instead: one per
+      // company, everyone sees it. The unique partial index makes the race
+      // between two people opening the page at once harmless.
+      if (calendarType === "business") {
+        const [existing] = await db.select({ id: schema.calendarViews.id })
+          .from(schema.calendarViews)
+          .where(and(
+            eq(schema.calendarViews.companyId, companyId),
+            eq(schema.calendarViews.calendarType, "business"),
+            eq(schema.calendarViews.isCompanyDefault, true),
+            eq(schema.calendarViews.isArchived, false),
+          ))
+          .limit(1);
+        if (!existing) {
+          await db.insert(schema.calendarViews).values({
+            companyId,
+            userId: actor.id,
+            name: "All Events",
+            calendarType: "business",
+            calendarMode: "week",
+            filters: {},
+            isDefault: true,
+            isCompanyDefault: true,
+            sortOrder: 0,
+          }).onConflictDoNothing();
+        }
+      }
+
       const views = await storage.getCalendarViews(
-        req.user!.id,
+        actor.id,
         calendarType as "personal" | "business",
-        req.user!.companyId!
+        companyId
       );
       res.json(views);
     } catch (error: any) {
