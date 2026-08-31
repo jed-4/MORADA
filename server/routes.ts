@@ -911,14 +911,18 @@ export async function pushBillToXeroInternal(
     //     traceability).
     // Map BuildPro bill status to a Xero invoice status so the two systems
     // stay in lock-step:
-    //   awaiting_approval → SUBMITTED   ("Awaiting Approval" in Xero UI)
-    //   awaiting_payment  → AUTHORISED  ("Awaiting Payment" in Xero UI)
-    //   paid              → AUTHORISED  (payment is posted separately via createPayment)
-    // draft / needs_review never reach this function — those bills are not
-    // pushed to Xero.
-    let xeroStatus: "SUBMITTED" | "AUTHORISED" = "AUTHORISED";
+    //   draft / needs_review → DRAFT     (e.g. a linked bill rejected back to draft)
+    //   awaiting_approval    → SUBMITTED  ("Awaiting Approval" in Xero UI)
+    //   awaiting_payment     → AUTHORISED ("Awaiting Payment" in Xero UI)
+    //   paid                 → AUTHORISED (payment is posted separately via createPayment)
+    // Unlinked draft / needs_review bills are filtered out before this function
+    // by the auto-push guards; a linked bill can legitimately arrive here as
+    // draft after rejection and must go back to DRAFT in Xero, not AUTHORISED.
+    let xeroStatus: "DRAFT" | "SUBMITTED" | "AUTHORISED" = "AUTHORISED";
     if (bill.status === "awaiting_approval") {
       xeroStatus = "SUBMITTED";
+    } else if (bill.status === "draft" || bill.status === "needs_review") {
+      xeroStatus = "DRAFT";
     }
 
     // Rounding adjustment → its own Xero line (like Xero's "Rounding" line), so
@@ -20020,10 +20024,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const approval = await storage.createBillApproval(validationResult.data);
-      
-      await storage.updateBill(req.params.id, { 
-        status: "awaiting_payment" 
+
+      await storage.updateBill(req.params.id, {
+        status: "awaiting_payment"
       });
+
+      // Mirror the approval into Xero: awaiting_payment pushes as AUTHORISED
+      // ("Awaiting Payment"), moving the bill out of Xero's Awaiting Approval
+      // tab. Same debounced queue as the PATCH route, so bulk approvals
+      // coalesce per bill and its guards handle unlinked/sendToXero cases.
+      const approverCompanyId = (req.user as any)?.companyId;
+      if (approverCompanyId) {
+        scheduleAutoPushBill(req.params.id, approverCompanyId);
+      }
 
       // Log activity if comments were added
       if (req.body.comments && req.body.comments.trim()) {
@@ -20088,10 +20101,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const approval = await storage.createBillApproval(validationResult.data);
-      
-      await storage.updateBill(req.params.id, { 
-        status: "draft" 
+
+      await storage.updateBill(req.params.id, {
+        status: "draft"
       });
+
+      // Mirror the rejection into Xero: a linked bill goes back to DRAFT so it
+      // leaves the Awaiting Approval tab. Unlinked bills are skipped by the
+      // queue's guards (draft bills are never first-pushed).
+      const rejecterCompanyId = (req.user as any)?.companyId;
+      if (rejecterCompanyId) {
+        scheduleAutoPushBill(req.params.id, rejecterCompanyId);
+      }
 
       // Log activity if comments were added
       if (req.body.comments && req.body.comments.trim()) {
