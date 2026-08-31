@@ -9,6 +9,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
 import { DemoDataBanner } from "@/components/DemoDataBanner";
+import { WelcomeEmailBanner } from "@/components/WelcomeEmailBanner";
 import { SidebarNav } from "@/components/SidebarNav";
 import { ClientRouteGuard } from "@/components/ClientRouteGuard";
 import { useState, useEffect, lazy, Suspense } from "react";
@@ -561,6 +562,9 @@ function AuthWrapper() {
             )}
             {/* Header in its own floating bar */}
             <Header />
+
+            {/* First-run nudge to go and find the welcome email */}
+            <WelcomeEmailBanner />
 
             {/* Sample-data notice while the signup demo dataset is present */}
             <DemoDataBanner />
