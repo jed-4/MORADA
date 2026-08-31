@@ -7,6 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Calendar,
+  CalendarRange,
+  List,
   ChevronLeft,
   ChevronRight,
   CheckSquare,
@@ -38,13 +40,21 @@ import type { Task } from "@shared/schema";
  */
 type WidgetCalendarView = "day" | "week" | "agenda";
 
-/** Offered in the config panel only — an always-visible switcher inside a tile
- *  costs a row of chrome to change a setting that rarely changes. */
-const VIEW_OPTIONS: { value: WidgetCalendarView; label: string }[] = [
-  { value: "agenda", label: "Agenda" },
-  { value: "day", label: "Day" },
-  { value: "week", label: "Week" },
-];
+/**
+ * The order the header button cycles through, and how each view presents
+ * itself. One cycling control costs a single icon in the title row, where a
+ * three-button switcher cost a whole strip of chrome; the config panel still
+ * picks which view the widget *opens* on.
+ */
+const VIEW_CYCLE: WidgetCalendarView[] = ["day", "week", "agenda"];
+
+const VIEW_META: Record<WidgetCalendarView, { label: string; icon: typeof Calendar }> = {
+  day: { label: "Day", icon: Calendar },
+  week: { label: "Week", icon: CalendarRange },
+  agenda: { label: "Agenda", icon: List },
+};
+
+const VIEW_OPTIONS = VIEW_CYCLE.map(value => ({ value, label: VIEW_META[value].label }));
 
 /** Layouts that earlier versions of this widget persisted. */
 function normaliseView(value: unknown): WidgetCalendarView {
@@ -170,6 +180,9 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
     setCurrentDate(d => (view === "day" ? addDays(d, 1) : addWeeks(d, 1)));
   const goToToday = () => setCurrentDate(new Date());
 
+  const nextView = VIEW_CYCLE[(VIEW_CYCLE.indexOf(view) + 1) % VIEW_CYCLE.length];
+  const cycleView = () => setView(nextView);
+
   const dateLabel = useMemo(() => {
     if (view === "day") {
       return formatInTimezone(currentDate, effectiveTimezone, { weekday: "short", month: "short", day: "numeric" });
@@ -195,6 +208,23 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
           <ChevronRight className="h-3.5 w-3.5" />
         </Button>
         <span className="ml-1 text-[11px] font-medium tabular-nums whitespace-nowrap">{dateLabel}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="ml-1 h-6 w-6"
+              onClick={cycleView}
+              aria-label={`${VIEW_META[view].label} view — switch to ${VIEW_META[nextView].label}`}
+              data-testid="calendar-widget-cycle-view"
+            >
+              {(() => { const ViewIcon = VIEW_META[view].icon; return <ViewIcon className="h-3.5 w-3.5" />; })()}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {VIEW_META[view].label} view &middot; click for {VIEW_META[nextView].label}
+          </TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -233,7 +263,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
     // Deliberately keyed on values, not identities: a new element every render
     // would re-fire this against the parent's state and loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, dateLabel, isGoogleConnected, connectingGoogle]);
+  }, [view, nextView, dateLabel, isGoogleConnected, connectingGoogle]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
