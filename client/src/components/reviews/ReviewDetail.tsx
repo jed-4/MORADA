@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SectionCard } from "@/components/detail/SectionCard";
+import { DetailLayout } from "@/components/detail/DetailLayout";
 import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +59,7 @@ interface ReviewDetailData {
   costImpactEstimateMode: string | null; costImpactAmountCents: number | null;
   costImpactMinCents: number | null; costImpactMaxCents: number | null;
   costImpactNote: string | null; createVariationOnApproval: boolean;
+  reviewerName?: string | null;
   projectId: string;
   currentRevisionId: string | null;
   portalSentAt: string | null;
@@ -152,49 +154,62 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
   const repliesOf = (id: string) => data.comments.filter((c) => c.parentCommentId === id);
 
   return (
-    <div className="flex-1 overflow-auto" data-testid="review-detail">
-      <div className="border-b bg-card">
-        <div className="px-6 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBack} data-testid="button-review-back">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold truncate" data-testid="review-detail-title">{data.name}</h1>
-            <p className="text-xs text-muted-foreground">
-              {current ? `${current.revisionLabel} · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}` : "No revision issued yet"}
-            </p>
-          </div>
-          {data.dueDate && (
-            <Badge variant={overdue ? "destructive" : "secondary"} className="font-normal">
-              {overdue ? `Overdue by ${daysOverdue(data.dueDate)}d` : `Due ${format(new Date(data.dueDate), "d MMM")}`}
-            </Badge>
-          )}
-          <StatusBadge status={data.status} data-testid="review-detail-status" />
+    <div className="flex flex-col h-full min-h-0" data-testid="review-detail">
+      {/* Header panel — same card-header pattern as the Reviews list, so the
+          section reads as one product rather than two pages. */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-8 flex items-center gap-2 px-2">
+          <button
+            onClick={onBack}
+            className="h-6 w-6 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+            data-testid="button-review-back"
+            aria-label="Back to reviews"
+          >
+            <ArrowLeft className="h-3 w-3" />
+          </button>
+          <div className="w-[3px] h-3.5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--primary))" }} aria-hidden="true" />
+          <span className="text-xs font-medium text-foreground truncate" data-testid="review-detail-title">
+            {data.name}
+          </span>
+
+          <div className="flex-1" />
+
           {!isClient && data.currentRevisionId && (
-            <Button
-              size="sm"
-              variant="outline"
+            <button
               onClick={() => setSendOpen(true)}
+              className="h-6 w-auto px-2 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
               data-testid="button-send-review-link"
             >
-              <Send className="mr-2 h-3.5 w-3.5" />
+              <Send className="w-3 h-3" />
               {data.portalSentAt ? "Resend link" : "Send link"}
-            </Button>
+            </button>
           )}
-          {!isClient && <Button
-            size="sm"
-            onClick={() => setIssueOpen(true)}
-            disabled={terminal}
-            title={terminal ? `This review is ${data.status} — reopen it before issuing another revision.` : undefined}
-            data-testid="button-issue-revision"
-          >
-            {terminal && <Lock className="mr-2 h-3.5 w-3.5" />}
-            {data.revisions.length === 0 ? "Issue Rev A" : "Issue next revision"}
-          </Button>}
+          {!isClient && (
+            <button
+              onClick={() => setIssueOpen(true)}
+              disabled={terminal}
+              title={terminal ? `This review is ${data.status} — reopen it before issuing another revision.` : undefined}
+              className={cn(
+                "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1",
+                terminal
+                  ? "border-border/50 text-muted-foreground/60 cursor-not-allowed"
+                  : "bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2",
+              )}
+              data-testid="button-issue-revision"
+            >
+              {terminal ? <Lock className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+              {data.revisions.length === 0 ? "Issue Rev A" : "Issue next revision"}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-6 py-5 space-y-6 max-w-4xl">
+      {/* Body closes the card. DetailLayout gives the main column + w-80 rail
+          the other detail pages use, so the facts a reader needs first are not
+          buried in the same stack as the work. */}
+      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden flex">
+        <DetailLayout sidebar={<ReviewFactsRail data={data} isClient={isClient} />}>
+
         <ReviewCostBanner
           costImpact={data.costImpact}
           estimate={{
@@ -208,20 +223,13 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
 
-        {!isClient && data.createVariationOnApproval && (
-          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            A draft variation will be raised when the client approves this.
-          </p>
-        )}
-
         {isClient && data.status === "awaiting_review" && (
           <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
         )}
 
         <SectionCard
           title="Documents"
-          variant="editorial"
+          variant="card"
           icon={<Paperclip className="h-3.5 w-3.5" />}
           accent="teal"
           count={data.revisions.reduce((n, r) => n + r.documents.length, 0)}
@@ -273,7 +281,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         <SectionCard
           title="Revision history"
-          variant="editorial"
+          variant="card"
           icon={<History className="h-3.5 w-3.5" />}
           accent="primary"
           count={data.revisions.length}
@@ -304,7 +312,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         </SectionCard>
 
         {data.approvals.length > 0 && (
-          <SectionCard title="Decisions" variant="editorial" icon={<CheckCircle2 className="h-3.5 w-3.5" />} accent="sage" count={data.approvals.length}>
+          <SectionCard title="Decisions" variant="card" icon={<CheckCircle2 className="h-3.5 w-3.5" />} accent="sage" count={data.approvals.length}>
             <ul className="space-y-3">
               {data.approvals.map((a) => (
                 <li key={a.id} className="space-y-1">
@@ -358,7 +366,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
         <SectionCard
           title="Comments"
-          variant="editorial"
+          variant="card"
           icon={<MessageSquare className="h-3.5 w-3.5" />}
           accent="muted"
           count={visibleComments.length}
@@ -424,6 +432,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             </div>
           </div>
         </SectionCard>
+        </DetailLayout>
       </div>
 
       <SendReviewLinkDialog
@@ -439,6 +448,102 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         onOpenChange={setIssueOpen}
         nextIsFirst={data.revisions.length === 0}
       />
+    </div>
+  );
+}
+
+/** One label/value pair in the rail. */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-sm">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The facts a reader needs before the body: what state is this in, who is it
+ * with, when is it due, does it carry money, and has the link actually reached
+ * them.
+ *
+ * Previously all of this was either absent or inferable only by reading four
+ * stacked sections, which is what made the page hard to scan. A rail is what
+ * the other detail pages use for exactly this, at the same w-80.
+ */
+function ReviewFactsRail({ data, isClient }: { data: ReviewDetailData; isClient: boolean }) {
+  const overdue = isOverdue(data.dueDate);
+  const current = data.revisions.find((r) => r.id === data.currentRevisionId) ?? data.revisions[0];
+  const docCount = current?.documents.length ?? 0;
+
+  return (
+    <div className="space-y-4" data-testid="review-facts-rail">
+      <Fact label="Status">
+        <StatusBadge status={data.status} data-testid="review-detail-status" />
+      </Fact>
+
+      <Fact label="Current revision">
+        {current ? (
+          <span className="flex items-center gap-2">
+            <Badge variant="secondary" className="font-mono text-xs">{current.revisionLabel}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {format(new Date(current.issuedAt), "d MMM yyyy")}
+            </span>
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">Not issued yet</span>
+        )}
+      </Fact>
+
+      <Fact label="Due">
+        {data.dueDate ? (
+          <span className={cn("text-sm", overdue && "text-destructive font-medium")}>
+            {overdue
+              ? `Overdue by ${daysOverdue(data.dueDate)} day${daysOverdue(data.dueDate) === 1 ? "" : "s"}`
+              : format(new Date(data.dueDate), "d MMM yyyy")}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">No due date</span>
+        )}
+      </Fact>
+
+      {!isClient && (
+        <Fact label="Reviewer">
+          <span className="text-sm">{data.reviewerName || <span className="text-muted-foreground">Unassigned</span>}</span>
+        </Fact>
+      )}
+
+      <Fact label="Documents">
+        <span className="text-sm">
+          {docCount} on {current?.revisionLabel ?? "this revision"}
+        </span>
+      </Fact>
+
+      {!isClient && (
+        <Fact label="Client link">
+          {data.portalSentAt ? (
+            <span className="text-sm">
+              Sent {format(new Date(data.portalSentAt), "d MMM")}
+              <span className="block text-xs text-muted-foreground">
+                {data.portalViewedAt
+                  ? `Opened ${format(new Date(data.portalViewedAt), "d MMM")}`
+                  : "Not opened yet"}
+              </span>
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">Not sent</span>
+          )}
+        </Fact>
+      )}
+
+      {!isClient && data.createVariationOnApproval && (
+        <Fact label="On approval">
+          <span className="text-sm flex items-start gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
+            Raises a draft variation
+          </span>
+        </Fact>
+      )}
     </div>
   );
 }
