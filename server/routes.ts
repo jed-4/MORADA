@@ -278,6 +278,27 @@ import {
   notifyTaskAssignment,
 } from "./utils/domainNotifications";
 
+/**
+ * The plan catalogue as the pricing UIs consume it — public marketing copy,
+ * prices and limits only. Deliberately omits Stripe price IDs and feature
+ * flags. Shared by /api/billing/plans and /api/billing/public-plans so the
+ * public pricing page, onboarding and the paywall can never drift apart.
+ */
+function publicPlanCatalogue() {
+  return PLAN_KEYS.map((k) => {
+    const p = PLANS[k];
+    return {
+      key: p.key,
+      name: p.name,
+      tagline: p.tagline,
+      monthlyPrice: p.monthlyPrice,
+      annualPrice: p.annualPrice,
+      mostPopular: !!p.mostPopular,
+      limits: p.limits,
+    };
+  });
+}
+
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
   const rows = scheduleId
     ? await db.select().from(nonWorkingDays)
@@ -1928,6 +1949,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
+    // Public pricing catalogue for the /pricing page. Read-only, no company
+    // context — everything else under /billing/ stays behind auth.
+    if (req.method === 'GET' && path === '/billing/public-plans') {
+      return next();
+    }
+
     // Public proposal client portal endpoints (token-gated inside the route handlers).
     // Method-scoped: only the specific methods that perform their own shareToken
     // validation are bypassed. GET /acceptances is NOT public — it returns acceptance
@@ -2490,19 +2517,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ---- Billing: unauthenticated pricing catalogue for the public /pricing page ----
+  // Same numbers the signed-in chooser sees, minus anything company-specific.
+  // The founding offer is only advertised while spots actually remain.
+  app.get('/api/billing/public-plans', async (_req, res) => {
+    let foundingOffer:
+      | { limit: number; spotsLeft: number; discountPercent: number; freeMonthDays: number }
+      | null = null;
+    try {
+      if (isStripeConfigured() && isFoundingProgrammeConfigured()) {
+        const spotsLeft = await foundingSpotsLeft();
+        if (spotsLeft > 0) {
+          foundingOffer = {
+            limit: FOUNDING_MEMBER_LIMIT,
+            spotsLeft,
+            discountPercent: FOUNDING_STUDIO_DISCOUNT_PERCENT,
+            freeMonthDays: FOUNDING_FREE_MONTH_DAYS,
+          };
+        }
+      }
+    } catch (foundingErr) {
+      console.error('[billing] public-plans: founding offer lookup failed:', foundingErr);
+    }
+
+    return res.json({ plans: publicPlanCatalogue(), foundingOffer });
+  });
+
   // ---- Billing: public plan catalogue for the paywall / change-plan UI ----
   app.get('/api/billing/plans', requireAuth, async (req: any, res) => {
-    const plans = PLAN_KEYS.map((k) => {
-      const p = PLANS[k];
-      return {
-        key: p.key,
-        name: p.name,
-        monthlyPrice: p.monthlyPrice,
-        annualPrice: p.annualPrice,
-        mostPopular: !!p.mostPopular,
-        limits: p.limits,
-      };
-    });
+    const plans = publicPlanCatalogue();
 
     // Founding member offer for the plan chooser: advertised while the
     // caller's company holds founding status or could still claim a spot.

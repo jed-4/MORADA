@@ -105,6 +105,7 @@ const SuggestionsReview = lazy(() => import("@/pages/SuggestionsReview"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const LandingPage = lazy(() => import("@/pages/landing"));
+const PricingPage = lazy(() => import("@/pages/Pricing"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
 const ClientHome = lazy(() => import("@/pages/ClientHome"));
@@ -164,6 +165,12 @@ function Router() {
           }
           return <Redirect to={`/users/${user.id}`} />;
         }}
+      </Route>
+      {/* A shared /pricing link shouldn't 404 for signed-in users — but the
+          public page's "Start free trial" CTAs are wrong for them, so send
+          them to their own billing settings instead. */}
+      <Route path="/pricing">
+        <Redirect to="/settings?tab=billing" />
       </Route>
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
@@ -376,6 +383,7 @@ function UnauthenticatedRoutes() {
     <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
       <Switch>
         <Route path="/auth" component={AuthPage} />
+        <Route path="/pricing" component={PricingPage} />
         <Route path="/privacy" component={PrivacyPolicy} />
         <Route path="/terms" component={TermsOfService} />
         <Route path="/accept-invite/:token" component={AcceptInvitation} />
