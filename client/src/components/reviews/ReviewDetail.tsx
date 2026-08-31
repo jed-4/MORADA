@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft, Paperclip, Send, FileText, Loader2, Upload, Lock,
-  MessageSquare, History, CheckCircle2,
+  MessageSquare, History, CheckCircle2, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,12 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SectionCard } from "@/components/detail/SectionCard";
-import { DetailLayout } from "@/components/detail/DetailLayout";
 import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ReviewCostBanner } from "./ReviewCostBanner";
+import { ReviewDocumentPreview } from "./ReviewDocumentPreview";
 import { IssueRevisionDialog } from "./IssueRevisionDialog";
 import { SendReviewLinkDialog } from "./SendReviewLinkDialog";
 import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCostImpact";
@@ -204,28 +204,18 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         </div>
       </div>
 
-      {/* Body closes the card. DetailLayout gives the main column + w-80 rail
-          the other detail pages use, so the facts a reader needs first are not
-          buried in the same stack as the work. */}
-      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden flex">
-        <DetailLayout sidebar={<ReviewFactsRail data={data} isClient={isClient} />}>
+      {/* Body closes the card. One scrolling column: the information card
+          answers "what is this and where is it up to" before any of the work,
+          which is what the rail was reaching for — but a card in the flow reads
+          better than a rail at this column width, and keeps the decision
+          buttons from wrapping. */}
+      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-auto">
+        <div className="px-4 py-4 space-y-4 max-w-4xl">
+          <ReviewInformationCard data={data} isClient={isClient} />
 
-        <ReviewCostBanner
-          costImpact={data.costImpact}
-          estimate={{
-            mode: data.costImpactEstimateMode as any,
-            amountCents: data.costImpactAmountCents,
-            minCents: data.costImpactMinCents,
-            maxCents: data.costImpactMaxCents,
-            note: data.costImpactNote,
-          }}
-        />
-
-        {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
-
-        {isClient && data.status === "awaiting_review" && (
-          <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
-        )}
+          {isClient && data.status === "awaiting_review" && (
+            <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
+          )}
 
         <SectionCard
           title="Documents"
@@ -263,15 +253,17 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
           )}
         >
           {current?.documents.length ? (
-            <ul className="divide-y">
-              {current.documents.map((d) => (
-                <li key={d.id} className="flex items-center gap-2.5 py-2" data-testid={`review-doc-${d.id}`}>
-                  <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-sm truncate flex-1">{d.fileName}</span>
-                  <span className="text-xs text-muted-foreground">{fmtBytes(d.fileSize)}</span>
-                </li>
-              ))}
-            </ul>
+            <ReviewDocumentPreview
+              documents={current.documents.map((d) => ({
+                id: d.id,
+                fileName: d.fileName,
+                mimeType: d.mimeType,
+                fileSize: d.fileSize,
+                // In-app viewers fetch the object path directly; it is served
+                // by the authenticated /objects route.
+                url: d.filePath,
+              }))}
+            />
           ) : (
             <p className="text-sm text-muted-foreground py-2">
               {current ? "No documents on this revision yet." : "Issue Rev A, then attach the drawings."}
@@ -279,90 +271,6 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
           )}
         </SectionCard>
 
-        <SectionCard
-          title="Revision history"
-          variant="card"
-          icon={<History className="h-3.5 w-3.5" />}
-          accent="primary"
-          count={data.revisions.length}
-        >
-          {data.revisions.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-2">Nothing issued yet.</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {data.revisions.map((r) => (
-                <li key={r.id} className="flex items-start gap-3" data-testid={`review-rev-${r.revisionLabel}`}>
-                  <Badge variant={r.supersededAt ? "outline" : "secondary"} className="font-mono text-xs mt-0.5">
-                    {r.revisionLabel}
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      {r.notes || <span className="text-muted-foreground">No note</span>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Issued {format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}
-                      {r.supersededAt && " · superseded"}
-                      {r.documents.length > 0 && ` · ${r.documents.length} document${r.documents.length === 1 ? "" : "s"}`}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
-
-        {data.approvals.length > 0 && (
-          <SectionCard title="Decisions" variant="card" icon={<CheckCircle2 className="h-3.5 w-3.5" />} accent="sage" count={data.approvals.length}>
-            <ul className="space-y-3">
-              {data.approvals.map((a) => (
-                <li key={a.id} className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={a.decision} />
-                    <span className="text-sm">{a.decidedByName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {format(new Date(a.createdAt), "d MMM yyyy, h:mma")}
-                    </span>
-                  </div>
-                  {a.comment && <p className="text-sm text-muted-foreground">{a.comment}</p>}
-                  {a.snapshotBannerText && (
-                    <p className="text-xs text-muted-foreground italic">
-                      Shown at approval: “{a.snapshotBannerText}”
-                      {a.acknowledgedVariationRequired && " · variation acknowledged"}
-                    </p>
-                  )}
-                  {a.decision === "approved" && a.createdVariationId && (
-                    <a
-                      href={`/projects/${data.projectId}/variations/${a.createdVariationId}`}
-                      className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                      data-testid="link-created-variation"
-                    >
-                      <FileText className="h-3 w-3" />
-                      Open the draft variation this raised
-                    </a>
-                  )}
-                  {!isClient && a.decision === "approved" && !a.createdVariationId && data.createVariationOnApproval && (
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs text-destructive" data-testid="variation-missing">
-                        The draft variation was not raised.
-                      </p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 text-xs"
-                        onClick={() => raiseVariation.mutate()}
-                        disabled={raiseVariation.isPending}
-                        data-testid="button-raise-variation"
-                      >
-                        {raiseVariation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                        Raise it now
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </SectionCard>
-        )}
 
         <SectionCard
           title="Comments"
@@ -432,7 +340,92 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             </div>
           </div>
         </SectionCard>
-        </DetailLayout>
+
+        {data.approvals.length > 0 && (
+          <SectionCard title="Decisions" variant="card" icon={<CheckCircle2 className="h-3.5 w-3.5" />} accent="sage" count={data.approvals.length}>
+            <ul className="space-y-3">
+              {data.approvals.map((a) => (
+                <li key={a.id} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={a.decision} />
+                    <span className="text-sm">{a.decidedByName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {format(new Date(a.createdAt), "d MMM yyyy, h:mma")}
+                    </span>
+                  </div>
+                  {a.comment && <p className="text-sm text-muted-foreground">{a.comment}</p>}
+                  {a.snapshotBannerText && (
+                    <p className="text-xs text-muted-foreground italic">
+                      Shown at approval: “{a.snapshotBannerText}”
+                      {a.acknowledgedVariationRequired && " · variation acknowledged"}
+                    </p>
+                  )}
+                  {a.decision === "approved" && a.createdVariationId && (
+                    <a
+                      href={`/projects/${data.projectId}/variations/${a.createdVariationId}`}
+                      className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                      data-testid="link-created-variation"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Open the draft variation this raised
+                    </a>
+                  )}
+                  {!isClient && a.decision === "approved" && !a.createdVariationId && data.createVariationOnApproval && (
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-destructive" data-testid="variation-missing">
+                        The draft variation was not raised.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs"
+                        onClick={() => raiseVariation.mutate()}
+                        disabled={raiseVariation.isPending}
+                        data-testid="button-raise-variation"
+                      >
+                        {raiseVariation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                        Raise it now
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        )}
+
+        <SectionCard
+          title="Revision history"
+          variant="card"
+          icon={<History className="h-3.5 w-3.5" />}
+          accent="primary"
+          count={data.revisions.length}
+        >
+          {data.revisions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">Nothing issued yet.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {data.revisions.map((r) => (
+                <li key={r.id} className="flex items-start gap-3" data-testid={`review-rev-${r.revisionLabel}`}>
+                  <Badge variant={r.supersededAt ? "outline" : "secondary"} className="font-mono text-xs mt-0.5">
+                    {r.revisionLabel}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm">
+                      {r.notes || <span className="text-muted-foreground">No note</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Issued {format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}
+                      {r.supersededAt && " · superseded"}
+                      {r.documents.length > 0 && ` · ${r.documents.length} document${r.documents.length === 1 ? "" : "s"}`}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+        </div>
       </div>
 
       <SendReviewLinkDialog
@@ -452,10 +445,10 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
   );
 }
 
-/** One label/value pair in the rail. */
+/** One label/value pair inside the information card. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5 min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="text-sm">{children}</div>
     </div>
@@ -463,87 +456,114 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /**
- * The facts a reader needs before the body: what state is this in, who is it
- * with, when is it due, does it carry money, and has the link actually reached
- * them.
+ * What this review IS and where it is up to, before any of the work.
  *
- * Previously all of this was either absent or inferable only by reading four
- * stacked sections, which is what made the page hard to scan. A rail is what
- * the other detail pages use for exactly this, at the same w-80.
+ * The page previously opened straight into four equally-weighted sections, so
+ * there was nowhere to answer "what am I looking at". Several of these facts
+ * had no home at all — notably whether the client has actually OPENED the link,
+ * which the builder had no way to see.
+ *
+ * Builder-only rows (reviewer, link telemetry, on-approval) are gated: a client
+ * does not need to be told which address the builder holds for them, or what
+ * the builder has planned once they approve.
  */
-function ReviewFactsRail({ data, isClient }: { data: ReviewDetailData; isClient: boolean }) {
+function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isClient: boolean }) {
   const overdue = isOverdue(data.dueDate);
   const current = data.revisions.find((r) => r.id === data.currentRevisionId) ?? data.revisions[0];
   const docCount = current?.documents.length ?? 0;
 
   return (
-    <div className="space-y-4" data-testid="review-facts-rail">
-      <Fact label="Status">
-        <StatusBadge status={data.status} data-testid="review-detail-status" />
-      </Fact>
-
-      <Fact label="Current revision">
-        {current ? (
-          <span className="flex items-center gap-2">
-            <Badge variant="secondary" className="font-mono text-xs">{current.revisionLabel}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {format(new Date(current.issuedAt), "d MMM yyyy")}
-            </span>
-          </span>
-        ) : (
-          <span className="text-sm text-muted-foreground">Not issued yet</span>
+    <SectionCard
+      title="Review information"
+      variant="card"
+      icon={<Info className="h-3.5 w-3.5" />}
+      accent="primary"
+    >
+      <div className="space-y-3" data-testid="review-information">
+        {data.description && (
+          <p className="text-sm text-muted-foreground">{data.description}</p>
         )}
-      </Fact>
 
-      <Fact label="Due">
-        {data.dueDate ? (
-          <span className={cn("text-sm", overdue && "text-destructive font-medium")}>
-            {overdue
-              ? `Overdue by ${daysOverdue(data.dueDate)} day${daysOverdue(data.dueDate) === 1 ? "" : "s"}`
-              : format(new Date(data.dueDate), "d MMM yyyy")}
-          </span>
-        ) : (
-          <span className="text-sm text-muted-foreground">No due date</span>
-        )}
-      </Fact>
+        <ReviewCostBanner
+          costImpact={data.costImpact}
+          estimate={{
+            mode: data.costImpactEstimateMode as any,
+            amountCents: data.costImpactAmountCents,
+            minCents: data.costImpactMinCents,
+            maxCents: data.costImpactMaxCents,
+            note: data.costImpactNote,
+          }}
+        />
 
-      {!isClient && (
-        <Fact label="Reviewer">
-          <span className="text-sm">{data.reviewerName || <span className="text-muted-foreground">Unassigned</span>}</span>
-        </Fact>
-      )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 pt-1">
+          <Fact label="Status">
+            <StatusBadge status={data.status} data-testid="review-detail-status" />
+          </Fact>
 
-      <Fact label="Documents">
-        <span className="text-sm">
-          {docCount} on {current?.revisionLabel ?? "this revision"}
-        </span>
-      </Fact>
-
-      {!isClient && (
-        <Fact label="Client link">
-          {data.portalSentAt ? (
-            <span className="text-sm">
-              Sent {format(new Date(data.portalSentAt), "d MMM")}
-              <span className="block text-xs text-muted-foreground">
-                {data.portalViewedAt
-                  ? `Opened ${format(new Date(data.portalViewedAt), "d MMM")}`
-                  : "Not opened yet"}
+          <Fact label="Current revision">
+            {current ? (
+              <span className="flex items-center gap-1.5">
+                <Badge variant="secondary" className="font-mono text-xs">{current.revisionLabel}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {format(new Date(current.issuedAt), "d MMM yyyy")}
+                </span>
               </span>
-            </span>
-          ) : (
-            <span className="text-sm text-muted-foreground">Not sent</span>
-          )}
-        </Fact>
-      )}
+            ) : (
+              <span className="text-sm text-muted-foreground">Not issued yet</span>
+            )}
+          </Fact>
 
-      {!isClient && data.createVariationOnApproval && (
-        <Fact label="On approval">
-          <span className="text-sm flex items-start gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
-            Raises a draft variation
-          </span>
-        </Fact>
-      )}
-    </div>
+          <Fact label="Due">
+            {data.dueDate ? (
+              <span className={cn("text-sm", overdue && "text-destructive font-medium")}>
+                {overdue
+                  ? `Overdue by ${daysOverdue(data.dueDate)} day${daysOverdue(data.dueDate) === 1 ? "" : "s"}`
+                  : format(new Date(data.dueDate), "d MMM yyyy")}
+              </span>
+            ) : (
+              <span className="text-sm text-muted-foreground">No due date</span>
+            )}
+          </Fact>
+
+          <Fact label="Documents">
+            <span className="text-sm">{docCount} on {current?.revisionLabel ?? "this revision"}</span>
+          </Fact>
+
+          {!isClient && (
+            <Fact label="Reviewer">
+              <span className="text-sm truncate block">
+                {data.reviewerName || <span className="text-muted-foreground">Unassigned</span>}
+              </span>
+            </Fact>
+          )}
+
+          {!isClient && (
+            <Fact label="Client link">
+              {data.portalSentAt ? (
+                <span className="text-sm">
+                  Sent {format(new Date(data.portalSentAt), "d MMM")}
+                  <span className="block text-xs text-muted-foreground">
+                    {data.portalViewedAt
+                      ? `Opened ${format(new Date(data.portalViewedAt), "d MMM")}`
+                      : "Not opened yet"}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">Not sent</span>
+              )}
+            </Fact>
+          )}
+
+          {!isClient && data.createVariationOnApproval && (
+            <Fact label="On approval">
+              <span className="text-sm flex items-start gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                Raises a draft variation
+              </span>
+            </Fact>
+          )}
+        </div>
+      </div>
+    </SectionCard>
   );
 }
