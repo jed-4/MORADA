@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTaskToggle } from "@/hooks/useTaskToggle";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
@@ -313,17 +314,21 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     });
   }, [allFocusBlocks, today]);
 
+  // Strikes the row through on the click and holds it there briefly, instead
+  // of waiting on the PATCH plus a refetch before anything moves.
+  const { toggleTask, isLingering } = useTaskToggle();
+
   const todaysTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done') return false;
+    if (t.status === 'done' && !isLingering(t.id)) return false;
     if (!t.dueDate) return false;
     return isToday(new Date(t.dueDate));
-  }), [tasks]);
+  }), [tasks, isLingering]);
 
   const overdueTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done') return false;
+    if (t.status === 'done' && !isLingering(t.id)) return false;
     if (!t.dueDate) return false;
     return isBefore(new Date(t.dueDate), today);
-  }), [tasks, today]);
+  }), [tasks, today, isLingering]);
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -332,17 +337,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setEditingTask(null);
-    },
-  });
-
-  const toggleTaskMutation = useMutation({
-    mutationFn: async (task: Task) => {
-      const newStatus = task.status === 'done' ? 'todo' : 'done';
-      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 
@@ -552,7 +546,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           task={task as any}
           accentColor={project ? generateNotionColors(project.color).originalHex : null}
           accentLabel={project?.name ?? null}
-          onToggle={() => toggleTaskMutation.mutate(task)}
+          onToggle={() => toggleTask(task)}
           onClick={() => setSelectedTaskId(task.id)}
           testIdPrefix="myday-task"
         />

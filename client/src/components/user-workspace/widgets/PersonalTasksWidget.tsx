@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getWorkspacePreferences } from "@/lib/workspacePreferences";
 import { generateNotionColors } from "@/lib/taskColors";
 import { TaskRow, TaskCard } from "@/components/widgets/shared/TaskRow";
+import { useTaskToggle } from "@/hooks/useTaskToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,22 @@ interface WidgetConfig {
   showCompleted?: boolean;
   projectFilter?: string;
   view?: ViewType;
+}
+
+/**
+ * The list view scrolls vertically inside a Radix ScrollArea. The board must not:
+ * ScrollArea renders its content inside a shrink-wrapping `display: table`
+ * viewport wrapper, so a child `overflow-x-auto` never resolves a width to
+ * scroll against — the columns just widen the table and get clipped by the
+ * Root's `overflow: hidden`, with no horizontal scrollbar mounted. The board
+ * already scrolls itself (sideways across columns, vertically within each), so
+ * it gets a plain container, matching the board in `MyDayWidget`.
+ */
+function TaskListContainer({ isBoard, children }: { isBoard: boolean; children: React.ReactNode }) {
+  if (isBoard) {
+    return <div className="flex-1 min-h-0 min-w-0 flex flex-col">{children}</div>;
+  }
+  return <ScrollArea className="flex-1 min-h-0">{children}</ScrollArea>;
 }
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
@@ -162,16 +179,9 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   // below recompute continuously.
   const today = useMemo(() => startOfDay(new Date()), []);
 
-  const toggleTaskMutation = useMutation({
-    mutationFn: async (task: Task) => {
-      const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
-      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
-  });
+  // Strikes the row through on the click and holds it briefly before the
+  // filter below drops it, instead of waiting on the server round trip.
+  const { toggleTask, isLingering } = useTaskToggle();
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -187,7 +197,9 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     let result = tasks;
 
     if (!showCompleted) {
-      result = result.filter(t => t.status !== 'done' && t.status !== 'complete');
+      result = result.filter(
+        t => (t.status !== 'done' && t.status !== 'complete') || isLingering(t.id),
+      );
     }
 
     if (projectFilter === 'business') {
@@ -218,12 +230,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
 
     return result.slice(0, maxTasks);
-  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today]);
+  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today, isLingering]);
 
   const filterCounts = useMemo(() => {
     let base = tasks;
     if (!showCompleted) {
-      base = base.filter(t => t.status !== 'done' && t.status !== 'complete');
+      base = base.filter(
+        t => (t.status !== 'done' && t.status !== 'complete') || isLingering(t.id),
+      );
     }
     if (projectFilter === 'business') {
       base = base.filter(t => isBusinessTask(t));
@@ -240,7 +254,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         return isWithinInterval(d, { start: today, end: addDays(today, 7) });
       }).length,
     };
-  }, [tasks, showCompleted, projectFilter, today]);
+  }, [tasks, showCompleted, projectFilter, today, isLingering]);
 
   const groupedTasks = useMemo(() => {
     if (effectiveGroupBy === 'none') {
@@ -354,7 +368,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         task={{ ...task, dueDate: opts.hideDue ? null : task.dueDate } as any}
         accentColor={accentColor}
         accentLabel={accentLabel}
-        onToggle={() => toggleTaskMutation.mutate(task)}
+        onToggle={() => toggleTask(task)}
         onClick={() => setSelectedTaskId(task.id)}
         testIdPrefix="personal-task"
       />
@@ -608,8 +622,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
       
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="space-y-2 pr-2">
+      <TaskListContainer isBoard={view === 'board'}>
+        <div className={view === 'board' ? "space-y-2" : "space-y-2 pr-2"}>
           {isLoading ? (
             <WidgetSkeleton rows={3} />
           ) : isError ? (
@@ -660,7 +674,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                               : project ? project.name
                               : isBusiness ? businessLabel : null
                           }
-                          onToggle={() => toggleTaskMutation.mutate(task)}
+                          onToggle={() => toggleTask(task)}
                           onClick={() => setSelectedTaskId(task.id)}
                           testIdPrefix="personal-task-card"
                         />
@@ -709,7 +723,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             ))
           )}
         </div>
-      </ScrollArea>
+      </TaskListContainer>
     </div>
   );
 }
