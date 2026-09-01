@@ -7,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -24,6 +34,7 @@ import {
   Circle,
   MinusCircle,
   GripVertical,
+  LayoutTemplate,
   MoreVertical,
   Copy,
 } from "lucide-react";
@@ -412,6 +423,35 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const suppressBlurRef = useRef(false);
   const taskListRef = useRef<HTMLDivElement>(null);
+  // ── Import a named labour template into this job ──────────────────────────
+  // Details already had this; labour only had a per-category "Apply to Project"
+  // that pulled one category out of the unnamed list. This brings a whole
+  // template across, so a new job can be set up from templates end to end.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSetId, setImportSetId] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+
+  const { data: labourTemplateSets = [] } = useQuery<any[]>({
+    queryKey: ["/api/labour-template-sets"],
+    enabled: importOpen,
+  });
+
+  const importTemplateMutation = useMutation({
+    mutationFn: ({ setId, replaceExisting }: { setId: string; replaceExisting: boolean }) =>
+      apiRequest(`/api/labour-estimates/${estimate!.id}/apply-template/${setId}`, "POST", { replaceExisting }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      setImportOpen(false);
+      setImportSetId(null);
+      toast({
+        title: "Template imported",
+        description: `${res?.tasks ?? 0} task${res?.tasks === 1 ? "" : "s"} across ${res?.categories ?? 0} new categor${res?.categories === 1 ? "y" : "ies"}.`,
+      });
+    },
+    onError: () => toast({ title: "Failed to import template", variant: "destructive" }),
+  });
+
   const taskCols = useResizableColumns("labour-tasks", LABOUR_COLUMNS, 32, { reorderable: true });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -906,6 +946,77 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     <div className="flex flex-col flex-1 min-h-0">
 
       {/* Delete category confirmation */}
+      {/* Import a labour template */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent data-testid="dialog-import-labour-template">
+          <DialogHeader>
+            <DialogTitle>Import a Labour template</DialogTitle>
+            <DialogDescription>
+              Brings the template's categories and tasks into this job.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            {labourTemplateSets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No Labour templates yet. Build one under Estimate Templates → Labour Hours.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Template</Label>
+                  <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border/40">
+                    {labourTemplateSets.map((set: any) => (
+                      <button
+                        key={set.id}
+                        onClick={() => setImportSetId(set.id)}
+                        className={`w-full text-left px-3 py-2 text-sm hover-elevate ${importSetId === set.id ? 'bg-primary/10 font-medium' : ''}`}
+                        data-testid={`import-labour-option-${set.id}`}
+                      >
+                        {set.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <RadioGroup value={importMode} onValueChange={(v) => setImportMode(v as "merge" | "replace")}>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="merge" id="labour-merge" className="mt-0.5" />
+                    <div>
+                      <Label htmlFor="labour-merge" className="text-sm cursor-pointer font-medium">Merge</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Keep what is here. Tasks are appended, and a category that already exists is added to rather than duplicated.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="replace" id="labour-replace" className="mt-0.5" />
+                    <div>
+                      <Label htmlFor="labour-replace" className="text-sm cursor-pointer font-medium">Replace everything</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Deletes every category and task in this job's labour estimate first. Cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                </RadioGroup>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={!importSetId || importTemplateMutation.isPending}
+              onClick={() => importSetId && importTemplateMutation.mutate({ setId: importSetId, replaceExisting: importMode === "replace" })}
+              data-testid="button-confirm-import-labour"
+            >
+              {importMode === "replace" ? "Replace and import" : "Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!confirmDeleteCatId} onOpenChange={open => !open && setConfirmDeleteCatId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -961,14 +1072,25 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {/* Sidebar header */}
           <div className="h-9 flex items-center justify-between pl-2 pr-1 border-b border-border/50 flex-shrink-0">
             <span className="text-xs font-medium text-muted-foreground">Categories</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => { setAddingCategory(true); setNewCatName(""); }}
-              title="Add category"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setImportOpen(true)}
+                title="Import a labour template"
+                data-testid="button-import-labour-template"
+              >
+                <LayoutTemplate className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => { setAddingCategory(true); setNewCatName(""); }}
+                title="Add category"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
 
           {/* New category input */}

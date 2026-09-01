@@ -449,6 +449,7 @@ export interface IStorage {
 
   // Labour Estimates
   getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined>;
+  getLabourEstimateById(id: string): Promise<any | undefined>;
   createLabourEstimate(data: any): Promise<any>;
   updateLabourEstimate(id: string, data: Partial<any>): Promise<any>;
   getLabourEstimateCategories(labourEstimateId: string): Promise<any[]>;
@@ -473,6 +474,12 @@ export interface IStorage {
   deleteLabourTemplateSet(id: string): Promise<boolean>;
   getLabourTemplateSet(id: string): Promise<any | undefined>;
   getLabourTemplateSetRows(templateSetId: string): Promise<any[]>;
+  applyLabourTemplateSet(
+    labourEstimateId: string,
+    companyId: string,
+    templateSetId: string,
+    replaceExisting: boolean,
+  ): Promise<{ categories: number; tasks: number } | null>;
   createLabourTaskTemplate(data: any): Promise<any>;
   updateLabourTaskTemplate(id: string, data: Partial<any>): Promise<any>;
   deleteLabourTaskTemplate(id: string): Promise<boolean>;
@@ -11693,6 +11700,18 @@ export class DbStorage implements IStorage {
     "General Allowances & Handover",
   ];
 
+  /** By id, so a route holding only the estimate id can still check ownership. */
+  async getLabourEstimateById(id: string): Promise<any | undefined> {
+    try {
+      const [row] = await db.select().from(schema.labourEstimates)
+        .where(eq(schema.labourEstimates.id, id)).limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getLabourEstimateById:", error);
+      return undefined;
+    }
+  }
+
   async getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined> {
     try {
       const [row] = await db
@@ -12012,6 +12031,100 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteLabourTemplateSet:", error);
       return false;
+    }
+  }
+
+  /**
+   * Import a whole named labour template into a project's labour estimate.
+   *
+   * The per-category "Apply to Project" that already existed pulls ONE category
+   * out of the unnamed list by matching its name. This is the other half Jed
+   * asked for: pick a template and bring all of its categories and tasks across
+   * in one go, the way Details already applies a set.
+   *
+   * Returns null if the template is not the caller's.
+   */
+  async applyLabourTemplateSet(
+    labourEstimateId: string,
+    companyId: string,
+    templateSetId: string,
+    replaceExisting: boolean,
+  ): Promise<{ categories: number; tasks: number } | null> {
+    try {
+      const [set] = await db.select().from(schema.labourTemplateSets)
+        .where(and(
+          eq(schema.labourTemplateSets.id, templateSetId),
+          eq(schema.labourTemplateSets.companyId, companyId),
+        ))
+        .limit(1);
+      if (!set) return null;
+
+      const rows = await db.select().from(schema.labourTaskTemplates)
+        .where(eq(schema.labourTaskTemplates.templateSetId, templateSetId))
+        .orderBy(schema.labourTaskTemplates.categoryName, schema.labourTaskTemplates.sortOrder);
+
+      if (replaceExisting) {
+        // Categories cascade to their tasks.
+        await db.delete(schema.labourEstimateCategories)
+          .where(eq(schema.labourEstimateCategories.labourEstimateId, labourEstimateId));
+      }
+
+      const existing = await db.select().from(schema.labourEstimateCategories)
+        .where(eq(schema.labourEstimateCategories.labourEstimateId, labourEstimateId));
+      const byName = new Map(existing.map(c => [c.name, c]));
+      let nextOrder = existing.reduce((m, c) => Math.max(m, (c.sortOrder ?? 0) + 1), 0);
+
+      // Group the template's rows by category so each category is created once.
+      const grouped = new Map<string, typeof rows>();
+      for (const r of rows) {
+        if (!r.categoryName) continue;
+        const list = grouped.get(r.categoryName) ?? [];
+        list.push(r);
+        grouped.set(r.categoryName, list);
+      }
+
+      let createdCats = 0;
+      const tasks: any[] = [];
+      for (const [name, list] of Array.from(grouped.entries())) {
+        let cat = byName.get(name);
+        if (!cat) {
+          // Merging into a job that already has this category appends to it
+          // rather than making a second one with the same name.
+          const [made] = await db.insert(schema.labourEstimateCategories)
+            .values({ labourEstimateId, name, sortOrder: nextOrder++ })
+            .returning();
+          cat = made;
+          byName.set(name, made);
+          createdCats++;
+        }
+        const base = await db.select({ sortOrder: schema.labourEstimateTasks.sortOrder })
+          .from(schema.labourEstimateTasks)
+          .where(eq(schema.labourEstimateTasks.categoryId, cat.id));
+        let order = base.reduce((m, r) => Math.max(m, (r.sortOrder ?? 0) + 1), 0);
+        for (const r of list) {
+          // A row with no description is a placeholder holding an empty
+          // category open in the template; it is not a task to copy across.
+          if (!r.description) continue;
+          tasks.push({
+            categoryId: cat.id,
+            description: r.description,
+            subHeading: r.subHeading,
+            numMen: r.numMen,
+            hoursPerMan: r.hoursPerMan,
+            totalHours: r.numMen * r.hoursPerMan,
+            sortOrder: order++,
+          });
+        }
+      }
+
+      // One insert, not one per task — the database is a long way from here.
+      if (tasks.length > 0) {
+        await db.insert(schema.labourEstimateTasks).values(tasks);
+      }
+      return { categories: createdCats, tasks: tasks.length };
+    } catch (error) {
+      console.error("Database error in applyLabourTemplateSet:", error);
+      throw error;
     }
   }
 

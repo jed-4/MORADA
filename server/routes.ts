@@ -8606,6 +8606,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return set;
   };
 
+  /**
+   * Import a whole named labour template into a project's labour estimate.
+   * Companion to the Details tab's apply-a-set, so a new job can be set up from
+   * templates: estimate lines, then Details, then Labour.
+   */
+  app.post("/api/labour-estimates/:id/apply-template/:setId", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      // Both ends are checked: the labour estimate AND the template must belong
+      // to the caller's company. Either id alone arriving from the URL would let
+      // one company's template be written into another company's job.
+      const estimate = await storage.getLabourEstimateById(req.params.id);
+      if (!estimate || estimate.companyId !== companyId) {
+        return res.status(404).json({ error: "Labour estimate not found" });
+      }
+      const result = await storage.applyLabourTemplateSet(
+        req.params.id,
+        companyId,
+        req.params.setId,
+        req.body?.replaceExisting === true,
+      );
+      if (result === null) return res.status(404).json({ error: "Template not found" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to apply labour template" });
+    }
+  });
+
   app.get("/api/labour-template-sets", requireAuth, async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
