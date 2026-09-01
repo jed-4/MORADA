@@ -52,17 +52,26 @@ type StatusFilter = "all" | "active" | "in_progress" | "completed" | "actionable
 
 const COLLAPSED_STATE_KEY = "checklist-widget-collapsed";
 
-function getStoredCollapsedState(projectId: string): { checklists: string[]; groups: string[] } {
-  try {
-    const stored = localStorage.getItem(`${COLLAPSED_STATE_KEY}-${projectId}`);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return { checklists: [], groups: [] };
+interface CollapsedState {
+  checklists: string[];
+  /** Drawer: which groups are EXPANDED (it opens folded). */
+  groups: string[];
+  /** Inline widget: which groups are COLLAPSED (it opens open). */
+  inlineGroups?: string[];
 }
 
-function saveCollapsedState(projectId: string, checklists: string[], groups: string[]) {
+function getStoredCollapsedState(projectId: string): CollapsedState {
   try {
-    localStorage.setItem(`${COLLAPSED_STATE_KEY}-${projectId}`, JSON.stringify({ checklists, groups }));
+    const stored = localStorage.getItem(`${COLLAPSED_STATE_KEY}-${projectId}`);
+    if (stored) return { checklists: [], groups: [], inlineGroups: [], ...JSON.parse(stored) };
+  } catch {}
+  return { checklists: [], groups: [], inlineGroups: [] };
+}
+
+function saveCollapsedState(projectId: string, patch: Partial<CollapsedState>) {
+  try {
+    const next = { ...getStoredCollapsedState(projectId), ...patch };
+    localStorage.setItem(`${COLLAPSED_STATE_KEY}-${projectId}`, JSON.stringify(next));
   } catch {}
 }
 
@@ -264,6 +273,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [collapsedInlineGroups, setCollapsedInlineGroups] = useState<Set<string>>(new Set());
 
   // Inline accordion in the widget body. Deliberately not persisted — a
   // dashboard should come back collapsed, unlike the drawer's saved state.
@@ -282,6 +292,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     if (currentProject?.id) {
       const stored = getStoredCollapsedState(currentProject.id);
       setExpandedGroups(new Set(stored.groups));
+      setCollapsedInlineGroups(new Set(stored.inlineGroups ?? []));
     }
   }, [currentProject?.id]);
 
@@ -361,7 +372,19 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       if (next.has(groupId)) next.delete(groupId);
       else next.add(groupId);
       if (currentProject?.id) {
-        saveCollapsedState(currentProject.id, [], Array.from(next));
+        saveCollapsedState(currentProject.id, { groups: Array.from(next) });
+      }
+      return next;
+    });
+  };
+
+  const handleToggleInlineGroup = (groupId: string) => {
+    setCollapsedInlineGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, { inlineGroups: Array.from(next) });
       }
       return next;
     });
@@ -653,6 +676,8 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             hideCompletedChecklists={hideCompletedChecklists}
             hideCompletedItems={hideCompletedItems}
             currentUser={currentUser as { id: string; name?: string | null } | null}
+            collapsedGroups={collapsedInlineGroups}
+            onToggleGroup={handleToggleInlineGroup}
           />
         )}
       </div>
@@ -755,6 +780,8 @@ function InlineInstanceContent({
   hideCompletedChecklists,
   hideCompletedItems,
   currentUser,
+  collapsedGroups,
+  onToggleGroup,
 }: {
   instanceId: string;
   projectId: string;
@@ -762,6 +789,10 @@ function InlineInstanceContent({
   hideCompletedChecklists: boolean;
   hideCompletedItems: boolean;
   currentUser?: { id: string; name?: string | null } | null;
+  /** Group ids folded shut inline. Inline opens expanded, so this is the
+   *  inverse of the drawer's `expandedGroups`. */
+  collapsedGroups: Set<string>;
+  onToggleGroup: (groupId: string) => void;
 }) {
   const { data: groups = [] } = useInstanceGroups(instanceId);
 
@@ -787,26 +818,39 @@ function InlineInstanceContent({
   // group preserves the authored sequence. Rows whose group is missing (legacy
   // items, or ones filed straight on the instance) fall back to the copied
   // group name and sit after the real groups.
+  // Sections come from the GROUPS, with items filed into them — not from the
+  // items themselves. Bucketing by item meant a group with nothing in it
+  // produced no bucket and vanished, so a checklist whose items had all been
+  // deleted rendered "No items" while the drawer, which reads the groups,
+  // still listed every stage. The structure is what the checklist *is*; the
+  // items are what is currently in it.
   const sections = useMemo(() => {
     const known = new Map(groups.map(g => [g.id, g]));
-    const buckets = new Map<string, { key: string; name: string; items: ChecklistInstanceItem[] }>();
+    const byGroup = new Map<string, ChecklistInstanceItem[]>();
+    const orphans = new Map<string, { key: string; name: string; items: ChecklistInstanceItem[] }>();
 
     for (const item of items) {
       const group = item.groupId ? known.get(item.groupId) : undefined;
-      const key = group ? group.id : `orphan:${item.groupName || ""}`;
-      const bucket = buckets.get(key)
-        ?? { key, name: group?.name ?? item.groupName ?? "", items: [] };
+      if (group) {
+        const list = byGroup.get(group.id) ?? [];
+        list.push(item);
+        byGroup.set(group.id, list);
+        continue;
+      }
+      // Legacy rows, or items filed straight on the instance.
+      const key = `orphan:${item.groupName || ""}`;
+      const bucket = orphans.get(key) ?? { key, name: item.groupName ?? "", items: [] };
       bucket.items.push(item);
-      buckets.set(key, bucket);
+      orphans.set(key, bucket);
     }
 
-    // Real groups first, in authored order, then whatever's left over.
-    const ordered = groups
-      .map(g => buckets.get(g.id))
-      .filter((b): b is NonNullable<typeof b> => !!b);
-    const leftovers = Array.from(buckets.values()).filter(b => !known.has(b.key));
+    const ordered = groups.map(g => ({
+      key: g.id,
+      name: g.name,
+      items: byGroup.get(g.id) ?? [],
+    }));
 
-    return [...ordered, ...leftovers].filter(section => {
+    return [...ordered, ...Array.from(orphans.values())].filter(section => {
       if (!hideCompletedChecklists) return true;
       return known.get(section.key)?.status !== "completed";
     });
@@ -831,27 +875,36 @@ function InlineInstanceContent({
           Couldn't load — tap to retry
         </button>
       ) : sections.length === 0 ? (
-        <div className="text-2xs text-muted-foreground py-1">No items</div>
+        <div className="text-2xs text-muted-foreground py-1">Nothing in this checklist yet</div>
       ) : (
         sections.map(section => {
           const done = section.items.filter(i => i.status === "completed" || i.status === "na").length;
           const visible = section.items.filter(
             item => !hideCompletedItems || (item.status !== "completed" && item.status !== "na"),
           );
-          if (visible.length === 0) return null;
+          const collapsed = collapsedGroups.has(section.key);
           return (
             <div key={section.key} data-testid={`checklist-widget-section-${section.key}`}>
               {section.name && (
-                <div className="flex items-center gap-1.5 px-1 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => onToggleGroup(section.key)}
+                  aria-expanded={!collapsed}
+                  data-testid={`checklist-widget-section-toggle-${section.key}`}
+                  className="flex w-full items-center gap-1 px-1 pt-0.5 rounded hover:bg-muted/50"
+                >
+                  {collapsed
+                    ? <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                    : <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
                   <span className="text-2xs font-medium text-muted-foreground uppercase tracking-wide truncate">
                     {section.name}
                   </span>
                   <span className="text-2xs text-muted-foreground tabular-nums flex-shrink-0 ml-auto">
                     {done}/{section.items.length}
                   </span>
-                </div>
+                </button>
               )}
-              {visible.map(item => (
+              {!collapsed && visible.map(item => (
                 <div
                   key={item.id}
                   className="group/item flex items-start gap-1.5 px-1 py-0.5 rounded hover:bg-muted/50"
