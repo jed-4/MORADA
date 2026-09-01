@@ -66,6 +66,18 @@ export interface WidgetProps {
   userId?: string;
   /** Called by the widget to push React nodes into the WidgetCard header row */
   onSetHeaderActions?: (actions: ReactNode) => void;
+  /**
+   * Where this widget's title should lead. Registered by the widget because the
+   * destination is usually dynamic (project-scoped routes), so the registry
+   * cannot know it. Pass null for a widget with no full page behind it.
+   */
+  onSetTitleAction?: (action: WidgetTitleAction | null) => void;
+}
+
+export interface WidgetTitleAction {
+  /** Tooltip and accessible name, e.g. "All bills". */
+  label: string;
+  onClick: () => void;
 }
 
 export interface ProjectDashboard {

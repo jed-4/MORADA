@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTaskToggle } from "@/hooks/useTaskToggle";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
@@ -175,7 +176,7 @@ function SortableSectionItem({
   );
 }
 
-export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
+export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -227,42 +228,30 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     })
   );
 
-  // Header row: new focus block, collapse/expand all, hover arrow to Tasks
   useEffect(() => {
     onSetHeaderActions?.(
-      <>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6"
-              onClick={() => setShowFocusCreator(true)}
-              data-testid="button-new-focus-block"
-              aria-label="New focus block"
-            >
-              <Clock className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">New focus block</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => setLocation("/tasks")}
-              data-testid="myday-open-tasks"
-              aria-label="Open tasks"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All tasks</TooltipContent>
-        </Tooltip>
-      </>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={() => setShowFocusCreator(true)}
+            data-testid="button-new-focus-block"
+            aria-label="New focus block"
+          >
+            <Clock className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">New focus block</TooltipContent>
+      </Tooltip>
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.({ label: "All tasks", onClick: () => setLocation("/tasks") });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -313,17 +302,21 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     });
   }, [allFocusBlocks, today]);
 
+  // Strikes the row through on the click and holds it there briefly, instead
+  // of waiting on the PATCH plus a refetch before anything moves.
+  const { toggleTask, isLingering } = useTaskToggle();
+
   const todaysTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done') return false;
+    if (t.status === 'done' && !isLingering(t.id)) return false;
     if (!t.dueDate) return false;
     return isToday(new Date(t.dueDate));
-  }), [tasks]);
+  }), [tasks, isLingering]);
 
   const overdueTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done') return false;
+    if (t.status === 'done' && !isLingering(t.id)) return false;
     if (!t.dueDate) return false;
     return isBefore(new Date(t.dueDate), today);
-  }), [tasks, today]);
+  }), [tasks, today, isLingering]);
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -332,17 +325,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setEditingTask(null);
-    },
-  });
-
-  const toggleTaskMutation = useMutation({
-    mutationFn: async (task: Task) => {
-      const newStatus = task.status === 'done' ? 'todo' : 'done';
-      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 
@@ -552,7 +534,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           task={task as any}
           accentColor={project ? generateNotionColors(project.color).originalHex : null}
           accentLabel={project?.name ?? null}
-          onToggle={() => toggleTaskMutation.mutate(task)}
+          onToggle={() => toggleTask(task)}
           onClick={() => setSelectedTaskId(task.id)}
           testIdPrefix="myday-task"
         />

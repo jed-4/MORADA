@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { centsToDollars } from "@shared/money";
-import { AlertCircle, ArrowRight, Rows3 } from "lucide-react";
+import { AlertCircle, Rows3 } from "lucide-react";
 import {
   Area,
   Bar,
@@ -194,7 +194,7 @@ function SCurveTooltip({ active, payload }: any) {
   );
 }
 
-export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const allowed = useFinancialPermission();
   const [, navigate] = useLocation();
@@ -219,27 +219,9 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
     enabled: !!projectId && allowed,
   });
 
-  // Header row: hover arrow to the client invoices page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(`/projects/${currentProject.id}/client-invoices`)}
-              data-testid="cashflow-widget-open-invoices"
-              aria-label="Open invoices"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Client invoices</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "Client invoices", onClick: () => navigate(`/projects/${currentProject.id}/client-invoices`) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

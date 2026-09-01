@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,21 +53,45 @@ interface ScheduleItem {
   projectId?: string;
 }
 
+/**
+ * `/api/ai/daily-summary` is an uncached Claude call, so a widget that
+ * generated on every mount would bill a request per dashboard load. The
+ * summary only describes the day, so one per user per day is enough — kept in
+ * localStorage so it survives a reload too.
+ */
+const summaryCacheKey = (userId?: string) => `ai-daily-summary-${userId ?? "anon"}`;
+
+function readCachedSummary(userId: string | undefined, dayKey: string): AISummary | null {
+  try {
+    const raw = localStorage.getItem(summaryCacheKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { date?: string; summary?: AISummary };
+    return parsed?.date === dayKey && parsed.summary ? parsed.summary : null;
+  } catch {
+    return null; // private window, cleared storage, or a bad entry
+  }
+}
+
+function writeCachedSummary(userId: string | undefined, dayKey: string, summary: AISummary) {
+  try {
+    localStorage.setItem(summaryCacheKey(userId), JSON.stringify({ date: dayKey, summary }));
+  } catch {
+    /* storage unavailable — the summary just won't survive a reload */
+  }
+}
+
 export default function PersonalAISummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const { effectiveTimezone } = useTimezone();
-  const showTaskCounts = widget.config?.showTaskCounts ?? true;
   const showSuggestedActions = widget.config?.showSuggestedActions ?? true;
   const [editingTitle, setEditingTitle] = useState(widget.title);
-  const [configShowTaskCounts, setConfigShowTaskCounts] = useState(showTaskCounts);
   const [configShowSuggestedActions, setConfigShowSuggestedActions] = useState(showSuggestedActions);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [summary, setSummary] = useState<AISummary | null>(null);
+  const dayKey = format(new Date(), "yyyy-MM-dd");
+  const [summary, setSummary] = useState<AISummary | null>(() => readCachedSummary(userId, dayKey));
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    setEditingTitle(widget.title);
-    setConfigShowTaskCounts(widget.config?.showTaskCounts ?? true);
-    setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
+    setEditingTitle(widget.title);    setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
   }, [widget.title, widget.config]);
 
   const { isLoading: isLoadingCapabilities } = useQuery<{ dailySummary: boolean }>({
@@ -197,12 +221,25 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     },
     onSuccess: (data) => {
       setSummary(data);
+      writeCachedSummary(userId, dayKey, data);
       setIsGenerating(false);
     },
     onError: () => {
       setIsGenerating(false);
     }
   });
+
+  // Generate once a day without being asked — the insight was the only part of
+  // this widget you could not get elsewhere, and it was hidden behind a button.
+  // Guarded by the day cache above, so this is at most one call per user per day.
+  const autoRequested = useRef(false);
+  useEffect(() => {
+    if (autoRequested.current || summary || isGenerating || !aiAvailable || isLoadingCapabilities) return;
+    autoRequested.current = true;
+    generateMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary, aiAvailable, isLoadingCapabilities]);
+
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -211,21 +248,6 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     return "Good evening";
   };
 
-  const getOverviewMessage = () => {
-    if (overdueTasks.length > 0) {
-      return `You have ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} that need attention${todaysTasks.length > 0 ? ` and ${todaysTasks.length} due today` : ''}.`;
-    }
-    if (todaysTasks.length > 0) {
-      return `You have ${todaysTasks.length} task${todaysTasks.length > 1 ? 's' : ''} to focus on today.`;
-    }
-    if (tomorrowsTasks.length > 0) {
-      return `No tasks due today. ${tomorrowsTasks.length} task${tomorrowsTasks.length > 1 ? 's' : ''} coming up tomorrow.`;
-    }
-    if (activeTasks.length === 0) {
-      return "You're all caught up! No active tasks.";
-    }
-    return `${activeTasks.length} active task${activeTasks.length > 1 ? 's' : ''} in your pipeline.`;
-  };
 
   const handleActionClick = (action: SuggestedAction) => {
     if (action.link) {
@@ -240,9 +262,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
           ...widget, 
           title: editingTitle,
           config: { 
-            ...widget.config, 
-            showTaskCounts: configShowTaskCounts,
-            showSuggestedActions: configShowSuggestedActions
+            ...widget.config,            showSuggestedActions: configShowSuggestedActions
           }
         });
       }
@@ -250,9 +270,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     };
 
     const handleCancelConfig = () => {
-      setEditingTitle(widget.title);
-      setConfigShowTaskCounts(widget.config?.showTaskCounts ?? true);
-      setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
+      setEditingTitle(widget.title);      setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
       onCloseConfig?.();
     };
 
@@ -266,13 +284,6 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
             onChange={(e) => setEditingTitle(e.target.value)}
             className="h-7 text-xs"
             placeholder="Widget title"
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Show Task Counts</Label>
-          <Switch 
-            checked={configShowTaskCounts} 
-            onCheckedChange={setConfigShowTaskCounts}
           />
         </div>
         <div className="flex items-center justify-between">
@@ -294,26 +305,6 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     );
   }
 
-  const quickStats = [
-    { 
-      label: "Active", 
-      value: activeTasks.length, 
-      icon: CheckCircle,
-      color: "text-status-info"
-    },
-    { 
-      label: "Overdue", 
-      value: overdueTasks.length, 
-      icon: AlertCircle,
-      color: overdueTasks.length > 0 ? "text-status-danger" : "text-muted-foreground"
-    },
-    { 
-      label: "Done", 
-      value: completedThisWeek.length, 
-      icon: TrendingUp,
-      color: "text-status-success"
-    },
-  ];
 
   if (isLoadingCapabilities) {
     return <WidgetSkeleton rows={3} />;
@@ -356,36 +347,6 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
           </Button>
         </div>
 
-        {showTaskCounts && (
-          <div className="grid grid-cols-3 gap-2">
-            {quickStats.map((stat, i) => (
-              <div key={i} className="text-center p-2 rounded-md bg-muted/50">
-                <stat.icon className={`h-3.5 w-3.5 mx-auto mb-0.5 ${stat.color}`} />
-                <div className="text-base font-semibold">{stat.value}</div>
-                <div className="text-label text-muted-foreground">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="p-3 rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
-          <p className="text-xs font-medium mb-0.5">{getGreeting()}!</p>
-          <p className="text-table text-muted-foreground leading-relaxed">{getOverviewMessage()}</p>
-        </div>
-
-        {overdueTasks.length > 0 && (
-          <div className="py-2 px-3 rounded-md border-l-3 border-l-coral bg-coral/10">
-            <div className="flex items-center gap-1.5 mb-1">
-              <AlertTriangle className="h-3 w-3 text-status-danger" />
-              <span className="text-data font-semibold uppercase tracking-wide text-status-danger">
-                Needs Attention
-              </span>
-            </div>
-            <p className="text-table text-status-danger">
-              {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} requiring immediate action
-            </p>
-          </div>
-        )}
 
         {showSuggestedActions && suggestedActions.length > 0 && (
           <div className="space-y-2">

@@ -236,7 +236,8 @@ export function PurchaseOrderDocument({
                   backgroundColor: thBg,
                   paddingHorizontal: 8,
                   paddingVertical: 5,
-                  borderRadius: isS2 ? 0 : 2,
+                  // react-pdf throws on a numeric 0 radius — omit it instead
+                  borderRadius: isS2 ? undefined : 2,
                 }}
               >
                 <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>

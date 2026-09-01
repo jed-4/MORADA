@@ -78,7 +78,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Widget } from "@/types/widgets";
+import { Widget, type WidgetTitleAction } from "@/types/widgets";
 import { dashboardConfigs, dashboardPersistence } from "./dashboard/DashboardWidgetRegistry";
 import DashboardWidgetContainer from "./dashboard/DashboardWidgetContainer";
 
@@ -748,10 +748,36 @@ export default function CustomizableProjectOverview() {
   );
 
   const [widgetHeaderActions, setWidgetHeaderActions] = useState<Record<string, ReactNode>>({});
+  const [widgetTitleActions, setWidgetTitleActions] = useState<Record<string, WidgetTitleAction | null>>({});
 
   const renderWidget = (widget: Widget) => {
     const definition = projectDashboard.getDefinition(widget.type);
-    if (!definition) return null;
+    // An unresolvable type used to return null. When a whole view's worth of
+    // widgets failed to resolve — which is what happened when the personal
+    // workspace's layout was served to this page — every one of them vanished
+    // and the grid rendered empty, with no error, no console warning and no
+    // empty state (that is gated on widgets.length, which was not zero). Show
+    // the gap instead, so a bad saved layout is visible and removable rather
+    // than a blank page.
+    if (!definition) {
+      return (
+        <DashboardWidgetContainer
+          variant="project"
+          key={widget.id}
+          widget={widget}
+          onUpdate={updateWidget}
+          onRemove={removeWidget}
+        >
+          <div className="flex flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+            <AlertCircle className="w-5 h-5 text-muted-foreground" />
+            <p className="text-sm font-medium">This widget isn't available here</p>
+            <p className="text-xs">
+              "{widget.type}" isn't a project widget. Remove it from this view.
+            </p>
+          </div>
+        </DashboardWidgetContainer>
+      );
+    }
 
     const WidgetComponent = definition.component;
 
@@ -765,6 +791,7 @@ export default function CustomizableProjectOverview() {
         onConfigure={definition.configurable ? setConfiguringWidget : undefined}
         isConfiguring={configuringWidget === widget.id}
         headerActions={widgetHeaderActions[widget.id]}
+        titleAction={widgetTitleActions[widget.id]}
       >
         <ErrorBoundary
           context={`widget:${widget.type}`}
@@ -785,6 +812,9 @@ export default function CustomizableProjectOverview() {
             onCloseConfig={() => setConfiguringWidget(null)}
             onSetHeaderActions={(actions) =>
               setWidgetHeaderActions(prev => ({ ...prev, [widget.id]: actions }))
+            }
+            onSetTitleAction={(action) =>
+              setWidgetTitleActions(prev => ({ ...prev, [widget.id]: action }))
             }
           />
         </ErrorBoundary>

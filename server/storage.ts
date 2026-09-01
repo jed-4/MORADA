@@ -27353,6 +27353,15 @@ export class DbStorage implements IStorage {
       // Build where conditions
       const conditions = [
         eq(schema.dashboardViews.companyId, companyId),
+        // The personal workspace stores its layout in this same table, tagged
+        // dashboardType 'user_workspace' (see the /api/user-workspace/views
+        // routes). This function serves the PROJECT dashboard, whose widget
+        // registry knows none of the personal widget types — so returning a
+        // workspace row here made the project overview render nothing at all,
+        // silently, for any user who had ever opened their workspace.
+        // Filtering on dashboardType rather than viewType because project rows
+        // predate the enum and carry its 'business' default.
+        ne(schema.dashboardViews.dashboardType, "user_workspace"),
         or(
           eq(schema.dashboardViews.creatorId, userId),
           eq(schema.dashboardViews.visibility, "everyone"),

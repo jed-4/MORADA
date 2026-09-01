@@ -1662,7 +1662,7 @@ export default function Schedule() {
   };
 
   // Day prop getter - add class to weekends for styling. Background colour is applied via the
-  // .rbc-weekend-day rule in schedule-calendar.css using hsl(var(--muted)/0.5).
+  // .rbc-weekend-day rule in schedule-calendar.css using hsl(var(--border)).
   const dayPropGetter = (date: Date) => {
     const day = date.getDay();
     if (day === 0 || day === 6) {

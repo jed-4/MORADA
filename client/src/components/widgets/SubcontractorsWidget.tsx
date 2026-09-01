@@ -1,40 +1,21 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Mail, Hammer, ArrowRight } from "lucide-react";
+import { Phone, Mail, Hammer } from "lucide-react";
 import type { Contact } from "@shared/schema";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
-export default function SubcontractorsWidget({ widget, onSetHeaderActions }: WidgetProps) {
+export default function SubcontractorsWidget({ widget, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
 
-  // Header row: hover arrow to the contacts page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => setLocation("/contacts")}
-              data-testid="subcontractors-widget-open-contacts"
-              aria-label="Open contacts"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All contacts</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "All contacts", onClick: () => setLocation("/contacts") } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

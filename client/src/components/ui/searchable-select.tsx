@@ -27,6 +27,38 @@ export interface SearchableSelectOption {
   group?: string
 }
 
+/**
+ * Deterministic ranked matcher, used in place of cmdk's default scorer.
+ *
+ * cmdk ranks by fuzzy subsequence, which reads as broken on codes: searching
+ * "429" surfaces anything containing 4, 2 and 9 in order, and an exact hit can
+ * rank below noise. This ranks by how the match starts instead —
+ * exact > whole-string prefix > word prefix > substring > nothing — so typing a
+ * code or the first word of a name puts that option on top.
+ *
+ * Exported so hand-rolled Command pickers can adopt the same behaviour without
+ * moving to SearchableSelect wholesale.
+ */
+export function rankedCommandFilter(itemValue: string, search: string): number {
+  const q = search.trim().toLowerCase()
+  if (!q) return 1
+  const haystack = itemValue.toLowerCase()
+  if (haystack === q) return 1
+  if (haystack.startsWith(q)) return 0.9
+  // Word-boundary prefix: "gen" should hit "429 - General Expenses".
+  if (new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(haystack)) return 0.8
+  if (haystack.includes(q)) return 0.6
+  // Every whitespace-separated term present somewhere, so "gen exp" still works.
+  const terms = q.split(/\s+/)
+  if (terms.length > 1 && terms.every((t) => haystack.includes(t))) return 0.4
+  return 0
+}
+
+/** Everything a search should look at, not just the visible label. */
+function searchCorpus(option: SearchableSelectOption): string {
+  return [option.label, option.description, option.value].filter(Boolean).join(" ")
+}
+
 interface SearchableSelectProps {
   options: SearchableSelectOption[]
   value?: string
@@ -119,7 +151,7 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent className={cn("p-0", className)} align="start">
-        <Command shouldFilter={true}>
+        <Command shouldFilter={true} filter={rankedCommandFilter}>
           <CommandInput
             placeholder={searchPlaceholder}
             value={searchValue}
@@ -132,7 +164,7 @@ export function SearchableSelect({
                 {groupedOptions.ungrouped.map((option) => (
                   <CommandItem
                     key={option.value}
-                    value={option.label}
+                    value={searchCorpus(option)}
                     onSelect={() => handleSelect(option.value)}
                     disabled={option.disabled}
                     className="cursor-pointer"
@@ -164,7 +196,7 @@ export function SearchableSelect({
                 {groupOptions.map((option) => (
                   <CommandItem
                     key={option.value}
-                    value={option.label}
+                    value={searchCorpus(option)}
                     onSelect={() => handleSelect(option.value)}
                     disabled={option.disabled}
                     className="cursor-pointer"

@@ -4,7 +4,7 @@ import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimez
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -496,6 +496,13 @@ export function EnhancedCalendar({
   const [internalView, setInternalView] = useState<EnhancedCalendarView>(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const [trayOpen, setTrayOpen] = useState(true);
+  /**
+   * The all-day strip is sized by the busiest day in the range, so one day with
+   * five all-day items makes the row tall for the whole week and pushes the time
+   * grid off a dashboard tile. Compact by default: one row per day plus the
+   * existing "+N more" popover, so nothing is ever hidden outright.
+   */
+  const [allDayExpanded, setAllDayExpanded] = useState(false);
   // Track resize preview state for real-time visual feedback
   const [resizePreview, setResizePreview] = useState<{
     eventId: string;
@@ -1489,20 +1496,25 @@ export function EnhancedCalendar({
                 <div
                   key={idx}
                   className={cn(
-                    "py-2 px-1 text-center border-r border-border/50 flex-shrink-0",
+                    "py-1 px-1 text-center border-r border-border/50 flex-shrink-0",
                     isToday(date) ? "bg-primary/10" : !isWeekday && "bg-muted/50",
                     (view === "day" || view === "week") && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
-                  <div className="text-data text-muted-foreground uppercase font-semibold">
-                    {format(date, "EEE")}
-                  </div>
-                  <div className={cn(
-                    "text-sm font-semibold mt-0.5",
-                    isToday(date) && "inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs"
-                  )}>
-                    {format(date, "d")}
+                  {/* Day and date on one line. Stacked, this row cost ~52px of
+                      every calendar before a single event was drawn — most of a
+                      dashboard tile's usable height. */}
+                  <div className="flex items-center justify-center gap-1.5 leading-none">
+                    <span className="text-data text-muted-foreground uppercase font-semibold">
+                      {format(date, "EEE")}
+                    </span>
+                    <span className={cn(
+                      "text-sm font-semibold leading-none",
+                      isToday(date) && "inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs"
+                    )}>
+                      {format(date, "d")}
+                    </span>
                   </div>
                 </div>
               );
@@ -1531,9 +1543,19 @@ export function EnhancedCalendar({
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">
-          <div className="py-1.5 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+          <button
+            type="button"
+            onClick={() => setAllDayExpanded(v => !v)}
+            aria-expanded={allDayExpanded}
+            data-testid="all-day-toggle"
+            title={allDayExpanded ? "Collapse all-day events" : "Expand all-day events"}
+            className="py-1.5 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center gap-0.5 bg-background uppercase font-semibold hover:text-foreground transition-colors"
+          >
+            {allDayExpanded
+              ? <ChevronUp className="h-3 w-3 flex-shrink-0" />
+              : <ChevronDown className="h-3 w-3 flex-shrink-0" />}
             All Day
-          </div>
+          </button>
           <div 
             className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
             ref={allDayScrollRef}
@@ -1542,7 +1564,7 @@ export function EnhancedCalendar({
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
-              const MAX_ALL_DAY_EVENTS = 5;
+              const MAX_ALL_DAY_EVENTS = allDayExpanded ? 5 : 1;
               const visibleEvents = allDayEvents.slice(0, MAX_ALL_DAY_EVENTS);
               const hiddenEvents = allDayEvents.slice(MAX_ALL_DAY_EVENTS);
               const hiddenCount = hiddenEvents.length;

@@ -29,7 +29,7 @@ import { formatDistanceToNow } from "date-fns";
 import { stripActivityActor } from "@/lib/formatters";
 import { useLocation } from "wouter";
 
-export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -197,43 +197,35 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     }
   };
 
-  // Header row: + note button, hover arrow to the Activity tab
   useEffect(() => {
     onSetHeaderActions?.(
       currentProject ? (
-        <>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="default"
-                className="h-6 w-6"
-                onClick={() => setIsAddingNote(prev => !prev)}
-                data-testid="button-add-activity-note"
-                aria-label="Add note"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Add note</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-                onClick={() => navigate(`/projects/${currentProject.id}/activity`)}
-                data-testid="activity-widget-open-full"
-                aria-label="Open activity"
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">All activity</TooltipContent>
-          </Tooltip>
-        </>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={() => setIsAddingNote(prev => !prev)}
+              data-testid="button-add-activity-note"
+              aria-label="Add note"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Add note</TooltipContent>
+        </Tooltip>
       ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.(
+      currentProject
+        ? { label: "All activity", onClick: () => navigate(`/projects/${currentProject.id}/activity`) }
+        : null,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
