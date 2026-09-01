@@ -949,7 +949,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
     // Assignee filter
     if (filters.assignee && filters.assignee !== 'all') {
-      filteredItems = filteredItems.filter(item => item.assignedTo === filters.assignee);
+      filteredItems = filteredItems.filter(item => item.assignedToId === filters.assignee);
     }
 
     // Date range filter
