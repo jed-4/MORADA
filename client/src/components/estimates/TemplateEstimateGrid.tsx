@@ -22,6 +22,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import {
   renderEstimateItemWithSubItems,
   type EstimateGridCtx,
@@ -157,7 +158,20 @@ export function TemplateEstimateGrid({
   formatCurrency,
   onRequestDelete,
 }: Props) {
-  const [columns, setColumns] = useState<ColumnConfig[]>(TEMPLATE_DEFAULT_COLUMNS);
+  // Order and widths come from useResizableColumns — the same hook the allowance
+  // detail and price-list tables use — so this grid gets drag-to-reorder and
+  // drag-to-resize headers instead of a fixed layout, and behaves like the rest
+  // of the app's bespoke grids rather than being a third way of doing columns.
+  const taskCols = useResizableColumns(
+    "estimate-template-grid",
+    TEMPLATE_DEFAULT_COLUMNS.map((c) => ({
+      key: c.id,
+      defaultWidth: c.widthPx,
+      flex: c.id === "item",     // the item name soaks up the leftover width
+    })),
+    0,
+    { reorderable: true },
+  );
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -168,33 +182,11 @@ export function TemplateEstimateGrid({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Column layout is per user AND per view. Sharing "estimate_detail" would mean
-  // resizing a column in a template silently resized it in every estimate.
-  const { data: savedPrefs } = useQuery<{ preferences?: { columns?: ColumnConfig[] } }>({
-    queryKey: ["/api/user-view-preferences", "estimate_template_detail"],
-    queryFn: async () => {
-      const res = await fetch("/api/user-view-preferences/estimate_template_detail", {
-        credentials: "include",
-      });
-      if (!res.ok) return {};
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
-
-  useEffect(() => {
-    const saved = savedPrefs?.preferences?.columns;
-    if (saved?.length) setColumns(saved);
-  }, [savedPrefs]);
-
-  const savePrefs = useMutation({
-    mutationFn: async (cols: ColumnConfig[]) =>
-      apiRequest("/api/user-view-preferences", "POST", {
-        viewKey: "estimate_template_detail",
-        preferences: { columns: cols },
-      }),
-  });
+  // NOTE: this grid used to persist its layout server-side under the view key
+  // "estimate_template_detail". That followed a user between devices, which the
+  // hook's localStorage does not — but it was only introduced with this grid, so
+  // no one has a saved layout to lose, and having ONE owner of column state
+  // beats two stores disagreeing about the same table.
 
   const { data: statusCategory } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/estimate_item.status"],
@@ -437,15 +429,24 @@ export function TemplateEstimateGrid({
   );
 
   // ── Layout ─────────────────────────────────────────────────────────────────
-  const visibleCols = useMemo(() => columns.filter((c) => c.visible), [columns]);
-  const gridTemplate = useMemo(
-    () => `40px ${visibleCols.map((c) => `${c.widthPx}px`).join(" ")} 80px`,
-    [visibleCols],
+  // EstimateGroupCard and the shared cell renderer both take ColumnConfig[], and
+  // they map over it — so reordering here reorders the data with it, for free.
+  const labelFor = useMemo(
+    () => new Map(TEMPLATE_DEFAULT_COLUMNS.map((c) => [c.id, c.label])),
+    [],
   );
-  const tableWidth = useMemo(
-    () => 40 + visibleCols.reduce((a, c) => a + c.widthPx, 0) + 80,
-    [visibleCols],
+  const columns: ColumnConfig[] = useMemo(
+    () => taskCols.cols.map((c) => ({
+      id: c.key,
+      label: labelFor.get(c.key) ?? c.key,
+      visible: true,
+      widthPx: c.width,
+    })),
+    [taskCols.cols, labelFor],
   );
+  const visibleCols = columns;
+  const gridTemplate = `40px ${taskCols.gridTemplate} 80px`;
+  const tableWidth = 40 + taskCols.minWidth + 80;
 
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
@@ -505,7 +506,11 @@ export function TemplateEstimateGrid({
           {visibleCols.map((c) => (
             <div
               key={c.id}
-              className={`px-2 truncate ${
+              {...taskCols.headerDragProps(c.id)}
+              style={{ opacity: taskCols.draggingKey === c.id ? 0.4 : 1 }}
+              title="Drag to move · drag the edge to resize"
+              data-testid={`tpl-col-${c.id}`}
+              className={`relative px-2 truncate select-none cursor-grab active:cursor-grabbing transition-opacity ${
                 ["quantity", "unitCostExTax", "markup", "builderCost", "clientPriceExTax", "clientPriceIncTax"].includes(c.id)
                   ? "text-right"
                   : ["type", "allowance", "wastage"].includes(c.id)
@@ -514,6 +519,10 @@ export function TemplateEstimateGrid({
               }`}
             >
               {c.label}
+              <ColResizeHandle
+                onStart={(e) => taskCols.startResize(c.id, e.clientX, c.widthPx)}
+                testId={`tpl-col-resize-${c.id}`}
+              />
             </div>
           ))}
           <div />
