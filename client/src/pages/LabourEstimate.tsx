@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -51,6 +51,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { LabourEstimate, LabourEstimateCategory, LabourEstimateTask, Project } from "@shared/schema";
 import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
@@ -191,6 +192,8 @@ function SortableTaskRow({
   onDelete,
   onCopyToTemplate,
   isTemplate,
+  cols,
+  gridTemplate,
 }: {
   task: TaskLike;
   editingCell: { taskId: string; field: string } | null;
@@ -204,6 +207,8 @@ function SortableTaskRow({
   onDelete: () => void;
   onCopyToTemplate?: () => void;
   isTemplate?: boolean;
+  cols: { key: string }[];
+  gridTemplate: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
@@ -232,10 +237,97 @@ function SortableTaskRow({
     commitEdit(task, field);
   };
 
+  // Cells are rendered BY KEY so the column order can change. Listing them
+  // positionally in JSX — which is how this grid used to work, and how the
+  // allowance tables still do — means the headers move but the data does not.
+  const renderCell = (key: string) => {
+    switch (key) {
+      case "description":
+        return (
+    <div className="pr-2 py-0.5">
+      {editingCell?.taskId === task.id && editingCell.field === 'description' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('description')}
+          onKeyDown={handleKeyDown('description')}
+          className="h-6 text-sm focus-visible:ring-0 border-primary"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer hover:text-foreground truncate block"
+          onClick={() => startEdit(task.id, 'description', task.description)}
+        >
+          {task.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
+        </span>
+      )}
+    </div>
+        );
+      case "numMen":
+        return (
+    <div className="flex justify-center">
+      {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'numMen' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('numMen')}
+          onKeyDown={handleKeyDown('numMen')}
+          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-16"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
+          onClick={() => task.subHeading ? undefined : startEdit(task.id, 'numMen', task.numMen)}
+        >
+          {task.subHeading ? "" : task.numMen}
+        </span>
+      )}
+    </div>
+        );
+      case "hoursPerMan":
+        return (
+    <div className="flex justify-center">
+      {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'hoursPerMan' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('hoursPerMan')}
+          onKeyDown={handleKeyDown('hoursPerMan')}
+          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
+          onClick={() => task.subHeading ? undefined : startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
+        >
+          {task.subHeading ? "" : task.hoursPerMan}
+        </span>
+      )}
+    </div>
+        );
+      case "totalHours":
+        return (
+    <div className="text-right pr-1">
+      <span className="text-sm tabular-nums font-medium">
+        {task.subHeading ? "" : isTemplate ? `${task.hoursPerMan}h` : task.totalHours.toFixed(2)}
+      </span>
+    </div>
+        );
+      default:
+        return <span />;
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
-      style={{ ...dndStyle, gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" } as React.CSSProperties}
+      style={{ ...dndStyle, gridTemplateColumns: `20px ${gridTemplate}` } as React.CSSProperties}
       className={`grid items-center border-b border-border/10 group/row min-h-[34px] ${
         task.subHeading ? "bg-muted/30 font-medium" : ""
       }`}
@@ -248,79 +340,7 @@ function SortableTaskRow({
         <GripVertical className="w-3 h-3" />
       </div>
 
-      {/* Description */}
-      <div className="pr-2 py-0.5">
-        {editingCell?.taskId === task.id && editingCell.field === 'description' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('description')}
-            onKeyDown={handleKeyDown('description')}
-            className="h-6 text-sm focus-visible:ring-0 border-primary"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer hover:text-foreground truncate block"
-            onClick={() => startEdit(task.id, 'description', task.description)}
-          >
-            {task.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
-          </span>
-        )}
-      </div>
-
-      {/* No. Men */}
-      <div className="flex justify-center">
-        {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'numMen' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('numMen')}
-            onKeyDown={handleKeyDown('numMen')}
-            className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-16"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'numMen', task.numMen)}
-          >
-            {task.subHeading ? "" : task.numMen}
-          </span>
-        )}
-      </div>
-
-      {/* Hrs / Man */}
-      <div className="flex justify-center">
-        {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'hoursPerMan' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('hoursPerMan')}
-            onKeyDown={handleKeyDown('hoursPerMan')}
-            className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
-          >
-            {task.subHeading ? "" : task.hoursPerMan}
-          </span>
-        )}
-      </div>
-
-      {/* Total / default hrs */}
-      <div className="text-right pr-1">
-        <span className="text-sm tabular-nums font-medium">
-          {task.subHeading ? "" : isTemplate ? `${task.hoursPerMan}h` : task.totalHours.toFixed(2)}
-        </span>
-      </div>
-
+      {cols.map(c => <React.Fragment key={c.key}>{renderCell(c.key)}</React.Fragment>)}
       {/* 3-dot menu */}
       <div className="flex justify-center opacity-0 group-hover/row:opacity-100 transition-opacity">
         <DropdownMenu>
@@ -357,6 +377,28 @@ function SortableTaskRow({
  */
 const PENDING_PREFIX = "pending-";
 
+/**
+ * The movable columns. The drag handle (20px) and the actions menu (32px) sit
+ * outside this list — they are structural, not data, and pinning them keeps the
+ * grip on the left and the menu on the right whatever else is reordered.
+ *
+ * Description is the flex column, so the table still reaches the right edge
+ * after the others are resized.
+ */
+const LABOUR_COLUMNS = [
+  { key: "description", defaultWidth: 260, flex: true },
+  { key: "numMen", defaultWidth: 70 },
+  { key: "hoursPerMan", defaultWidth: 80 },
+  { key: "totalHours", defaultWidth: 80 },
+];
+
+const LABOUR_COLUMN_LABELS: Record<string, string> = {
+  description: "Description",
+  numMen: "No. Men",
+  hoursPerMan: "Hrs / Man",
+  totalHours: "Total Hrs",
+};
+
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const mode = 'project' as const;
@@ -370,6 +412,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const suppressBlurRef = useRef(false);
   const taskListRef = useRef<HTMLDivElement>(null);
+  const taskCols = useResizableColumns("labour-tasks", LABOUR_COLUMNS, 32, { reorderable: true });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -1030,13 +1073,26 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {/* Column headers */}
           <div
             className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
-            style={{ gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" }}
+            style={{ gridTemplateColumns: `20px ${taskCols.gridTemplate}` }}
           >
             <span />
-            <span>Description</span>
-            <span className="text-center">No. Men</span>
-            <span className="text-center">Hrs / Man</span>
-            <span className="text-right pr-1">{mode === 'template' ? 'Default' : 'Total Hrs'}</span>
+            {taskCols.cols.map(c => (
+              <span
+                key={c.key}
+                {...taskCols.headerDragProps(c.key)}
+                className={`relative select-none cursor-grab active:cursor-grabbing truncate px-0.5 ${
+                  c.key === 'totalHours' ? 'text-right pr-1' : c.key === 'description' ? '' : 'text-center'
+                }`}
+                title="Drag to move · drag the edge to resize"
+                data-testid={`labour-col-${c.key}`}
+              >
+                {c.key === 'totalHours' && mode === 'template' ? 'Default' : LABOUR_COLUMN_LABELS[c.key]}
+                <ColResizeHandle
+                  onStart={e => taskCols.startResize(c.key, e.clientX, c.width)}
+                  testId={`labour-col-resize-${c.key}`}
+                />
+              </span>
+            ))}
             <span />
           </div>
 
@@ -1063,6 +1119,8 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                   {activeTasks.map(task => (
                     <SortableTaskRow
                       key={task.id}
+                      cols={taskCols.cols}
+                      gridTemplate={taskCols.gridTemplate}
                       task={task}
                       editingCell={editingCell}
                       editValue={editValue}
