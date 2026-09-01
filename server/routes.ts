@@ -6387,6 +6387,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return cat;
   };
 
+  /** task → category → labour estimate → project → company */
+  const loadLabourEstimateTask = async (id: string) => {
+    const { labourEstimateTasks } = await import("@shared/schema");
+    const [row] = await db.select().from(labourEstimateTasks)
+      .where(eq(labourEstimateTasks.id, id)).limit(1);
+    return row;
+  };
+  const getOwnedLabourEstimateTask = makeOwnedViaParent(
+    loadLabourEstimateTask, (t) => t?.categoryId,
+    getOwnedLabourEstimateCategory as any, "Task not found");
+
   // --- batches ---
   /**
    * Every schedule item id resolved in ONE round trip:
@@ -8792,6 +8803,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/labour-estimate-categories/:catId/tasks", requireAuth, async (req, res) => {
     try {
+      // Ownership: category → labour estimate → project → company. The id is
+      // the client's, and getLabourEstimateTasks filters on nothing else, so
+      // without this any signed-in user could read another company's tasks.
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
       const tasks = await storage.getLabourEstimateTasks(req.params.catId);
       res.json(tasks);
     } catch (error) {
@@ -8801,6 +8816,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/labour-estimate-categories/:catId/tasks", requireAuth, async (req, res) => {
     try {
+      // The categoryId written below comes straight from the URL — guard it,
+      // or a row lands in another company's labour estimate.
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
       const task = await storage.createLabourEstimateTask({
         categoryId: req.params.catId,
         description: req.body.description || "",
@@ -8816,7 +8834,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateLabourEstimateTask(req.params.taskId, req.body);
+      // Ownership: task → category → labour estimate → project → company.
+      if (!(await getOwnedLabourEstimateTask(req, res, req.params.taskId))) return;
+      // updateLabourEstimateTask spreads `data` straight into .set(), so the
+      // body is whitelisted here: an unfiltered categoryId would re-parent an
+      // owned task into another company's category, and an id would rewrite
+      // the primary key. totalHours is omitted because storage recomputes it.
+      const { description, subHeading, numMen, hoursPerMan, sortOrder } = req.body ?? {};
+      const patch: Record<string, unknown> = {};
+      if (description !== undefined) patch.description = description;
+      if (subHeading !== undefined) patch.subHeading = subHeading;
+      if (numMen !== undefined) patch.numMen = numMen;
+      if (hoursPerMan !== undefined) patch.hoursPerMan = hoursPerMan;
+      if (sortOrder !== undefined) patch.sortOrder = sortOrder;
+      const updated = await storage.updateLabourEstimateTask(req.params.taskId, patch);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update task" });
@@ -8825,6 +8856,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
     try {
+      // Ownership: task → category → labour estimate → project → company.
+      if (!(await getOwnedLabourEstimateTask(req, res, req.params.taskId))) return;
       await storage.deleteLabourEstimateTask(req.params.taskId);
       res.status(204).send();
     } catch (error) {
