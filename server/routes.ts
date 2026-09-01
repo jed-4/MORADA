@@ -13287,6 +13287,159 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Every deadline that touches this user, from one round trip.
+   *
+   * The widget behind this used to fetch tasks and a `/api/milestones` route
+   * that never existed, and it filtered only the far end of the window — so an
+   * old overdue task stayed in the list forever and crowded out everything that
+   * was actually coming up. Both are fixed here: the sources are real, and
+   * overdue is returned as its own capped list rather than being allowed to
+   * swallow the upcoming one.
+   *
+   * Fetching these seven client-side would be seven sequential round trips to
+   * us-east-1; unioned here it is one.
+   */
+  app.get("/api/deadlines", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? "14"), 10) || 14, 1), 90);
+      const OVERDUE_LOOKBACK_DAYS = 60;
+
+      const now = new Date();
+      const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+      const windowStart = subDays(todayStart, OVERDUE_LOOKBACK_DAYS);
+      const windowEnd = addDays(todayStart, days); windowEnd.setHours(23, 59, 59, 999);
+
+      const {
+        projects: projectsTbl,
+        scheduleItems: scheduleTbl,
+        selections: selectionsTbl,
+        rfqs: rfqsTbl,
+        schedules: schedulesTbl,
+        variations: variationsTbl,
+        reviewItems: reviewItemsTbl,
+        checklistInstances: checklistTbl,
+      } = await import("@shared/schema");
+
+      const projectRows = await db
+        .select({ id: projectsTbl.id, name: projectsTbl.name, color: projectsTbl.color })
+        .from(projectsTbl)
+        .where(and(eq(projectsTbl.companyId, companyId), eq(projectsTbl.isActive, true)));
+      const projectIds = projectRows.map((p: any) => p.id);
+      const projectMap = new Map(projectRows.map((p: any) => [p.id, p]));
+
+      if (projectIds.length === 0) {
+        return res.json({ overdue: [], upcoming: [], days });
+      }
+
+      const inWindow = (col: any) => and(gte(col, windowStart), lte(col, windowEnd));
+
+      // Schedule items hang off `schedules`, not off projects directly, so the
+      // project has to be reached one hop out.
+      const scheduleRows = await db
+        .select({ id: schedulesTbl.id, projectId: schedulesTbl.projectId })
+        .from(schedulesTbl)
+        .where(inArray(schedulesTbl.projectId, projectIds));
+      const scheduleProject = new Map(scheduleRows.map((r: any) => [r.id, r.projectId as string]));
+      const scheduleIds = scheduleRows.map((r: any) => r.id);
+
+      // Status sets are the "still open" side of each table's documented values;
+      // anything already decided, delivered or cancelled is not a deadline.
+      const [tasks, milestones, sels, rfqRows, varRows, revRows, chkRows] = await Promise.all([
+        storage.getTasksByUser(user.id, companyId),
+        scheduleIds.length
+          ? db.select().from(scheduleTbl).where(and(
+              inArray(scheduleTbl.scheduleId, scheduleIds),
+              inArray(scheduleTbl.type, ["milestone", "inspection"]),
+              inArray(scheduleTbl.status, ["not_started", "in_progress", "on_hold"]),
+              inWindow(scheduleTbl.startDate),
+            ))
+          : Promise.resolve([]),
+        db.select().from(selectionsTbl).where(and(
+          inArray(selectionsTbl.projectId, projectIds),
+          inArray(selectionsTbl.status, ["draft", "pending"]),
+          inWindow(selectionsTbl.deadline),
+        )),
+        db.select().from(rfqsTbl).where(and(
+          eq(rfqsTbl.companyId, companyId),
+          inArray(rfqsTbl.status, ["sent", "confirmed"]),
+          inWindow(rfqsTbl.dueDate),
+        )),
+        db.select().from(variationsTbl).where(and(
+          inArray(variationsTbl.projectId, projectIds),
+          inArray(variationsTbl.status, ["pending", "action"]),
+          inWindow(variationsTbl.approvalDeadline),
+        )),
+        db.select().from(reviewItemsTbl).where(and(
+          eq(reviewItemsTbl.companyId, companyId),
+          inArray(reviewItemsTbl.status, ["awaiting_review", "changes_requested"]),
+          inWindow(reviewItemsTbl.dueDate),
+        )),
+        db.select().from(checklistTbl).where(and(
+          eq(checklistTbl.companyId, companyId),
+          inArray(checklistTbl.status, ["active", "in_progress"]),
+          inWindow(checklistTbl.dueDate),
+        )),
+      ]);
+
+      type Deadline = {
+        id: string; kind: string; title: string; dueDate: string;
+        projectId: string | null; projectName: string | null; projectColor: string | null;
+        href: string;
+      };
+
+      const add = (
+        out: Deadline[], kind: string, id: string, title: string,
+        due: Date | string | null, projectId: string | null, href: string,
+      ) => {
+        if (!due) return;
+        const d = new Date(due);
+        if (isNaN(d.getTime()) || d < windowStart || d > windowEnd) return;
+        const project = projectId ? projectMap.get(projectId) : null;
+        out.push({
+          id: `${kind}:${id}`, kind, title, dueDate: d.toISOString(),
+          projectId, projectName: project?.name ?? null, projectColor: project?.color ?? null, href,
+        });
+      };
+
+      const all: Deadline[] = [];
+      for (const t of tasks as any[]) {
+        if (t.status === "done" || t.status === "complete") continue;
+        add(all, "task", t.id, t.title, t.dueDate, t.projectId ?? null, "/tasks");
+      }
+      for (const m of milestones as any[]) {
+        const pid = scheduleProject.get(m.scheduleId) ?? null;
+        add(all, m.type === "inspection" ? "inspection" : "milestone", m.id, m.name, m.startDate, pid, pid ? `/projects/${pid}/schedule` : "/schedule");
+      }
+      for (const s of sels as any[])
+        add(all, "selection", s.id, s.name, s.deadline, s.projectId, `/projects/${s.projectId}/selections`);
+      for (const r of rfqRows as any[])
+        add(all, "rfq", r.id, r.title, r.dueDate, r.projectId ?? null, r.projectId ? `/projects/${r.projectId}/rfqs` : "/rfqs");
+      for (const v of varRows as any[])
+        add(all, "variation", v.id, v.name, v.approvalDeadline, v.projectId, `/projects/${v.projectId}/variations`);
+      for (const rv of revRows as any[])
+        add(all, "review", rv.id, rv.name, rv.dueDate, rv.projectId, `/projects/${rv.projectId}/reviews`);
+      for (const c of chkRows as any[])
+        add(all, "checklist", c.id, c.name, c.dueDate, c.projectId, `/projects/${c.projectId}/checklists`);
+
+      all.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      const todayMs = todayStart.getTime();
+      const overdue = all.filter(d => new Date(d.dueDate).getTime() < todayMs);
+      const upcoming = all.filter(d => new Date(d.dueDate).getTime() >= todayMs);
+
+      // Overdue is capped so a long tail can never push the upcoming work —
+      // the thing this widget is for — off the bottom of the card.
+      res.json({ overdue: overdue.slice(-25).reverse(), upcoming, days });
+    } catch (error) {
+      console.error("Error building deadlines:", error);
+      res.status(500).json({ error: "Failed to load deadlines" });
+    }
+  });
+
   app.get("/api/business/variations-pending", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
