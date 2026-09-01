@@ -7,11 +7,10 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Send, ArrowRight, AlertCircle, Paperclip } from "lucide-react";
+import { MessageSquare, Send, AlertCircle, Paperclip } from "lucide-react";
 import { useLocation } from "wouter";
 import { format, isToday } from "date-fns";
 
@@ -48,7 +47,7 @@ function initials(name: string): string {
   return name.split(/\s+/).map(p => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
 }
 
-export default function MessagesWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function MessagesWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -130,27 +129,9 @@ export default function MessagesWidget({ widget, onUpdate, isConfiguring, onClos
     sendMutation.mutate(content);
   };
 
-  // Header row: hover arrow to the Messages tab
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(`/projects/${currentProject.id}/messages`)}
-              data-testid="messages-widget-open-full"
-              aria-label="Open messages"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All messages</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "All messages", onClick: () => navigate(`/projects/${currentProject.id}/messages`) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

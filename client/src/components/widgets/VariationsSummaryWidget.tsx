@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { ArrowRight } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
@@ -10,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
 type RowKey = "total" | "approved" | "pending" | "revised" | "invoiced";
@@ -23,7 +21,7 @@ const ROW_CONFIG: { key: RowKey; configKey: string; label: string }[] = [
   { key: "invoiced", configKey: "showInvoiced", label: "Invoiced" },
 ];
 
-export default function VariationsSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function VariationsSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const { metrics, isLoading, isError, formatCurrency } = useProjectMetrics();
   const allowed = useFinancialPermission();
@@ -45,27 +43,9 @@ export default function VariationsSummaryWidget({ widget, onUpdate, isConfigurin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfiguring]);
 
-  // Hover arrow in the widget header → variations page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(variationsPath)}
-              data-testid="variations-widget-open-full"
-              aria-label="Open variations"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All variations</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "All variations", onClick: () => navigate(variationsPath) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

@@ -58,8 +58,51 @@ function isBusinessTask(task: Task): boolean {
   return !task.projectId && !task.scope;
 }
 
+type SortKey = 'dueDate' | 'priority' | 'project' | 'title';
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'dueDate', label: 'Due date' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'project', label: 'Project' },
+  { value: 'title', label: 'Name' },
+];
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+/**
+ * Until now the list had no ordering at all — rows arrived in whatever order
+ * Postgres returned them, which is arbitrary and can change between refetches.
+ * Due date ascending is the default because it puts the overdue work at the top
+ * on its own, with undated tasks last rather than jumbled through the middle.
+ */
+function compareTasks(a: Task, b: Task, key: SortKey, projectName: (t: Task) => string): number {
+  switch (key) {
+    case 'dueDate': {
+      const av = a.dueDate ? new Date(a.dueDate).getTime() : null;
+      const bv = b.dueDate ? new Date(b.dueDate).getTime() : null;
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;   // undated sinks, whichever direction
+      if (bv === null) return -1;
+      return av - bv;
+    }
+    case 'priority': {
+      const av = PRIORITY_RANK[a.priority ?? ''] ?? 99;
+      const bv = PRIORITY_RANK[b.priority ?? ''] ?? 99;
+      return av - bv;
+    }
+    case 'project':
+      return projectName(a).localeCompare(projectName(b));
+    case 'title':
+      return (a.title ?? '').localeCompare(b.title ?? '');
+    default:
+      return 0;
+  }
+}
+
 interface WidgetConfig {
   maxTasks?: number;
+  sortBy?: SortKey;
+  sortDir?: 'asc' | 'desc';
   showFilter?: FilterType;
   groupBy?: GroupByType;
   showCompleted?: boolean;
@@ -83,7 +126,7 @@ function TaskListContainer({ isBoard, children }: { isBoard: boolean; children: 
   return <ScrollArea className="flex-1 min-h-0">{children}</ScrollArea>;
 }
 
-export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
+export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, onSetTitleAction, userId }: WidgetProps) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const { effectiveTimezone } = useTimezone();
@@ -96,6 +139,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const showCompleted = config.showCompleted ?? false;
   const projectFilter = config.projectFilter ?? 'all';
   const view = config.view ?? 'list';
+  const sortBy = config.sortBy ?? 'dueDate';
+  const sortDir = config.sortDir ?? 'asc';
   // A board with one column is just a list with extra chrome.
   const effectiveGroupBy: GroupByType =
     view === 'board' && groupBy === 'none' ? 'project' : groupBy;
@@ -107,6 +152,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
   const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
   const [configView, setConfigView] = useState<ViewType>(view);
+  const [configSortBy, setConfigSortBy] = useState<SortKey>(sortBy);
+  const [configSortDir, setConfigSortDir] = useState<'asc' | 'desc'>(sortDir);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -135,42 +182,31 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     queryKey: ["/api/projects"],
   });
 
-  // Header row: + new task, hover arrow through to the full Tasks page
+  // Header row: + new task. Opening the full page is the title's job.
   useEffect(() => {
     onSetHeaderActions?.(
-      <>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="default"
-              className="h-6 w-6"
-              onClick={() => setShowCreateDialog(true)}
-              data-testid="button-add-task-widget"
-              aria-label="New task"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">New task</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate("/tasks")}
-              data-testid="personal-tasks-open-full"
-              aria-label="Open tasks"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">All tasks</TooltipContent>
-        </Tooltip>
-      </>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="default"
+            className="h-6 w-6"
+            onClick={() => setShowCreateDialog(true)}
+            data-testid="button-add-task-widget"
+            aria-label="New task"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">New task</TooltipContent>
+      </Tooltip>
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    onSetTitleAction?.({ label: "All tasks", onClick: () => navigate("/tasks") });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -229,8 +265,15 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         break;
     }
 
+    // Sort before the cap, so `maxTasks` keeps the most relevant rows rather
+    // than an arbitrary slice of whatever order the server returned.
+    const projectNameOf = (t: Task) =>
+      (t.projectId ? projectMap.get(t.projectId)?.name : null) ?? (isBusinessTask(t) ? businessLabel : '');
+    const dir = sortDir === 'desc' ? -1 : 1;
+    result = [...result].sort((a, b) => compareTasks(a, b, sortBy, projectNameOf) * dir);
+
     return result.slice(0, maxTasks);
-  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today, isLingering]);
+  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today, isLingering, sortBy, sortDir, projectMap, businessLabel]);
 
   const filterCounts = useMemo(() => {
     let base = tasks;
@@ -409,6 +452,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             view: configView,
             showCompleted: configShowCompleted,
             projectFilter: configProjectFilter,
+            sortBy: configSortBy,
+            sortDir: configSortDir,
           }
         });
       }
@@ -484,6 +529,34 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
               <SelectItem value="board">Board</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Sort By</Label>
+          <div className="flex gap-2">
+            <Select value={configSortBy} onValueChange={(v) => setConfigSortBy(v as SortKey)}>
+              <SelectTrigger className="h-7 text-xs flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={configSortDir} onValueChange={(v) => setConfigSortDir(v as 'asc' | 'desc')}>
+              <SelectTrigger className="h-7 text-xs w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Asc</SelectItem>
+                <SelectItem value="desc">Desc</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-data text-muted-foreground">
+            Tasks with no due date always sort last.
+          </p>
         </div>
 
         <div className="space-y-2">

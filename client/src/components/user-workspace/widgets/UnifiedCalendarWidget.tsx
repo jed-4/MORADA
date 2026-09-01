@@ -376,7 +376,16 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
           <WidgetSkeleton rows={4} />
         </div>
       ) : (
-        <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        <div
+          className="flex-1 min-h-0 min-w-0 overflow-hidden"
+          // EnhancedCalendar paints its gutters, sticky headers and column
+          // washes with `bg-background` — the page cream. That is right on the
+          // full-page calendar, which sits flush on the page, but inside a white
+          // widget card it reads as a dirty off-white panel. Remapping the token
+          // for this subtree fixes every one of them at once, and leaves the
+          // shared component (and the calendar page) alone.
+          style={{ ["--background" as never]: "var(--card)" }}
+        >
           {/* The same renderer the user calendar page uses, so the two surfaces
               match by construction rather than by imitation. Read-only: a stray
               drag in a dashboard tile should never move a real site booking. */}

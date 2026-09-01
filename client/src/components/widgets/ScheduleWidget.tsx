@@ -106,7 +106,7 @@ function TypeDot({ type, overdue, className }: { type: string; overdue?: boolean
   );
 }
 
-export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
+export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const { effectiveTimezone } = useTimezone();
   const weekStartDay = useWeekStartDay();
@@ -164,26 +164,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   }, [viewMode, displayMode, currentDate, isConfiguring]);
 
   // Header row: arrow through to the full schedule page
+  // The title itself is the way through to the full page.
   useEffect(() => {
-    onSetHeaderActions?.(
-      currentProject ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-              onClick={() => navigate(`/projects/${currentProject.id}/schedule`)}
-              data-testid="schedule-widget-open-full"
-              aria-label="Open full schedule"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Full schedule</TooltipContent>
-        </Tooltip>
-      ) : null,
-    );
+    onSetTitleAction?.(currentProject ? { label: "Full schedule", onClick: () => navigate(`/projects/${currentProject.id}/schedule`) } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 

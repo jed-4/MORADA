@@ -33,6 +33,15 @@ export interface WidgetCardProps {
   accent?: WidgetAccent;
   headerLeft?: ReactNode;
   headerRight?: ReactNode;
+  /**
+   * Where the widget's title leads. When set, the title becomes a button that
+   * lifts on hover — replacing the arrow every widget used to hand-roll into
+   * `headerActions`, which cost a control and only appeared once you had
+   * already found it.
+   */
+  onTitleClick?: () => void;
+  /** Tooltip/aria text for the title button, e.g. "All bills". */
+  titleActionLabel?: string;
   children: ReactNode;
   className?: string;
   contentClassName?: string;
@@ -46,6 +55,8 @@ export function WidgetCard({
   accent = "purple",
   headerLeft,
   headerRight,
+  onTitleClick,
+  titleActionLabel,
   children,
   className,
   contentClassName,
@@ -66,9 +77,20 @@ export function WidgetCard({
           <div className="flex shrink-0 items-center">{headerLeft}</div>
         ) : null}
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold leading-tight">
-            {title}
-          </h3>
+          {onTitleClick ? (
+            <button
+              type="button"
+              onClick={onTitleClick}
+              title={titleActionLabel}
+              aria-label={titleActionLabel}
+              data-testid="widget-card-title-action"
+              className="-mx-1.5 -my-0.5 flex max-w-full items-center rounded px-1.5 py-0.5 text-left transition-colors hover-elevate active-elevate-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <h3 className="truncate text-sm font-semibold leading-tight">{title}</h3>
+            </button>
+          ) : (
+            <h3 className="truncate text-sm font-semibold leading-tight">{title}</h3>
+          )}
           {subtitle ? (
             <p className="mt-0.5 truncate text-xs text-bp-muted">{subtitle}</p>
           ) : null}
