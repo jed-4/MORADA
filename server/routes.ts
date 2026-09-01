@@ -8592,6 +8592,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Named labour templates (migration 0065) ──────────────────────────────
+  // Every one of these checks the set belongs to the caller's company before
+  // touching it — the ids come from the URL and nothing downstream re-checks.
+
+  const getOwnedLabourTemplateSet = async (req: any, res: any, id: string) => {
+    const companyId = req.user?.companyId;
+    const set = id ? await storage.getLabourTemplateSet(id) : undefined;
+    if (!companyId || !set || set.companyId !== companyId) {
+      res.status(404).json({ error: "Template not found" });
+      return null;
+    }
+    return set;
+  };
+
+  app.get("/api/labour-template-sets", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      res.json(await storage.getLabourTemplateSets(companyId));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch labour templates" });
+    }
+  });
+
+  app.post("/api/labour-template-sets", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { name } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Name required" });
+      res.status(201).json(await storage.createLabourTemplateSet({ companyId, name: name.trim() }));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create labour template" });
+    }
+  });
+
+  app.patch("/api/labour-template-sets/:id", requireAuth, async (req, res) => {
+    try {
+      if (!(await getOwnedLabourTemplateSet(req, res, req.params.id))) return;
+      const { name } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Name required" });
+      res.json(await storage.renameLabourTemplateSet(req.params.id, name.trim()));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to rename labour template" });
+    }
+  });
+
+  app.delete("/api/labour-template-sets/:id", requireAuth, async (req, res) => {
+    try {
+      // Takes its rows with it via ON DELETE CASCADE, so an unguarded id would
+      // destroy another company's template outright.
+      if (!(await getOwnedLabourTemplateSet(req, res, req.params.id))) return;
+      await storage.deleteLabourTemplateSet(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete labour template" });
+    }
+  });
+
+  app.get("/api/labour-template-sets/:id/rows", requireAuth, async (req, res) => {
+    try {
+      if (!(await getOwnedLabourTemplateSet(req, res, req.params.id))) return;
+      res.json(await storage.getLabourTemplateSetRows(req.params.id));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch labour template rows" });
+    }
+  });
+
   app.get("/api/labour-task-templates", requireAuth, async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
