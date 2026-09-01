@@ -38,3 +38,30 @@ export function useScheduleView() {
 }
 
 export const ScheduleViewProvider = ScheduleViewContext.Provider;
+
+// Assignee filter values are either "all", a contact id, or "company:<companyId>"
+// for the business itself (the same convention ContactSelect uses when assigning).
+export const BUSINESS_ASSIGNEE_PREFIX = "company:";
+
+/**
+ * Shared by the list and Gantt views so the two can't drift apart again.
+ *
+ * Business-assigned items are stored with assignedToId = null and assignedToName
+ * set to the company nickname — see the `company:` branch of the PATCH handler for
+ * /api/schedule-items/:id. Some older rows still carry the raw "company:<uuid>" in
+ * assignedToId. Because the cached nickname goes stale when the business is renamed,
+ * match on the *shape* of a business assignment rather than on the stored name.
+ */
+export function matchesAssigneeFilter(
+  item: Pick<ScheduleItem, "assignedToId" | "assignedToName">,
+  assignee: string,
+): boolean {
+  if (!assignee || assignee === "all") return true;
+
+  if (assignee.startsWith(BUSINESS_ASSIGNEE_PREFIX)) {
+    const noContact = !item.assignedToId || item.assignedToId.startsWith(BUSINESS_ASSIGNEE_PREFIX);
+    return noContact && !!item.assignedToName;
+  }
+
+  return item.assignedToId === assignee;
+}
