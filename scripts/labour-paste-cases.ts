@@ -9,7 +9,7 @@
  * because every bug this parser can have lives in that formatting, not in the
  * logic on top of it.
  */
-import { parseLabourPaste, type ParsedLabourRow } from "../client/src/lib/parseLabourPaste";
+import { parseLabourPaste, describeRoles, type ParsedLabourRow } from "../client/src/lib/parseLabourPaste";
 
 let failed = 0;
 
@@ -142,6 +142,65 @@ check(
   "totalHours is not a parsed field",
   Object.keys(rows("A\t2\t3")[0]),
   ["description", "numMen", "hoursPerMan"],
+);
+
+
+// ── Jed's actual sheet: Men · Hrs · Description, figures on the LEFT ────────
+// This is the layout that broke the first build, which assumed the app's own
+// column order. Nothing here is a header row — the roles come from the shape.
+{
+  const r = parseLabourPaste(
+    "2\t1\tOpen up roof to install skylights\n2\t4\tFrame & install skylights\n1\t4\tFrame skylight tunnels",
+  );
+  check("figures-first layout", r.rows, [
+    { description: "Open up roof to install skylights", numMen: 2, hoursPerMan: 1 },
+    { description: "Frame & install skylights", numMen: 2, hoursPerMan: 4 },
+    { description: "Frame skylight tunnels", numMen: 1, hoursPerMan: 4 },
+  ]);
+  check("figures-first roles inferred from shape", describeRoles(r.roles), "Men · Hrs · Description");
+  check("no extra columns claimed", r.extraColumns, 0);
+}
+
+// ── The same three tasks the other way round still work ────────────────────
+check(
+  "description-first layout",
+  rows("Open up roof\t2\t1\nFrame skylights\t2\t4"),
+  [
+    { description: "Open up roof", numMen: 2, hoursPerMan: 1 },
+    { description: "Frame skylights", numMen: 2, hoursPerMan: 4 },
+  ],
+);
+
+// ── Description in the middle ───────────────────────────────────────────────
+check(
+  "description sandwiched between the figures",
+  rows("2\tHang doors\t4\n1\tFit hardware\t2"),
+  [
+    { description: "Hang doors", numMen: 2, hoursPerMan: 4 },
+    { description: "Fit hardware", numMen: 1, hoursPerMan: 2 },
+  ],
+);
+
+// ── A header row names the columns, whatever order they are in ─────────────
+{
+  const r = parseLabourPaste("No. Men\tHrs / Man\tDescription\n3\t8\tFrame walls");
+  check("header row places the columns", r.rows, [
+    { description: "Frame walls", numMen: 3, hoursPerMan: 8 },
+  ]);
+  check("header row is the stated source", r.roles?.source, "header");
+}
+
+// ── A block of pure numbers has no task in it ──────────────────────────────
+check("all-numeric block yields nothing", rows("1\t2\t3\n4\t5\t6"), []);
+
+// ── Leading blank spreadsheet columns are common and must not shift roles ──
+check(
+  "leading empty columns ignored",
+  rows("\t\t2\t6\tStrip formwork\n\t\t1\t3\tPatch and make good"),
+  [
+    { description: "Strip formwork", numMen: 2, hoursPerMan: 6 },
+    { description: "Patch and make good", numMen: 1, hoursPerMan: 3 },
+  ],
 );
 
 if (failed) {

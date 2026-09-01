@@ -50,7 +50,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { LabourEstimate, LabourEstimateCategory, LabourEstimateTask, Project } from "@shared/schema";
-import { parseLabourPaste, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
+import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
@@ -102,7 +102,7 @@ function SortableCategoryItem({
       <div
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60 transition-colors"
+        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 transition-opacity"
       >
         <GripVertical className="w-3 h-3" />
       </div>
@@ -243,7 +243,7 @@ function SortableTaskRow({
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-center h-full cursor-grab active:cursor-grabbing text-muted-foreground/20 hover:text-muted-foreground/50 transition-colors pl-1"
+        className="flex items-center justify-center h-full cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity pl-1"
       >
         <GripVertical className="w-3 h-3" />
       </div>
@@ -349,6 +349,13 @@ function SortableTaskRow({
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
+
+/**
+ * Rows added optimistically carry this id prefix until the server answers with
+ * a real one. Nothing may be PATCHed against such an id — the row does not
+ * exist yet — so edits on it are dropped rather than 500ing.
+ */
+const PENDING_PREFIX = "pending-";
 
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
@@ -463,8 +470,37 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const addTaskMutation = useMutation({
     mutationFn: (data: { description: string; sortOrder?: number }) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks`, "POST", data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
-    onError: () => toast({ title: "Failed to add task", variant: "destructive" }),
+    // Show the row straight away. The database is in us-east-1 and this is used
+    // from AU, so POST-then-refetch is two round trips — the row took about
+    // three seconds to appear, which felt like the Enter key had missed.
+    onMutate: (data) => {
+      const key = ["/api/labour-estimate-categories", effectiveCatId, "tasks"];
+      // Paint FIRST, then cancel. Awaiting cancelQueries here made the row wait
+      // on whatever refetch was already in flight — measured at ~900ms when
+      // adding rows one after another, versus ~95ms once the write goes first.
+      const prev = queryClient.getQueryData<LabourEstimateTask[]>(key);
+      const optimistic = {
+        id: `${PENDING_PREFIX}${crypto.randomUUID()}`,
+        categoryId: effectiveCatId,
+        description: data.description,
+        subHeading: null,
+        numMen: 1,
+        hoursPerMan: 0,
+        totalHours: 0,
+        sortOrder: data.sortOrder ?? (prev?.length ?? 0),
+      } as unknown as LabourEstimateTask;
+      queryClient.setQueryData<LabourEstimateTask[]>(key, [...(prev ?? []), optimistic]);
+      queryClient.cancelQueries({ queryKey: key });
+      return { prev, key };
+    },
+    onError: (_e, _v, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      toast({ title: "Failed to add task", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
   });
 
   const pasteTasksMutation = useMutation({
@@ -513,8 +549,13 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     const onPaste = (e: ClipboardEvent) => {
       if (!effectiveCatId) return;
 
+      // The "Add item" box is where people naturally click before pasting, so a
+      // block dropped there must become rows, not one very long task name.
+      // Every OTHER text field keeps its own paste: mid-edit in a cell, a paste
+      // is a paste.
       const el = e.target as HTMLElement | null;
-      if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      const editable = el?.closest?.('input, textarea, select, [contenteditable="true"]');
+      if (editable && !(editable as HTMLElement).dataset?.labourAddItem) return;
       if (!taskListRef.current || taskListRef.current.offsetParent === null) return;
 
       const text = e.clipboardData?.getData("text/plain") ?? "";
@@ -536,7 +577,13 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
       // Say what was dropped. A quietly discarded header row or a fourth column
       // that did not come across is the kind of thing you only notice later.
+      setNewRowDesc("");   // in case the block was pasted into the add box
+
       const notes: string[] = [];
+      // Column order is inferred per paste, so say which layout was read. If it
+      // guessed wrong this is the line that makes it obvious immediately.
+      const layout = describeRoles(parsed.roles);
+      if (layout) notes.push(`read as ${layout}`);
       if (parsed.skippedHeader) notes.push("header row skipped");
       if (parsed.skippedBlank) notes.push(`${parsed.skippedBlank} row(s) had no description`);
       if (parsed.extraColumns > 0) {
@@ -645,6 +692,9 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const commitEdit = useCallback((task: TaskLike, field: 'description' | 'numMen' | 'hoursPerMan') => {
     if (!editingCell || editingCell.taskId !== task.id || editingCell.field !== field) return;
     setEditingCell(null);
+    // Optimistic row: the server has not given it an id yet, so there is
+    // nothing to PATCH. The refetch a moment later brings the real row in.
+    if (task.id.startsWith(PENDING_PREFIX)) return;
     if (mode === 'template') {
       const data: Partial<TaskLike> = {};
       if (field === 'description') data.description = editValue;
@@ -997,6 +1047,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {selectedCat && (
             <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
               <Input
+                data-labour-add-item="true"
                 placeholder={mode === 'template' ? "Add template item…" : "Add item…"}
                 value={newRowDesc}
                 onChange={e => setNewRowDesc(e.target.value)}
