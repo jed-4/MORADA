@@ -8814,6 +8814,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Append a block of tasks pasted from a spreadsheet.
+   *
+   * Separate from the single-task POST because a 20-row paste issued as 20
+   * requests is ~8s of round trips against a US database, and because this one
+   * verifies the category belongs to the caller's company before writing.
+   */
+  app.post("/api/labour-estimate-categories/:catId/tasks/bulk", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+      if (!rows) return res.status(400).json({ error: "rows must be an array" });
+      if (rows.length > 1000) {
+        return res.status(400).json({ error: "Too many rows in one paste (limit 1000)" });
+      }
+
+      const clean = rows
+        .map((r: any) => ({
+          description: String(r?.description ?? "").trim().slice(0, 2000),
+          numMen: Number.isFinite(Number(r?.numMen)) ? Math.max(0, Number(r.numMen)) : 1,
+          hoursPerMan: Number.isFinite(Number(r?.hoursPerMan)) ? Math.max(0, Number(r.hoursPerMan)) : 0,
+        }))
+        .filter((r: any) => r.description);
+
+      const created = await storage.createLabourEstimateTasksBulk(companyId, req.params.catId, clean);
+      if (created === null) return res.status(404).json({ error: "Category not found" });
+      res.status(201).json(created);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add pasted tasks" });
+    }
+  });
+
   app.patch("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourEstimateTask(req.params.taskId, req.body);
