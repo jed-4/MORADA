@@ -506,11 +506,50 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const pasteTasksMutation = useMutation({
     mutationFn: (rows: { description: string; numMen: number; hoursPerMan: number }[]) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/bulk`, "POST", { rows }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+
+    // Draw the pasted rows straight away, exactly as adding one row does. The
+    // insert itself was never the slow part — it was POST, then invalidate,
+    // then refetch tasks AND categories: three round trips to us-east-1 before
+    // anything appeared, which read as a three-second hang after the toast had
+    // already said it worked.
+    onMutate: (rows) => {
+      const key = ["/api/labour-estimate-categories", effectiveCatId, "tasks"];
+      const prev = queryClient.getQueryData<LabourEstimateTask[]>(key);
+      const base = prev?.length ?? 0;
+      const optimistic = rows.map((r, i) => ({
+        id: `${PENDING_PREFIX}${crypto.randomUUID()}`,
+        categoryId: effectiveCatId,
+        description: r.description,
+        subHeading: null,
+        numMen: r.numMen,
+        hoursPerMan: r.hoursPerMan,
+        totalHours: r.numMen * r.hoursPerMan,
+        sortOrder: base + i,
+      })) as unknown as LabourEstimateTask[];
+      queryClient.setQueryData<LabourEstimateTask[]>(key, [...(prev ?? []), ...optimistic]);
+      queryClient.cancelQueries({ queryKey: key });
+      return { prev, key, pendingIds: new Set(optimistic.map(o => o.id)) };
+    },
+
+    // The POST already returns the created rows, so swap them in rather than
+    // asking for them again. That removes the second round trip entirely.
+    onSuccess: (created: any, _rows, ctx: any) => {
+      if (Array.isArray(created) && ctx?.key) {
+        queryClient.setQueryData<LabourEstimateTask[]>(ctx.key, old =>
+          [...(old ?? []).filter(t => !ctx.pendingIds.has(t.id)), ...created],
+        );
+      } else {
+        queryClient.invalidateQueries({ queryKey: ctx?.key });
+      }
+      // The category hours tally is off to the side; let it catch up in the
+      // background rather than holding the rows back.
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
     },
-    onError: () => toast({ title: "Failed to paste tasks", variant: "destructive" }),
+
+    onError: (_e, _v, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      toast({ title: "Failed to paste tasks", variant: "destructive" });
+    },
   });
 
   const deleteTaskMutation = useMutation({
