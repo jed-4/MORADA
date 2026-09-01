@@ -3289,7 +3289,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         <div
                           key={`${week.weekLabel}-${dayIdx}`}
                           className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
-                            isToday ? 'bg-primary/20 text-primary font-semibold' : day.isWeekend ? 'bg-muted/30 text-foreground' : 'text-foreground'
+                            isToday ? 'bg-primary/20 text-primary font-semibold' : day.isWeekend ? 'bg-border text-foreground' : 'text-foreground'
                           }`}
                           style={{ width: `${day.widthPx}px` }}
                         >
@@ -3333,7 +3333,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       return (
                         <div
                           key={`col-bg-${week.weekLabel}-${dayIdx}`}
-                          className={`absolute top-0 ${isTodayCol ? 'bg-primary/15' : 'bg-muted/30'}`}
+                          className={`absolute top-0 ${isTodayCol ? 'bg-primary/15' : 'bg-border'}`}
                           style={{
                             left: `${previousDays * pixelsPerDay}px`,
                             width: `${pixelsPerDay}px`,

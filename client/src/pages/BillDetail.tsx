@@ -38,6 +38,7 @@ import {
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { rankedCommandFilter } from "@/components/ui/searchable-select";
 import { EmptyState } from "@/components/EmptyState";
 import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
@@ -851,12 +852,33 @@ export default function BillDetail() {
   const sheetPreviewUrlRef = useRef<string | null>(null);
   sheetPreviewUrlRef.current = sheetPreviewUrl;
   const reopenPreviewRef = useRef(false);
+  const previewBillIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const previousId = previewBillIdRef.current;
+    previewBillIdRef.current = id;
     reopenPreviewRef.current = !!sheetPreviewUrlRef.current;
     setSheetPreviewUrl(null);
     setSheetPreviewFilename("");
     setModalPreviewFile(null);
     setFullscreenPreview(false);
+    // Only on a genuine bill-to-bill swap, never on first mount.
+    //
+    // The attachment list is local state hydrated from the bill query, and that
+    // query is keyed on the id — so the moment the id changes `bill` goes
+    // undefined and the hydration effect stops running, leaving these holding
+    // the OUTGOING bill's paths. Clearing the preview without clearing these
+    // too let the re-open below fire against the previous bill's attachments
+    // and put its document straight back in the pane, which is why "Approve &
+    // next" still showed the invoice you had just approved.
+    //
+    // Guarded on a real id transition because the hydration effect is declared
+    // above this one: on mount it populates the attachments first, so clearing
+    // unconditionally would wipe them for a bill served from cache and nothing
+    // would refill them.
+    if (previousId !== undefined && previousId !== id) {
+      setAttachmentUrls([]);
+      setAttachmentMeta({});
+    }
   }, [id]);
   useEffect(() => {
     if (!reopenPreviewRef.current || sheetPreviewUrl || attachmentUrls.length === 0) return;
@@ -977,6 +999,28 @@ export default function BillDetail() {
     if (!supplierId) return "";
     const supplier = suppliers.find(s => s.id === supplierId);
     return supplier?.defaultCostCodeId || "";
+  };
+
+  // Picking a supplier re-stamps every line with that supplier's defaults.
+  //
+  // The effects above only ever filled blanks, so switching supplier on a bill
+  // that already had accounts left the previous supplier's codes in place. This
+  // runs from the picker's onSelect rather than an effect watching supplierId,
+  // because the form also assigns supplierId while hydrating an existing bill —
+  // and treating that as a supplier change would wipe the bill's saved accounts.
+  //
+  // The Xero account is fully supplier-driven: no default means the column goes
+  // back to none, so an inherited account can never be saved by accident. Cost
+  // codes are only overwritten when the new supplier actually has one — blanking
+  // per-line job costing is destructive in a way a blank account is not.
+  const applySupplierDefaultsToAllLines = (supplier: any) => {
+    const defaultAccount = supplier?.xeroDefaultAccountCode || supplier?.xeroDefaultAccount || "";
+    const defaultCostCode = supplier?.defaultCostCodeId || "";
+    setLineItems(prev => prev.map(item => ({
+      ...item,
+      account: defaultAccount,
+      costCodeId: defaultCostCode || item.costCodeId,
+    })));
   };
 
   const updateSupplierDefaultsMutation = useMutation({
@@ -2040,7 +2084,9 @@ export default function BillDetail() {
           documentSubtotalCents: data.subtotalAmount ?? null,
           documentTotalCents: data.totalAmount ?? null,
         });
-        const firstCostCode = costCodes[0]?.id;
+        // The supplier's default, not whichever cost code happens to sort first —
+        // an arbitrary code silently mis-files every AI-read line in job costing.
+        const firstCostCode = getSupplierDefaultCostCode() || undefined;
         const defaultAccount = getSupplierDefaultAccount();
         setTaxMode(detectedTaxMode);
         const newLineItems = data.lineItems.map((item: any, index: number) => ({
@@ -2296,7 +2342,8 @@ export default function BillDetail() {
     }
 
     if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
-      const firstCostCode = costCodes[0]?.id;
+      // See above: supplier default rather than an arbitrary first cost code.
+      const firstCostCode = getSupplierDefaultCostCode() || undefined;
       const defaultAccount = getSupplierDefaultAccount();
       // Read the document rather than assuming. Inc-GST line totals are the
       // common case here, which is why this used to hardcode inclusive — but
@@ -2865,7 +2912,7 @@ export default function BillDetail() {
                             align="start"
                             data-testid="select-supplier-content"
                           >
-                            <Command shouldFilter={true}>
+                            <Command shouldFilter={true} filter={rankedCommandFilter}>
                               <CommandInput
                                 placeholder="Search suppliers..."
                                 value={supplierSearchText}
@@ -2881,6 +2928,7 @@ export default function BillDetail() {
                                       value={supplier.name}
                                       onSelect={() => {
                                         field.onChange(supplier.id);
+                                        applySupplierDefaultsToAllLines(supplier);
                                         setSupplierPickerOpen(false);
                                         setSupplierSearchText("");
                                       }}
@@ -3675,7 +3723,7 @@ export default function BillDetail() {
                                     </button>
                                   </PopoverTrigger>
                                   <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]" align="start">
-                                    <Command shouldFilter={true}>
+                                    <Command shouldFilter={true} filter={rankedCommandFilter}>
                                       <CommandInput
                                         placeholder="Search accounts..."
                                         value={accountPickerSearch}
@@ -3699,7 +3747,7 @@ export default function BillDetail() {
                                           {xeroAccounts.map((acc) => (
                                             <CommandItem
                                               key={acc.code}
-                                              value={`${acc.code} ${acc.name}`}
+                                              value={`${acc.code} ${acc.name} ${acc.type || ""}`}
                                               onSelect={() => {
                                                 updateLineItem(index, "account", acc.code);
                                                 setAccountPickerOpenIndex(null);
@@ -4827,7 +4875,7 @@ export default function BillDetail() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]" align="start">
-                    <Command shouldFilter={true}>
+                    <Command shouldFilter={true} filter={rankedCommandFilter}>
                       <CommandInput placeholder="Search accounts..." value={defaultsAccountSearch} onValueChange={setDefaultsAccountSearch} />
                       <CommandList className="max-h-[260px]">
                         <CommandEmpty>No accounts found.</CommandEmpty>
@@ -4836,7 +4884,7 @@ export default function BillDetail() {
                             <span className="text-muted-foreground">None</span>
                           </CommandItem>
                           {xeroAccounts.map((acc) => (
-                            <CommandItem key={acc.code} value={`${acc.code} ${acc.name}`} onSelect={() => { setSupplierDefaultsAccount(acc.code); setSupplierDefaultsAccountDirty(true); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
+                            <CommandItem key={acc.code} value={`${acc.code} ${acc.name} ${acc.type || ""}`} onSelect={() => { setSupplierDefaultsAccount(acc.code); setSupplierDefaultsAccountDirty(true); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
                               <span className="truncate">{acc.code} - {acc.name}</span>
                             </CommandItem>
                           ))}
@@ -5014,7 +5062,7 @@ export default function BillDetail() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]" align="start">
-                  <Command shouldFilter={true}>
+                  <Command shouldFilter={true} filter={rankedCommandFilter}>
                     <CommandInput
                       placeholder="Search suppliers..."
                       value={unmatchedSearchText}
