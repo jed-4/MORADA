@@ -467,6 +467,12 @@ export interface IStorage {
   deleteLabourEstimateTask(id: string): Promise<boolean>;
   reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void>;
   getLabourTaskTemplates(companyId: string, categoryName?: string): Promise<any[]>;
+  getLabourTemplateSets(companyId: string): Promise<any[]>;
+  createLabourTemplateSet(data: { companyId: string; name: string }): Promise<any>;
+  renameLabourTemplateSet(id: string, name: string): Promise<any>;
+  deleteLabourTemplateSet(id: string): Promise<boolean>;
+  getLabourTemplateSet(id: string): Promise<any | undefined>;
+  getLabourTemplateSetRows(templateSetId: string): Promise<any[]>;
   createLabourTaskTemplate(data: any): Promise<any>;
   updateLabourTaskTemplate(id: string, data: Partial<any>): Promise<any>;
   deleteLabourTaskTemplate(id: string): Promise<boolean>;
@@ -11952,6 +11958,74 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // ── Named labour templates (migration 0065) ───────────────────────────────
+  // Mirrors the enote_template_sets shape so Labour reads like Details.
+
+  async getLabourTemplateSets(companyId: string): Promise<any[]> {
+    try {
+      return await db.select().from(schema.labourTemplateSets)
+        .where(eq(schema.labourTemplateSets.companyId, companyId))
+        .orderBy(schema.labourTemplateSets.name);
+    } catch (error) {
+      console.error("Database error in getLabourTemplateSets:", error);
+      return [];
+    }
+  }
+
+  async getLabourTemplateSet(id: string): Promise<any | undefined> {
+    try {
+      const [row] = await db.select().from(schema.labourTemplateSets)
+        .where(eq(schema.labourTemplateSets.id, id)).limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getLabourTemplateSet:", error);
+      return undefined;
+    }
+  }
+
+  async createLabourTemplateSet(data: { companyId: string; name: string }): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.labourTemplateSets).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createLabourTemplateSet:", error);
+      throw error;
+    }
+  }
+
+  async renameLabourTemplateSet(id: string, name: string): Promise<any> {
+    try {
+      const [row] = await db.update(schema.labourTemplateSets).set({ name })
+        .where(eq(schema.labourTemplateSets.id, id)).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in renameLabourTemplateSet:", error);
+      throw error;
+    }
+  }
+
+  async deleteLabourTemplateSet(id: string): Promise<boolean> {
+    try {
+      // Rows go with it via ON DELETE CASCADE (see migration 0065).
+      await db.delete(schema.labourTemplateSets).where(eq(schema.labourTemplateSets.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteLabourTemplateSet:", error);
+      return false;
+    }
+  }
+
+  async getLabourTemplateSetRows(templateSetId: string): Promise<any[]> {
+    try {
+      return await db.select().from(schema.labourTaskTemplates)
+        .where(eq(schema.labourTaskTemplates.templateSetId, templateSetId))
+        .orderBy(schema.labourTaskTemplates.categoryName, schema.labourTaskTemplates.sortOrder);
+    } catch (error) {
+      console.error("Database error in getLabourTemplateSetRows:", error);
+      return [];
+    }
+  }
+
   async createLabourTaskTemplate(data: any): Promise<any> {
     try {
       const [row] = await db.insert(schema.labourTaskTemplates).values(data).returning();
@@ -12167,7 +12241,14 @@ export class DbStorage implements IStorage {
       const templates = await db
         .select()
         .from(schema.labourTaskTemplates)
-        .where(and(eq(schema.labourTaskTemplates.companyId, companyId), eq(schema.labourTaskTemplates.categoryName, categoryName)))
+        // Scoped to the unnamed working list. Without this, adding named
+        // templates would make "Apply to Project" sweep in every template that
+        // happens to share a category name.
+        .where(and(
+          eq(schema.labourTaskTemplates.companyId, companyId),
+          eq(schema.labourTaskTemplates.categoryName, categoryName),
+          isNull(schema.labourTaskTemplates.templateSetId),
+        ))
         .orderBy(schema.labourTaskTemplates.sortOrder);
       if (templates.length === 0) return [];
       const tasks = templates.map((t, i) => ({

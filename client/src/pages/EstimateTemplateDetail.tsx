@@ -61,6 +61,7 @@ import {
   Copy,
 } from "lucide-react";
 import type { EstimateTemplate } from "@shared/schema";
+import { TemplateEstimateGrid } from "@/components/estimates/TemplateEstimateGrid";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -86,57 +87,6 @@ interface TemplateItem {
   parentGroupName?: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const UNIT_OPTIONS = [
-  { value: "ea", label: "ea" },
-  { value: "m2", label: "m²" },
-  { value: "m3", label: "m³" },
-  { value: "lm", label: "lm" },
-  { value: "hr", label: "hr" },
-  { value: "day", label: "day" },
-  { value: "t", label: "t" },
-  { value: "kg", label: "kg" },
-  { value: "l", label: "l" },
-  { value: "item", label: "item" },
-  { value: "wk", label: "wk" },
-  { value: "lot", label: "lot" },
-  { value: "set", label: "set" },
-];
-
-const TYPE_OPTIONS = [
-  "Material",
-  "Labour",
-  "Subcontractor",
-  "Equipment",
-  "Other",
-];
-
-const ALLOWANCE_OPTIONS = ["None", "Prime Cost", "Provisional Sum"];
-
-const WASTAGE_OPTIONS = [0, 5, 10, 15, 20, 25];
-
-// ─── Column widths (CSS Grid template) ───────────────────────────────────────
-
-const COL_DRAG = "24px";
-const COL_NAME = "minmax(140px, 1fr)";
-const COL_DESC = "minmax(100px, 1.2fr)";
-const COL_COSTCODE = "80px";
-const COL_TYPE = "90px";
-const COL_ALLOWANCE = "100px";
-const COL_QTY = "60px";
-const COL_WASTE = "56px";
-const COL_UNIT = "54px";
-const COL_UCOST = "88px";
-const COL_MARKUP = "64px";
-const COL_AMOUNT = "90px";
-const COL_ACTIONS = "28px";
-
-const GRID_TEMPLATE = [
-  COL_DRAG, COL_NAME, COL_DESC, COL_COSTCODE, COL_TYPE,
-  COL_ALLOWANCE, COL_QTY, COL_WASTE, COL_UNIT, COL_UCOST, COL_MARKUP, COL_AMOUNT, COL_ACTIONS,
-].join(" ");
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const centsToDisplay = (cents?: number) => ((cents ?? 0) / 100).toFixed(2);
@@ -153,13 +103,6 @@ const calcLineAmount = (item: TemplateItem): number => {
 
 const fmt = (n: number) =>
   n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const allowanceChipClass = (a?: string) =>
-  a === "Prime Cost"
-    ? "bg-status-info-bg text-status-info border-status-info/30"
-    : a === "Provisional Sum"
-    ? "bg-status-warning-bg text-status-warning border-status-warning/30"
-    : "text-muted-foreground";
 
 // ─── Empty-item factory ───────────────────────────────────────────────────────
 
@@ -186,260 +129,6 @@ const makeEmpty = (groupName: string, sortOrder: number): TemplateItem => ({
 interface CellEditingState {
   itemId: string;
   field: string;
-}
-
-// ─── Sortable row ─────────────────────────────────────────────────────────────
-
-interface SortableRowProps {
-  item: TemplateItem;
-  costCodes: CostCode[];
-  editingCell: CellEditingState | null;
-  editingValue: string;
-  onCellClick: (item: TemplateItem, field: string) => void;
-  onCellChange: (v: string) => void;
-  onCellBlur: () => void;
-  onCellKeyDown: (e: React.KeyboardEvent) => void;
-  onDelete: (item: TemplateItem) => void;
-  onDuplicate: (item: TemplateItem) => void;
-  onAllowanceChange: (item: TemplateItem, val: string) => void;
-  onTypeChange: (item: TemplateItem, val: string) => void;
-  onUnitChange: (item: TemplateItem, val: string) => void;
-  onWastageChange: (item: TemplateItem, val: number) => void;
-  onCostCodeChange: (item: TemplateItem, costCodeId: string, costCodes: CostCode[]) => void;
-}
-
-function SortableRow({
-  item,
-  costCodes,
-  editingCell,
-  editingValue,
-  onCellClick,
-  onCellChange,
-  onCellBlur,
-  onCellKeyDown,
-  onDelete,
-  onDuplicate,
-  onAllowanceChange,
-  onTypeChange,
-  onUnitChange,
-  onWastageChange,
-  onCostCodeChange,
-}: SortableRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    gridTemplateColumns: GRID_TEMPLATE,
-  };
-
-  const isEditingField = (field: string) => editingCell?.itemId === item.id && editingCell?.field === field;
-  const isRowActive = editingCell?.itemId === item.id;
-
-  const amount = calcLineAmount(item);
-
-  const editableCell = (field: string, value: string, align: "left" | "right" = "left", placeholder = "") => {
-    if (isEditingField(field)) {
-      return (
-        <div className="w-full h-full ring-1 ring-inset ring-primary/60 rounded-[2px] flex items-center">
-          <input
-            autoFocus
-            className="w-full h-full bg-transparent border-0 outline-none px-1 text-xs"
-            style={{ textAlign: align }}
-            value={editingValue}
-            onChange={(e) => onCellChange(e.target.value)}
-            onBlur={onCellBlur}
-            onKeyDown={onCellKeyDown}
-          />
-        </div>
-      );
-    }
-    return (
-      <div
-        className="w-full h-full flex items-center px-1 cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors"
-        style={{ justifyContent: align === "right" ? "flex-end" : "flex-start" }}
-        onClick={() => onCellClick(item, field)}
-        title="Click to edit"
-      >
-        {value ? (
-          <span className="text-xs truncate" style={{ textAlign: align }}>{value}</span>
-        ) : (
-          <span className="text-xs text-muted-foreground/40 truncate">{placeholder}</span>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`grid items-center min-h-[32px] border-b border-border/50 hover:bg-muted/20 group ${isRowActive ? 'bg-primary/[0.04]' : ''}`}
-    >
-      {/* Drag handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-60 hover:opacity-100 h-full"
-      >
-        <GripVertical className="w-3 h-3 text-muted-foreground" />
-      </div>
-
-      {/* Name */}
-      <div className="h-8 flex items-center pr-1">
-        {editableCell("name", item.name, "left", "Item name…")}
-      </div>
-
-      {/* Description */}
-      <div className="h-8 flex items-center pr-1">
-        {editableCell("description", item.description || "", "left", "Description…")}
-      </div>
-
-      {/* Cost Code */}
-      <div className="h-8 flex items-center pr-1">
-        {isEditingField("costCode") ? (
-          <div className="w-full h-full ring-1 ring-inset ring-primary/60 rounded-[2px] flex items-center">
-            <CostCodeSelect
-              value={item.costCodeId || ""}
-              onValueChange={(v) => {
-                onCostCodeChange(item, v, costCodes);
-              }}
-              placeholder="Select…"
-              triggerClassName="h-full border-0 shadow-none focus-visible:ring-0 bg-transparent text-xs"
-            />
-          </div>
-        ) : (
-          <div
-            className="w-full flex items-center cursor-pointer h-full px-1 border-b border-transparent hover:border-primary/30 transition-colors"
-            onClick={() => onCellClick(item, "costCode")}
-          >
-            {item.costCodeTitle ? (
-              <Badge variant="outline" className="h-4 px-1 text-label max-w-full truncate">
-                {item.costCodeTitle}
-              </Badge>
-            ) : (
-              <span className="text-xs text-muted-foreground/40">—</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Type */}
-      <div className="h-8 flex items-center pr-1">
-        <Select value={item.type || "Material"} onValueChange={(v) => onTypeChange(item, v)}>
-          <SelectTrigger className="h-6 text-xs border-0 shadow-none px-1 focus:ring-0 bg-transparent hover:bg-muted/40 w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TYPE_OPTIONS.map((t) => (
-              <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Allowance */}
-      <div className="h-8 flex items-center pr-1">
-        <Select value={item.allowance || "None"} onValueChange={(v) => onAllowanceChange(item, v)}>
-          <SelectTrigger className="h-6 text-xs border-0 shadow-none px-1 focus:ring-0 bg-transparent hover:bg-muted/40 w-full">
-            <SelectValue>
-              {item.allowance && item.allowance !== "None" ? (
-                <span className={`text-label px-1 py-0.5 rounded border ${allowanceChipClass(item.allowance)}`}>
-                  {item.allowance === "Prime Cost" ? "PC" : "PS"}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">None</span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {ALLOWANCE_OPTIONS.map((a) => (
-              <SelectItem key={a} value={a} className="text-xs">{a}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Quantity */}
-      <div className="h-8 flex items-center pr-1">
-        {editableCell("quantity", item.quantity != null ? String(item.quantity) : "", "right", "0")}
-      </div>
-
-      {/* Wastage % */}
-      <div className="h-8 flex items-center pr-1">
-        <Select
-          value={String(item.wastagePercent ?? 0)}
-          onValueChange={(v) => onWastageChange(item, parseInt(v))}
-        >
-          <SelectTrigger className="h-6 text-xs border-0 shadow-none px-1 focus:ring-0 bg-transparent hover:bg-muted/40 w-full">
-            <SelectValue>{(item.wastagePercent ?? 0) > 0 ? `+${item.wastagePercent}%` : "—"}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {WASTAGE_OPTIONS.map((w) => (
-              <SelectItem key={w} value={String(w)} className="text-xs">
-                {w === 0 ? "None" : `+${w}%`}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Unit */}
-      <div className="h-8 flex items-center pr-1">
-        <Select value={item.unit || "ea"} onValueChange={(v) => onUnitChange(item, v)}>
-          <SelectTrigger className="h-6 text-xs border-0 shadow-none px-1 focus:ring-0 bg-transparent hover:bg-muted/40 w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {UNIT_OPTIONS.map((u) => (
-              <SelectItem key={u.value} value={u.value} className="text-xs">{u.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Unit Cost */}
-      <div className="h-8 flex items-center pr-1">
-        {editableCell("unitPrice", centsToDisplay(item.unitPrice), "right", "0.00")}
-      </div>
-
-      {/* Markup % */}
-      <div className="h-8 flex items-center pr-1">
-        {editableCell("markup", item.markup != null ? String(item.markup) : "", "right", "0")}
-      </div>
-
-      {/* Amount */}
-      <div className="h-8 flex items-center justify-end pr-1">
-        <span className="text-xs font-medium text-foreground">${fmt(amount)}</span>
-      </div>
-
-      {/* Actions */}
-      <div className="h-8 flex items-center justify-center opacity-0 group-hover:opacity-100">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-5 w-5">
-              <MoreVertical className="w-3 h-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onDuplicate(item)} className="text-xs">
-              <Copy className="w-3 h-3 mr-2" />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onDelete(item)}
-              className="text-xs text-destructive focus:text-destructive"
-            >
-              <Trash2 className="w-3 h-3 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -520,15 +209,13 @@ export default function EstimateTemplateDetail() {
     return result;
   }, [items]);
 
-  const groupItems = useCallback(
-    (group: string) =>
-      items
-        .filter((i) => (i.groupName || "ungrouped") === group && !i.isGroup)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [items]
-  );
-
   const totalAmount = items.filter((i) => !i.isGroup).reduce((acc, i) => acc + calcLineAmount(i), 0);
+  // The group cards total BUILDER cost; the figure above is the CLIENT price.
+  // Both are shown, both labelled — one bare number next to group badges that
+  // measured something else just looked like an arithmetic bug.
+  const builderTotal = items
+    .filter((i) => !i.isGroup)
+    .reduce((acc, i) => acc + ((i.unitPrice ?? 0) / 100) * (i.quantity ?? 0) * (1 + (i.wastagePercent ?? 0) / 100), 0);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -542,64 +229,11 @@ export default function EstimateTemplateDetail() {
   };
 
   // Inline cell editing
-  const handleCellClick = (item: TemplateItem, field: string) => {
-    if (field === "costCode") {
-      setEditingCell({ itemId: item.id, field });
-      return;
-    }
-    let value = "";
-    if (field === "name") value = item.name;
-    else if (field === "description") value = item.description || "";
-    else if (field === "quantity") value = item.quantity != null ? String(item.quantity) : "";
-    else if (field === "unitPrice") value = centsToDisplay(item.unitPrice);
-    else if (field === "markup") value = item.markup != null ? String(item.markup) : "";
-    setEditingCell({ itemId: item.id, field });
-    setEditingValue(value);
-  };
-
-  const handleCellBlur = () => {
-    if (!editingCell) return;
-    const { itemId, field } = editingCell;
-    let patch: Partial<TemplateItem> = {};
-    if (field === "name") patch = { name: editingValue.trim() };
-    else if (field === "description") patch = { description: editingValue.trim() };
-    else if (field === "quantity") patch = { quantity: parseFloat(editingValue) || 0 };
-    else if (field === "unitPrice") patch = { unitPrice: displayToCents(editingValue) };
-    else if (field === "markup") patch = { markup: parseFloat(editingValue) || 0 };
-    if (Object.keys(patch).length > 0) patchItem(itemId, patch);
-    setEditingCell(null);
-    setEditingValue("");
-  };
-
-  const handleCellKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") { handleCellBlur(); }
-    else if (e.key === "Escape") { setEditingCell(null); setEditingValue(""); }
-  };
-
-  const handleCostCodeChange = (item: TemplateItem, costCodeId: string, codes: CostCode[]) => {
-    const cc = codes.find((c) => c.id === costCodeId);
-    patchItem(item.id, {
-      costCodeId: costCodeId || undefined,
-      costCodeTitle: cc ? `${cc.code} - ${cc.title}` : undefined,
-    });
-    setEditingCell(null);
-  };
-
-  const handleAllowanceChange = (item: TemplateItem, val: string) => patchItem(item.id, { allowance: val });
-  const handleTypeChange = (item: TemplateItem, val: string) => patchItem(item.id, { type: val });
-  const handleUnitChange = (item: TemplateItem, val: string) => patchItem(item.id, { unit: val });
-  const handleWastageChange = (item: TemplateItem, val: number) => patchItem(item.id, { wastagePercent: val });
-
   const handleDeleteItem = (item: TemplateItem) => setDeleteConfirmItem(item);
   const confirmDeleteItem = () => {
     if (!deleteConfirmItem) return;
     saveItems(items.filter((i) => i.id !== deleteConfirmItem.id));
     setDeleteConfirmItem(null);
-  };
-
-  const handleDuplicateItem = (item: TemplateItem) => {
-    const dup: TemplateItem = { ...item, id: crypto.randomUUID(), sortOrder: items.length };
-    saveItems([...items, dup]);
   };
 
   const handleAddItem = (group: string) => {
@@ -635,15 +269,6 @@ export default function EstimateTemplateDetail() {
     const newIndex = items.findIndex((i) => i.id === over.id);
     const reordered = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({ ...item, sortOrder: idx }));
     saveItems(reordered);
-  };
-
-  const toggleGroup = (group: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) next.delete(group);
-      else next.add(group);
-      return next;
-    });
   };
 
   const handleOpenSettings = () => {
@@ -707,9 +332,10 @@ export default function EstimateTemplateDetail() {
         <span className="text-xs text-muted-foreground flex-shrink-0">
           {nonGroupItems.length} {nonGroupItems.length === 1 ? "item" : "items"}
         </span>
-        <span className="text-xs font-medium flex-shrink-0 text-foreground">
+        <span className="text-xs font-medium flex-shrink-0 text-foreground tabular-nums">
           ${fmt(totalAmount)}
         </span>
+        <span className="text-xs text-muted-foreground flex-shrink-0">client ex GST</span>
       </div>
 
       {/* ── Row 2: Toolbar ── */}
@@ -744,144 +370,55 @@ export default function EstimateTemplateDetail() {
         </div>
       </div>
 
-      {/* ── Column Headers ── */}
-      <div
-        className="grid items-center h-7 bg-muted/50 border-b border-border flex-shrink-0 text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
-        style={{ gridTemplateColumns: GRID_TEMPLATE }}
-      >
-        <div /> {/* drag */}
-        <div className="pl-1">Item Name</div>
-        <div className="pl-1">Description</div>
-        <div className="pl-1">Code</div>
-        <div className="pl-1">Type</div>
-        <div className="pl-1">Allowance</div>
-        <div className="text-right pr-1">Qty</div>
-        <div className="text-right pr-1">Waste</div>
-        <div className="pl-1">Unit</div>
-        <div className="text-right pr-1">Unit Cost</div>
-        <div className="text-right pr-1">Markup%</div>
-        <div className="text-right pr-1">Amount</div>
-        <div />
-      </div>
-
-      {/* ── Content ── */}
-      <div className="flex-1 overflow-auto">
-        {nonGroupItems.length === 0 && groups.length <= 1 ? (
-          <div className="text-center py-12">
-            <Calculator className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-            <h3 className="text-sm font-medium mb-1">No items yet</h3>
-            <p className="text-xs text-muted-foreground mb-4">Add estimate items to build this template</p>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                className="h-7 px-3 text-xs border rounded-md hover-elevate flex items-center gap-1"
-                onClick={() => setAddGroupDialogOpen(true)}
-              >
-                <FolderPlus className="w-3 h-3" />
-                Add Group
-              </button>
-              <button
-                className="h-7 px-3 text-xs rounded-md bg-primary text-white border border-primary/20 active-elevate-2 flex items-center gap-1"
-                onClick={() => handleAddItem("ungrouped")}
-                data-testid="button-add-first-item"
-              >
-                <Plus className="w-3 h-3" />
-                Add Item
-              </button>
-            </div>
+      {/* ── Grid ── */}
+      {nonGroupItems.length === 0 && groups.length <= 1 ? (
+        <div className="flex-1 text-center py-12">
+          <Calculator className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+          <h3 className="text-sm font-medium mb-1">No items yet</h3>
+          <p className="text-xs text-muted-foreground mb-4">Add estimate items to build this template</p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              className="h-7 px-3 text-xs border rounded-md hover-elevate flex items-center gap-1"
+              onClick={() => setAddGroupDialogOpen(true)}
+            >
+              <FolderPlus className="w-3 h-3" />
+              Add Group
+            </button>
+            <button
+              className="h-7 px-3 text-xs rounded-md bg-primary text-white border border-primary/20 active-elevate-2 flex items-center gap-1"
+              onClick={() => handleAddItem("ungrouped")}
+              data-testid="button-add-first-item"
+            >
+              <Plus className="w-3 h-3" />
+              Add Item
+            </button>
           </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            {groups.map((group) => {
-              const gItems = groupItems(group);
-              const isExpanded = expandedGroups.has(group);
-              const groupTotal = gItems.reduce((acc, i) => acc + calcLineAmount(i), 0);
-              const label = group === "ungrouped" ? "General" : group;
+        </div>
+      ) : (
+        <TemplateEstimateGrid
+          items={items}
+          onSave={saveItems}
+          costCodes={costCodes}
+          costCategories={[]}
+          formatCurrency={(n) => `$${fmt(n)}`}
+          onRequestDelete={(id: string) => {
+            const row = items.find((i) => i.id === id);
+            if (row) setDeleteConfirmItem(row);
+          }}
+        />
+      )}
 
-              return (
-                <div key={group}>
-                  {/* Group header row */}
-                  <div
-                    className="grid items-center h-8 bg-muted/40 border-b border-border cursor-pointer select-none sticky top-0 z-10"
-                    style={{ gridTemplateColumns: GRID_TEMPLATE }}
-                    onClick={() => toggleGroup(group)}
-                  >
-                    <div className="flex items-center justify-center">
-                      {isExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="col-span-10 pl-1 flex items-center gap-2">
-                      <span className="text-xs font-semibold">{label}</span>
-                      <span className="text-data text-muted-foreground">
-                        {gItems.length} {gItems.length === 1 ? "item" : "items"}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-right pr-1">${fmt(groupTotal)}</div>
-                    <div />
-                  </div>
-
-                  {/* Items */}
-                  {isExpanded && (
-                    <>
-                      <SortableContext items={gItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                        {gItems.map((item) => (
-                          <SortableRow
-                            key={item.id}
-                            item={item}
-                            costCodes={costCodes}
-                            editingCell={editingCell}
-                            editingValue={editingValue}
-                            onCellClick={handleCellClick}
-                            onCellChange={setEditingValue}
-                            onCellBlur={handleCellBlur}
-                            onCellKeyDown={handleCellKeyDown}
-                            onDelete={handleDeleteItem}
-                            onDuplicate={handleDuplicateItem}
-                            onAllowanceChange={handleAllowanceChange}
-                            onTypeChange={handleTypeChange}
-                            onUnitChange={handleUnitChange}
-                            onWastageChange={handleWastageChange}
-                            onCostCodeChange={handleCostCodeChange}
-                          />
-                        ))}
-                      </SortableContext>
-
-                      {/* Add item row */}
-                      <div
-                        className="grid items-center h-7 border-b border-border/40 cursor-pointer hover:bg-muted/20 group"
-                        style={{ gridTemplateColumns: GRID_TEMPLATE }}
-                        onClick={() => handleAddItem(group)}
-                        data-testid={`button-add-item-group-${group}`}
-                      >
-                        <div />
-                        <div className="col-span-12 pl-1 flex items-center gap-1 opacity-0 group-hover:opacity-60 transition-opacity">
-                          <Plus className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">Add item</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </DndContext>
-        )}
-      </div>
-
-      {/* ── Footer totals ── */}
+      {/* ── Footer total ── */}
       {nonGroupItems.length > 0 && (
-        <div
-          className="grid items-center h-9 bg-muted/30 border-t border-border flex-shrink-0"
-          style={{ gridTemplateColumns: GRID_TEMPLATE }}
-        >
-          <div />
-          <div className="col-span-10 pl-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Total
-          </div>
-          <div className="text-xs font-bold text-right pr-1">${fmt(totalAmount)}</div>
-          <div />
+        <div className="h-9 flex items-center justify-end gap-6 px-3 bg-muted/30 border-t border-border flex-shrink-0">
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Builder cost</span>
+            <span className="text-xs font-medium tabular-nums" data-testid="text-template-builder-total">${fmt(builderTotal)}</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Client ex GST</span>
+            <span className="text-xs font-bold tabular-nums" data-testid="text-template-total">${fmt(totalAmount)}</span>
+          </span>
         </div>
       )}
 

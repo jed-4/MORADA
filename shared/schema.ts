@@ -7185,6 +7185,22 @@ export const insertLabourEstimateTaskSchema = createInsertSchema(labourEstimateT
 export type InsertLabourEstimateTask = z.infer<typeof insertLabourEstimateTaskSchema>;
 export type LabourEstimateTask = typeof labourEstimateTasks.$inferSelect;
 
+/**
+ * A named Labour template. The Details equivalent (enoteTemplateSets) already
+ * existed; labour had no container, so a company could only ever have one
+ * labour template. See migration 0065.
+ */
+export const labourTemplateSets = pgTable("labour_template_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertLabourTemplateSetSchema = createInsertSchema(labourTemplateSets).omit({ id: true, createdAt: true });
+export type InsertLabourTemplateSet = z.infer<typeof insertLabourTemplateSetSchema>;
+export type LabourTemplateSet = typeof labourTemplateSets.$inferSelect;
+
 export const labourTaskTemplates = pgTable("labour_task_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
@@ -7194,6 +7210,8 @@ export const labourTaskTemplates = pgTable("labour_task_templates", {
   numMen: doublePrecision("num_men").notNull().default(1),
   hoursPerMan: doublePrecision("hours_per_man").notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
+  /** NULL = the unnamed working list this table has always been. */
+  templateSetId: varchar("template_set_id").references(() => labourTemplateSets.id, { onDelete: "cascade" }),
 });
 
 export const insertLabourTaskTemplateSchema = createInsertSchema(labourTaskTemplates).omit({ id: true });
