@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -50,6 +50,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { LabourEstimate, LabourEstimateCategory, LabourEstimateTask, Project } from "@shared/schema";
+import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
@@ -101,7 +103,7 @@ function SortableCategoryItem({
       <div
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60 transition-colors"
+        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 transition-opacity"
       >
         <GripVertical className="w-3 h-3" />
       </div>
@@ -190,6 +192,8 @@ function SortableTaskRow({
   onDelete,
   onCopyToTemplate,
   isTemplate,
+  cols,
+  gridTemplate,
 }: {
   task: TaskLike;
   editingCell: { taskId: string; field: string } | null;
@@ -203,6 +207,8 @@ function SortableTaskRow({
   onDelete: () => void;
   onCopyToTemplate?: () => void;
   isTemplate?: boolean;
+  cols: { key: string }[];
+  gridTemplate: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
@@ -231,10 +237,97 @@ function SortableTaskRow({
     commitEdit(task, field);
   };
 
+  // Cells are rendered BY KEY so the column order can change. Listing them
+  // positionally in JSX — which is how this grid used to work, and how the
+  // allowance tables still do — means the headers move but the data does not.
+  const renderCell = (key: string) => {
+    switch (key) {
+      case "description":
+        return (
+    <div className="pr-2 py-0.5">
+      {editingCell?.taskId === task.id && editingCell.field === 'description' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('description')}
+          onKeyDown={handleKeyDown('description')}
+          className="h-6 text-sm focus-visible:ring-0 border-primary"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer hover:text-foreground truncate block"
+          onClick={() => startEdit(task.id, 'description', task.description)}
+        >
+          {task.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
+        </span>
+      )}
+    </div>
+        );
+      case "numMen":
+        return (
+    <div className="flex justify-center">
+      {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'numMen' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('numMen')}
+          onKeyDown={handleKeyDown('numMen')}
+          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-16"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
+          onClick={() => task.subHeading ? undefined : startEdit(task.id, 'numMen', task.numMen)}
+        >
+          {task.subHeading ? "" : task.numMen}
+        </span>
+      )}
+    </div>
+        );
+      case "hoursPerMan":
+        return (
+    <div className="flex justify-center">
+      {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'hoursPerMan' ? (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onFocus={e => e.target.select()}
+          onBlur={handleBlur('hoursPerMan')}
+          onKeyDown={handleKeyDown('hoursPerMan')}
+          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20"
+        />
+      ) : (
+        <span
+          className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
+          onClick={() => task.subHeading ? undefined : startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
+        >
+          {task.subHeading ? "" : task.hoursPerMan}
+        </span>
+      )}
+    </div>
+        );
+      case "totalHours":
+        return (
+    <div className="text-right pr-1">
+      <span className="text-sm tabular-nums font-medium">
+        {task.subHeading ? "" : isTemplate ? `${task.hoursPerMan}h` : task.totalHours.toFixed(2)}
+      </span>
+    </div>
+        );
+      default:
+        return <span />;
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
-      style={{ ...dndStyle, gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" } as React.CSSProperties}
+      style={{ ...dndStyle, gridTemplateColumns: `20px ${gridTemplate}` } as React.CSSProperties}
       className={`grid items-center border-b border-border/10 group/row min-h-[34px] ${
         task.subHeading ? "bg-muted/30 font-medium" : ""
       }`}
@@ -242,84 +335,12 @@ function SortableTaskRow({
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-center h-full cursor-grab active:cursor-grabbing text-muted-foreground/20 hover:text-muted-foreground/50 transition-colors pl-1"
+        className="flex items-center justify-center h-full cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity pl-1"
       >
         <GripVertical className="w-3 h-3" />
       </div>
 
-      {/* Description */}
-      <div className="pr-2 py-0.5">
-        {editingCell?.taskId === task.id && editingCell.field === 'description' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('description')}
-            onKeyDown={handleKeyDown('description')}
-            className="h-6 text-sm focus-visible:ring-0 border-primary"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer hover:text-foreground truncate block"
-            onClick={() => startEdit(task.id, 'description', task.description)}
-          >
-            {task.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
-          </span>
-        )}
-      </div>
-
-      {/* No. Men */}
-      <div className="flex justify-center">
-        {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'numMen' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('numMen')}
-            onKeyDown={handleKeyDown('numMen')}
-            className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-16"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'numMen', task.numMen)}
-          >
-            {task.subHeading ? "" : task.numMen}
-          </span>
-        )}
-      </div>
-
-      {/* Hrs / Man */}
-      <div className="flex justify-center">
-        {task.subHeading ? <span /> : editingCell?.taskId === task.id && editingCell.field === 'hoursPerMan' ? (
-          <Input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onFocus={e => e.target.select()}
-            onBlur={handleBlur('hoursPerMan')}
-            onKeyDown={handleKeyDown('hoursPerMan')}
-            className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20"
-          />
-        ) : (
-          <span
-            className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
-          >
-            {task.subHeading ? "" : task.hoursPerMan}
-          </span>
-        )}
-      </div>
-
-      {/* Total / default hrs */}
-      <div className="text-right pr-1">
-        <span className="text-sm tabular-nums font-medium">
-          {task.subHeading ? "" : isTemplate ? `${task.hoursPerMan}h` : task.totalHours.toFixed(2)}
-        </span>
-      </div>
-
+      {cols.map(c => <React.Fragment key={c.key}>{renderCell(c.key)}</React.Fragment>)}
       {/* 3-dot menu */}
       <div className="flex justify-center opacity-0 group-hover/row:opacity-100 transition-opacity">
         <DropdownMenu>
@@ -349,6 +370,35 @@ function SortableTaskRow({
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
+/**
+ * Rows added optimistically carry this id prefix until the server answers with
+ * a real one. Nothing may be PATCHed against such an id — the row does not
+ * exist yet — so edits on it are dropped rather than 500ing.
+ */
+const PENDING_PREFIX = "pending-";
+
+/**
+ * The movable columns. The drag handle (20px) and the actions menu (32px) sit
+ * outside this list — they are structural, not data, and pinning them keeps the
+ * grip on the left and the menu on the right whatever else is reordered.
+ *
+ * Description is the flex column, so the table still reaches the right edge
+ * after the others are resized.
+ */
+const LABOUR_COLUMNS = [
+  { key: "description", defaultWidth: 260, flex: true },
+  { key: "numMen", defaultWidth: 70 },
+  { key: "hoursPerMan", defaultWidth: 80 },
+  { key: "totalHours", defaultWidth: 80 },
+];
+
+const LABOUR_COLUMN_LABELS: Record<string, string> = {
+  description: "Description",
+  numMen: "No. Men",
+  hoursPerMan: "Hrs / Man",
+  totalHours: "Total Hrs",
+};
+
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const mode = 'project' as const;
@@ -361,6 +411,8 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const suppressBlurRef = useRef(false);
+  const taskListRef = useRef<HTMLDivElement>(null);
+  const taskCols = useResizableColumns("labour-tasks", LABOUR_COLUMNS, 32, { reorderable: true });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -461,8 +513,86 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const addTaskMutation = useMutation({
     mutationFn: (data: { description: string; sortOrder?: number }) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks`, "POST", data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
-    onError: () => toast({ title: "Failed to add task", variant: "destructive" }),
+    // Show the row straight away. The database is in us-east-1 and this is used
+    // from AU, so POST-then-refetch is two round trips — the row took about
+    // three seconds to appear, which felt like the Enter key had missed.
+    onMutate: (data) => {
+      const key = ["/api/labour-estimate-categories", effectiveCatId, "tasks"];
+      // Paint FIRST, then cancel. Awaiting cancelQueries here made the row wait
+      // on whatever refetch was already in flight — measured at ~900ms when
+      // adding rows one after another, versus ~95ms once the write goes first.
+      const prev = queryClient.getQueryData<LabourEstimateTask[]>(key);
+      const optimistic = {
+        id: `${PENDING_PREFIX}${crypto.randomUUID()}`,
+        categoryId: effectiveCatId,
+        description: data.description,
+        subHeading: null,
+        numMen: 1,
+        hoursPerMan: 0,
+        totalHours: 0,
+        sortOrder: data.sortOrder ?? (prev?.length ?? 0),
+      } as unknown as LabourEstimateTask;
+      queryClient.setQueryData<LabourEstimateTask[]>(key, [...(prev ?? []), optimistic]);
+      queryClient.cancelQueries({ queryKey: key });
+      return { prev, key };
+    },
+    onError: (_e, _v, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      toast({ title: "Failed to add task", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
+  });
+
+  const pasteTasksMutation = useMutation({
+    mutationFn: (rows: { description: string; numMen: number; hoursPerMan: number }[]) =>
+      apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/bulk`, "POST", { rows }),
+
+    // Draw the pasted rows straight away, exactly as adding one row does. The
+    // insert itself was never the slow part — it was POST, then invalidate,
+    // then refetch tasks AND categories: three round trips to us-east-1 before
+    // anything appeared, which read as a three-second hang after the toast had
+    // already said it worked.
+    onMutate: (rows) => {
+      const key = ["/api/labour-estimate-categories", effectiveCatId, "tasks"];
+      const prev = queryClient.getQueryData<LabourEstimateTask[]>(key);
+      const base = prev?.length ?? 0;
+      const optimistic = rows.map((r, i) => ({
+        id: `${PENDING_PREFIX}${crypto.randomUUID()}`,
+        categoryId: effectiveCatId,
+        description: r.description,
+        subHeading: null,
+        numMen: r.numMen,
+        hoursPerMan: r.hoursPerMan,
+        totalHours: r.numMen * r.hoursPerMan,
+        sortOrder: base + i,
+      })) as unknown as LabourEstimateTask[];
+      queryClient.setQueryData<LabourEstimateTask[]>(key, [...(prev ?? []), ...optimistic]);
+      queryClient.cancelQueries({ queryKey: key });
+      return { prev, key, pendingIds: new Set(optimistic.map(o => o.id)) };
+    },
+
+    // The POST already returns the created rows, so swap them in rather than
+    // asking for them again. That removes the second round trip entirely.
+    onSuccess: (created: any, _rows, ctx: any) => {
+      if (Array.isArray(created) && ctx?.key) {
+        queryClient.setQueryData<LabourEstimateTask[]>(ctx.key, old =>
+          [...(old ?? []).filter(t => !ctx.pendingIds.has(t.id)), ...created],
+        );
+      } else {
+        queryClient.invalidateQueries({ queryKey: ctx?.key });
+      }
+      // The category hours tally is off to the side; let it catch up in the
+      // background rather than holding the rows back.
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
+
+    onError: (_e, _v, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      toast({ title: "Failed to paste tasks", variant: "destructive" });
+    },
   });
 
   const deleteTaskMutation = useMutation({
@@ -479,12 +609,89 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
   });
 
+  /**
+   * Paste a block of rows straight out of a spreadsheet.
+   *
+   * The listener is on `document` rather than the grid, because after clicking
+   * about the page focus is usually on <body> and a container-scoped handler
+   * would simply never fire — which reads as "paste is broken".
+   *
+   * That breadth needs three guards:
+   *  - an editable target keeps its own paste. Typing into a cell and pasting a
+   *    task name must stay a normal paste, not create rows.
+   *  - the panel must be ON SCREEN. EstimateDetail renders every tab at once and
+   *    hides the inactive ones with `hidden`, so this component is mounted while
+   *    you are on the Estimate tab; without the offsetParent check, pasting over
+   *    there would silently append labour tasks. offsetParent is null under
+   *    display:none.
+   *  - the payload must contain a tab or a newline, i.e. actually be a block.
+   *    Otherwise an incidental Cmd+V of one word becomes a task.
+   */
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!effectiveCatId) return;
+
+      // The "Add item" box is where people naturally click before pasting, so a
+      // block dropped there must become rows, not one very long task name.
+      // Every OTHER text field keeps its own paste: mid-edit in a cell, a paste
+      // is a paste.
+      const el = e.target as HTMLElement | null;
+      const editable = el?.closest?.('input, textarea, select, [contenteditable="true"]');
+      if (editable && !(editable as HTMLElement).dataset?.labourAddItem) return;
+      if (!taskListRef.current || taskListRef.current.offsetParent === null) return;
+
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text.includes("\t") && !text.includes("\n")) return;
+
+      const parsed = parseLabourPaste(text);
+      if (parsed.rows.length === 0) return;
+
+      e.preventDefault();
+
+      if (parsed.rows.length > MAX_PASTE_ROWS) {
+        toast({
+          title: "That paste is too big",
+          description: `${parsed.rows.length} rows — the limit is ${MAX_PASTE_ROWS}. Paste it in a few goes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Say what was dropped. A quietly discarded header row or a fourth column
+      // that did not come across is the kind of thing you only notice later.
+      setNewRowDesc("");   // in case the block was pasted into the add box
+
+      const notes: string[] = [];
+      // Column order is inferred per paste, so say which layout was read. If it
+      // guessed wrong this is the line that makes it obvious immediately.
+      const layout = describeRoles(parsed.roles);
+      if (layout) notes.push(`read as ${layout}`);
+      if (parsed.skippedHeader) notes.push("header row skipped");
+      if (parsed.skippedBlank) notes.push(`${parsed.skippedBlank} row(s) had no description`);
+      if (parsed.extraColumns > 0) {
+        notes.push(`${parsed.extraColumns} extra column(s) ignored — Total Hrs is calculated`);
+      }
+
+      pasteTasksMutation.mutate(parsed.rows, {
+        onSuccess: () =>
+          toast({
+            title: `Added ${parsed.rows.length} task${parsed.rows.length === 1 ? "" : "s"} to ${selectedCat?.name ?? "the category"}`,
+            description: notes.length ? notes.join(" · ") : undefined,
+          }),
+      });
+    };
+
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [effectiveCatId, selectedCat?.name, pasteTasksMutation, toast]);
+
   const applyTemplateMutation = useMutation({
     mutationFn: () => apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/apply-template`, "POST", { labourEstimateId: estimate!.id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
-      setMode('project');
+      // No setMode here: this panel is project-only (`mode` is a const), so the
+      // call had no binding and threw before the toast ever ran.
       toast({ title: "Template applied" });
     },
     onError: () => toast({ title: "No template tasks for this category", variant: "destructive" }),
@@ -567,6 +774,9 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const commitEdit = useCallback((task: TaskLike, field: 'description' | 'numMen' | 'hoursPerMan') => {
     if (!editingCell || editingCell.taskId !== task.id || editingCell.field !== field) return;
     setEditingCell(null);
+    // Optimistic row: the server has not given it an id yet, so there is
+    // nothing to PATCH. The refetch a moment later brings the real row in.
+    if (task.id.startsWith(PENDING_PREFIX)) return;
     if (mode === 'template') {
       const data: Partial<TaskLike> = {};
       if (field === 'description') data.description = editValue;
@@ -863,18 +1073,32 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {/* Column headers */}
           <div
             className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
-            style={{ gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" }}
+            style={{ gridTemplateColumns: `20px ${taskCols.gridTemplate}` }}
           >
             <span />
-            <span>Description</span>
-            <span className="text-center">No. Men</span>
-            <span className="text-center">Hrs / Man</span>
-            <span className="text-right pr-1">{mode === 'template' ? 'Default' : 'Total Hrs'}</span>
+            {taskCols.cols.map(c => (
+              <span
+                key={c.key}
+                {...taskCols.headerDragProps(c.key)}
+                style={{ opacity: taskCols.draggingKey === c.key ? 0.4 : 1 }}
+                className={`relative select-none cursor-grab active:cursor-grabbing truncate px-0.5 transition-opacity ${
+                  c.key === 'totalHours' ? 'text-right pr-1' : c.key === 'description' ? '' : 'text-center'
+                }`}
+                title="Drag to move · drag the edge to resize"
+                data-testid={`labour-col-${c.key}`}
+              >
+                {c.key === 'totalHours' && mode === 'template' ? 'Default' : LABOUR_COLUMN_LABELS[c.key]}
+                <ColResizeHandle
+                  onStart={e => taskCols.startResize(c.key, e.clientX, c.width)}
+                  testId={`labour-col-resize-${c.key}`}
+                />
+              </span>
+            ))}
             <span />
           </div>
 
           {/* Task rows */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" ref={taskListRef}>
             {!selectedCat ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
@@ -896,6 +1120,8 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                   {activeTasks.map(task => (
                     <SortableTaskRow
                       key={task.id}
+                      cols={taskCols.cols}
+                      gridTemplate={taskCols.gridTemplate}
                       task={task}
                       editingCell={editingCell}
                       editValue={editValue}
@@ -919,6 +1145,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {selectedCat && (
             <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
               <Input
+                data-labour-add-item="true"
                 placeholder={mode === 'template' ? "Add template item…" : "Add item…"}
                 value={newRowDesc}
                 onChange={e => setNewRowDesc(e.target.value)}
