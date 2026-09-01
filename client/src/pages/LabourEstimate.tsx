@@ -1080,7 +1080,8 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
               <span
                 key={c.key}
                 {...taskCols.headerDragProps(c.key)}
-                className={`relative select-none cursor-grab active:cursor-grabbing truncate px-0.5 ${
+                style={{ opacity: taskCols.draggingKey === c.key ? 0.4 : 1 }}
+                className={`relative select-none cursor-grab active:cursor-grabbing truncate px-0.5 transition-opacity ${
                   c.key === 'totalHours' ? 'text-right pr-1' : c.key === 'description' ? '' : 'text-center'
                 }`}
                 title="Drag to move · drag the edge to resize"

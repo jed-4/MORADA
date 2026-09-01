@@ -1,4 +1,4 @@
-import React, { useCallback, useSyncExternalStore } from "react";
+import React, { useCallback, useState, useSyncExternalStore } from "react";
 
 // ─── Shared, generalised column-resize mechanism ──────────────────────────────
 // Extracted from LineItemsTable so any bespoke grid (allowance timesheets, bills,
@@ -35,6 +35,13 @@ let widthStore: WidthMap = (() => {
   }
 })();
 const widthListeners = new Set<() => void>();
+
+/**
+ * The column currently being dragged. Module-level rather than React state
+ * because the dragover handler needs it synchronously on every pointer move,
+ * and because only one column can be dragged at a time anywhere on the page.
+ */
+let draggingKey: string | null = null;
 
 const ORDER_KEY = "grid-col-order-v1";
 type OrderMap = Record<string, string[]>;
@@ -124,6 +131,11 @@ export function useResizableColumns(
 ) {
   const widths = useSyncExternalStore(subscribe, () => widthStore, () => widthStore);
   const order = useSyncExternalStore(subscribe, () => orderStore, () => orderStore);
+  // Purely for the "this one is moving" style. It cannot ride on the stores
+  // above: useSyncExternalStore only re-renders when the SNAPSHOT changes, and
+  // starting a drag changes neither widths nor order, so notifying its
+  // listeners did nothing at all.
+  const [dragVisual, setDragVisual] = useState<string | null>(null);
 
   const widthFor = (key: string, defaultWidth: number) =>
     widths[`${namespace}:${key}`] ?? defaultWidth;
@@ -177,21 +189,35 @@ export function useResizableColumns(
     return {
       draggable: true,
       onDragStart: (e: React.DragEvent) => {
+        draggingKey = key;
+        setDragVisual(key);
         e.dataTransfer.setData("text/x-morada-col", key);
         e.dataTransfer.effectAllowed = "move";
       },
       onDragOver: (e: React.DragEvent) => {
-        if (!e.dataTransfer.types.includes("text/x-morada-col")) return;
-        e.preventDefault();                       // required or drop never fires
+        if (!draggingKey) return;
+        e.preventDefault();                        // required or the drag is rejected
         e.dataTransfer.dropEffect = "move";
+        // Reorder AS YOU DRAG rather than on drop. Waiting for the drop meant
+        // nothing moved until you let go, so there was no sign the column was
+        // going anywhere. Committing here also stops the whole interaction
+        // depending on a `drop` event firing, which is the least reliable part
+        // of HTML5 drag-and-drop.
+        if (draggingKey !== key) moveColumn(draggingKey, key);
       },
       onDrop: (e: React.DragEvent) => {
-        const from = e.dataTransfer.getData("text/x-morada-col");
-        if (!from) return;
         e.preventDefault();
-        e.stopPropagation();                      // don't let a row DnD see it
-        moveColumn(from, key);
+        e.stopPropagation();                       // don't let a row DnD see it
+        draggingKey = null;
+        setDragVisual(null);
       },
+      onDragEnd: () => {
+        // Fires even when the drop lands outside a header, so the dragging
+        // style can never get stuck on.
+        draggingKey = null;
+        setDragVisual(null);
+      },
+      "data-dragging": dragVisual === key ? "true" : undefined,
     };
   };
 
@@ -204,7 +230,7 @@ export function useResizableColumns(
       .join(" ") + (trailingPx ? ` ${trailingPx}px` : "");
   const minWidth = cols.reduce((s, c) => s + c.width, 0) + trailingPx;
 
-  return { widthFor, startResize, gridTemplate, minWidth, cols, moveColumn, resetOrder, headerDragProps };
+  return { widthFor, startResize, gridTemplate, minWidth, cols, moveColumn, resetOrder, headerDragProps, draggingKey: dragVisual };
 }
 
 /** The draggable divider drawn on a header cell's right edge. */
