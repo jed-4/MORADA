@@ -8745,6 +8745,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/enote-template-sets/:id/rows", requireAuth, async (req, res) => {
     try {
+      // Ownership, matching the DELETE below. The id comes from the URL and
+      // nothing downstream re-checks it, so without this any signed-in user
+      // could read another company's template contents.
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.id))) return;
       const rows = await storage.getEnoteTemplateSetRows(req.params.id);
       res.json(rows);
     } catch (error) {

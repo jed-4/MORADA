@@ -54,6 +54,7 @@ import {
   AlertCircle,
   GripVertical,
   StickyNote,
+  ArrowLeft,
   Clock,
   Columns3,
 } from "lucide-react";
@@ -220,8 +221,17 @@ export default function EstimateTemplates() {
 
   const addEnoteTemplateMutation = useMutation({
     mutationFn: (data: { groupName: string; categoryName: string; brainstormNotes?: string }) =>
-      apiRequest("/api/enote-templates", "POST", { ...data, sortOrder: enoteTemplates.length }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
+      // templateSetId is null unless a saved template is open, so the Labour
+      // tab's group box keeps writing to the unsaved list exactly as before.
+      apiRequest("/api/enote-templates", "POST", {
+        ...data,
+        templateSetId: openDetailsSet?.id ?? null,
+        sortOrder: enoteTemplates.length,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+    },
     onError: () => toast({ title: "Failed to add Detail template", variant: "destructive" }),
   });
 
@@ -276,6 +286,18 @@ export default function EstimateTemplates() {
   });
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [editingSetName, setEditingSetName] = useState("");
+  const createSetMutation = useMutation({
+    mutationFn: (name: string) => apiRequest("/api/enote-template-sets", "POST", { name }),
+    onSuccess: (set: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+      // Drop straight into the new one — creating a template and then having to
+      // find it in the list is a pointless extra step.
+      setOpenDetailsSet({ id: set.id, name: set.name });
+      setSelectedGroup("");
+    },
+    onError: () => toast({ title: "Failed to create template", variant: "destructive" }),
+  });
+
   const renameSetMutation = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) =>
       apiRequest(`/api/enote-template-sets/${id}`, "PATCH", { name }),
@@ -315,6 +337,54 @@ export default function EstimateTemplates() {
     allLabourTemplates.filter(t => t.categoryName === selectedGroup),
     [allLabourTemplates, selectedGroup]
   );
+  // ── Details: a library of templates you open, not one list ─────────────────
+  // The saved templates were already here — enote_template_sets, with their rows
+  // scoped by templateSetId, savable from a job and appliable to one. They were
+  // just relegated to a strip at the bottom that you could rename but not open,
+  // while the big editor above always edited the rows belonging to NO template.
+  // That is why it looked like a single open template: it was.
+  const [openDetailsSet, setOpenDetailsSet] = useState<{ id: string | null; name: string } | null>(null);
+
+  const { data: openDetailsRows = [] } = useQuery<EnoteTemplate[]>({
+    queryKey: ["/api/enote-template-sets", openDetailsSet?.id, "rows"],
+    queryFn: () =>
+      fetch(`/api/enote-template-sets/${openDetailsSet!.id}/rows`, { credentials: "include" }).then(r => r.json()),
+    enabled: activeTab === 'enotes' && !!openDetailsSet?.id,
+  });
+
+  // A null id is the unsaved list — the rows that belong to no template.
+  const detailsRows: any[] = openDetailsSet?.id
+    ? (openDetailsRows as any[])
+    : (enoteTemplates as any[]).filter((t: any) => !t.templateSetId);
+
+  const detailsGroups = useMemo(
+    () => Array.from(new Set(detailsRows.map((t: any) => t.groupName))).sort() as string[],
+    [detailsRows],
+  );
+
+  const detailsGroupRequired = useMemo(() => {
+    const map = new Map<string, boolean>();
+    detailsRows.forEach((t: any) => {
+      if (!map.has(t.groupName)) map.set(t.groupName, t.isRequired !== false);
+    });
+    return map;
+  }, [detailsRows]);
+
+  const detailsGroupItems = useMemo(
+    () => detailsRows.filter((t: any) => t.groupName === selectedGroup),
+    [detailsRows, selectedGroup],
+  );
+
+  /** How many groups/categories a saved template holds, for the list. */
+  const setRowCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    (enoteTemplates as any[]).forEach((t: any) => {
+      if (!t.templateSetId) return;
+      map.set(t.templateSetId, (map.get(t.templateSetId) ?? 0) + (t.categoryName ? 1 : 0));
+    });
+    return map;
+  }, [enoteTemplates]);
+
   const groupEnoteItems = useMemo(() =>
     enoteTemplates.filter((t: any) => t.groupName === selectedGroup),
     [enoteTemplates, selectedGroup]
@@ -695,6 +765,74 @@ export default function EstimateTemplates() {
     const data = template.templateData as TemplateItem[] | null;
     return data?.length || 0;
   };
+
+  type DetailsTemplateRow = { id: string | null; name: string; createdAt: string | null; count: number };
+
+  const detailsTemplateRows = useMemo<DetailsTemplateRow[]>(() => {
+    const unsavedCount = (enoteTemplates as any[]).filter((t: any) => !t.templateSetId && t.categoryName).length;
+    const saved = enoteTemplateSets.map((set: any) => ({
+      id: set.id as string,
+      name: set.name as string,
+      createdAt: set.createdAt as string,
+      count: setRowCounts.get(set.id) ?? 0,
+    }));
+    // The unsaved list is only worth showing while it still holds something —
+    // otherwise it is a permanent empty row at the top of every company's list.
+    return unsavedCount > 0
+      ? [{ id: null, name: "Unsaved list", createdAt: null, count: unsavedCount }, ...saved]
+      : saved;
+  }, [enoteTemplateSets, enoteTemplates, setRowCounts]);
+
+  const detailsTemplateColumns = useMemo<ColumnDef<DetailsTemplateRow, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name,
+      cell: ({ row }) => (
+        <span className="text-xs font-semibold" data-testid={`details-template-${row.original.id ?? 'unsaved'}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 280,
+      meta: { defaultWidth: 280, headerLabel: "Name", flex: true } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "count",
+      header: "Categories",
+      accessorFn: (t) => t.count,
+      cell: ({ row }) => <span className="text-xs tabular-nums">{row.original.count}</span>,
+      size: 100,
+      meta: { defaultWidth: 100, headerLabel: "Categories", align: "right" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "created",
+      header: "Created",
+      accessorFn: (t) => t.createdAt ?? "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.createdAt ? format(new Date(row.original.createdAt), "d MMM yyyy") : "—"}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Created" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) =>
+        row.original.id ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); deleteSetMutation.mutate(row.original.id!); }}
+            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded"
+            data-testid={`delete-details-template-${row.original.id}`}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        ) : null,
+      size: 44,
+      meta: { defaultWidth: 44, headerLabel: "" } satisfies DataTableColumnMeta,
+    },
+  ], [deleteSetMutation]);
 
   const templateColumns = useMemo<ColumnDef<EstimateTemplate, unknown>[]>(() => [
     {
@@ -1126,9 +1264,61 @@ export default function EstimateTemplates() {
         </div>
       )}
 
+      {/* Details Tab — the library. Open one to edit it. */}
+      {activeTab === 'enotes' && !openDetailsSet && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="h-9 flex items-center justify-end gap-1.5 px-3 border-b border-border flex-shrink-0">
+            <button
+              className="h-6 px-2 text-xs rounded-md bg-primary text-white border border-primary/20 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => {
+                const name = window.prompt("Name this Details template");
+                if (name?.trim()) createSetMutation.mutate(name.trim());
+              }}
+              data-testid="button-new-details-template"
+            >
+              <Plus className="w-3 h-3" />
+              <span>New template</span>
+            </button>
+          </div>
+          {detailsTemplateRows.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <StickyNote className="h-8 w-8 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">No Details templates yet</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                  Make one with <span className="font-medium text-foreground">New template</span>, or save the
+                  Details of a job you have already set up from that estimate.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DataTable
+                data={detailsTemplateRows}
+                columns={detailsTemplateColumns}
+                storageKey="details-templates"
+                rowKey={(t) => t.id ?? "__unsaved"}
+                onRowClick={(t) => { setOpenDetailsSet({ id: t.id, name: t.name }); setSelectedGroup(""); }}
+              />
+            </div>
+          )}
+        </div>
+      )}
       {/* E-Notes Tab — split panel mirroring Labour layout */}
-      {activeTab === 'enotes' && (
+      {activeTab === 'enotes' && openDetailsSet && (
         <div className="flex-1 flex min-h-0 overflow-hidden flex-col">
+          {/* Which template you are editing, and the way back to the list */}
+          <div className="h-9 flex items-center gap-2 px-3 border-b border-border flex-shrink-0 bg-muted/10">
+            <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0"
+              onClick={() => { setOpenDetailsSet(null); setSelectedGroup(""); }}
+              data-testid="button-details-back">
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-xs font-semibold truncate">{openDetailsSet.name}</span>
+            {!openDetailsSet.id && (
+              <Badge variant="outline" className="text-[10px] flex-shrink-0">Unsaved list</Badge>
+            )}
+          </div>
           <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* LEFT: Groups panel */}
           <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
@@ -1136,7 +1326,7 @@ export default function EstimateTemplates() {
               <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {allGroups.length === 0 && (
+              {detailsGroups.length === 0 && (
                 <div className="px-3 py-4 space-y-1.5" data-testid="groups-empty-state">
                   {/* The only control that can break the deadlock is the "New
                       group…" box pinned to the BOTTOM of this panel, under a
@@ -1149,10 +1339,10 @@ export default function EstimateTemplates() {
                   </p>
                 </div>
               )}
-              {allGroups.map(group => {
+              {detailsGroups.map(group => {
                 const isSelected = selectedGroup === group;
-                const enoteCount = enoteTemplates.filter((t: any) => t.groupName === group && t.categoryName).length;
-                const isRequired = groupRequiredStatus.get(group);
+                const enoteCount = detailsRows.filter((t: any) => t.groupName === group && t.categoryName).length;
+                const isRequired = detailsGroupRequired.get(group);
                 const hasEnotes = !labourOnlyGroups.has(group);
                 return (
                   <button key={group} onClick={() => setSelectedGroup(group)}
@@ -1224,12 +1414,12 @@ export default function EstimateTemplates() {
                   <span />
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {groupEnoteItems.filter((t: any) => t.categoryName).length === 0 && (
+                  {detailsGroupItems.filter((t: any) => t.categoryName).length === 0 && (
                     <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
                       No categories yet — add one below
                     </div>
                   )}
-                  {groupEnoteItems.filter((t: any) => t.categoryName).map((t: any) => (
+                  {detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => (
                     <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
                       style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
                       {/* Category */}
@@ -1285,59 +1475,6 @@ export default function EstimateTemplates() {
           </div>
           </div>
 
-          {/* Named Template Sets section */}
-          {enoteTemplateSets.length > 0 && (
-            <div className="flex-shrink-0 border-t border-border bg-muted/10">
-              <div className="px-4 py-2 flex items-center gap-2 border-b border-border/50">
-                <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Saved Templates</span>
-                <span className="text-data text-muted-foreground">({enoteTemplateSets.length})</span>
-              </div>
-              <div className="max-h-48 overflow-y-auto divide-y divide-border/10">
-                {enoteTemplateSets.map(set => (
-                  <div key={set.id} className="flex items-center gap-2 px-4 py-2 group/setrow hover-elevate">
-                    {editingSetId === set.id ? (
-                      <Input
-                        autoFocus
-                        value={editingSetName}
-                        onChange={e => setEditingSetName(e.target.value)}
-                        onBlur={() => {
-                          if (editingSetName.trim()) {
-                            renameSetMutation.mutate({ id: set.id, name: editingSetName.trim() });
-                          } else {
-                            setEditingSetId(null);
-                          }
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === "Enter" && editingSetName.trim()) {
-                            renameSetMutation.mutate({ id: set.id, name: editingSetName.trim() });
-                          } else if (e.key === "Escape") {
-                            setEditingSetId(null);
-                          }
-                        }}
-                        className="h-6 text-xs flex-1 focus-visible:ring-0 border-primary"
-                      />
-                    ) : (
-                      <span
-                        className="text-sm flex-1 cursor-pointer hover:text-foreground truncate"
-                        onClick={() => { setEditingSetId(set.id); setEditingSetName(set.name); }}
-                      >
-                        {set.name}
-                      </span>
-                    )}
-                    <span className="text-data text-muted-foreground opacity-0 group-hover/setrow:opacity-100 flex-shrink-0">
-                      {format(new Date(set.createdAt), "d MMM yyyy")}
-                    </span>
-                    <button
-                      onClick={() => deleteSetMutation.mutate(set.id)}
-                      className="opacity-0 group-hover/setrow:opacity-100 h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded flex-shrink-0"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

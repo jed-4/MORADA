@@ -36,7 +36,6 @@
     "server/routes.ts GET /api/custom-field-defs/:fieldDefId/options",
     "server/routes.ts GET /api/custom-field-defs/:id",
     "server/routes.ts GET /api/custom-field-options/:id",
-    "server/routes.ts GET /api/enote-template-sets/:id/rows",
     "server/routes.ts GET /api/estimates/:id/enotes/attachment-counts",
     "server/routes.ts GET /api/google-calendar/callback",
     "server/routes.ts GET /api/google-drive/callback",
