@@ -911,7 +911,17 @@ export default function EstimateTemplates() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {allGroups.length === 0 && (
-                <div className="px-3 py-4 text-xs text-muted-foreground italic">No groups yet</div>
+                <div className="px-3 py-4 space-y-1.5" data-testid="groups-empty-state">
+                  {/* The only control that can break the deadlock is the "New
+                      group…" box pinned to the BOTTOM of this panel, under a
+                      tall empty column. Saying "No groups yet" and nothing else
+                      read as a dead end, so point at it and say what to press. */}
+                  <p className="text-xs font-medium text-foreground">No groups yet</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Type a name in <span className="font-medium text-foreground">New group…</span> at the
+                    bottom of this panel and press <kbd className="px-1 py-0.5 rounded border border-border bg-muted text-[10px] font-medium">Enter</kbd>.
+                  </p>
+                </div>
               )}
               {allGroups.map(group => {
                 const isSelected = selectedGroup === group;
@@ -1127,7 +1137,17 @@ export default function EstimateTemplates() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {allGroups.length === 0 && (
-                <div className="px-3 py-4 text-xs text-muted-foreground italic">No groups yet</div>
+                <div className="px-3 py-4 space-y-1.5" data-testid="groups-empty-state">
+                  {/* The only control that can break the deadlock is the "New
+                      group…" box pinned to the BOTTOM of this panel, under a
+                      tall empty column. Saying "No groups yet" and nothing else
+                      read as a dead end, so point at it and say what to press. */}
+                  <p className="text-xs font-medium text-foreground">No groups yet</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Type a name in <span className="font-medium text-foreground">New group…</span> at the
+                    bottom of this panel and press <kbd className="px-1 py-0.5 rounded border border-border bg-muted text-[10px] font-medium">Enter</kbd>.
+                  </p>
+                </div>
               )}
               {allGroups.map(group => {
                 const isSelected = selectedGroup === group;
