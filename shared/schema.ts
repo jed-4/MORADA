@@ -7759,6 +7759,11 @@ export const products = pgTable("products", {
   url:               text("url"),
   notes:             text("notes"),
   isActive:          boolean("is_active").default(true),
+  // The spec, and only the spec. How a particular template USES a product —
+  // quantity, markup, whether the client may see it — lives on
+  // selectionTemplateOptions below, because those answers differ per use and a
+  // library product is meant to be shared between them.
+  specifications:    json("specifications").$type<Record<string, any>>(),
   createdAt:         timestamp("created_at").defaultNow(),
   updatedAt:         timestamp("updated_at").defaultNow(),
 }, (table) => ({
@@ -7786,6 +7791,84 @@ export const productImages = pgTable("product_images", {
 export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });
 export type InsertProductImage = z.infer<typeof insertProductImageSchema>;
 export type ProductImage = typeof productImages.$inferSelect;
+
+// ── Selection Template Options ────────────────────────────────────────────────
+// The Option level of the Product Library hierarchy:
+//
+//   selection_template_groups   Category   "Roofing"
+//   └── selection_templates     Selection  "Gutter profile"
+//       └── THIS TABLE          Option     "Quad", "Half round"
+//
+// Options currently live inside `selection_templates.templateData` as a JSON
+// blob, which is why they cannot be searched, cannot be linked to from a job,
+// and give "save to library" nowhere to write. These rows shadow that blob
+// until it is retired.
+//
+// The split from `products` is deliberate. A product is a SPEC — a Colorbond
+// quad gutter is the same object wherever it is specified. These columns are
+// how one template USES that product, and the answers differ per use: the same
+// tapware may be 2 units and client-visible in one selection and 6 units and
+// hidden in another. Putting them on the product would make sharing a product
+// between templates impossible, which is the point of a library.
+export const selectionTemplateOptions = pgTable("selection_template_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => selectionTemplates.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  // Denormalised from selectionTemplates so every read can be scoped by tenant
+  // without a join. Same convention as the rest of the schema.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  // How THIS template uses the product. Names and defaults match
+  // selection_options exactly, because /apply copies them straight across.
+  quantity:        integer("quantity"),
+  unitCostOverride: integer("unit_cost_override"),  // cents; null = use the product's defaultUnitCost
+  markupPercent:   doublePrecision("markup_percent"),
+  totalCost:       integer("total_cost"),           // cents
+  visibleToClient: boolean("visible_to_client"),
+  gstInclusive:    boolean("gst_inclusive"),
+  // NULLABLE on purpose. /apply defaults an absent sortOrder differently per
+  // format — 0 for legacy, the option's index for flat — so storing 0 for
+  // "absent" would make the flat default unreproducible from a row. Order reads
+  // with NULLS LAST.
+  sortOrder:       integer("sort_order"),
+
+  // Provenance, and the backfill's idempotency key.
+  //
+  // The option's `id` inside templateData where it has one. Many do not: ids are
+  // minted at read time by a React ref (getStableId in
+  // SelectionTemplateItemDetail) and persisted only on an explicit save, so they
+  // are neither guaranteed nor reproducible outside that page session. The
+  // fallback is positional — `idx:0` for a flat option, `idx:2/1` for
+  // items[2].options[1] in the legacy `itemName` format.
+  templateOptionId: text("template_option_id"),
+
+  // The legacy `itemName` format nests options under items, and an item is a
+  // SELECTION that has no table of its own. Until those are promoted, this
+  // preserves which item an option belonged to so the grouping is not lost.
+  legacyItemIndex: integer("legacy_item_index"),
+  legacyItemName:  text("legacy_item_name"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  templateIdx: index("selection_template_options_template_idx").on(table.templateId, table.sortOrder),
+  productIdx: index("selection_template_options_product_idx").on(table.productId),
+  companyIdx: index("selection_template_options_company_idx").on(table.companyId),
+  // One row per option, so the backfill updates rather than duplicates on a
+  // re-run. Partial because templateOptionId is nullable for rows created by
+  // hand later.
+  templateOptionUnique: uniqueIndex("selection_template_options_template_option_unique")
+    .on(table.templateId, table.templateOptionId)
+    .where(sql`template_option_id IS NOT NULL`),
+}));
+
+export const insertSelectionTemplateOptionSchema = createInsertSchema(selectionTemplateOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertSelectionTemplateOption = z.infer<typeof insertSelectionTemplateOptionSchema>;
+export type SelectionTemplateOption = typeof selectionTemplateOptions.$inferSelect;
 
 // ── Circuit Sessions ────────────────────────────────
 // Live business snapshot the AI uses when building circuit sessions or answering queries.
