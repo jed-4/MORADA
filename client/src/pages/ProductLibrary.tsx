@@ -101,10 +101,17 @@ export default function ProductLibrary() {
     setIsDialogOpen(true);
   };
 
+  // The form field is `unitCost` (dollars); the column is `defaultUnitCost` (cents).
+  // Sending the form's name meant Drizzle — which builds statements from the table's
+  // own columns — dropped the price silently on both insert and update.
+  const toPayload = ({ unitCost, ...rest }: ProductForm) => ({
+    ...rest,
+    defaultUnitCost: unitCost != null ? Math.round(unitCost * 100) : null,
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: ProductForm) => {
-      const payload = { ...data, unitCost: data.unitCost != null ? Math.round(data.unitCost * 100) : null };
-      return await apiRequest("/api/products", "POST", payload);
+      return await apiRequest("/api/products", "POST", toPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
@@ -116,8 +123,7 @@ export default function ProductLibrary() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: ProductForm) => {
-      const payload = { ...data, unitCost: data.unitCost != null ? Math.round(data.unitCost * 100) : null };
-      return await apiRequest(`/api/products/${editingProduct!.id}`, "PATCH", payload);
+      return await apiRequest(`/api/products/${editingProduct!.id}`, "PATCH", toPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });

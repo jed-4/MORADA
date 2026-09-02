@@ -193,6 +193,7 @@ import {
   insertPriceListGroupSchema,
   insertPriceListItemSchema,
   insertBillLineItemPriceLinkSchema,
+  insertProductSchema,
   type CircuitContext,
   type InsertContact
 } from "@shared/schema";
@@ -15464,7 +15465,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const companyId = req.user!.companyId!;
-      const product = await storage.createProduct({ ...req.body, companyId });
+      // req.body used to go straight to the DB. Anything the table did not recognise
+      // was dropped in silence rather than rejected — which is how a mis-named price
+      // field looked like a successful save for months.
+      const parsed = insertProductSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const product = await storage.createProduct({ ...parsed.data, companyId });
       res.status(201).json(product);
     } catch (error) {
       res.status(500).json({ error: "Failed to create product" });
@@ -15496,9 +15507,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       if (!(await getOwnedProduct(req, res, Number(req.params.id)))) return;
-      // Never allow re-parenting a product to another company
-      const { companyId: _ignored, ...body } = req.body ?? {};
-      const product = await storage.updateProduct(Number(req.params.id), body);
+      // companyId is omitted from the schema, so a product can never be re-parented
+      // into another tenant by passing one.
+      const parsed = insertProductSchema.omit({ companyId: true }).partial().safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const product = await storage.updateProduct(Number(req.params.id), parsed.data);
       if (!product) return res.status(404).json({ error: "Product not found" });
       res.json(product);
     } catch (error) {

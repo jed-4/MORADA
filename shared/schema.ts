@@ -7761,7 +7761,12 @@ export const products = pgTable("products", {
   isActive:          boolean("is_active").default(true),
   createdAt:         timestamp("created_at").defaultNow(),
   updatedAt:         timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  // Every read is scoped by company and ordered by name — getProducts() is
+  // WHERE company_id = $1 [AND is_active] ORDER BY name. Postgres does not index
+  // the referencing side of an FK, so without this it is a seq scan plus a sort.
+  companyNameIdx: index("products_company_id_name_idx").on(table.companyId, table.name),
+}));
 
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
