@@ -1163,6 +1163,22 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
   __billAutoPushTimers.set(billId, timer);
 }
 
+// Xero serves dates as either ISO or the legacy /Date(1234567890)/ form.
+// Hoisted to module scope so the payment mirror below reads dates identically
+// to the invoice sync.
+function parseXeroDate(d: string | undefined): Date | undefined {
+  if (!d) return undefined;
+  const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
+  if (match) return new Date(parseInt(match[1]));
+  const parsed = new Date(d);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+// Marks a bill_payments row as a mirror of a Xero payment rather than something
+// recorded by hand in Morada. It is also the reconcile key: rows carrying it are
+// owned by Xero and rebuilt from Xero, rows without it are never touched.
+const XERO_PAYMENT_METHOD = "Xero";
+
 /**
  * Map a Xero invoice status back onto the BuildPro lifecycle so the two systems
  * stay in lock-step regardless of which side is the source of truth for a given
@@ -1199,6 +1215,81 @@ function deriveBillStatusFromXero(
   if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") return { status: "awaiting_payment" };
   if (amountPaidCents === 0 && xeroStatus === "SUBMITTED") return { status: "awaiting_approval" };
   return { status: localStatus };
+}
+
+/**
+ * Mirror the payments Xero holds against an invoice into `bill_payments`.
+ *
+ * `syncBillFromXeroInternal` has always written the `paidAmount` scalar without
+ * recording any payment rows, so a bill paid in Xero read "Paid $X / Due $0" at
+ * the top while the Payments panel underneath still said "No payments recorded
+ * yet." This closes that gap.
+ *
+ * Reconciled as a SET rather than by appending deltas: rows tagged with
+ * `paymentMethod = "Xero"` are owned by Xero and rebuilt from it, everything
+ * else is left strictly alone. That makes repeated syncs idempotent without
+ * needing a Xero payment id column (and so without a migration), and it can
+ * never double-count a payment somebody also recorded by hand.
+ *
+ * Deliberately does NOT go through `storage.createBillPayment`, which calls
+ * `syncBillPaidStatus` and recomputes `bills.paidAmount` *and* status by summing
+ * local rows against the local total. On a Xero-linked bill that is the weaker
+ * source: the caller has just written Xero's own absolute AmountPaid and a
+ * richer status mapping, and on a bill in the review queue the local total is
+ * the very figure under dispute. Letting the recompute run would undo both.
+ */
+async function mirrorXeroBillPayments(billId: string, invoice: any): Promise<void> {
+  try {
+    // Xero's summarised list response — what the nightly sweep pulls — omits
+    // Payments entirely. Absent is not the same as none, so only act when Xero
+    // actually sent the array; otherwise a sweep would wipe every mirrored row.
+    const xeroPayments = Array.isArray(invoice?.Payments) ? invoice.Payments : null;
+    if (!xeroPayments) return;
+
+    const { billPayments: billPaymentsTbl } = await import("@shared/schema");
+
+    const desired = xeroPayments
+      .map((pmt: any) => ({
+        amount: Math.round((pmt?.Amount || 0) * 100),
+        paymentDate: parseXeroDate(pmt?.Date) ?? new Date(),
+        reference: pmt?.Reference ? String(pmt.Reference) : null,
+      }))
+      .filter((pmt: { amount: number }) => pmt.amount > 0);
+
+    const mine = and(
+      eq(billPaymentsTbl.billId, billId),
+      eq(billPaymentsTbl.paymentMethod, XERO_PAYMENT_METHOD),
+    );
+    const existing = await db.select().from(billPaymentsTbl).where(mine);
+
+    // Compare on what Xero actually tells us. Voided mirrors still count as
+    // present, so a row a user voided here is left voided rather than being
+    // silently resurrected on the next sync.
+    const key = (r: { amount: number; paymentDate: Date | string; reference: string | null }) =>
+      `${r.amount}|${new Date(r.paymentDate).toISOString().slice(0, 10)}|${r.reference ?? ""}`;
+    const sortedKeys = (rows: any[]) => rows.map(key).sort().join("\u0000");
+    if (existing.length === desired.length && sortedKeys(existing) === sortedKeys(desired)) return;
+
+    await db.delete(billPaymentsTbl).where(mine);
+    if (desired.length > 0) {
+      await db.insert(billPaymentsTbl).values(
+        desired.map((pmt: { amount: number; paymentDate: Date; reference: string | null }) => ({
+          billId,
+          amount: pmt.amount,
+          paymentDate: pmt.paymentDate,
+          paymentMethod: XERO_PAYMENT_METHOD,
+          reference: pmt.reference,
+          notes: null,
+          isVoided: false,
+          recordedBy: null,
+        })) as any,
+      );
+    }
+  } catch (err) {
+    // A bill that syncs but shows no payment rows is a far better outcome than
+    // a sync that fails outright, so this never takes the caller down with it.
+    console.error("[mirrorXeroBillPayments] failed for bill", billId, err);
+  }
 }
 
 /**
@@ -1288,14 +1379,6 @@ async function syncBillFromXeroInternal(
       if (!invoice) return { ok: false, error: billIsCredit ? "Xero credit note not found" : "Xero invoice not found" };
     }
 
-    const parseXeroDate = (d: string | undefined): Date | undefined => {
-      if (!d) return undefined;
-      const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
-      if (match) return new Date(parseInt(match[1]));
-      const parsed = new Date(d);
-      return isNaN(parsed.getTime()) ? undefined : parsed;
-    };
-
     const amountPaidCents = Math.round((invoice.AmountPaid || 0) * 100);
     const subtotalCents = Math.round((invoice.SubTotal || 0) * 100);
     const taxCents = Math.round((invoice.TotalTax || 0) * 100);
@@ -1335,6 +1418,14 @@ async function syncBillFromXeroInternal(
         : {}),
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
+
+    // Mirror Xero's payments into bill_payments so the Payments panel agrees
+    // with the paid figure just written above. Credit notes are excluded: Xero
+    // settles those through Allocations, not Payments, so the array here would
+    // be empty and mirroring it would say something untrue.
+    if (!billIsCredit) {
+      await mirrorXeroBillPayments(bill.id, invoice);
+    }
 
     // If this bill is linked to a PO, payment-state may have shifted →
     // recompute the PO's status from all of its linked bills.
