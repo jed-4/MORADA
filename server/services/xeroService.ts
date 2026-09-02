@@ -24,6 +24,8 @@ const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
 const XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL = "https://identity.xero.com/connect/token";
 const XERO_CONNECTIONS_URL = "https://api.xero.com/connections";
+import { parseXeroPnlMonthLabel, type SectionTotals } from "@shared/xeroPnl";
+
 const XERO_API_BASE = "https://api.xero.com/api.xro/2.0";
 const XERO_SCOPES = "openid profile email accounting.transactions accounting.attachments accounting.contacts accounting.settings accounting.reports.read offline_access";
 
@@ -1535,7 +1537,7 @@ export class XeroService {
     connectionId: string,
     fromDate: string,
     toDate: string
-  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number>; directCostTotals: Record<string, number>; incomeByAccount: Record<string, Record<string, number>>; directCostByAccount: Record<string, Record<string, number>> }> {
+  ): Promise<{ byAccount: Record<string, { name: string; type: string | null; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number>; directCostTotals: Record<string, number>; incomeByAccount: Record<string, Record<string, number>>; directCostByAccount: Record<string, Record<string, number>>; parsedTotals: Record<string, SectionTotals>; reportTotals: Record<string, SectionTotals> }> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -1599,21 +1601,31 @@ export class XeroService {
     // (REVENUE / SALES / OTHERINCOME) instead of fragile section-title keyword matching
     const uuidToCode = new Map<string, string>();
     const uuidToType = new Map<string, string>(); // e.g. "REVENUE", "SALES", "OTHERINCOME", "EXPENSE", etc.
-    if (accountsResponse.ok) {
-      const accountsData = (await accountsResponse.json()) as any;
-      for (const acc of (accountsData.Accounts || [])) {
-        if (acc.AccountID) {
-          if (acc.Code) uuidToCode.set(acc.AccountID as string, (acc.Code as string).trim());
-          if (acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
-        }
+    // These maps are not optional. Without them every P&L row keys on a raw
+    // account UUID instead of its code (so it matches no overhead item) and
+    // income/direct-cost classification silently degrades to section-title
+    // keyword guessing. A sync that continued here would quietly write almost
+    // nothing, so a failed /Accounts call has to abort the whole run.
+    if (!accountsResponse.ok) {
+      const errorText = await accountsResponse.text();
+      throw new Error(`Failed to fetch Xero accounts for P&L mapping: ${accountsResponse.status} ${errorText}`);
+    }
+    const accountsData = (await accountsResponse.json()) as any;
+    for (const acc of (accountsData.Accounts || [])) {
+      if (acc.AccountID) {
+        if (acc.Code) uuidToCode.set(acc.AccountID as string, (acc.Code as string).trim());
+        if (acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
       }
+    }
+    if (uuidToCode.size === 0) {
+      throw new Error("Xero returned an empty account list — refusing to sync P&L against unmapped accounts");
     }
 
     const INCOME_TYPES = new Set(["REVENUE", "SALES", "OTHERINCOME"]);
 
     const data = (await response.json()) as any;
     const report = data.Reports?.[0];
-    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {}, directCostTotals: {}, incomeByAccount: {}, directCostByAccount: {} };
+    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {}, directCostTotals: {}, incomeByAccount: {}, directCostByAccount: {}, parsedTotals: {}, reportTotals: {} };
 
     // Parse column headers to extract month labels (format: "Jan 2025")
     const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
@@ -1621,34 +1633,27 @@ export class XeroService {
     // Optional diagnostic logging for investigating missing-month issues in the
     // Xero P&L response (e.g. an absent May 2025 column). Off by default; enable
     // by setting XERO_PL_DIAGNOSTIC=1 in the server environment when needed.
+    // Diagnostic for the missing-month failure mode: a P&L column Xero does not
+    // return (or that we fail to parse) means that month is never written, and
+    // for a CONFIRMED month that leaves the stored figures frozen at stale
+    // values with no drift flag and no visible signal. Enable with
+    // XERO_PL_DIAGNOSTIC=1 and read `missingMonths`.
     if (process.env.XERO_PL_DIAGNOSTIC === "1") {
-      const diagMonthMap: Record<string, string> = {
-        Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
-        Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
-      };
-      const parsedMonthKeys: string[] = columns.slice(1).map((label) => {
-        const parts = (label || "").trim().split(/\s+/);
-        let mm: string | undefined;
-        let yearStr: string | undefined;
-        for (let j = 0; j < parts.length; j++) {
-          const code = diagMonthMap[parts[j] as keyof typeof diagMonthMap];
-          if (code) {
-            mm = code;
-            for (let k = j + 1; k < parts.length; k++) {
-              if (/^\d{2}(\d{2})?$/.test(parts[k])) { yearStr = parts[k]; break; }
-            }
-            if (!yearStr) {
-              for (let k = j - 1; k >= 0; k--) {
-                if (/^\d{2}(\d{2})?$/.test(parts[k])) { yearStr = parts[k]; break; }
-              }
-            }
-            break;
-          }
+      const parsedMonthKeys = columns.slice(1).map(
+        (label) => parseXeroPnlMonthLabel(label) ?? `<unparsed:"${label}">`,
+      );
+      // Every month the caller asked for, so we can name what came back short.
+      const requested: string[] = [];
+      {
+        const cursor = new Date(fromDate);
+        const last = new Date(toDate);
+        while (cursor <= last) {
+          requested.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+          cursor.setMonth(cursor.getMonth() + 1);
         }
-        if (!mm || !yearStr) return `<unparsed:"${label}">`;
-        const yyyy = yearStr.length === 2 ? `20${yearStr}` : yearStr;
-        return `${yyyy}-${mm}`;
-      });
+      }
+      const returned = new Set(parsedMonthKeys);
+      const missingMonths = requested.filter((m) => !returned.has(m));
       console.log("[Xero P&L diagnostic]", {
         windowFromDate: fromDate,
         windowToDate: toDate,
@@ -1659,10 +1664,29 @@ export class XeroService {
         columnsCount: columns.length,
         columns,
         parsedMonthKeys,
+        requestedMonths: requested,
+        missingMonths,
       });
+      if (missingMonths.length > 0) {
+        console.warn(
+          `[Xero P&L diagnostic] Xero did not return ${missingMonths.length} requested month column(s): ${missingMonths.join(", ")}`,
+        );
+      }
     }
 
-    const byAccount: Record<string, { name: string; amounts: Record<string, number> }> = {};
+    const byAccount: Record<string, { name: string; type: string | null; amounts: Record<string, number> }> = {};
+    // Per-month section totals straight off the report, used to reconcile what we
+    // actually stored against what Xero said (see verifySyncedTotals).
+    // parsedTotals = what THIS parser pulled out of the account rows.
+    // reportTotals  = what Xero's own "Total ..." summary rows say.
+    // Comparing the two separates a parse bug from a write bug when the
+    // reconciliation guard fires.
+    const parsedTotals: Record<string, SectionTotals> = {};
+    const reportTotals: Record<string, SectionTotals> = {};
+    const bump = (into: Record<string, SectionTotals>, monthKey: string, field: keyof SectionTotals, val: number) => {
+      if (!into[monthKey]) into[monthKey] = { income: 0, directCosts: 0, expenses: 0 };
+      into[monthKey][field] += val;
+    };
     const accounts: any[] = [];
     // income totals keyed by "YYYY-MM"
     const incomeTotals: Record<string, number> = {};
@@ -1704,42 +1728,9 @@ export class XeroService {
     function extractMonthAmounts(cells: any[]): Record<string, number> {
       const result: Record<string, number> = {};
       for (let i = 1; i < cells.length && i < columns.length; i++) {
-        const monthLabel = (columns[i] || "").trim();
-        const val = parseFloat(cells[i]?.Value || "0") || 0;
-        // Xero P&L column headers can come in several shapes:
-        //   "Jan 2025" | "Jan 25" | "30 Apr 26" | "30 Apr 2026" | "30 Apr 2026 YTD"
-        // Find the month token, then take whichever adjacent token looks like a year.
-        const parts = monthLabel.split(/\s+/);
-        let mm: string | undefined;
-        let yearStr: string | undefined;
-        for (let j = 0; j < parts.length; j++) {
-          const p = parts[j];
-          const monthCode = MONTH_MAP[p as keyof typeof MONTH_MAP];
-          if (monthCode) {
-            mm = monthCode;
-            // Year is the next purely-numeric token (covers "Jan 2025" and "30 Apr 26")
-            for (let k = j + 1; k < parts.length; k++) {
-              if (/^\d{2}(\d{2})?$/.test(parts[k])) {
-                yearStr = parts[k];
-                break;
-              }
-            }
-            // Or fall back to the previous numeric token if no trailing year was found
-            if (!yearStr) {
-              for (let k = j - 1; k >= 0; k--) {
-                if (/^\d{2}(\d{2})?$/.test(parts[k])) {
-                  yearStr = parts[k];
-                  break;
-                }
-              }
-            }
-            break;
-          }
-        }
-        if (mm && yearStr) {
-          const yyyy = yearStr.length === 2 ? `20${yearStr}` : yearStr;
-          result[`${yyyy}-${mm}`] = val;
-        }
+        const monthKey = parseXeroPnlMonthLabel(columns[i] || "");
+        if (!monthKey) continue;
+        result[monthKey] = parseFloat(cells[i]?.Value || "0") || 0;
       }
       return result;
     }
@@ -1768,6 +1759,7 @@ export class XeroService {
         const accountName = rowTitle || "Income";
         for (const [monthKey, val] of Object.entries(monthAmts)) {
           incomeTotals[monthKey] = (incomeTotals[monthKey] || 0) + val;
+          bump(parsedTotals, monthKey, "income", val);
           if (!incomeByAccount[accountName]) incomeByAccount[accountName] = {};
           incomeByAccount[accountName][monthKey] = (incomeByAccount[accountName][monthKey] || 0) + val;
         }
@@ -1777,6 +1769,7 @@ export class XeroService {
         const accountName = rowTitle || "Direct Costs";
         for (const [monthKey, val] of Object.entries(monthAmts)) {
           directCostTotals[monthKey] = (directCostTotals[monthKey] || 0) + val;
+          bump(parsedTotals, monthKey, "directCosts", val);
           if (!directCostByAccount[accountName]) directCostByAccount[accountName] = {};
           directCostByAccount[accountName][monthKey] = (directCostByAccount[accountName][monthKey] || 0) + val;
         }
@@ -1785,18 +1778,39 @@ export class XeroService {
         if (!accountCode && !rowTitle) return;
         const key = accountCode || rowTitle;
         if (!byAccount[key]) {
-          byAccount[key] = { name: rowTitle, amounts: {} };
-          accounts.push({ code: accountCode, name: rowTitle });
+          byAccount[key] = { name: rowTitle, type: accountType || null, amounts: {} };
+          accounts.push({ code: accountCode, name: rowTitle, type: accountType || null });
         }
         const monthAmts = extractMonthAmounts(cells);
         for (const [monthKey, val] of Object.entries(monthAmts)) {
           byAccount[key].amounts[monthKey] = (byAccount[key].amounts[monthKey] || 0) + val;
+          bump(parsedTotals, monthKey, "expenses", val);
         }
+      }
+    }
+
+    // Xero closes each P&L section with a SummaryRow ("Total Income",
+    // "Total Cost of Sales", "Total Operating Expenses", ...). Those are the
+    // figures a human reads off the report, so capture them verbatim.
+    function captureSummaryRow(cells: any[]) {
+      const title = (cells?.[0]?.Value || "").toLowerCase();
+      if (!title.startsWith("total")) return;
+      let field: keyof SectionTotals | null = null;
+      if (title.includes("cost of sales") || title.includes("direct cost")) field = "directCosts";
+      else if (title.includes("operating expense") || title === "total expenses") field = "expenses";
+      else if (title.includes("income") || title.includes("revenue")) field = "income";
+      if (!field) return;
+      for (const [monthKey, val] of Object.entries(extractMonthAmounts(cells))) {
+        bump(reportTotals, monthKey, field, val);
       }
     }
 
     function parseSection(rows: any[], insideExpense: boolean, insideIncome: boolean) {
       for (const row of rows) {
+        if (row.RowType === "SummaryRow" && row.Cells) {
+          captureSummaryRow(row.Cells);
+          continue;
+        }
         if (row.RowType === "Section") {
           const sectionTitle: string = row.Title || row.Cells?.[0]?.Value || "";
           const nextIncome = sectionTitle ? isIncomeSectionTitle(sectionTitle) : insideIncome;
@@ -1812,7 +1826,7 @@ export class XeroService {
 
     parseSection(report.Rows || [], false, false);
 
-    return { byAccount, accounts, incomeTotals, directCostTotals, incomeByAccount, directCostByAccount };
+    return { byAccount, accounts, incomeTotals, directCostTotals, incomeByAccount, directCostByAccount, parsedTotals, reportTotals };
   }
 
   async createContact(connectionId: string, name: string): Promise<{ contactId: string; name: string }> {
@@ -1851,11 +1865,16 @@ export class XeroService {
     }
 
     const uuidToType = new Map<string, string>();
-    if (accountsResponse.ok) {
-      const accountsData = (await accountsResponse.json()) as any;
-      for (const acc of (accountsData.Accounts || [])) {
-        if (acc.AccountID && acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
-      }
+    // Same rule as getProfitAndLossReport: without the type map this falls back
+    // to section-title keyword matching and can silently under- or over-count
+    // revenue, so treat a failed account fetch as fatal rather than degrading.
+    if (!accountsResponse.ok) {
+      const errorText = await accountsResponse.text();
+      throw new Error(`Failed to fetch Xero accounts for revenue classification: ${accountsResponse.status} ${errorText}`);
+    }
+    const accountsData = (await accountsResponse.json()) as any;
+    for (const acc of (accountsData.Accounts || [])) {
+      if (acc.AccountID && acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
     }
     const INCOME_TYPES = new Set(["REVENUE", "SALES", "OTHERINCOME"]);
     const INCOME_SECTION_KEYWORDS = ["revenue", "income", "sales", "trading income", "other income"];

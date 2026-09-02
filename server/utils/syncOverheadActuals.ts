@@ -8,6 +8,7 @@ import {
   overheadMonthStatus,
   companyIncomeActuals,
   companyDirectCostActuals,
+  overheadSyncReconciliation,
 } from "@shared/schema";
 
 const SAVED_HISTORY_MONTHS = 18;
@@ -55,11 +56,22 @@ function lastDayOfMonth(year: number, month: number): number {
 
 type PnLResult = Awaited<ReturnType<typeof xeroService.getProfitAndLossReport>>;
 
+function mergeTotals(
+  target: Record<string, { income: number; directCosts: number; expenses: number }>,
+  src: Record<string, { income: number; directCosts: number; expenses: number }>,
+) {
+  // Chunks never overlap (they partition the window), so a straight copy is
+  // correct — no accumulation, which would double-count on a retry.
+  for (const [monthKey, totals] of Object.entries(src)) target[monthKey] = { ...totals };
+}
+
 function mergePnL(target: PnLResult, src: PnLResult) {
   for (const [code, data] of Object.entries(src.byAccount)) {
-    if (!target.byAccount[code]) target.byAccount[code] = { name: data.name, amounts: {} };
+    if (!target.byAccount[code]) target.byAccount[code] = { name: data.name, type: data.type, amounts: {} };
     Object.assign(target.byAccount[code].amounts, data.amounts);
   }
+  mergeTotals(target.parsedTotals, src.parsedTotals);
+  mergeTotals(target.reportTotals, src.reportTotals);
   for (const acc of src.accounts) {
     if (!target.accounts.find(a => a.code === acc.code)) target.accounts.push(acc);
   }
@@ -83,6 +95,8 @@ async function fetchPnLForWindow(connectionId: string, months: RollingMonth[]): 
     directCostTotals: {},
     incomeByAccount: {},
     directCostByAccount: {},
+    parsedTotals: {},
+    reportTotals: {},
   };
   for (const chunk of chunkWindow(months)) {
     if (!chunk.length) continue;
@@ -100,7 +114,16 @@ export interface SyncResult {
   synced: number;
   drifted: number;
   monthsCovered: number;
+  /** Overhead items created because Xero had an account we had never seen. */
+  itemsCreated: number;
+  /** Months where what we stored disagrees with Xero's own P&L section totals. */
+  mismatchedMonths: Array<{ year: number; month: number; incomeDiffCents: number; directCostDiffCents: number; expenseDiffCents: number }>;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A month is only worth flagging when it is off by more than a rounding cent. */
+const RECONCILE_TOLERANCE_CENTS = 1;
 
 /**
  * Sync overhead actuals, income totals and direct cost totals from Xero P&L.
@@ -173,12 +196,77 @@ export async function syncOverheadActualsForCompany(
 
   let synced = 0;
   let drifted = 0;
+  let itemsCreated = 0;
 
-  // Overhead items — by Xero account code. Skip DIRECTCOSTS-typed items so
-  // they don't double-count under both Overheads and Direct Costs.
+  // An account Xero reports but we have no overhead item for used to be dropped
+  // on the floor here (`if (!item) continue`) — silently, with no row, no log
+  // and no total. That is why "Subscriptions - Morada" and "Adv & Mktg -
+  // Photography" had money in Xero and nothing at all in Monthly Actuals: the
+  // item list is a snapshot taken whenever someone last pressed "Sync accounts",
+  // so every account added to Xero since then was invisible.
+  //
+  // Now we create the missing item on the spot. Guards:
+  //  - only for accounts carrying a real Xero code (a UUID key means the account
+  //    has no code, so there is no stable upsert key — warn instead of guessing);
+  //  - only when the account actually has money in the window, so the ~50
+  //    permanently-zero accounts in a typical chart of accounts stay out of the
+  //    grid;
+  //  - never for DIRECTCOSTS, which belong to the Direct Costs section.
+  let overheadsCategoryId: string | null = null;
+  const ensureOverheadsCategory = async (): Promise<string> => {
+    if (overheadsCategoryId) return overheadsCategoryId;
+    const [existing] = await db
+      .select({ id: overheadCategories.id })
+      .from(overheadCategories)
+      .where(and(eq(overheadCategories.companyId, companyId), eq(overheadCategories.name, "Overheads")));
+    if (existing) {
+      overheadsCategoryId = existing.id;
+      return overheadsCategoryId;
+    }
+    const [created] = await db
+      .insert(overheadCategories)
+      .values({ companyId, name: "Overheads", sortOrder: 0 })
+      .returning();
+    overheadsCategoryId = created.id;
+    return overheadsCategoryId;
+  };
+
   for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
-    const item = itemByCode.get(accountCode);
-    if (!item) continue;
+    let item = itemByCode.get(accountCode);
+
+    if (!item) {
+      const hasMoney = Object.values(accountData.amounts).some(v => Math.round(v * 100) !== 0);
+      if (!hasMoney) continue;
+      if (accountData.type === "DIRECTCOSTS") continue;
+      if (UUID_RE.test(accountCode)) {
+        console.warn(
+          `[OverheadSync] Xero account "${accountData.name}" has activity but no account code — cannot map it to an overhead item. Give it a code in Xero.`,
+        );
+        continue;
+      }
+      const categoryId = await ensureOverheadsCategory();
+      const [createdItem] = await db
+        .insert(overheadItems)
+        .values({
+          categoryId,
+          name: accountData.name || accountCode,
+          frequency: "monthly",
+          budgetCents: 0,
+          xeroAccountCode: accountCode,
+          xeroAccountType: accountData.type || "EXPENSE",
+          xeroSynced: true,
+          notes: null,
+          sortOrder: 0,
+        })
+        .returning();
+      item = { id: createdItem.id, type: createdItem.xeroAccountType };
+      itemByCode.set(accountCode, item);
+      itemsCreated++;
+      console.log(
+        `[OverheadSync] Created overhead item for previously unmapped Xero account ${accountCode} "${accountData.name}" (company ${companyId})`,
+      );
+    }
+
     if (item.type === "DIRECTCOSTS") continue;
 
     for (const [monthKey, amount] of Object.entries(accountData.amounts)) {
@@ -254,5 +342,100 @@ export async function syncOverheadActualsForCompany(
       });
   }
 
-  return { synced, drifted, monthsCovered: window.length };
+  // ── Reconciliation guard ──────────────────────────────────────────────────
+  // Everything above writes optimistically, one account-month at a time, and
+  // for CONFIRMED months it does not delete first — so a run that dies partway
+  // leaves those months frozen at stale values with no drift flag and no signal
+  // anywhere. Compare what we now hold against Xero's own P&L section totals and
+  // record the difference, so Monthly Actuals can say so out loud.
+  const mismatchedMonths = await verifySyncedTotals(companyId, window, result.reportTotals);
+
+  return { synced, drifted, monthsCovered: window.length, itemsCreated, mismatchedMonths };
+}
+
+/**
+ * Compare stored month totals against Xero's reported section totals and persist
+ * the result. Never throws: a reconciliation failure must not fail a sync that
+ * otherwise succeeded (and the table may not be migrated yet on this database).
+ */
+async function verifySyncedTotals(
+  companyId: string,
+  window: RollingMonth[],
+  reportTotals: Record<string, { income: number; directCosts: number; expenses: number }>,
+): Promise<SyncResult["mismatchedMonths"]> {
+  const mismatched: SyncResult["mismatchedMonths"] = [];
+  try {
+    const [incomeRows, dcRows, ohRows] = await Promise.all([
+      db
+        .select({ year: companyIncomeActuals.year, month: companyIncomeActuals.month, cents: companyIncomeActuals.incomeCents })
+        .from(companyIncomeActuals)
+        .where(eq(companyIncomeActuals.companyId, companyId)),
+      db
+        .select({ year: companyDirectCostActuals.year, month: companyDirectCostActuals.month, cents: companyDirectCostActuals.directCostCents })
+        .from(companyDirectCostActuals)
+        .where(eq(companyDirectCostActuals.companyId, companyId)),
+      db
+        .select({ year: overheadMonthActuals.year, month: overheadMonthActuals.month, cents: overheadMonthActuals.actualCents })
+        .from(overheadMonthActuals)
+        .innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id))
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(eq(overheadCategories.companyId, companyId)),
+    ]);
+
+    const key = (y: number, m: number) => `${y}__${m}`;
+    const storedIncome = new Map<string, number>();
+    for (const r of incomeRows) storedIncome.set(key(r.year, r.month), r.cents);
+    const storedDc = new Map<string, number>();
+    for (const r of dcRows) storedDc.set(key(r.year, r.month), r.cents);
+    const storedOh = new Map<string, number>();
+    for (const r of ohRows) storedOh.set(key(r.year, r.month), (storedOh.get(key(r.year, r.month)) || 0) + r.cents);
+
+    for (const { year, month } of window) {
+      const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+      const xero = reportTotals[monthKey];
+      // A month absent from the report is itself the failure mode we are hunting
+      // (the "missing column" case) — but we cannot tell an absent column from a
+      // genuinely empty month, so only reconcile months Xero actually reported.
+      if (!xero) continue;
+
+      const xeroIncomeCents = Math.round(xero.income * 100);
+      const xeroDirectCostCents = Math.round(xero.directCosts * 100);
+      const xeroExpenseCents = Math.round(xero.expenses * 100);
+      const storedIncomeCents = storedIncome.get(key(year, month)) || 0;
+      const storedDirectCostCents = storedDc.get(key(year, month)) || 0;
+      const storedExpenseCents = storedOh.get(key(year, month)) || 0;
+
+      const incomeDiffCents = storedIncomeCents - xeroIncomeCents;
+      const directCostDiffCents = storedDirectCostCents - xeroDirectCostCents;
+      const expenseDiffCents = storedExpenseCents - xeroExpenseCents;
+
+      await db
+        .insert(overheadSyncReconciliation)
+        .values({
+          companyId, year, month,
+          xeroIncomeCents, xeroDirectCostCents, xeroExpenseCents,
+          storedIncomeCents, storedDirectCostCents, storedExpenseCents,
+          checkedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [overheadSyncReconciliation.companyId, overheadSyncReconciliation.year, overheadSyncReconciliation.month],
+          set: {
+            xeroIncomeCents, xeroDirectCostCents, xeroExpenseCents,
+            storedIncomeCents, storedDirectCostCents, storedExpenseCents,
+            checkedAt: new Date(),
+          },
+        });
+
+      const worst = Math.max(Math.abs(incomeDiffCents), Math.abs(directCostDiffCents), Math.abs(expenseDiffCents));
+      if (worst > RECONCILE_TOLERANCE_CENTS) {
+        mismatched.push({ year, month, incomeDiffCents, directCostDiffCents, expenseDiffCents });
+        console.warn(
+          `[OverheadSync] ${monthKey} does not match Xero — income ${incomeDiffCents / 100}, direct costs ${directCostDiffCents / 100}, overheads ${expenseDiffCents / 100} (stored minus Xero, company ${companyId})`,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("[OverheadSync] Reconciliation check failed (sync itself was unaffected):", err);
+  }
+  return mismatched;
 }
