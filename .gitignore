@@ -28,3 +28,6 @@ expo-mobile/.env.local
 # launch.json); per-machine state is not.
 .claude/settings.local.json
 .claude/settings.local*.json
+
+# Fingerprint harness output — a local run artefact, diffed by hand, never committed.
+/fingerprints/
