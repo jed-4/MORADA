@@ -7826,6 +7826,11 @@ export const selectionTemplateOptions = pgTable("selection_template_options", {
   totalCost:       integer("total_cost"),           // cents
   visibleToClient: boolean("visible_to_client"),
   gstInclusive:    boolean("gst_inclusive"),
+  // The option's OWN category, null when the blob did not give it one. The
+  // product's category may have been inherited from the item or template so the
+  // library can file it; that inheritance must not leak back into an applied
+  // selection option, which previously had no category at all.
+  optionCategory:  text("option_category"),
   // NULLABLE on purpose. /apply defaults an absent sortOrder differently per
   // format — 0 for legacy, the option's index for flat — so storing 0 for
   // "absent" would make the flat default unreproducible from a row. Order reads

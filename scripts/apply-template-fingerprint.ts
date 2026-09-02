@@ -35,9 +35,11 @@ import { join } from "node:path";
 import {
   buildLegacyApplyRows,
   buildFlatApplyRows,
+  optionFromRows,
   type ApplyContext,
   type ApplyRows,
 } from "../shared/applyTemplate";
+import { extractTemplateOptions } from "../shared/templateOptions";
 
 const outIdx = process.argv.indexOf("--out");
 const OUT = outIdx !== -1 ? process.argv[outIdx + 1] : "fingerprints/apply-template";
@@ -476,6 +478,86 @@ for (const m of MUTANTS) {
   });
   if (caught) console.log(`  ✓ caught: ${m.name}`);
   else fail(`NOT caught: ${m.name} — the corpus has a blind spot`);
+}
+
+// 2b. ROUND-TRIP CHECK — the gate on step 2.
+//
+// Step 2 swaps the builders' INPUT from templateData to rows. That is only safe
+// if a `products` row plus a `selection_template_options` row can rebuild the
+// option the blob held. This pushes every corpus case through the real path —
+// extractTemplateOptions (what the backfill stores), then optionFromRows (what
+// step 2 reads) — and asserts /apply produces byte-identical rows either way.
+//
+// The first draft of the extractor failed this on seven fields, two of them
+// serious: visibleToClient false -> true exposes an option the builder hid from
+// the client, and gstInclusive true -> false is a money bug. That failure is
+// what forced the selection_template_options split.
+//
+// One case is allowed to differ, deliberately and by name. Anything not on this
+// list is a failure — an allow-list keeps an intentional change visible in
+// review instead of quietly widening the check.
+const EXPECTED_DIVERGENCES: Record<string, string> = {
+  "legacy-image-url-with-no-slash":
+    "the blob path turns an empty-string imageUrl into an attachment with an " +
+    "empty file_path and the invented name 'image.jpg'; the row path drops it. " +
+    "option_attachments.file_path is NOT NULL and '' addresses no file, so the " +
+    "row is junk either way — this is a fix, not a regression, and it is the " +
+    "only behaviour change step 2 makes.",
+};
+
+console.log("\nROUND-TRIP CHECK — blob -> rows -> apply must equal blob -> apply");
+for (const c of CASES) {
+  const fromBlob = stable(run(c, REAL));
+
+  // Store, then read back, exactly as the backfill and step 2 do.
+  const { options: stored } = extractTemplateOptions(
+    c.format === "legacy" ? { templateData: c.data } : { category: c.template?.category, templateData: c.data },
+  );
+  const rebuilt = stored.map((o) =>
+    optionFromRows(
+      {
+        name: o.name, brand: o.brand, sku: o.sku, description: o.description,
+        category: o.category, subcategory: o.subcategory,
+        defaultUnitCost: o.defaultUnitCost, unitType: o.unitType, url: o.url,
+        specifications: o.specifications,
+      },
+      {
+        quantity: o.quantity, unitCostOverride: null, markupPercent: o.markupPercent,
+        totalCost: o.totalCost, visibleToClient: o.visibleToClient,
+        gstInclusive: o.gstInclusive, sortOrder: o.sortOrder,
+        optionCategory: o.ownCategory,
+      },
+      o.imageUrls,
+    ),
+  );
+
+  // Reassemble into the shape the builders take. The legacy format nests options
+  // under ITEMS, and item fields (itemName, categoryName, budgetAmount, room,
+  // deadline) are not in the rows at all — an item is a selection with no table
+  // of its own. That is the known gap recorded below; the item shells are reused
+  // from the blob here so this check measures the OPTION round trip only.
+  const ctx = makeCtx(c.selectionType ?? c.template?.selectionType ?? "selection");
+  let fromRows: string;
+  if (c.format === "legacy") {
+    let n = 0;
+    const items = c.data.map((item: any) => ({
+      ...item,
+      options: (item?.options || []).map(() => rebuilt[n++]),
+    }));
+    fromRows = stable(REAL.legacy(items, ctx));
+  } else {
+    fromRows = stable(REAL.flat(c.template ?? {}, rebuilt, c.maxOrder ?? 0, ctx));
+  }
+
+  const expected = EXPECTED_DIVERGENCES[c.key];
+  if (fromBlob === fromRows) {
+    if (expected) fail(`${c.key} — listed as an expected divergence but now matches; remove it from EXPECTED_DIVERGENCES`);
+    else console.log(`  \u2713 ${c.key}`);
+  } else if (expected) {
+    console.log(`  \u2713 ${c.key}  (known divergence: ${expected})`);
+  } else {
+    fail(`${c.key} — a row-sourced apply differs from the blob\n${diffFirst(fromBlob, fromRows)}`);
+  }
 }
 
 // 3. FINGERPRINT

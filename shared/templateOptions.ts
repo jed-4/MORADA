@@ -65,6 +65,14 @@ export interface TemplateOption {
   // those items are promoted to real templates. Null for the flat format.
   legacyItemIndex: number | null;
   legacyItemName: string | null;
+
+  /**
+   * The option's own category before inheritance — what /apply must put on the
+   * selection option. `category` above may have been filled in from the item or
+   * the template so the library can file the product; applying that inherited
+   * value would give a selection option a category the blob never had.
+   */
+  ownCategory: string | null;
 }
 
 export interface TemplateOptionWarning {
@@ -171,6 +179,7 @@ function readOption(
     sortOrder: num(opt?.sortOrder),
     legacyItemIndex: legacyItem?.index ?? null,
     legacyItemName: legacyItem?.name ?? null,
+    ownCategory: str(opt?.category),
   };
 }
 

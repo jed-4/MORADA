@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS selection_template_options (
   total_cost          integer,          -- cents
   visible_to_client   boolean,
   gst_inclusive       boolean,
+  -- The option's OWN category, NULL when the blob did not give it one. The
+  -- product's category may have been inherited from the item or template so the
+  -- library can file it; that inheritance must not leak back into an applied
+  -- selection option, which previously had no category at all.
+  option_category     text,
   -- NULLABLE on purpose: /apply defaults an absent sortOrder to 0 for the
   -- legacy format and to the option's index for the flat one, so storing 0 for
   -- "absent" would make the flat default unreproducible. Read with NULLS LAST.
