@@ -100,8 +100,13 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
 
   // Accept Xero's version. Not offered for missing_in_xero — there's no invoice
   // left to pull from, so the request would just fail.
+  // The endpoint is /api/xero/sync-bill-payment/:id — it pulls amounts, dates,
+  // status and lines from Xero and clears the review flag, which is exactly
+  // this button's job. There has never been a /api/bills/:id/sync-from-xero;
+  // that path 404'd into the SPA catch-all, so every click came back as
+  // "Unexpected token '<'" from index.html being parsed as JSON.
   const resync = useMutation({
-    mutationFn: async (billId: string) => apiRequest(`/api/bills/${billId}/sync-from-xero`, "POST", {}),
+    mutationFn: async (billId: string) => apiRequest(`/api/xero/sync-bill-payment/${billId}`, "POST"),
     onSuccess: () => settle("Synced from Xero", "The bill now matches Xero."),
     onError: fail,
     onSettled: () => setBusyId(null),

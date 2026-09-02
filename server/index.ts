@@ -298,6 +298,21 @@ app.use((req, res, next) => {
     );
   });
 
+  // Unmatched /api routes must 404 as JSON. Without this they fall through to
+  // the SPA catch-all below (vite.ts), which answers *every* unmatched path
+  // with index.html and a 200 — so a client-side path typo reaches the fetch
+  // layer as HTML and surfaces as `Unexpected token '<', "<!DOCTYPE "... is
+  // not valid JSON` instead of an obvious 404. That is precisely how the Xero
+  // review dialog's broken "Sync from Xero" button presented, and it cost real
+  // diagnostic time. Mounted after every route is registered, so only genuinely
+  // unmatched paths get here.
+  app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+    // No CORS middleware is mounted (the API is same-origin), but never let a
+    // preflight be the thing this guard answers.
+    if (req.method === "OPTIONS") return next();
+    res.status(404).json({ error: `No such API route: ${req.method} /api${req.path}` });
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
