@@ -165,3 +165,83 @@ export function buildFlatApplyRows(
 
   return { selections, options, attachments };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 2: rebuilding an option from rows instead of the blob.
+//
+// The blob is one object per option. The rows are two — a `products` row holding
+// the SPEC and a `selection_template_options` row holding how this template USES
+// it — so reconstructing the option means recombining them. Everything the
+// builders above read must come back out, or applying a template from rows would
+// silently substitute a default. Proved by the ROUND-TRIP CHECK in
+// scripts/apply-template-fingerprint.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The `products` columns the option shape needs. */
+export interface ProductSpec {
+  name: string;
+  brand: string | null;
+  sku: string | null;
+  description: string | null;
+  category: string | null;
+  subcategory: string | null;
+  defaultUnitCost: number | null;
+  unitType: string | null;
+  url: string | null;
+  specifications: Record<string, any> | null;
+}
+
+/** The `selection_template_options` columns: how this template uses the product. */
+export interface TemplateOptionUse {
+  quantity: number | null;
+  unitCostOverride: number | null;
+  markupPercent: number | null;
+  totalCost: number | null;
+  visibleToClient: boolean | null;
+  gstInclusive: boolean | null;
+  sortOrder: number | null;
+  /** The option's own category. NOT the product's, which may be inherited. */
+  optionCategory: string | null;
+}
+
+/**
+ * Rows -> the option shape `buildOption` consumes.
+ *
+ * Null means "the blob did not say", NOT "the value is false/zero". The builders
+ * apply their own defaults (`?? true` for visibleToClient, `?? false` for
+ * gstInclusive, `?? 0` or `?? idx` for sortOrder), so this must hand back
+ * `undefined` for an absent value rather than null — `??` treats them alike, but
+ * `||` does not, and `unitType` and `url` go through `||`.
+ */
+export function optionFromRows(
+  product: ProductSpec,
+  use: TemplateOptionUse,
+  imageUrls: string[],
+): any {
+  const orUndefined = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
+  return {
+    name: product.name,
+    brand: orUndefined(product.brand),
+    sku: orUndefined(product.sku),
+    description: orUndefined(product.description),
+    // The option's own, never the product's: a product's category may have been
+    // inherited from the item or template when it was filed in the library, and
+    // applying that would give the selection option a category the blob never
+    // carried. Proved by the round-trip check.
+    category: orUndefined(use.optionCategory),
+    subcategory: orUndefined(product.subcategory),
+    unitType: orUndefined(product.unitType),
+    url: orUndefined(product.url),
+    specifications: orUndefined(product.specifications),
+    // A template may override the product's list cost without changing the
+    // product. Absent override = use the product's own default.
+    unitCost: orUndefined(use.unitCostOverride ?? product.defaultUnitCost),
+    quantity: orUndefined(use.quantity),
+    markupPercent: orUndefined(use.markupPercent),
+    totalCost: orUndefined(use.totalCost),
+    visibleToClient: orUndefined(use.visibleToClient),
+    gstInclusive: orUndefined(use.gstInclusive),
+    sortOrder: orUndefined(use.sortOrder),
+    imageUrls,
+  };
+}

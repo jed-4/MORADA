@@ -232,7 +232,7 @@ import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shar
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { buildLegacyApplyRows, buildFlatApplyRows } from "@shared/applyTemplate";
+import { buildLegacyApplyRows, buildFlatApplyRows, optionFromRows } from "@shared/applyTemplate";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
@@ -35387,6 +35387,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return selectionRows.map((r) => r.id);
   }
 
+  /**
+   * Step 2: a template's options, read from rows instead of templateData.
+   *
+   * Returns [] when the backfill has not run for this template, and the callers
+   * below fall back to the blob. That fallback is not temporary scaffolding —
+   * templateData is still authoritative, and a template created or edited since
+   * the last backfill will legitimately have no rows. Applying a template with
+   * zero options because a backfill was forgotten would be far worse than
+   * reading the blob.
+   *
+   * Equivalence between the two paths is proved by the ROUND-TRIP CHECK in
+   * scripts/apply-template-fingerprint.ts.
+   */
+  async function loadTemplateOptionRows(templateId: string, companyId: string) {
+    const rows = await db
+      .select({ link: schema.selectionTemplateOptions, product: schema.products })
+      .from(schema.selectionTemplateOptions)
+      .innerJoin(schema.products, eq(schema.selectionTemplateOptions.productId, schema.products.id))
+      .where(and(
+        eq(schema.selectionTemplateOptions.templateId, templateId),
+        eq(schema.selectionTemplateOptions.companyId, companyId),
+      ));
+    if (rows.length === 0) return [];
+
+    // One batched image fetch, not one per option.
+    const images = await db.select().from(schema.productImages)
+      .where(inArray(schema.productImages.productId, rows.map((r) => r.product.id)))
+      .orderBy(asc(schema.productImages.sortOrder));
+    const byProduct = new Map<number, string[]>();
+    for (const img of images) {
+      if (!byProduct.has(img.productId)) byProduct.set(img.productId, []);
+      byProduct.get(img.productId)!.push(img.filePath);
+    }
+
+    // Stable order: the stored sortOrder where there is one, then the
+    // provenance key, so a template with no explicit ordering still applies its
+    // options in the same order every time.
+    const ordered = [...rows].sort((a, b) => {
+      const ai = a.link.legacyItemIndex ?? 0, bi = b.link.legacyItemIndex ?? 0;
+      if (ai !== bi) return ai - bi;
+      const as = a.link.sortOrder, bs = b.link.sortOrder;
+      if (as !== bs) return (as ?? Number.MAX_SAFE_INTEGER) - (bs ?? Number.MAX_SAFE_INTEGER);
+      return (a.link.templateOptionId ?? "").localeCompare(b.link.templateOptionId ?? "");
+    });
+
+    return ordered.map(({ link, product }) => ({
+      legacyItemIndex: link.legacyItemIndex,
+      option: optionFromRows(product as any, link as any, byProduct.get(product.id) ?? []),
+    }));
+  }
+
   app.post("/api/selection-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
@@ -35399,17 +35450,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const items = (template.templateData as any[]) || [];
       const isOldFormat = items.length > 0 && 'itemName' in items[0];
+
+      // Options come from rows once the backfill has run; the blob remains the
+      // fallback. In the LEGACY format the rows supply only the options — an
+      // item is a selection with no table of its own, so its name, category,
+      // room, budget and deadline still come from the blob until those items are
+      // promoted to real templates.
+      const optionRowsFromDb = await loadTemplateOptionRows(template.id, user.companyId);
+      const usingRows = optionRowsFromDb.length > 0;
+
       if (isOldFormat) {
-        const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
-        res.json({ created: selectionIds.length, selectionIds });
+        const sourceItems = usingRows
+          ? items.map((item: any, i: number) => ({
+              ...item,
+              options: optionRowsFromDb.filter((r) => (r.legacyItemIndex ?? 0) === i).map((r) => r.option),
+            }))
+          : items;
+        const selectionIds = await applyTemplateItems(sourceItems, projectId, template.selectionType, storage);
+        res.json({ created: selectionIds.length, selectionIds, source: usingRows ? "rows" : "templateData" });
       } else {
         // New flat format: template itself is one selection item
         const existingSelections = await storage.getSelectionsForProject(projectId);
         const maxOrder = existingSelections.reduce((m: number, s: any) => Math.max(m, s.sortOrder ?? 0), 0);
         // See the note in applyTemplateItems — one implementation, shared with
         // the fingerprint harness.
+        const flatOptions = usingRows ? optionRowsFromDb.map((r) => r.option) : items;
         const { selections: selectionRows, options: optionRows, attachments: attachmentRows } =
-          buildFlatApplyRows(template, items, maxOrder, {
+          buildFlatApplyRows(template, flatOptions, maxOrder, {
             projectId,
             selectionType: template.selectionType,
             newId: randomUUID,
@@ -35419,7 +35486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const selection = await storage.createSelection(selectionRows[0] as any);
         if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
         if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
-        res.json({ created: 1, selectionIds: [selection.id] });
+        res.json({ created: 1, selectionIds: [selection.id], source: usingRows ? "rows" : "templateData" });
       }
     } catch (error: any) {
       res.status(500).json({ error: "Failed to apply template", details: error.message });
