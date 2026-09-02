@@ -1164,6 +1164,93 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
 }
 
 /**
+ * Map a Xero invoice status back onto the BuildPro lifecycle so the two systems
+ * stay in lock-step regardless of which side is the source of truth for a given
+ * change. Mapping:
+ *   PAID                         → paid
+ *   VOIDED / DELETED             → draft (with a note)
+ *   any partial payment          → awaiting_payment
+ *   AUTHORISED (no payment)      → awaiting_payment   ("Awaiting Payment" in Xero UI)
+ *   SUBMITTED  (no payment)      → awaiting_approval  ("Awaiting Approval" in Xero UI)
+ *   DRAFT                        → leave BuildPro status untouched (we never push DRAFT)
+ * Guard: never *reverse* progress past `paid` — once paid locally and the Xero
+ * side reports anything other than PAID/VOIDED/DELETED, keep the local status as
+ * `paid` to avoid demoting a settled bill.
+ *
+ * Shared by the full sync and the safe-half sync so the two can never drift
+ * apart on what a Xero status means.
+ */
+function deriveBillStatusFromXero(
+  localStatus: string,
+  xeroStatus: string,
+  amountPaidCents: number,
+  totalCents: number,
+): { status: string; voidNote?: string } {
+  if (xeroStatus === "PAID") return { status: "paid" };
+  if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
+    return {
+      status: "draft",
+      voidNote: `Voided/Deleted in Xero on ${new Date().toISOString().slice(0, 10)}`,
+    };
+  }
+  // Don't demote a locally-paid bill on a non-PAID Xero update.
+  if (localStatus === "paid") return { status: "paid" };
+  if (amountPaidCents > 0 && amountPaidCents < totalCents) return { status: "awaiting_payment" };
+  if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") return { status: "awaiting_payment" };
+  if (amountPaidCents === 0 && xeroStatus === "SUBMITTED") return { status: "awaiting_approval" };
+  return { status: localStatus };
+}
+
+/**
+ * Apply only the half of a Xero update that is never in dispute: how much has
+ * been paid, and the lifecycle status that follows from it.
+ *
+ * The nightly sweep refuses to auto-apply *anything* to a bill it classifies as
+ * a surprise. That is right for the total and wrong for the payment, which
+ * nobody is arguing about — so a bill Xero had marked PAID sat on "Awaiting
+ * Payment" in Morada for as long as its total stayed unreconciled, and with the
+ * webhook not delivering there was nothing else to correct it.
+ *
+ * Deliberately does NOT touch total/subtotal/tax, dates, line items or the
+ * supplier reference: those are exactly what the human is being asked to rule
+ * on, and the bill stays flagged for review either way.
+ */
+async function applySafeXeroPaymentState(
+  bill: { id: string; status: string; matchedSitePOId: string | null },
+  xInv: any,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const amountPaidCents = Math.round((xInv.AmountPaid || 0) * 100);
+    // Compare Xero's payment against Xero's own total. The local total is the
+    // figure under dispute, so it cannot decide whether this is a part payment.
+    const xeroTotalCents = Math.round((xInv.Total || 0) * 100);
+    const xeroStatus = String(xInv.Status || "");
+    const { status } = deriveBillStatusFromXero(bill.status, xeroStatus, amountPaidCents, xeroTotalCents);
+
+    await storage.updateBill(bill.id, {
+      status: status as any,
+      paidAmount: amountPaidCents,
+      xeroPaidStatus: xeroStatus,
+      xeroLastSyncAt: new Date(),
+      xeroLastSyncStatus: "success",
+      xeroLastSyncError: null,
+    } as any);
+
+    // Payment state moved, so any linked PO's status may have moved with it.
+    if (bill.matchedSitePOId) {
+      try {
+        await recomputePOStatusFromBills(bill.matchedSitePOId);
+      } catch (err) {
+        console.error("[applySafeXeroPaymentState] PO recompute failed:", err);
+      }
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Failed to apply payment state" };
+  }
+}
+
+/**
  * Internal helper to sync a bill from Xero (used by webhook + manual sync route).
  * Pulls amounts, dates, status, and line items from a Xero invoice.
  */
@@ -1215,35 +1302,8 @@ async function syncBillFromXeroInternal(
     const totalCents = Math.round((invoice.Total || 0) * 100);
     const xeroStatus = invoice.Status as string;
 
-    // Map the Xero invoice status back onto the BuildPro lifecycle so the
-    // two systems stay in lock-step regardless of which side is the source
-    // of truth for a given change. Mapping:
-    //   PAID                         → paid
-    //   VOIDED / DELETED             → draft (with a note)
-    //   any partial payment          → awaiting_payment
-    //   AUTHORISED (no payment)      → awaiting_payment   ("Awaiting Payment" in Xero UI)
-    //   SUBMITTED  (no payment)      → awaiting_approval  ("Awaiting Approval" in Xero UI)
-    //   DRAFT                        → leave BuildPro status untouched (we never push DRAFT)
-    // Guard: never *reverse* progress past `paid` — once paid locally and the
-    // Xero side reports anything other than PAID/VOIDED/DELETED, keep the
-    // local status as `paid` to avoid demoting a settled bill.
-    let newStatus: string = bill.status;
-    let extraNotes: string | undefined;
-    if (xeroStatus === "PAID") {
-      newStatus = "paid";
-    } else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-      newStatus = "draft";
-      extraNotes = `Voided/Deleted in Xero on ${new Date().toISOString().slice(0, 10)}`;
-    } else if (bill.status === "paid") {
-      // Don't demote a locally-paid bill on a non-PAID Xero update.
-      newStatus = "paid";
-    } else if (amountPaidCents > 0 && amountPaidCents < totalCents) {
-      newStatus = "awaiting_payment";
-    } else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") {
-      newStatus = "awaiting_payment";
-    } else if (amountPaidCents === 0 && xeroStatus === "SUBMITTED") {
-      newStatus = "awaiting_approval";
-    }
+    const { status: newStatus, voidNote: extraNotes } =
+      deriveBillStatusFromXero(bill.status, xeroStatus, amountPaidCents, totalCents);
 
     const billDate = parseXeroDate(invoice.Date);
     const dueDate = parseXeroDate(invoice.DueDate);
@@ -1377,7 +1437,9 @@ interface ReconcileReport {
   checked: number; // matched against a Xero invoice in this sweep
   diverged: number;
   corrected: number;
-  results: Array<{ billId: string; billNumber: string; xeroInvoiceId: string; changes: string[]; applied: boolean; error?: string }>;
+  // `partial` marks a bill where only the undisputed half (payment + status)
+  // was applied and the total was left for review — see applySafeXeroPaymentState.
+  results: Array<{ billId: string; billNumber: string; xeroInvoiceId: string; changes: string[]; applied: boolean; partial?: boolean; error?: string }>;
   notInXero: Array<{ billId: string; billNumber: string; xeroInvoiceId: string }>;
   // Diverged bills the nightly (safe-only) sweep deliberately did NOT auto-apply
   // — total changed or voided/gone in Xero — surfaced for human review.
@@ -1434,6 +1496,9 @@ async function reconcileBillsWithXero(
       billNumber: billsTbl.billNumber,
       total: billsTbl.total,
       paidAmount: billsTbl.paidAmount,
+      // status + matchedSitePOId feed applySafeXeroPaymentState.
+      status: billsTbl.status,
+      matchedSitePOId: billsTbl.matchedSitePOId,
       xeroInvoiceId: billsTbl.xeroInvoiceId,
       xeroPaidStatus: billsTbl.xeroPaidStatus,
       xeroReviewReason: billsTbl.xeroReviewReason,
@@ -1509,16 +1574,41 @@ async function reconcileBillsWithXero(
     }
 
     let applied = false;
+    let partial = false;
     let error: string | undefined;
-    // Safe-only (nightly) never auto-applies a surprising change — it's left for
-    // a human, and the caller raises a notification.
+    // Safe-only (nightly) never auto-applies a surprising change wholesale —
+    // it's left for a human, and the caller raises a notification.
     if (!opts.dryRun && !(opts.safeOnly && surprising)) {
       const r = await syncBillFromXeroInternal(local.id, companyId, xInv);
       applied = r.ok;
       if (r.ok) corrected++;
       else error = r.error;
+    } else if (!opts.dryRun && opts.safeOnly && reviewReason === "total_changed") {
+      // An edited total doesn't make the payment doubtful. Take the payment and
+      // status; leave the total — and the review flag — alone. Voided and
+      // missing bills get nothing: there the document itself is in question.
+      const r = await applySafeXeroPaymentState(local, xInv);
+      applied = r.ok;
+      partial = r.ok;
+      if (r.ok) {
+        corrected++;
+        // Those lines have just been applied, so the flag must stop advertising
+        // them as pending. Re-diffing against the values we just wrote leaves
+        // exactly the total still in dispute.
+        const flagged = toFlag.get(local.id);
+        if (flagged) {
+          flagged.changes = diffBillVsXero(
+            {
+              total: local.total,
+              paidAmount: Math.round((xInv.AmountPaid || 0) * 100),
+              xeroPaidStatus: String(xInv.Status || ""),
+            },
+            xInv,
+          );
+        }
+      } else error = r.error;
     }
-    results.push({ billId: local.id, billNumber: local.billNumber, xeroInvoiceId: xeroId, changes, applied, error });
+    results.push({ billId: local.id, billNumber: local.billNumber, xeroInvoiceId: xeroId, changes, applied, partial, error });
   }
 
   // Bills linked locally but not returned by the Xero list (deleted in Xero, or
@@ -40847,17 +40937,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      // Ownership via the shared helper, as dismiss/unlink already do. The old
+      // inline check only ran `if (bill.projectId)` — a bill carrying neither a
+      // companyId nor a projectId skipped the tenant check altogether and was
+      // syncable across tenants. getOwnedBill covers both shapes and denies
+      // when there is nothing to check against. It writes its own 404.
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       if (!bill.xeroInvoiceId) return res.status(400).json({ error: "Bill has not been pushed to Xero" });
-
-      // Tenant ownership check via project → company
-      if (bill.projectId) {
-        const project = await storage.getProject(bill.projectId);
-        if (!project || project.companyId !== companyId) {
-          return res.status(403).json({ error: "Forbidden" });
-        }
-      }
 
       const result = await syncBillFromXeroInternal(bill.id, companyId);
       if (!result.ok) return res.status(400).json({ error: result.error || "Sync failed" });
