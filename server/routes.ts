@@ -233,6 +233,7 @@ import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } f
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { buildLegacyApplyRows, buildFlatApplyRows, optionFromRows } from "@shared/applyTemplate";
+import { syncTemplateOptions } from "./services/templateOptionSync";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
@@ -35087,6 +35088,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: user.id,
       };
       const template = await storage.createSelectionTemplate(templateData as any);
+      // Mirror the blob into rows so /apply never reads options older than the
+      // template. Never throws: the blob is still authoritative and /apply falls
+      // back to it, so a failed mirror degrades rather than losing the save.
+      await syncTemplateOptions(template.id, user.companyId, (template as any).templateData, template.category ?? null);
       if (groupIds && groupIds.length > 0) {
         // Security: only allow groupIds that belong to this company
         const validGroups = await storage.getSelectionTemplateGroups(user.companyId);
@@ -35130,6 +35135,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
       if (!updated) {
         return res.status(404).json({ error: "Selection template not found or access denied" });
+      }
+      // Only when the options actually changed — a rename or a group change must
+      // not churn every product row.
+      if (updateData.templateData !== undefined) {
+        await syncTemplateOptions(req.params.id, user.companyId, (updated as any).templateData, updated.category ?? null);
       }
       if (groupIds !== undefined) {
         // Security: only allow groupIds that belong to this company
@@ -35378,6 +35388,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: user.id,
         createdByName: user.name || user.email || null,
       });
+      // Saving a project as a template writes the LEGACY `itemName` shape, so
+      // this path keeps producing legacy templates — see the note on step 3.
+      // Mirroring it is what stops those templates being invisible to the
+      // library until someone remembers to re-run the backfill.
+      await syncTemplateOptions(template.id, user.companyId, templateData, template.category ?? null);
       res.status(201).json(template);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to save as template", details: error.message });
