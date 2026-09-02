@@ -711,7 +711,7 @@ export interface IStorage {
   deleteSelectionComment(id: string): Promise<boolean>;
 
   // Product Library CRUD
-  getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<schema.Product[]>;
+  getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]>;
   getProduct(id: number): Promise<schema.Product | undefined>;
   createProduct(product: schema.InsertProduct): Promise<schema.Product>;
   updateProduct(id: number, product: Partial<schema.InsertProduct>): Promise<schema.Product | undefined>;
@@ -16841,10 +16841,23 @@ export class DbStorage implements IStorage {
   }
 
   // ── Product Library ──────────────────────────────────────────────────
-  async getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<schema.Product[]> {
+  async getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]> {
     const conditions: any[] = [eq(schema.products.companyId, companyId)];
     if (filters?.isActive !== undefined) conditions.push(eq(schema.products.isActive, filters.isActive));
     if (filters?.category) conditions.push(eq(schema.products.category, filters.category));
+    // Products backfilled from selection_templates.templateData are shadows: they
+    // exist so the blob can be retired, but templateData is still authoritative
+    // and no UI is ready to show them. A shadow is a product some
+    // selection_template_options row points at, so excluding them is a NOT
+    // EXISTS rather than a column test. Keeps the Product Library page and the
+    // add-from-library picker exactly as they were; the Category → Selection →
+    // Option front door will opt in.
+    if (!filters?.includeTemplateOptions) {
+      conditions.push(sql`NOT EXISTS (
+        SELECT 1 FROM ${schema.selectionTemplateOptions}
+        WHERE ${schema.selectionTemplateOptions.productId} = ${schema.products.id}
+      )`);
+    }
     let rows = await db.select().from(schema.products).where(and(...conditions)).orderBy(schema.products.name);
     if (filters?.search) {
       const t = filters.search.toLowerCase();
