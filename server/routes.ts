@@ -232,6 +232,7 @@ import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shar
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { buildLegacyApplyRows, buildFlatApplyRows } from "@shared/applyTemplate";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
@@ -35366,60 +35367,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     selectionType: string,
     _storage: any
   ): Promise<string[]> {
-    const selectionRows = items.map((item) => ({
-      id: randomUUID(),
-      projectId,
-      name: item.itemName,
-      description: item.description || null,
-      category: item.categoryName || null,
-      room: item.room || null,
-      selectionType: selectionType || "selection",
-      status: "draft",
-      allowance: item.budgetAmount || null,
-      clientCanSeePrice: item.clientCanSeePrice ?? true,
-      clientCanChange: item.clientCanChange ?? true,
-      deadline: item.deadline ? new Date(item.deadline) : null,
-      sortOrder: item.sortOrder ?? 0,
-      notes: item.notes || null,
-    }));
-    const optionRows: any[] = [];
-    const attachmentRows: any[] = [];
-    items.forEach((item, i) => {
-      for (const opt of (item.options || [])) {
-        const optionId = randomUUID();
-        optionRows.push({
-          id: optionId,
-          selectionId: selectionRows[i].id,
-          name: opt.name,
-          brand: opt.brand || null,
-          sku: opt.sku || null,
-          description: opt.description || null,
-          category: opt.category || null,
-          subcategory: opt.subcategory || null,
-          unitCost: opt.unitCost ?? null,
-          quantity: opt.quantity ?? null,
-          unitType: opt.unitType || null,
-          markupPercent: opt.markupPercent ?? null,
-          totalCost: opt.totalCost ?? null,
-          url: opt.url || null,
-          visibleToClient: opt.visibleToClient ?? true,
-          gstInclusive: opt.gstInclusive ?? false,
-          sortOrder: opt.sortOrder ?? 0,
-          specifications: opt.specifications || null,
-        });
-        const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-        imageUrls.forEach((filePath, idx) => {
-          attachmentRows.push({
-            optionId,
-            fileName: filePath.split("/").pop() || "image.jpg",
-            filePath,
-            fileType: "image",
-            mimeType: "image/jpeg",
-            sortOrder: idx,
-          });
-        });
-      }
-    });
+    // Row building lives in shared/applyTemplate.ts so the fingerprint harness
+    // (scripts/apply-template-fingerprint.ts) exercises the same code the route
+    // does — a copy would let them drift apart, which is exactly what the
+    // harness is meant to rule out before step 2 changes the input source.
+    const { selections: selectionRows, options: optionRows, attachments: attachmentRows } =
+      buildLegacyApplyRows(items, { projectId, selectionType, newId: randomUUID });
     if (selectionRows.length > 0) await db.insert(schema.selections).values(selectionRows as any);
     if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
     if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
@@ -35443,61 +35396,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ created: selectionIds.length, selectionIds });
       } else {
         // New flat format: template itself is one selection item
-        const tpl = template as any;
         const existingSelections = await storage.getSelectionsForProject(projectId);
         const maxOrder = existingSelections.reduce((m: number, s: any) => Math.max(m, s.sortOrder ?? 0), 0);
-        const selection = await storage.createSelection({
-          projectId,
-          name: template.name,
-          description: template.description || null,
-          category: template.category || null,
-          room: tpl.room || null,
-          selectionType: template.selectionType || "selection",
-          status: "draft",
-          allowance: tpl.budgetAmount || null,
-          clientCanSeePrice: tpl.clientCanSeePrice ?? true,
-          clientCanChange: tpl.clientCanChange ?? true,
-          deadline: tpl.deadline || null,
-          sortOrder: maxOrder + 1,
-          notes: null,
-        } as any);
-        // Batched inserts — see applyTemplateItems
-        const optionRows: any[] = [];
-        const attachmentRows: any[] = [];
-        items.forEach((opt: any, idx: number) => {
-          const optionId = randomUUID();
-          optionRows.push({
-            id: optionId,
-            selectionId: selection.id,
-            name: opt.name,
-            brand: opt.brand || null,
-            sku: opt.sku || null,
-            description: opt.description || null,
-            category: opt.category || null,
-            subcategory: opt.subcategory || null,
-            unitCost: opt.unitCost ?? null,
-            quantity: opt.quantity ?? null,
-            unitType: opt.unitType || null,
-            markupPercent: opt.markupPercent ?? null,
-            totalCost: opt.totalCost ?? null,
-            url: opt.url || null,
-            visibleToClient: opt.visibleToClient ?? true,
-            gstInclusive: opt.gstInclusive ?? false,
-            sortOrder: opt.sortOrder ?? idx,
-            specifications: opt.specifications || null,
+        // See the note in applyTemplateItems — one implementation, shared with
+        // the fingerprint harness.
+        const { selections: selectionRows, options: optionRows, attachments: attachmentRows } =
+          buildFlatApplyRows(template, items, maxOrder, {
+            projectId,
+            selectionType: template.selectionType,
+            newId: randomUUID,
           });
-          const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-          imageUrls.forEach((filePath: string, imgIdx: number) => {
-            attachmentRows.push({
-              optionId,
-              fileName: filePath.split("/").pop() || "image.jpg",
-              filePath,
-              fileType: "image",
-              mimeType: "image/jpeg",
-              sortOrder: imgIdx,
-            });
-          });
-        });
+        // createSelection rather than a raw insert: it is what the original did,
+        // and it carries whatever defaults and side effects storage applies.
+        const selection = await storage.createSelection(selectionRows[0] as any);
         if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
         if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
         res.json({ created: 1, selectionIds: [selection.id] });
