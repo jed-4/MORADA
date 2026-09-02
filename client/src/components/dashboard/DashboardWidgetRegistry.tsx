@@ -73,7 +73,6 @@ import PersonalAISummaryWidget from "@/components/user-workspace/widgets/Persona
 import UnifiedCalendarWidget from "@/components/user-workspace/widgets/UnifiedCalendarWidget";
 import ActionableItemsWidget from "@/components/user-workspace/widgets/ActionableItemsWidget";
 import MyProjectsWidget from "@/components/user-workspace/widgets/MyProjectsWidget";
-import PersonalKPIsWidget from "@/components/user-workspace/widgets/PersonalKPIsWidget";
 
 // Business dashboard widgets
 import BusinessKPIsWidget from "@/components/business-widgets/BusinessKPIsWidget";
@@ -491,18 +490,6 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     accent: "project",
     defaultColumns: 4,
     defaultRowSpan: 3,
-  },
-  personalKPIs: {
-    type: "personalKPIs",
-    name: "Personal KPIs",
-    description: "Track your personal goals and performance metrics (Coming Soon)",
-    icon: TrendingUp,
-    component: PersonalKPIsWidget,
-    defaultSize: "md",
-    configurable: true,
-    accent: "financial",
-    defaultColumns: 4,
-    defaultRowSpan: 2,
   },
 };
 

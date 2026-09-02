@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ProjectSelect } from "@/components/ProjectSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
@@ -21,6 +23,8 @@ import type { Timesheet } from "@shared/schema";
 
 export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [clockInOpen, setClockInOpen] = useState(false);
+  const [clockInProjectId, setClockInProjectId] = useState("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -38,14 +42,23 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
     },
   });
 
+  // The signature is apiRequest(url, method, body). Passing { method: "POST" }
+  // as the *method* produced "[object Object]", which fetch rejects as an
+  // invalid HTTP method — so this button had never once clocked anyone in.
+  //
+  // It also sent no body. The endpoint treats a missing projectId as a
+  // business-level overhead timesheet, so merely fixing the signature would
+  // have quietly logged every dashboard clock-in against no job at all.
   const clockInMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest('/api/timesheets/clock-in', { method: 'POST' });
+    mutationFn: async (projectId: string) => {
+      return apiRequest("/api/timesheets/clock-in", "POST", { projectId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets/active"] });
-      toast({ title: "Clocked in successfully" });
+      setClockInOpen(false);
+      setClockInProjectId("");
+      toast({ title: "Clocked in" });
     },
     onError: () => {
       toast({ title: "Failed to clock in", variant: "destructive" });
@@ -54,12 +67,18 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
 
   const clockOutMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('/api/timesheets/clock-out', { method: 'POST' });
+      // clock-out requires the timesheet it is ending; without it the endpoint
+      // answers 400. The old call sent no body at all, so this button was
+      // broken twice over — wrong signature, and nothing to act on.
+      if (!activeTimesheet) throw new Error("No active timesheet");
+      return apiRequest("/api/timesheets/clock-out", "POST", {
+        timesheetId: activeTimesheet.id,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets/active"] });
-      toast({ title: "Clocked out successfully" });
+      toast({ title: "Clocked out" });
     },
     onError: () => {
       toast({ title: "Failed to clock out", variant: "destructive" });
@@ -110,7 +129,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: isClockedIn ? Square : Play,
       color: isClockedIn ? 'text-status-danger' : 'text-status-success',
       bgColor: isClockedIn ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30',
-      onClick: () => isClockedIn ? clockOutMutation.mutate() : clockInMutation.mutate(),
+      onClick: () => (isClockedIn ? clockOutMutation.mutate() : setClockInOpen(true)),
       loading: clockInMutation.isPending || clockOutMutation.isPending,
     },
   ];
@@ -162,7 +181,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       {actions.map((action) => {
         const Icon = action.icon;
         const isDisabled = action.loading || action.disabled;
-        return (
+        const tile = (
           <button
             key={action.id}
             onClick={action.onClick}
@@ -175,6 +194,48 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
               {action.loading ? 'Loading...' : action.label}
             </span>
           </button>
+        );
+
+        // Clocking in asks which job first — the same rule TimeClockWidget
+        // holds to. Hours that land on no project are hours nobody bills.
+        if (action.id !== 'clock' || isClockedIn) return tile;
+
+        return (
+          <Popover key={action.id} open={clockInOpen} onOpenChange={setClockInOpen}>
+            <PopoverTrigger asChild>{tile}</PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3 space-y-2">
+              <p className="text-xs font-medium">Clock in to</p>
+              {/* allowNone defaults to true, which offers "Business (No Project)"
+                  and emits the literal string "none" — the endpoint would take
+                  that as a project id. Real projects only. */}
+              <ProjectSelect
+                value={clockInProjectId}
+                onValueChange={setClockInProjectId}
+                allowNone={false}
+                placeholder="Select a project"
+                data-testid="quick-action-clock-project"
+              />
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setClockInOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={!clockInProjectId || clockInMutation.isPending}
+                  onClick={() => clockInMutation.mutate(clockInProjectId)}
+                  data-testid="quick-action-clock-start"
+                >
+                  {clockInMutation.isPending ? 'Starting…' : 'Start'}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         );
       })}
     </div>
