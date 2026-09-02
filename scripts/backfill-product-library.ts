@@ -5,6 +5,12 @@
  *   tsx scripts/backfill-product-library.ts                  # dry-run (default)
  *   tsx scripts/backfill-product-library.ts --apply          # write rows
  *   tsx scripts/backfill-product-library.ts --company <id>   # one tenant only
+ *   tsx scripts/backfill-product-library.ts --verify         # report drift only
+ *
+ * --verify answers the question the write-through raises: are the rows actually
+ * keeping up with the blob? It reports any template whose rows disagree with its
+ * templateData and exits non-zero if any do, so it can be run on a schedule or
+ * before dropping the column. It writes nothing.
  *
  * templateData stays authoritative. These rows SHADOW it — nothing reads them
  * yet (getProducts hides any product a selection_template_options row points at,
@@ -33,6 +39,7 @@ import { extractTemplateOptions } from "../shared/templateOptions";
 import { eq, isNotNull } from "drizzle-orm";
 
 const APPLY = process.argv.includes("--apply");
+const VERIFY = process.argv.includes("--verify");
 const companyArgIdx = process.argv.indexOf("--company");
 const ONLY_COMPANY = companyArgIdx !== -1 ? process.argv[companyArgIdx + 1] : null;
 
@@ -66,6 +73,9 @@ async function main() {
   }
 
   const warnings: string[] = [];
+  // Rows whose option has vanished from the blob — the other half of drift.
+  const liveKeys = new Set<string>();
+  let orphanedLinks = 0;
   let created = 0;
   let updated = 0;
   let images = 0;
@@ -83,6 +93,7 @@ async function main() {
 
     for (const opt of options) {
       const key = `${tpl.id} ${opt.templateOptionId}`;
+      liveKeys.add(key);
 
       // The spec half.
       const productValues = {
@@ -160,6 +171,30 @@ async function main() {
       );
       images += missing.length;
     }
+  }
+
+  for (const key of Array.from(seen.keys())) {
+    if (!liveKeys.has(key)) orphanedLinks++;
+  }
+
+  if (VERIFY) {
+    // Drift = anything a sync would still want to do. If the write-through is
+    // holding, every template is already mirrored and there is nothing to create
+    // or delete. Updates are ignored: the sync rewrites unchanged rows too, so
+    // counting them would report drift that does not exist.
+    const drifted = created + orphanedLinks;
+    console.log(`\nVERIFY — nothing written`);
+    console.log(`  templates scanned .............. ${scoped.length}`);
+    console.log(`  options missing from the rows .. ${created}`);
+    console.log(`  rows with no option in the blob  ${orphanedLinks}`);
+    if (drifted === 0) {
+      console.log(`\nNo drift. Every template's rows match its templateData.`);
+    } else {
+      console.log(`\n${drifted} option(s) out of step — run without --verify to see them, then --apply.`);
+    }
+    await pool.end();
+    if (drifted > 0) process.exit(1);
+    return;
   }
 
   console.log(`\n${APPLY ? "APPLIED" : "DRY RUN — nothing written"}`);
