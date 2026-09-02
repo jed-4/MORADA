@@ -188,9 +188,45 @@ function defaultColumnConfig(): ColumnConfig[] {
   }));
 }
 
+// A saved config is a snapshot of the columns that existed the day the invoice
+// was last saved. Returning it verbatim meant any column added to ALL_COLUMNS
+// afterwards was simply absent, `isColVisible` read the absence as "hidden", and
+// the picker couldn't rescue it either (toggleColumn only maps over entries that
+// are already there) — which is how invoices predating the Xero Account/Tax/
+// Tracking columns ended up unable to ever show them, and so unable to push.
+// Reconcile instead: keep the visibility and order the user chose for columns
+// they have seen, splice unseen ones in at their canonical neighbour, and drop
+// ids that no longer exist.
 function mergeColumnConfig(saved: any[]): ColumnConfig[] {
   if (!saved || !Array.isArray(saved) || saved.length === 0) return defaultColumnConfig();
-  return saved as ColumnConfig[];
+
+  const canonicalIndex = new Map(ALL_COLUMNS.map((c, i) => [c.id, i] as const));
+  const byId = new Map<ColumnId, ColumnConfig>();
+  for (const entry of saved) {
+    const id = entry?.id as ColumnId;
+    if (!canonicalIndex.has(id) || byId.has(id)) continue;
+    byId.set(id, { id, visible: !!entry.visible, order: Number(entry.order) || 0 });
+  }
+  if (byId.size === 0) return defaultColumnConfig();
+
+  const ordered = Array.from(byId.values())
+    .sort((a, b) => a.order - b.order)
+    .map((c) => c.id);
+
+  for (const col of ALL_COLUMNS) {
+    if (byId.has(col.id)) continue;
+    // Anchor on the nearest preceding canonical column that survived, so a new
+    // column lands where it was designed to sit rather than tacked on the end.
+    let insertAt = 0;
+    for (let i = canonicalIndex.get(col.id)! - 1; i >= 0; i--) {
+      const at = ordered.indexOf(ALL_COLUMNS[i].id);
+      if (at >= 0) { insertAt = at + 1; break; }
+    }
+    ordered.splice(insertAt, 0, col.id);
+    byId.set(col.id, { id: col.id, visible: col.defaultVisible, order: 0 });
+  }
+
+  return ordered.map((id, i) => ({ ...byId.get(id)!, order: i }));
 }
 
 // ─── Form schema ─────────────────────────────────────────────────────────────
@@ -1316,7 +1352,12 @@ export default function ClientInvoiceDetail() {
     const def = ALL_COLUMNS.find((d) => d.id === id);
     if (def?.required) return;
     setColumnConfig((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c))
+      // Append rather than no-op if the id somehow isn't in the config yet —
+      // a silently dead checkbox is the failure mode mergeColumnConfig exists
+      // to prevent, and this is the second line of defence.
+      prev.some((c) => c.id === id)
+        ? prev.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c))
+        : [...prev, { id, visible: true, order: prev.length }]
     );
   };
 
@@ -1978,6 +2019,152 @@ export default function ClientInvoiceDetail() {
     onRemove: () => void;
   };
 
+  // ── Shared Xero posting controls ────────────────────────────────────────────
+  // Every Xero line on this invoice — contract claim, variation, allowance,
+  // custom line, bill, selection, labour, markup — posts an account, a tax rate
+  // and up to two tracking options. These three renderers are the single source
+  // for those controls so the sections can't drift apart the way the grids had;
+  // a section that owns a real 1:1 grid renders them as columns, and one whose
+  // Xero line has no single row of its own (labour, markup) renders the same
+  // controls inline via `xeroInlineControls`.
+  const XERO_CELL_CLS =
+    "h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full";
+
+  // What the push will actually use when a line carries no override, mirroring
+  // resolveClientInvoiceFallbackAccount on the server: company default, else the
+  // Xero revenue account literally named "Sales". Shown as the placeholder so an
+  // unset line reads as its real posting account rather than as blank.
+  const defaultAccountCode =
+    companySettings?.clientInvoiceDefaultXeroAccount ||
+    xeroAccounts.find((a) => (a.name || "").trim().toLowerCase() === "sales")?.code ||
+    "";
+  const defaultAccountLabel = (() => {
+    if (!defaultAccountCode) return "— Account —";
+    const acc = xeroAccounts.find((a) => a.code === defaultAccountCode);
+    return acc ? `${acc.code} — ${acc.name}` : defaultAccountCode;
+  })();
+
+  const xeroTaxControl = (key: string) => {
+    const current = lineXeroOverrides[key]?.taxType
+      ?? (lineXeroOverrides[key]?.taxable === false ? "NONE" : "OUTPUT");
+    // Fall back to the two rates every AU org has when Xero isn't reachable,
+    // so the column is still usable rather than a free-text guess.
+    const rates = xeroTaxRates.length > 0
+      ? xeroTaxRates
+      : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }];
+    return (
+      <Select value={current} onValueChange={(v) => setXeroByKey(key, { taxType: v })}>
+        <SelectTrigger className={XERO_CELL_CLS} data-testid={`select-tax-${key}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {rates.map((r) => (
+            <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  };
+
+  const xeroTrackingControl = (
+    key: string,
+    cat: { trackingCategoryId: string; name: string; options?: Array<{ trackingOptionId: string; name: string }> },
+  ) => (
+    <Select
+      value={lineXeroOverrides[key]?.tracking?.[cat.trackingCategoryId] || "__none__"}
+      onValueChange={(v) =>
+        setXeroByKey(key, {
+          tracking: {
+            ...(lineXeroOverrides[key]?.tracking ?? {}),
+            [cat.trackingCategoryId]: v === "__none__" ? "" : v,
+          },
+        })
+      }
+    >
+      <SelectTrigger className={XERO_CELL_CLS} data-testid={`select-tracking-${cat.trackingCategoryId}-${key}`}>
+        <SelectValue
+          placeholder={
+            cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+              ? projectTrackingOptionName
+              : `— ${cat.name} —`
+          }
+        />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__none__">
+          <span className="text-muted-foreground">
+            {cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+              ? `${projectTrackingOptionName} (from project)`
+              : "— Project default —"}
+          </span>
+        </SelectItem>
+        {(cat.options ?? []).map((o) => (
+          <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
+  // Mirror of setXeroByKey's routing on the read side: a custom line keeps its
+  // account on its own row, everything else in the overrides map.
+  const xeroAccountValue = (key: string) => {
+    if (key.startsWith("custom#")) {
+      return customLines[Number(key.slice("custom#".length))]?.xeroAccountCode || "";
+    }
+    return lineXeroOverrides[key]?.account || "";
+  };
+
+  const xeroAccountControl = (key: string) => {
+    const value = xeroAccountValue(key);
+    return xeroAccounts.length > 0 ? (
+      <Select
+        value={value || "__none__"}
+        onValueChange={(v) => setXeroByKey(key, { account: v === "__none__" ? null : v })}
+      >
+        <SelectTrigger className={XERO_CELL_CLS} data-testid={`select-account-${key}`}>
+          <SelectValue placeholder={defaultAccountLabel} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">
+            <span className="text-muted-foreground">{defaultAccountLabel} (default)</span>
+          </SelectItem>
+          {xeroAccounts.map((acc) => (
+            <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ) : (
+      <input
+        value={value}
+        onChange={(e) => setXeroByKey(key, { account: e.target.value || null })}
+        placeholder={defaultAccountLabel}
+        className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+        data-testid={`input-account-${key}`}
+      />
+    );
+  };
+
+  // Xero allows two tracking categories per line, so only the first two are
+  // offered. Empty when the org doesn't use tracking, keeping the grid narrower.
+  const xeroTrackingCats = () => (xeroTrackingCategories ?? []).slice(0, 2);
+
+  // The Tax / tracking / Account columns, in that order, for any grid whose rows
+  // map 1:1 onto Xero lines. `keyOf` returns the row's override identity.
+  const xeroLineColumns = <T,>(keyOf: (row: T) => string): LineItemColumn<T>[] => {
+    const cols: LineItemColumn<T>[] = [];
+    if (isColVisible("tax"))
+      cols.push({ key: "taxType", header: "Tax", width: 128, truncate: false, cell: (r) => xeroTaxControl(keyOf(r)) });
+    for (const cat of (isColVisible("tracking") ? xeroTrackingCats() : [])) {
+      cols.push({
+        key: `tracking-${cat.trackingCategoryId}`, header: cat.name, width: 128, truncate: false,
+        cell: (r) => xeroTrackingControl(keyOf(r), cat),
+      });
+    }
+    if (isColVisible("account"))
+      cols.push({ key: "account", header: "Account", width: 128, truncate: false, cell: (r) => xeroAccountControl(keyOf(r)) });
+    return cols;
+  };
+
   const claimLineColumns = (): LineItemColumn<ClaimLine>[] => {
     const exOf = (incAmt: number) => incAmt / (1 + GST_RATE);
     const cols: LineItemColumn<ClaimLine>[] = [];
@@ -1991,106 +2178,9 @@ export default function ClientInvoiceDetail() {
       cols.push({ key: "claimPercent", header: "Claim %", align: "right", width: 80, truncate: false, cell: (l) => l.claimPercentCell });
     if (isColVisible("claimAmount"))
       cols.push({ key: "claimAmount", header: "Claim $", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
-    // Tax and Account sit inline, exactly as they do on Custom Lines — the Xero
-    // Posting panel is for setting them in bulk and for tracking, not the only
-    // way to reach them.
-    if (isColVisible("tax")) cols.push({
-      key: "taxType", header: "Tax", width: 128, truncate: false,
-      cell: (l) => {
-        const current = lineXeroOverrides[l.xeroKey]?.taxType
-          ?? (lineXeroOverrides[l.xeroKey]?.taxable === false ? "NONE" : "OUTPUT");
-        // Fall back to the two rates every AU org has when Xero isn't reachable,
-        // so the column is still usable rather than a free-text guess.
-        const rates = xeroTaxRates.length > 0
-          ? xeroTaxRates
-          : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }];
-        return (
-          <Select value={current} onValueChange={(v) => setXeroByKey(l.xeroKey, { taxType: v })}>
-            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tax-${l.xeroKey}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {rates.map((r) => (
-                <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      },
-    });
-    // One column per mapped Xero tracking category (Xero allows two per line).
-    // Rendered only when the connection actually has categories, so an org that
-    // doesn't use tracking keeps a narrower grid.
-    for (const cat of (isColVisible("tracking") ? (xeroTrackingCategories ?? []).slice(0, 2) : [])) {
-      cols.push({
-        key: `tracking-${cat.trackingCategoryId}`, header: cat.name, width: 128, truncate: false,
-        cell: (l) => (
-          <Select
-            value={lineXeroOverrides[l.xeroKey]?.tracking?.[cat.trackingCategoryId] || "__none__"}
-            onValueChange={(v) =>
-              setXeroByKey(l.xeroKey, {
-                tracking: {
-                  ...(lineXeroOverrides[l.xeroKey]?.tracking ?? {}),
-                  [cat.trackingCategoryId]: v === "__none__" ? "" : v,
-                },
-              })
-            }
-          >
-            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tracking-${cat.trackingCategoryId}-${l.xeroKey}`}>
-              <SelectValue
-                placeholder={
-                  cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
-                    ? projectTrackingOptionName
-                    : `— ${cat.name} —`
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">
-                <span className="text-muted-foreground">
-                  {cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
-                    ? `${projectTrackingOptionName} (from project)`
-                    : "— Project default —"}
-                </span>
-              </SelectItem>
-              {(cat.options ?? []).map((o) => (
-                <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ),
-      });
-    }
-    if (isColVisible("account")) cols.push({
-      key: "account", header: "Account", width: 128, truncate: false,
-      cell: (l) => {
-        const value = lineXeroOverrides[l.xeroKey]?.account || "";
-        return xeroAccounts.length > 0 ? (
-          <Select
-            value={value || "__none__"}
-            onValueChange={(v) => setXeroByKey(l.xeroKey, { account: v === "__none__" ? null : v })}
-          >
-            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${l.xeroKey}`}>
-              <SelectValue placeholder="— Account —" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__"><span className="text-muted-foreground">— Default —</span></SelectItem>
-              {xeroAccounts.map((acc) => (
-                <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <input
-            value={value}
-            onChange={(e) => setXeroByKey(l.xeroKey, { account: e.target.value || null })}
-            placeholder="Account"
-            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
-            data-testid={`input-account-${l.xeroKey}`}
-          />
-        );
-      },
-    });
+    // Tax, tracking and Account sit inline, exactly as they do on Custom Lines —
+    // the "Set all" popover is for setting them in bulk, not the only way there.
+    cols.push(...xeroLineColumns<ClaimLine>((l) => l.xeroKey));
     if (isColVisible("amountExTax"))
       cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 112, cell: (l) => formatCurrency(exOf(l.claimAmt)) });
     if (isColVisible("amountTax"))
@@ -2098,6 +2188,51 @@ export default function ClientInvoiceDetail() {
     if (isColVisible("amountIncTax"))
       cols.push({ key: "amountIncTax", header: "Inc Tax", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
     return cols;
+  };
+
+  // The same three columns for the Bills/Selections grids, which are plain
+  // <Table>s rather than LineItemTables. Heads and cells are emitted as
+  // fragments so both stay in step — add a column in one, add it in the other.
+  const xeroPostingHeads = () => {
+    return (
+      <>
+        {isColVisible("tax") && <TableHead className="w-32">Tax</TableHead>}
+        {(isColVisible("tracking") ? xeroTrackingCats() : []).map((cat) => (
+          <TableHead className="w-32" key={cat.trackingCategoryId}>{cat.name}</TableHead>
+        ))}
+        {isColVisible("account") && <TableHead className="w-40">Account</TableHead>}
+      </>
+    );
+  };
+
+  const xeroPostingCells = (key: string) => {
+    return (
+      <>
+        {isColVisible("tax") && <TableCell className="py-1 w-32">{xeroTaxControl(key)}</TableCell>}
+        {(isColVisible("tracking") ? xeroTrackingCats() : []).map((cat) => (
+          <TableCell className="py-1 w-32" key={cat.trackingCategoryId}>{xeroTrackingControl(key, cat)}</TableCell>
+        ))}
+        {isColVisible("account") && <TableCell className="py-1 w-40">{xeroAccountControl(key)}</TableCell>}
+      </>
+    );
+  };
+
+  // Labour and the markup line each post a single Xero line with no row of their
+  // own to hang a column on, so they get the same three controls in a strip.
+  // Hidden with the columns, so the picker still governs the whole invoice.
+  const xeroInlineControls = (key: string, testId: string) => {
+    const cats = isColVisible("tracking") ? xeroTrackingCats() : [];
+    if (!isColVisible("tax") && !isColVisible("account") && cats.length === 0) return null;
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap justify-end" data-testid={`xero-inline-${testId}`}>
+        <SiXero className="w-3 h-3 text-muted-foreground shrink-0" />
+        {isColVisible("tax") && <div className="w-32">{xeroTaxControl(key)}</div>}
+        {cats.map((cat) => (
+          <div className="w-32" key={cat.trackingCategoryId}>{xeroTrackingControl(key, cat)}</div>
+        ))}
+        {isColVisible("account") && <div className="w-40">{xeroAccountControl(key)}</div>}
+      </div>
+    );
   };
 
   // Section header bar shared by every sub-section: accent dot, label, and a
@@ -3309,7 +3444,13 @@ export default function ClientInvoiceDetail() {
                       <div className="px-4 py-3">
                         {selectedTimesheetIds.length === 0 ? (
                           <p className="text-table text-muted-foreground text-center py-2">No labour entries selected.</p>
-                        ) : (() => {
+                        ) : (<>
+                        {/* Labour posts as one Xero line no matter which display
+                            mode is showing, so its posting controls sit above the
+                            grid instead of repeating down a column that would
+                            imply per-timesheet accounts. */}
+                        <div className="pb-2">{xeroInlineControls(lineAccountKey("labour"), "labour")}</div>
+                        {(() => {
                           const rows = expandByCostCode(getSelectedTimesheets());
                                                     const showCostCode = labourBreakByCostCode;
 
@@ -3483,6 +3624,7 @@ export default function ClientInvoiceDetail() {
                             </Table>
                           );
                         })()}
+                        </>)}
                       </div>
                     </div>
 
@@ -3516,6 +3658,7 @@ export default function ClientInvoiceDetail() {
                                 <TableHead>Bill No.</TableHead>
                                 <TableHead>Supplier</TableHead>
                                 <TableHead>Date</TableHead>
+                                {xeroPostingHeads()}
                                 <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
@@ -3526,6 +3669,7 @@ export default function ClientInvoiceDetail() {
                                   <TableCell className="text-table font-medium py-1">{b.billNumber}</TableCell>
                                   <TableCell className="text-table text-muted-foreground py-1">{(b as any).supplierName || "—"}</TableCell>
                                   <TableCell className="text-table text-muted-foreground py-1">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yyyy") : "—"}</TableCell>
+                                  {xeroPostingCells(lineAccountKey("bill", b.id))}
                                   <TableCell className="text-right text-table font-medium py-1">{formatCurrency(b.total / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedBillIds(prev => prev.filter(id => id !== b.id))} className="text-muted-foreground hover:text-destructive">
@@ -3571,6 +3715,7 @@ export default function ClientInvoiceDetail() {
                                 <TableHead>Option</TableHead>
                                 <TableHead className="text-right w-16">Qty</TableHead>
                                 <TableHead className="w-16">Unit</TableHead>
+                                {xeroPostingHeads()}
                                 <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
@@ -3582,6 +3727,7 @@ export default function ClientInvoiceDetail() {
                                   <TableCell className="text-table font-medium py-1">{o.name}</TableCell>
                                   <TableCell className="text-right text-table py-1">{o.quantity}</TableCell>
                                   <TableCell className="text-table text-muted-foreground py-1">{o.unitType}</TableCell>
+                                  {xeroPostingCells(lineAccountKey("selection", o.id))}
                                   <TableCell className="text-right text-table font-medium py-1">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedSelectionOptionIds(prev => prev.filter(id => id !== o.id))} className="text-muted-foreground hover:text-destructive">
@@ -3739,31 +3885,7 @@ export default function ClientInvoiceDetail() {
                           });
                           if (isColVisible("account")) cols.push({
                             key: "account", header: "Account", width: 128, truncate: false,
-                            cell: (line, index) =>
-                              xeroAccounts.length > 0 ? (
-                                <Select
-                                  value={line.xeroAccountCode || "__none__"}
-                                  onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
-                                >
-                                  <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${index}`}>
-                                    <SelectValue placeholder="— Account —" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                    {xeroAccounts.map((acc) => (
-                                      <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <input
-                                  value={line.xeroAccountCode || ""}
-                                  onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
-                                  placeholder="Account"
-                                  className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
-                                  data-testid={`input-account-${index}`}
-                                />
-                              ),
+                            cell: (_line, index) => xeroAccountControl(`custom#${index}`),
                           });
                           // Prices are entered EX GST; GST is added on top for
                           // taxable lines (same convention as the totals/PDF/Xero).
@@ -3887,6 +4009,7 @@ export default function ClientInvoiceDetail() {
                           </div>
                         )}
                         {invoiceType === "cost_plus" && (
+                          <>
                           <div className="flex justify-between text-sm items-center pt-0.5">
                             <div className="flex items-center gap-1.5">
                               <span className="text-muted-foreground">Markup</span>
@@ -3916,6 +4039,12 @@ export default function ClientInvoiceDetail() {
                             </div>
                             <span className="font-medium tabular-nums">{formatCurrency(calculateMarkup())}</span>
                           </div>
+                          {/* Markup is its own Xero line but has no grid row, so
+                              it gets the same controls the sections use. */}
+                          {calculateMarkup() !== 0 && (
+                            <div className="pb-1">{xeroInlineControls(lineAccountKey("markup"), "markup")}</div>
+                          )}
+                          </>
                         )}
                         <div className="border-t border-border/30 pt-2 mt-2 space-y-1.5">
                           <div className="flex justify-between text-sm">
