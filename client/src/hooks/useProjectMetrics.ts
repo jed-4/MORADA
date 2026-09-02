@@ -3,6 +3,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
 import { computeContractMetrics, frozenContractTotalFrom, isPendingVariationStatus, type ContractMetrics } from "@shared/projectMetrics";
 import { timesheetTotalExGstCents, exGstFromInc } from "@shared/money";
+import { summariseInvoices, invoiceBalanceCents, isIssuedInvoice } from "@shared/invoiceMetrics";
 
 export interface ProjectMetric {
   id: string;
@@ -236,6 +237,22 @@ export function useProjectMetrics() {
     enabled: !!projectId,
   });
 
+  // Actual costs from the SAME server endpoint the Budget page uses, so the
+  // CASH dashboard and /budget can never disagree on what "Actual Costs" means.
+  // It is ex-GST cents: every project bill's line items (not just paid ones,
+  // and not the inc-GST header total) plus approved timesheet labour.
+  // Permission-gated — a 403/404 falls back to the local approximation below.
+  const { data: actualCostsData } = useQuery<{ actualCostExGstCents: number } | null>({
+    queryKey: ["/api/projects", projectId, "actual-costs"],
+    queryFn: async () => {
+      if (!projectId) return null;
+      const response = await fetch(`/api/projects/${projectId}/actual-costs`, { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
   const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || invoicesLoading || invoiceVariationsLoading || variationItemsLoading || timesheetsLoading;
   const isError = estimatesError || itemsError || billsError || variationsError || invoicesError || invoiceVariationsError || variationItemsError || timesheetsError;
 
@@ -440,13 +457,24 @@ export function useProjectMetrics() {
     const approvedBillsAmount = approvedBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
     const overdueBillsAmount = overdueBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
 
-    // Actual Costs — ex GST so they compare like-for-like with estimate costs:
-    // paid bills at their ex-GST subtotal + approved timesheet labour (wages
-    // carry no GST, so timesheet totals are already ex GST).
-    const paidBillsExGst = paidBillsList.reduce((sum, b) => sum + (b.subtotal || 0), 0) / 100;
+    // Actual Costs — ex GST so they compare like-for-like with estimate costs.
+    //
+    // Authoritative source is /api/projects/:id/actual-costs, which the Budget
+    // page already uses. The local fallback below is only for callers without
+    // the budget_actuals permission (or a failed request).
+    //
+    // The fallback deliberately counts EVERY bill, not just paid ones: a cost
+    // is incurred when the bill is received, not when it is paid. Counting
+    // paid bills only was why the dashboard read ~$4.6k under the Budget page.
     const approvedLabourExGst = approvedTimesheets.reduce(
       (sum, ts) => sum + timesheetTotalExGstCents(ts), 0) / 100;
-    const actualCosts = paidBillsExGst + approvedLabourExGst;
+    const fallbackBillsExGst = bills.reduce((sum, b) => {
+      const exGst = b.subtotal || 0;
+      return sum + ((b as any).billType === 'credit' ? -exGst : exGst);
+    }, 0) / 100;
+    const actualCosts = actualCostsData
+      ? (actualCostsData.actualCostExGstCents || 0) / 100
+      : fallbackBillsExGst + approvedLabourExGst;
 
     // Cost to Complete
     const costToComplete = Math.max(0, totalProjectCosts - actualCosts);
@@ -461,16 +489,18 @@ export function useProjectMetrics() {
     // Invoice rows come from /api/client-invoices (raw ClientInvoice rows), so
     // money lives in totalAmount / paidAmount / balanceAmount (all in cents).
     const invTotalCents = (inv: ClientInvoice) => inv.totalAmount || 0;
-    const invBalanceCents = (inv: ClientInvoice) =>
-      inv.balanceAmount || ((inv.totalAmount || 0) - (inv.paidAmount || 0));
+    const invBalanceCents = (inv: ClientInvoice) => invoiceBalanceCents(inv);
 
     const nonCancelledInvoices = clientInvoices.filter(inv => inv.status !== 'cancelled');
     const paidInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'paid');
     const partialInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'partial');
     const draftInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'draft');
-    // "Outstanding" = sent (incl. explicitly-overdue) but not yet part/fully paid.
-    const sentInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue');
     const unpaidInvoicesList = nonCancelledInvoices.filter(inv => inv.status !== 'paid');
+
+    // Canonical invoice money (shared with the /client-invoices header) —
+    // "invoiced" counts ISSUED invoices only, and "outstanding" sums BALANCES
+    // so a partially-paid invoice's unpaid remainder is included.
+    const invoiceSummary = summariseInvoices(nonCancelledInvoices);
     // Overdue = an issued (non-draft, non-paid) invoice past its due date.
     // Drafts are never "overdue" since they haven't been sent to the client.
     const overdueInvoicesList = nonCancelledInvoices.filter(inv => {
@@ -479,11 +509,16 @@ export function useProjectMetrics() {
       return new Date(inv.dueDate) < now;
     });
 
-    const invoicedAmount = nonCancelledInvoices.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
-    const paidInvoicesAmount = paidInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
-    const partialAmount = partialInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
-    const draftAmount = draftInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
-    const sentAmount = sentInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    // Drafts are NOT invoiced — they have not been issued to the client, so
+    // counting them overstated revenue and drove "% of contract" to 100% on
+    // jobs that still had real money left to bill.
+    const invoicedAmount = invoiceSummary.invoicedCents / 100;
+    const paidInvoicesAmount = invoiceSummary.paidCents / 100;
+    const partialAmount = invoiceSummary.partialCents / 100;
+    const draftAmount = invoiceSummary.draftCents / 100;
+    // "Outstanding" = unpaid balance across every issued invoice. Summing the
+    // totals of `sent` rows alone missed the unpaid remainder of a partial.
+    const sentAmount = invoiceSummary.outstandingCents / 100;
     const overdueAmount = overdueInvoicesList.reduce((sum, inv) => sum + invBalanceCents(inv), 0) / 100;
 
     let oldestOverdueDays = 0;
@@ -513,7 +548,7 @@ export function useProjectMetrics() {
     // Actual Gross Profit & Margin — ex GST both sides. Prefer the stored
     // gstAmount; fall back to backing GST out of the inc-GST total for legacy
     // rows that never populated it.
-    const invoicedAmountExGst = nonCancelledInvoices.reduce((sum, inv) => {
+    const invoicedAmountExGst = nonCancelledInvoices.filter(inv => isIssuedInvoice(inv.status)).reduce((sum, inv) => {
       const totalCents = invTotalCents(inv);
       const exCents = (inv.gstAmount || 0) > 0
         ? totalCents - (inv.gstAmount || 0)
@@ -586,7 +621,7 @@ export function useProjectMetrics() {
       sentAmount,
       partialAmount,
       draftInvoicesCount: draftInvoicesList.length,
-      sentInvoicesCount: sentInvoicesList.length,
+      sentInvoicesCount: invoiceSummary.outstandingCount,
       partialInvoicesCount: partialInvoicesList.length,
       nonCancelledInvoicesCount: nonCancelledInvoices.length,
       overdueAmount,

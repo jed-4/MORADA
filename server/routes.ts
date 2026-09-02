@@ -5152,6 +5152,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const bill of bills) {
           const lines = await storage.getBillLineItems(bill.id);
           const sign = bill.billType === "credit" ? -1 : 1;
+          if (lines.length === 0) {
+            // A bill with no line items (e.g. still in "needs review", or entered
+            // as a header total only) would otherwise contribute $0 and silently
+            // vanish from project cost. Fall back to its stored ex-GST subtotal.
+            // Only reachable when there are no lines, so it cannot double count.
+            billsCostExGstCents += ((bill as any).subtotal || 0) * sign;
+            continue;
+          }
           for (const line of lines) {
             billsCostExGstCents += billLineExGstCents(line.total ?? 0, line.tax, (bill as any).taxMode) * sign;
           }

@@ -1346,7 +1346,12 @@ export default function BudgetPage() {
                   { label: "Gross Profit", value: formatCurrency(grossProfitCents), color: getVarianceColor(grossProfitCents) },
                 ].map((stat) => (
                   <div key={stat.label} className="flex flex-col leading-tight">
-                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{stat.label}</span>
+                    {/* Every figure on the Budget page is ex GST. It is stated on
+                        each one because the same labels appear inc GST on the
+                        CASH dashboard, and an unlabelled pair looks like a bug. */}
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                      {stat.label} <span className="normal-case font-normal">ex GST</span>
+                    </span>
                     <span className={cn("text-sm font-semibold tabular-nums", stat.color)}>{stat.value}</span>
                   </div>
                 ))}
@@ -1421,6 +1426,7 @@ export default function BudgetPage() {
             <div className="flex items-center gap-x-3 gap-y-1 flex-wrap" data-testid="bar-gross-margin">
               <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
                 Margin
+                <span className="block normal-case font-normal">ex GST</span>
               </span>
               <div className="flex items-center gap-1.5" data-testid="margin-revised">
                 <span className="text-muted-foreground">Revised Contract</span>
