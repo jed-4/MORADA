@@ -7373,6 +7373,36 @@ export const companyOhSettings = pgTable("company_oh_settings", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Per-month reconciliation of what the Xero sync STORED against what Xero's own
+// P&L section totals said at the moment of the sync. This is the audit trail the
+// Monthly Actuals banner reads: if a sync dies partway (or a confirmed month is
+// silently left frozen at a stale value) the stored figures drift from the
+// report and nothing else in the schema would ever notice.
+//
+// Deliberately its own table rather than columns on company_income_actuals: a
+// table this app has not yet migrated only breaks the banner (the query is
+// wrapped and degrades to "no banner"), whereas a missing column on a hot table
+// would 500 every Overheads request.
+export const overheadSyncReconciliation = pgTable("overhead_sync_reconciliation", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  // What Xero's report said (ex-GST cents)
+  xeroIncomeCents: integer("xero_income_cents").notNull().default(0),
+  xeroDirectCostCents: integer("xero_direct_cost_cents").notNull().default(0),
+  xeroExpenseCents: integer("xero_expense_cents").notNull().default(0),
+  // What we actually have stored for that month
+  storedIncomeCents: integer("stored_income_cents").notNull().default(0),
+  storedDirectCostCents: integer("stored_direct_cost_cents").notNull().default(0),
+  storedExpenseCents: integer("stored_expense_cents").notNull().default(0),
+  checkedAt: timestamp("checked_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("overhead_sync_reconciliation_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export type OverheadSyncReconciliation = typeof overheadSyncReconciliation.$inferSelect;
+
 export const insertCompanyOhSettingsSchema = createInsertSchema(companyOhSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCompanyOhSettings = z.infer<typeof insertCompanyOhSettingsSchema>;
 export type CompanyOhSettings = typeof companyOhSettings.$inferSelect;

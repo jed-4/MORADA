@@ -41814,9 +41814,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings, companyIncomeActuals, companyDirectCostActuals } = await import("@shared/schema");
+      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings, companyIncomeActuals, companyDirectCostActuals, overheadSyncReconciliation } = await import("@shared/schema");
 
-      const [categories, items, actuals, statuses, settings, incomeActuals, directCostActuals] = await Promise.all([
+      // Reconciliation is best-effort: it is a young table and this page must
+      // still render on a database where migration 0066 has not been applied.
+      const reconciliationPromise = db
+        .select()
+        .from(overheadSyncReconciliation)
+        .where(eq(overheadSyncReconciliation.companyId, companyId))
+        .catch((err) => {
+          console.error("Overhead reconciliation unavailable (migration 0066 applied?):", err?.message || err);
+          return [] as any[];
+        });
+
+      const [categories, items, actuals, statuses, settings, incomeActuals, directCostActuals, reconciliation] = await Promise.all([
         db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadCategories.sortOrder), asc(overheadCategories.createdAt)),
         db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.name)),
         db.select().from(overheadMonthActuals).innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id)).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)),
@@ -41824,6 +41835,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1),
         db.select().from(companyIncomeActuals).where(eq(companyIncomeActuals.companyId, companyId)),
         db.select().from(companyDirectCostActuals).where(eq(companyDirectCostActuals.companyId, companyId)),
+        reconciliationPromise,
       ]);
 
       res.json({
@@ -41834,6 +41846,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         settings: settings[0] || null,
         incomeActuals,
         directCostActuals,
+        reconciliation,
       });
     } catch (error: any) {
       console.error("Error fetching overheads:", error);
@@ -42368,129 +42381,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero not connected" });
 
-      const accounts = await xeroService.getAccounts(connection.id);
-      if (!accounts.length) return res.json({ created: 0, updated: 0 });
-
-      const { overheadCategories, overheadItems } = await import("@shared/schema");
-
-      // Fetch existing categories and items for this company
-      const existingCats = await db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId));
-      const existingItems = await db.select().from(overheadItems)
-        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
-        .where(eq(overheadCategories.companyId, companyId));
-
-      // Cleanup: remove any existing overhead items that originated from a Xero
-      // direct-cost account. Direct costs have their own collapsible section in
-      // the UI now and must not double-count under Overheads. Cascading delete
-      // wipes their overhead_month_actuals rows automatically.
-      const directCostItemIds = existingItems
-        .filter(r => r.overhead_items.xeroAccountType === "DIRECTCOSTS")
-        .map(r => r.overhead_items.id);
-      if (directCostItemIds.length > 0) {
-        await db.delete(overheadItems).where(inArray(overheadItems.id, directCostItemIds));
-      }
-      // Drop any "Direct Costs" category that's now empty after the deletion
-      const directCostCats = existingCats.filter(c => c.name.toLowerCase() === "direct costs");
-      for (const cat of directCostCats) {
-        const remaining = await db.select({ id: overheadItems.id }).from(overheadItems).where(eq(overheadItems.categoryId, cat.id));
-        if (remaining.length === 0) {
-          await db.delete(overheadCategories).where(eq(overheadCategories.id, cat.id));
-        }
-      }
-
-      // Simplified category mapping: only EXPENSE-style accounts become overhead items.
-      // DIRECTCOSTS accounts are intentionally omitted — they're handled by the
-      // Direct Costs section and pulled directly from the P&L breakdown JSONB.
-      const TYPE_LABEL: Record<string, string> = {
-        EXPENSE: "Overheads",
-        OVERHEADS: "Overheads",
-        CURRLIAB: "Overheads",
-      };
-
-      // Legacy category names that should be merged into the simplified categories
-      const LEGACY_TO_TARGET: Record<string, string> = {
-        "general expenses": "overheads",
-        "current liabilities": "overheads",
-      };
-
-      // Migrate items from legacy categories to their target categories
-      for (const [legacyName, targetName] of Object.entries(LEGACY_TO_TARGET)) {
-        const legacyCat = existingCats.find(c => c.name.toLowerCase() === legacyName);
-        if (!legacyCat) continue;
-        // Ensure target category exists
-        let targetCat = existingCats.find(c => c.name.toLowerCase() === targetName);
-        if (!targetCat) {
-          const label = targetName === "overheads" ? "Overheads" : "Direct Costs";
-          const [nc] = await db.insert(overheadCategories).values({ companyId, name: label, sortOrder: 0 }).returning();
-          targetCat = nc;
-          existingCats.push(targetCat);
-        }
-        // Move all items from legacy to target
-        await db.update(overheadItems).set({ categoryId: targetCat.id }).where(eq(overheadItems.categoryId, legacyCat.id));
-        // Delete now-empty legacy category
-        await db.delete(overheadCategories).where(eq(overheadCategories.id, legacyCat.id));
-      }
-
-      // Re-fetch current state after migration
-      const currentCats = await db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId));
-      const currentItems = await db.select().from(overheadItems)
-        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
-        .where(eq(overheadCategories.companyId, companyId));
-
-      const catByName = new Map(currentCats.map(c => [c.name.toLowerCase(), c.id]));
-      const itemByCode = new Map(currentItems
-        .filter(r => r.overhead_items.xeroAccountCode)
-        .map(r => [r.overhead_items.xeroAccountCode as string, r.overhead_items.id]));
-
-      let created = 0;
-      let updated = 0;
-
-      for (const acc of accounts) {
-        const accCode: string = acc.Code?.trim() || "";
-        if (!accCode) continue; // skip accounts with no code — no stable upsert key
-        const accName: string = acc.Name || "";
-        const accType: string = acc.Type || "EXPENSE";
-        // Skip direct-cost accounts entirely — they belong in the Direct Costs section, not Overheads
-        if (accType === "DIRECTCOSTS") continue;
-        const catLabel = TYPE_LABEL[accType] || "Overheads";
-
-        // Upsert category by name
-        let catId = catByName.get(catLabel.toLowerCase());
-        if (!catId) {
-          const [newCat] = await db.insert(overheadCategories)
-            .values({ companyId, name: catLabel, sortOrder: 0 })
-            .returning();
-          catId = newCat.id;
-          catByName.set(catLabel.toLowerCase(), catId);
-        }
-
-        // Upsert item by xeroAccountCode
-        const existingItemId = accCode ? itemByCode.get(accCode) : null;
-        if (existingItemId) {
-          // Update name and xeroAccountType only — preserve budget, frequency and buildproGroup
-          await db.update(overheadItems)
-            .set({ name: accName, xeroSynced: true, xeroAccountCode: accCode || null, xeroAccountType: accType || null })
-            .where(eq(overheadItems.id, existingItemId));
-          updated++;
-        } else {
-          // Create new item
-          const [newItem] = await db.insert(overheadItems).values({
-            categoryId: catId,
-            name: accName,
-            frequency: "monthly",
-            budgetCents: 0,
-            xeroAccountCode: accCode || null,
-            xeroAccountType: accType || null,
-            xeroSynced: true,
-            notes: null,
-            sortOrder: 0,
-          }).returning();
-          created++;
-          if (accCode && newItem) itemByCode.set(accCode, newItem.id);
-        }
-      }
-
-      res.json({ created, updated });
+      const { syncOverheadAccountsForCompany } = await import("./utils/syncOverheadAccounts");
+      const result = await syncOverheadAccountsForCompany(companyId, connection.id);
+      res.json(result);
     } catch (error: any) {
       console.error("Error syncing overhead accounts from Xero:", error);
       res.status(500).json({ error: error.message || "Failed to sync" });

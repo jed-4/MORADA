@@ -90,3 +90,22 @@ export function timesheetRateCents(ts: { hourlyRate: string | number | null | un
 export function timesheetHours(ts: { duration: string | number | null | undefined }): number {
   return toNumber(ts.duration);
 }
+
+/**
+ * Signed abbreviated money for dense financial grids.
+ *
+ * Values at or above $1,000 collapse to "k"; smaller ones stay whole dollars so
+ * a $385 credit does not become an unreadable "$0.4k". The sign is carried
+ * OUTSIDE the dollar sign (-$0.4k, -$385) so credits are unmistakable.
+ *
+ * Lives here rather than in the page because a Math.abs() in one of two
+ * near-identical local copies is exactly what made a -$385.36 Warehouse-Rent
+ * credit render as "$0.4k" on Monthly Actuals while the totals stayed correct.
+ */
+export function formatSignedAbbreviatedMoney(cents: number): string {
+  const v = cents / 100;
+  const sign = v < 0 ? "-" : "";
+  const abs = Math.abs(v);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`;
+  return `${sign}$${Math.round(abs)}`;
+}

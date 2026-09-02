@@ -8,6 +8,11 @@ let lastInsuranceCheckDate: string | null = null;
 let lastRecurringTasksCheckDate: string | null = null;
 let lastArchivedContactCleanupDate: string | null = null;
 let lastOverheadActualsSyncDate: string | null = null;
+// When a sync fails we deliberately do NOT mark the day done, so it retries.
+// The processor ticks every minute, so the retry needs its own floor or a
+// persistently failing Xero connection would be hammered 1,440 times a day.
+let lastOverheadActualsAttemptMs = 0;
+const OVERHEAD_SYNC_RETRY_FLOOR_MS = 30 * 60 * 1000;
 let processorInterval: NodeJS.Timeout | null = null;
 const timesheetReminderSent = new Map<string, number>();
 
@@ -565,32 +570,60 @@ export async function cleanupArchivedContacts() {
 export async function syncOverheadActualsNightly() {
   const today = format(new Date(), "yyyy-MM-dd");
   if (lastOverheadActualsSyncDate === today) return;
+  if (Date.now() - lastOverheadActualsAttemptMs < OVERHEAD_SYNC_RETRY_FLOOR_MS) return;
+  lastOverheadActualsAttemptMs = Date.now();
 
   try {
-    console.log("[ReminderProcessor] Running nightly overhead actuals Xero sync...");
+    console.log("[ReminderProcessor] Running nightly overhead Xero sync...");
     // Lazy import to avoid circular deps
     const { db } = await import("../db");
     const { xeroConnections } = await import("@shared/schema");
     const { syncOverheadActualsForCompany } = await import("./syncOverheadActuals");
+    const { syncOverheadAccountsForCompany } = await import("./syncOverheadAccounts");
 
     const allConnections = await db.select().from(xeroConnections);
     let totalSynced = 0;
     let totalDrifted = 0;
+    let totalAccountsCreated = 0;
+    let totalItemsCreated = 0;
+    let totalMismatchedMonths = 0;
+    let anyCompanyFailed = false;
 
     for (const connection of allConnections) {
       const companyId = connection.companyId;
       try {
+        // Refresh the chart of accounts FIRST. The actuals pass can only write
+        // figures for accounts it can map to an overhead item, so doing this
+        // second would leave a brand-new Xero account unmapped for a further
+        // day. This used to run only when someone pressed the button in the UI.
+        const accountResult = await syncOverheadAccountsForCompany(companyId, connection.id);
+        totalAccountsCreated += accountResult.created;
+
         const result = await syncOverheadActualsForCompany(companyId, connection.id);
         totalSynced += result.synced;
         totalDrifted += result.drifted;
+        totalItemsCreated += result.itemsCreated;
+        totalMismatchedMonths += result.mismatchedMonths.length;
       } catch (err) {
-        console.error(`[ReminderProcessor] Overhead actuals sync failed for company ${companyId}:`, err);
+        anyCompanyFailed = true;
+        console.error(`[ReminderProcessor] Overhead sync failed for company ${companyId}:`, err);
       }
     }
 
-    lastOverheadActualsSyncDate = today;
-    console.log(`[ReminderProcessor] Nightly overhead actuals sync complete: ${totalSynced} records, ${totalDrifted} drifted`);
+    // Only claim the day when every company got through. Marking it done after a
+    // partial run is what let a half-finished sync sit until the next midnight:
+    // confirmed months keep their stale values and nothing retries.
+    if (anyCompanyFailed) {
+      console.warn("[ReminderProcessor] Overhead sync had failures — leaving today unmarked so the next tick retries");
+    } else {
+      lastOverheadActualsSyncDate = today;
+    }
+
+    console.log(
+      `[ReminderProcessor] Nightly overhead sync complete: ${totalSynced} records, ${totalDrifted} drifted, ` +
+      `${totalAccountsCreated + totalItemsCreated} new accounts mapped, ${totalMismatchedMonths} month(s) not matching Xero`,
+    );
   } catch (error) {
-    console.error("[ReminderProcessor] Error in nightly overhead actuals sync:", error);
+    console.error("[ReminderProcessor] Error in nightly overhead sync:", error);
   }
 }

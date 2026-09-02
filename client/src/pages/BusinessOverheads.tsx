@@ -6,6 +6,7 @@ import { useIsDark, monthlyActualsPalette, MonthlyActualsLegend } from "@/compon
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatSignedAbbreviatedMoney } from "@shared/money";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,15 @@ interface OverheadsData {
   settings: OhSettings | null;
   incomeActuals: CompanyIncomeActual[];
   directCostActuals: CompanyDirectCostActual[];
+  /** Absent when migration 0066 has not been applied — the banner just hides. */
+  reconciliation?: OverheadSyncReconciliation[];
+}
+
+interface OverheadSyncReconciliation {
+  companyId: string; year: number; month: number;
+  xeroIncomeCents: number; xeroDirectCostCents: number; xeroExpenseCents: number;
+  storedIncomeCents: number; storedDirectCostCents: number; storedExpenseCents: number;
+  checkedAt: string;
 }
 
 type Frequency = "weekly" | "monthly" | "quarterly" | "annual";
@@ -146,10 +156,11 @@ const XERO_TYPE_LABELS: Record<string, string> = {
 function fmtDollars(cents: number): string {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(cents / 100);
 }
+// Single source of truth for abbreviated money on this page — see
+// formatSignedAbbreviatedMoney in shared/money.ts for why it is not local.
+const fmtSignedK = formatSignedAbbreviatedMoney;
 function fmtK(cents: number): string {
-  const v = cents / 100;
-  if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(1)}k`;
-  return `$${Math.round(v)}`;
+  return fmtSignedK(cents);
 }
 function toMonthlyCents(item: OverheadItem): number {
   switch (item.frequency) {
@@ -1011,6 +1022,70 @@ type ColSpec = {
   stackedPct?: boolean;
 };
 
+// Raised when what we stored for a month disagrees with Xero's own P&L section
+// totals at the time of the last sync. The sync writes optimistically, one
+// account-month at a time, and does not delete confirmed months first — so a run
+// that dies partway leaves those months frozen at stale figures with no drift
+// flag and nothing else in the UI to say so. This is that missing signal.
+function ReconciliationBanner({ data }: { data: OverheadsData }) {
+  const mismatches = useMemo(() => {
+    const rows = data.reconciliation || [];
+    return rows
+      .map(r => ({
+        year: r.year,
+        month: r.month,
+        income: r.storedIncomeCents - r.xeroIncomeCents,
+        directCosts: r.storedDirectCostCents - r.xeroDirectCostCents,
+        expenses: r.storedExpenseCents - r.xeroExpenseCents,
+      }))
+      .filter(r => Math.abs(r.income) > 1 || Math.abs(r.directCosts) > 1 || Math.abs(r.expenses) > 1)
+      .sort((a, b) => (b.year - a.year) || (b.month - a.month));
+  }, [data.reconciliation]);
+
+  if (mismatches.length === 0) return null;
+
+  const totalOff = mismatches.reduce(
+    (sum, m) => sum + Math.abs(m.income) + Math.abs(m.directCosts) + Math.abs(m.expenses),
+    0,
+  );
+
+  const describe = (m: typeof mismatches[number]) => {
+    const parts: string[] = [];
+    // "short" / "over" is from Morada's point of view, which is how anyone
+    // reading this screen thinks about it.
+    const word = (cents: number) => (cents < 0 ? "short" : "over by");
+    if (Math.abs(m.income) > 1) parts.push(`income ${word(m.income)} ${fmtSignedK(Math.abs(m.income))}`);
+    if (Math.abs(m.directCosts) > 1) parts.push(`direct costs ${word(m.directCosts)} ${fmtSignedK(Math.abs(m.directCosts))}`);
+    if (Math.abs(m.expenses) > 1) parts.push(`overheads ${word(m.expenses)} ${fmtSignedK(Math.abs(m.expenses))}`);
+    return `${MONTH_NAMES[m.month - 1]} ${m.year}: ${parts.join(", ")}`;
+  };
+
+  return (
+    <div
+      className="mx-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2"
+      data-testid="banner-xero-reconciliation"
+      role="status"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+      <div className="min-w-0 text-xs">
+        <div className="font-semibold text-destructive">
+          {mismatches.length === 1 ? "1 month does not match Xero" : `${mismatches.length} months do not match Xero`}
+          {` — ${fmtSignedK(totalOff)} unaccounted for`}
+        </div>
+        <ul className="mt-1 space-y-0.5 text-muted-foreground">
+          {mismatches.slice(0, 6).map(m => (
+            <li key={`${m.year}-${m.month}`}>{describe(m)}</li>
+          ))}
+          {mismatches.length > 6 && <li>…and {mismatches.length - 6} more</li>}
+        </ul>
+        <div className="mt-1 text-muted-foreground">
+          Re-run Sync Actuals. If a month stays out, un-confirm it first — confirmed months are never cleared before a rewrite.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
   const [groupBy, setGroupBy] = useState<GroupBy>(() => {
@@ -1400,7 +1475,23 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
       const drifted = res?.drifted || 0;
-      toast({ title: drifted > 0 ? `Synced — ${drifted} confirmed month${drifted !== 1 ? "s" : ""} have changed figures` : "Xero actuals synced" });
+      const created = res?.itemsCreated || 0;
+      const mismatched = (res?.mismatchedMonths || []).length;
+      // A mismatch matters more than drift — it means the stored figures do not
+      // add up to Xero at all, so lead with it and let the banner give detail.
+      if (mismatched > 0) {
+        toast({
+          title: `Synced, but ${mismatched} month${mismatched !== 1 ? "s do" : " does"} not match Xero`,
+          description: "See the banner above the table.",
+          variant: "destructive",
+        });
+      } else if (created > 0) {
+        toast({ title: `Xero actuals synced — added ${created} new account${created !== 1 ? "s" : ""}` });
+      } else if (drifted > 0) {
+        toast({ title: `Synced — ${drifted} confirmed month${drifted !== 1 ? "s" : ""} have changed figures` });
+      } else {
+        toast({ title: "Xero actuals synced" });
+      }
     },
     onError: () => toast({ title: "Failed to sync Xero actuals", variant: "destructive" }),
   });
@@ -1521,14 +1612,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const isDark = useIsDark();
   const C = monthlyActualsPalette(isDark);
 
-  // Number formatter: 0 → em-dash, otherwise absolute-value k or full dollars
+  // Number formatter: 0 → em-dash, otherwise signed k or signed full dollars.
+  // Delegates to fmtSignedK so month cells and every other abbreviated figure
+  // on this page share one implementation and cannot drift apart again.
   function fmtCell(cents: number, mode: 'k' | 'dollars'): string {
     if (cents === 0) return '—';
-    if (mode === 'k') {
-      const k = Math.abs(cents) / 100000;
-      return `$${k.toFixed(1)}k`;
-    }
-    return `$${Math.abs(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    if (mode === 'k') return fmtSignedK(cents);
+    const sign = cents < 0 ? '-' : '';
+    const abs = Math.abs(cents / 100);
+    return `${sign}$${abs.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 
   // ─── Column-driven row renderer ──────────────────────────────────────────────
@@ -1758,6 +1850,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <ReconciliationBanner data={data} />
       {/* ─── Toolbar (single h-9 row, matches Project → Scope) ─────────────── */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border/50 bg-card flex-wrap">
         {/* Data source dropdown */}
