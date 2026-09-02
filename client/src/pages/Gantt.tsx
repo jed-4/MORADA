@@ -2,6 +2,7 @@ import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
+import { MAX_NEST_DEPTH, resolveDisplayParents, buildNormalizedOrder } from "@/lib/scheduleNesting";
 import * as workingDaysLib from "@/lib/workingDays";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,55 +66,6 @@ import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
 const ROW_HEIGHT = 32;
-
-// Given a flat sequence of visible item ids plus a parent lookup, produce a
-// normalized order where every group (parent + its children) is contiguous:
-// each top-level item appears in `flatOrder` sequence, immediately followed by
-// its children (also in `flatOrder` sequence). This guarantees a stray item can
-// never sit between a parent and its children — regardless of drag state — so
-// the mid-drag view always matches what persists after a refresh.
-// Groups are one level deep; any accidental grandchild is flattened to
-// top-level so no visible row is ever dropped.
-function buildNormalizedOrder(
-  flatOrder: string[],
-  parentIdOf: Map<string, string | null | undefined>,
-  collapsedItems: Set<string>,
-): string[] {
-  const visible = new Set(flatOrder);
-  const effParent = (id: string): string | null => {
-    const p = parentIdOf.get(id);
-    if (!p || !visible.has(p)) return null;
-    const pp = parentIdOf.get(p);
-    if (pp && visible.has(pp)) return null; // parent is itself a child → flatten
-    return p;
-  };
-
-  const topLevel: string[] = [];
-  const kidsByParent = new Map<string, string[]>();
-  for (const id of flatOrder) {
-    const p = effParent(id);
-    if (p) {
-      let arr = kidsByParent.get(p);
-      if (!arr) {
-        arr = [];
-        kidsByParent.set(p, arr);
-      }
-      arr.push(id);
-    } else {
-      topLevel.push(id);
-    }
-  }
-
-  const result: string[] = [];
-  for (const pid of topLevel) {
-    result.push(pid);
-    if (!collapsedItems.has(pid)) {
-      const kids = kidsByParent.get(pid);
-      if (kids) for (const k of kids) result.push(k);
-    }
-  }
-  return result;
-}
 
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
@@ -749,15 +701,48 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     }
   }, [sortResetKey]);
 
+  // Drag-to-nest is allowed as long as the result still fits inside
+  // MAX_NEST_DEPTH — the dragged item's own subtree included — and does not
+  // make an item a descendant of itself.
   const canNestItem = (activeId: string, targetId: string): boolean => {
+    if (activeId === targetId) return false;
     const activeItem = allItems.find(i => i.id === activeId);
     const targetItem = allItems.find(i => i.id === targetId);
     if (!activeItem || !targetItem) return false;
-    if (targetItem.parentItemId) return false;
-    if (activeItem.parentItemId) return false;
-    const activeHasChildren = allItems.some(i => i.parentItemId === activeId);
-    if (activeHasChildren) return false;
-    return true;
+
+    const parentOf = new Map<string, string | null>();
+    allItems.forEach(i => parentOf.set(i.id, i.parentItemId ?? null));
+
+    // Depth of the drop target, and a cycle check in the same walk.
+    let targetDepth = 0;
+    let cursor = parentOf.get(targetId) ?? null;
+    const seen = new Set<string>([targetId]);
+    while (cursor && !seen.has(cursor)) {
+      if (cursor === activeId) return false; // target sits inside the dragged subtree
+      seen.add(cursor);
+      targetDepth++;
+      cursor = parentOf.get(cursor) ?? null;
+    }
+
+    // How many levels the dragged item brings with it.
+    const childrenOf = new Map<string, string[]>();
+    allItems.forEach(i => {
+      const pid = i.parentItemId ?? null;
+      if (!pid) return;
+      const arr = childrenOf.get(pid);
+      if (arr) arr.push(i.id);
+      else childrenOf.set(pid, [i.id]);
+    });
+    const subtreeHeight = (id: string, guard: Set<string>): number => {
+      if (guard.has(id)) return 0;
+      guard.add(id);
+      const kids = childrenOf.get(id) || [];
+      let tallest = 0;
+      for (const k of kids) tallest = Math.max(tallest, 1 + subtreeHeight(k, guard));
+      return tallest;
+    };
+
+    return targetDepth + 1 + subtreeHeight(activeId, new Set()) <= MAX_NEST_DEPTH;
   };
   
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -921,8 +906,11 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     enabled: allItems.length > 0,
   });
 
-  // Separate items into parent items and child items, with search and filter applied
-  const { parentItems, childItemsByParent } = useMemo(() => {
+  // Separate items into top-level items and their descendants, with search and
+  // filter applied. `children` is keyed by DISPLAY parent, so it holds every
+  // level of the tree — not just the first — and a row that nests deeper than
+  // MAX_NEST_DEPTH is clamped rather than dropped.
+  const { parentItems, childItemsByParent, itemDepth } = useMemo(() => {
     const parents: ScheduleItem[] = [];
     const children: Record<string, ScheduleItem[]> = {};
 
@@ -990,16 +978,24 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       });
     }
 
-    const validItemIds = new Set(filteredItems.map(i => i.id));
+    const parentIdOfFiltered = new Map<string, string | null | undefined>();
+    filteredItems.forEach(i => parentIdOfFiltered.set(i.id, i.parentItemId ?? null));
+    const { displayParentOf, depthOf } = resolveDisplayParents(
+      filteredItems.map(i => i.id),
+      parentIdOfFiltered,
+    );
 
     filteredItems.forEach(item => {
-      if (item.parentItemId && validItemIds.has(item.parentItemId)) {
-        if (!children[item.parentItemId]) {
-          children[item.parentItemId] = [];
+      const displayParent = displayParentOf.get(item.id) ?? null;
+      if (displayParent) {
+        if (!children[displayParent]) {
+          children[displayParent] = [];
         }
-        children[item.parentItemId].push(item);
+        children[displayParent].push(item);
       } else {
-        parents.push({ ...item, parentItemId: item.parentItemId && !validItemIds.has(item.parentItemId) ? null : item.parentItemId });
+        // A parent that the filters removed leaves its child at top level; blank
+        // the stale link so downstream depth checks agree with what is drawn.
+        parents.push({ ...item, parentItemId: null });
       }
     });
 
@@ -1028,19 +1024,21 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       });
     });
 
-    return { parentItems: parents, childItemsByParent: children };
+    return { parentItems: parents, childItemsByParent: children, itemDepth: depthOf };
   }, [allItems, searchQuery, filters]);
 
   // Create flattened list of item IDs for SortableContext (sorted by date initially)
   const defaultItemIds = useMemo(() => {
     const ids: string[] = [];
-    parentItems.forEach(parent => {
-      ids.push(parent.id);
-      if (!collapsedItems.has(parent.id)) {
-        const children = childItemsByParent[parent.id] || [];
-        children.forEach(child => ids.push(child.id));
-      }
-    });
+    const seen = new Set<string>();
+    const walk = (item: ScheduleItem) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      ids.push(item.id);
+      if (collapsedItems.has(item.id)) return;
+      (childItemsByParent[item.id] || []).forEach(walk);
+    };
+    parentItems.forEach(walk);
     return ids;
   }, [parentItems, childItemsByParent, collapsedItems]);
 
@@ -1451,20 +1449,38 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return new Date(s.substring(0, 10) + 'T00:00:00');
   };
 
+  // A group bar spans everything underneath it. With three levels that has to
+  // reach grandchildren too: a phase whose items each hold sub-items would
+  // otherwise draw a bar that stops short of its own work.
+  const descendantsOf = (item: ScheduleItem): ScheduleItem[] => {
+    const out: ScheduleItem[] = [];
+    const seen = new Set<string>([item.id]);
+    const walk = (id: string) => {
+      for (const child of childItemsByParent[id] || []) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        out.push(child);
+        walk(child.id);
+      }
+    };
+    walk(item.id);
+    return out;
+  };
+
   const getEffectiveDates = (parentItem: ScheduleItem) => {
-    const children = childItemsByParent[parentItem.id] || [];
-    
-    if (children.length === 0) {
+    const descendants = descendantsOf(parentItem);
+
+    if (descendants.length === 0) {
       // No children, use parent's own dates
       return {
         startDate: parseLocalMidnight(parentItem.startDate as any),
         endDate: parseLocalMidnight(parentItem.endDate as any),
       };
     }
-    
-    // Get earliest start and latest end from children
+
+    // Get earliest start and latest end from every descendant.
     // Parse as local midnight to avoid UTC timezone shifts causing off-by-one
-    const childDates = children.flatMap(child => [
+    const childDates = descendants.flatMap(child => [
       parseLocalMidnight(child.startDate as any),
       parseLocalMidnight(child.endDate as any)
     ]);
@@ -2864,9 +2880,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           {/* Task rows */}
           <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto pb-20">
             {orderedItems.map((item, idx) => {
-              const isParent = !item.parentItemId;
+              // `depth` — not "does it have a parent" — decides how a row is
+              // drawn, so the second and third levels both get a chevron and an
+              // indent of their own instead of every non-root row looking alike.
+              const depth = itemDepth.get(item.id) ?? (item.parentItemId ? 1 : 0);
+              const isParent = depth === 0;
               const childItems = childItemsByParent[item.id] || [];
-              const hasChildren = isParent && childItems.length > 0;
+              const hasChildren = childItems.length > 0;
               const isCollapsed = collapsedItems.has(item.id);
 
               return (
@@ -2889,8 +2909,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                       </div>
                       )}
-                      {!isParent && <div className="w-6 flex-shrink-0" />}
-                      {isParent && childItems.length > 0 && (
+                      {depth > 0 && <div style={{ width: depth * 12 }} className="flex-shrink-0" />}
+                      {!hasChildren && <div className="w-6 flex-shrink-0" />}
+                      {hasChildren && (
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleCollapse(item.id); }}
                           className="p-1 hover:bg-accent rounded flex-shrink-0"
@@ -3002,10 +3023,11 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       );
 
                       if (colId === 'completion') {
-                        const percent = isParent && childItems.length > 0
-                          ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length)
+                        const rollupSource = hasChildren ? descendantsOf(item) : [];
+                        const percent = rollupSource.length > 0
+                          ? Math.round(rollupSource.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / rollupSource.length)
                           : (item.progressPercent || 0);
-                        const isReadOnly = isParent && childItems.length > 0;
+                        const isReadOnly = hasChildren;
                         return (
                           <div
                             key="completion"
@@ -3408,7 +3430,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 const dragItem = allItems.find(item => item.id === dragging.id);
                 if (!dragItem) return null;
                 
-                const isParentWithChildren = !dragItem.parentItemId && (childItemsByParent[dragItem.id]?.length > 0);
+                const isParentWithChildren = (childItemsByParent[dragItem.id]?.length ?? 0) > 0;
                 const effectiveDates = isParentWithChildren ? getEffectiveDates(dragItem) : { startDate: parseLocalMidnight(dragItem.startDate as any), endDate: parseLocalMidnight(dragItem.endDate as any) };
                 const originalStart = getPosition(effectiveDates.startDate);
                 const originalDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
@@ -3449,10 +3471,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               })()}
               
               {orderedItems.map((item) => {
-                const isParent = !item.parentItemId;
+                const depth = itemDepth.get(item.id) ?? (item.parentItemId ? 1 : 0);
+                const isParent = depth === 0;
                 const childItems = childItemsByParent[item.id] || [];
-                const hasChildren = isParent && childItems.length > 0;
-                const isChild = !!item.parentItemId;
+                // A mid-level item with sub-items is a group bar too, so it gets
+                // the thin rolled-up bar rather than a solid task bar.
+                const hasChildren = childItems.length > 0;
+                const isChild = depth > 0;
 
                 const dates = hasChildren ? getEffectiveDates(item) : { startDate: parseLocalMidnight(item.startDate as any), endDate: parseLocalMidnight(item.endDate as any) };
                 const barStart = getPosition(dates.startDate);
@@ -3466,7 +3491,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 const displayProgress = progressDrag?.itemId === item.id 
                   ? progressDrag.currentProgress 
                   : hasChildren 
-                    ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / (childItems.length || 1))
+                    ? (() => {
+                        const d = descendantsOf(item);
+                        return Math.round(d.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / (d.length || 1));
+                      })()
                     : (item.progressPercent ?? 0);
 
                 return (
