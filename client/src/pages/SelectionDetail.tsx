@@ -2039,7 +2039,14 @@ export default function SelectionDetail() {
                               Client selected
                             </Badge>
                           ) : null}
-                          {isAdminUser && (
+                          {/* Was `isAdminUser` alone, which hid the whole menu —
+                              and with it the only Approve control in the DEFAULT
+                              view — from a site manager who actually holds
+                              `projects.selections:approve`. The table view had
+                              been checking the permission all along; grid never
+                              did, which is a large part of why `approvedAt` is
+                              unset on every option in production. */}
+                          {(isAdminUser || canApproveSelections) && (
                             <AlertDialog>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -2059,15 +2066,16 @@ export default function SelectionDetail() {
                                     <Eye className="w-4 h-4 mr-2" />
                                     View
                                   </DropdownMenuItem>
-                                  {!isApproved && (
+                                  {canApproveSelections && !isApproved && (
                                     <DropdownMenuItem
                                       onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                                      disabled={approveMutation.isPending}
                                     >
                                       <CheckCircle className="w-4 h-4 mr-2" />
                                       Approve
                                     </DropdownMenuItem>
                                   )}
-                                  {!isLocked && (
+                                  {isAdminUser && !isLocked && (
                                     <DropdownMenuItem
                                       onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
                                     >
@@ -2075,7 +2083,7 @@ export default function SelectionDetail() {
                                       Edit
                                     </DropdownMenuItem>
                                   )}
-                                  {isApproved && (
+                                  {canApproveSelections && isApproved && (
                                     <AlertDialogTrigger asChild>
                                       <DropdownMenuItem
                                         onSelect={(e) => e.preventDefault()}
@@ -2086,21 +2094,28 @@ export default function SelectionDetail() {
                                       </DropdownMenuItem>
                                     </AlertDialogTrigger>
                                   )}
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
-                                    disabled={saveToLibraryMutation.isPending}
-                                  >
-                                    <BookMarked className="w-4 h-4 mr-2" />
-                                    Save to Product Library
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
-                                    className="text-destructive"
-                                    disabled={isLocked}
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
+                                  {/* Editing the catalogue and deleting an option
+                                      are not approval rights — they stay on
+                                      isAdminUser, unchanged. */}
+                                  {isAdminUser && (
+                                    <>
+                                      <DropdownMenuItem
+                                        onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
+                                        disabled={saveToLibraryMutation.isPending}
+                                      >
+                                        <BookMarked className="w-4 h-4 mr-2" />
+                                        Save to Product Library
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
+                                        className="text-destructive"
+                                        disabled={isLocked}
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                               <AlertDialogContent onClick={(e) => e.stopPropagation()}>
@@ -2158,6 +2173,37 @@ export default function SelectionDetail() {
                             })()}
                           </div>
                         </div>
+                        {/* Approve, promoted out of the hover-only kebab.
+                            `approvedAt` is what the server's visibility rules
+                            actually gate on (server/selectionVisibility.ts), and
+                            the ONLY control in the product that writes it used to
+                            be a menu item you had to hover the right card to
+                            find.
+
+                            Shown on the client's pick when there is one. When
+                            nothing has been picked at all it shows on every
+                            option, because that is the state almost every
+                            production selection is actually in — gating purely on
+                            `isSelectedByClient` would leave the builder with no
+                            visible way to approve anything. Once a decision
+                            exists, the other cards fall back to the kebab. */}
+                        {canApproveSelections && !isApproved &&
+                          (option.isSelectedByClient || !hasDecision) && (
+                          <Button
+                            size="sm"
+                            className="mt-2 w-full h-7 text-xs"
+                            onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                            disabled={approveMutation.isPending}
+                            data-testid={`button-approve-option-${option.id}`}
+                          >
+                            {approveMutation.isPending ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                            )}
+                            Approve
+                          </Button>
+                        )}
                       </CardContent>
                     </Card>
                   );
