@@ -121,9 +121,8 @@ export async function extractSkusForBill(
 
   let text = "";
   try {
-    const { ObjectStorageService } = await import("../replit_integrations/object_storage/objectStorage");
-    const file = await new ObjectStorageService().getObjectEntityFile(first.objectPath);
-    const [buffer] = await file.download();
+    const { objectStorage } = await import("../objectStorage");
+    const buffer = await objectStorage.getObjectBuffer(first.objectPath);
     text = String(first.mimeType).includes("pdf") || /\.pdf$/i.test(first.filename ?? "")
       ? await pdfToText(buffer)
       : "";

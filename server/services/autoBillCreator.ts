@@ -1,8 +1,7 @@
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
 import type { InsertBill } from "@shared/schema";
-import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
-import { randomUUID } from "crypto";
+import { objectStorage } from "../objectStorage";
 
 export interface AutoBillResult {
   success: boolean;
@@ -62,40 +61,44 @@ export class AutoBillCreatorService {
     }
   }
 
+  /**
+   * Writes one email attachment to object storage.
+   *
+   * This used to reach past the service to the raw storage client and
+   * re-implement key derivation inline — splitting PRIVATE_OBJECT_DIR into a
+   * bucket and prefix by hand, then building the returned path separately. The
+   * two had to agree, and nothing enforced that they did. It now goes through
+   * the same uploadObjectEntity() every other upload path uses, so the key
+   * layout and the returned path come from one place.
+   *
+   * Keeping the file extension on the key preserves the previous behaviour —
+   * the AI bill reader sniffs PDF vs image from the stored path.
+   */
   private async uploadAttachment(
     fileContent: Buffer | string,
     fileName: string,
     companyId: string
   ): Promise<{ objectPath: string; mimeType: string } | null> {
-    const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
-    if (!privateDir) return null;
+    if (!process.env.PRIVATE_OBJECT_DIR) return null;
 
     const fileBuffer = Buffer.isBuffer(fileContent)
       ? fileContent
       : Buffer.from(fileContent as string, "base64");
 
-    const dirParts = privateDir.replace(/^\//, "").split("/");
-    const bucketName = dirParts[0];
-    const dirPrefix = dirParts.slice(1).join("/");
-    const objectId = randomUUID();
     const ext = fileName.split(".").pop()?.toLowerCase() || "";
-    const objectNameSuffix = ext ? `${objectId}.${ext}` : objectId;
-    const objectName = dirPrefix
-      ? `${dirPrefix}/uploads/${objectNameSuffix}`
-      : `uploads/${objectNameSuffix}`;
     const contentType =
       ext === "pdf" ? "application/pdf" :
       ext === "png" ? "image/png" :
       ["jpg", "jpeg"].includes(ext) ? "image/jpeg" : "application/octet-stream";
 
-    await objectStorageClient.bucket(bucketName).file(objectName).save(fileBuffer, {
+    const objectPath = await objectStorage.uploadObjectEntity(
+      fileBuffer,
       contentType,
-    });
+      companyId,
+      ext || undefined,
+    );
 
-    return {
-      objectPath: `/objects/company/${companyId}/uploads/${objectNameSuffix}`,
-      mimeType: contentType,
-    };
+    return { objectPath, mimeType: contentType };
   }
 
   private async createBillFromEmail(

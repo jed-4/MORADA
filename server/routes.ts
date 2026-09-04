@@ -14,7 +14,7 @@ import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServic
 import { renderReminderText } from "@shared/rfqReminders";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
-import { ObjectStorageService } from "./replit_integrations/object_storage";
+import { ObjectStorageService } from "./objectStorage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -415,7 +415,7 @@ async function pushBillAttachmentsToXero(
   if (raw.length === 0) return;
 
   // Lazy-import to avoid a circular at module-load time.
-  const { ObjectStorageService } = await import("./replit_integrations/object_storage");
+  const { ObjectStorageService } = await import("./objectStorage");
   const oss = new ObjectStorageService();
 
   let existingNames = new Set<string>();
@@ -436,8 +436,8 @@ async function pushBillAttachmentsToXero(
 
     // Object paths may have been stored either as the raw `/objects/...`
     // form or the company-scoped `/objects/company/<id>/objects/...` form
-    // emitted by uploadObjectEntity. Normalise to the raw form expected by
-    // getObjectEntityFile.
+    // emitted by uploadObjectEntity. Normalise to the raw form; the service
+    // strips the company segment too, so this is belt and braces.
     let normalised = objectPath;
     const m = normalised.match(/^\/objects\/company\/[^/]+(\/.+)$/);
     if (m && m[1]) normalised = `/objects${m[1].startsWith("/") ? m[1] : `/${m[1]}`}`;
@@ -453,14 +453,13 @@ async function pushBillAttachmentsToXero(
     if (existingNames.has(filename)) continue;
 
     try {
-      const file = await oss.getObjectEntityFile(normalised);
-      const [metadata] = await file.getMetadata();
+      const metadata = await oss.getObjectMetadata(normalised);
       // Defense in depth: when an object has a stamped companyId in its
       // metadata, refuse to push it to Xero unless it matches the bill's
       // company. Objects uploaded via the legacy presigned-URL flow may not
       // have this stamp — those are still permitted (they live under our
-      // PRIVATE_OBJECT_DIR which getObjectEntityFile already enforces).
-      const objCompanyId = (metadata?.metadata as any)?.companyId as string | undefined;
+      // PRIVATE_OBJECT_DIR, which the key prefix already enforces).
+      const objCompanyId = metadata.custom?.companyId;
       if (companyId && objCompanyId && objCompanyId !== companyId) {
         console.warn(
           `[pushBillAttachmentsToXero] skipping ${filename} — object companyId ${objCompanyId} does not match bill company ${companyId}`,
@@ -468,9 +467,9 @@ async function pushBillAttachmentsToXero(
         continue;
       }
       const contentType = (typeof entry === "object" && entry?.mimeType)
-        || (metadata?.contentType as string | undefined)
+        || metadata.contentType
         || "application/octet-stream";
-      const [buffer] = await file.download();
+      const buffer = await oss.getObjectBuffer(normalised);
       await xeroService.uploadInvoiceAttachment(
         connectionId,
         xeroInvoiceId,
@@ -1855,14 +1854,12 @@ async function objectPathToDataUri(
   if (cache.has(filePath)) return cache.get(filePath)!;
   let result: string | null = null;
   try {
-    const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
-    const svc = new ObjectStorageService();
+    const { objectStorage: svc } = await import("./objectStorage");
     const normalised = filePath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
-    const file = await svc.getObjectEntityFile(normalised);
-    const [meta] = await file.getMetadata();
+    const meta = await svc.getObjectMetadata(normalised);
     const size = Number(meta.size || 0);
     if (size > 0 && size <= 4 * 1024 * 1024) {
-      const [buf] = await file.download();
+      const buf = await svc.getObjectBuffer(normalised);
       result = `data:${meta.contentType || "image/jpeg"};base64,${buf.toString("base64")}`;
     }
   } catch {
@@ -11248,16 +11245,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Missing required field: name" });
       }
 
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      const rawObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
-      
       // NOTE: this prefix is NOT access control, despite how it reads. The
       // bucket is flat and every consumer strips the segment back off before
       // the storage lookup, so a caller can put their own company id in front
       // of another tenant's UUID and the path still resolves. Enforcement comes
       // from the signed grant below (and, for the serving route, from the
       // bucket partitioning tracked as PR2 phase 2).
-      const objectPath = `/objects/company/${companyId}${rawObjectPath.replace('/objects', '')}`;
+      //
+      // The service now returns the path alongside the URL. It used to be
+      // reverse-engineered out of the signed URL by string-matching the
+      // https://storage.googleapis.com host, which does not survive a change
+      // of provider.
+      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUploadURL(
+        companyId,
+        contentType,
+      );
 
       // Binds this exact path to this exact company, unforgeably. Consumers
       // that have no row to authorise against yet — bill OCR runs before the
@@ -11276,8 +11278,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Server-side file upload — browser sends the raw file; server writes to GCS.
-  // This avoids the CORS issues of direct-to-GCS signed-URL uploads.
+  // Server-side file upload — browser sends the raw file; server writes to
+  // object storage. This avoids the CORS issues of direct-to-bucket uploads,
+  // and is the path the client actually takes (see client/src/hooks/use-upload.ts).
   const messageFileUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
@@ -11318,7 +11321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!fileData || !fileName) {
         return res.status(400).json({ error: "fileData and fileName are required" });
       }
-      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const { ObjectStorageService } = await import("./objectStorage");
       const objectStorage = new ObjectStorageService();
       let base64Body = fileData as string;
       let resolvedMime = mimeType || "image/jpeg";
@@ -11354,8 +11357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Extract the actual object path after company prefix
       const pathAfterCompany = req.path.replace(`/objects/company/${companyId}`, '/objects');
-      const objectFile = await objectStorageService.getObjectEntityFile(pathAfterCompany);
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(pathAfterCompany, res);
     } catch (error: any) {
       console.error("Error serving object:", error);
       if (error.name === "ObjectNotFoundError") {
@@ -15379,7 +15381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!fileData || !fileName) {
         return res.status(400).json({ error: "fileData and fileName are required" });
       }
-      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const { ObjectStorageService } = await import("./objectStorage");
       const objectStorage = new ObjectStorageService();
       let base64Body = fileData as string;
       let resolvedMime = mimeType || "application/octet-stream";
@@ -15435,10 +15437,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Best-effort object storage cleanup before DB delete
       if (attachmentRecord.filePath) {
         try {
-          const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
-          const objectStorage = new ObjectStorageService();
-          const file = await objectStorage.getObjectEntityFile(attachmentRecord.filePath);
-          await file.delete();
+          const { objectStorage } = await import("./objectStorage");
+          await objectStorage.deleteObject(attachmentRecord.filePath);
         } catch (ossErr) {
           console.warn("[deleteOptionAttachment] Object storage deletion skipped:", (ossErr as any)?.message);
         }
@@ -15781,7 +15781,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "urls (string array) is required" });
       }
       const { downloadImage } = await import("./services/productScraper");
-      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const { ObjectStorageService } = await import("./objectStorage");
       const objectStorage = new ObjectStorageService();
       const existing = await storage.getOptionAttachments(req.params.id);
       let sortOrder = existing.length;
@@ -18267,8 +18267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // /objects/uploads/<id>) — strip the company segment for the storage
       // lookup, which uses the raw form
       const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
-      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(normalisedPath, res);
     } catch (error: any) {
       if (error?.name === "ObjectNotFoundError") {
         return res.status(404).json({ error: "Not found" });
@@ -18555,8 +18554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // /objects/uploads/<id>) — strip the company segment for the storage
       // lookup, which uses the raw form
       const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
-      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(normalisedPath, res);
     } catch (error: any) {
       if (error?.name === "ObjectNotFoundError") {
         return res.status(404).json({ error: "Not found" });
@@ -18694,13 +18692,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // the bucket is flat.
       const stored = urls[index];
       const objectPath = stored.replace(/^\/objects\/company\/[^/]+/, "/objects");
-      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-
       const name = rfq.attachmentFileNames?.[index];
       if (name) {
         res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/"/g, "")}"`);
       }
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(objectPath, res);
     } catch (error: any) {
       console.error("Error serving portal attachment:", error);
       if (error?.name === "ObjectNotFoundError") {
@@ -21755,11 +21751,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stored paths carry a /company/<id> segment for the authenticated route;
       // the bucket itself is flat, so strip it before the lookup.
       const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
-      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
       if (attachment.name) {
         res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
       }
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(normalised, res);
     } catch (error: any) {
       if (error?.name === "ObjectNotFoundError") {
         return res.status(404).json({ error: "Attachment not found" });
@@ -25505,9 +25500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } | null = null;
     try {
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const { ObjectStorageService } = await import(
-        "./replit_integrations/object_storage/objectStorage"
-      );
+      const { ObjectStorageService } = await import("./objectStorage");
 
       const { fileData, fileName } = req.body || {};
 
@@ -25611,16 +25604,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storagePath = `/objects${remainder}`;
       }
 
-      const { ObjectStorageService } = await import(
-        "./replit_integrations/object_storage/objectStorage"
-      );
+      const { ObjectStorageService } = await import("./objectStorage");
       const objectStorage = new ObjectStorageService();
 
       let fileBuffer: Buffer;
       try {
-        const objectFile = await objectStorage.getObjectEntityFile(storagePath);
-        const [downloaded] = await objectFile.download();
-        fileBuffer = downloaded as Buffer;
+        fileBuffer = await objectStorage.getObjectBuffer(storagePath);
       } catch (dlErr: any) {
         return res.status(404).json({ error: "File not found in storage" });
       }
@@ -25680,7 +25669,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         reason?: string;
       }> = [];
 
-      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const { ObjectStorageService } = await import("./objectStorage");
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
       const { resolveSupplierId } = await import("./services/supplierResolver");
       const objectStorage = new ObjectStorageService();
@@ -25726,16 +25715,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!objectPath) { results.push({ billId, billNumber, status: "skipped", reason: "No PDF or image attachment" }); continue; }
 
-        // Strip /objects/company/<cid> prefix for getObjectEntityFile
+        // Strip /objects/company/<cid> prefix before the storage lookup
         let storagePath = objectPath;
         const m = storagePath.match(/^\/objects\/company\/[^/]+(\/.*)?$/);
         if (m) storagePath = `/objects${m[1] || "/"}`;
 
         let fileBuffer: Buffer;
         try {
-          const objectFile = await objectStorage.getObjectEntityFile(storagePath);
-          const [downloaded] = await objectFile.download();
-          fileBuffer = downloaded as Buffer;
+          fileBuffer = await objectStorage.getObjectBuffer(storagePath);
         } catch (dlErr: any) {
           results.push({ billId, billNumber, status: "failed", reason: `Couldn't download the attachment${dlErr?.message ? `: ${dlErr.message}` : ""}` });
           continue;
@@ -25973,7 +25960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No processable attachment found (PDF or image)" });
       }
 
-      // Strip /objects/company/<cid> prefix to get the path for getObjectEntityFile
+      // Strip /objects/company/<cid> prefix before the storage lookup
       let storagePath = objectPath;
       const companyPrefixMatch = storagePath.match(/^\/objects\/company\/[^/]+(\/.*)?$/);
       if (companyPrefixMatch) {
@@ -25981,16 +25968,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storagePath = `/objects${remainder}`;
       }
 
-      const { ObjectStorageService } = await import(
-        "./replit_integrations/object_storage/objectStorage"
-      );
+      const { ObjectStorageService } = await import("./objectStorage");
       const objectStorage = new ObjectStorageService();
 
       let fileBuffer: Buffer;
       try {
-        const objectFile = await objectStorage.getObjectEntityFile(storagePath);
-        const [downloaded] = await objectFile.download();
-        fileBuffer = downloaded as Buffer;
+        fileBuffer = await objectStorage.getObjectBuffer(storagePath);
       } catch (dlErr: any) {
         console.error("[ocr-from-attachment] Download failed:", dlErr.message);
         return res.status(404).json({ error: "Attachment file not found in storage" });
@@ -41538,7 +41521,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       };
 
       // Object storage client for pulling Xero attachments down into BuildPro.
-      const { ObjectStorageService } = await import("./replit_integrations/object_storage");
+      const { ObjectStorageService } = await import("./objectStorage");
       const oss = new ObjectStorageService();
 
       // Projects touched by this import — their budgets are recalculated once at
@@ -44273,8 +44256,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       // Stored paths are /objects/company/<cid>/uploads/<id>; the storage
       // lookup uses the raw form, so strip the company segment.
       const normalisedPath = (doc.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
-      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
-      await objectStorageService.downloadObject(objectFile, res);
+      await objectStorageService.downloadToResponse(normalisedPath, res);
     } catch (error: any) {
       if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
       console.error("Portal review document error:", error);
