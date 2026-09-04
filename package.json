@@ -12,6 +12,9 @@
     "check:tenancy": "node scripts/check-route-tenancy.mjs",
     "check:tenancy:update": "node scripts/check-route-tenancy.mjs --update"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "@aws-sdk/client-s3": "^3.1127.0",
