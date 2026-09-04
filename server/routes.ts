@@ -2074,7 +2074,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   // Compatibility bridge: sync Passport user to legacy session fields
-  // This allows old routes checking req.session.userId to work with Replit Auth
+  // This allows old routes checking req.session.userId to keep working
   app.use('/api', ensureLegacySessionFields);
 
   // Legacy uploaded files. Nothing writes to this tree any more (all three
