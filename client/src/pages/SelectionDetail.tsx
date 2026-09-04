@@ -19,7 +19,14 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
-import { SelectionStatusPill, getDerivedStatus, isDecided } from "@/components/selections/selectionHelpers";
+import {
+  SelectionStatusPill,
+  RestrictedNotice,
+  RestrictedPill,
+  getDerivedStatus,
+  isDecided,
+  isRestricted,
+} from "@/components/selections/selectionHelpers";
 import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import { 
   insertSelectionOptionSchema, 
@@ -1104,12 +1111,19 @@ export default function SelectionDetail() {
     });
   const hasDecision = (selection?.options || []).some((o) => o.isSelectedByClient || o.approvedAt);
 
+  // A withheld stub arrives without description/deadline/allowance/flags, so
+  // the form's values for those are empty defaults, not the stored data.
+  // Saving would overwrite the real values with blanks. Refuse at the source.
+  const isWithheldStub = () => (selection as any)?.restricted === true;
+
   const handleSaveSelection = () => {
+    if (isWithheldStub()) return;
     const data = selectionForm.getValues();
     updateSelectionMutation.mutate(data);
   };
 
   const handleSaveDetails = () => {
+    if (isWithheldStub()) return;
     const data = selectionForm.getValues();
     updateSelectionMutation.mutate(data, {
       onSuccess: () => setIsEditingDetails(false),
@@ -1180,6 +1194,13 @@ export default function SelectionDetail() {
     );
   }
 
+  // Withheld by permission: the server sent a name-only stub with `options: []`
+  // because this viewer lacks `projects.selections.pending`. See
+  // server/selectionVisibility.ts. Every photo hangs off an option, so the page
+  // has nothing to show — it must explain that rather than offer an empty
+  // "add your first product" state for options that already exist.
+  const restricted = isRestricted(selection as any);
+
   const currentStatus = getStatusInfo(selection.status);
   const StatusIcon = currentStatus.icon;
 
@@ -1248,34 +1269,48 @@ export default function SelectionDetail() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
-              <Settings className="w-4 h-4 mr-2" />
-              Edit Details
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setSendDialogOpen(true)} data-testid="menu-send-to-client">
-              <Send className="w-4 h-4 mr-2" />
-              Send to Client
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleCopyPortalLink}>
-              <LinkIcon className="w-4 h-4 mr-2" />
-              {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowQrModal(true)}>
-              <QrCode className="w-4 h-4 mr-2" />
-              Show QR Code
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={(e) => e.preventDefault()}
-              disabled={isExportingPdf}
-              onClick={() => exportPdf(`/api/selections/${id}/pdf`, "selection.pdf")}
-            >
-              {isExportingPdf ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Package className="w-4 h-4 mr-2" />
-              )}
-              {isExportingPdf ? "Exporting…" : "Export PDF"}
-            </DropdownMenuItem>
+            {/* Every item here is unsafe against a withheld stub: the edit form
+                is populated from fields the server did not send, so saving it
+                would blank the description, deadline and allowance and store
+                the synthetic "awaiting_approval" status; the portal link, QR
+                and PDF all need a portalToken that was stripped. */}
+            {restricted ? (
+              <DropdownMenuItem disabled>
+                <Lock className="w-4 h-4 mr-2" />
+                Hidden — no permission
+              </DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Edit Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSendDialogOpen(true)} data-testid="menu-send-to-client">
+                  <Send className="w-4 h-4 mr-2" />
+                  Send to Client
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCopyPortalLink}>
+                  <LinkIcon className="w-4 h-4 mr-2" />
+                  {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowQrModal(true)}>
+                  <QrCode className="w-4 h-4 mr-2" />
+                  Show QR Code
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => e.preventDefault()}
+                  disabled={isExportingPdf}
+                  onClick={() => exportPdf(`/api/selections/${id}/pdf`, "selection.pdf")}
+                >
+                  {isExportingPdf ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Package className="w-4 h-4 mr-2" />
+                  )}
+                  {isExportingPdf ? "Exporting…" : "Export PDF"}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -1293,7 +1328,7 @@ export default function SelectionDetail() {
                 {/* Status */}
                 <div>
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
-                  <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
+                  {restricted ? <RestrictedPill /> : <SelectionStatusPill derived={getDerivedStatus(selection as any)} />}
                 </div>
 
                 {/* Category */}
@@ -1893,10 +1928,10 @@ export default function SelectionDetail() {
                   </div>
                 </div>
 
-                {/* Add option */}
+                {/* Add option — withheld selections are read-only here */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" data-testid="button-add-option">
+                    <Button size="sm" className={cn(restricted && "hidden")} data-testid="button-add-option">
                       <Plus className="w-3.5 h-3.5 mr-1" />
                       Add Product
                       <ChevronDown className="w-3 h-3 ml-1" />
@@ -1920,7 +1955,10 @@ export default function SelectionDetail() {
               </div>
             </div>
             
-            {filteredOptions.length === 0 ? (
+            {restricted ? (
+              /* Not "no options" — the options exist and were withheld. */
+              <RestrictedNotice className="py-4" />
+            ) : filteredOptions.length === 0 ? (
               <div className="text-center py-12 border rounded-lg bg-muted/20">
                 <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-lg font-medium mb-2">No options yet</h3>

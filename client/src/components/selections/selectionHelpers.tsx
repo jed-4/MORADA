@@ -3,8 +3,9 @@
 // pages/Selections.tsx so the page owns data/orchestration only.
 
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, Lock } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 import type { SelectionWithOptions, SelectionOption, OptionAttachment } from "@shared/schema";
 
@@ -24,6 +25,65 @@ export const CATEGORY_DOT_COLOURS: Record<string, string> = {
 export function getCategoryColour(category?: string | null): string {
   if (!category) return "#94a3b8";
   return CATEGORY_DOT_COLOURS[category] ?? "#94a3b8";
+}
+
+// --- Withheld selections -----------------------------------------------------
+// A viewer without `projects.selections.pending` gets unapproved selections as
+// a name-only stub (server/selectionVisibility.ts): the options array is
+// emptied, and because every photo hangs off an option via `option_attachments`
+// the images disappear with them. Without an explicit treatment the row renders
+// as a nameless grey box and reads as "the images are broken" — which is
+// exactly how it was reported. Say what happened and which permission fixes it.
+
+export const RESTRICTED_PERMISSION_NAME = "Selections \u2014 not yet approved";
+export const RESTRICTED_HINT = `Options and photos are hidden until this selection is approved. Ask an admin for the \u201c${RESTRICTED_PERMISSION_NAME}\u201d permission to see them now.`;
+
+export function isRestricted(sel: SelectionWithOptions | null | undefined): boolean {
+  return (sel as any)?.restricted === true;
+}
+
+/** Muted lock pill. Not a status of the selection — a state of your view. */
+export function RestrictedPill({ className }: { className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant="secondary"
+          className={cn(
+            // Outlined on the page background rather than a tint: this pill sits
+            // both on a white list row AND on the card's muted lock panel, and a
+            // `bg-secondary` fill is invisible against the latter.
+            "gap-1 rounded-[5px] border border-border bg-background h-[18px] px-[7px] py-0 text-data font-medium text-muted-foreground",
+            className,
+          )}
+          data-testid="pill-restricted"
+        >
+          <Lock className="w-2.5 h-2.5" />
+          Restricted
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="left" className="max-w-[260px]">{RESTRICTED_HINT}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Full-width explainer for the surfaces that have room for one. */
+export function RestrictedNotice({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2.5 rounded-lg border border-dashed border-border bg-muted/30 p-3",
+        className,
+      )}
+      data-testid="notice-restricted"
+    >
+      <Lock className="w-4 h-4 mt-px shrink-0 text-muted-foreground/70" />
+      <div className="min-w-0">
+        <div className="text-[12px] font-medium text-foreground">Options hidden</div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{RESTRICTED_HINT}</p>
+      </div>
+    </div>
+  );
 }
 
 export function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
@@ -125,19 +185,26 @@ export function SelectionThumbnail({
   category,
   attachment,
   size = 32,
+  locked = false,
 }: {
   category?: string | null;
   attachment?: OptionAttachment;
   size?: number;
+  /** Withheld by permission — a padlock, not the generic "no photo" icon. */
+  locked?: boolean;
 }) {
   const colour = getCategoryColour(category);
-  const isImage = attachment && attachment.fileType?.toLowerCase() === "image";
+  const isImage = !locked && attachment && attachment.fileType?.toLowerCase() === "image";
   return (
     <div
       className="rounded-md overflow-hidden flex items-center justify-center shrink-0"
-      style={{ width: size, height: size, backgroundColor: `${colour}26` }}
+      style={{ width: size, height: size, backgroundColor: locked ? undefined : `${colour}26` }}
     >
-      {isImage && attachment?.filePath ? (
+      {locked ? (
+        <div className="w-full h-full flex items-center justify-center bg-muted/70">
+          <Lock className="text-muted-foreground/70" style={{ width: size * 0.36, height: size * 0.36 }} />
+        </div>
+      ) : isImage && attachment?.filePath ? (
         <img
           src={attachment.filePath}
           alt=""
@@ -154,6 +221,9 @@ export function SelectionThumbnail({
 // Image stack for a row/card: the chosen option's photo, or up to three
 // overlapping option thumbnails when nothing is chosen yet.
 export function OptionThumbStack({ selection, size = 48 }: { selection: SelectionWithOptions; size?: number }) {
+  if (isRestricted(selection)) {
+    return <SelectionThumbnail category={selection.category} size={size} locked />;
+  }
   const chosen = getSelectedOption(selection);
   const chosenImg = firstImage(chosen);
   if (chosenImg) {

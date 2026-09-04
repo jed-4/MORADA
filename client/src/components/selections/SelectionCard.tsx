@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Edit3, Copy, Trash2, Eye, Image as ImageIcon, PanelRight } from "lucide-react";
+import { MoreVertical, Edit3, Copy, Trash2, Eye, Image as ImageIcon, Lock, PanelRight } from "lucide-react";
 import type { SelectionWithOptions, OptionAttachment } from "@shared/schema";
 import {
   getDerivedStatus,
@@ -19,7 +19,9 @@ import {
   getDeadlineMeta,
   getCategoryColour,
   firstImage,
+  isRestricted,
   BudgetCell,
+  RestrictedPill,
   SelectionStatusPill,
 } from "./selectionHelpers";
 
@@ -41,6 +43,9 @@ export function SelectionCard({
   const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
   const chosen = getSelectedOption(selection);
   const optionCount = selection.options?.length ?? 0;
+  // See SelectionRow: a withheld stub carries no options, so the whole image
+  // area would otherwise be the generic "no photo" placeholder.
+  const restricted = isRestricted(selection);
   const images = (chosen
     ? [firstImage(chosen)]
     : (selection.options ?? []).map((o) => firstImage(o))
@@ -54,7 +59,12 @@ export function SelectionCard({
     >
       {/* Image area */}
       <div className="relative h-36 bg-muted/60 overflow-hidden">
-        {images.length === 0 ? (
+        {restricted ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-muted/70">
+            <Lock className="w-6 h-6 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground/70">Photos hidden</span>
+          </div>
+        ) : images.length === 0 ? (
           <div
             className="w-full h-full flex items-center justify-center"
             style={{ backgroundColor: `${getCategoryColour(selection.category)}1f` }}
@@ -83,7 +93,18 @@ export function SelectionCard({
             ))}
           </div>
         )}
-        <SelectionStatusPill derived={derived} className="absolute top-2 left-2 backdrop-blur-sm" />
+        {/* Positioned wrapper, not `absolute` on the Badge itself: Badge's base
+            class carries `hover-elevate`, and index.css sets `position:
+            relative` on that in a layer that beats Tailwind's `.absolute`. Put
+            the class on the Badge and the pill silently drops into normal flow
+            below the image, where `overflow-hidden` clips it away entirely. */}
+        <div className="absolute top-2 left-2 z-[1]">
+          {restricted ? (
+            <RestrictedPill className="backdrop-blur-sm" />
+          ) : (
+            <SelectionStatusPill derived={derived} className="backdrop-blur-sm" />
+          )}
+        </div>
         {optionCount > 0 && !chosen && (
           <span className="absolute bottom-2 right-2 rounded-full bg-black/55 text-white text-[9.5px] px-2 py-0.5">
             {optionCount} option{optionCount === 1 ? "" : "s"}
@@ -114,13 +135,17 @@ export function SelectionCard({
               <DropdownMenuItem onClick={() => onEdit(selection.id)}>
                 <Edit3 className="w-4 h-4 mr-2" /> Open
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDuplicate(selection.id)}>
-                <Copy className="w-4 h-4 mr-2" /> Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" /> Delete
-              </DropdownMenuItem>
+              {!restricted && (
+                <>
+                  <DropdownMenuItem onClick={() => onDuplicate(selection.id)}>
+                    <Copy className="w-4 h-4 mr-2" /> Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
+                    <Trash2 className="w-4 h-4 mr-2" /> Delete
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
