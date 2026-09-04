@@ -3,6 +3,7 @@ import { randomBytes, createHash, createHmac, timingSafeEqual } from 'crypto';
 import { encryptToken, decryptToken } from '../utils/encryption';
 import type { IStorage } from '../storage';
 import type { User } from '@shared/schema';
+import { buildAppUrl } from '../config/appUrl';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
@@ -113,15 +114,14 @@ export class GoogleOAuthService {
   }
   
   private getRedirectUri(): string {
-    // Hardcoding this made the connect flow impossible to run anywhere but the
-    // deployed Replit app: Google sends the callback to the registered URI, so a
-    // local server never receives it and Google Calendar can't be connected in dev.
-    // Override with GOOGLE_CALENDAR_REDIRECT_URI (e.g.
-    // http://localhost:3001/api/google-calendar/callback), which must also be added
-    // to the OAuth client's authorised redirect URIs in Google Cloud Console.
-    // Unset — including in production — keeps the previous behaviour exactly.
+    // GOOGLE_CALENDAR_REDIRECT_URI still wins, so any environment that already
+    // pins an explicit URI keeps it. The fallback used to be the hardcoded
+    // https://buildpro4.replit.app host, which stops resolving the moment the
+    // app leaves Replit; it now derives from the shared base-URL resolver.
+    // Whichever value applies must also be registered as an authorised
+    // redirect URI in the Google Cloud Console.
     return process.env.GOOGLE_CALENDAR_REDIRECT_URI
-      || 'https://buildpro4.replit.app/api/google-calendar/callback';
+      || buildAppUrl('/api/google-calendar/callback');
   }
   
   generateAuthUrl(userId: string, companyId: string): string {
@@ -586,7 +586,10 @@ export class GoogleOAuthService {
   }
 
   getBillInboxRedirectUri(): string {
-    return 'https://buildpro4.replit.app/api/bill-inbox/callback';
+    // Was hardcoded to https://buildpro4.replit.app with no override at all,
+    // which made connecting a bill inbox impossible anywhere else. Derived
+    // from the shared resolver now; on Replit it produces the same host.
+    return buildAppUrl('/api/bill-inbox/callback');
   }
 
   async getGmailClient(userId: string): Promise<any> {
