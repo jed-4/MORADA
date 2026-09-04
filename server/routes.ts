@@ -194,6 +194,7 @@ import {
   insertPriceListItemSchema,
   insertBillLineItemPriceLinkSchema,
   insertProductSchema,
+  insertProductImageSchema,
   type CircuitContext,
   type InsertContact
 } from "@shared/schema";
@@ -15734,7 +15735,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const productId = Number(req.params.id);
       if (!(await getOwnedProduct(req, res, productId))) return;
-      const image = await storage.createProductImage({ ...req.body, productId });
+      // Same reason as the product routes: req.body went straight to the insert,
+      // so a mis-named field was dropped rather than rejected.
+      const parsed = insertProductImageSchema.omit({ productId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const image = await storage.createProductImage({ ...parsed.data, productId });
       res.status(201).json(image);
     } catch (error) {
       res.status(500).json({ error: "Failed to create product image" });
