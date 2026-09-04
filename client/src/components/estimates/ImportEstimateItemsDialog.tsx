@@ -39,13 +39,34 @@ import {
   FuzzyMatch,
 } from "@shared/import";
 import { useToast } from "@/hooks/use-toast";
-import { EstimateGroup, FieldOption } from "@shared/schema";
+import { EstimateGroup, FieldOption, FieldCategoryWithOptions } from "@shared/schema";
+
+/** Append the imported lines, or replace everything already there. */
+export type ImportMergeMode = "append" | "replace";
 
 interface ImportEstimateItemsDialogProps {
   open: boolean;
   onClose: () => void;
-  estimateId: string;
+  /** Omitted when the caller commits the rows itself via `onCommit`. */
+  estimateId?: string;
   onImportComplete: () => void;
+  /** Heading text; defaults to the estimate wording. */
+  title?: string;
+  /**
+   * Group names to fuzzy-match against. Callers without server-side estimate
+   * groups (estimate templates keep groups as plain strings) pass them here
+   * instead of relying on the /api/estimates/:id/groups fetch.
+   */
+  groupNames?: string[];
+  /**
+   * Commit hook. When present it replaces the POST to the estimate items
+   * import route, and must return how many rows were written.
+   */
+  onCommit?: (items: ImportEstimateItem[], mode: ImportMergeMode) => Promise<number>;
+  /** Offer the Replace / Append choice. Requires `onCommit`. */
+  offerMergeMode?: boolean;
+  /** Row count shown in the "replace" warning. */
+  existingCount?: number;
 }
 
 const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
@@ -56,6 +77,7 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   unitType: "Unit",
   unitCostExTax: "Unit Cost (ex. tax)",
   markupPercent: "Markup",
+  wastagePercent: "Wastage %",
   allowance: "Allowance",
   notes: "Notes",
   costCode: "Cost Code",
@@ -75,6 +97,7 @@ const CORE_MAPPING_FIELDS: (keyof ImportEstimateItem)[] = [
   "unitType",
   "unitCostExTax",
   "markupPercent",
+  "wastagePercent",
   "description"
 ];
 
@@ -83,6 +106,11 @@ export function ImportEstimateItemsDialog({
   onClose,
   estimateId,
   onImportComplete,
+  title,
+  groupNames,
+  onCommit,
+  offerMergeMode = false,
+  existingCount = 0,
 }: ImportEstimateItemsDialogProps) {
   const { toast } = useToast();
   const [fileName, setFileName] = useState<string>("");
@@ -90,6 +118,7 @@ export function ImportEstimateItemsDialog({
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [isImporting, setIsImporting] = useState(false);
+  const [mergeMode, setMergeMode] = useState<ImportMergeMode>("append");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   
@@ -110,7 +139,16 @@ export function ImportEstimateItemsDialog({
   // Fetch existing estimate groups for matching
   const { data: existingGroups = [] } = useQuery<EstimateGroup[]>({
     queryKey: ["/api/estimates", estimateId, "groups"],
-    enabled: open && !!estimateId,
+    enabled: open && !!estimateId && !groupNames,
+  });
+
+  // Fetch the company's configured unit list, so imported units land on a
+  // spelling the unit dropdown actually offers.
+  const { data: unitCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_item.unit"],
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
   // Fetch status options from field settings
@@ -136,9 +174,13 @@ export function ImportEstimateItemsDialog({
   // Build match options for fuzzy matching
   const matchOptions: ImportMatchOptions = useMemo(() => ({
     costCodes,
-    groups: existingGroups.map(g => ({ id: g.id, name: g.name })),
+    // Template groups have no ids — the name doubles as the identity.
+    groups: groupNames
+      ? groupNames.map(n => ({ id: n, name: n }))
+      : existingGroups.map(g => ({ id: g.id, name: g.name })),
     statusOptions: statusOptions.map(s => ({ id: s.id, name: s.name, key: s.key })),
-  }), [costCodes, existingGroups, statusOptions]);
+    unitOptions: unitCategory?.options?.map(o => o.name),
+  }), [costCodes, groupNames, existingGroups, statusOptions, unitCategory]);
 
   // Compute parsed results from original data (no corrections applied during parsing)
   const parsedResults = useMemo(() => {
@@ -341,22 +383,31 @@ export function ImportEstimateItemsDialog({
         }
       });
 
-      const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: validRows }),
-      });
+      // Callers that own their own storage (estimate templates keep line items
+      // in a jsonb blob, not the estimate_items table) commit the rows
+      // themselves; everyone else posts to the estimate import route.
+      let importedCount: number;
+      if (onCommit) {
+        importedCount = await onCommit(validRows as ImportEstimateItem[], mergeMode);
+      } else {
+        const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: validRows }),
+        });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Import failed");
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Import failed");
+        }
+
+        const result = await response.json();
+        importedCount = result.count;
       }
-
-      const result = await response.json();
       
       toast({
         title: "Success",
-        description: `Successfully imported ${result.count} items!`,
+        description: `Successfully imported ${importedCount} items!`,
       });
       
       handleClose();
@@ -374,6 +425,7 @@ export function ImportEstimateItemsDialog({
   };
 
   const handleClose = () => {
+    setMergeMode("append");
     setFileName("");
     setFileData([]);
     setHeaders([]);
@@ -430,7 +482,7 @@ export function ImportEstimateItemsDialog({
         
         {/* Header - Fixed */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle className="text-xl">Import estimation</DialogTitle>
+          <DialogTitle className="text-xl">{title ?? "Import estimation"}</DialogTitle>
         </DialogHeader>
 
         {/* Upload State */}
@@ -762,6 +814,49 @@ export function ImportEstimateItemsDialog({
               </div>
             )}
             
+            {/* Replace vs append — only for callers holding their own rows */}
+            {offerMergeMode && (
+              <div className="px-6 pb-2 pt-1 border-t border-border">
+                <p className="text-sm font-medium mb-2 mt-3">Existing items</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-start gap-2 cursor-pointer" data-testid="radio-import-append">
+                    <input
+                      type="radio"
+                      className="mt-1"
+                      checked={mergeMode === "append"}
+                      onChange={() => setMergeMode("append")}
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium">Add to existing</span>
+                      <span className="text-muted-foreground">
+                        {" "}— keep the {existingCount} item{existingCount !== 1 ? "s" : ""} already here and append the import.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer" data-testid="radio-import-replace">
+                    <input
+                      type="radio"
+                      className="mt-1"
+                      checked={mergeMode === "replace"}
+                      onChange={() => setMergeMode("replace")}
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium">Replace all items</span>
+                      <span className="text-muted-foreground">
+                        {" "}— delete the {existingCount} existing item{existingCount !== 1 ? "s" : ""} first.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+                {mergeMode === "replace" && existingCount > 0 && (
+                  <p className="mt-2 text-sm text-status-warning flex items-center gap-1.5" data-testid="text-replace-warning">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {existingCount} existing item{existingCount !== 1 ? "s" : ""} will be removed. This cannot be undone.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex justify-end gap-2 px-6 py-4">
               <Button

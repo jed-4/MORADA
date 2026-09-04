@@ -72,6 +72,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
 import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
+import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow } from "@/lib/estimateSpreadsheet";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
@@ -3345,10 +3346,8 @@ export default function EstimateDetail() {
   // Only the IMPORTABLE fields, with headers the importer auto-detects, so an
   // exported estimate re-imports cleanly (unlike the CSV dump above, which
   // includes computed columns the importer can't take back).
-  const EXPORT_HEADERS = ['Group', 'Item', 'Type', 'Description', 'Quantity', 'Unit', 'Unit Cost', 'Markup %', 'Cost Code', 'Allowance', 'Notes'] as const;
-
-  const buildExportRows = (): Record<string, any>[] => {
-    const rowFor = (it: EstimateItem) => {
+  const buildExportRows = (): EstimateExportRow[] => {
+    const rowFor = (it: EstimateItem): EstimateExportRow => {
       const grp = groups.find(g => g.id === it.groupId);
       const code = costCodes.find(c => c.id === it.costCode);
       return {
@@ -3360,6 +3359,7 @@ export default function EstimateDetail() {
         Unit: it.unitType || '',
         'Unit Cost': Number(it.unitCostExTax ?? 0),
         'Markup %': it.markupPercent ?? '',
+        'Wastage %': it.wastagePercent ?? 0,
         'Cost Code': code ? `${code.code} - ${code.title}` : '',
         Allowance: it.allowance || 'None',
         Notes: it.notes || '',
@@ -3373,25 +3373,13 @@ export default function EstimateDetail() {
 
   const handleExportEstimateXLSX = async () => {
     if (!estimate || !items) return;
-    const XLSX = await import('xlsx');
     const rows = buildExportRows();
-    const ws = XLSX.utils.json_to_sheet(rows, { header: EXPORT_HEADERS as unknown as string[] });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Estimate');
-    XLSX.writeFile(wb, `${estimate.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportEstimateRows(rows, { name: estimate.name, sheetName: 'Estimate' });
     toast({ title: 'Exported to Excel', description: `${rows.length} lines. Re-imports cleanly via Import Items.` });
   };
 
   const handleDownloadImportTemplate = async () => {
-    const XLSX = await import('xlsx');
-    const example = [{
-      Group: 'Kitchen', Item: 'Example line item', Type: 'Material', Description: '',
-      Quantity: 1, Unit: 'ea', 'Unit Cost': 100, 'Markup %': 10, 'Cost Code': '', Allowance: 'None', Notes: '',
-    }];
-    const ws = XLSX.utils.json_to_sheet(example, { header: EXPORT_HEADERS as unknown as string[] });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Estimate Import');
-    XLSX.writeFile(wb, 'Morada_Estimate_Import_Template.xlsx');
+    await downloadBlankImportTemplate();
     toast({ title: 'Template downloaded', description: 'Fill it in, then bring it in via Import Items.' });
   };
 

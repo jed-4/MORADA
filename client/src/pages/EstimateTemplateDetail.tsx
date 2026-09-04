@@ -59,9 +59,22 @@ import {
   GripVertical,
   FolderPlus,
   Copy,
+  Upload,
+  Download,
+  FileText,
 } from "lucide-react";
 import type { EstimateTemplate } from "@shared/schema";
 import { TemplateEstimateGrid } from "@/components/estimates/TemplateEstimateGrid";
+import {
+  ImportEstimateItemsDialog,
+  type ImportMergeMode,
+} from "@/components/estimates/ImportEstimateItemsDialog";
+import type { ImportEstimateItem } from "@shared/import";
+import {
+  exportEstimateRows,
+  downloadBlankImportTemplate,
+  type EstimateExportRow,
+} from "@/lib/estimateSpreadsheet";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -148,6 +161,7 @@ export default function EstimateTemplateDetail() {
   const [newGroupName, setNewGroupName] = useState("");
   const [settingsName, setSettingsName] = useState("");
   const [settingsDesc, setSettingsDesc] = useState("");
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -271,6 +285,105 @@ export default function EstimateTemplateDetail() {
     saveItems(reordered);
   };
 
+  // ── Excel round trip ──────────────────────────────────────────────────────
+  // Same column set as a job estimate export (ESTIMATE_EXPORT_HEADERS), so a
+  // sheet exported here imports into an estimate and vice versa. Group header
+  // rows are skipped: the Group column already carries the grouping.
+
+  const buildExportRows = (): EstimateExportRow[] =>
+    items
+      .filter((i) => !i.isGroup)
+      .map((i) => {
+        const code = i.costCodeId ? costCodeMap.get(i.costCodeId) : undefined;
+        return {
+          Group: i.groupName || "",
+          Item: i.name || "",
+          Type: i.type || "",
+          Description: i.description || "",
+          Quantity: i.quantity ?? 0,
+          Unit: i.unit || "",
+          // Stored in cents, exported in dollars to match the estimate sheet.
+          "Unit Cost": (i.unitPrice ?? 0) / 100,
+          "Markup %": i.markup ?? 0,
+          "Wastage %": i.wastagePercent ?? 0,
+          "Cost Code": code ? `${code.code} - ${code.title}` : i.costCodeTitle || "",
+          Allowance: i.allowance || "None",
+          Notes: "",
+        };
+      });
+
+  const handleExportXLSX = async () => {
+    if (!template) return;
+    const rows = buildExportRows();
+    if (rows.length === 0) {
+      toast({ title: "Nothing to export", description: "This template has no items yet." });
+      return;
+    }
+    await exportEstimateRows(rows, { name: template.name, sheetName: "Template" });
+    toast({
+      title: "Exported to Excel",
+      description: `${rows.length} lines. Re-imports cleanly via Import from Excel.`,
+    });
+  };
+
+  const handleDownloadImportTemplate = async () => {
+    await downloadBlankImportTemplate({
+      sheetName: "Template Import",
+      fileName: "Morada_Estimate_Template_Import.xlsx",
+    });
+    toast({
+      title: "Template downloaded",
+      description: "Fill it in, then bring it in via Import from Excel.",
+    });
+  };
+
+  /**
+   * Commit imported rows into templateData. Template items live in a jsonb
+   * blob rather than the estimate_items table, so the shared dialog hands the
+   * parsed rows back here instead of posting them.
+   */
+  const handleImportCommit = async (
+    imported: ImportEstimateItem[],
+    mode: ImportMergeMode,
+  ): Promise<number> => {
+    const base = mode === "replace" ? [] : items;
+    const mapped: TemplateItem[] = imported.map((row, idx) => {
+      // parseImportRow resolves a matched cost code to its id; an unmatched
+      // one stays as the raw text, which we keep as the display title.
+      const matched = row.costCode ? costCodeMap.get(row.costCode) : undefined;
+      return {
+        id: crypto.randomUUID(),
+        groupName: row.group?.trim() || undefined,
+        name: row.name,
+        description: row.description || undefined,
+        costCodeId: matched?.id,
+        costCodeTitle: matched
+          ? `${matched.code} - ${matched.title}`
+          : row.costCode || undefined,
+        unit: row.unitType || "ea",
+        quantity: row.quantity ?? 1,
+        unitPrice: Math.round((row.unitCostExTax ?? 0) * 100),
+        markup: row.markupPercent ?? 0,
+        allowance: row.allowance || "None",
+        wastagePercent: row.wastagePercent ?? 0,
+        type: row.type || "Material",
+        sortOrder: base.length + idx,
+        isGroup: false,
+      };
+    });
+
+    await updateMutation.mutateAsync({ templateData: [...base, ...mapped] });
+
+    // Imported groups should land open, not collapsed out of sight.
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      mapped.forEach((m) => next.add(m.groupName || "ungrouped"));
+      return next;
+    });
+
+    return mapped.length;
+  };
+
   const handleOpenSettings = () => {
     setSettingsName(template?.name || "");
     setSettingsDesc(template?.description || "");
@@ -349,6 +462,39 @@ export default function EstimateTemplateDetail() {
             <Settings className="w-3 h-3" />
             Settings
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 px-2 text-xs border rounded-md hover-elevate flex items-center gap-1"
+                data-testid="button-import-export"
+              >
+                <Upload className="w-3 h-3" />
+                Import / Export
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem
+                onClick={() => setImportDialogOpen(true)}
+                data-testid="menu-import-excel"
+              >
+                <Upload className="w-3.5 h-3.5 mr-2" />
+                Import from Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportXLSX} data-testid="menu-export-excel">
+                <Download className="w-3.5 h-3.5 mr-2" />
+                Export to Excel
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleDownloadImportTemplate}
+                data-testid="menu-download-import-template"
+              >
+                <FileText className="w-3.5 h-3.5 mr-2" />
+                Download import template
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -392,6 +538,14 @@ export default function EstimateTemplateDetail() {
               <Plus className="w-3 h-3" />
               Add Item
             </button>
+            <button
+              className="h-7 px-3 text-xs border rounded-md hover-elevate flex items-center gap-1"
+              onClick={() => setImportDialogOpen(true)}
+              data-testid="button-import-first-items"
+            >
+              <Upload className="w-3 h-3" />
+              Import from Excel
+            </button>
           </div>
         </div>
       ) : (
@@ -421,6 +575,18 @@ export default function EstimateTemplateDetail() {
           </span>
         </div>
       )}
+
+      {/* ── Import Dialog ── */}
+      <ImportEstimateItemsDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onImportComplete={() => setImportDialogOpen(false)}
+        title="Import template items"
+        groupNames={groups.filter((g) => g !== "ungrouped")}
+        onCommit={handleImportCommit}
+        offerMergeMode
+        existingCount={nonGroupItems.length}
+      />
 
       {/* ── Settings Dialog ── */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
