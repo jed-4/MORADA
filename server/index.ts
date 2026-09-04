@@ -4,7 +4,7 @@ import { sentryEnabled } from "./instrument";
 import * as Sentry from "@sentry/node";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { serveStatic, log } from "./serveStatic";
 import { startReminderProcessor } from "./utils/reminderProcessor";
 import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcessor";
 import { startGmailBillPoller } from "./services/gmailBillPoller";
@@ -140,12 +140,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// Liveness probe for the host's health check.
+//
+// Mounted here, above setupAuth, so it needs no session — and deliberately
+// does NOT touch the database. This answers "is the process up and serving
+// HTTP", which is the only question a health check should ask of a
+// single-instance app: a check that failed on a transient Neon blip would
+// cycle the instance, and cycling the instance takes all nine in-process
+// schedulers down with it.
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
 // Require SESSION_SECRET in production for security
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET environment variable must be set in production');
 }
 
-// Note: Replit Auth session setup is done in registerRoutes via setupAuth()
+// Session setup happens in registerRoutes via setupAuth()
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -315,8 +327,14 @@ app.use((req, res, next) => {
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // doesn't interfere with the other routes.
+  //
+  // The import is dynamic so that Vite — and the plugin packages its config
+  // pulls in, all of them devDependencies — stay out of the production bundle
+  // entirely. See the note at the top of server/vite.ts before making it
+  // static again.
   if (app.get("env") === "development") {
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
   } else {
     serveStatic(app);

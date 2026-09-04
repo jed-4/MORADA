@@ -1,0 +1,150 @@
+# Render blueprint for Morada.
+#
+# ONE web service, ONE instance. That is a correctness constraint, not a cost
+# decision — see numInstances below.
+#
+# Secrets are declared with `sync: false`, which means Render prompts for them
+# once and never stores a value in this file. Nothing here is a secret, and
+# nothing here should become one.
+
+services:
+  - type: web
+    name: morada
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Ohio is the closest Render region to the production Neon endpoint
+    # (us-east-2). Every request makes several database round trips, and the
+    # app is served to Australia either way, so the latency that is worth
+    # minimising is app-to-database, not user-to-app.
+    region: ohio
+    plan: standard
+
+    branch: main
+    autoDeploy: false
+
+    # Answers "is the process serving HTTP" and nothing else — it does not
+    # touch the database. See the handler in server/index.ts for why.
+    healthCheckPath: /api/health
+
+    # ── DO NOT RAISE THIS ────────────────────────────────────────────────
+    # The app runs nine in-process setInterval schedulers (reminders,
+    # scheduled messages, the Gmail bill poller, the Xero push worker and
+    # reconciler, RFQ reminders, trial expiry, onboarding emails, referral
+    # credits). None of them takes a lock or does leader election. A second
+    # instance means every one of them runs twice: duplicate emails to
+    # suppliers and clients, duplicate Xero pushes, double bill ingestion.
+    #
+    # Socket.IO independently requires it — there is no Redis adapter, so
+    # real-time updates would only reach whichever instance a client happened
+    # to connect to.
+    #
+    # Splitting the schedulers into a background worker and adding a Socket.IO
+    # adapter are the prerequisites for scaling. Until then: one.
+    numInstances: 1
+
+    envVars:
+      # ── Core ────────────────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      # PORT is injected by Render; the server reads process.env.PORT.
+
+      # Signs session cookies, the mobile X-Session-ID mapping, OAuth state,
+      # AND the HMAC upload grants. Must be copied across verbatim from the
+      # existing deployment — a new value logs every user out and invalidates
+      # any upload grant already issued.
+      - key: SESSION_SECRET
+        sync: false
+
+      - key: DATABASE_URL
+        sync: false
+
+      # Required to boot. The Resend client is constructed at module load and
+      # throws without a key, despite the warning line that reads as if email
+      # merely degrades.
+      - key: RESEND_API_KEY
+        sync: false
+
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # Canonical public URL. Every OAuth callback derives from this via
+      # server/config/appUrl.ts, so it must be set before Xero or Google can
+      # be connected.
+      - key: APP_BASE_URL
+        value: https://app.moradaco.com.au
+      - key: APP_URL
+        value: https://app.moradaco.com.au
+
+      # ── Object storage (Cloudflare R2) ─────────────────────────────────
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      # Supplies the key prefix. Keep the existing /<bucket>/<prefix> value —
+      # R2_BUCKET supersedes the leading segment, and the prefix must match
+      # what the objects were copied under or every stored path 404s.
+      - key: PRIVATE_OBJECT_DIR
+        sync: false
+
+      # ── Integrations ────────────────────────────────────────────────────
+      - key: XERO_CLIENT_ID
+        sync: false
+      - key: XERO_CLIENT_SECRET
+        sync: false
+      - key: XERO_WEBHOOK_KEY
+        sync: false
+      - key: XERO_DEFAULT_BANK_CODE
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_ENCRYPTION_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_STUDIO_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_STUDIO_ANNUAL
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+
+      # ── Observability ───────────────────────────────────────────────────
+      - key: SENTRY_DSN
+        sync: false
+      # Replaces REPLIT_DEPLOYMENT_ID, which was the release identifier and
+      # does not exist here. Without it, issues cannot be filtered by build.
+      - key: SENTRY_RELEASE
+        sync: false
+
+      # ── Build-time only ─────────────────────────────────────────────────
+      # These are read by `vite build` and baked into the client bundle, so
+      # they must exist during the Docker build, not just at runtime.
+      # VITE_CRISP_WEBSITE_ID previously lived in .replit's [userenv] block
+      # rather than the secrets panel, which makes it the easiest one to lose.
+      - key: VITE_CRISP_WEBSITE_ID
+        value: e3620629-080d-4b1e-88b5-821e2adac0fd
+      - key: VITE_SENTRY_DSN
+        sync: false
+      - key: SENTRY_AUTH_TOKEN
+        sync: false
+      - key: SENTRY_ORG
+        sync: false
+      - key: SENTRY_PROJECT
+        sync: false
+
+# Deliberately NOT set here, and must never be set in production:
+#   DEV_USER_EMAIL      — injects a logged-in user and bypasses authentication
+#   NEON_DATABASE_URL   — a stale database with an outdated schema
+#   REPLIT_DOMAINS      — would take precedence in the base-URL fallback chain
+#                         only if APP_BASE_URL/APP_URL were unset, but there is
+#                         no reason for it to exist here at all

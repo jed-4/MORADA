@@ -4,8 +4,12 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Session storage table for Replit Auth
-// IMPORTANT: This table is mandatory for Replit Auth, don't drop it
+// Session storage table, backing connect-pg-simple.
+// IMPORTANT: don't drop it. The comment here used to credit Replit Auth, which
+// this app never actually used (server/replitAuth.ts was dead code and has
+// been removed) — but sessions genuinely do live in Postgres, and the store is
+// created with createTableIfMissing: false, so losing this table logs every
+// user out and every login fails until it is restored.
 export const sessions = pgTable(
   "sessions",
   {
