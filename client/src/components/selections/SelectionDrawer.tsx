@@ -28,7 +28,10 @@ import {
   getSelectedOption,
   firstImage,
   formatMoneyCents,
+  isRestricted,
   BudgetCell,
+  RestrictedNotice,
+  RestrictedPill,
   SelectionStatusPill,
   SelectionThumbnail,
 } from "./selectionHelpers";
@@ -101,6 +104,7 @@ export function SelectionDrawer({
 
   if (!selection) return null;
   const derived = getDerivedStatus(selection);
+  const restricted = isRestricted(selection);
   const chosen = getSelectedOption(selection);
   const isLockedForChange = derived === "ordered" || derived === "received";
   // Stable order — the API's option order can shift after updates
@@ -141,7 +145,7 @@ export function SelectionDrawer({
             <div className="min-w-0">
               <SheetTitle className="text-[15px] leading-snug truncate">{selection.name}</SheetTitle>
               <div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                <SelectionStatusPill derived={derived} />
+                {restricted ? <RestrictedPill /> : <SelectionStatusPill derived={derived} />}
                 {[selection.category, selection.room].filter(Boolean).join(" · ")}
               </div>
             </div>
@@ -150,8 +154,10 @@ export function SelectionDrawer({
               <ExternalLink className="w-3 h-3 ml-1" />
             </Button>
           </div>
-          {/* Quick actions — quiet text links, house toolbar style */}
-          <div className="-mx-1 flex items-center pt-1 pb-1.5">
+          {/* Quick actions — quiet text links, house toolbar style. Hidden on a
+              withheld selection: the stub carries no portalToken, so sending
+              and link-copying would fail, and the PDF would export blank. */}
+          <div className={cn("-mx-1 flex items-center pt-1 pb-1.5", restricted && "hidden")}>
             <button
               className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover-elevate flex items-center gap-1.5"
               onClick={() => setSendOpen((v) => !v)}
@@ -263,11 +269,13 @@ export function SelectionDrawer({
               {otherOptions.map((o) => <OptionRow key={o.id} o={o} />)}
             </div>
           ))}
-          {(selection.options ?? []).length === 0 && (
+          {restricted ? (
+            <RestrictedNotice />
+          ) : (selection.options ?? []).length === 0 ? (
             <div className="text-[11px] text-muted-foreground border border-dashed rounded-lg p-3 text-center">
               No options yet — open the selection to add products.
             </div>
-          )}
+          ) : null}
 
           {/* Comments */}
           <div className="space-y-1.5">

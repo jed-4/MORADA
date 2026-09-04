@@ -1696,6 +1696,12 @@ export type SelectionComment = typeof selectionComments.$inferSelect;
 export type SelectionWithOptions = Selection & {
   options: (SelectionOption & { attachments?: OptionAttachment[] })[];
   clientSelection?: ClientSelection;
+  // Set by server/selectionVisibility.ts when the caller lacks
+  // `projects.selections.pending` and the selection isn't approved yet. The row
+  // arrives as a name-only stub with `options: []` — every option, and with it
+  // every attached photo, has been withheld. UI must say so rather than
+  // rendering an empty selection that reads as broken.
+  restricted?: boolean;
 };
 
 export type SelectionOptionWithAttachments = SelectionOption & {

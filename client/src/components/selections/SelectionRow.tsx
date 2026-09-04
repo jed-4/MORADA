@@ -20,8 +20,10 @@ import {
   getSelectedOption,
   getDeadlineMeta,
   getCategoryColour,
+  isRestricted,
   OptionThumbStack,
   BudgetCell,
+  RestrictedPill,
   SelectionStatusPill,
 } from "./selectionHelpers";
 
@@ -63,6 +65,10 @@ export function SelectionRow({
   const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
   const purchaseOrderId = (selection as any).purchaseOrderId ?? null;
   const optionCount = selection.options?.length ?? 0;
+  // Withheld stub: name/category/room are all that arrived. Everything keyed
+  // off options (thumbnail, chosen product, count, budget) is empty by
+  // construction, so say why instead of rendering convincing blanks.
+  const restricted = isRestricted(selection);
 
   return (
     <div
@@ -104,8 +110,10 @@ export function SelectionRow({
           )}
           {!columns.location && selection.room && <span className="shrink-0">{selection.room}</span>}
           {((!columns.category && selection.category) || (!columns.location && selection.room)) &&
-            (selectedOption || optionCount > 0) && <span className="text-muted-foreground/40">·</span>}
-          {selectedOption ? (
+            (restricted || selectedOption || optionCount > 0) && <span className="text-muted-foreground/40">·</span>}
+          {restricted ? (
+            <span className="truncate italic text-muted-foreground/60">Options &amp; photos hidden</span>
+          ) : selectedOption ? (
             <span className="truncate text-muted-foreground/70">{selectedOption.name}</span>
           ) : optionCount > 0 ? (
             <span className="truncate text-muted-foreground/70">
@@ -134,7 +142,7 @@ export function SelectionRow({
 
       {/* Status pill (+ PO link when ordered) */}
       <div className="min-w-0 flex items-center gap-1.5">
-        <SelectionStatusPill derived={derived} />
+        {restricted ? <RestrictedPill /> : <SelectionStatusPill derived={derived} />}
         {purchaseOrderId && (
           <a
             href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
@@ -201,15 +209,21 @@ export function SelectionRow({
               <Edit3 className="w-4 h-4 mr-2" />
               Open
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
-              <Copy className="w-4 h-4 mr-2" />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
+            {/* Duplicating or deleting a withheld selection means acting on
+                contents you were not shown. Read-only until it's visible. */}
+            {!restricted && (
+              <>
+                <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
