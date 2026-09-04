@@ -9,6 +9,16 @@ import { getSessionCompanyId } from "./auth";
 /**
  * Authenticated, ownership-checked serving for the local uploads tree.
  *
+ * LEGACY READ PATH. Nothing writes here any more — enote attachments, gear
+ * photos and contact avatars all upload to object storage now, and store an
+ * /objects/company/<id>/... path served by the authenticated route in
+ * routes.ts. This handler stays for rows written before that change.
+ *
+ * On an ephemeral filesystem those files are already gone, and this correctly
+ * 404s for them. It is kept rather than deleted because the ownership joins
+ * below are the only thing standing between a stale /uploads path and a
+ * cross-tenant read, for as long as any such row exists.
+ *
  * This replaces an `express.static('/uploads', ...)` mount that sat above
  * setupAuth in index.ts, so every file under it — up to 50 MB of estimate-note
  * attachments, plus gear photos and contact avatars — was fetchable by anyone

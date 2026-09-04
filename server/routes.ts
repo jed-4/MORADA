@@ -14,7 +14,7 @@ import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServic
 import { renderReminderText } from "@shared/rfqReminders";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
-import { ObjectStorageService } from "./objectStorage";
+import { ObjectStorageService, objectStorage } from "./objectStorage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -267,7 +267,6 @@ import {
 import { foundingSpotsLeft } from "./foundingMembers";
 import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
-import { promises as fsPromises } from "node:fs";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, emitMessagesRead, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
@@ -2078,8 +2077,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // This allows old routes checking req.session.userId to work with Replit Auth
   app.use('/api', ensureLegacySessionFields);
 
-  // Uploaded files. Mounted HERE — below setupAuth — and not in index.ts,
-  // where it was an unauthenticated express.static mount.
+  // Legacy uploaded files. Nothing writes to this tree any more (all three
+  // former callers now upload to object storage), but rows predating that
+  // change still hold /uploads/... paths, so the read path stays.
+  //
+  // Mounted HERE — below setupAuth — and not in index.ts, where it was an
+  // unauthenticated express.static mount.
   //
   // requireAuth is explicit because this path is not under /api, so none of
   // the /api middleware below (auth, clientAccessGate, requireCompany) ever
@@ -8602,18 +8605,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── E-Note Attachments ──────────────────────────────────────────────────────
 
-  // Multer for enote attachments (stored to local disk under uploads/enote-attachments/)
-  const _enoteAttachDir = 'uploads/enote-attachments';
-  try { (await import('fs')).mkdirSync(_enoteAttachDir, { recursive: true }); } catch (_) {}
+  // E-note attachments go to object storage. They used to be written to the
+  // container filesystem under uploads/enote-attachments/, which is ephemeral
+  // on any autoscaling host — every redeploy silently discarded them. Memory
+  // storage also means the bytes are never persisted before the ownership
+  // check below runs, so a rejected cross-tenant POST costs nothing.
   const enoteAttachmentUpload = multer({
-    storage: multer.diskStorage({
-      destination: (_req, _file, cb) => cb(null, _enoteAttachDir),
-      filename: (_req, file, cb) => {
-        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        const ext = file.originalname.split('.').pop() || 'bin';
-        cb(null, `${unique}.${ext}`);
-      },
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
   });
 
@@ -8644,15 +8642,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimate-enotes/:rowId/attachments", requireAuth, enoteAttachmentUpload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-      // multer has already written the file to disk by the time this runs, so
-      // a rejected upload has to clean up after itself or it orphans up to
-      // 50 MB that nothing will ever reference or serve.
+      // Nothing is written anywhere until ownership is proven — the upload is
+      // still only a buffer at this point.
       const owned = await getOwnedEnote(req, res, req.params.rowId, "Note not found");
-      if (!owned) {
-        try { (await import('fs')).unlinkSync(req.file.path); } catch (_) {}
-        return;
-      }
-      const fileUrl = `/uploads/enote-attachments/${req.file.filename}`;
+      if (!owned) return;
+      const companyId = getSessionCompanyId(req)!;
+      const fileUrl = await objectStorage.uploadObjectEntity(
+        req.file.buffer,
+        req.file.mimetype || "application/octet-stream",
+        companyId,
+        req.file.originalname.split(".").pop() || undefined,
+      );
       const attachment = await storage.createEnoteAttachment({
         enoteId: req.params.rowId,
         fileName: req.file.originalname,
@@ -9788,33 +9788,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SCOPE GEAR PHOTOS
   // ============================================================
 
-  // Multer configuration for gear photo uploads
+  // Gear photos go to object storage. They used to land on the container
+  // filesystem under uploads/gear-photos/, which does not survive a redeploy.
+  // Memory storage removes the need for the old discardUpload() cleanup too:
+  // a rejected upload is a buffer that is simply never written.
   const gearPhotoUpload = multer({
-    storage: multer.diskStorage({
-      destination: (req, file, cb) => {
-        cb(null, 'uploads/gear-photos/');
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + '-' + file.originalname);
-      }
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   });
-
-  // Discards a multer-written upload. The file lands on disk before any
-  // handler runs, so every rejection path has to clean up after itself or a
-  // refused cross-tenant POST still costs 10 MB.
-  const discardUpload = async (file?: Express.Multer.File) => {
-    if (!file?.path) return;
-    try {
-      await fsPromises.unlink(file.path);
-    } catch (err: any) {
-      if (err?.code !== 'ENOENT') {
-        console.error("Failed to remove rejected gear photo upload:", err);
-      }
-    }
-  };
 
   // Get gear photos for a scope item
   app.get("/api/scope/:scopeItemId/gear-photos", requireAuth, requireTeamMember, async (req, res) => {
@@ -9842,33 +9823,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // this check a caller could hang their own photo off another tenant's
       // scope item — getScopeGearPhotos filters by scopeItemId alone, so the
       // victim would render it.
-      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) {
-        await discardUpload(req.file);
-        return;
-      }
+      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) return;
 
       const companyId = req.user!.companyId!;
-      const photoData = {
+
+      // Validate before writing to storage, not after. photoUrl is entirely
+      // server-generated, so the placeholder here only stands in for a value
+      // that cannot fail validation — everything the caller actually supplied
+      // is checked while the upload is still just a buffer. Uploading first
+      // would leave an orphaned object behind on any rejection, which is the
+      // problem the old on-disk discardUpload() existed to solve.
+      const validationResult = insertScopeGearPhotoSchema.safeParse({
         scopeItemId: req.params.scopeItemId,
-        photoUrl: `/uploads/gear-photos/${req.file.filename}`,
+        photoUrl: "pending-upload",
         gearItemName: req.body.gearItemName || 'Unnamed Item',
         companyId,
-      };
-
-      const validationResult = insertScopeGearPhotoSchema.safeParse(photoData);
+      });
       if (!validationResult.success) {
-        await discardUpload(req.file);
         return res.status(400).json({
           error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const newPhoto = await storage.createScopeGearPhoto(validationResult.data);
+      const photoUrl = await objectStorage.uploadObjectEntity(
+        req.file.buffer,
+        req.file.mimetype || "image/jpeg",
+        companyId,
+        req.file.originalname.split(".").pop() || undefined,
+      );
+
+      const newPhoto = await storage.createScopeGearPhoto({ ...validationResult.data, photoUrl });
       res.status(201).json(newPhoto);
     } catch (error) {
       console.error("Error uploading gear photo:", error);
-      await discardUpload(req.file);
       res.status(500).json({ error: "Failed to upload gear photo" });
     }
   });
@@ -16640,22 +16628,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'image/webp': 'webp',
       };
       const ext = mimeToExt[req.file.mimetype] || 'jpg';
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const filename = `avatar-${uniqueSuffix}.${ext}`;
 
-      // Ensure upload directory exists
-      const uploadDir = 'uploads/contact-avatars/';
-      const fs = await import('fs');
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      // Write file to disk
-      const filePath = `${uploadDir}${filename}`;
-      fs.writeFileSync(filePath, req.file.buffer);
-
-      // Construct the URL for the uploaded file
-      const avatarUrl = `/uploads/contact-avatars/${filename}`;
+      // Avatars go to object storage. They were previously written to
+      // uploads/contact-avatars/ on the container filesystem, which is
+      // discarded on every redeploy — the avatar survived exactly until the
+      // next deploy and then 404ed forever.
+      const avatarUrl = await objectStorage.uploadObjectEntity(
+        req.file.buffer,
+        req.file.mimetype,
+        companyId,
+        ext,
+      );
 
       // Update the contact with the new avatar URL
       await storage.updateContact(contactId, { avatarUrl }, companyId);
