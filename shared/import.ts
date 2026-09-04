@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeUnit } from "./units";
 
 // Cost Code type (minimal version from schema for import matching)
 export type CostCode = {
@@ -106,10 +107,18 @@ export function fuzzyMatchString(
     }
   }
   
-  // Try partial/contains match
-  const containsMatch = validOptions.find(opt => 
-    opt.toLowerCase().includes(normalized) || normalized.includes(opt.toLowerCase())
-  );
+  // Try partial/contains match.
+  //
+  // A bare substring test is far too loose for short unit codes: "drum"
+  // contains "m" and "barrel" contains "l", so an unrecognised unit was
+  // silently rewritten to metres or litres. Options shorter than three
+  // characters ("m", "l", "m2", "kg") therefore never win on containment —
+  // they are already covered exhaustively by the exact and alias passes above.
+  const containsMatch = validOptions.find(opt => {
+    const option = opt.toLowerCase();
+    if (option.length < 3 || normalized.length < 3) return false;
+    return option.includes(normalized) || normalized.includes(option);
+  });
   if (containsMatch) {
     return {
       rawValue: String(rawValue).trim(),
@@ -255,6 +264,7 @@ export const importEstimateItemSchema = z.object({
   unitType: z.string().default("each"),
   unitCostExTax: z.number().default(0),
   markupPercent: z.number().min(0).default(0),
+  wastagePercent: z.number().min(0).default(0),
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
   costCode: z.string().optional(),
@@ -343,6 +353,14 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "markup percent": "markupPercent",
   "margin": "markupPercent",
   "margin %": "markupPercent",
+
+  // Wastage variations
+  "wastage": "wastagePercent",
+  "wastage %": "wastagePercent",
+  "wastage percent": "wastagePercent",
+  "waste": "wastagePercent",
+  "waste %": "wastagePercent",
+
   
   // Notes variations
   "notes": "notes",
@@ -897,6 +915,16 @@ export interface ImportMatchOptions {
   costCodes?: CostCode[];
   groups?: { id: string; name: string }[];
   statusOptions?: { id: string; name: string; key?: string }[];
+  /**
+   * The company's configured `estimate_item.unit` options. When supplied, a
+   * matched unit is snapped back to the exact spelling on that list, so an
+   * import never lands a value the unit dropdown doesn't offer.
+   *
+   * UNIT_TYPE_ALIASES canonicalises to "each"/"hour"; Field Settings ships
+   * "ea"/"hr". Without this the two disagree and imported rows show an
+   * off-list unit.
+   */
+  unitOptions?: string[];
 }
 
 // Utility: Parse a single row based on column mapping
@@ -926,7 +954,7 @@ export function parseImportRow(
           data[fieldKey] = typeof value === "string" ? parseCurrency(value) : (value || 0);
         } else if (fieldKey === "quantity") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value.replace(/[,\s]/g, "")) || 0 : (value ?? 0);
-        } else if (fieldKey === "markupPercent") {
+        } else if (fieldKey === "markupPercent" || fieldKey === "wastagePercent") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 0 : (value || 0);
         } else if (fieldKey === "costCode") {
           // Convert number to string if necessary
@@ -961,11 +989,23 @@ export function parseImportRow(
           if (rawValue) {
             unitTypeMatch = matchUnitType(rawValue);
             // Apply high or medium confidence matches (unit type is more flexible)
-            if (unitTypeMatch?.matchedValue && (unitTypeMatch.confidence === "high" || unitTypeMatch.confidence === "medium")) {
-              data[fieldKey] = unitTypeMatch.matchedValue;
-            } else {
-              data[fieldKey] = rawValue; // Keep original - it's a string field
-            }
+            const looseMatch =
+              unitTypeMatch?.matchedValue &&
+              (unitTypeMatch.confidence === "high" || unitTypeMatch.confidence === "medium")
+                ? unitTypeMatch.matchedValue
+                : rawValue; // Keep original - it's a string field
+
+            // Snap onto the company's configured spelling when we have one, so
+            // "ea" survives a round trip instead of becoming off-list "each".
+            // Try the raw value first, then the alias table's canonical form —
+            // "EA." and "cubic metre" only reach "ea"/"m³" via that second hop.
+            const snap = (value: string | undefined) =>
+              value === undefined
+                ? undefined
+                : matchOptions?.unitOptions?.find(
+                    (opt) => normalizeUnit(opt) === normalizeUnit(value),
+                  );
+            data[fieldKey] = snap(rawValue) ?? snap(looseMatch) ?? looseMatch;
           }
         } else if (fieldKey === "allowance") {
           // Fuzzy match allowance type
@@ -1327,3 +1367,45 @@ export function parseFullEstimateImport(
   
   return { format, groups, items, errors };
 }
+
+// ─── Spreadsheet round-trip headers ──────────────────────────────────────────
+// The single source of truth for the Excel export / blank-import-template
+// column set, shared by job estimates and estimate templates so a sheet
+// exported from either re-imports cleanly into either.
+//
+// Every header here must resolve through `defaultColumnMappings` above, so
+// exported files auto-detect with no manual column mapping. `Amount` is
+// deliberately absent: it is computed from Quantity x Unit Cost, and a column
+// the importer cannot take back would silently drift on a round trip.
+export const ESTIMATE_EXPORT_HEADERS = [
+  'Group',
+  'Item',
+  'Type',
+  'Description',
+  'Quantity',
+  'Unit',
+  'Unit Cost',
+  'Markup %',
+  'Wastage %',
+  'Cost Code',
+  'Allowance',
+  'Notes',
+] as const;
+
+export type EstimateExportHeader = (typeof ESTIMATE_EXPORT_HEADERS)[number];
+
+/** The single demo row shipped in the blank "import template" download. */
+export const ESTIMATE_IMPORT_EXAMPLE_ROW: Record<EstimateExportHeader, string | number> = {
+  Group: 'Kitchen',
+  Item: 'Example line item',
+  Type: 'Material',
+  Description: '',
+  Quantity: 1,
+  Unit: 'ea',
+  'Unit Cost': 100,
+  'Markup %': 10,
+  'Wastage %': 0,
+  'Cost Code': '',
+  Allowance: 'None',
+  Notes: '',
+};

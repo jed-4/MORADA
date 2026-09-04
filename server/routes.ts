@@ -7154,6 +7154,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           allowanceStatus: "pending",
           pcMarkupPercent: undefined,
           quantity,
+          // Wastage drives resolveEstimateStoredPrice above, so it has to be
+          // persisted too — otherwise the imported price reflects wastage the
+          // stored row says is 0, and the next edit recomputes it away.
+          wastagePercent: Math.round(Number(item.wastagePercent) || 0),
           unitType: item.unitType || "each",
           status: item.status || "incomplete",
           unitCostExTax,
