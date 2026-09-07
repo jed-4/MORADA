@@ -21,16 +21,31 @@ import type {
   ProposalAcceptance,
 } from "@shared/schema";
 
+// The portal is served by /client-view, which redacts the proposal down to an
+// allowlist — internal notes, the share token, foreign keys and the author are
+// never sent. These types mirror that contract deliberately: widening them back
+// to the full `Proposal` would invite reads for fields the server withholds.
+type ClientProposal = Pick<
+  Proposal,
+  | "id" | "proposalNumber" | "name" | "projectId" | "version"
+  | "introductionText" | "closingText" | "termsAndConditions"
+  | "subtotal" | "gstAmount" | "totalAmount"
+  | "status" | "expiryDate" | "sentDate" | "acceptedDate" | "acceptedByName"
+  | "showPricing" | "allowClientOptions" | "layoutSettings"
+>;
+
+type ClientAcceptance = Pick<ProposalAcceptance, "id" | "status" | "signedByName" | "signedAt">;
+
 interface SnapshotData {
-  proposal: Proposal;
+  proposal: ClientProposal;
   sections?: ProposalSection[];
   items?: ProposalItem[];
   milestones?: ProposalPaymentMilestone[];
-  acceptances?: ProposalAcceptance[];
+  acceptances?: ClientAcceptance[];
 }
 
 interface ClientViewResponse {
-  proposal: Proposal;
+  proposal: ClientProposal;
   snapshot: SnapshotData | null;
   source: "snapshot" | "live";
 }
