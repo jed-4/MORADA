@@ -120,6 +120,7 @@ const SelectionPortal = lazy(() => import("@/pages/SelectionPortal"));
 const ReviewPortal = lazy(() => import("@/pages/ReviewPortal"));
 const TradesPortal = lazy(() => import("@/pages/TradesPortal"));
 const ProductLibrary = lazy(() => import("@/pages/ProductLibrary"));
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
 const RFIDetail = lazy(() => import("@/pages/RFIDetail"));
 const ProjectScope = lazy(() => import("@/pages/ProjectScope"));
@@ -355,6 +356,7 @@ function Router() {
       <Route path="/price-list" component={PriceListsPage} />
       <Route path="/ai-price-review" component={AIPriceReviewPage} />
       <Route path="/product-library" component={ProductLibrary} />
+      <Route path="/product-library/:id" component={ProductDetail} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />
