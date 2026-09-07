@@ -18,6 +18,8 @@ import { Loader2, Plus, Send, X, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { formatCents } from "@shared/money";
+import { expiryFromDays } from "@shared/proposalExpiry";
+import { format } from "date-fns";
 import type { Contact, Proposal } from "@shared/schema";
 
 interface Recipient {
@@ -81,6 +83,9 @@ export function SendProposalDialog({
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [chase, setChase] = useState(false);
+  // How long the pricing holds. Blank means open-ended — no expiry, and the
+  // "price about to lapse" follow-up has nothing to fire from.
+  const [validDays, setValidDays] = useState<string>("30");
 
   // Re-seed each time the dialog opens so an abandoned edit doesn't persist.
   useEffect(() => {
@@ -92,6 +97,8 @@ export function SendProposalDialog({
     // Chasing is opt-in every time, deliberately: it is never carried over
     // from a previous send or pre-ticked.
     setChase(false);
+    // Only offer to set an expiry when the proposal does not already carry one.
+    setValidDays(proposal.expiryDate ? "" : "30");
   }, [open, suggested, companyName, proposal.proposalNumber, proposal.name]);
 
   const addRecipient = () => {
@@ -123,6 +130,7 @@ export function SendProposalDialog({
           pdfBase64,
           pdfFilename: `${proposal.proposalNumber}.pdf`,
           remindersEnabled: chase,
+          ...(expiresOn ? { expiryDate: expiresOn.toISOString() } : {}),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -156,6 +164,11 @@ export function SendProposalDialog({
       });
     },
   });
+
+  // Parsed once: an empty or junk value means "no expiry", never day zero.
+  const parsedDays = Number.parseInt(validDays, 10);
+  const expiresOn =
+    Number.isFinite(parsedDays) && parsedDays > 0 ? expiryFromDays(parsedDays) : null;
 
   const total = Number(proposal.totalAmount ?? 0);
   const canSend = recipients.length > 0 && !!pdfBlob && !sendMutation.isPending;
@@ -245,6 +258,29 @@ export function SendProposalDialog({
             />
           </div>
 
+          {!proposal.expiryDate && (
+            <div className="space-y-2">
+              <Label htmlFor="valid-days">Pricing valid for</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="valid-days"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={validDays}
+                  onChange={(e) => setValidDays(e.target.value)}
+                  className="w-24"
+                  data-testid="input-valid-days"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {expiresOn
+                    ? `days — until ${format(expiresOn, "d MMM yyyy")}`
+                    : "days — leave blank for no expiry"}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-start gap-3 rounded-md border p-3">
             <Switch
               checked={chase}
@@ -258,9 +294,12 @@ export function SendProposalDialog({
                 Follow up if there's no reply
               </Label>
               <p className="text-xs text-muted-foreground">
-                A gentle nudge 5 days after sending, and a note 3 days before the
-                price lapses. Both stop the moment the client responds. You can
-                change the wording, or turn this off, from the proposal at any time.
+                A gentle nudge 5 days after sending
+                {expiresOn || proposal.expiryDate
+                  ? ", and a note 3 days before the price lapses"
+                  : " (the \u201cprice about to lapse\u201d note needs an expiry date to fire)"}
+                . Both stop the moment the client responds. You can change the
+                wording, or turn this off, from the proposal at any time.
               </p>
             </div>
           </div>

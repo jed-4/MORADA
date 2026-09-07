@@ -685,7 +685,8 @@ export function ProposalBuilder({
   // Soft lock: a sent proposal stays editable, but the client is holding a
   // frozen copy, so edits made here no longer reach them. The banner says so
   // and offers the revision that would.
-  const isSentToClient = ['sent', 'viewed', 'accepted', 'rejected'].includes(proposal.status ?? '');
+  const isSentToClient = ['sent', 'viewed', 'accepted', 'rejected', 'expired'].includes(proposal.status ?? '');
+  const isExpired = proposal.status === 'expired';
   const [pdfEstimatesData, setPdfEstimatesData] = useState<Record<string, {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -1087,11 +1088,13 @@ export function ProposalBuilder({
         >
           <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {proposal.status === 'accepted'
-              ? 'This proposal has been accepted. The client holds the signed copy — edits here will not change it.'
-              : proposal.status === 'rejected'
-                ? 'This proposal was declined. The client holds the copy they were sent — edits here will not change it.'
-                : 'This proposal has been sent. The client sees the copy frozen at send time, so changes you make here will not reach them.'}
+            {isExpired
+              ? 'The pricing on this proposal has lapsed, so the client can no longer accept it. Give it a new "valid until" date above to put it back in front of them — no need for a revision.'
+              : proposal.status === 'accepted'
+                ? 'This proposal has been accepted. The client holds the signed copy — edits here will not change it.'
+                : proposal.status === 'rejected'
+                  ? 'This proposal was declined. The client holds the copy they were sent — edits here will not change it.'
+                  : 'This proposal has been sent. The client sees the copy frozen at send time, so changes you make here will not reach them.'}
           </span>
           <Button
             size="sm"

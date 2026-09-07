@@ -523,6 +523,35 @@ export default function ProposalDetail() {
                 </FormItem>
               )}
             />
+            {/* Valid until. Until now nothing in the app could set this: the
+                list's "Valid Until" column, the PDF cover page and the
+                expiry-based follow-up all read a column no code ever wrote.
+                Extending it on an expired proposal brings it back rather than
+                forcing a revision for identical work. */}
+            <FormField
+              control={form.control}
+              name="expiryDate"
+              render={({ field }) => (
+                <FormItem className="w-48">
+                  <FormControl>
+                    <Input
+                      type="date"
+                      aria-label="Pricing valid until"
+                      value={
+                        field.value
+                          ? new Date(field.value as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      onChange={(e) =>
+                        field.onChange(e.target.value ? new Date(e.target.value) : undefined)
+                      }
+                      data-testid="input-proposal-expiry"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="projectId"

@@ -1082,6 +1082,7 @@ export interface IStorage {
   updateProposalReminderTemplate(id: string, template: Partial<schema.InsertProposalReminderTemplate>): Promise<schema.ProposalReminderTemplate | undefined>;
   deleteProposalReminderTemplate(id: string): Promise<boolean>;
   getProposalsAwaitingReminders(): Promise<Proposal[]>;
+  expireLapsedProposals(now?: Date): Promise<Proposal[]>;
   getProposalReminderLog(proposalId: string): Promise<schema.ProposalReminderLogEntry[]>;
   claimProposalReminder(entry: schema.InsertProposalReminderLog): Promise<schema.ProposalReminderLogEntry | null>;
   markProposalReminderFailed(id: string, error: string): Promise<void>;
@@ -19729,6 +19730,41 @@ export class DbStorage implements IStorage {
     return totals;
   }
 
+  /**
+   * Retire proposals whose pricing has run out.
+   *
+   * Only ever touches proposals that are out with a client and undecided
+   * (sent/viewed), not archived, and carrying an actual expiry date. An
+   * open-ended proposal never lapses — a null date must not read as "expired
+   * now", which would retire every proposal in the database on the first
+   * sweep. An accepted proposal does not stop being accepted because a date
+   * passed.
+   *
+   * The comparison is against the stored timestamp directly because expiry
+   * dates are written at the END of the chosen day (see shared/proposalExpiry
+   * .ts): "valid until 31 March" has to mean through the 31st, not from its
+   * first second.
+   *
+   * Returns the proposals it retired so the caller can log them — a quote
+   * lapsing is something the builder should find out about.
+   */
+  async expireLapsedProposals(now: Date = new Date()): Promise<Proposal[]> {
+    try {
+      return await db.update(schema.proposals)
+        .set({ status: "expired", updatedAt: now })
+        .where(and(
+          inArray(schema.proposals.status, ["sent", "viewed"]),
+          eq(schema.proposals.isArchived, false),
+          isNotNull(schema.proposals.expiryDate),
+          lt(schema.proposals.expiryDate, now),
+        ))
+        .returning();
+    } catch (error) {
+      console.error("Database error in expireLapsedProposals:", error);
+      throw error;
+    }
+  }
+
   // --- Proposal reminders -------------------------------------------------
 
   async getProposalReminderTemplates(companyId: string): Promise<schema.ProposalReminderTemplate[]> {
@@ -20083,11 +20119,14 @@ export class DbStorage implements IStorage {
     const parent = await this.getProposal(parentId);
     if (!parent) throw new Error('Parent proposal not found');
 
-    const REVISABLE = new Set(['sent', 'viewed', 'rejected', 'accepted']);
+    // "expired" belongs here: a proposal whose pricing has lapsed is precisely
+    // the one you want to requote at current rates, and blocking it left an
+    // expired proposal with no way forward at all.
+    const REVISABLE = new Set(['sent', 'viewed', 'rejected', 'accepted', 'expired']);
     if (!REVISABLE.has(String(parent.status))) {
       throw new InvalidProposalStateError(
         `Cannot revise a proposal in status "${parent.status}". ` +
-        `Only sent, viewed, rejected or accepted proposals can be revised.`
+        `Only sent, viewed, rejected, accepted or expired proposals can be revised.`
       );
     }
 

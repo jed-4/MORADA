@@ -12,6 +12,7 @@ import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subM
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
+import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
@@ -24681,7 +24682,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
-      const proposal = await storage.updateProposal(req.params.id, validationResult.data);
+
+      // Expiring is not a one-way door. A client who asks for another week
+      // gets it by moving the date, and the proposal has to come back — the
+      // alternative is burning a revision number to re-quote identical work.
+      // It returns to the state it was actually in: a client who had already
+      // opened it goes back to "viewed", not "sent", or the view count sitting
+      // beside it on the same row contradicts the status.
+      const patch: Record<string, unknown> = { ...validationResult.data };
+
+      // Normalise here rather than trusting the caller: a date picker hands
+      // back midnight, and storing that means "valid until 31 March" expires
+      // at the first second of the 31st — the client opens it on the day you
+      // told them it was good until and is refused.
+      if (validationResult.data.expiryDate) {
+        patch.expiryDate = endOfDay(validationResult.data.expiryDate as any);
+      }
+
+      if (
+        ownedProposal.status === "expired"
+        && patch.expiryDate
+        && (patch.expiryDate as Date) > new Date()
+      ) {
+        patch.status = statusOnReinstate(ownedProposal);
+      }
+
+      const proposal = await storage.updateProposal(req.params.id, patch);
       if (!proposal) {
         return res.status(404).json({ error: "Proposal not found" });
       }
@@ -25012,6 +25038,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sentAt: z.coerce.date().optional(),
         // Opt in to chasing at the moment of sending. Off unless asked for.
         remindersEnabled: z.boolean().optional(),
+        // How long the pricing holds. Sending is the natural moment to decide,
+        // and until now nothing in the app could set this at all — the "Valid
+        // until" column, the cover page and the before_expiry reminder all read
+        // a column no code wrote.
+        expiryDate: z.coerce.date().optional(),
       });
       const parsed = sendSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -25045,12 +25076,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       const sentDate = sentAt ? new Date(sentAt) : new Date();
+      // Resolve the expiry BEFORE the snapshot: the client's frozen copy shows
+      // "Valid until", so a date set in this same request has to be inside the
+      // snapshot, not only on the row we update afterwards.
+      const resolvedExpiry = parsed.data.expiryDate
+        ? endOfDay(parsed.data.expiryDate)
+        : priced.expiryDate ?? null;
       const sentProposalPreview = {
         ...priced,
         status: "sent" as const,
         sentDate,
         sentPdfPath,
         sentTo: recipients,
+        expiryDate: resolvedExpiry,
       };
 
       const snapshot = {
@@ -25091,6 +25129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sentPdfPath,
         sentTo: recipients,
         remindersEnabled: parsed.data.remindersEnabled === true,
+        ...(parsed.data.expiryDate ? { expiryDate: resolvedExpiry } : {}),
       } as any);
 
       // Prefer the canonical domain over the host this request happened to

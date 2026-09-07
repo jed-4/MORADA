@@ -103,14 +103,57 @@ export async function sendProposalReminder({
   }
 }
 
-async function sweep(): Promise<{ checked: number; sent: number }> {
+/**
+ * Retire proposals whose pricing has run out.
+ *
+ * Runs FIRST in the sweep, deliberately: a proposal that lapsed since the last
+ * tick must drop out of the reminder work list in the same pass, or we email a
+ * client chasing a price that is no longer on offer.
+ */
+async function expireLapsed(): Promise<number> {
+  let expired: Awaited<ReturnType<typeof storage.expireLapsedProposals>>;
+  try {
+    expired = await storage.expireLapsedProposals();
+  } catch (e) {
+    console.error("[ProposalReminders] expiry pass failed", e);
+    return 0;
+  }
+
+  // A quote lapsing is something the builder should find out about, so each
+  // one lands in the project's activity feed. Logging is best-effort: failing
+  // to write the note must not undo the expiry.
+  for (const proposal of expired) {
+    try {
+      await storage.createActivity({
+        projectId: proposal.projectId,
+        activityType: "proposal",
+        action: "status_changed",
+        userName: "Morada",
+        description: `proposal '${proposal.name}' expired — pricing was valid until ${
+          proposal.expiryDate ? new Date(proposal.expiryDate).toLocaleDateString("en-AU") : "an earlier date"
+        }`,
+        entityId: proposal.id,
+        entityName: proposal.proposalNumber,
+        metadata: { expiryDate: proposal.expiryDate },
+      });
+    } catch (e) {
+      console.error(`[ProposalReminders] could not log expiry of ${proposal.proposalNumber}`, e);
+    }
+  }
+
+  return expired.length;
+}
+
+async function sweep(): Promise<{ checked: number; sent: number; expired: number }> {
   const baseUrl = (process.env.APP_BASE_URL || process.env.APP_URL || "https://app.moradaco.com.au")
     .replace(/\/$/, "");
   let checked = 0;
   let sent = 0;
 
+  const expired = await expireLapsed();
+
   const live = await storage.getProposalsAwaitingReminders();
-  if (live.length === 0) return { checked, sent };
+  if (live.length === 0) return { checked, sent, expired };
 
   // Grouped by company so templates and settings are fetched once each rather
   // than once per proposal — Neon is us-east-1 and every round trip is ~400ms.
@@ -173,7 +216,7 @@ async function sweep(): Promise<{ checked: number; sent: number }> {
     }
   }
 
-  return { checked, sent };
+  return { checked, sent, expired };
 }
 
 export function startProposalReminderScheduler(): void {
@@ -182,9 +225,11 @@ export function startProposalReminderScheduler(): void {
 
   const run = () => {
     sweep()
-      .then(({ checked, sent }) => {
-        if (checked > 0 || sent > 0) {
-          console.log(`[ProposalReminders] swept ${checked} proposal(s), sent ${sent} reminder(s)`);
+      .then(({ checked, sent, expired }) => {
+        if (checked > 0 || sent > 0 || expired > 0) {
+          console.log(
+            `[ProposalReminders] swept ${checked} proposal(s), sent ${sent} reminder(s), expired ${expired}`,
+          );
         }
       })
       .catch((e) => console.error("[ProposalReminders]", e));
@@ -192,5 +237,5 @@ export function startProposalReminderScheduler(): void {
 
   setTimeout(run, STARTUP_DELAY_MS);
   setInterval(run, CHECK_INTERVAL_MS);
-  console.log("[ProposalReminders] scheduler started (hourly sweep)");
+  console.log("[ProposalReminders] scheduler started (hourly sweep: expiry then reminders)");
 }
