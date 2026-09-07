@@ -128,6 +128,7 @@ import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCo
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { deriveRfqStatus } from "@shared/rfqStatus";
 import { DEFAULT_RFQ_REMINDER_TEMPLATES } from "@shared/schema";
+import { DEFAULT_PROPOSAL_REMINDER_TEMPLATES } from "@shared/proposalReminders";
 import { timesheetTotalExGstCents } from "@shared/money";
 import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTotals";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
@@ -1075,6 +1076,15 @@ export interface IStorage {
   getProposals(companyId: string, filters?: { projectId?: string; status?: string; parentProposalId?: string }): Promise<Proposal[]>;
   getProposal(id: string): Promise<Proposal | undefined>;
   recomputeProposalTotals(proposalId: string): Promise<ProposalTotals | null>;
+  getProposalReminderTemplates(companyId: string): Promise<schema.ProposalReminderTemplate[]>;
+  getProposalReminderTemplate(id: string): Promise<schema.ProposalReminderTemplate | undefined>;
+  createProposalReminderTemplate(companyId: string, template: schema.InsertProposalReminderTemplate): Promise<schema.ProposalReminderTemplate>;
+  updateProposalReminderTemplate(id: string, template: Partial<schema.InsertProposalReminderTemplate>): Promise<schema.ProposalReminderTemplate | undefined>;
+  deleteProposalReminderTemplate(id: string): Promise<boolean>;
+  getProposalsAwaitingReminders(): Promise<Proposal[]>;
+  getProposalReminderLog(proposalId: string): Promise<schema.ProposalReminderLogEntry[]>;
+  claimProposalReminder(entry: schema.InsertProposalReminderLog): Promise<schema.ProposalReminderLogEntry | null>;
+  markProposalReminderFailed(id: string, error: string): Promise<void>;
   createProposal(proposal: InsertProposal): Promise<Proposal>;
   createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
   updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined>;
@@ -19717,6 +19727,121 @@ export class DbStorage implements IStorage {
       .where(eq(schema.proposals.id, proposalId));
 
     return totals;
+  }
+
+  // --- Proposal reminders -------------------------------------------------
+
+  async getProposalReminderTemplates(companyId: string): Promise<schema.ProposalReminderTemplate[]> {
+    try {
+      const existing = await db.select().from(schema.proposalReminderTemplates)
+        .where(eq(schema.proposalReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.proposalReminderTemplates.displayOrder), asc(schema.proposalReminderTemplates.createdAt));
+      if (existing.length > 0) return existing;
+
+      const seeded = await db.insert(schema.proposalReminderTemplates)
+        .values(DEFAULT_PROPOSAL_REMINDER_TEMPLATES.map((t) => ({ ...t, companyId })))
+        .onConflictDoNothing()
+        .returning();
+      if (seeded.length > 0) return seeded;
+
+      // Lost a seeding race with a concurrent request — re-read.
+      return await db.select().from(schema.proposalReminderTemplates)
+        .where(eq(schema.proposalReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.proposalReminderTemplates.displayOrder), asc(schema.proposalReminderTemplates.createdAt));
+    } catch (error) {
+      console.error("Database error in getProposalReminderTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getProposalReminderTemplate(id: string): Promise<schema.ProposalReminderTemplate | undefined> {
+    const [row] = await db.select().from(schema.proposalReminderTemplates)
+      .where(eq(schema.proposalReminderTemplates.id, id)).limit(1);
+    return row;
+  }
+
+  async createProposalReminderTemplate(
+    companyId: string,
+    template: schema.InsertProposalReminderTemplate,
+  ): Promise<schema.ProposalReminderTemplate> {
+    const [row] = await db.insert(schema.proposalReminderTemplates)
+      .values({ ...(template as any), companyId })
+      .returning();
+    return row;
+  }
+
+  async updateProposalReminderTemplate(
+    id: string,
+    template: Partial<schema.InsertProposalReminderTemplate>,
+  ): Promise<schema.ProposalReminderTemplate | undefined> {
+    const [row] = await db.update(schema.proposalReminderTemplates)
+      .set({ ...(template as any), updatedAt: new Date() })
+      .where(eq(schema.proposalReminderTemplates.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteProposalReminderTemplate(id: string): Promise<boolean> {
+    const rows = await db.delete(schema.proposalReminderTemplates)
+      .where(eq(schema.proposalReminderTemplates.id, id))
+      .returning();
+    return rows.length > 0;
+  }
+
+  /**
+   * The scheduler's work list: proposals actually out with a client, still
+   * awaiting a response, with chasing switched on for that proposal.
+   *
+   * Everything the client has already answered — accepted, rejected — and
+   * everything that can no longer be answered — draft, superseded, expired,
+   * archived — is excluded here rather than in the sweep, so a proposal that
+   * has been decided can never be chased.
+   */
+  async getProposalsAwaitingReminders(): Promise<Proposal[]> {
+    try {
+      return await db.select().from(schema.proposals)
+        .where(and(
+          eq(schema.proposals.remindersEnabled, true),
+          eq(schema.proposals.isArchived, false),
+          inArray(schema.proposals.status, ["sent", "viewed"]),
+        ))
+        .orderBy(asc(schema.proposals.companyId));
+    } catch (error) {
+      console.error("Database error in getProposalsAwaitingReminders:", error);
+      throw error;
+    }
+  }
+
+  async getProposalReminderLog(proposalId: string): Promise<schema.ProposalReminderLogEntry[]> {
+    return await db.select().from(schema.proposalReminderLog)
+      .where(eq(schema.proposalReminderLog.proposalId, proposalId))
+      .orderBy(desc(schema.proposalReminderLog.sentAt));
+  }
+
+  /**
+   * Claim-then-send: the unique (proposal, template, email) index means the
+   * INSERT is the lock. A second scheduler pass, an overlapping hourly tick or
+   * a second app instance gets null here rather than emailing a client twice.
+   */
+  async claimProposalReminder(
+    entry: schema.InsertProposalReminderLog,
+  ): Promise<schema.ProposalReminderLogEntry | null> {
+    try {
+      const [row] = await db.insert(schema.proposalReminderLog)
+        .values(entry as any)
+        .onConflictDoNothing()
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      console.error("Database error in claimProposalReminder:", error);
+      throw error;
+    }
+  }
+
+  async markProposalReminderFailed(id: string, error: string): Promise<void> {
+    await db.update(schema.proposalReminderLog)
+      .set({ status: "failed", error: error.slice(0, 500) })
+      .where(eq(schema.proposalReminderLog.id, id));
   }
 
   async deleteProposal(id: string): Promise<boolean> {

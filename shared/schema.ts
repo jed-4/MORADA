@@ -2919,6 +2919,10 @@ export const proposals = pgTable("proposals", {
   // Who it went to, captured at send time — the contact may change later.
   sentTo: jsonb("sent_to").$type<Array<{ name?: string; email: string }>>().default([]),
 
+  // Chase this client if they don't respond. Off unless switched on for this
+  // proposal: a homeowner should never be emailed because a default was left on.
+  remindersEnabled: boolean("reminders_enabled").notNull().default(false),
+
   // View tracking (client-view endpoint)
   viewCount: integer("view_count").notNull().default(0),
   lastViewedAt: timestamp("last_viewed_at"),
@@ -3115,6 +3119,79 @@ export const insertProposalPaymentMilestoneSchema = createInsertSchema(proposalP
 
 export type InsertProposalPaymentMilestone = z.infer<typeof insertProposalPaymentMilestoneSchema>;
 export type ProposalPaymentMilestone = typeof proposalPaymentMilestones.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Proposal reminders — chasing a client who hasn't responded.
+// ---------------------------------------------------------------------------
+export const proposalReminderTriggerEnum = pgEnum("proposal_reminder_trigger", [
+  "after_send",
+  "before_expiry",
+]);
+
+export const proposalReminderTemplates = pgTable("proposal_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(), // shown in the reminders list, e.g. "Gentle follow-up"
+  trigger: proposalReminderTriggerEnum("trigger").notNull().default("after_send"),
+  offsetDays: integer("offset_days").notNull(),
+
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalReminderTemplateSchema = createInsertSchema(proposalReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+
+export const updateProposalReminderTemplateSchema = insertProposalReminderTemplateSchema.partial();
+
+export type InsertProposalReminderTemplate = z.infer<typeof insertProposalReminderTemplateSchema>;
+export type ProposalReminderTemplate = typeof proposalReminderTemplates.$inferSelect;
+
+// What was actually sent, to whom, off which template.
+//
+// The unique (proposal, template, email) index is the concurrency control, not
+// just a record: a reminder is claimed by inserting its log row before the
+// email goes out, so a retry, an overlapping tick or a second app instance
+// hits the constraint rather than emailing a client twice.
+export const proposalReminderLog = pgTable("proposal_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => proposalReminderTemplates.id, { onDelete: "set null" }),
+
+  toEmail: text("to_email").notNull(),
+  subject: text("subject"),
+  body: text("body"),
+
+  status: text("status").notNull().default("sent"), // "sent" | "failed"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+}, (table) => ({
+  oncePerRecipient: uniqueIndex("proposal_reminder_log_once_idx")
+    .on(table.proposalId, table.templateId, table.toEmail),
+}));
+
+export const insertProposalReminderLogSchema = createInsertSchema(proposalReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertProposalReminderLog = z.infer<typeof insertProposalReminderLogSchema>;
+export type ProposalReminderLogEntry = typeof proposalReminderLog.$inferSelect;
 
 // Activity feed table
 export const activities = pgTable("activities", {

@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -31,6 +31,7 @@ import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { SendProposalDialog } from './SendProposalDialog';
+import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
@@ -630,6 +631,7 @@ export function ProposalBuilder({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isRemindersOpen, setIsRemindersOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   // Sibling revisions for the toolbar's "Revision history" drawer.
@@ -998,6 +1000,17 @@ export function ProposalBuilder({
                   Copy client share link
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  onSelect={() => setIsRemindersOpen(true)}
+                  disabled={isDraft}
+                  data-testid="menu-proposal-reminders"
+                >
+                  <BellRing className="w-4 h-4 mr-2" />
+                  Follow-ups
+                  {proposal.remindersEnabled ? (
+                    <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
+                  ) : null}
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onSelect={() => setIsRevisionHistoryOpen(true)}
                   data-testid="menu-revision-history"
                 >
@@ -1049,6 +1062,12 @@ export function ProposalBuilder({
       {/* When a toolbarSlot is provided (e.g. the page header), portal the
           toolbar there. Otherwise render it inline above the preview. */}
       {toolbarSlot ? createPortal(toolbarContent, toolbarSlot) : toolbarContent}
+
+      <ProposalRemindersDialog
+        open={isRemindersOpen}
+        onOpenChange={setIsRemindersOpen}
+        proposal={proposal}
+      />
 
       <SendProposalDialog
         open={isSendOpen}

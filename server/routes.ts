@@ -137,6 +137,8 @@ import {
   insertRfqQuoteItemSchema,
   insertRfqReminderTemplateSchema,
   updateRfqReminderTemplateSchema,
+  insertProposalReminderTemplateSchema,
+  updateProposalReminderTemplateSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -25008,6 +25010,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pdfBase64: z.string().min(1, "The proposal PDF is still generating"),
         pdfFilename: z.string().optional(),
         sentAt: z.coerce.date().optional(),
+        // Opt in to chasing at the moment of sending. Off unless asked for.
+        remindersEnabled: z.boolean().optional(),
       });
       const parsed = sendSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -25086,6 +25090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contentSnapshot: snapshot,
         sentPdfPath,
         sentTo: recipients,
+        remindersEnabled: parsed.data.remindersEnabled === true,
       } as any);
 
       // Prefer the canonical domain over the host this request happened to
@@ -25261,6 +25266,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // columns that don't exist in the schema (issueDate/taxAmount/total on the
   // invoice; taxRate/amount on items), bypassed per-company invoice numbering
   // with `INV-<timestamp>`, and had no ownership check on the proposal.
+
+  // --- Proposal reminder templates ----------------------------------------
+  // Company-scoped throughout: every read and write resolves the template and
+  // checks its companyId against the session before touching it.
+
+  app.get("/api/proposal-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Seeds the two gentle defaults on first read for this company.
+      res.json(await storage.getProposalReminderTemplates(getSessionCompanyId(req)!));
+    } catch (error) {
+      console.error("Error fetching proposal reminder templates:", error);
+      res.status(500).json({ error: "Failed to fetch reminders" });
+    }
+  });
+
+  app.post("/api/proposal-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // insertProposalReminderTemplateSchema omits companyId at its definition,
+      // and createProposalReminderTemplate takes the session's companyId as a
+      // separate argument and spreads it last — a body-supplied companyId
+      // cannot reach the insert.
+      const parsed = insertProposalReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      res.status(201).json(await storage.createProposalReminderTemplate(getSessionCompanyId(req)!, parsed.data));
+    } catch (error: any) {
+      console.error("Error creating proposal reminder template:", error);
+      res.status(500).json({ error: "Failed to create reminder" });
+    }
+  });
+
+  app.patch("/api/proposal-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = updateProposalReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const existing = await storage.getProposalReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== getSessionCompanyId(req)) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(await storage.updateProposalReminderTemplate(req.params.id, parsed.data));
+    } catch (error: any) {
+      console.error("Error updating proposal reminder template:", error);
+      res.status(500).json({ error: "Failed to update reminder" });
+    }
+  });
+
+  app.delete("/api/proposal-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getProposalReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== getSessionCompanyId(req)) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      await storage.deleteProposalReminderTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting proposal reminder template:", error);
+      res.status(500).json({ error: "Failed to delete reminder" });
+    }
+  });
+
+  // What has actually been emailed to this client, and what failed.
+  app.get("/api/proposals/:id/reminder-log", async (req, res) => {
+    try {
+      if (!(await getOwnedProposal(req, res, req.params.id))) return;
+      res.json(await storage.getProposalReminderLog(req.params.id));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch reminder log" });
+    }
+  });
+
+  // Send one reminder now, bypassing the schedule. Deliberately forced: the
+  // user asked for it explicitly, so the once-only claim shouldn't silently
+  // swallow it because the scheduler already sent that template.
+  app.post("/api/proposals/:id/reminders/:templateId/send", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const proposal = await getOwnedProposal(req, res, req.params.id);
+      if (!proposal) return;
+
+      const template = await storage.getProposalReminderTemplate(req.params.templateId);
+      if (!template || template.companyId !== getSessionCompanyId(req)) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      if (proposal.status !== "sent" && proposal.status !== "viewed") {
+        return res.status(400).json({
+          error: "Only a proposal awaiting a client response can be chased.",
+        });
+      }
+
+      const recipients = (proposal.sentTo ?? []) as Array<{ name?: string; email: string }>;
+      if (!Array.isArray(recipients) || recipients.length === 0) {
+        return res.status(400).json({ error: "This proposal has no recorded recipients to chase." });
+      }
+
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req)!).catch(() => undefined);
+      const project = proposal.projectId
+        ? await storage.getProject(proposal.projectId).catch(() => undefined)
+        : undefined;
+      const baseUrl =
+        (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+        `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+
+      const { sendProposalReminder } = await import("./services/proposalReminderScheduler");
+      const results = [];
+      for (const recipient of recipients) {
+        results.push(await sendProposalReminder({
+          proposal,
+          template,
+          recipient,
+          baseUrl,
+          senderName: `${(req.user as any)?.firstName || ""} ${(req.user as any)?.lastName || ""}`.trim()
+            || (req.user as any)?.email,
+          companyName: settings?.companyName || null,
+          projectName: project?.name ?? null,
+          force: true,
+        }));
+      }
+      res.json({ results });
+    } catch (error: any) {
+      console.error("Error sending proposal reminder:", error);
+      res.status(500).json({ error: "Failed to send reminder" });
+    }
+  });
 
   // Next sequential proposal number (PROP-YYYY-NNNN) — scoped to the caller's company
   app.get("/api/proposal-numbers/next", async (req, res) => {
