@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { PortalLayout } from "@/components/portal/PortalLayout";
 import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 import { SignaturePad, type SignatureResult } from "@/components/SignaturePad";
+import { PDFPreview } from "@/components/proposals/PDFPreview";
+import { formatCents } from "@shared/money";
 import type {
   Proposal,
   ProposalSection,
@@ -32,7 +34,14 @@ type ClientProposal = Pick<
   | "subtotal" | "gstAmount" | "totalAmount"
   | "status" | "expiryDate" | "sentDate" | "acceptedDate" | "acceptedByName"
   | "showPricing" | "allowClientOptions" | "layoutSettings"
->;
+> & {
+  /**
+   * Whether the exact PDF the client was emailed is available to serve back.
+   * Proposals sent before PDFs were stored have none, and the portal falls
+   * back to rendering the snapshot's sections.
+   */
+  hasSentPdf?: boolean;
+};
 
 type ClientAcceptance = Pick<ProposalAcceptance, "id" | "status" | "signedByName" | "signedAt">;
 
@@ -80,9 +89,9 @@ function richTextToPlain(html: string): string {
     .trim();
 }
 
-function formatCents(cents: number | null | undefined): string {
+function formatMoney(cents: number | null | undefined): string {
   if (cents == null) return "—";
-  return `$${(Number(cents) / 100).toFixed(2)}`;
+  return formatCents(Number(cents));
 }
 
 function SectionView({
@@ -141,12 +150,12 @@ function SectionView({
                       <td className="px-3 py-2 text-muted-foreground">{it.unitType}</td>
                       {showPricing && (
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {itShowsPricing ? formatCents(it.unitPrice) : "—"}
+                          {itShowsPricing ? formatMoney(it.unitPrice) : "—"}
                         </td>
                       )}
                       {showPricing && (
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {itShowsPricing ? formatCents(it.totalPrice) : "—"}
+                          {itShowsPricing ? formatMoney(it.totalPrice) : "—"}
                         </td>
                       )}
                     </tr>
@@ -157,7 +166,7 @@ function SectionView({
                     <td className="px-3 py-2 font-medium" colSpan={3}>Subtotal</td>
                     <td className="px-3 py-2"></td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium">
-                      {formatCents(subtotal)}
+                      {formatMoney(subtotal)}
                     </td>
                   </tr>
                 )}
@@ -192,7 +201,7 @@ function SectionView({
                       {m.percentage != null ? `${Number(m.percentage).toFixed(2)}%` : "—"}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {m.amountCents != null ? `$${(Number(m.amountCents) / 100).toFixed(2)}` : "—"}
+                      {formatMoney(m.amountCents)}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{m.description || "—"}</td>
                   </tr>
@@ -409,20 +418,37 @@ export default function ProposalPortal() {
           <CardContent className="text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Building className="w-4 h-4" />
-              <span>Total: ${(Number(proposal.totalAmount || 0) / 100).toFixed(2)}</span>
+              <span>Total: {formatMoney(proposal.totalAmount)}</span>
             </div>
           </CardContent>
         </Card>
 
-        {sections.map((section) => (
-          <SectionView
-            key={section.id}
-            section={section}
-            items={items}
-            milestones={milestones}
-            showPricing={proposal.showPricing !== false}
-          />
-        ))}
+        {/* The document itself. When the sent PDF was stored we show that exact
+            file — the same one attached to the client's email — rather than the
+            card-per-section approximation below, which strips all formatting
+            and cannot render the estimate at all. The cards remain as the
+            fallback for proposals sent before the PDF was kept. */}
+        {proposal.hasSentPdf ? (
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="h-[80vh] min-h-[480px]" data-testid="portal-proposal-pdf">
+                <PDFPreview
+                  pdfBlob={`/api/proposals/${id}/sent-pdf?token=${encodeURIComponent(shareToken)}`}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          sections.map((section) => (
+            <SectionView
+              key={section.id}
+              section={section}
+              items={items}
+              milestones={milestones}
+              showPricing={proposal.showPricing !== false}
+            />
+          ))
+        )}
 
         <Card data-testid="card-portal-acceptance">
           <CardHeader>

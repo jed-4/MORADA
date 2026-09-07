@@ -25489,6 +25489,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // it. Share-token gated exactly like /client-view; no session involved.
   app.get("/api/proposals/:id/sent-pdf", async (req, res) => {
     try {
+      // No companyId scoping here by design, exactly as for /client-view and
+      // /view: this is the client's own share link and there is no session to
+      // scope by. Authorisation is the opaque per-proposal shareToken, checked
+      // below before anything is read, plus the same draft/archived gates.
       const token = typeof req.query.token === "string" ? req.query.token : "";
       if (!token) return res.status(401).json({ error: "Share token is required" });
       const proposal = await storage.getProposal(req.params.id);

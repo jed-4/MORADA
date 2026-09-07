@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -30,6 +30,7 @@ import { EstimateEditor } from './SectionEditor';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
+import { SendProposalDialog } from './SendProposalDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
@@ -628,6 +629,7 @@ export function ProposalBuilder({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
+  const [isSendOpen, setIsSendOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   // Sibling revisions for the toolbar's "Revision history" drawer.
@@ -677,6 +679,11 @@ export function ProposalBuilder({
 
   const orderedRevisions = [...revisionSiblings].sort((a, b) => (a.version || 1) - (b.version || 1));
   const isSuperseded = proposal.status === 'superseded';
+  const isDraft = (proposal.status ?? 'draft') === 'draft';
+  // Soft lock: a sent proposal stays editable, but the client is holding a
+  // frozen copy, so edits made here no longer reach them. The banner says so
+  // and offers the revision that would.
+  const isSentToClient = ['sent', 'viewed', 'accepted', 'rejected'].includes(proposal.status ?? '');
   const [pdfEstimatesData, setPdfEstimatesData] = useState<Record<string, {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -939,6 +946,22 @@ export function ProposalBuilder({
         </Badge>
       )}
 
+      {/* Sending is the primary action on a draft, so it gets a real button
+          rather than a menu item. Once sent, the menu's revision flow takes
+          over — re-sending the same proposal number would leave the client
+          holding two different documents with one identity. */}
+      {isDraft && (
+        <Button
+          size="sm"
+          onClick={() => setIsSendOpen(true)}
+          disabled={!pdfBlob}
+          data-testid="button-send-proposal"
+        >
+          <Send className="w-4 h-4 mr-2" />
+          Send
+        </Button>
+      )}
+
       <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
           {({ loading, url }) => (
             <DropdownMenu>
@@ -1026,6 +1049,48 @@ export function ProposalBuilder({
       {/* When a toolbarSlot is provided (e.g. the page header), portal the
           toolbar there. Otherwise render it inline above the preview. */}
       {toolbarSlot ? createPortal(toolbarContent, toolbarSlot) : toolbarContent}
+
+      <SendProposalDialog
+        open={isSendOpen}
+        onOpenChange={setIsSendOpen}
+        proposal={proposal}
+        client={client}
+        companyName={companyName}
+        pdfBlob={pdfBlob}
+      />
+
+      {/* Soft lock. The client holds the snapshot frozen at send time, so edits
+          made here are invisible to them until a new revision goes out. */}
+      {isSentToClient && (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+          data-testid="banner-sent-lock"
+        >
+          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="text-muted-foreground">
+            {proposal.status === 'accepted'
+              ? 'This proposal has been accepted. The client holds the signed copy — edits here will not change it.'
+              : proposal.status === 'rejected'
+                ? 'This proposal was declined. The client holds the copy they were sent — edits here will not change it.'
+                : 'This proposal has been sent. The client sees the copy frozen at send time, so changes you make here will not reach them.'}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => newRevisionMutation.mutate()}
+            disabled={newRevisionMutation.isPending}
+            data-testid="button-banner-create-revision"
+          >
+            {newRevisionMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Copy className="w-4 h-4 mr-2" />
+            )}
+            Create revision
+          </Button>
+        </div>
+      )}
 
       {/* Revision history side drawer (opened from the ⋯ menu). */}
       <Sheet open={isRevisionHistoryOpen} onOpenChange={setIsRevisionHistoryOpen}>

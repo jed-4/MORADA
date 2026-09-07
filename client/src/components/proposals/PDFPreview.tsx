@@ -5,7 +5,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PDFPreviewProps {
-  pdfBlob: Blob;
+  /**
+   * The document to render: a Blob in the builder, where the PDF is generated
+   * in-page, or a URL in the client portal, which fetches the stored copy the
+   * client was emailed.
+   */
+  pdfBlob: Blob | string;
 }
 
 export function PDFPreview({ pdfBlob }: PDFPreviewProps) {

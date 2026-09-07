@@ -38,6 +38,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -58,6 +59,7 @@ import { format } from "date-fns";
 import { revisionLabel, formatViewedTooltip } from "@/components/proposals/proposalDisplay";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatCents } from "@shared/money";
 
 export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
@@ -86,26 +88,6 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
       setLocation('/proposals/new');
     }
   };
-
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ proposalId, status }: { proposalId: string; status: string }) => {
-      return await apiRequest(`/api/proposals/${proposalId}`, "PATCH", { status });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
-      toast({
-        title: "Status updated",
-        description: "Proposal status has been updated successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update proposal status.",
-      });
-    },
-  });
 
   const toggleArchiveMutation = useMutation({
     mutationFn: async ({ proposalId, isArchived }: { proposalId: string; isArchived: boolean }) => {
@@ -220,12 +202,11 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
     return statusOption?.color || null;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD'
-    }).format(amount);
-  };
+  // proposals.totalAmount is CENTS. This used to hand the raw column to a
+  // dollars formatter, which was invisible only because the column was always
+  // 0 — now that send computes real totals it would overstate every figure by
+  // 100x. formatCents is the canonical AUD formatter and takes cents.
+  const formatCurrency = (cents: number) => formatCents(Number(cents ?? 0));
 
   const handleRowClick = (proposalId: string) => {
     if (isProjectContext) {
@@ -394,24 +375,16 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
                     </Badge>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  {proposalStatuses.map((status) => (
-                    <DropdownMenuItem
-                      key={status.key}
-                      onClick={() => updateStatusMutation.mutate({
-                        proposalId: proposal.id,
-                        status: status.key
-                      })}
-                      className="gap-2"
-                      data-testid={`menu-item-status-${status.key}`}
-                    >
-                      {getStatusIcon(status.key)}
-                      <span className="flex-1">{status.name}</span>
-                      {proposal.status === status.key && (
-                        <CheckCircle className="w-4 h-4" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
+                <DropdownMenuContent align="start" className="w-56">
+                  {/* Status is not editable here. It belongs to the proposal
+                      state machine — Send, the client's own accept or decline,
+                      and Create revision — and setting it directly used to let
+                      you mark a proposal accepted with no acceptance record,
+                      no signature and no snapshot. The server refuses it now,
+                      so offering the choice would only produce an error. */}
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Status is set by sending, and by the client's response.
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => toggleArchiveMutation.mutate({
@@ -500,7 +473,7 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
     );
 
     return cols;
-  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, filteredProposals]);
+  }, [projects, proposalStatuses, isProjectContext, toggleArchiveMutation, filteredProposals]);
 
   const pickerColumns = useMemo(() => {
     return proposalColumns.map((c) => {
