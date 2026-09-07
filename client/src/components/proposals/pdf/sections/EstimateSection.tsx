@@ -1,6 +1,7 @@
 import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
 import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
+import { lineAppearsOnProposal, lineCountsTowardProposalTotal } from "@shared/proposalTotals";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -114,7 +115,16 @@ export function EstimateSection({
   })();
   const hideLineItems = pricingMode === "lump_sum" || pricingMode === "section_totals";
 
-  const { estimate, groups, items } = estimateData;
+  const { estimate, groups, items: allItems } = estimateData;
+
+  // Honour the estimate grid's two client-facing switches. Both were written by
+  // the grid and read by nothing, so a line the user hid with the eye toggle
+  // printed anyway, with its price. Filtering here rather than at each call
+  // site means the grouping, every subtotal and the grand total all agree —
+  // and they agree with computeProposalTotals on the server, which drives the
+  // figure the payment schedule is a percentage of. If the two ever diverge
+  // the client gets a column that does not add up to its own total.
+  const items = allItems.filter(lineAppearsOnProposal);
 
   const itemsByGroup: Record<string, EstimateItem[]> = {};
   const ungroupedItems: EstimateItem[] = [];
@@ -199,8 +209,28 @@ export function EstimateSection({
       wastagePercent: (item as any).wastagePercent,
     }).lineExTax;
   };
-  const lineIncTaxClient = (item: EstimateItem) => round2(preMarginIncTax(item) * marginFactor);
-  const lineExTaxClient = (item: EstimateItem) => round2(preMarginExTax(item) * marginFactor);
+  // A line marked "excluded" is named on the proposal as NOT part of this
+  // price, so it contributes nothing — matching lineCountsTowardProposalTotal
+  // on the server. "included" and "empty" only change the printed cell; the
+  // client is still paying for those lines.
+  const lineIncTaxClient = (item: EstimateItem) =>
+    lineCountsTowardProposalTotal(item) ? round2(preMarginIncTax(item) * marginFactor) : 0;
+  const lineExTaxClient = (item: EstimateItem) =>
+    lineCountsTowardProposalTotal(item) ? round2(preMarginExTax(item) * marginFactor) : 0;
+
+  /**
+   * What goes in an amount cell. "Included" and "Excluded" say in words what a
+   * figure cannot: that the work is covered by the price, or explicitly is not.
+   * "empty" blanks the cell for lines quoted elsewhere.
+   */
+  const amountCell = (item: EstimateItem, value: number): string => {
+    switch ((item.shownAs ?? "price") as string) {
+      case "included": return "Included";
+      case "excluded": return "Excluded";
+      case "empty": return "";
+      default: return formatCurrency(value);
+    }
+  };
 
   const calculateGroupSubtotals = (groupItems: EstimateItem[]) => {
     const incTax = round2(groupItems.reduce((sum, item) => sum + lineIncTaxClient(item), 0));
@@ -359,12 +389,12 @@ export function EstimateSection({
         )}
         {toggles.amountExTax && (
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(lineExTaxClient(item))}
+            {amountCell(item, lineExTaxClient(item))}
           </Text>
         )}
         {toggles.amountIncTax && (
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(lineIncTaxClient(item))}
+            {amountCell(item, lineIncTaxClient(item))}
           </Text>
         )}
       </View>
