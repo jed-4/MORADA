@@ -24658,6 +24658,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/proposals/:id", async (req, res) => {
     try {
+      // `status` is owned by the state machine — /send, the portal's accept and
+      // reject, and createProposalRevision's supersede. It used to be settable
+      // from here, which the list page's status dropdown did directly: you
+      // could mark a proposal "accepted" with no acceptance record, no
+      // signature and no snapshot, or push a superseded revision back to draft.
+      // Refuse it explicitly rather than silently dropping it, so a caller
+      // finds out instead of believing the write landed.
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, "status")) {
+        return res.status(400).json({
+          error: "Proposal status cannot be set directly. Use the send, accept, reject or revision actions.",
+        });
+      }
       const validationResult = insertProposalSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -24888,9 +24900,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const acceptance = await storage.createProposalAcceptance(validationResult.data);
+      // The signer's address and device come from the request, never the body:
+      // this endpoint is unauthenticated, so a self-reported IP is worthless as
+      // an audit record.
+      const forwarded = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
+      const acceptance = await storage.createProposalAcceptance({
+        ...validationResult.data,
+        ipAddress: forwarded || req.ip || null,
+        userAgent: (req.headers["user-agent"] as string | undefined) || null,
+      });
+
+      // This is the whole point of the endpoint and it used to be missing: the
+      // acceptance row was written and the proposal itself left untouched, so a
+      // client could sign and Morada still showed the proposal as unsigned.
+      const decidedAt = acceptance.signedAt ?? new Date();
+      const proposal = acceptance.status === "accepted"
+        ? await storage.updateProposal(req.params.id, {
+            status: "accepted",
+            acceptedDate: decidedAt,
+            acceptedByName: acceptance.signedByName,
+            acceptedByEmail: acceptance.signedByEmail,
+            signature: acceptance.signature ?? null,
+          })
+        : await storage.updateProposal(req.params.id, {
+            status: "rejected",
+            rejectedDate: decidedAt,
+            rejectionReason: acceptance.rejectionReason ?? null,
+          });
+
+      // Fold the decision into the frozen snapshot. The portal decides whether
+      // the client has already responded by reading snapshot.acceptances, and
+      // the send-time snapshot deliberately starts that list empty.
+      try {
+        const stored = (proposal ?? existing).contentSnapshot as Record<string, any> | null;
+        if (stored && typeof stored === "object") {
+          const priorAcceptances = Array.isArray(stored.acceptances) ? stored.acceptances : [];
+          await storage.updateProposal(req.params.id, {
+            contentSnapshot: {
+              ...stored,
+              proposal: { ...(stored.proposal ?? {}), status: proposal?.status ?? stored.proposal?.status },
+              acceptances: [...priorAcceptances, acceptance],
+            },
+          } as any);
+        }
+      } catch (err) {
+        console.error("Failed to fold acceptance into proposal snapshot:", err);
+      }
+
+      try {
+        await storage.createActivity({
+          projectId: existing.projectId,
+          activityType: "proposal",
+          // Validated as "accepted" | "rejected" above; the column is plain text.
+          action: acceptance.status === "accepted" ? "accepted" as const : "rejected" as const,
+          userName: acceptance.signedByName,
+          description: `${acceptance.status} proposal '${existing.name}'`,
+          entityId: existing.id,
+          entityName: existing.proposalNumber,
+          metadata: { signedByEmail: acceptance.signedByEmail },
+        });
+      } catch (err) {
+        console.error("Failed to log proposal decision activity:", err);
+      }
+
       res.status(201).json(acceptance);
     } catch (error) {
+      console.error("Error recording proposal acceptance:", error);
       res.status(500).json({ error: "Failed to create proposal acceptance" });
     }
   });
@@ -24919,7 +24994,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only draft proposals can be sent" });
       }
 
-      const { sentAt } = req.body;
+      const sendSchema = z.object({
+        recipients: z.array(z.object({
+          name: z.string().optional(),
+          email: z.string().email("Each recipient needs a valid email address"),
+        })).min(1, "Add at least one recipient"),
+        subject: z.string().min(1).optional(),
+        message: z.string().optional(),
+        // The PDF is rendered in the browser by @react-pdf and posted here, the
+        // same way RFQ send works. Rendering it server-side would mean running
+        // the client-only document components under Node, and the deployed
+        // container has no Chromium for a headless fallback.
+        pdfBase64: z.string().min(1, "The proposal PDF is still generating"),
+        pdfFilename: z.string().optional(),
+        sentAt: z.coerce.date().optional(),
+      });
+      const parsed = sendSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const { recipients, pdfBase64, sentAt } = parsed.data;
+
+      // Totals first: the snapshot, the emailed figure and every percentage
+      // milestone all read proposals.totalAmount, and until this ran the column
+      // was still the 0 it was created with.
+      await storage.recomputeProposalTotals(req.params.id);
+      const priced = (await storage.getProposal(req.params.id)) ?? existing;
 
       const [sections, items, milestones, companySettings] = await Promise.all([
         storage.getProposalSections(req.params.id),
@@ -24928,8 +25031,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getCompanySettings(getSessionCompanyId(req)),
       ]);
 
+      // Persist the exact PDF the client is about to be emailed, so the portal
+      // can serve that document back instead of re-deriving a lookalike.
+      const oss = new ObjectStorageService();
+      const sentPdfPath = await oss.uploadObjectEntity(
+        Buffer.from(pdfBase64, "base64"),
+        "application/pdf",
+        priced.companyId ?? getSessionCompanyId(req),
+      );
+
       const sentDate = sentAt ? new Date(sentAt) : new Date();
-      const sentProposalPreview = { ...existing, status: "sent" as const, sentDate };
+      const sentProposalPreview = {
+        ...priced,
+        status: "sent" as const,
+        sentDate,
+        sentPdfPath,
+        sentTo: recipients,
+      };
 
       const snapshot = {
         capturedAt: new Date().toISOString(),
@@ -24937,6 +25055,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sections,
         items,
         milestones,
+        // Present and empty on purpose. The portal decides whether the client
+        // has already responded by looking here; when the key was absent the
+        // sign panel came back on every reload and the same client could sign
+        // the same proposal any number of times.
+        acceptances: [] as unknown[],
         company: companySettings
           ? {
               companyName: companySettings.companyName,
@@ -24961,8 +25084,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "sent",
         sentDate,
         contentSnapshot: snapshot,
-      });
-      res.json(proposal);
+        sentPdfPath,
+        sentTo: recipients,
+      } as any);
+
+      // Prefer the canonical domain over the host this request happened to
+      // arrive on: the client's link lives for weeks, and building it from
+      // req.host bakes a preview/staging host into it. Mirrors RFQ send.
+      const baseUrl =
+        (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+        `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+      const portalLink = `${baseUrl}/portal/proposal/${proposal!.id}?token=${encodeURIComponent(proposal!.shareToken)}`;
+
+      const companyName = companySettings?.companyName || "Morada";
+      const senderName =
+        `${(req.user as any)?.firstName || ""} ${(req.user as any)?.lastName || ""}`.trim()
+        || (req.user as any)?.email
+        || companyName;
+      const subject = parsed.data.subject
+        || `${companyName} — proposal ${proposal!.proposalNumber}: ${proposal!.name}`;
+
+      const sent: string[] = [];
+      const failed: { email: string; error: string }[] = [];
+
+      for (const recipient of recipients) {
+        const greeting = recipient.name ? `Hi ${recipient.name},` : "Hi,";
+        const body = parsed.data.message
+          || `We're pleased to attach our proposal for ${proposal!.name}.\n\n`
+             + `You can review it and accept or decline online here:\n${portalLink}\n\n`
+             + `The proposal is also attached to this email as a PDF.\n\n`
+             + `Thanks,\n${senderName}\n${companyName}`;
+        const html =
+          `<p>${escapeHtml(greeting)}</p>`
+          + `<p>${escapeHtml(body).replace(/\n/g, "<br>")}</p>`
+          + `<p><a href="${portalLink}">Review and respond to this proposal</a></p>`;
+
+        try {
+          await sendGenericEmail({
+            to: recipient.email,
+            subject,
+            html,
+            // Sends as the user when their Gmail is connected, and falls back
+            // to Resend from the Morada address with replies going to them.
+            from: `${companyName} via Morada <noreply@moradaco.com.au>`,
+            replyTo: (req.user as any)?.email,
+            userId: (req.user as any)?.id,
+            attachments: [{
+              filename: parsed.data.pdfFilename || `${proposal!.proposalNumber}.pdf`,
+              content: pdfBase64,
+              mimeType: "application/pdf",
+            }],
+          });
+          sent.push(recipient.email);
+        } catch (err: any) {
+          console.error(`Failed to email proposal ${proposal!.proposalNumber} to ${recipient.email}:`, err);
+          failed.push({ email: recipient.email, error: err?.message || "Send failed" });
+        }
+      }
+
+      // The proposal is sent whether or not every address accepted delivery —
+      // the snapshot is frozen and the client has a live link either way. The
+      // caller gets the per-recipient outcome so the UI can say what happened.
+      try {
+        await storage.createActivity({
+          projectId: proposal!.projectId,
+          userId: (req.user as any)?.id,
+          userName: senderName,
+          activityType: "proposal",
+          action: "sent",
+          description: `sent proposal '${proposal!.name}' to ${recipients.map((r) => r.email).join(", ")}`,
+          entityId: proposal!.id,
+          entityName: proposal!.proposalNumber,
+          metadata: { recipientCount: recipients.length, failedCount: failed.length },
+        });
+      } catch (err) {
+        console.error("Failed to log proposal send activity:", err);
+      }
+
+      res.json({ proposal, sent, failed, portalLink });
     } catch (error) {
       console.error("Error sending proposal:", error);
       res.status(500).json({ error: "Failed to send proposal" });
@@ -24988,8 +25187,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.isArchived) {
         return res.status(400).json({ error: "This proposal is archived and cannot be accepted." });
       }
-      if (existing.status !== "sent") {
-        return res.status(400).json({ error: "Only sent proposals can be accepted" });
+      if (existing.status !== "sent" && existing.status !== "viewed") {
+        // "viewed" counts: recordProposalView flips sent -> viewed the instant
+        // the client opens the link, so gating on "sent" alone made a proposal
+        // un-acceptable the moment anyone looked at it.
+        return res.status(400).json({ error: "Only sent or viewed proposals can be accepted" });
       }
 
       const { signedByName, signedByEmail, signature, signatureMethod, comments } = req.body;
@@ -25037,8 +25239,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.isArchived) {
         return res.status(400).json({ error: "This proposal is archived and cannot be rejected." });
       }
-      if (existing.status !== "sent") {
-        return res.status(400).json({ error: "Only sent proposals can be rejected" });
+      if (existing.status !== "sent" && existing.status !== "viewed") {
+        // Same reason as accept: a viewed proposal is still live.
+        return res.status(400).json({ error: "Only sent or viewed proposals can be rejected" });
       }
 
       const { rejectionReason } = req.body;
@@ -25195,6 +25398,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     parts: { sections?: any[]; items?: any[]; milestones?: any[]; acceptances?: any[]; company?: any } = {},
   ) => {
     const proposal = pick(rawProposal, CLIENT_PROPOSAL_FIELDS);
+    // Whether the portal can show the real document. The storage path itself
+    // stays server-side; the client fetches it through /sent-pdf with its
+    // share token. Proposals sent before PDFs were stored have none, and the
+    // portal falls back to rendering the snapshot.
+    if (proposal) proposal.hasSentPdf = !!rawProposal?.sentPdfPath;
     const pricingOn = rawProposal?.showPricing !== false;
 
     const sections = (parts.sections ?? [])
@@ -25273,6 +25481,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error recording proposal view:", error);
       res.status(500).json({ error: "Failed to record view" });
+    }
+  });
+
+  // The PDF the client was emailed, served back to the share link so the
+  // portal shows the real document rather than a plain-text approximation of
+  // it. Share-token gated exactly like /client-view; no session involved.
+  app.get("/api/proposals/:id/sent-pdf", async (req, res) => {
+    try {
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      if (!token) return res.status(401).json({ error: "Share token is required" });
+      const proposal = await storage.getProposal(req.params.id);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      if (proposal.shareToken !== token) return res.status(403).json({ error: "Invalid share token" });
+      if (proposal.status === "draft") {
+        return res.status(400).json({ error: "This proposal has not been sent yet." });
+      }
+      if (proposal.isArchived) {
+        return res.status(400).json({ error: "This proposal is archived and cannot be viewed." });
+      }
+      const stored = (proposal as any).sentPdfPath as string | null;
+      // Proposals sent before this shipped have no stored PDF; the portal
+      // falls back to rendering the snapshot and must be able to tell.
+      if (!stored) return res.status(404).json({ error: "No PDF was stored for this proposal" });
+
+      const objectStorageService = new ObjectStorageService();
+      // Stored as /objects/company/<cid>/uploads/<id>; the storage lookup wants
+      // the raw form.
+      const normalisedPath = stored.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Proposal sent-pdf error:", error);
+      res.status(500).json({ error: "Failed to load proposal PDF" });
     }
   });
 
