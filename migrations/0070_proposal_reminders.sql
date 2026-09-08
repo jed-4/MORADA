@@ -6,7 +6,15 @@
 ALTER TABLE proposals
   ADD COLUMN IF NOT EXISTS reminders_enabled boolean NOT NULL DEFAULT false;
 
-CREATE TYPE proposal_reminder_trigger AS ENUM ('after_send', 'before_expiry');
+-- Guarded like every other enum in this directory (see 0041, 0039, 0013):
+-- Postgres has no CREATE TYPE IF NOT EXISTS, and this file is applied by hand
+-- to THREE databases — Replit-dev, prod, and the local Neon branch. Bare, a
+-- re-run or a second target aborts the whole transaction on "type already
+-- exists" while every other statement here is idempotent.
+DO $$ BEGIN
+  CREATE TYPE proposal_reminder_trigger AS ENUM ('after_send', 'before_expiry');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS proposal_reminder_templates (
   id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
