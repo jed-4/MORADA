@@ -1067,6 +1067,11 @@ export const estimateGroups = pgTable("estimate_groups", {
   defaultCostCategoryId: varchar("default_cost_category_id").references(() => costCategories.id, { onDelete: "set null" }),
   order: integer("order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
+  // Hide this whole section from the client's proposal — the group-level
+  // counterpart of estimate_items.proposal_visible. Hiding a group hides its
+  // descendants too; that tree walk lives in shared/proposalTotals.ts so the
+  // printed document and the total at the bottom resolve it identically.
+  proposalVisible: boolean("proposal_visible").notNull().default(true),
   status: text("status").notNull().default("not_started"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

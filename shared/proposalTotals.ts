@@ -35,6 +35,46 @@ export interface ProposalTotalsItemInput extends EstimateItemSummaryInput {
   proposalVisible?: boolean | null;
   /** Estimate grid "Shown As" cycle. Null/undefined behaves as "price". */
   shownAs?: string | null;
+  /** The group this line sits in, if any — a hidden group takes its lines with it. */
+  groupId?: string | null;
+}
+
+/** The shape of an estimate group needed to resolve proposal visibility. */
+export interface ProposalGroupInput {
+  id: string;
+  parentGroupId?: string | null;
+  /** Group-level eye toggle. Null/undefined means visible (the column default). */
+  proposalVisible?: boolean | null;
+}
+
+/**
+ * Every group id that is hidden from the proposal, directly or by inheritance.
+ *
+ * Groups nest, so hiding "Kitchen" must also hide "Kitchen > Joinery" and every
+ * line inside it. Resolving that here — once, into a flat set — is what keeps
+ * the renderer and the totals from disagreeing: both ask this same set rather
+ * than each walking the tree their own way.
+ *
+ * Cycles are possible in legacy data (a corrupt parentGroupId chain), so the
+ * walk is depth-capped by the group count rather than trusting the tree.
+ */
+export function collectHiddenGroupIds(groups: ProposalGroupInput[]): Set<string> {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const hidden = new Set<string>();
+
+  for (const group of groups) {
+    let cursor: ProposalGroupInput | undefined = group;
+    let hops = 0;
+    while (cursor && hops <= groups.length) {
+      if (cursor.proposalVisible === false) {
+        hidden.add(group.id);
+        break;
+      }
+      cursor = cursor.parentGroupId ? byId.get(cursor.parentGroupId) : undefined;
+      hops++;
+    }
+  }
+  return hidden;
 }
 
 export interface ProposalTotals {
@@ -62,22 +102,43 @@ export interface ProposalTotals {
  * the total at the bottom disagree, the document is wrong in a way a client
  * will notice.
  */
-export function lineCountsTowardProposalTotal(item: ProposalTotalsItemInput): boolean {
-  if (item.proposalVisible === false) return false;
+export function lineCountsTowardProposalTotal(
+  item: ProposalTotalsItemInput,
+  hiddenGroupIds?: Set<string>,
+): boolean {
+  if (!lineAppearsOnProposal(item, hiddenGroupIds)) return false;
   if ((item.shownAs ?? "price") === "excluded") return false;
   return true;
 }
 
-/** True when the line is printed on the proposal at all (hidden lines are not). */
-export function lineAppearsOnProposal(item: ProposalTotalsItemInput): boolean {
-  return item.proposalVisible !== false;
+/**
+ * True when the line is printed on the proposal at all.
+ *
+ * A line is withheld either by its own eye toggle or by sitting inside a hidden
+ * group. Pass the set from `collectHiddenGroupIds` to honour the group level;
+ * omit it and only the per-line flag applies.
+ */
+export function lineAppearsOnProposal(
+  item: ProposalTotalsItemInput,
+  hiddenGroupIds?: Set<string>,
+): boolean {
+  if (item.proposalVisible === false) return false;
+  if (hiddenGroupIds && item.groupId && hiddenGroupIds.has(item.groupId)) return false;
+  return true;
 }
 
 export function computeProposalTotals(
   items: ProposalTotalsItemInput[],
-  options: { projectMarkupPercent: number | null | undefined; taxRate: number | null | undefined; estimateId?: string },
+  options: {
+    projectMarkupPercent: number | null | undefined;
+    taxRate: number | null | undefined;
+    estimateId?: string;
+    /** Group tree, so a hidden section drops out of the price with its lines. */
+    groups?: ProposalGroupInput[];
+  },
 ): ProposalTotals {
-  const counted = items.filter(lineCountsTowardProposalTotal);
+  const hiddenGroupIds = options.groups ? collectHiddenGroupIds(options.groups) : undefined;
+  const counted = items.filter((it) => lineCountsTowardProposalTotal(it, hiddenGroupIds));
 
   const summary = computeEstimateSummary(counted, {
     projectMarkupPercent: options.projectMarkupPercent,
