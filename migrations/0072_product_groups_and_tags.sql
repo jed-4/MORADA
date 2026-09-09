@@ -1,4 +1,4 @@
--- Product Library: real groups, and tags that double as sets.
+-- Product Library: real groups, and tags that double as sets. (migration 0072)
 --
 -- Until now a product's filing was two free-text columns, `category` and
 -- `subcategory`. Nothing enforced spelling, so "Tapware", "tapware" and
