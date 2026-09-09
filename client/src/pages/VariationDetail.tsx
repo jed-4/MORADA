@@ -189,6 +189,10 @@ const VARIATION_TYPE_COLORS: Record<string, string> = {
   Fee: "bg-status-info-bg text-status-info",
 };
 
+/** Columns whose value is derived from the others — the inc-GST unit cost and
+ *  both amount columns. Nothing here is typed. */
+const VARIATION_DERIVED_COLUMNS = new Set(["unitCostIncTax", "amtExTax", "amtIncTax"]);
+
 const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
 
 export default function VariationDetail() {
@@ -591,6 +595,46 @@ export default function VariationDetail() {
     }
   }, [existingVariationTimesheets, isEditMode]);
 
+  // ── Unsaved-changes tracking ──────────────────────────────────────────────
+  // Cost lines, allowance lines, the bill/labour selections and the global
+  // markup all live in local state until Save, so react-hook-form's isDirty
+  // only sees half the page. Snapshotting the local half and comparing is
+  // cheaper than threading a setDirty() through every mutation, and it cannot
+  // drift out of step with a handler someone adds later.
+  const localSnapshot = JSON.stringify({
+    costLines,
+    allowanceLines,
+    selectedBillIds: [...selectedBillIds].sort(),
+    selectedTimesheetIds: [...selectedTimesheetIds].sort(),
+    globalMarkup,
+  });
+  const baselineRef = useRef<string | null>(null);
+  // Rebaseline once the server data has landed, and again after every save.
+  useEffect(() => {
+    if (!isEditMode) { baselineRef.current = localSnapshot; return; }
+    if (!variationLoading && variation) baselineRef.current = localSnapshot;
+    // Deliberately keyed on the server record, not the snapshot: re-running on
+    // every keystroke would make the baseline chase the edits and nothing
+    // would ever read as dirty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variation, variationLoading, isEditMode, existingCostLines, existingVariationBills, existingVariationTimesheets]);
+
+  const isDirty =
+    !isLocked &&
+    (form.formState.isDirty || (baselineRef.current !== null && baselineRef.current !== localSnapshot));
+
+  // Browser-level guard for a reload or a closed tab. The in-app guard lives
+  // in handleCancel.
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
   useEffect(() => {
     if (!isEditMode && projects.length > 0) {
       const projectIdToUse = projectIdFromParams || projects[0]?.id;
@@ -778,6 +822,26 @@ export default function VariationDetail() {
     updateCostLine(index, "unitCostExTax", ex);
   };
 
+  // Fade at the clipped edge of the cost table, hidden once you reach the end.
+  // Measured rather than assumed: the table is only wider than its container
+  // when enough columns are visible.
+  const costScrollRef = useRef<HTMLDivElement | null>(null);
+  const [costScrollAtEnd, setCostScrollAtEnd] = useState(true);
+  const updateCostScrollEnd = () => {
+    const el = costScrollRef.current;
+    if (!el) return;
+    // 1px of slack: fractional widths mean scrollLeft rarely lands exactly.
+    setCostScrollAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+  };
+  useEffect(() => {
+    updateCostScrollEnd();
+    const el = costScrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(updateCostScrollEnd);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [costLines.length, columns]);
+
   /** Every editable grid cell wears the same skin: no border at rest, a soft
    *  plum wash and ring on focus. A bordered box per cell turned the grid into
    *  a wall of outlines. */
@@ -892,7 +956,7 @@ export default function VariationDetail() {
         const amtExTax = getCostLineAmountExTax(line);
         return (
           <span
-            className={cn("money px-1.5", amtExTax === 0 ? "money-zero" : "money-figure")}
+            className={cn("money px-1.5 w-full", amtExTax === 0 ? "money-zero" : "money-figure")}
             data-testid={`text-amt-ex-tax-${index}`}
           >
             {formatCurrency(amtExTax)}
@@ -1474,6 +1538,7 @@ export default function VariationDetail() {
   };
 
   const handleCancel = () => {
+    if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) return;
     if (projectIdFromParams) {
       setLocation(`/projects/${projectIdFromParams}/variations`);
     } else {
@@ -1482,9 +1547,43 @@ export default function VariationDetail() {
   };
 
   if (variationLoading) {
+    // A skeleton of the real layout, not a centred spinner. Neon sits in
+    // us-east-1 and the app is used from Australia, so this is on screen for a
+    // noticeable beat — long enough that a blank page reads as a failure.
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin" data-testid="loading-spinner" />
+      <div className="flex h-full flex-col" data-testid="loading-skeleton">
+        <div className="mx-3 mt-3 rounded-[10px] border border-border bg-card overflow-hidden">
+          <div className="h-11 px-3.5 flex items-center gap-2.5 border-b border-border/60">
+            <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+            <div className="h-4 w-14 rounded-full bg-muted animate-pulse" />
+            <span className="flex-1" />
+            <div className="h-7 w-24 rounded-md bg-muted animate-pulse" />
+          </div>
+          <div className="px-3.5 py-2.5 flex items-end gap-9">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="h-2 w-16 rounded bg-muted animate-pulse" />
+                <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+              </div>
+            ))}
+            <span className="flex-1" />
+            <div className="h-7 w-28 rounded bg-muted animate-pulse" />
+          </div>
+        </div>
+        <div className="mx-3 mt-3 space-y-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-[10px] border border-border bg-card overflow-hidden">
+              <div className="h-10 px-3.5 flex items-center gap-2.5 border-b border-border/60">
+                <div className="h-4 w-1 rounded-sm bg-muted animate-pulse" />
+                <div className="h-2.5 w-24 rounded bg-muted animate-pulse" />
+              </div>
+              <div className="p-4 space-y-2.5">
+                <div className="h-3 w-full rounded bg-muted animate-pulse" />
+                <div className="h-3 w-4/5 rounded bg-muted animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -1513,13 +1612,26 @@ export default function VariationDetail() {
               />
             ) : undefined
           }
-          context={projectName}
           strip={headerStrip}
           headline={{ label: "Total inc GST", value: formatCurrency(calculateTotal()) }}
           data-testid="header-variation"
           actions={
           <>
             {isEditMode && variationLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            {/* Preview sits beside Save rather than in the overflow menu: it is
+                the thing you reach for repeatedly while drafting, not a
+                once-per-document action. */}
+            {isEditMode && (
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="h-7 px-2.5 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 whitespace-nowrap"
+                data-testid="button-preview-variation"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+            )}
             {/* Only decisions stay as buttons — approving, rejecting, sending
                 for approval. The document verbs (preview, PDF, send, move to
                 action) live in the overflow menu beside Save. */}
@@ -1575,12 +1687,20 @@ export default function VariationDetail() {
           }
           primaryAction={
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Filled only when there is something to save. Previously it
+                  looked identical either way, so there was no way to tell
+                  whether you had unsaved work. */}
               {!isLocked && (
                 <button
                   type="button"
                   onClick={form.handleSubmit(onSubmit)}
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="h-7 w-auto px-2.5 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 whitespace-nowrap flex-shrink-0"
+                  disabled={createMutation.isPending || updateMutation.isPending || (isEditMode && !isDirty)}
+                  className={cn(
+                    "h-7 w-auto px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0 transition-colors",
+                    isEditMode && !isDirty
+                      ? "border-border text-muted-foreground bg-card cursor-default"
+                      : "bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2",
+                  )}
                   data-testid="button-save"
                 >
                   {(createMutation.isPending || updateMutation.isPending) ? (
@@ -1588,7 +1708,13 @@ export default function VariationDetail() {
                   ) : (
                     <FileText className="w-3 h-3" />
                   )}
-                  <span>{isEditMode ? "Save Changes" : "Create Variation"}</span>
+                  <span>
+                    {!isEditMode
+                      ? "Create Variation"
+                      : isDirty
+                        ? "Save Changes"
+                        : "Saved"}
+                  </span>
                 </button>
               )}
               {isEditMode && (
@@ -1605,10 +1731,6 @@ export default function VariationDetail() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => setPreviewOpen(true)} data-testid="button-preview-variation">
-                      <Eye className="w-3.5 h-3.5 mr-2" />
-                      Preview
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleDownloadPdf} disabled={pdfGenerating} data-testid="button-download-pdf">
                       {pdfGenerating ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
                       Download PDF
@@ -1859,7 +1981,15 @@ export default function VariationDetail() {
                     {/* No "Add Item" button in the header: the Add Line row at
                         the foot of the table is permanent, so it doubles as the
                         empty state and one affordance covers both. */}
-                    <div className="px-4 pt-3 overflow-x-auto">
+                    <div
+                      className="doc-scroll-fade"
+                      data-at-end={costScrollAtEnd}
+                    >
+                    <div
+                      ref={costScrollRef}
+                      onScroll={updateCostScrollEnd}
+                      className="px-4 pt-3 doc-scroll-x"
+                    >
                       {costLines.length === 0 ? null : (
                         <div className="min-w-fit">
                           {(() => {
@@ -1926,6 +2056,10 @@ export default function VariationDetail() {
                                             "px-0.5 py-1 min-w-0 flex items-center",
                                             align === "right" && "justify-end text-right",
                                             align === "center" && "justify-center text-center",
+                                            // Computed, not typed. Same muted band the estimate
+                                            // grid uses, so the figures you can actually change
+                                            // come forward.
+                                            VARIATION_DERIVED_COLUMNS.has(column.id) && "bg-muted/40",
                                           )}
                                         >
                                           {renderCostLineCell(column.id, line, index)}
@@ -1955,6 +2089,7 @@ export default function VariationDetail() {
                           </div>
                         </div>
                       )}
+                    </div>
                     </div>
                     <AddLineRow
                       onClick={addCostLine}

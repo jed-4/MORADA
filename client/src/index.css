@@ -1600,3 +1600,55 @@ input[type="number"] {
     background-color: hsl(var(--card));
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HORIZONTAL SCROLL AFFORDANCE
+   ═══════════════════════════════════════════════════════════════════════════
+   macOS hides scrollbars until something moves, so a wide line-item table
+   clipped its right-hand columns mid-word with no cue that more existed —
+   people read a truncated "AMOUNT" header as a rendering bug. A scrollbar
+   that is always visible, plus a fade at the clipped edge, says "there is
+   more this way" without waiting for a scroll gesture.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+
+  .doc-scroll-x {
+    overflow-x: auto;
+    scrollbar-width: thin;                       /* Firefox */
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  /* WebKit needs the explicit track/thumb, and `-webkit-appearance` is what
+     overrides the macOS overlay-scrollbar default. */
+  .doc-scroll-x::-webkit-scrollbar {
+    height: 8px;
+    -webkit-appearance: none;
+  }
+  .doc-scroll-x::-webkit-scrollbar-track {
+    background: hsl(var(--muted) / 0.5);
+    border-radius: 4px;
+  }
+  .doc-scroll-x::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 4px;
+  }
+  .doc-scroll-x::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.55);
+  }
+
+  /* The fade. Sits on a wrapper around the scroller and is masked out once the
+     scroller reaches its right edge (JS toggles `data-at-end`). */
+  .doc-scroll-fade { position: relative; }
+  .doc-scroll-fade::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 8px;                                  /* clear of the scrollbar */
+    right: 0;
+    width: 2rem;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, hsl(var(--card)));
+    opacity: 1;
+    transition: opacity 140ms ease;
+  }
+  .doc-scroll-fade[data-at-end="true"]::after { opacity: 0; }
+}
