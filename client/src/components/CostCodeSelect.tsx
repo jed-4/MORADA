@@ -35,9 +35,9 @@ export function CostCodeSelect({
   });
 
   const categoryMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { label: string; code: string }>();
     categories.forEach((cat) => {
-      map.set(cat.id, `${cat.code} - ${cat.title}`);
+      map.set(cat.id, { label: `${cat.code} - ${cat.title}`, code: cat.code });
     });
     return map;
   }, [categories]);
@@ -52,14 +52,29 @@ export function CostCodeSelect({
       });
     }
     
+    // Sort by CATEGORY first, then by code within it. Sorting by code alone
+    // interleaved categories whose code ranges overlap, so one category could
+    // appear more than once in the list. Uncategorized codes sort last.
+    const UNCATEGORIZED = "Uncategorized";
+    const groupOf = (c: CostCode) => {
+      const cat = c.categoryId ? categoryMap.get(c.categoryId) : undefined;
+      return cat?.label ?? UNCATEGORIZED;
+    };
+    const groupSortKey = (c: CostCode) => {
+      const cat = c.categoryId ? categoryMap.get(c.categoryId) : undefined;
+      // "~" sorts after digits and letters, parking Uncategorized at the end.
+      return cat?.code ?? "~";
+    };
+    const collate = (a: string, b: string) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
     [...costCodes]
-      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' }))
+      .sort((a, b) => collate(groupSortKey(a), groupSortKey(b)) || collate(a.code, b.code))
       .forEach((code) => {
-        const categoryName = code.categoryId ? categoryMap.get(code.categoryId) : undefined;
         opts.push({
           value: code.id,
           label: `${code.code} - ${code.title}`,
-          group: categoryName || (code.categoryId ? undefined : "Uncategorized"),
+          group: groupOf(code),
         });
       });
     

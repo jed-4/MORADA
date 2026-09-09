@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -230,11 +231,13 @@ export function RfqRemindersDialog({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Days</Label>
-                <Input
-                  type="number"
+                <NumericInput
+                  integer
                   min={0}
                   value={draft.offsetDays ?? 0}
-                  onChange={(e) => setDraft((d) => ({ ...d, offsetDays: parseInt(e.target.value) || 0 }))}
+                  onCommit={(v) => setDraft((d) => ({ ...d, offsetDays: v ?? 0 }))}
+                  emptyValue={0}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35"
                   data-testid="input-reminder-days"
                 />
               </div>
