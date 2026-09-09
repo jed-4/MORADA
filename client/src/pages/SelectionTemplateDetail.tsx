@@ -59,6 +59,8 @@ const CASVA_LILAC = 'hsl(var(--primary))';
 
 interface SelectionOption {
   id: string;
+  /** Set when the option references a library product rather than describing one. */
+  productId?: number;
   name: string;
   description?: string;
   sku?: string;
@@ -383,6 +385,7 @@ export default function SelectionTemplateDetail() {
     setSpecsOpen(false);
     setSpecPickerOpen(false);
     setOptionForm({
+      productId: undefined,
       name: "",
       description: "",
       sku: "",
@@ -404,8 +407,18 @@ export default function SelectionTemplateDetail() {
     setGstInclusive(product.gstInclusive || false);
     setSpecsOpen(!!(product.specifications && Object.keys(product.specifications).length > 0));
     setSpecPickerOpen(false);
-    const imageUrls = (product.images || []).map((img: any) => img.url || img).filter(Boolean);
+    // product_images stores `filePath`; there is no `url`. Reading `.url` meant
+    // the image never came across — and the `|| img` fallback put the whole
+    // image OBJECT into a string array, which /apply later calls .split("/") on.
+    const imageUrls = (product.images || [])
+      .map((img: any) => (typeof img === "string" ? img : img?.filePath))
+      .filter((u: any): u is string => typeof u === "string" && u.length > 0);
     setOptionForm({
+      // The point of picking from the library is to REFERENCE the product, not
+      // copy it. Without this the write-through sees an unlinked option and
+      // mints a new product, so the same Colorbond colour offered by Gutter
+      // colour and Fascia colour became two products that then drift apart.
+      productId: product.id,
       name: product.name || "",
       description: product.description || "",
       sku: product.sku || "",
@@ -460,6 +473,10 @@ export default function SelectionTemplateDetail() {
 
     const builtOption = (base: Partial<SelectionOption>) => ({
       ...base,
+      // Present when the option came from the library. On an edit `base` already
+      // carries it, but a NEW option is built from {} — which is exactly how the
+      // link used to be lost.
+      productId: optionForm.productId ?? (base as any).productId,
       name: optionForm.name!.trim(),
       description: optionForm.description?.trim(),
       sku: optionForm.sku?.trim(),

@@ -52,6 +52,30 @@ export async function syncTemplateOptions(
 
     const plan = planTemplateOptionSync(existing, options);
 
+    // An option that names a productId REFERENCES a library product instead of
+    // describing one of its own. Verify the reference before trusting it: the id
+    // arrives inside templateData, so an unchecked link would let one tenant's
+    // template point at another tenant's product.
+    const claimed = Array.from(new Set(
+      options.map((o) => o.productId).filter((id): id is number => typeof id === "number"),
+    ));
+    const ownedProductIds = new Set<number>();
+    if (claimed.length > 0) {
+      const rows = await db
+        .select({ id: schema.products.id })
+        .from(schema.products)
+        .where(and(inArray(schema.products.id, claimed), eq(schema.products.companyId, companyId)));
+      for (const r of rows) ownedProductIds.add(r.id);
+      for (const id of claimed) {
+        if (!ownedProductIds.has(id)) {
+          result.warnings.push(`productId ${id} is not this company's — treated as an unlinked option`);
+        }
+      }
+    }
+    /** The library product this option points at, or null if it owns its own. */
+    const linkedProductId = (o: (typeof options)[number]) =>
+      o.productId !== null && ownedProductIds.has(o.productId) ? o.productId : null;
+
     const productValues = (o: (typeof options)[number]) => ({
       companyId,
       name: o.name,
@@ -84,21 +108,37 @@ export async function syncTemplateOptions(
     // Update in place rather than delete-and-recreate: recreating would orphan
     // the product row and lose the images hanging off it.
     for (const { link, option } of plan.updates) {
-      await db.update(schema.products)
-        .set({ ...productValues(option), updatedAt: new Date() })
-        .where(eq(schema.products.id, link.productId));
-      await db.update(schema.selectionTemplateOptions)
-        .set({ ...linkValues(option), updatedAt: new Date() })
-        .where(eq(schema.selectionTemplateOptions.id, link.id));
+      const linked = linkedProductId(option);
+      if (linked !== null) {
+        // The library owns this product's spec. Several templates may offer it,
+        // so writing this template's copy of the fields back would let editing
+        // one selection silently rewrite the others.
+        await db.update(schema.selectionTemplateOptions)
+          .set({ ...linkValues(option), productId: linked, updatedAt: new Date() })
+          .where(eq(schema.selectionTemplateOptions.id, link.id));
+      } else {
+        await db.update(schema.products)
+          .set({ ...productValues(option), updatedAt: new Date() })
+          .where(eq(schema.products.id, link.productId));
+        await db.update(schema.selectionTemplateOptions)
+          .set({ ...linkValues(option), productId: link.productId, updatedAt: new Date() })
+          .where(eq(schema.selectionTemplateOptions.id, link.id));
+      }
       result.updated++;
     }
 
     for (const option of plan.creates) {
-      const [product] = await db.insert(schema.products)
-        .values(productValues(option))
-        .returning({ id: schema.products.id });
+      // Point at the library product where there is one; only mint a shadow
+      // product for an option the blob describes itself.
+      let productId = linkedProductId(option);
+      if (productId === null) {
+        const [product] = await db.insert(schema.products)
+          .values(productValues(option))
+          .returning({ id: schema.products.id });
+        productId = product.id;
+      }
       await db.insert(schema.selectionTemplateOptions)
-        .values({ ...linkValues(option), productId: product.id });
+        .values({ ...linkValues(option), productId });
       result.created++;
     }
 
