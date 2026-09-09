@@ -1430,3 +1430,173 @@ input[type="number"] {
   margin-block: 0.6em;
   border-top: 1px solid hsl(var(--border));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DOCUMENT TYPOGRAPHY — shared foundation for the detail pages
+   ═══════════════════════════════════════════════════════════════════════════
+   One place for the type and money treatment every document-shaped page needs
+   (variation, allowance, RFQ, purchase order, invoice, proposal), so a page
+   inherits the look by using these classes instead of restating a stack of
+   utilities. Sizes come from the `fontSize` scale in tailwind.config.ts —
+   these classes compose that scale, they do not invent new sizes.
+
+   Naming: `doc-` for structural type, `money-` for figures.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+
+  /* ── Section labels ──────────────────────────────────────────────────────
+     The uppercase tracked label that titles a section. Tracking widens as the
+     size drops, because uppercase at 9–11px closes up without it. */
+
+  /* 11px — a section header inside a document card. */
+  .doc-section-label {
+    @apply text-[11px] font-semibold uppercase text-foreground/80;
+    letter-spacing: 0.09em;
+  }
+
+  /* Same label, for a section holding nothing — recedes rather than shouts. */
+  .doc-section-label-empty {
+    @apply text-[11px] font-semibold uppercase text-muted-foreground/60;
+    letter-spacing: 0.09em;
+  }
+
+  /* 9px — the label above a field or a figure. */
+  .doc-field-label {
+    @apply text-label font-semibold uppercase text-muted-foreground/75;
+    letter-spacing: 0.07em;
+  }
+
+  /* 9px — a column heading in a line-item table. */
+  .doc-col-label {
+    @apply text-label font-semibold uppercase text-muted-foreground/75;
+    letter-spacing: 0.07em;
+  }
+
+  /* ── Body ────────────────────────────────────────────────────────────────  */
+
+  .doc-title      { @apply text-[15px] font-semibold tracking-[-0.01em] text-foreground; }
+  .doc-body       { @apply text-body-sm text-foreground; }
+  .doc-body-muted { @apply text-body-sm text-muted-foreground; }
+  .doc-caption    { @apply text-data text-muted-foreground; }
+
+  /* Prose inside a document — intro text, scope, closing text, T&C. Line
+     height is looser than the grid: this is read, not scanned. */
+  .doc-prose {
+    @apply text-body-sm text-foreground;
+    line-height: 1.6;
+  }
+
+  /* ── Money ───────────────────────────────────────────────────────────────
+     Every figure in the app lines up on the same rules: tabular numerals so
+     digits sit in columns, right-aligned so decimal points stack, and no
+     hyphenation of a negative. `tabular-nums` alone is not enough — Inter also
+     needs `lining-nums` to stop old-style figures in some weights. */
+
+  .money {
+    font-variant-numeric: tabular-nums lining-nums;
+    @apply text-right whitespace-nowrap;
+  }
+
+  /* A figure in a table cell or a summary row. */
+  .money-figure { @apply money text-body-sm font-medium text-foreground; }
+
+  /* The subtotal line — carries a little more weight than the rows above it. */
+  .money-strong { @apply money text-body-sm font-semibold text-foreground; }
+
+  /* The one number the document exists to state. */
+  .money-total {
+    @apply money text-2xl font-bold text-primary;
+    letter-spacing: -0.02em;
+  }
+
+  /* A figure that resolves to nothing — present, but not competing. */
+  .money-zero { @apply money text-body-sm font-medium text-muted-foreground/60; }
+
+  /* A deduction or a credit. Paired with a leading minus, never a bracket:
+     Australian building documents read "−$1,400.00", not "(1,400.00)". */
+  .money-negative { @apply money text-body-sm font-semibold text-coral; }
+
+  /* ── Money lines ─────────────────────────────────────────────────────────
+     A label on the left, a figure hard right, and a dotted leader carrying the
+     eye across the gap. The leader is a repeating-gradient on a flex spacer
+     rather than the classic `content: "......"` trick, so it never affects
+     copy-and-paste or a screen reader. */
+
+  /* No dotted leader. It was tried and it read as clutter: the rows are short
+     and the figure column is fixed, so the eye already tracks label to figure
+     without a rule to carry it. The divider above the subtotal does the
+     separating instead. */
+  .money-line {
+    @apply flex items-baseline gap-2;
+  }
+
+  .money-line-label { @apply text-body-sm text-muted-foreground shrink-0; }
+
+  /* A money line that closes a group — hairline above, a touch more air. */
+  .money-line-rule {
+    @apply border-t border-border pt-2 mt-1;
+  }
+
+  /* ── Line-item tables ────────────────────────────────────────────────────  */
+
+  .doc-cell        { @apply text-body-sm text-foreground; }
+  .doc-cell-muted  { @apply text-body-sm text-muted-foreground; }
+  .doc-cell-name   { @apply text-body-sm font-medium text-foreground; }
+
+  /* A derived cell — computed, not typed. Muted so the figures you can change
+     come forward. Mirrors DERIVED_COLUMNS in the estimate grid. */
+  .doc-cell-derived { @apply text-body-sm text-muted-foreground bg-muted/40; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DOCUMENT FIELDS
+   ═══════════════════════════════════════════════════════════════════════════
+   The shadcn `Input` default is `bg-background`, which is the cream page
+   colour (#F9F6F1). On the cream page that reads as a field; on a WHITE card
+   it reads as a disabled grey box, which is why the detail-page forms looked
+   washed out. On a card, a field is white and the hairline does the work.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+
+  /* NOTE the doubled class. Tailwind flattens @layer into plain source order,
+     so a components-layer rule and a utilities-layer rule at equal specificity
+     resolve by position — and utilities are emitted last. `.doc-input` alone
+     therefore lost to the Input component's own `bg-background`, and to the
+     Button's `justify-center`. Repeating the class lifts specificity to (0,2,0)
+     so these win without an `!important` on every declaration. */
+  .doc-input.doc-input {
+    @apply h-8 text-body-sm rounded-md;
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border-strong));
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .doc-input.doc-input::placeholder { color: hsl(var(--muted-foreground) / 0.55); }
+  .doc-input.doc-input:hover:not(:disabled):not(:focus) {
+    border-color: hsl(var(--muted-foreground) / 0.45);
+  }
+  .doc-input.doc-input:focus,
+  .doc-input.doc-input:focus-visible {
+    outline: none;
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.14);
+  }
+  .doc-input.doc-input:disabled {
+    background-color: hsl(var(--muted) / 0.4);
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* A field whose control is a button — the date picker. Same skin, but the
+     value sits left like typed text rather than centred like a label. */
+  .doc-input-button.doc-input-button {
+    @apply h-8 w-full text-body-sm rounded-md font-normal px-2.5;
+    display: flex;
+    justify-content: flex-start;
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border-strong));
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .doc-input-button.doc-input-button:hover:not(:disabled) {
+    border-color: hsl(var(--muted-foreground) / 0.45);
+    background-color: hsl(var(--card));
+  }
+}
