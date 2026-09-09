@@ -25,6 +25,16 @@ export type OnboardingEmailKey = "welcome" | "tips_day3" | "trial_ending" | "tri
 
 const FROM = "Morada <noreply@moradaco.com.au>";
 
+// Unsubscribe target. There's no preference table to point at (and no
+// migration here), so this is a mailto — replies to noreply@ come through to a
+// real person, which is the same channel the copy already tells people to use.
+// It backs both the visible footer link and the List-Unsubscribe header;
+// having either one lowers spam scoring, and Gmail/Outlook surface the header
+// as a native unsubscribe control.
+const UNSUBSCRIBE_MAILTO = "noreply@moradaco.com.au";
+const UNSUBSCRIBE_HREF = `mailto:${UNSUBSCRIBE_MAILTO}?subject=${encodeURIComponent("Unsubscribe from Morada emails")}`;
+const LIST_UNSUBSCRIBE_HEADER = `<mailto:${UNSUBSCRIBE_MAILTO}?subject=Unsubscribe>`;
+
 // These two ask the user to subscribe. With billing switched off there is
 // nothing to subscribe to and the paywall never engages (requireActivePlan is
 // a no-op without Stripe), so the nag is both useless and misleading — it
@@ -104,6 +114,12 @@ function shell(bodyHtml: string): string {
                 <p style="margin: 0; color: #6B6560; font-size: 12px;">
                   © ${new Date().getFullYear()} Morada — construction management for Australian builders.
                 </p>
+                <p style="margin: 8px 0 0; color: #6B6560; font-size: 12px; line-height: 1.5;">
+                  You're receiving this because you created a Morada account.
+                  <a href="${UNSUBSCRIBE_HREF}" style="color: #6B6560; text-decoration: underline;">Unsubscribe</a>
+                  &middot; <a href="${appUrl()}/privacy" style="color: #6B6560; text-decoration: underline;">Privacy</a>
+                  &middot; <a href="${appUrl()}/terms" style="color: #6B6560; text-decoration: underline;">Terms</a>
+                </p>
               </td>
             </tr>
           </table>
@@ -120,6 +136,85 @@ function button(href: string, label: string): string {
       <a href="${href}" style="display: inline-block; padding: 13px 30px; background-color: #A890D4; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">${label}</a>
     </td></tr>
   </table>`;
+}
+
+// ---- Plain-text alternative -------------------------------------------------
+// Derived from the same body HTML rather than hand-written, so the two parts
+// can never drift apart when the copy changes.
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  middot: "·",
+  mdash: "—",
+  ndash: "–",
+  hellip: "…",
+  lt: "<",
+  gt: ">",
+  apos: "'",
+  quot: '"',
+  amp: "&",
+};
+
+function decodeEntities(s: string): string {
+  return (
+    s
+      .replace(/&#(\d+);/g, (_m, code: string) => String.fromCodePoint(Number(code)))
+      .replace(/&#x([0-9a-f]+);/gi, (_m, code: string) => String.fromCodePoint(parseInt(code, 16)))
+      // &amp; last (via the map ordering below) isn't possible in one pass, so
+      // decode every named entity except &amp; first, then &amp; — otherwise
+      // "&amp;lt;" would wrongly become "<".
+      .replace(/&(nbsp|middot|mdash|ndash|hellip|lt|gt|apos|quot);/g, (_m, name: string) => NAMED_ENTITIES[name])
+      .replace(/&amp;/g, "&")
+  );
+}
+
+function htmlToText(html: string): string {
+  const withLinks = html.replace(
+    /<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (_m, href: string, label: string) => {
+      const text = decodeEntities(stripTags(label)).trim();
+      return text ? `${text}: ${href}` : href;
+    },
+  );
+  return decodeEntities(
+    withLinks
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "- ")
+      .replace(/<\/(p|h1|h2|h3|h4|li|tr|div|table)>/gi, "\n\n"),
+  )
+    .replace(/<[^>]+>/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+const TEXT_FOOTER = [
+  "—",
+  "© " + new Date().getFullYear() + " Morada — construction management for Australian builders.",
+  "You're receiving this because you created a Morada account.",
+  `Unsubscribe: ${UNSUBSCRIBE_HREF}`,
+  `Privacy: ${appUrl()}/privacy`,
+  `Terms: ${appUrl()}/terms`,
+].join("\n");
+
+interface RenderedEmail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+/** Wrap a body in the branded shell and produce the matching plain-text part. */
+function compose(subject: string, bodyHtml: string): RenderedEmail {
+  return {
+    subject,
+    html: shell(bodyHtml),
+    text: `${htmlToText(bodyHtml)}\n\n${TEXT_FOOTER}`,
+  };
 }
 
 const h2 = (text: string) =>
@@ -142,12 +237,11 @@ function formatDate(d: Date | null): string {
   return d.toLocaleDateString("en-AU", { day: "numeric", month: "long" });
 }
 
-function welcomeEmail(ctx: TemplateContext) {
+function welcomeEmail(ctx: TemplateContext): RenderedEmail {
   const greeting = ctx.firstName ? `Welcome aboard, ${ctx.firstName}` : "Welcome aboard";
-  return {
-    subject: "Welcome to Morada — your 14-day trial has started",
-    html: shell(
-      h2(`${greeting}!`) +
+  return compose(
+    "Welcome to Morada — your 14-day trial has started",
+    h2(`${greeting}!`) +
         p(
           `Your account for <strong>${ctx.companyName}</strong> is ready and your 14-day free trial has started. No card needed${ctx.trialEndsAt ? `, and nothing happens until ${formatDate(ctx.trialEndsAt)}` : ""}.`,
         ) +
@@ -159,16 +253,14 @@ function welcomeEmail(ctx: TemplateContext) {
         small(
           `Questions, or something not working the way you'd expect? Just reply to this email — it comes through to a real person.`,
         ),
-    ),
-  };
+  );
 }
 
-function tipsDay3Email(ctx: TemplateContext) {
+function tipsDay3Email(ctx: TemplateContext): RenderedEmail {
   const greeting = ctx.firstName ? `Hi ${ctx.firstName},` : "Hi there,";
-  return {
-    subject: "Try this next in Morada: build an estimate",
-    html: shell(
-      h2("Where most builders see it click") +
+  return compose(
+    "Try this next in Morada: build an estimate",
+    h2("Where most builders see it click") +
         p(greeting) +
         p(
           `You're a few days into your trial. If you've only done one thing so far, make it this: <strong>build an estimate on a real job</strong>.`,
@@ -181,16 +273,14 @@ function tipsDay3Email(ctx: TemplateContext) {
         ) +
         button(`${appUrl()}/estimates`, "Build an estimate") +
         small(`Stuck on how to structure something? Reply and tell us about the job — happy to help you set it up.`),
-    ),
-  };
+  );
 }
 
-function trialEndingEmail(ctx: TemplateContext) {
+function trialEndingEmail(ctx: TemplateContext): RenderedEmail {
   const greeting = ctx.firstName ? `Hi ${ctx.firstName},` : "Hi there,";
-  return {
-    subject: `Your Morada trial ends ${ctx.trialEndsAt ? formatDate(ctx.trialEndsAt) : "in 4 days"}`,
-    html: shell(
-      h2("Four days left on your trial") +
+  return compose(
+    `Your Morada trial ends ${ctx.trialEndsAt ? formatDate(ctx.trialEndsAt) : "in 4 days"}`,
+    h2("Four days left on your trial") +
         p(greeting) +
         p(
           `Your free trial for <strong>${ctx.companyName}</strong> ends ${ctx.trialEndsAt ? `on <strong>${formatDate(ctx.trialEndsAt)}</strong>` : "in four days"}. To keep going without interruption, pick a plan and add your card.`,
@@ -202,11 +292,10 @@ function trialEndingEmail(ctx: TemplateContext) {
         small(
           `Not sure which plan fits, or need more time to get a proper look? Reply and let us know — we'd rather sort it out than have you rushed.`,
         ),
-    ),
-  };
+  );
 }
 
-async function trialEndedEmail(ctx: TemplateContext) {
+async function trialEndedEmail(ctx: TemplateContext): Promise<RenderedEmail> {
   const greeting = ctx.firstName ? `Hi ${ctx.firstName},` : "Hi there,";
   // Only mention the founding offer when the programme is switched on AND
   // spots remain — never promise something we can't honour.
@@ -224,10 +313,9 @@ async function trialEndedEmail(ctx: TemplateContext) {
     }
   }
 
-  return {
-    subject: `Your Morada trial has ended — pick up where you left off`,
-    html: shell(
-      h2("Your trial has ended") +
+  return compose(
+    `Your Morada trial has ended — pick up where you left off`,
+    h2("Your trial has ended") +
         p(greeting) +
         p(
           `The 14-day trial for <strong>${ctx.companyName}</strong> has finished. Your data is all still here and untouched — subscribe and you're straight back into it.`,
@@ -237,8 +325,7 @@ async function trialEndedEmail(ctx: TemplateContext) {
         small(
           `If Morada wasn't the right fit, we'd genuinely like to know why — reply and tell us. It's the most useful feedback we get.`,
         ),
-    ),
-  };
+  );
 }
 
 // ---- Send with once-only claim --------------------------------------------
@@ -252,26 +339,56 @@ async function claimAndSend(
   companyId: string,
   key: OnboardingEmailKey,
   toEmail: string,
-  build: () => Promise<{ subject: string; html: string }> | { subject: string; html: string },
+  build: () => Promise<RenderedEmail> | RenderedEmail,
+  // Manual resend (user pressed "Didn't arrive? Resend"). The log row is a
+  // tombstone that suppresses every later automatic send, so a resend has to
+  // step over it — but it still refreshes the row afterwards so the automatic
+  // path stays suppressed either way.
+  opts: { force?: boolean } = {},
 ): Promise<boolean> {
-  const claim = await pool.query(
-    `INSERT INTO onboarding_email_log (company_id, email_key, to_email)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (company_id, email_key) DO NOTHING
-     RETURNING id`,
-    [companyId, key, toEmail],
-  );
-  if (claim.rowCount === 0) return false; // already sent (or being sent)
+  if (!opts.force) {
+    const claim = await pool.query(
+      `INSERT INTO onboarding_email_log (company_id, email_key, to_email)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (company_id, email_key) DO NOTHING
+       RETURNING id`,
+      [companyId, key, toEmail],
+    );
+    if (claim.rowCount === 0) return false; // already sent (or being sent)
+  }
 
   try {
-    const { subject, html } = await build();
-    await sendGenericEmail({ to: toEmail, subject, html, from: FROM });
-    console.log(`[onboarding-email] sent '${key}' to ${toEmail} (company ${companyId})`);
+    const { subject, html, text } = await build();
+    await sendGenericEmail({
+      to: toEmail,
+      subject,
+      html,
+      text,
+      from: FROM,
+      headers: { "List-Unsubscribe": LIST_UNSUBSCRIBE_HEADER },
+    });
+    if (opts.force) {
+      // Record the resend without disturbing the once-only guarantee.
+      await pool
+        .query(
+          `INSERT INTO onboarding_email_log (company_id, email_key, to_email)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (company_id, email_key)
+           DO UPDATE SET to_email = EXCLUDED.to_email, sent_at = now()`,
+          [companyId, key, toEmail],
+        )
+        .catch((logErr) => console.error(`[onboarding-email] resend log update failed:`, logErr));
+    }
+    console.log(
+      `[onboarding-email] sent '${key}' to ${toEmail} (company ${companyId})${opts.force ? " [manual resend]" : ""}`,
+    );
     return true;
   } catch (err) {
-    await pool
-      .query(`DELETE FROM onboarding_email_log WHERE company_id = $1 AND email_key = $2`, [companyId, key])
-      .catch(() => {});
+    if (!opts.force) {
+      await pool
+        .query(`DELETE FROM onboarding_email_log WHERE company_id = $1 AND email_key = $2`, [companyId, key])
+        .catch(() => {});
+    }
     console.error(`[onboarding-email] failed to send '${key}' to ${toEmail} (company ${companyId}):`, err);
     return false;
   }
@@ -304,18 +421,25 @@ async function companyContext(companyId: string): Promise<
  * Day-0 welcome. Called (fire-and-forget) right after company creation, so a
  * new signup hears from us immediately.
  */
-export async function sendWelcomeEmail(companyId: string): Promise<boolean> {
+export async function sendWelcomeEmail(
+  companyId: string,
+  opts: { force?: boolean } = {},
+): Promise<{ sent: boolean; reason?: "disabled" | "no_recipient" | "already_sent" | "send_failed"; to?: string }> {
   if (!sendingEnabled()) {
     console.log(`[onboarding-email] skipping welcome for company ${companyId} (sending disabled outside production)`);
-    return false;
+    return { sent: false, reason: "disabled" };
   }
   await ensureOnboardingEmailTable();
   const ctx = await companyContext(companyId);
   if (!ctx) {
     console.warn(`[onboarding-email] no owner email for company ${companyId} — skipping welcome`);
-    return false;
+    return { sent: false, reason: "no_recipient" };
   }
-  return claimAndSend(companyId, "welcome", ctx.email, () => welcomeEmail(ctx));
+  const sent = await claimAndSend(companyId, "welcome", ctx.email, () => welcomeEmail(ctx), opts);
+  if (sent) return { sent: true, to: ctx.email };
+  // Without force, a false here is almost always the once-only claim losing;
+  // with force the only way to get here is the send itself failing.
+  return { sent: false, reason: opts.force ? "send_failed" : "already_sent", to: ctx.email };
 }
 
 /**

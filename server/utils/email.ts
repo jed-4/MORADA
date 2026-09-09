@@ -28,15 +28,21 @@ interface SendEmailParams {
   to: string | string[];
   subject: string;
   html: string;
+  // Plain-text alternative part. Sending multipart/alternative rather than
+  // HTML-only measurably lowers spam scoring (SpamAssassin's MIME_HTML_ONLY),
+  // and it's what text-only clients fall back to. Resend only.
+  text?: string;
   userId?: string;
   attachments?: SendEmailAttachment[];
   from?: string;
   replyTo?: string;
+  // Extra SMTP headers (e.g. List-Unsubscribe on bulk/lifecycle mail). Resend only.
+  headers?: Record<string, string>;
 }
 
 async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success: boolean; messageId?: string; sentVia: 'gmail' | 'resend' }> {
-  const { to, subject, html, userId, attachments, from, replyTo } = params;
-  
+  const { to, subject, html, text, userId, attachments, from, replyTo, headers } = params;
+
   if (userId && gmailServiceInitialized && gmailService) {
     try {
       const canSend = await gmailService.canSendViaGmail(userId);
@@ -76,7 +82,9 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
     html,
   };
 
+  if (text) sendParams.text = text;
   if (replyTo) sendParams.reply_to = replyTo;
+  if (headers && Object.keys(headers).length) sendParams.headers = headers;
   if (resendAttachments?.length) sendParams.attachments = resendAttachments;
 
   const { data, error } = await resend.emails.send(sendParams);
@@ -448,10 +456,14 @@ export interface SendGenericEmailParams {
   to: string | string[];
   subject: string;
   html: string;
+  /** Plain-text alternative part — see SendEmailParams.text. */
+  text?: string;
   userId?: string;
   attachments?: SendEmailAttachment[];
   from?: string;
   replyTo?: string;
+  /** Extra SMTP headers, e.g. List-Unsubscribe. */
+  headers?: Record<string, string>;
 }
 
 export async function sendGenericEmail(params: SendGenericEmailParams) {
