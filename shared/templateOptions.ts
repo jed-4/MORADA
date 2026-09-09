@@ -67,6 +67,13 @@ export interface TemplateOption {
   legacyItemName: string | null;
 
   /**
+   * Set when this option REFERENCES a library product rather than describing one
+   * of its own. The sync then links to that product and leaves its spec alone —
+   * the library owns it, and several templates may be pointing at it.
+   */
+  productId: number | null;
+
+  /**
    * The option's own category before inheritance — what /apply must put on the
    * selection option. `category` above may have been filled in from the item or
    * the template so the library can file the product; applying that inherited
@@ -180,6 +187,7 @@ function readOption(
     legacyItemIndex: legacyItem?.index ?? null,
     legacyItemName: legacyItem?.name ?? null,
     ownCategory: str(opt?.category),
+    productId: num(opt?.productId),
   };
 }
 

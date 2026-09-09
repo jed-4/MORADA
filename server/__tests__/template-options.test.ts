@@ -336,5 +336,36 @@ check("the flat format carries no legacy grouping", () => {
   assert.strictEqual(r.options[0].legacyItemName, null);
 });
 
+// ── The library link ─────────────────────────────────────────────────────────
+// An option that names a productId REFERENCES a library product. Losing this is
+// what made "add from library" duplicate: the same Colorbond colour offered by
+// Gutter colour and Fascia colour became two products that then drifted apart.
+
+check("a library-linked option carries its productId", () => {
+  const r = extractTemplateOptions({ templateData: [{ name: "Monument", productId: 42 }] });
+  assert.strictEqual(r.options[0].productId, 42);
+});
+
+check("an option that describes itself has no productId", () => {
+  const r = extractTemplateOptions({ templateData: [{ name: "One-off" }] });
+  assert.strictEqual(r.options[0].productId, null);
+});
+
+check("a non-numeric productId is refused rather than passed through", () => {
+  // It arrives inside templateData, so it is untrusted input. The sync also
+  // checks the product belongs to the caller's company before linking.
+  for (const bad of ["42", null, {}, NaN, true]) {
+    const r = extractTemplateOptions({ templateData: [{ name: "X", productId: bad as any }] });
+    assert.strictEqual(r.options[0].productId, null, `productId ${JSON.stringify(bad)} should not survive`);
+  }
+});
+
+check("two templates can reference the same product", () => {
+  // The point of the whole exercise: Monument exists once and is offered twice.
+  const gutter = extractTemplateOptions({ templateData: [{ name: "Monument", productId: 42 }] });
+  const fascia = extractTemplateOptions({ templateData: [{ name: "Monument", productId: 42 }] });
+  assert.strictEqual(gutter.options[0].productId, fascia.options[0].productId);
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.log("SOME TESTS FAILED");
