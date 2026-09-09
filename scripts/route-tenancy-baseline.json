@@ -194,6 +194,7 @@
     "POST /api/projects/:projectId/takeoff/measurements — insertTakeoffMeasurementSchema",
     "POST /api/projects/:projectId/takeoff/plans — insertTakeoffPlanSchema",
     "POST /api/projects/:projectId/takeoff/plans/:planId/pages — insertTakeoffPlanPageSchema",
+    "POST /api/proposal-reminder-templates — insertProposalReminderTemplateSchema",
     "POST /api/proposals — insertProposalSchema",
     "POST /api/proposals/:id/milestones — insertProposalPaymentMilestoneSchema",
     "POST /api/purchase-order-templates — insertPurchaseOrderTemplateSchema",

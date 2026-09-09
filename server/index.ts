@@ -451,6 +451,11 @@ app.use((req, res, next) => {
     const { startRfqReminderScheduler } = await import("./services/rfqReminderScheduler");
     startRfqReminderScheduler();
 
+    // Chases clients who haven't responded to a proposal. Opt-in per proposal,
+    // so this sweep does nothing at all until someone switches chasing on.
+    const { startProposalReminderScheduler } = await import("./services/proposalReminderScheduler");
+    startProposalReminderScheduler();
+
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in
     // production — instead of discovering it when a customer's checkout fails.
