@@ -1,7 +1,11 @@
 import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
 import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
-import { lineAppearsOnProposal, lineCountsTowardProposalTotal } from "@shared/proposalTotals";
+import {
+  collectHiddenGroupIds,
+  lineAppearsOnProposal,
+  lineCountsTowardProposalTotal,
+} from "@shared/proposalTotals";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -124,7 +128,10 @@ export function EstimateSection({
   // and they agree with computeProposalTotals on the server, which drives the
   // figure the payment schedule is a percentage of. If the two ever diverge
   // the client gets a column that does not add up to its own total.
-  const items = allItems.filter(lineAppearsOnProposal);
+  // Sections hidden from the proposal, resolved once — nested groups inherit
+  // their parent's hiding.
+  const hiddenGroupIds = collectHiddenGroupIds(groups);
+  const items = allItems.filter((it) => lineAppearsOnProposal(it, hiddenGroupIds));
 
   const itemsByGroup: Record<string, EstimateItem[]> = {};
   const ungroupedItems: EstimateItem[] = [];
@@ -145,10 +152,14 @@ export function EstimateSection({
   // set. (The old flat `[...groups].sort(order)` flattened the tree and
   // interleaved subgroups arbitrarily.)
   const rootGroups = [...groups]
-    .filter((g) => !g.parentGroupId)
+    .filter((g) => !g.parentGroupId && !hiddenGroupIds.has(g.id))
     .sort((a, b) => a.order - b.order);
   const subgroupsByParent: Record<string, EstimateGroup[]> = {};
   for (const g of groups) {
+    // Hidden subgroups are dropped as the tree is built, not at each use, so
+    // both consumers below inherit it: the render recursion and
+    // collectGroupItems, which sums a group's descendants for its subtotal.
+    if (hiddenGroupIds.has(g.id)) continue;
     if (g.parentGroupId) (subgroupsByParent[g.parentGroupId] ||= []).push(g);
   }
   for (const k of Object.keys(subgroupsByParent)) {
@@ -214,9 +225,9 @@ export function EstimateSection({
   // on the server. "included" and "empty" only change the printed cell; the
   // client is still paying for those lines.
   const lineIncTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item) ? round2(preMarginIncTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginIncTax(item) * marginFactor) : 0;
   const lineExTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item) ? round2(preMarginExTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginExTax(item) * marginFactor) : 0;
 
   /**
    * What goes in an amount cell. "Included" and "Excluded" say in words what a
