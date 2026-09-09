@@ -24605,27 +24605,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/proposals", async (req, res) => {
     try {
       const { projectId, status, parentProposalId, parentId } = req.query;
-      // Tenant scoping: a projectId must belong to the caller's company; an
-      // omitted projectId previously returned every company's proposals.
-      if (projectId) {
-        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
-      } else if (!(req.user as any)?.companyId) {
+      // Tenant scoping is enforced inside getProposals' WHERE clause, so no
+      // out-of-company row ever leaves Postgres. A supplied projectId is still
+      // checked up front so a foreign project 404s rather than silently
+      // returning an empty list.
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      const proposals = await storage.getProposals(
-        projectId as string | undefined,
-        status as string | undefined,
-        (parentProposalId as string | undefined) ?? (parentId as string | undefined),
-      );
-      const userCompanyId = (req.user as any)?.companyId;
-      const scoped = projectId ? proposals : await (async () => {
-        const { projects: projectsTbl } = await import("@shared/schema");
-        const companyProjects = await db.select({ id: projectsTbl.id })
-          .from(projectsTbl).where(eq(projectsTbl.companyId, userCompanyId));
-        const ids = new Set(companyProjects.map((pr: any) => pr.id));
-        return proposals.filter((pp: any) => ids.has(pp.projectId));
-      })();
-      res.json(scoped);
+      if (projectId) {
+        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      }
+      const proposals = await storage.getProposals(userCompanyId, {
+        projectId: projectId as string | undefined,
+        status: status as string | undefined,
+        parentProposalId: (parentProposalId as string | undefined) ?? (parentId as string | undefined),
+      });
+      res.json(proposals);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch proposals" });
     }
@@ -24852,8 +24848,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Proposal Acceptances API Routes
+  // Staff-side read of the acceptance audit trail. Rows carry the signer's
+  // name, email, IP and user agent, so this must be company-scoped — unlike
+  // the POST below, which is the public portal route and is share-token gated.
   app.get("/api/proposals/:id/acceptances", async (req, res) => {
     try {
+      if (!(await getOwnedProposal(req, res, req.params.id))) return;
       const acceptances = await storage.getProposalAcceptances(req.params.id);
       res.json(acceptances);
     } catch (error) {
@@ -24907,6 +24907,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/proposals/:id/latest-acceptance", async (req, res) => {
     try {
+      if (!(await getOwnedProposal(req, res, req.params.id))) return;
       const acceptance = await storage.getLatestProposalAcceptance(req.params.id);
       res.json(acceptance || null);
     } catch (error) {
@@ -24917,11 +24918,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposal Status Transition Routes
   app.post("/api/proposals/:id/send", async (req, res) => {
     try {
-      const existing = await storage.getProposal(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ error: "Proposal not found" });
-      }
-      
+      // Ownership first: this both flips the proposal to "sent" and freezes a
+      // snapshot built from the CALLER's company settings, so an unscoped send
+      // would stamp one company's branding onto another company's document.
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
+
       // Validate state transition
       if (existing.status !== "draft") {
         return res.status(400).json({ error: "Only draft proposals can be sent" });
@@ -24979,10 +24981,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/accept", async (req, res) => {
     try {
-      const existing = await storage.getProposal(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ error: "Proposal not found" });
-      }
+      // Staff-side accept (recording a decision taken offline). The client's
+      // own acceptance comes through POST /acceptances, which is share-token
+      // gated instead.
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
       if (existing.status === "superseded") {
         return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be accepted." });
       }
@@ -25030,10 +25033,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/reject", async (req, res) => {
     try {
-      const existing = await storage.getProposal(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ error: "Proposal not found" });
-      }
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
       if (existing.status === "superseded") {
         return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be rejected." });
       }
@@ -25100,6 +25101,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const overrides: Partial<InsertProposal> = parsedOverrides.data;
 
+      // Creating a revision supersedes the parent's current live revision, so
+      // an unscoped call could retire another company's active proposal.
+      if (!(await getOwnedProposal(req, res, req.params.id, "Parent proposal not found"))) return;
+
       let created;
       try {
         created = await storage.createProposalRevision(req.params.id, overrides);
@@ -25132,8 +25137,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Capture/refresh content snapshot for a proposal (called on send & on demand)
   app.post("/api/proposals/:id/snapshot", async (req, res) => {
     try {
-      const proposal = await storage.getProposal(req.params.id);
-      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      const proposal = await getOwnedProposal(req, res, req.params.id);
+      if (!proposal) return;
       const [sections, items, milestones, acceptances] = await Promise.all([
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
@@ -25156,6 +25161,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- Client-facing payload redaction -------------------------------------
+  // /view and /client-view are served to whoever holds the share link, with no
+  // session behind them. Both used to return the raw `proposals` row, which
+  // includes `notes` — documented in the schema as "Internal notes, not visible
+  // to client" — along with the share token, internal foreign keys and the
+  // author's name. Build the client payload from an allowlist instead, so a
+  // column added to `proposals` later is private until someone opts it in.
+  const CLIENT_PROPOSAL_FIELDS = [
+    "id", "proposalNumber", "name", "projectId", "version",
+    "introductionText", "closingText", "termsAndConditions",
+    "subtotal", "gstAmount", "totalAmount",
+    "status", "expiryDate", "sentDate", "acceptedDate", "acceptedByName",
+    "showPricing", "allowClientOptions", "layoutSettings",
+  ] as const;
+
+  // The snapshot's company block is branding, not the company's private
+  // library: termsTemplates and paymentScheduleTemplates are deliberately out.
+  const CLIENT_COMPANY_FIELDS = [
+    "companyName", "address", "phone", "email", "website", "logoUrl",
+    "proposalPrimaryColor", "proposalSecondaryColor", "proposalFontFamily",
+    "proposalHeaderText", "proposalFooterText", "taxRate",
+  ] as const;
+
+  const pick = <T extends Record<string, any>>(source: T | null | undefined, fields: readonly string[]) => {
+    if (!source || typeof source !== "object") return null;
+    const out: Record<string, any> = {};
+    for (const key of fields) {
+      if (key in source) out[key] = source[key];
+    }
+    return out;
+  };
+
+  /**
+   * Reduce a proposal and its parts to what the share-link holder may see.
+   * Beyond the field allowlists this also enforces, server-side, the three
+   * visibility switches the portal previously only honoured in the browser:
+   * disabled sections, items flagged hidden, and suppressed pricing were all
+   * being shipped to the client and merely not rendered.
+   */
+  const buildClientView = (
+    rawProposal: any,
+    parts: { sections?: any[]; items?: any[]; milestones?: any[]; acceptances?: any[]; company?: any } = {},
+  ) => {
+    const proposal = pick(rawProposal, CLIENT_PROPOSAL_FIELDS);
+    const pricingOn = rawProposal?.showPricing !== false;
+
+    const sections = (parts.sections ?? [])
+      .filter((s) => s?.isEnabled !== false)
+      .map((s) => {
+        const { templateId: _t, content, ...rest } = s ?? {};
+        const { estimateId: _e, ...safeContent } = (content as Record<string, any> | null) ?? {};
+        return { ...rest, content: safeContent };
+      });
+
+    const sectionPricing = new Map<string, boolean>(
+      sections.map((s: any) => [s.id, s.showPricing !== false]),
+    );
+
+    const items = (parts.items ?? [])
+      .filter((it) => it?.showInProposal !== false)
+      .map((it) => {
+        const { estimateItemId: _e, ...rest } = it ?? {};
+        const visible = pricingOn
+          && (it.sectionId ? sectionPricing.get(it.sectionId) !== false : true)
+          && it.showPricing !== false;
+        return visible ? rest : { ...rest, unitPrice: null, totalPrice: null };
+      });
+
+    const milestones = (parts.milestones ?? []).map((m) => {
+      const { companyId: _c, ...rest } = m ?? {};
+      return rest;
+    });
+
+    // The client needs to know a decision exists and whose name is on it —
+    // not the IP address, user agent or email captured for the audit trail.
+    const acceptances = (parts.acceptances ?? []).map((a) =>
+      pick(a, ["id", "status", "signedByName", "signedAt"]),
+    );
+
+    return {
+      proposal,
+      sections,
+      items,
+      milestones,
+      acceptances,
+      company: parts.company ? pick(parts.company, CLIENT_COMPANY_FIELDS) : undefined,
+    };
+  };
+
+  /** Redact a stored contentSnapshot, whose shape varies by which route wrote it. */
+  const redactSnapshot = (snapshot: any) => {
+    if (!snapshot || typeof snapshot !== "object") return null;
+    const view = buildClientView(snapshot.proposal, {
+      sections: snapshot.sections,
+      items: snapshot.items,
+      milestones: snapshot.milestones,
+      acceptances: snapshot.acceptances,
+      company: snapshot.company,
+    });
+    return { capturedAt: snapshot.capturedAt ?? null, ...view };
+  };
+
   app.post("/api/proposals/:id/view", async (req, res) => {
     try {
       const bodyToken = typeof req.body?.shareToken === "string" ? req.body.shareToken : "";
@@ -25169,7 +25276,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const device = (req.body?.device || req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
-      res.json({ proposal, snapshot: proposal.contentSnapshot ?? null });
+      res.json({
+        proposal: buildClientView(proposal).proposal,
+        snapshot: redactSnapshot(proposal.contentSnapshot),
+      });
     } catch (error) {
       console.error("Error recording proposal view:", error);
       res.status(500).json({ error: "Failed to record view" });
@@ -25196,9 +25306,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const device = (req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
-      const snapshot = proposal.contentSnapshot ?? null;
-      if (snapshot && typeof snapshot === 'object') {
-        return res.json({ proposal, snapshot, source: 'snapshot' });
+      const stored = proposal.contentSnapshot;
+      if (stored && typeof stored === 'object') {
+        const snapshot = redactSnapshot(stored);
+        // A snapshot missing its proposal block would otherwise hand the portal
+        // a null and crash it; fall back to the live row, still redacted.
+        const live = buildClientView(proposal).proposal;
+        return res.json({ proposal: snapshot?.proposal ?? live, snapshot, source: 'snapshot' });
       }
       // Fall back to live data if no snapshot was captured yet
       const [sections, items, milestones, acceptances] = await Promise.all([
@@ -25207,11 +25321,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProposalPaymentMilestones(req.params.id),
         storage.getProposalAcceptances(req.params.id),
       ]);
-      res.json({
-        proposal,
-        snapshot: { proposal, sections, items, milestones, acceptances },
-        source: 'live',
-      });
+      const snapshot = buildClientView(proposal, { sections, items, milestones, acceptances });
+      res.json({ proposal: snapshot.proposal, snapshot, source: 'live' });
     } catch (error) {
       console.error("Error in client-view:", error);
       res.status(500).json({ error: "Failed to load proposal for client view" });

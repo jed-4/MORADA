@@ -396,6 +396,18 @@ async function main() {
     await controlOk("PATCH /api/proposal-sections/:id", "PATCH", `/api/proposal-sections/${proposalSectionA.id}`, { name: "A's section" });
     await controlOk("PATCH /api/proposal-items/:id", "PATCH", `/api/proposal-items/${proposalItemA.id}`, { name: "A's item" });
     await controlOk("PATCH /api/proposal-milestones/:id", "PATCH", `/api/proposal-milestones/${proposalMilestoneA.id}`, { name: "A's milestone" });
+    await controlOk("GET /api/proposals/:id/acceptances", "GET", `/api/proposals/${proposalA.id}/acceptances`);
+    await controlOk("GET /api/proposals/:id/latest-acceptance", "GET", `/api/proposals/${proposalA.id}/latest-acceptance`);
+    // Proves the move of tenant scoping from a Node post-filter into the
+    // getProposals WHERE clause still returns the company's own rows.
+    await test("control: company A's proposal listing includes its own proposal", async () => {
+      const r = await api("GET", `/api/proposals`, { cookie: A.cookie });
+      assert.strictEqual(r.status, 200, `expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      assert.ok(
+        Array.isArray(r.body) && r.body.some((p: any) => p.id === proposalA.id),
+        "company A's own proposal missing from its listing",
+      );
+    });
     await controlOk("GET /api/rfqs/:id/items", "GET", `/api/rfqs/${rfqA.id}/items`);
     await controlOk("GET /api/rfis/:id", "GET", `/api/rfis/${rfiA.id}`);
     await controlOk("PATCH /api/rfis/:id", "PATCH", `/api/rfis/${rfiA.id}`, { subject: "RFI A edit" });
@@ -651,6 +663,34 @@ async function main() {
     await crossTenant("DELETE /api/proposal-items/:id", "DELETE", `/api/proposal-items/${proposalItemA.id}`, `/api/proposal-items/${NONE}`);
     await crossTenant("PATCH /api/proposal-milestones/:id", "PATCH", `/api/proposal-milestones/${proposalMilestoneA.id}`, `/api/proposal-milestones/${NONE}`, { name: "hacked" });
     await crossTenant("DELETE /api/proposal-milestones/:id", "DELETE", `/api/proposal-milestones/${proposalMilestoneA.id}`, `/api/proposal-milestones/${NONE}`);
+
+    // The acceptance reads and the status-transition writes below were
+    // unguarded until fix/proposals-tenancy: they resolved the proposal with a
+    // bare storage.getProposal and never checked the caller's company. The
+    // reads exposed client signatures, emails and IP addresses; the writes let
+    // any tenant send, accept, reject, re-snapshot or supersede another
+    // tenant's proposal. Ownership is checked before the state gates, so these
+    // stay 404 regardless of what status company A's proposal is in.
+    await crossTenant("GET /api/proposals/:id/acceptances", "GET", `/api/proposals/${proposalA.id}/acceptances`, `/api/proposals/${NONE}/acceptances`);
+    await crossTenant("GET /api/proposals/:id/latest-acceptance", "GET", `/api/proposals/${proposalA.id}/latest-acceptance`, `/api/proposals/${NONE}/latest-acceptance`);
+    await crossTenant("POST /api/proposals/:id/send", "POST", `/api/proposals/${proposalA.id}/send`, `/api/proposals/${NONE}/send`, {});
+    await crossTenant("POST /api/proposals/:id/accept", "POST", `/api/proposals/${proposalA.id}/accept`, `/api/proposals/${NONE}/accept`, { signedByName: "Mallory", signedByEmail: "m@example.com" });
+    await crossTenant("POST /api/proposals/:id/reject", "POST", `/api/proposals/${proposalA.id}/reject`, `/api/proposals/${NONE}/reject`, { rejectionReason: "hacked" });
+    await crossTenant("POST /api/proposals/:id/snapshot", "POST", `/api/proposals/${proposalA.id}/snapshot`, `/api/proposals/${NONE}/snapshot`, {});
+    await crossTenant("POST /api/proposals/:id/new-revision", "POST", `/api/proposals/${proposalA.id}/new-revision`, `/api/proposals/${NONE}/new-revision`, {});
+    await crossTenant("POST /api/proposals/:id/revision", "POST", `/api/proposals/${proposalA.id}/revision`, `/api/proposals/${NONE}/revision`, {});
+
+    // The list route scopes in SQL now rather than post-filtering in Node —
+    // company B must not see company A's proposal in an unfiltered listing.
+    await test("GET /api/proposals: company B's listing excludes company A's proposals", async () => {
+      const r = await api("GET", `/api/proposals`, { cookie: B.cookie });
+      assert.strictEqual(r.status, 200, `expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      assert.ok(Array.isArray(r.body), `expected an array, got ${JSON.stringify(r.body)}`);
+      assert.ok(
+        !r.body.some((p: any) => p.id === proposalA.id),
+        "company A's proposal leaked into company B's listing",
+      );
+    });
 
     // ---- RFQs (getOwnedRFQ) ----
     await crossTenant("GET /api/rfqs/:id/items", "GET", `/api/rfqs/${rfqA.id}/items`, `/api/rfqs/${NONE}/items`);

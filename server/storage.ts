@@ -1071,7 +1071,7 @@ export interface IStorage {
   deleteInvoiceSelection(id: string): Promise<boolean>;
 
   // Proposals CRUD
-  getProposals(projectId?: string, status?: string, parentProposalId?: string): Promise<Proposal[]>;
+  getProposals(companyId: string, filters?: { projectId?: string; status?: string; parentProposalId?: string }): Promise<Proposal[]>;
   getProposal(id: string): Promise<Proposal | undefined>;
   createProposal(proposal: InsertProposal): Promise<Proposal>;
   createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
@@ -19562,11 +19562,23 @@ export class DbStorage implements IStorage {
   }
 
   // Proposals CRUD operations
-  async getProposals(projectId?: string, status?: string, parentProposalId?: string): Promise<Proposal[]> {
+  async getProposals(companyId: string, filters?: { projectId?: string; status?: string; parentProposalId?: string }): Promise<Proposal[]> {
+    const { projectId, status, parentProposalId } = filters ?? {};
     try {
       let query = db.select().from(schema.proposals);
 
-      const conditions = [];
+      // Tenant scope lives in the WHERE clause, not in a post-filter in the
+      // route. Scoping runs through the owning project rather than
+      // proposals.company_id because that column is nullable and legacy rows
+      // predate it — the project is the authoritative owner either way.
+      const conditions = [
+        inArray(
+          schema.proposals.projectId,
+          db.select({ id: schema.projects.id })
+            .from(schema.projects)
+            .where(eq(schema.projects.companyId, companyId)),
+        ),
+      ];
       if (projectId) {
         conditions.push(eq(schema.proposals.projectId, projectId));
       }
@@ -19580,9 +19592,8 @@ export class DbStorage implements IStorage {
         )!);
       }
 
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions));
-      }
+      // The tenant condition is always present, so this is never unfiltered.
+      query = query.where(and(...conditions));
 
       return await query.orderBy(desc(schema.proposals.createdAt));
     } catch (error) {
