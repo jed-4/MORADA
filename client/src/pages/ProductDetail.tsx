@@ -9,7 +9,7 @@
  * Layout and tokens follow the price list pages: page header at px-4 pt-3 pb-2,
  * cards as bg-card rounded-md border with --shadow-card, 6px controls.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -29,6 +29,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ProductTaxonomyDialog } from "@/components/ProductTaxonomyDialog";
 
 interface ProductImage {
   id: number;
@@ -36,6 +37,9 @@ interface ProductImage {
   fileName: string | null;
   sortOrder: number | null;
 }
+
+interface ProductGroup { id: string; parentId: string | null; name: string }
+interface ProductTag { id: string; name: string; colour: string | null }
 
 interface Product {
   id: number;
@@ -51,6 +55,8 @@ interface Product {
   url: string | null;
   notes: string | null;
   specifications: Record<string, any> | null;
+  groupId: string | null;
+  tagIds?: string[];
   images?: ProductImage[];
 }
 
@@ -95,7 +101,17 @@ export default function ProductDetail() {
     enabled: !!id,
   });
 
+  const { data: groups = [] } = useQuery<ProductGroup[]>({ queryKey: ["/api/product-groups"] });
+  const { data: tags = [] } = useQuery<ProductTag[]>({ queryKey: ["/api/product-tags"] });
+  const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
+  const groupLabel = (g: ProductGroup) => {
+    const parent = g.parentId ? groupById.get(g.parentId) : undefined;
+    return parent ? `${parent.name} › ${g.name}` : g.name;
+  };
+
   const [form, setForm] = useState<Partial<Product> & { unitCostInput?: string }>({});
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [taxonomyOpen, setTaxonomyOpen] = useState<false | "groups" | "tags">(false);
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
   const [dirty, setDirty] = useState(false);
 
@@ -104,6 +120,7 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!product) return;
     setForm({ ...product, unitCostInput: centsToInput(product.defaultUnitCost) });
+    setTagIds(product.tagIds ?? []);
     setSpecRows(specsToRows(product.specifications));
     setDirty(false);
     setHeroIdx(0);
@@ -128,8 +145,14 @@ export default function ProductDetail() {
         notes: form.notes || null,
         defaultUnitCost: inputToCents(form.unitCostInput ?? ""),
         specifications: rowsToSpecs(specRows),
+        groupId: form.groupId ?? null,
       };
-      return apiRequest(`/api/products/${id}`, "PATCH", body);
+      // Tags live in a junction table, so they are their own write. Sequential
+      // rather than parallel: if the product save fails there is no reason to
+      // have already changed its tags.
+      const saved = await apiRequest(`/api/products/${id}`, "PATCH", body);
+      await apiRequest(`/api/products/${id}/tags`, "PUT", { tagIds });
+      return saved;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products", id] });
@@ -407,11 +430,74 @@ export default function ProductDetail() {
                 <Field label="SKU">
                   <Input value={form.sku ?? ""} onChange={(e) => set("sku", e.target.value)} className="h-7 text-xs font-mono" data-testid="input-sku" />
                 </Field>
-                <Field label="Category">
-                  <Input value={form.category ?? ""} onChange={(e) => set("category", e.target.value)} className="h-7 text-xs" placeholder="e.g. Tapware" data-testid="input-category" />
+                <Field label="Group" hint="where it lives">
+                  <Select
+                    value={form.groupId ?? "__none__"}
+                    onValueChange={(v) => set("groupId", v === "__none__" ? null : v)}
+                  >
+                    <SelectTrigger className="h-7 text-xs" data-testid="select-group">
+                      <SelectValue placeholder="Unfiled" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-xs">Unfiled</SelectItem>
+                      {groups.map((g) => (
+                        <SelectItem key={g.id} value={g.id} className="text-xs">{groupLabel(g)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <button
+                    onClick={() => setTaxonomyOpen("groups")}
+                    className="text-[10px] text-primary hover:underline"
+                    data-testid="button-manage-groups"
+                  >
+                    {groups.length === 0 ? "Create a group" : "Manage groups"}
+                  </button>
                 </Field>
-                <Field label="Subcategory">
-                  <Input value={form.subcategory ?? ""} onChange={(e) => set("subcategory", e.target.value)} className="h-7 text-xs" data-testid="input-subcategory" />
+                <Field label="Tags" hint="what it belongs to">
+                  {tags.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground pt-1">
+                      No tags yet.{" "}
+                      <button
+                        onClick={() => setTaxonomyOpen("tags")}
+                        className="text-primary hover:underline"
+                        data-testid="button-create-tag"
+                      >
+                        Create one
+                      </button>{" "}
+                      — a tag like “Colorbond standard” is what lets a whole set be added to a
+                      selection in one go.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {tags.map((t) => {
+                        const on = tagIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setTagIds((prev) => on ? prev.filter((x) => x !== t.id) : [...prev, t.id]);
+                              setDirty(true);
+                            }}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors hover-elevate ${
+                              on ? "bg-primary/10 border-primary/30 text-primary" : "border-border text-muted-foreground"
+                            }`}
+                            style={on && t.colour ? { borderColor: t.colour, color: t.colour } : undefined}
+                            data-testid={`tag-${t.id}`}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                      <button
+                        onClick={() => setTaxonomyOpen("tags")}
+                        className="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-border text-muted-foreground hover-elevate"
+                        data-testid="button-manage-tags"
+                      >
+                        + Manage
+                      </button>
+                    </div>
+                  )}
                 </Field>
                 <Field label="Unit cost" hint="ex GST">
                   <Input
@@ -527,6 +613,12 @@ export default function ProductDetail() {
           </div>
         </div>
       </div>
+
+      <ProductTaxonomyDialog
+        open={taxonomyOpen !== false}
+        onOpenChange={(v) => setTaxonomyOpen(v ? (taxonomyOpen || "groups") : false)}
+        initialTab={taxonomyOpen === "tags" ? "tags" : "groups"}
+      />
     </div>
   );
 }

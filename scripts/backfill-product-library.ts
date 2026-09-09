@@ -109,6 +109,9 @@ async function main() {
         url: opt.url,
         specifications: opt.specifications,
         isActive: true,
+        // Every product this script creates is a shadow of a blob option, not a
+        // product anyone put in the library. Marked so the library hides it.
+        source: "template_shadow" as const,
       };
       // The "how this template uses it" half.
       const linkValues = {

@@ -7851,8 +7851,20 @@ export const products = pgTable("products", {
   brand:             text("brand"),
   sku:               text("sku"),
   description:       text("description"),
+  // Superseded by groupId. Kept for one release so nothing reading them breaks
+  // while the backfill runs; drop once the UI reads groups everywhere.
   category:          text("category"),
   subcategory:       text("subcategory"),
+  groupId:           varchar("group_id").references(() => productGroups.id, { onDelete: "set null" }),
+  // "library"         a real product someone put in the library.
+  // "template_shadow" a row the templateData write-through had to mint because
+  //                   an option described a product instead of referencing one.
+  //
+  // Only shadows are hidden from the library. Testing found the earlier
+  // NOT EXISTS(selection_template_options) test hid any product a template
+  // merely REFERENCED — so adding the Colorbond colours to "Gutter colour"
+  // emptied the Product Library.
+  source:            text("source").notNull().default("library"),
   supplierContactId: varchar("supplier_contact_id").references(() => contacts.id),
   defaultUnitCost:   integer("default_unit_cost"),   // cents
   unitType:          text("unit_type"),
@@ -7871,6 +7883,7 @@ export const products = pgTable("products", {
   // WHERE company_id = $1 [AND is_active] ORDER BY name. Postgres does not index
   // the referencing side of an FK, so without this it is a seq scan plus a sort.
   companyNameIdx: index("products_company_id_name_idx").on(table.companyId, table.name),
+  groupIdx: index("products_group_id_idx").on(table.groupId),
 }));
 
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
@@ -7891,6 +7904,85 @@ export const productImages = pgTable("product_images", {
 export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });
 export type InsertProductImage = z.infer<typeof insertProductImageSchema>;
 export type ProductImage = typeof productImages.$inferSelect;
+
+// ── Product Groups ────────────────────────────────────────────────────────────
+// Where a product LIVES. Replaces the free-text `category` / `subcategory` pair,
+// which enforced no spelling — "Tapware", "tapware" and "Tap ware" were three
+// different groups — and could never be renamed.
+//
+// `parentId` is nullable and self-referencing, so the existing two levels
+// (category → subcategory) migrate straight across and a third can be added
+// later without another migration. Precedent: system_folders, field_options.
+export const productGroups = pgTable("product_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  parentId: varchar("parent_id").references((): any => productGroups.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  colour: text("colour"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("product_groups_company_idx").on(table.companyId),
+  parentIdx: index("product_groups_parent_idx").on(table.parentId),
+  // Two branches may each hold a "Colours"; only siblings must differ.
+  uniqueSibling: uniqueIndex("product_groups_sibling_name_unique").on(table.companyId, table.parentId, table.name),
+}));
+
+// companyId is NOT omitted here — routes omit it at the parse site so the
+// omission is visible where req.body is read. See insertProductSchema.
+export const insertProductGroupSchema = createInsertSchema(productGroups).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProductGroup = z.infer<typeof insertProductGroupSchema>;
+export type ProductGroup = typeof productGroups.$inferSelect;
+
+// ── Product Tags ──────────────────────────────────────────────────────────────
+// What a product BELONGS TO. A group is one place; tags are many, and they carry
+// the cross-cutting facts a single tree cannot: "colorbond-standard",
+// "hamptons", "accessible".
+//
+// Real rows rather than a JSON string array (the shape price_list_items.tags
+// uses) because a tag here doubles as a SET — "add every product tagged
+// colorbond-standard to this selection". A set one typo away from fragmenting is
+// not one you would build a client-facing selection from, and free-text tags
+// cannot be renamed. Modelled on task_tags.
+export const productTags = pgTable("product_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  colour: text("colour"),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("product_tags_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertProductTagSchema = createInsertSchema(productTags).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProductTag = z.infer<typeof insertProductTagSchema>;
+export type ProductTag = typeof productTags.$inferSelect;
+
+// Many-to-many. A junction table rather than an id array on the product, so
+// "every product tagged X" is an indexed lookup — which is what makes bulk-add
+// from a tag cheap.
+export const productTagAssignments = pgTable("product_tag_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tagId: varchar("tag_id").notNull().references(() => productTags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePair: uniqueIndex("product_tag_assignments_unique").on(table.productId, table.tagId),
+  tagIdx: index("product_tag_assignments_tag_idx").on(table.tagId),
+}));
+
+export type ProductTagAssignment = typeof productTagAssignments.$inferSelect;
 
 // ── Selection Template Options ────────────────────────────────────────────────
 // The Option level of the Product Library hierarchy:

@@ -198,6 +198,8 @@ import {
   insertBillLineItemPriceLinkSchema,
   insertProductSchema,
   insertProductImageSchema,
+  insertProductGroupSchema,
+  insertProductTagSchema,
   type CircuitContext,
   type InsertContact
 } from "@shared/schema";
@@ -15630,32 +15632,206 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Product Groups & Tags ──────────────────────────────────────────────────
+  // A GROUP is where a product lives (one, a tree). A TAG is what it belongs to
+  // (many, cross-cutting). Separate ideas, separate tables — trying to make one
+  // mechanism do both is what left `category`/`subcategory` doing neither well.
+
+  /** Confirms a group belongs to the caller's company. 404s and returns null otherwise. */
+  const getOwnedProductGroup = async (req: any, res: any, id: string) => {
+    const [row] = await db.select().from(schema.productGroups)
+      .where(and(eq(schema.productGroups.id, id), eq(schema.productGroups.companyId, req.user!.companyId!)))
+      .limit(1);
+    if (!row) { res.status(404).json({ error: "Group not found" }); return null; }
+    return row;
+  };
+
+  const getOwnedProductTag = async (req: any, res: any, id: string) => {
+    const [row] = await db.select().from(schema.productTags)
+      .where(and(eq(schema.productTags.id, id), eq(schema.productTags.companyId, req.user!.companyId!)))
+      .limit(1);
+    if (!row) { res.status(404).json({ error: "Tag not found" }); return null; }
+    return row;
+  };
+
+  app.get("/api/product-groups", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      res.json(await storage.getProductGroups(req.user!.companyId!));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch product groups" });
+    }
+  });
+
+  app.post("/api/product-groups", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const parsed = insertProductGroupSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      // A parent from another company would graft this tenant's tree onto theirs.
+      if (parsed.data.parentId && !(await getOwnedProductGroup(req, res, parsed.data.parentId))) return;
+      const [row] = await db.insert(schema.productGroups)
+        .values({ ...parsed.data, companyId: req.user!.companyId! })
+        .returning();
+      res.status(201).json(row);
+    } catch (error: any) {
+      if (String(error?.message).includes("product_groups_sibling_name_unique")) {
+        return res.status(409).json({ error: "A group with that name already exists here" });
+      }
+      res.status(500).json({ error: "Failed to create product group" });
+    }
+  });
+
+  app.patch("/api/product-groups/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      if (!(await getOwnedProductGroup(req, res, req.params.id))) return;
+      const parsed = insertProductGroupSchema.omit({ companyId: true }).partial().safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      // Re-parenting: the new parent must be ours, and must not be the group
+      // itself — a group that is its own parent disappears from every tree walk.
+      if (parsed.data.parentId) {
+        if (parsed.data.parentId === req.params.id) {
+          return res.status(400).json({ error: "A group cannot be its own parent" });
+        }
+        if (!(await getOwnedProductGroup(req, res, parsed.data.parentId))) return;
+      }
+      const [row] = await db.update(schema.productGroups)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(eq(schema.productGroups.id, req.params.id))
+        .returning();
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update product group" });
+    }
+  });
+
+  app.delete("/api/product-groups/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      if (!(await getOwnedProductGroup(req, res, req.params.id))) return;
+      // products.group_id is ON DELETE SET NULL, so the products survive and fall
+      // back to "Unfiled". Child groups cascade.
+      await db.delete(schema.productGroups).where(eq(schema.productGroups.id, req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete product group" });
+    }
+  });
+
+  app.get("/api/product-tags", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      res.json(await storage.getProductTags(req.user!.companyId!));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch product tags" });
+    }
+  });
+
+  app.post("/api/product-tags", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const parsed = insertProductTagSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const [row] = await db.insert(schema.productTags)
+        .values({ ...parsed.data, companyId: req.user!.companyId! })
+        .returning();
+      res.status(201).json(row);
+    } catch (error: any) {
+      if (String(error?.message).includes("product_tags_company_name_unique")) {
+        return res.status(409).json({ error: "A tag with that name already exists" });
+      }
+      res.status(500).json({ error: "Failed to create product tag" });
+    }
+  });
+
+  app.patch("/api/product-tags/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      if (!(await getOwnedProductTag(req, res, req.params.id))) return;
+      const parsed = insertProductTagSchema.omit({ companyId: true }).partial().safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const [row] = await db.update(schema.productTags)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(eq(schema.productTags.id, req.params.id))
+        .returning();
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update product tag" });
+    }
+  });
+
+  app.delete("/api/product-tags/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      if (!(await getOwnedProductTag(req, res, req.params.id))) return;
+      // Assignments cascade; the products themselves are untouched.
+      await db.delete(schema.productTags).where(eq(schema.productTags.id, req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete product tag" });
+    }
+  });
+
+  /** Replaces a product's tags wholesale. */
+  app.put("/api/products/:id/tags", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const productId = Number(req.params.id);
+      if (!(await getOwnedProduct(req, res, productId))) return;
+      const { tagIds } = req.body ?? {};
+      if (!Array.isArray(tagIds) || tagIds.some((t: any) => typeof t !== "string")) {
+        return res.status(400).json({ error: "tagIds (string array) is required" });
+      }
+      // Every tag must be ours, or a product could be filed under another
+      // tenant's tag and surface in their bulk-add.
+      const owned = await storage.getProductTags(req.user!.companyId!);
+      const ownedIds = new Set(owned.map((t) => t.id));
+      const unknown = tagIds.filter((t: string) => !ownedIds.has(t));
+      if (unknown.length > 0) {
+        return res.status(400).json({ error: `Unknown tag: ${unknown[0]}` });
+      }
+      await storage.setProductTags(productId, tagIds);
+      res.json({ tagIds });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to set product tags" });
+    }
+  });
+
   // ── Product Library Routes ─────────────────────────────────────────────────
   app.get("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const companyId = req.user!.companyId!;
-      const { category, search } = req.query as Record<string, string>;
+      const { category, search, groupId, tagId, includeTemplateOptions } = req.query as Record<string, string>;
       const products = await storage.getProducts(companyId, {
         category: category || undefined,
+        groupId: groupId || undefined,
+        tagId: tagId || undefined,
         search: search || undefined,
         isActive: true,
+        // Shadows are hidden by default. This is the only way to see them, and
+        // it exists so the state is inspectable rather than invisible.
+        includeTemplateOptions: includeTemplateOptions === "1" || includeTemplateOptions === "true",
       });
-      // Attach each product's first image so pickers can show thumbnails
-      // (single batched query — no per-product fan-out)
-      if (products.length > 0) {
-        const images = await db.select().from(schema.productImages)
-          .where(inArray(schema.productImages.productId, products.map((p) => p.id)))
-          .orderBy(asc(schema.productImages.sortOrder));
-        const firstByProduct = new Map<number, any>();
-        for (const img of images) {
-          if (!firstByProduct.has(img.productId)) firstByProduct.set(img.productId, img);
-        }
-        return res.json(products.map((p) => ({
-          ...p,
-          images: firstByProduct.has(p.id) ? [firstByProduct.get(p.id)] : [],
-        })));
+      if (products.length === 0) return res.json(products);
+
+      // Two batched queries, not two per product. The library page needs the
+      // thumbnail and the tags for every row at once.
+      const ids = products.map((p) => p.id);
+      const [images, tagIdsByProduct] = await Promise.all([
+        db.select().from(schema.productImages)
+          .where(inArray(schema.productImages.productId, ids))
+          .orderBy(asc(schema.productImages.sortOrder)),
+        storage.getTagIdsByProduct(ids),
+      ]);
+      const firstByProduct = new Map<number, any>();
+      for (const img of images) {
+        if (!firstByProduct.has(img.productId)) firstByProduct.set(img.productId, img);
       }
-      res.json(products);
+      res.json(products.map((p) => ({
+        ...p,
+        images: firstByProduct.has(p.id) ? [firstByProduct.get(p.id)] : [],
+        tagIds: tagIdsByProduct.get(p.id) ?? [],
+      })));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch products" });
     }
@@ -15696,8 +15872,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const product = await getOwnedProduct(req, res, Number(req.params.id));
       if (!product) return;
-      const images = await storage.getProductImages(product.id);
-      res.json({ ...product, images });
+      const [images, tagIdsByProduct] = await Promise.all([
+        storage.getProductImages(product.id),
+        storage.getTagIdsByProduct([product.id]),
+      ]);
+      res.json({ ...product, images, tagIds: tagIdsByProduct.get(product.id) ?? [] });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch product" });
     }

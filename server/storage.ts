@@ -713,7 +713,11 @@ export interface IStorage {
   deleteSelectionComment(id: string): Promise<boolean>;
 
   // Product Library CRUD
-  getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]>;
+  getProducts(companyId: string, filters?: { category?: string; groupId?: string; tagId?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]>;
+  getProductGroups(companyId: string): Promise<schema.ProductGroup[]>;
+  getProductTags(companyId: string): Promise<schema.ProductTag[]>;
+  getTagIdsByProduct(productIds: number[]): Promise<Map<number, string[]>>;
+  setProductTags(productId: number, tagIds: string[]): Promise<void>;
   getProduct(id: number): Promise<schema.Product | undefined>;
   createProduct(product: schema.InsertProduct): Promise<schema.Product>;
   updateProduct(id: number, product: Partial<schema.InsertProduct>): Promise<schema.Product | undefined>;
@@ -16888,22 +16892,28 @@ export class DbStorage implements IStorage {
   }
 
   // ── Product Library ──────────────────────────────────────────────────
-  async getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]> {
+  async getProducts(companyId: string, filters?: { category?: string; groupId?: string; tagId?: string; search?: string; isActive?: boolean; includeTemplateOptions?: boolean }): Promise<schema.Product[]> {
     const conditions: any[] = [eq(schema.products.companyId, companyId)];
     if (filters?.isActive !== undefined) conditions.push(eq(schema.products.isActive, filters.isActive));
     if (filters?.category) conditions.push(eq(schema.products.category, filters.category));
-    // Products backfilled from selection_templates.templateData are shadows: they
-    // exist so the blob can be retired, but templateData is still authoritative
-    // and no UI is ready to show them. A shadow is a product some
-    // selection_template_options row points at, so excluding them is a NOT
-    // EXISTS rather than a column test. Keeps the Product Library page and the
-    // add-from-library picker exactly as they were; the Category → Selection →
-    // Option front door will opt in.
-    if (!filters?.includeTemplateOptions) {
-      conditions.push(sql`NOT EXISTS (
-        SELECT 1 FROM ${schema.selectionTemplateOptions}
-        WHERE ${schema.selectionTemplateOptions.productId} = ${schema.products.id}
+    if (filters?.groupId) conditions.push(eq(schema.products.groupId, filters.groupId));
+    // "Every product tagged X" — an indexed junction lookup, which is what makes
+    // bulk-add from a tag cheap.
+    if (filters?.tagId) {
+      conditions.push(sql`EXISTS (
+        SELECT 1 FROM ${schema.productTagAssignments}
+        WHERE ${schema.productTagAssignments.productId} = ${schema.products.id}
+          AND ${schema.productTagAssignments.tagId} = ${filters.tagId}
       )`);
+    }
+    // Hide SHADOWS — rows the templateData write-through had to mint because an
+    // option described a product instead of referencing one. Deliberately NOT a
+    // "is this referenced by a template" test: that also hid every product a
+    // template merely points at, so adding the Colorbond colours to "Gutter
+    // colour" emptied the library. A referenced product is still a library
+    // product; only a minted one is an artefact.
+    if (!filters?.includeTemplateOptions) {
+      conditions.push(ne(schema.products.source, "template_shadow"));
     }
     let rows = await db.select().from(schema.products).where(and(...conditions)).orderBy(schema.products.name);
     if (filters?.search) {
@@ -16945,6 +16955,41 @@ export class DbStorage implements IStorage {
   async deleteProductImage(id: number): Promise<boolean> {
     const result = await db.delete(schema.productImages).where(eq(schema.productImages.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getProductGroups(companyId: string): Promise<schema.ProductGroup[]> {
+    return db.select().from(schema.productGroups)
+      .where(and(eq(schema.productGroups.companyId, companyId), eq(schema.productGroups.isActive, true)))
+      .orderBy(asc(schema.productGroups.sortOrder), asc(schema.productGroups.name));
+  }
+
+  async getProductTags(companyId: string): Promise<schema.ProductTag[]> {
+    return db.select().from(schema.productTags)
+      .where(and(eq(schema.productTags.companyId, companyId), eq(schema.productTags.isActive, true)))
+      .orderBy(asc(schema.productTags.sortOrder), asc(schema.productTags.name));
+  }
+
+  /** One batched query, not one per product — the library page needs all of them. */
+  async getTagIdsByProduct(productIds: number[]): Promise<Map<number, string[]>> {
+    const out = new Map<number, string[]>();
+    if (productIds.length === 0) return out;
+    const rows = await db.select().from(schema.productTagAssignments)
+      .where(inArray(schema.productTagAssignments.productId, productIds));
+    for (const r of rows) {
+      if (!out.has(r.productId)) out.set(r.productId, []);
+      out.get(r.productId)!.push(r.tagId);
+    }
+    return out;
+  }
+
+  /** Replaces the product's tags wholesale. Callers must have checked ownership. */
+  async setProductTags(productId: number, tagIds: string[]): Promise<void> {
+    await db.delete(schema.productTagAssignments)
+      .where(eq(schema.productTagAssignments.productId, productId));
+    const unique = Array.from(new Set(tagIds));
+    if (unique.length === 0) return;
+    await db.insert(schema.productTagAssignments)
+      .values(unique.map((tagId) => ({ productId, tagId })));
   }
 
   async getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]> {
