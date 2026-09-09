@@ -1157,7 +1157,7 @@ export default function EstimateDetail() {
 
   // Mutation for updating individual group properties (including parentGroupId)
   const updateGroupMutation = useMutation({
-    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string } }) => {
+    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string; proposalVisible?: boolean } }) => {
       return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
     },
     onMutate: async ({ groupId, updates }) => {
@@ -5508,6 +5508,12 @@ export default function EstimateDetail() {
                                   dropTarget={dropTarget}
                                   onUpdateStatus={(groupId, status) =>
                                     updateGroupMutation.mutate({ groupId, updates: { status } })
+                                  }
+                                  onToggleProposalVisible={(groupId, next) =>
+                                    updateGroupMutation.mutate({
+                                      groupId,
+                                      updates: { proposalVisible: next },
+                                    })
                                   }
                                 />
                               );
