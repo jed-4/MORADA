@@ -20,6 +20,7 @@ import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSecti
 import { DocumentHeader } from "@/components/detail/DocumentHeader";
 import { MoneySummary, type MoneyRow } from "@/components/detail/MoneySummary";
 import { AddLineRow } from "@/components/detail/AddLineRow";
+import { SigningStatusStrip } from "@/components/variations/SigningStatusStrip";
 import { 
   MoreVertical,
   ArrowLeft, 
@@ -1777,6 +1778,29 @@ export default function VariationDetail() {
             {/* fieldset[disabled] is what makes the approved lock airtight in
                 the UI: every native input/select/button inside is disabled. */}
             <fieldset disabled={isLocked} className="space-y-3 min-w-0">
+
+                {/* ── Client approval ── */}
+                {isEditMode && (variation as any)?.portalSentAt && (
+                  <DocumentCard data-testid="section-signing-status">
+                    <DocumentSection
+                      title="Client Approval"
+                      role={variation?.status === "rejected" ? "exception" : "client"}
+                      collapsible={false}
+                      divider={false}
+                      tint
+                      data-testid="signing-status"
+                    >
+                      <SigningStatusStrip
+                        portalSentAt={(variation as any).portalSentAt}
+                        portalViewedAt={(variation as any).portalViewedAt}
+                        clientSignedName={(variation as any).clientSignedName}
+                        clientSignedDate={(variation as any).clientSignedDate}
+                        status={variation?.status}
+                        rejectionReason={(variation as any).rejectionReason}
+                      />
+                    </DocumentSection>
+                  </DocumentCard>
+                )}
 
                 {/* ── General Info ── */}
                 <DocumentCard>
