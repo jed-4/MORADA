@@ -89,6 +89,9 @@ export async function syncTemplateOptions(
       url: o.url,
       specifications: o.specifications,
       isActive: true,
+      // Minted because the option described a product rather than referencing
+      // one. Hidden from the library; a product the user linked is not.
+      source: "template_shadow" as const,
     });
     const linkValues = (o: (typeof options)[number]) => ({
       templateId,

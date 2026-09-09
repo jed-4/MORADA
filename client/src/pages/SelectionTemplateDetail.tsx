@@ -186,6 +186,7 @@ export default function SelectionTemplateDetail() {
   const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
   const [productLibraryOpen, setProductLibraryOpen] = useState(false);
+  const [pickerTag, setPickerTag] = useState<string>("all");
   const [productSearch, setProductSearch] = useState("");
 
   const [optionForm, setOptionForm] = useState<Partial<SelectionOption>>({
@@ -273,6 +274,64 @@ export default function SelectionTemplateDetail() {
     queryKey: ["/api/products"],
     enabled: productLibraryOpen,
   });
+
+  const { data: productTags = [] } = useQuery<any[]>({
+    queryKey: ["/api/product-tags"],
+    enabled: productLibraryOpen,
+  });
+
+  /** The product fields an option copies for display; the link is productId. */
+  const optionFromProduct = (product: any, sortOrder: number) => {
+    const imageUrls = (product.images || [])
+      .map((img: any) => (typeof img === "string" ? img : img?.filePath))
+      .filter((u: any): u is string => typeof u === "string" && u.length > 0);
+    return {
+      id: crypto.randomUUID(),
+      productId: product.id,
+      name: product.name || "",
+      description: product.description || undefined,
+      sku: product.sku || undefined,
+      brand: product.brand || undefined,
+      category: product.category || undefined,
+      unitCost: product.defaultUnitCost ?? undefined,
+      quantity: 1,
+      unitType: product.unitType || "ea",
+      url: product.url || undefined,
+      imageUrls,
+      visibleToClient: true,
+      isSelectedByClient: false,
+      specifications: product.specifications || undefined,
+      sortOrder,
+    } as any;
+  };
+
+  /**
+   * The point of tags: "Gutter colour" and "Fascia colour" both want the same
+   * 22 Colorbond colours. Adding them one at a time is 22 clicks per selection
+   * and they drift; this adds the whole set at once, still as references.
+   */
+  const handleAddAllFromLibrary = (toAdd: any[]) => {
+    const alreadyLinked = new Set(options.map((o: any) => o.productId).filter(Boolean));
+    const fresh = toAdd.filter((p) => !alreadyLinked.has(p.id));
+    if (fresh.length === 0) {
+      toast({ title: "Already added", description: "Every product in that tag is already an option here." });
+      return;
+    }
+    const updated = [
+      ...options,
+      ...fresh.map((p, i) => optionFromProduct(p, options.length + i)),
+    ];
+    updateMutation.mutate({ templateData: updated }, {
+      onSuccess: () => {
+        setProductLibraryOpen(false);
+        const skipped = toAdd.length - fresh.length;
+        toast({
+          title: `Added ${fresh.length} option${fresh.length === 1 ? "" : "s"}`,
+          description: skipped > 0 ? `${skipped} were already here.` : undefined,
+        });
+      },
+    });
+  };
 
   useEffect(() => {
     if (template) {
@@ -1480,7 +1539,7 @@ export default function SelectionTemplateDetail() {
             <DialogTitle>Product Library</DialogTitle>
             <DialogDescription>Select a product to add as an option.</DialogDescription>
           </DialogHeader>
-          <div className="flex-shrink-0 mb-2">
+          <div className="flex-shrink-0 mb-2 space-y-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
@@ -1490,6 +1549,35 @@ export default function SelectionTemplateDetail() {
                 className="pl-7 h-8 text-sm"
               />
             </div>
+            {productTags.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={pickerTag} onValueChange={setPickerTag}>
+                  <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-picker-tag">
+                    <SelectValue placeholder="Any tag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Any tag</SelectItem>
+                    {productTags.map((t: any) => (
+                      <SelectItem key={t.id} value={t.id} className="text-xs">{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {pickerTag !== "all" && (() => {
+                  const tagged = products.filter((p: any) => (p.tagIds || []).includes(pickerTag));
+                  return (
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs flex-shrink-0"
+                      disabled={tagged.length === 0 || updateMutation.isPending}
+                      onClick={() => handleAddAllFromLibrary(tagged)}
+                      data-testid="button-add-all-tagged"
+                    >
+                      Add all {tagged.length}
+                    </Button>
+                  );
+                })()}
+              </div>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
             {products.length === 0 ? (
@@ -1498,11 +1586,12 @@ export default function SelectionTemplateDetail() {
                 No products in library yet
               </div>
             ) : (() => {
-              const filtered = products.filter(p =>
-                !productSearch ||
-                p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
-                p.brand?.toLowerCase().includes(productSearch.toLowerCase()) ||
-                p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+              const filtered = products.filter((p: any) =>
+                (pickerTag === "all" || (p.tagIds || []).includes(pickerTag)) &&
+                (!productSearch ||
+                  p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                  p.brand?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                  p.sku?.toLowerCase().includes(productSearch.toLowerCase()))
               );
               if (filtered.length === 0) {
                 return <div className="text-center py-8 text-sm text-muted-foreground">No products match your search</div>;
@@ -1513,8 +1602,8 @@ export default function SelectionTemplateDetail() {
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-md border bg-card hover-elevate text-left"
                   onClick={() => handleSelectFromLibrary(product)}
                 >
-                  {(product.images?.[0]?.url || product.imageUrl) ? (
-                    <img src={product.images?.[0]?.url || product.imageUrl} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                  {(product.images?.[0]?.filePath || product.imageUrl) ? (
+                    <img src={product.images?.[0]?.filePath || product.imageUrl} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
                       <Package className="h-4 w-4 text-muted-foreground" />

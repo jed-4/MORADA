@@ -38,6 +38,9 @@ import { formatCents } from "@shared/money";
 
 interface ProductImage { id: number; filePath: string; fileName: string | null }
 
+interface ProductGroup { id: string; parentId: string | null; name: string; sortOrder: number }
+interface ProductTag { id: string; name: string; colour: string | null; sortOrder: number }
+
 interface Product {
   id: number;
   name: string;
@@ -49,6 +52,8 @@ interface Product {
   defaultUnitCost: number | null;
   unitType: string | null;
   url: string | null;
+  groupId: string | null;
+  tagIds?: string[];
   images?: ProductImage[];
 }
 
@@ -58,6 +63,7 @@ const GRID_COLUMNS = [
   { key: "sku",         label: "SKU",      defaultWidth: 120 },
   { key: "brand",       label: "Brand",    defaultWidth: 140 },
   { key: "subcategory", label: "Subcategory", defaultWidth: 140 },
+  { key: "tags",        label: "Tags",     defaultWidth: 160 },
   { key: "unit",        label: "Unit",     defaultWidth: 70 },
   { key: "cost",        label: "Cost",     defaultWidth: 110, align: "right" as const },
 ];
@@ -68,7 +74,8 @@ export default function ProductLibrary() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterGroup, setFilterGroup] = useState("all");
+  const [filterTag, setFilterTag] = useState("all");
   const [groupBy, setGroupBy] = useState<"category" | "none">("category");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -76,6 +83,20 @@ export default function ProductLibrary() {
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
+  const { data: groups_ = [] } = useQuery<ProductGroup[]>({ queryKey: ["/api/product-groups"] });
+  const { data: tags = [] } = useQuery<ProductTag[]>({ queryKey: ["/api/product-tags"] });
+
+  const groupById = useMemo(() => new Map(groups_.map((g) => [g.id, g])), [groups_]);
+  const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
+
+  /** "Roofing › Gutter" — a child reads as nonsense without its parent. */
+  const groupLabel = (id: string | null): string => {
+    if (!id) return "Unfiled";
+    const g = groupById.get(id);
+    if (!g) return "Unfiled";
+    const parent = g.parentId ? groupById.get(g.parentId) : undefined;
+    return parent ? `${parent.name} › ${g.name}` : g.name;
+  };
 
   const gridCols = useResizableColumns("product-library", GRID_COLUMNS);
   // Mirrors the price list's `32px … 1fr 72px`: a 32px checkbox column (which is
@@ -84,53 +105,52 @@ export default function ProductLibrary() {
   const gridTemplate = `32px ${gridCols.gridTemplate} 1fr 72px`;
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  const categories = useMemo(
-    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort() as string[],
-    [products],
-  );
-
   const filtered = useMemo(() => {
     const t = search.trim().toLowerCase();
     return products.filter((p) => {
-      if (filterCategory !== "all") {
-        const c = p.category ?? UNGROUPED;
-        if (c !== filterCategory) return false;
+      if (filterGroup !== "all") {
+        if ((p.groupId ?? UNGROUPED) !== filterGroup) return false;
       }
+      if (filterTag !== "all" && !(p.tagIds ?? []).includes(filterTag)) return false;
       if (!t) return true;
       return [p.name, p.brand, p.sku, p.subcategory, p.description]
         .some((f) => (f ?? "").toLowerCase().includes(t));
     });
-  }, [products, search, filterCategory]);
+  }, [products, search, filterGroup, filterTag]);
 
   const groups = useMemo(() => {
     if (groupBy === "none") {
       return [{ id: "all", name: "All products", items: filtered }];
     }
-    const byCat = new Map<string, Product[]>();
+    const byGroup = new Map<string, Product[]>();
     for (const p of filtered) {
-      const key = p.category ?? UNGROUPED;
-      if (!byCat.has(key)) byCat.set(key, []);
-      byCat.get(key)!.push(p);
+      const key = p.groupId ?? UNGROUPED;
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key)!.push(p);
     }
-    return Array.from(byCat.entries())
-      .sort(([a], [b]) => (a === UNGROUPED ? 1 : b === UNGROUPED ? -1 : a.localeCompare(b)))
+    return Array.from(byGroup.entries())
       .map(([id, items]) => ({
         id,
-        name: id === UNGROUPED ? "Uncategorised" : id,
+        name: id === UNGROUPED ? "Unfiled" : groupLabel(id),
         items: items.slice().sort((x, y) => x.name.localeCompare(y.name)),
-      }));
-  }, [filtered, groupBy]);
+      }))
+      // Unfiled last — it is a to-do list, not a category.
+      .sort((a, b) => (a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : a.name.localeCompare(b.name)));
+  }, [filtered, groupBy, groupById]);
 
   const allExpanded = groups.every((g) => !collapsed.has(g.id));
-  const activeFilterCount = (filterCategory !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0);
+  const activeFilterCount =
+    (filterGroup !== "all" ? 1 : 0) + (filterTag !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0);
 
   const createMutation = useMutation({
-    mutationFn: (category?: string | null) =>
+    mutationFn: (groupId?: string | null) =>
       apiRequest("/api/products", "POST", {
         name: "New product",
         unitType: "ea",
         isActive: true,
-        ...(category ? { category } : {}),
+        // Adding from inside a group files it there, so the new row does not
+        // land in Unfiled and have to be moved.
+        ...(groupId && groupId !== UNGROUPED ? { groupId } : {}),
       }),
     onSuccess: (p: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
@@ -177,6 +197,27 @@ export default function ProductLibrary() {
         return <span className="text-xs text-muted-foreground truncate">{p.brand || "—"}</span>;
       case "subcategory":
         return <span className="text-xs text-muted-foreground truncate">{p.subcategory || "—"}</span>;
+      case "tags": {
+        const mine = (p.tagIds ?? []).map((id) => tagById.get(id)).filter(Boolean) as ProductTag[];
+        if (mine.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <div className="flex items-center gap-1 min-w-0">
+            {mine.slice(0, 2).map((t) => (
+              <span
+                key={t.id}
+                className="text-[10px] px-1.5 py-0.5 rounded-full border truncate max-w-[110px]"
+                style={t.colour ? { borderColor: t.colour, color: t.colour } : undefined}
+                title={t.name}
+              >
+                {t.name}
+              </span>
+            ))}
+            {mine.length > 2 && (
+              <span className="text-[10px] text-muted-foreground">+{mine.length - 2}</span>
+            )}
+          </div>
+        );
+      }
       case "unit":
         return <span className="text-xs text-muted-foreground">{p.unitType || "ea"}</span>;
       case "cost":
@@ -268,17 +309,31 @@ export default function ProductLibrary() {
 
             <PopoverContent align="start" className="w-56 p-3 space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Category</Label>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-category">
+                <Label className="text-xs text-muted-foreground">Group</Label>
+                <Select value={filterGroup} onValueChange={setFilterGroup}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-group">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all" className="text-xs">All categories</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                    <SelectItem value="all" className="text-xs">All groups</SelectItem>
+                    {groups_.map((g) => (
+                      <SelectItem key={g.id} value={g.id} className="text-xs">{groupLabel(g.id)}</SelectItem>
                     ))}
-                    <SelectItem value={UNGROUPED} className="text-xs">Uncategorised</SelectItem>
+                    <SelectItem value={UNGROUPED} className="text-xs">Unfiled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Tag</Label>
+                <Select value={filterTag} onValueChange={setFilterTag}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-tag">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Any tag</SelectItem>
+                    {tags.map((t) => (
+                      <SelectItem key={t.id} value={t.id} className="text-xs">{t.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -299,7 +354,7 @@ export default function ProductLibrary() {
                   variant="ghost"
                   size="sm"
                   className="h-6 w-full text-xs"
-                  onClick={() => { setFilterCategory("all"); setGroupBy("category"); }}
+                  onClick={() => { setFilterGroup("all"); setFilterTag("all"); setGroupBy("category"); }}
                   data-testid="button-clear-filters"
                 >
                   Clear filters
@@ -333,14 +388,14 @@ export default function ProductLibrary() {
           <EmptyState
             variant="inline"
             icon={Package}
-            title={search || filterCategory !== "all" ? "No products match your filters." : "No products yet"}
+            title={search || filterGroup !== "all" || filterTag !== "all" ? "No products match your filters." : "No products yet"}
             description={
-              search || filterCategory !== "all"
+              search || filterGroup !== "all" || filterTag !== "all"
                 ? undefined
                 : "Add one here, or save an option to the library from any selection."
             }
             action={
-              search || filterCategory !== "all"
+              search || filterGroup !== "all" || filterTag !== "all"
                 ? undefined
                 : { label: "Add Product", onClick: () => { setCreating(true); createMutation.mutate(null); }, icon: Plus }
             }
