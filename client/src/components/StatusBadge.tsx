@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
  * Maps a free-form status string to one of the soft pastel palettes
  * defined in tailwind config (--status-*).
  *
- * Tone palette:
- *   success (sage)   - paid / approved / complete / accepted / won
- *   warning (amber)  - pending / partial / in-progress / processing / on-hold
- *   info    (lilac)  - sent / draft / awaiting-approval / new / scheduled
- *   danger  (coral)  - overdue / rejected / cancelled / declined / failed / lost / expired
- *   action  (sky)    - action_required / needs-action / requires-action / info
+ * Tone palette — each tone answers "where is this in its life?", not "what
+ * colour would look nice":
+ *   neutral          - nothing has happened yet: draft
+ *   info    (blue)   - it has left the building: sent / issued / quoted / new
+ *   warning (amber)  - waiting on someone: pending / partial / in-progress / on-hold
+ *   success (sage)   - done: paid / approved / complete / accepted / won
+ *   action  (plum)   - needs you: action_required / needs-action / needs-review
+ *   danger  (coral)  - bad end state: overdue / rejected / cancelled / failed / expired
  */
 
 export type StatusTone =
@@ -60,9 +62,12 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
     "invoiced",
     "partially_paid",
   ],
+  // Blue means "it has left the building". A draft has not, so `draft` is
+  // deliberately absent — it falls through to `neutral` (grey). Before this it
+  // sat here beside `sent`, and the two were the same pill: you could not tell
+  // an unsent variation from one already with the client.
   info: [
     "sent",
-    "draft",
     "awaiting_approval",
     "awaiting-approval",
     "new",
@@ -127,8 +132,19 @@ export interface StatusBadgeProps {
    * Dynamic colour for field-setting-driven statuses (6-digit hex from the
    * status colour picker). Renders a translucent pill tinted with the colour.
    * Takes precedence over tone detection.
+   *
+   * @deprecated Prefer `paint`. This path paints `${color}20` as the fill and
+   * the raw hex as the label, which routinely lands under 3:1 for a mid-tone
+   * picker colour — it is what made chips look wrong in PR #57. Resolve through
+   * `resolveStatusChip()` in lib/statusChip.ts instead, which derives a pair
+   * with the contrast checked.
    */
   color?: string | null;
+  /**
+   * A contrast-checked fill/label pair from `deriveChipPaint()`. Takes
+   * precedence over everything else.
+   */
+  paint?: { background: string; foreground: string } | null;
   className?: string;
   "data-testid"?: string;
 }
@@ -142,10 +158,24 @@ export function StatusBadge({
   tone,
   label,
   color,
+  paint,
   className,
   ...rest
 }: StatusBadgeProps) {
   const resolvedTone = tone ?? getStatusTone(status);
+
+  if (paint) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn("rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium border-transparent", className)}
+        style={{ backgroundColor: paint.background, color: paint.foreground }}
+        data-testid={rest["data-testid"] ?? `badge-status-${normalize(status)}`}
+      >
+        {label ?? humanize(status)}
+      </Badge>
+    );
+  }
 
   if (color) {
     // User-configured status colour (field settings). 6-digit hex gets the
@@ -168,10 +198,18 @@ export function StatusBadge({
   }
 
   if (resolvedTone === "neutral") {
+    // Grey, and specifically NOT `variant="secondary"` — that is the plum wash
+    // (`--secondary: 270 36% 95%`), which reads as a tone of its own rather
+    // than the absence of one. Neutral means "nothing has happened yet", so it
+    // takes the warm grey `--muted` pair, which is defined for both themes.
     return (
       <Badge
         variant="secondary"
-        className={cn("rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium", className)}
+        className={cn(
+          "rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
+          "bg-muted text-muted-foreground",
+          className,
+        )}
         data-testid={rest["data-testid"] ?? `badge-status-${normalize(status)}`}
       >
         {label ?? humanize(status)}

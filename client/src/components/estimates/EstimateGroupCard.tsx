@@ -21,6 +21,7 @@ import {
   FileText,
   FolderPlus,
   Tag,
+  Eye,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useQuery } from "@tanstack/react-query";
@@ -102,6 +103,8 @@ interface EstimateGroupCardProps {
   dropIndicator?: 'above' | 'below' | null;
   dropTarget?: { id: string; position: 'above' | 'below' } | null;
   onUpdateStatus?: (groupId: string, status: GroupStatus) => void;
+  /** Group-level show/hide in the client proposal; hides descendants with it. */
+  onToggleProposalVisible?: (groupId: string, next: boolean) => void;
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -140,6 +143,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   dropIndicator,
   dropTarget,
   onUpdateStatus,
+  onToggleProposalVisible,
 }) => {
   // Resolve this card's totals: prefer the map (accurate for nested groups) over the prop
   const effectiveGroupTotals = groupTotalsMap?.[group.id] ?? groupTotals;
@@ -321,6 +325,43 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     </span>
                   )}
                 </div>
+              </div>
+            );
+          }
+
+          // Group-level "show in proposal", in the same column as the per-line
+          // eye toggles beneath it. Hiding a group hides everything inside it,
+          // subgroups included, and takes that money out of the proposal total
+          // — previously the only way to drop a section from a client document
+          // was to toggle every line in it, and re-toggle any line added later.
+          if (column.id === 'proposalVisible') {
+            const groupVisible = (group as any).proposalVisible !== false;
+            return (
+              <div
+                key={column.id}
+                className={`${columnCellClass(column.id)} justify-center`}
+                role="gridcell"
+                data-testid={`cell-group-proposalVisible-${group.id}`}
+              >
+                {onToggleProposalVisible && !isLocked ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    title={groupVisible ? "Shown in proposal — click to hide this section" : "Hidden from proposal"}
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleProposalVisible(group.id, !groupVisible);
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    data-testid={`button-toggle-group-proposalVisible-${group.id}`}
+                  >
+                    {groupVisible ? <Eye className="w-4 h-4" /> : <Eye className="w-4 h-4 opacity-30" />}
+                  </Button>
+                ) : (
+                  <Eye className={`w-4 h-4 ${groupVisible ? "" : "opacity-30"}`} />
+                )}
               </div>
             );
           }
@@ -585,6 +626,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 costCategories={costCategories}
                 dropTarget={dropTarget}
                 onUpdateStatus={onUpdateStatus}
+                onToggleProposalVisible={onToggleProposalVisible}
               />
             </div>
           ))}

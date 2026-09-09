@@ -26,6 +26,8 @@ import assert from "node:assert";
 import {
   computeProposalTotals,
   lineCountsTowardProposalTotal,
+  lineAppearsOnProposal,
+  collectHiddenGroupIds,
   EMPTY_PROPOSAL_TOTALS,
 } from "@shared/proposalTotals";
 
@@ -151,6 +153,88 @@ check("a full milestone schedule sums back to the contract total", () => {
   const sum = schedule.reduce((acc, pct) => acc + Math.round(t.totalCents * pct / 100), 0);
   assert.strictEqual(schedule.reduce((a, b) => a + b, 0), 100);
   assert.strictEqual(sum, t.totalCents);
+});
+
+// --- group-level visibility -------------------------------------------------
+//
+// Hiding a whole section is the group-level counterpart of the per-line eye
+// toggle. Groups NEST, so the risk is a half-applied rule: a hidden parent
+// whose subgroup still prints, or lines dropped from the page but left in the
+// total. Either way the client gets a column that does not add up.
+
+const GROUPS = [
+  { id: "kitchen", parentGroupId: null, proposalVisible: true },
+  { id: "kitchen-joinery", parentGroupId: "kitchen", proposalVisible: true },
+  { id: "bathroom", parentGroupId: null, proposalVisible: false },
+  { id: "bathroom-tiling", parentGroupId: "bathroom", proposalVisible: true },
+];
+
+check("hiding a group hides its descendants, however deep", () => {
+  const hidden = collectHiddenGroupIds(GROUPS);
+  assert.ok(hidden.has("bathroom"), "the hidden group itself");
+  assert.ok(hidden.has("bathroom-tiling"), "a visible subgroup of a hidden parent must still be hidden");
+  assert.ok(!hidden.has("kitchen"));
+  assert.ok(!hidden.has("kitchen-joinery"));
+});
+
+check("a line inside a hidden group leaves both the page and the price", () => {
+  const items = [
+    { ...pricedLine, groupId: "kitchen" },
+    { ...pricedLine, groupId: "bathroom" },
+    { ...pricedLine, groupId: "bathroom-tiling" },
+  ];
+  const hidden = collectHiddenGroupIds(GROUPS);
+
+  assert.strictEqual(lineAppearsOnProposal(items[0], hidden), true);
+  assert.strictEqual(lineAppearsOnProposal(items[1], hidden), false);
+  assert.strictEqual(lineAppearsOnProposal(items[2], hidden), false, "line in a nested hidden group still printed");
+
+  const t = computeProposalTotals(items, { projectMarkupPercent: 0, taxRate: 10, groups: GROUPS });
+  assert.strictEqual(t.totalCents, 110_000, "hidden sections were still billed to the client");
+  assert.strictEqual(t.includedItemCount, 1);
+  assert.strictEqual(t.excludedItemCount, 2);
+});
+
+check("passing no groups leaves the per-line rule untouched", () => {
+  // Callers that do not know about groups must behave exactly as before.
+  const items = [{ ...pricedLine, groupId: "bathroom" }];
+  const t = computeProposalTotals(items, { projectMarkupPercent: 0, taxRate: 10 });
+  assert.strictEqual(t.totalCents, 110_000);
+  assert.strictEqual(lineAppearsOnProposal(items[0]), true);
+});
+
+check("an ungrouped line is unaffected by hidden groups", () => {
+  const hidden = collectHiddenGroupIds(GROUPS);
+  assert.strictEqual(lineAppearsOnProposal({ ...pricedLine, groupId: null }, hidden), true);
+  assert.strictEqual(lineAppearsOnProposal({ ...pricedLine }, hidden), true);
+});
+
+check("the per-line toggle still wins inside a visible group", () => {
+  const hidden = collectHiddenGroupIds(GROUPS);
+  const item = { ...pricedLine, groupId: "kitchen", proposalVisible: false };
+  assert.strictEqual(lineAppearsOnProposal(item, hidden), false);
+  assert.strictEqual(lineCountsTowardProposalTotal(item, hidden), false);
+});
+
+check("a cycle in the group tree terminates instead of hanging", () => {
+  // Legacy data has produced corrupt parentGroupId chains before; a naive
+  // ancestor walk would spin forever and take the PDF render with it.
+  const cyclic = [
+    { id: "a", parentGroupId: "b", proposalVisible: true },
+    { id: "b", parentGroupId: "a", proposalVisible: true },
+  ];
+  const hidden = collectHiddenGroupIds(cyclic);
+  assert.strictEqual(hidden.size, 0);
+});
+
+check("a hidden group in a cycle still hides its members", () => {
+  const cyclic = [
+    { id: "a", parentGroupId: "b", proposalVisible: false },
+    { id: "b", parentGroupId: "a", proposalVisible: true },
+  ];
+  const hidden = collectHiddenGroupIds(cyclic);
+  assert.ok(hidden.has("a"));
+  assert.ok(hidden.has("b"), "b inherits through the cycle back to the hidden a");
 });
 
 console.log(`\n${passed} proposal-totals checks passed`);

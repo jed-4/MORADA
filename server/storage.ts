@@ -19755,12 +19755,19 @@ export class DbStorage implements IStorage {
 
     const estimate = await this.getEstimate(estimateId);
     if (!estimate) return null;
-    const items = await this.getEstimateItems(estimateId);
+    const [items, groups] = await Promise.all([
+      this.getEstimateItems(estimateId),
+      // Groups are needed for the price, not just the layout: a section hidden
+      // from the proposal takes its lines out of the total as well as off the
+      // page, and nested groups inherit that.
+      this.getEstimateGroups(estimateId),
+    ]);
 
     const totals = computeProposalTotals(items, {
       projectMarkupPercent: estimate.projectMarkupPercent,
       taxRate: estimate.taxRate,
       estimateId,
+      groups,
     });
 
     await db.update(schema.proposals)

@@ -56,6 +56,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -3176,13 +3177,15 @@ export default function Schedule() {
                                       </Button>
                                     </div>
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <Input
-                                        type="number"
-                                        min="0"
+                                      {/* Whole days. The direction lives in a
+                                          separate control, so this holds the
+                                          magnitude only. */}
+                                      <NumericInput
+                                        integer
+                                        min={0}
                                         value={Math.abs(offset?.offsetDays ?? 0)}
-                                        onFocus={(e) => e.target.select()}
-                                        onChange={(e) => {
-                                          const absVal = Math.max(0, parseInt(e.target.value) || 0);
+                                        onCommit={(v) => {
+                                          const absVal = Math.max(0, v ?? 0);
                                           const currentDir = (offset?.offsetDays ?? 0) < 0 ? -1 : 1;
                                           const days = currentDir * absVal;
                                           setTaskLinkOffsetsLocal(prev => {
@@ -3191,7 +3194,8 @@ export default function Schedule() {
                                             return [...prev, { taskId, offsetDays: days, offsetFrom: "end" as const }];
                                           });
                                         }}
-                                        className="h-6 w-14 text-xs"
+                                        emptyValue={0}
+                                        className="flex h-6 w-14 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35"
                                         placeholder="0"
                                       />
                                       <span className="text-xs text-muted-foreground">days</span>

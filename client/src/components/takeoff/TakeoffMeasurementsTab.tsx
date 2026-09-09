@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -286,21 +287,23 @@ function SortableTabRow({
       <Badge variant="outline" className="text-xs">{m.measurementType}</Badge>
       <div className="flex items-center gap-1">
         <span className="text-[10px] text-muted-foreground">×</span>
-        <Input
-          type="number"
-          step="0.1"
+        {/* A multiplier is fractional by nature (×1.5, ×0.75) — the one thing
+            `type="number"` + `|| 0` made impossible to type. */}
+        <NumericInput
           value={m.multiplier ?? 1}
-          onChange={(e) => onMultiplier(parseFloat(e.target.value) || 0)}
-          className="h-7 w-16 text-xs"
+          onCommit={(v) => onMultiplier(v ?? 0)}
+          emptyValue={0}
+          min={0}
+          className="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35"
         />
       </div>
       <div className="flex items-center gap-1">
-        <Input
-          type="number"
-          step="1"
+        <NumericInput
           value={m.wastePercent ?? 0}
-          onChange={(e) => onWaste(parseFloat(e.target.value) || 0)}
-          className="h-7 w-16 text-xs"
+          onCommit={(v) => onWaste(v ?? 0)}
+          emptyValue={0}
+          min={0}
+          className="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35"
         />
         <span className="text-[10px] text-muted-foreground">% waste</span>
       </div>

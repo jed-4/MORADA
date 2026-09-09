@@ -16,7 +16,13 @@ import { format } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
 import { computeVariationTotals } from "@shared/variationTotals";
 import { formatCents, dollarsToCents, centsToDollars, exGstFromInc, toNumber } from "@shared/money";
+import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSection";
+import { DocumentHeader } from "@/components/detail/DocumentHeader";
+import { MoneySummary, type MoneyRow } from "@/components/detail/MoneySummary";
+import { AddLineRow } from "@/components/detail/AddLineRow";
+import { SigningStatusStrip } from "@/components/variations/SigningStatusStrip";
 import { 
+  MoreVertical,
   ArrowLeft, 
   Plus, 
   Trash2,
@@ -61,6 +67,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
+import { NumericInput } from "@/components/ui/numeric-input";
 import {
   Form,
   FormControl,
@@ -181,6 +189,10 @@ const VARIATION_TYPE_COLORS: Record<string, string> = {
   Subcontractor: "bg-status-warning-bg text-status-warning",
   Fee: "bg-status-info-bg text-status-info",
 };
+
+/** Columns whose value is derived from the others — the inc-GST unit cost and
+ *  both amount columns. Nothing here is typed. */
+const VARIATION_DERIVED_COLUMNS = new Set(["unitCostIncTax", "amtExTax", "amtIncTax"]);
 
 const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
 
@@ -584,6 +596,46 @@ export default function VariationDetail() {
     }
   }, [existingVariationTimesheets, isEditMode]);
 
+  // ── Unsaved-changes tracking ──────────────────────────────────────────────
+  // Cost lines, allowance lines, the bill/labour selections and the global
+  // markup all live in local state until Save, so react-hook-form's isDirty
+  // only sees half the page. Snapshotting the local half and comparing is
+  // cheaper than threading a setDirty() through every mutation, and it cannot
+  // drift out of step with a handler someone adds later.
+  const localSnapshot = JSON.stringify({
+    costLines,
+    allowanceLines,
+    selectedBillIds: [...selectedBillIds].sort(),
+    selectedTimesheetIds: [...selectedTimesheetIds].sort(),
+    globalMarkup,
+  });
+  const baselineRef = useRef<string | null>(null);
+  // Rebaseline once the server data has landed, and again after every save.
+  useEffect(() => {
+    if (!isEditMode) { baselineRef.current = localSnapshot; return; }
+    if (!variationLoading && variation) baselineRef.current = localSnapshot;
+    // Deliberately keyed on the server record, not the snapshot: re-running on
+    // every keystroke would make the baseline chase the edits and nothing
+    // would ever read as dirty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variation, variationLoading, isEditMode, existingCostLines, existingVariationBills, existingVariationTimesheets]);
+
+  const isDirty =
+    !isLocked &&
+    (form.formState.isDirty || (baselineRef.current !== null && baselineRef.current !== localSnapshot));
+
+  // Browser-level guard for a reload or a closed tab. The in-app guard lives
+  // in handleCancel.
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
   useEffect(() => {
     if (!isEditMode && projects.length > 0) {
       const projectIdToUse = projectIdFromParams || projects[0]?.id;
@@ -771,6 +823,33 @@ export default function VariationDetail() {
     updateCostLine(index, "unitCostExTax", ex);
   };
 
+  // Fade at the clipped edge of the cost table, hidden once you reach the end.
+  // Measured rather than assumed: the table is only wider than its container
+  // when enough columns are visible.
+  const costScrollRef = useRef<HTMLDivElement | null>(null);
+  const [costScrollAtEnd, setCostScrollAtEnd] = useState(true);
+  const updateCostScrollEnd = () => {
+    const el = costScrollRef.current;
+    if (!el) return;
+    // 1px of slack: fractional widths mean scrollLeft rarely lands exactly.
+    setCostScrollAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+  };
+  useEffect(() => {
+    updateCostScrollEnd();
+    const el = costScrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(updateCostScrollEnd);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [costLines.length, columns]);
+
+  /** Every editable grid cell wears the same skin: no border at rest, a soft
+   *  plum wash and ring on focus. A bordered box per cell turned the grid into
+   *  a wall of outlines. */
+  const CELL =
+    "h-7 w-full px-1.5 rounded-sm border-0 bg-transparent shadow-none " +
+    "focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:bg-primary/[0.04] transition-colors";
+
   const renderCostLineCell = (columnId: string, line: CostLine, index: number) => {
     switch (columnId) {
       case "type":
@@ -789,47 +868,109 @@ export default function VariationDetail() {
         );
       case "name":
         return (
-          <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium w-full", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
+          <Input
+            value={line.name}
+            onChange={(e) => updateCostLine(index, "name", e.target.value)}
+            /* Muted to 40%: at full strength this hint read as a real row, so an
+               empty grid looked like it was already full of items called
+               "Item name". */
+            placeholder="Item name"
+            className={cn(CELL, "doc-cell-name placeholder:text-muted-foreground/40", !line.showInPdf && "line-through")}
+            data-testid={`input-name-${index}`}
+          />
         );
       case "description":
         return (
-          <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-description-${index}`} />
+          <Input
+            value={line.description}
+            onChange={(e) => updateCostLine(index, "description", e.target.value)}
+            className={cn(CELL, "doc-cell-muted")}
+            data-testid={`input-description-${index}`}
+          />
         );
       case "costCode":
         return (
-          <CostCodeSelect value={line.costCode || ""} onValueChange={(val) => updateCostLine(index, "costCode", val)} allowNone triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`select-cost-code-${index}`} />
+          <CostCodeSelect
+            value={line.costCode || ""}
+            onValueChange={(val) => updateCostLine(index, "costCode", val)}
+            allowNone
+            triggerClassName={cn(CELL, "doc-cell-muted")}
+            data-testid={`select-cost-code-${index}`}
+          />
         );
       case "qty":
         return (
-          <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-quantity-${index}`} />
+          <NumericInput
+            value={line.quantity}
+            onCommit={(v) => updateCostLine(index, "quantity", v ?? 0)}
+            emptyValue={0}
+            min={0}
+            className={cn(CELL, "doc-cell text-right")}
+            data-testid={`input-quantity-${index}`}
+          />
         );
       case "unit":
         return (
-          <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-unit-type-${index}`} />
+          <Input
+            value={line.unitType}
+            onChange={(e) => updateCostLine(index, "unitType", e.target.value)}
+            placeholder="each"
+            className={cn(CELL, "doc-cell-muted placeholder:text-muted-foreground/40")}
+            data-testid={`input-unit-type-${index}`}
+          />
         );
       case "unitCostExTax":
         return (
-          <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-unit-cost-${index}`} />
+          <NumericInput
+            value={line.unitCostExTax}
+            onCommit={(v) => updateCostLine(index, "unitCostExTax", v ?? 0)}
+            emptyValue={0}
+            min={0}
+            className={cn(CELL, "doc-cell text-right")}
+            data-testid={`input-unit-cost-${index}`}
+          />
         );
       case "unitCostIncTax":
         return (
-          <Input type="number" value={getUnitCostIncTax(line)} onChange={(e) => setUnitCostFromInc(index, parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-unit-cost-inc-${index}`} />
+          <NumericInput
+            value={getUnitCostIncTax(line)}
+            onCommit={(v) => setUnitCostFromInc(index, v ?? 0)}
+            emptyValue={0}
+            min={0}
+            className={cn(CELL, "doc-cell text-right")}
+            data-testid={`input-unit-cost-inc-${index}`}
+          />
         );
       case "markup":
         return (
-          <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-markup-${index}`} />
+          <NumericInput
+            value={line.markupPercent ?? null}
+            onCommit={(v) => updateCostLine(index, "markupPercent", v)}
+            emptyValue={null}
+            min={0}
+            placeholder="0"
+            className={cn(CELL, "doc-cell text-right placeholder:text-muted-foreground/40")}
+            data-testid={`input-markup-${index}`}
+          />
         );
       case "amtExTax": {
         const amtExTax = getCostLineAmountExTax(line);
         return (
-          <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>
+          <span
+            className={cn("money px-1.5 w-full", amtExTax === 0 ? "money-zero" : "money-figure")}
+            data-testid={`text-amt-ex-tax-${index}`}
+          >
+            {formatCurrency(amtExTax)}
+          </span>
         );
       }
       case "amtIncTax": {
         const amtExTax = getCostLineAmountExTax(line);
         const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
         return (
-          <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>
+          <span className="money doc-cell-muted px-1.5" data-testid={`text-amt-inc-tax-${index}`}>
+            {formatCurrency(amtIncTax)}
+          </span>
         );
       }
       case "visible":
@@ -903,6 +1044,10 @@ export default function VariationDetail() {
       ],
       bills: getSelectedBills(),
       timesheets: getSelectedTimesheets(),
+      // Without this the editor computed every figure as if the markup were
+      // zero, while the server stored — and the PDF and client portal printed —
+      // the marked-up total. The screen understated what the client received.
+      globalMarkupPercent: globalMarkupValue(),
     });
 
   const calculateGlobalMarkupAmount = () => centsToDollars(calculateTotals().globalMarkupCents);
@@ -912,6 +1057,86 @@ export default function VariationDetail() {
 
   // Canonical AUD formatter (shared/money.ts), fed dollars from the helpers above.
   const formatCurrency = (amount: number) => formatCents(dollarsToCents(amount));
+
+  /** The summary rows.
+   *
+   *  Component rows use `!== 0`, not `> 0`. A vendor credit makes the bills
+   *  total negative; the old `> 0` test hid the row while the value still
+   *  landed in Subtotal, so the summary genuinely did not add up. */
+  const summaryRows: MoneyRow[] = (() => {
+    const totals = calculateTotals();
+    const bills = calculateBillsTotal();
+    const labour = calculateLabourTotal();
+    const allowances = calculateAllowancesTotal();
+    return [
+      { label: "Cost lines", cents: dollarsToCents(calculateCostLinesSubtotal()) },
+      {
+        label: `Bills (${selectedBillIds.length})`,
+        cents: dollarsToCents(bills),
+        tone: bills < 0 ? "negative" : "normal",
+        hidden: bills === 0,
+      },
+      {
+        label: `Labour (${selectedTimesheetIds.length})`,
+        cents: dollarsToCents(labour),
+        tone: labour < 0 ? "negative" : "normal",
+        hidden: labour === 0,
+      },
+      {
+        label: `Allowances (${allowanceLines.length})`,
+        cents: dollarsToCents(allowances),
+        tone: allowances < 0 ? "negative" : "normal",
+        hidden: allowances === 0,
+      },
+      {
+        label: "Global markup",
+        cents: totals.globalMarkupCents,
+        testId: "text-global-markup-amount",
+        // The percentage input sits with the figure it drives.
+        // A bordered box on a summary row read as a form field dropped into a
+        // statement. Borderless until you touch it: it looks like the figure it
+        // is, and still says "editable" on hover.
+        adornment: (
+          <span className="inline-flex items-baseline -ml-1">
+            <Input
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="0"
+              value={globalMarkup}
+              onChange={(e) => setGlobalMarkup(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              className="h-5 w-9 px-0 text-body-sm text-right tabular-nums bg-transparent border-0 border-b border-dashed border-border shadow-none rounded-none focus-visible:ring-0 focus-visible:border-primary hover:border-muted-foreground/50 transition-colors"
+              data-testid="input-global-markup"
+            />
+            <span className="text-body-sm text-muted-foreground">%</span>
+          </span>
+        ),
+      },
+      { label: "Subtotal ex GST", cents: totals.subtotalCents, tone: "strong", rule: true, testId: "text-subtotal" },
+      { label: "GST (10%)", cents: totals.gstCents, testId: "text-gst" },
+    ];
+  })();
+
+  /** The figures in the header strip. Markup only appears when there is one —
+   *  a "Global markup $0.00" column on every variation is noise. */
+  const headerStrip = (() => {
+    const totals = calculateTotals();
+    const items = [
+      { label: "Cost lines", value: formatCurrency(calculateCostLinesSubtotal()) },
+    ];
+    if (totals.globalMarkupCents !== 0) {
+      items.push({
+        label: `Global markup ${globalMarkupValue()}%`,
+        value: formatCents(totals.globalMarkupCents),
+      });
+    }
+    items.push(
+      { label: "Subtotal ex GST", value: formatCents(totals.subtotalCents) },
+      { label: "GST (10%)", value: formatCents(totals.gstCents) },
+    );
+    return items;
+  })();
 
   // ── Save bills/timesheets helper ──────────────────────────────────────────
 
@@ -1314,6 +1539,7 @@ export default function VariationDetail() {
   };
 
   const handleCancel = () => {
+    if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) return;
     if (projectIdFromParams) {
       setLocation(`/projects/${projectIdFromParams}/variations`);
     } else {
@@ -1322,50 +1548,48 @@ export default function VariationDetail() {
   };
 
   if (variationLoading) {
+    // A skeleton of the real layout, not a centred spinner. Neon sits in
+    // us-east-1 and the app is used from Australia, so this is on screen for a
+    // noticeable beat — long enough that a blank page reads as a failure.
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin" data-testid="loading-spinner" />
+      <div className="flex h-full flex-col" data-testid="loading-skeleton">
+        <div className="mx-3 mt-3 rounded-[10px] border border-border bg-card overflow-hidden">
+          <div className="h-11 px-3.5 flex items-center gap-2.5 border-b border-border/60">
+            <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+            <div className="h-4 w-14 rounded-full bg-muted animate-pulse" />
+            <span className="flex-1" />
+            <div className="h-7 w-24 rounded-md bg-muted animate-pulse" />
+          </div>
+          <div className="px-3.5 py-2.5 flex items-end gap-9">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="h-2 w-16 rounded bg-muted animate-pulse" />
+                <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+              </div>
+            ))}
+            <span className="flex-1" />
+            <div className="h-7 w-28 rounded bg-muted animate-pulse" />
+          </div>
+        </div>
+        <div className="mx-3 mt-3 space-y-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-[10px] border border-border bg-card overflow-hidden">
+              <div className="h-10 px-3.5 flex items-center gap-2.5 border-b border-border/60">
+                <div className="h-4 w-1 rounded-sm bg-muted animate-pulse" />
+                <div className="h-2.5 w-24 rounded bg-muted animate-pulse" />
+              </div>
+              <div className="p-4 space-y-2.5">
+                <div className="h-3 w-full rounded bg-muted animate-pulse" />
+                <div className="h-3 w-4/5 rounded bg-muted animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   const projectName = projects.find((p) => p.id === form.watch("projectId"))?.name || "";
-
-  // ── Sub-section header component ─────────────────────────────────────────
-  const SubHeader = ({
-    dotColor,
-    label,
-    rightEl,
-    collapsible,
-    collapsed,
-    onToggle,
-  }: {
-    dotColor: string;
-    label: string;
-    rightEl?: React.ReactNode;
-    collapsible?: boolean;
-    collapsed?: boolean;
-    onToggle?: () => void;
-  }) => (
-    <div
-      className={cn(
-        "h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40",
-        collapsible && "cursor-pointer"
-      )}
-      onClick={collapsible ? onToggle : undefined}
-    >
-      <div className="flex items-center gap-2">
-        <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", dotColor)} />
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-      </div>
-        <div className="flex items-center gap-2">
-        {rightEl}
-        {collapsible && (
-          collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-        )}
-      </div>
-    </div>
-  );
 
   // ── Compact label ─────────────────────────────────────────────────────────
   const FieldLabel = ({ children }: { children: React.ReactNode }) => (
@@ -1375,89 +1599,49 @@ export default function VariationDetail() {
   return (
     <div className="flex h-full flex-col" data-testid="page-variation-detail">
 
-      {/* ── Unified header card ── */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-
-        {/* Row 1 — Title & Actions */}
-        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
-              data-testid="button-back"
-            >
-              <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-            <h2 className="text-sm font-semibold" data-testid="text-page-title">
-              {isEditMode ? form.watch("variationNumber") : "New Variation"}
-            </h2>
-            {isEditMode && variation?.status && (
+      {/* ── Header ── */}
+      <div className="mx-3 mt-3 flex-shrink-0 space-y-2">
+        <DocumentHeader
+          onBack={handleCancel}
+          title={isEditMode ? form.watch("variationNumber") : "New Variation"}
+          status={
+            isEditMode && variation?.status ? (
               /* Bare "action" isn't a known StatusBadge status — force the action tone. */
               <StatusBadge
                 status={variation.status}
                 tone={variation.status === "action" ? "action" : undefined}
               />
-            )}
-            {projectName && (
-              <span className="text-xs text-muted-foreground ml-1" data-testid="text-project-name">
-                {projectName}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5">
+            ) : undefined
+          }
+          strip={headerStrip}
+          headline={{ label: "Total inc GST", value: formatCurrency(calculateTotal()) }}
+          data-testid="header-variation"
+          actions={
+          <>
             {isEditMode && variationLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            {/* Preview sits beside Save rather than in the overflow menu: it is
+                the thing you reach for repeatedly while drafting, not a
+                once-per-document action. */}
             {isEditMode && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setPreviewOpen(true)}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  data-testid="button-preview-variation"
-                >
-                  <Eye className="w-3 h-3" />
-                  <span>Preview</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  disabled={pdfGenerating}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  data-testid="button-download-pdf"
-                >
-                  {pdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                  <span>PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenSendModal}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  data-testid="button-send-to-client"
-                >
-                  <Mail className="w-3 h-3" />
-                  <span>Send</span>
-                </button>
-              </>
-            )}
-            {isEditMode && variation?.status === "draft" && (
               <button
                 type="button"
-                onClick={() => moveToActionMutation.mutate()}
-                disabled={moveToActionMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-move-to-action"
+                onClick={() => setPreviewOpen(true)}
+                className="h-7 px-2.5 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 whitespace-nowrap"
+                data-testid="button-preview-variation"
               >
-                {moveToActionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                <span>Move to Action</span>
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
               </button>
             )}
+            {/* Only decisions stay as buttons — approving, rejecting, sending
+                for approval. The document verbs (preview, PDF, send, move to
+                action) live in the overflow menu beside Save. */}
             {isEditMode && variation?.status === "action" && (
               <button
                 type="button"
                 onClick={() => sendForApprovalMutation.mutate()}
                 disabled={sendForApprovalMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+                className="h-7 px-2.5 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 whitespace-nowrap"
                 data-testid="button-send-for-approval"
               >
                 {sendForApprovalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
@@ -1469,7 +1653,7 @@ export default function VariationDetail() {
                 type="button"
                 onClick={() => setRejectDialogOpen(true)}
                 disabled={rejectMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                className="h-7 px-2.5 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 whitespace-nowrap"
                 data-testid="button-reject-approved"
               >
                 <X className="w-3 h-3" />
@@ -1482,7 +1666,7 @@ export default function VariationDetail() {
                   type="button"
                   onClick={() => setRejectDialogOpen(true)}
                   disabled={rejectMutation.isPending}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  className="h-7 px-2.5 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 whitespace-nowrap"
                   data-testid="button-reject"
                 >
                   <X className="w-3 h-3" />
@@ -1492,7 +1676,7 @@ export default function VariationDetail() {
                   type="button"
                   onClick={() => setApproveDialogOpen(true)}
                   disabled={approveMutation.isPending}
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-sage text-white border-sage/20 hover:bg-sage/90 active-elevate-2 flex items-center gap-1"
+                  className="h-7 px-2.5 text-xs border rounded-md bg-sage text-white border-sage/20 hover:bg-sage/90 active-elevate-2 flex items-center gap-1 whitespace-nowrap"
                   data-testid="button-approve"
                 >
                   <Check className="w-3 h-3" />
@@ -1500,52 +1684,90 @@ export default function VariationDetail() {
                 </button>
               </>
             )}
-            {!isLocked && (
-            <button
-              type="button"
-              onClick={form.handleSubmit(onSubmit)}
-              disabled={createMutation.isPending || updateMutation.isPending}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              data-testid="button-save"
-            >
-              {(createMutation.isPending || updateMutation.isPending) ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <FileText className="w-3 h-3" />
+          </>
+          }
+          primaryAction={
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Filled only when there is something to save. Previously it
+                  looked identical either way, so there was no way to tell
+                  whether you had unsaved work. */}
+              {!isLocked && (
+                <button
+                  type="button"
+                  onClick={form.handleSubmit(onSubmit)}
+                  disabled={createMutation.isPending || updateMutation.isPending || (isEditMode && !isDirty)}
+                  className={cn(
+                    "h-7 w-auto px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0 transition-colors",
+                    isEditMode && !isDirty
+                      ? "border-border text-muted-foreground bg-card cursor-default"
+                      : "bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2",
+                  )}
+                  data-testid="button-save"
+                >
+                  {(createMutation.isPending || updateMutation.isPending) ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <FileText className="w-3 h-3" />
+                  )}
+                  <span>
+                    {!isEditMode
+                      ? "Create Variation"
+                      : isDirty
+                        ? "Save Changes"
+                        : "Saved"}
+                  </span>
+                </button>
               )}
-              <span>{isEditMode ? "Save Changes" : "Create Variation"}</span>
-            </button>
-            )}
-          </div>
-        </div>
+              {isEditMode && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                      aria-label="More actions"
+                      title="More actions"
+                      data-testid="button-variation-menu"
+                    >
+                      <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onClick={handleDownloadPdf} disabled={pdfGenerating} data-testid="button-download-pdf">
+                      {pdfGenerating ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
+                      Download PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleOpenSendModal} data-testid="button-send-to-client">
+                      <Mail className="w-3.5 h-3.5 mr-2" />
+                      Send to Client
+                    </DropdownMenuItem>
+                    {variation?.status === "draft" && (
+                      <DropdownMenuItem
+                        onClick={() => moveToActionMutation.mutate()}
+                        disabled={moveToActionMutation.isPending}
+                        data-testid="button-move-to-action"
+                      >
+                        {moveToActionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-2" />}
+                        Move to Action
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          }
+        />
 
-        {/* Approved-lock banner */}
+        {/* Approved-lock banner. Sits under the header card rather than inside
+            it — the card is the document's identity and figures, and a banner
+            wedged between them broke that read. */}
         {isLocked && (
-          <div className="bg-sage/15 border-y border-sage/30 px-4 py-1.5 flex items-center gap-2 text-xs" data-testid="banner-locked">
-            <Check className="w-3.5 h-3.5 text-sage" />
+          <div className="rounded-[10px] bg-sage/15 border border-sage/30 px-4 py-2 flex items-center gap-2 text-xs" data-testid="banner-locked">
+            <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" />
             <span className="text-muted-foreground">
               This variation is approved and locked. To make changes, reject it first — the rejection reason is kept on record.
             </span>
           </div>
         )}
-
-        {/* Row 2 — Live financial summary strip */}
-        <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
-          <div className="flex items-center gap-1.5" data-testid="header-summary-subtotal">
-            <span className="text-muted-foreground">Subtotal</span>
-            <span className="font-semibold tabular-nums">{formatCurrency(calculateSubtotal())}</span>
-          </div>
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="header-summary-gst">
-            <span className="text-muted-foreground">GST</span>
-            <span className="font-semibold tabular-nums">{formatCurrency(calculateGST())}</span>
-          </div>
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="header-summary-total">
-            <span className="text-muted-foreground">Total</span>
-            <span className="font-semibold tabular-nums text-primary">{formatCurrency(calculateTotal())}</span>
-          </div>
-        </div>
 
       </div>
 
@@ -1557,12 +1779,38 @@ export default function VariationDetail() {
                 the UI: every native input/select/button inside is disabled. */}
             <fieldset disabled={isLocked} className="space-y-3 min-w-0">
 
+                {/* ── Client approval ── */}
+                {isEditMode && (variation as any)?.portalSentAt && (
+                  <DocumentCard data-testid="section-signing-status">
+                    <DocumentSection
+                      title="Client Approval"
+                      role={variation?.status === "rejected" ? "exception" : "client"}
+                      collapsible={false}
+                      divider={false}
+                      tint
+                      data-testid="signing-status"
+                    >
+                      <SigningStatusStrip
+                        portalSentAt={(variation as any).portalSentAt}
+                        portalViewedAt={(variation as any).portalViewedAt}
+                        clientSignedName={(variation as any).clientSignedName}
+                        clientSignedDate={(variation as any).clientSignedDate}
+                        status={variation?.status}
+                        rejectionReason={(variation as any).rejectionReason}
+                      />
+                    </DocumentSection>
+                  </DocumentCard>
+                )}
+
                 {/* ── General Info ── */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary/80 flex-shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">General Info</span>
-                  </div>
+                <DocumentCard>
+                  <DocumentSection
+                    title="General Info"
+                    role="client"
+                    collapsible={false}
+                    divider={false}
+                    data-testid="section-general-info"
+                  >
                   <div className="p-4 space-y-3">
 
                     {/* Row 1: Name (col-span-2) + Variation Number */}
@@ -1575,7 +1823,7 @@ export default function VariationDetail() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input className="h-8 text-sm" placeholder="Enter variation name" {...field} data-testid="input-name" />
+                                <Input className="doc-input" placeholder="Enter variation name" {...field} data-testid="input-name" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1590,7 +1838,7 @@ export default function VariationDetail() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input className="h-8 text-sm" placeholder="Auto-generated" {...field} data-testid="input-variation-number" />
+                                <Input className="doc-input" placeholder="Auto-generated" {...field} data-testid="input-variation-number" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1615,8 +1863,8 @@ export default function VariationDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "w-full h-8 justify-start text-left font-normal text-sm",
-                                        !field.value && "text-muted-foreground"
+                                        "doc-input-button text-left justify-start",
+                                        !field.value && "text-muted-foreground/55"
                                       )}
                                       data-testid="button-approval-deadline"
                                     >
@@ -1644,7 +1892,7 @@ export default function VariationDetail() {
                               <FormControl>
                                 <Input
                                   type="number"
-                                  className="h-8 text-sm"
+                                  className="doc-input"
                                   placeholder="0"
                                   {...field}
                                   onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
@@ -1668,9 +1916,10 @@ export default function VariationDetail() {
                         render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <Textarea
+                              <AutoTextarea
                                 placeholder="Enter introduction text"
-                                className="resize-none min-h-[72px] text-sm"
+                                minRows={2}
+                                className="doc-prose bg-card"
                                 {...field}
                                 data-testid="textarea-introduction"
                               />
@@ -1682,27 +1931,31 @@ export default function VariationDetail() {
                     </div>
 
                   </div>
-                </div>
+                  </DocumentSection>
+                </DocumentCard>
 
                 {/* ── Financials ── */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-financials">
+                <DocumentCard data-testid="section-financials">
 
                   {/* Cost Lines sub-section */}
-                  <div>
-                    <SubHeader
-                      dotColor="bg-amber/70"
-                      label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
-                      rightEl={
+                  <DocumentSection
+                    title="Cost Lines"
+                    role="manual"
+                    summary={costLines.length > 0 ? formatCurrency(calculateCostLinesSubtotal()) : undefined}
+                    defaultOpen
+                    data-testid="section-cost-lines"
+                    actions={
                         <div className="flex items-center gap-1.5">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
                                 type="button"
-                                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                                title="Columns"
+                                aria-label="Columns"
+                                className="h-7 w-7 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                                 data-testid="button-column-visibility"
                               >
-                                <Columns className="h-3 w-3" />
-                                <span>Columns</span>
+                                <Columns className="h-3.5 w-3.5" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-64">
@@ -1746,33 +1999,22 @@ export default function VariationDetail() {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                          <button
-                            type="button"
-                            onClick={addCostLine}
-                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                            data-testid="button-add-cost-line"
-                          >
-                            <Plus className="h-3 w-3" />
-                            <span>Add Item</span>
-                          </button>
                         </div>
                       }
-                    />
-                    <div className="px-4 py-3 overflow-x-auto">
-                      {costLines.length === 0 ? (
-                        <div className="py-1.5 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={addCostLine}
-                            className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
-                            data-testid="empty-cost-lines"
-                          >
-                            <Plus className="w-3 h-3" />
-                            Add first item
-                          </button>
-                          <span className="text-xs text-muted-foreground/50">Items added here appear as a mini estimate</span>
-                        </div>
-                      ) : (
+                    >
+                    {/* No "Add Item" button in the header: the Add Line row at
+                        the foot of the table is permanent, so it doubles as the
+                        empty state and one affordance covers both. */}
+                    <div
+                      className="doc-scroll-fade"
+                      data-at-end={costScrollAtEnd}
+                    >
+                    <div
+                      ref={costScrollRef}
+                      onScroll={updateCostScrollEnd}
+                      className="px-4 pt-3 doc-scroll-x"
+                    >
+                      {costLines.length === 0 ? null : (
                         <div className="min-w-fit">
                           {(() => {
                             const visibleCostCols = columns.filter((c) => c.visible);
@@ -1783,7 +2025,7 @@ export default function VariationDetail() {
                               <div style={{ minWidth: `${costTableWidth}px` }}>
                                 <div
                                   role="row"
-                                  className="grid items-center border-b border-border"
+                                  className="grid items-center border-b border-border bg-card sticky top-0 z-10"
                                   style={{ gridTemplateColumns: costGridTemplate, width: `${costTableWidth}px` }}
                                 >
                                   {visibleCostCols.map((column, ci) => {
@@ -1793,7 +2035,7 @@ export default function VariationDetail() {
                                         key={column.id}
                                         role="columnheader"
                                         className={cn(
-                                          "h-8 px-2 flex items-center relative group/header text-table text-muted-foreground/70 uppercase tracking-wide font-medium",
+                                          "h-7 px-1.5 flex items-center relative group/header doc-col-label",
                                           align === "right" && "justify-end",
                                           align === "center" && "justify-center",
                                         )}
@@ -1815,7 +2057,7 @@ export default function VariationDetail() {
                                       </div>
                                     );
                                   })}
-                                  <div role="columnheader" className="h-8 px-2 flex items-center justify-center" />
+                                  <div role="columnheader" className="h-7 px-1.5 flex items-center justify-center" />
                                 </div>
                                 {costLines.map((line, index) => (
                                   <div
@@ -1823,7 +2065,8 @@ export default function VariationDetail() {
                                     role="row"
                                     data-testid={`row-cost-line-${index}`}
                                     className={cn(
-                                      "grid items-center border-b border-border/30 transition-opacity",
+                                      "grid items-center border-b border-border/40 transition-colors",
+                                      "hover:bg-muted/25",
                                       !line.showInPdf && "opacity-40",
                                     )}
                                     style={{ gridTemplateColumns: costGridTemplate, width: `${costTableWidth}px` }}
@@ -1834,9 +2077,13 @@ export default function VariationDetail() {
                                         <div
                                           key={column.id}
                                           className={cn(
-                                            "px-2 py-1 min-w-0",
-                                            align === "right" && "text-right",
-                                            align === "center" && "text-center",
+                                            "px-0.5 py-1 min-w-0 flex items-center",
+                                            align === "right" && "justify-end text-right",
+                                            align === "center" && "justify-center text-center",
+                                            // Computed, not typed. Same muted band the estimate
+                                            // grid uses, so the figures you can actually change
+                                            // come forward.
+                                            VARIATION_DERIVED_COLUMNS.has(column.id) && "bg-muted/40",
                                           )}
                                         >
                                           {renderCostLineCell(column.id, line, index)}
@@ -1867,17 +2114,24 @@ export default function VariationDetail() {
                         </div>
                       )}
                     </div>
-                  </div>
+                    </div>
+                    <AddLineRow
+                      onClick={addCostLine}
+                      disabled={isLocked}
+                      data-testid="button-add-cost-line"
+                    />
+                  </DocumentSection>
 
                   {/* Bills sub-section */}
-                  <div className="border-t border-border/50" data-testid="section-bills">
-                    <SubHeader
-                      dotColor="bg-amber/70"
-                      label={selectedBillIds.length > 0 ? `Bills · ${formatCurrency(calculateBillsTotal())}` : "Bills"}
-                      collapsible
-                      collapsed={billsCollapsed}
-                      onToggle={() => setBillsCollapsed((v) => !v)}
-                      rightEl={
+                  <DocumentSection
+                    title="Bills"
+                    role="supplier"
+                    count={selectedBillIds.length}
+                    summary={selectedBillIds.length > 0 ? formatCurrency(calculateBillsTotal()) : undefined}
+                    open={!billsCollapsed}
+                    onOpenChange={(o) => setBillsCollapsed(!o)}
+                    data-testid="section-bills"
+                    actions={
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setBillsModalOpen(true); }}
@@ -1888,8 +2142,17 @@ export default function VariationDetail() {
                           Import Bills
                         </button>
                       }
-                    />
-                    {!billsCollapsed && (
+                      emptyAction={
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setBillsModalOpen(true); }}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                          data-testid="button-import-bills-empty"
+                        >
+                          + Import
+                        </button>
+                      }
+                    >
                     <div className="px-4 py-3">
                       {selectedBillIds.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-2">No bills selected.</p>
@@ -1922,18 +2185,28 @@ export default function VariationDetail() {
                         </Table>
                       )}
                     </div>
-                    )}
-                  </div>
+                  </DocumentSection>
 
                   {/* Labour sub-section */}
-                  <div className="border-t border-border/50" data-testid="section-labour">
-                    <SubHeader
-                      dotColor="bg-primary/70"
-                      label={selectedTimesheetIds.length > 0 ? `Labour · ${formatCurrency(calculateLabourTotal())}` : "Labour"}
-                      collapsible
-                      collapsed={labourCollapsed}
-                      onToggle={() => setLabourCollapsed((v) => !v)}
-                      rightEl={
+                  <DocumentSection
+                    title="Labour"
+                    role="labour"
+                    count={selectedTimesheetIds.length}
+                    summary={selectedTimesheetIds.length > 0 ? formatCurrency(calculateLabourTotal()) : undefined}
+                    open={!labourCollapsed}
+                    onOpenChange={(o) => setLabourCollapsed(!o)}
+                    data-testid="section-labour"
+                    emptyAction={
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setLabourModalOpen(true); }}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                        data-testid="button-import-labour-empty"
+                      >
+                        + Import
+                      </button>
+                    }
+                    actions={
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setLabourModalOpen(true); }}
@@ -1944,8 +2217,7 @@ export default function VariationDetail() {
                           Import Labour
                         </button>
                       }
-                    />
-                    {!labourCollapsed && (
+                    >
                     <div className="px-4 py-3">
                       {selectedTimesheetIds.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-2">No labour selected.</p>
@@ -1978,18 +2250,28 @@ export default function VariationDetail() {
                         </Table>
                       )}
                     </div>
-                    )}
-                  </div>
+                  </DocumentSection>
 
                   {/* Allowances sub-section */}
-                  <div className="border-t border-border/50" data-testid="section-allowances">
-                    <SubHeader
-                      dotColor="bg-teal/70"
-                      label={allowanceLines.length > 0 ? `Allowances · ${formatCurrency(calculateAllowancesTotal())}` : "Allowances"}
-                      collapsible
-                      collapsed={allowancesCollapsed}
-                      onToggle={() => setAllowancesCollapsed((v) => !v)}
-                      rightEl={
+                  <DocumentSection
+                    title="Allowances"
+                    role="manual"
+                    count={allowanceLines.length}
+                    summary={allowanceLines.length > 0 ? formatCurrency(calculateAllowancesTotal()) : undefined}
+                    open={!allowancesCollapsed}
+                    onOpenChange={(o) => setAllowancesCollapsed(!o)}
+                    data-testid="section-allowances"
+                    emptyAction={
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setAllowancesModalOpen(true); }}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                        data-testid="button-import-allowance-empty"
+                      >
+                        + Import
+                      </button>
+                    }
+                    actions={
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
@@ -2011,8 +2293,7 @@ export default function VariationDetail() {
                           </button>
                         </div>
                       }
-                    />
-                    {!allowancesCollapsed && (
+                    >
                     <div className="px-4 py-3">
                       {allowanceLines.length === 0 ? (
                         <div className="py-1.5 flex items-center gap-3">
@@ -2050,12 +2331,13 @@ export default function VariationDetail() {
                                     />
                                   </TableCell>
                                   <TableCell className="px-2 py-1">
-                                    <Input
-                                      type="number"
+                                    {/* Allowance adjustments are often negative
+                                        (a deduction), so no `min` here. */}
+                                    <NumericInput
                                       value={line.amount}
-                                      onChange={(e) => updateAllowanceLine(index, "amount", parseFloat(e.target.value) || 0)}
-                                      step="0.01"
-                                      className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                      onCommit={(v) => updateAllowanceLine(index, "amount", v ?? 0)}
+                                      emptyValue={0}
+                                      className={cn(CELL, "doc-cell text-right")}
                                       data-testid={`input-allowance-amount-${index}`}
                                     />
                                   </TableCell>
@@ -2082,104 +2364,37 @@ export default function VariationDetail() {
                         </>
                       )}
                     </div>
-                    )}
-                  </div>
+                  </DocumentSection>
 
-                  {/* ── Variation Summary panel ── */}
-                  <div className="border-t border-border/50" data-testid="summary-panel">
-                    <div className="bg-primary/10 px-4 py-3 flex items-center justify-between gap-4 border-b border-border/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-                        <span className="text-xs font-medium">Variation Summary</span>
-                      </div>
-                    </div>
-                    <div className="px-4 py-3">
-                      <div className="grid grid-cols-5 gap-6">
-                        {/* Left: Breakdown */}
-                        <div className="col-span-3 space-y-1.5">
-                          {/* Carries each line's own markup, because that is
-                              what the line is worth and what the client is
-                              shown. Only the document-level markup below is
-                              broken out, since it is the only one charged on
-                              top rather than inside a line. */}
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Cost Lines</span>
-                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
-                          </div>
-                          {calculateBillsTotal() > 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
-                              <span className="font-medium tabular-nums">{formatCurrency(calculateBillsTotal())}</span>
-                            </div>
-                          )}
-                          {calculateLabourTotal() > 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Labour ({selectedTimesheetIds.length})</span>
-                              <span className="font-medium tabular-nums">{formatCurrency(calculateLabourTotal())}</span>
-                            </div>
-                          )}
-                          {calculateAllowancesTotal() !== 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Allowances ({allowanceLines.length})</span>
-                              <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-status-danger" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
-                            </div>
-                          )}
-                          {/* Document-level markup. Sits on the ex-GST value of
-                              cost lines + bills + labour (never allowances) and
-                              prints as its own row on the client's document. */}
-                          <div className="flex justify-between items-center text-sm">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-muted-foreground">Global markup</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                placeholder="0"
-                                value={globalMarkup}
-                                onChange={(e) => setGlobalMarkup(e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
-                                data-testid="input-global-markup"
-                              />
-                              <span className="text-xs text-muted-foreground">%</span>
-                            </div>
-                            <span className="font-medium tabular-nums" data-testid="text-global-markup-amount">
-                              {formatCurrency(calculateGlobalMarkupAmount())}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm pt-1 border-t border-border/50">
-                            <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
-                            <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
-                            <span className="font-medium tabular-nums" data-testid="text-gst">{formatCurrency(calculateGST())}</span>
-                          </div>
-                        </div>
-                        {/* Right: Total callout */}
-                        <div className="col-span-2 flex flex-col items-end justify-end gap-1">
-                          <span className="text-xs text-muted-foreground uppercase tracking-wide">Total</span>
-                          <span className="text-2xl font-bold tabular-nums text-primary" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  {/* ── Variation Summary ── */}
+                  <DocumentSection
+                    title="Variation Summary"
+                    role="client"
+                    collapsible={false}
+                    divider={false}
+                    tint
+                    data-testid="summary-panel"
+                  >
+                    <MoneySummary
+                      rows={summaryRows}
+                      total={{ label: "Total inc GST", cents: calculateTotals().totalCents }}
+                    />
+                  </DocumentSection>
 
-                </div>
+                </DocumentCard>
 
                 {/* ── Documentation Card ── */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-documentation">
+                <DocumentCard data-testid="section-documentation">
 
                   {/* Closing Text sub-section */}
-                  <div>
-                    <SubHeader
-                      dotColor="bg-amber/70"
-                      label="Closing Text"
-                      collapsible
-                      collapsed={closingCollapsed}
-                      onToggle={() => setClosingCollapsed((v) => !v)}
-                    />
-                    {!closingCollapsed && (
+                  <DocumentSection
+                    title="Closing Text"
+                    role="client"
+                    open={!closingCollapsed}
+                    onOpenChange={(o) => setClosingCollapsed(!o)}
+                    isEmpty={!form.watch("closingText")}
+                    data-testid="section-closing-text"
+                  >
                       <div className="px-4 py-3">
                         <FormField
                           control={form.control}
@@ -2187,9 +2402,10 @@ export default function VariationDetail() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Textarea
+                                <AutoTextarea
                                   placeholder="Enter closing text"
-                                  className="resize-none min-h-[80px] text-sm"
+                                  minRows={2}
+                                  className="doc-prose bg-card"
                                   {...field}
                                   data-testid="textarea-closing"
                                 />
@@ -2199,39 +2415,40 @@ export default function VariationDetail() {
                           )}
                         />
                       </div>
-                    )}
-                  </div>
+                  </DocumentSection>
 
                   {/* Terms & Conditions sub-section */}
-                  <div className="border-t border-border/50">
-                    <SubHeader
-                      dotColor="bg-muted-foreground/40"
-                      label="Terms & Conditions"
-                      collapsible
-                      collapsed={termsCollapsed}
-                      onToggle={() => setTermsCollapsed((v) => !v)}
-                    />
-                    {!termsCollapsed && (
-                      <div className="px-4 py-3 space-y-3">
-                        {/* Hidden field keeps value in form state for save/PDF */}
-                        <input type="hidden" {...form.register("termsAndConditions")} />
-                        {(companySettings?.termsTemplates?.length ?? 0) > 0 || companySettings?.termsAndConditions ? (
-                          <>
+                  <DocumentSection
+                    title="Terms & Conditions"
+                    role="client"
+                    open={!termsCollapsed}
+                    onOpenChange={(o) => setTermsCollapsed(!o)}
+                    isEmpty={!form.watch("termsAndConditions")}
+                    data-testid="section-terms"
+                  >
+                      {/* A template is a starting point, not a lock: picking one
+                          fills the box, and the box stays editable so a one-off
+                          clause can be added without editing Company Settings.
+                          It used to render as a read-only grey preview. */}
+                      <div className="px-4 py-3 space-y-2">
+                        {((companySettings?.termsTemplates?.length ?? 0) > 0 || companySettings?.termsAndConditions) && (
+                          <div className="flex items-center gap-2">
+                            <span className="doc-field-label">Template</span>
                             <Select
                               value={selectedTemplateId}
                               onValueChange={(id) => {
                                 setSelectedTemplateId(id);
                                 if (id === "company-default") {
                                   const defaultContent = companySettings?.termsAndConditions;
-                                  if (defaultContent) form.setValue("termsAndConditions", defaultContent);
+                                  if (defaultContent) form.setValue("termsAndConditions", defaultContent, { shouldDirty: true });
                                 } else {
                                   const tpl = companySettings?.termsTemplates?.find(t => t.id === id);
-                                  if (tpl) form.setValue("termsAndConditions", tpl.content);
+                                  if (tpl) form.setValue("termsAndConditions", tpl.content, { shouldDirty: true });
                                 }
                               }}
                             >
-                              <SelectTrigger data-testid="select-terms-template">
-                                <SelectValue placeholder="Select terms &amp; conditions..." />
+                              <SelectTrigger className="h-7 w-56 text-xs" data-testid="select-terms-template">
+                                <SelectValue placeholder="Choose a template…" />
                               </SelectTrigger>
                               <SelectContent>
                                 {companySettings?.termsAndConditions && (
@@ -2242,43 +2459,82 @@ export default function VariationDetail() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            <span className="flex-1" />
                             {form.watch("termsAndConditions") && (
-                              <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground whitespace-pre-wrap max-h-52 overflow-y-auto" data-testid="preview-terms-content">
-                                {form.watch("termsAndConditions")}
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => { form.setValue("termsAndConditions", "", { shouldDirty: true }); setSelectedTemplateId(""); }}
+                                className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                                data-testid="button-clear-terms"
+                              >
+                                Clear
+                              </button>
                             )}
-                          </>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            No terms templates configured.{" "}
-                            <a href="/settings" className="text-primary hover:underline">Add templates in Company Settings</a>.
+                          </div>
+                        )}
+                        <FormField
+                          control={form.control}
+                          name="termsAndConditions"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <AutoTextarea
+                                  placeholder="Enter terms & conditions, or choose a template above"
+                                  minRows={3}
+                                  maxRows={20}
+                                  className="doc-prose bg-card"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                  data-testid="textarea-terms"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {(companySettings?.termsTemplates?.length ?? 0) === 0 && !companySettings?.termsAndConditions && (
+                          <p className="doc-caption">
+                            No templates configured.{" "}
+                            <a href="/settings" className="text-primary hover:underline">Add them in Company Settings</a>.
                           </p>
                         )}
                       </div>
-                    )}
-                  </div>
+                  </DocumentSection>
 
                   {/* Attachments sub-section */}
-                  <div className="border-t border-border/50">
-                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">
-                        Attachments {attachments.length > 0 && `· ${attachments.length}`}
-                      </span>
-                      <Paperclip className="h-3 w-3 text-muted-foreground/50 ml-0.5" />
-                      {isEditMode && (
+                  <DocumentSection
+                    title="Attachments"
+                    role="meta"
+                    count={attachments.length}
+                    divider={false}
+                    data-testid="section-attachments"
+                    actions={
+                      isEditMode ? (
                         <button
                           type="button"
                           onClick={() => attachmentInputRef.current?.click()}
                           disabled={uploadingAttachment}
-                          className="ml-auto h-5 px-1.5 text-data border rounded flex items-center gap-1 hover-elevate active-elevate-2 text-muted-foreground"
+                          className="h-7 px-2 text-xs border rounded-md flex items-center gap-1 hover-elevate active-elevate-2 text-muted-foreground"
                           data-testid="button-upload-attachment"
                         >
-                          {uploadingAttachment ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5" />}
+                          {uploadingAttachment ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
                           Upload
                         </button>
-                      )}
-                    </div>
+                      ) : undefined
+                    }
+                    emptyAction={
+                      isEditMode ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); attachmentInputRef.current?.click(); }}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                          data-testid="button-upload-attachment-empty"
+                        >
+                          + Upload
+                        </button>
+                      ) : undefined
+                    }
+                  >
                     <input
                       ref={attachmentInputRef}
                       type="file"
@@ -2322,9 +2578,9 @@ export default function VariationDetail() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </DocumentSection>
 
-                </div>
+                </DocumentCard>
 
                 {/* Schedule Impact card */}
                 {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
