@@ -17,7 +17,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Package, Plus, Search, X, Filter, ChevronRight, ChevronDown,
-  ChevronsUpDown, ChevronsDownUp, Loader2, Trash2, MoreVertical,
+  ChevronsUpDown, ChevronsDownUp, Loader2, Trash2, MoreVertical, FolderTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { ProductTaxonomyDialog } from "@/components/ProductTaxonomyDialog";
 import { formatCents } from "@shared/money";
 
 interface ProductImage { id: number; filePath: string; fileName: string | null }
@@ -79,6 +80,7 @@ export default function ProductLibrary() {
   const [groupBy, setGroupBy] = useState<"category" | "none">("category");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [taxonomyOpen, setTaxonomyOpen] = useState(false);
 
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -364,6 +366,20 @@ export default function ProductLibrary() {
           </Popover>
         </div>
 
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setTaxonomyOpen(true)}
+              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+              data-testid="button-manage-taxonomy"
+              aria-label="Groups and tags"
+            >
+              <FolderTree className="h-3 w-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Groups &amp; tags</TooltipContent>
+        </Tooltip>
         <Button
           size="sm"
           className="h-6 px-2 text-xs flex-shrink-0"
@@ -374,7 +390,10 @@ export default function ProductLibrary() {
           {creating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
           Add Product
         </Button>
+        </div>
       </div>
+
+      <ProductTaxonomyDialog open={taxonomyOpen} onOpenChange={setTaxonomyOpen} />
 
       {/* Body — a card per group, exactly as the price list draws them. */}
       <div className="flex-1 min-h-0 overflow-auto px-3 py-3 space-y-3">

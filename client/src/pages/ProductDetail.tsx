@@ -29,6 +29,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ProductTaxonomyDialog } from "@/components/ProductTaxonomyDialog";
 
 interface ProductImage {
   id: number;
@@ -110,6 +111,7 @@ export default function ProductDetail() {
 
   const [form, setForm] = useState<Partial<Product> & { unitCostInput?: string }>({});
   const [tagIds, setTagIds] = useState<string[]>([]);
+  const [taxonomyOpen, setTaxonomyOpen] = useState<false | "groups" | "tags">(false);
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
   const [dirty, setDirty] = useState(false);
 
@@ -443,12 +445,27 @@ export default function ProductDetail() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <button
+                    onClick={() => setTaxonomyOpen("groups")}
+                    className="text-[10px] text-primary hover:underline"
+                    data-testid="button-manage-groups"
+                  >
+                    {groups.length === 0 ? "Create a group" : "Manage groups"}
+                  </button>
                 </Field>
                 <Field label="Tags" hint="what it belongs to">
                   {tags.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground pt-1">
-                      No tags yet. A tag like “colorbond standard” is what lets a whole set be
-                      added to a selection in one go.
+                      No tags yet.{" "}
+                      <button
+                        onClick={() => setTaxonomyOpen("tags")}
+                        className="text-primary hover:underline"
+                        data-testid="button-create-tag"
+                      >
+                        Create one
+                      </button>{" "}
+                      — a tag like “Colorbond standard” is what lets a whole set be added to a
+                      selection in one go.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-1 pt-0.5">
@@ -472,6 +489,13 @@ export default function ProductDetail() {
                           </button>
                         );
                       })}
+                      <button
+                        onClick={() => setTaxonomyOpen("tags")}
+                        className="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-border text-muted-foreground hover-elevate"
+                        data-testid="button-manage-tags"
+                      >
+                        + Manage
+                      </button>
                     </div>
                   )}
                 </Field>
@@ -589,6 +613,12 @@ export default function ProductDetail() {
           </div>
         </div>
       </div>
+
+      <ProductTaxonomyDialog
+        open={taxonomyOpen !== false}
+        onOpenChange={(v) => setTaxonomyOpen(v ? (taxonomyOpen || "groups") : false)}
+        initialTab={taxonomyOpen === "tags" ? "tags" : "groups"}
+      />
     </div>
   );
 }
