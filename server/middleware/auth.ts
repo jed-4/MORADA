@@ -2,11 +2,31 @@ import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
 import { User } from '@shared/schema';
 
-// Extend Express Request and Session to include user
+// Extend Express Request and Session to include user.
+//
+// The alias is deliberate and load-bearing. Inside `namespace Express`, a bare
+// `User` resolves to `Express.User` — the empty interface @types/passport
+// contributes — rather than to the `User` imported above, so `req.user` was
+// silently typed `{}` and every `req.user.companyId` in the codebase was a
+// "Property does not exist" error. 457 of them, all false positives.
+//
+// Those types entered the program only because server/replitAuth.ts imported
+// passport; deleting that dead module made them vanish by accident. Naming the
+// import explicitly makes the correct resolution permanent, so re-introducing
+// passport anywhere cannot bring the shadowing back.
+type AppUser = User;
+
 declare global {
   namespace Express {
+    // Re-declared here because several `req.user as Express.User & { ... }`
+    // casts in routes.ts refer to it by name. It used to come from
+    // @types/passport as an EMPTY interface — which is exactly what made the
+    // shadowing above so damaging — so pointing it at the real user shape both
+    // keeps those casts compiling and makes them mean what they read as.
+    interface User extends AppUser {}
+
     interface Request {
-      user?: User;
+      user?: AppUser;
       userId?: string;
     }
   }

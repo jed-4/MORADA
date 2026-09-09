@@ -57,7 +57,7 @@ export function useAuth() {
         return;
       }
       
-      // Web: Redirect to Replit Auth logout (GET endpoint)
+      // Web: hit the logout endpoint (GET), which clears the session cookie.
       window.location.href = '/api/logout';
     } catch (error) {
       console.error('Logout error:', error);

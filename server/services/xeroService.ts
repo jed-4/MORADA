@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import type { XeroConnection } from "@shared/schema";
 import { encryptToken, decryptToken } from "../utils/encryption";
+import { buildAppUrl } from "../config/appUrl";
 
 // Encrypt Xero tokens at rest when a 32-char key is configured; otherwise store
 // as-is so a missing key never breaks the connection. Reads transparently
@@ -272,18 +273,14 @@ interface XeroTenant {
   tenantType: string;
 }
 
+// Derived from the shared base-URL resolver rather than from REPLIT_DOMAINS
+// directly. The old version consulted only the Replit variables and fell
+// through to http://localhost:5000 — off Replit that sent every connect
+// attempt to localhost and the OAuth flow could never complete. The resolver
+// still consults REPLIT_DOMAINS below APP_BASE_URL/APP_URL, so the redirect
+// this returns on Replit today is byte-identical.
 function getRedirectUri(): string {
-  if (process.env.REPLIT_DOMAINS) {
-    const domains = process.env.REPLIT_DOMAINS.split(',');
-    const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim();
-    if (canonicalDomain) {
-      return `https://${canonicalDomain}/api/xero/callback`;
-    }
-  }
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return `https://${process.env.REPLIT_DEV_DOMAIN}/api/xero/callback`;
-  }
-  return "http://localhost:5000/api/xero/callback";
+  return buildAppUrl("/api/xero/callback");
 }
 
 export class XeroService {

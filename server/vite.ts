@@ -1,34 +1,42 @@
-import express, { type Express } from "express";
+/**
+ * Vite dev middleware. DEVELOPMENT ONLY.
+ *
+ * server/index.ts reaches this module through `await import("./vite")` inside
+ * its development branch, and `vite` itself is imported dynamically below.
+ * Both indirections are load-bearing: esbuild hoists *static* imports of
+ * external packages to the top of the bundle even when the importing module is
+ * only reachable dynamically, so a static `import { createServer } from "vite"`
+ * here would put Vite back into the production import graph regardless of how
+ * index.ts calls it. A dynamic import of an external specifier stays dynamic.
+ *
+ * Do not convert the imports below to static ones, and do not import this
+ * module from anywhere that runs in production. `serveStatic` and `log` live
+ * in server/serveStatic.ts precisely so that nothing has to.
+ */
+import type { Express } from "express";
+import type { Server } from "http";
 import fs from "fs";
 import path from "path";
-import { createServer as createViteServer, createLogger } from "vite";
-import { type Server } from "http";
-import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 
-const viteLogger = createLogger();
-
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
 export async function setupVite(app: Express, server: Server) {
+  // Dynamic so the production bundle never references Vite. See the note above.
+  const { createServer: createViteServer, createLogger } = await import("vite");
+  const viteLogger = createLogger();
+
   const serverOptions = {
-    middlewareMode: true,
+    middlewareMode: true as const,
     hmr: { server },
     allowedHosts: true as const,
   };
 
   const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
+    // Previously the config object was imported from ../vite.config and spread
+    // in with `configFile: false`. That static relative import is what dragged
+    // @vitejs/plugin-react, @sentry/vite-plugin and the @replit plugin into the
+    // server bundle. Pointing Vite at the file instead gives the same resolved
+    // config — aliases, plugins and all — without the server ever importing it.
+    configFile: path.resolve(import.meta.dirname, "..", "vite.config.ts"),
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
@@ -63,32 +71,5 @@ export async function setupVite(app: Express, server: Server) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }
-  });
-}
-
-export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
-
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
-  }
-
-  // Serve hashed asset bundles with long cache; force revalidation on the SPA
-  // entry document so back/forward + bfcache restores always pick up new app
-  // shells after a deploy.
-  app.use(express.static(distPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith("index.html")) {
-        res.setHeader("Cache-Control", "no-cache");
-      }
-    },
-  }));
-
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.setHeader("Cache-Control", "no-cache");
-    res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
