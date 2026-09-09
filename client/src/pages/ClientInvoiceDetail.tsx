@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -3176,20 +3177,20 @@ export default function ClientInvoiceDetail() {
                                       placeholder="Description"
                                     />
                                   ),
+                                  // Contract claim rows live in the contract_claim_rows jsonb
+                                  // column and are validated by a bare z.number(), so fractional
+                                  // claims (7.5% progress payments) are storable — and this is the
+                                  // field where a lost decimal is money. The old `type="number"` +
+                                  // `parseFloat(...) || 0` pair could not express one: `.value`
+                                  // reads "" at "7.", so the field collapsed to 0 mid-keystroke.
+                                  // (The `step="0.01"` it used to carry patched the adjacent
+                                  // stepMismatch symptom of the same root cause.)
                                   claimPercentCell: (
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      // Contract claim rows live in the contract_claim_rows jsonb
-                                      // column and are validated by a bare z.number(), so fractional
-                                      // claims (7.5% progress payments) are storable. Without an
-                                      // explicit step, type="number" defaults to step="1" and the
-                                      // browser treats 7.5 as a stepMismatch.
-                                      step="0.01"
+                                    <NumericInput
+                                      min={0}
                                       value={row.claimPercent}
-                                      onChange={(e) =>
-                                        updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
-                                      }
+                                      onCommit={(v) => updateContractClaimRow(row.id, "claimPercent", v ?? 0)}
+                                      emptyValue={0}
                                       className="h-7 w-16 text-right text-table ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm"
                                     />
                                   ),
@@ -3852,10 +3853,10 @@ export default function ClientInvoiceDetail() {
                           cols.push({
                             key: "quantity", header: "Qty", align: "right", width: 56, truncate: false,
                             cell: (line, index) => (
-                              <Input
-                                type="number"
+                              <NumericInput
                                 value={line.quantity}
-                                onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
+                                onCommit={(v) => updateCustomLine(index, "quantity", v ?? 0)}
+                                emptyValue={0}
                                 className="h-7 w-14 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
                               />
                             ),
@@ -3863,10 +3864,10 @@ export default function ClientInvoiceDetail() {
                           cols.push({
                             key: "unitPrice", header: "Unit Cost (ex GST)", align: "right", width: 96, truncate: false,
                             cell: (line, index) => (
-                              <Input
-                                type="number"
+                              <NumericInput
                                 value={line.unitPrice}
-                                onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                                onCommit={(v) => updateCustomLine(index, "unitPrice", v ?? 0)}
+                                emptyValue={0}
                                 className="h-7 w-20 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
                               />
                             ),
@@ -5128,13 +5129,19 @@ export default function ClientInvoiceDetail() {
                     <FormItem>
                       <FormLabel>Amount (AUD)*</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
+                        {/* Deliberately NOT `{...field}` — that spread carries
+                            react-hook-form's own `value`/`onChange`, which is
+                            the pair this component replaces. */}
+                        <NumericInput
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                          min={0}
                           max={outstandingCents / 100}
-                          {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          value={field.value}
+                          onCommit={(v) => field.onChange(v ?? 0)}
+                          emptyValue={0}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35"
                           data-testid="input-payment-amount"
                         />
                       </FormControl>
