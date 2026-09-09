@@ -129,6 +129,7 @@ import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { deriveRfqStatus } from "@shared/rfqStatus";
 import { DEFAULT_RFQ_REMINDER_TEMPLATES } from "@shared/schema";
 import { timesheetTotalExGstCents } from "@shared/money";
+import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTotals";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import { defaultRevisionLabel } from "@shared/reviewCostImpact";
 import type { CircuitContext } from "@shared/schema";
@@ -1073,6 +1074,7 @@ export interface IStorage {
   // Proposals CRUD
   getProposals(companyId: string, filters?: { projectId?: string; status?: string; parentProposalId?: string }): Promise<Proposal[]>;
   getProposal(id: string): Promise<Proposal | undefined>;
+  recomputeProposalTotals(proposalId: string): Promise<ProposalTotals | null>;
   createProposal(proposal: InsertProposal): Promise<Proposal>;
   createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
   updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined>;
@@ -7686,6 +7688,21 @@ export class DbStorage implements IStorage {
           // Mark as Contract and the manual Lock action, not a workflow stage.
           { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
+      case 'proposal.status':
+        // Display only. Unlike task/defect status these are not user-picked —
+        // the proposal state machine owns them (send, client view, accept,
+        // reject, revise), and PATCH /api/proposals/:id refuses `status`
+        // outright. Seeded so the badge renders a proper label and colour
+        // instead of the raw key, and so the list's status filter has options.
+        return [
+          { id: 'opt-proposal-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-proposal-status-sent', categoryId, key: 'sent', name: 'Sent', color: '#7890C8', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-proposal-status-viewed', categoryId, key: 'viewed', name: 'Viewed', color: '#70CAD0', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-proposal-status-accepted', categoryId, key: 'accepted', name: 'Accepted', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 3 },
+          { id: 'opt-proposal-status-rejected', categoryId, key: 'rejected', name: 'Rejected', color: '#DA988A', isDefault: false, isCompleted: true, sortOrder: 4 },
+          { id: 'opt-proposal-status-superseded', categoryId, key: 'superseded', name: 'Superseded', color: '#B0AAA4', isDefault: false, isCompleted: true, sortOrder: 5 },
+          { id: 'opt-proposal-status-expired', categoryId, key: 'expired', name: 'Expired', color: '#C87878', isDefault: false, isCompleted: true, sortOrder: 6 },
+        ];
       case 'defect.status':
         return [
           { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#DA988A', isDefault: true, isCompleted: false, sortOrder: 0 },
@@ -8118,6 +8135,10 @@ export class DbStorage implements IStorage {
       { key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
       { key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
       { key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
+      // Read-only in effect: the proposal state machine writes these, the UI
+      // only renders them. Registered here so every company (including ones
+      // created before proposals shipped) gets the labels and colours.
+      { key: 'proposal.status', label: 'Proposal Statuses', entity: 'proposal', description: 'Workflow statuses for proposals (set by the system, not editable)', sortOrder: 7 },
       // 'estimate_group.status' is deliberately NOT here: nothing reads it.
       // EstimateGroupCard shares estimate_item.status with the lines inside a
       // section, so seeding a second status list would only be one more list
@@ -8200,6 +8221,21 @@ export class DbStorage implements IStorage {
           { id: 'opt-checklist-type-job', categoryId, key: 'Job', name: 'Job', color: '#10B981', isDefault: false, sortOrder: 1 },
           { id: 'opt-checklist-type-estimation', categoryId, key: 'Estimation', name: 'Estimation', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
           { id: 'opt-checklist-type-lead', categoryId, key: 'Lead', name: 'Lead', color: '#F59E0B', isDefault: false, sortOrder: 3 },
+        ];
+        break;
+      case 'proposal.status':
+        // Display only — the proposal state machine owns these values, and
+        // PATCH /api/proposals/:id refuses `status`. Without this seed the
+        // by-key lookup 404s, the list's status badge falls back to the raw
+        // key with no colour, and its status filter has nothing in it.
+        optionsToInsert = [
+          { id: 'opt-proposal-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-proposal-status-sent', categoryId, key: 'sent', name: 'Sent', color: '#7890C8', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-proposal-status-viewed', categoryId, key: 'viewed', name: 'Viewed', color: '#70CAD0', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-proposal-status-accepted', categoryId, key: 'accepted', name: 'Accepted', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 3 },
+          { id: 'opt-proposal-status-rejected', categoryId, key: 'rejected', name: 'Rejected', color: '#DA988A', isDefault: false, isCompleted: true, sortOrder: 4 },
+          { id: 'opt-proposal-status-superseded', categoryId, key: 'superseded', name: 'Superseded', color: '#B0AAA4', isDefault: false, isCompleted: true, sortOrder: 5 },
+          { id: 'opt-proposal-status-expired', categoryId, key: 'expired', name: 'Expired', color: '#C87878', isDefault: false, isCompleted: true, sortOrder: 6 },
         ];
         break;
       case 'task.status':
@@ -19637,6 +19673,50 @@ export class DbStorage implements IStorage {
       console.error("Database error in updateProposal:", error);
       throw error;
     }
+  }
+
+  /**
+   * Recompute a proposal's client-facing totals from the estimate revision it
+   * is linked to, and persist them.
+   *
+   * These three columns were previously written as 0 at creation and never
+   * again, which is why percentage-based payment milestones printed $0.00 on
+   * the client's document. Money runs through computeProposalTotals — i.e.
+   * computeEstimateSummary — rather than a sum of the pre-margin priceIncTax
+   * cache, and it drops lines the user hid from the proposal.
+   *
+   * Returns the recomputed totals, or null when nothing was linked to compute
+   * from (the proposal keeps whatever it had rather than being zeroed).
+   */
+  async recomputeProposalTotals(proposalId: string): Promise<ProposalTotals | null> {
+    const proposal = await this.getProposal(proposalId);
+    if (!proposal) return null;
+
+    // The proposal-level estimateId is authoritative: the builder's revision
+    // selector cascades it into every estimate section in one batched write.
+    const estimateId = proposal.estimateId;
+    if (!estimateId) return null;
+
+    const estimate = await this.getEstimate(estimateId);
+    if (!estimate) return null;
+    const items = await this.getEstimateItems(estimateId);
+
+    const totals = computeProposalTotals(items, {
+      projectMarkupPercent: estimate.projectMarkupPercent,
+      taxRate: estimate.taxRate,
+      estimateId,
+    });
+
+    await db.update(schema.proposals)
+      .set({
+        subtotal: totals.subtotalCents,
+        gstAmount: totals.gstCents,
+        totalAmount: totals.totalCents,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.proposals.id, proposalId));
+
+    return totals;
   }
 
   async deleteProposal(id: string): Promise<boolean> {

@@ -2913,6 +2913,12 @@ export const proposals = pgTable("proposals", {
   // Snapshot of full proposal frozen at send-time (sections + items + milestones + totals + T&Cs)
   contentSnapshot: jsonb("content_snapshot"),
 
+  // The exact PDF the client was emailed, stored at send time so the portal
+  // serves that document rather than re-deriving a lookalike from live data.
+  sentPdfPath: text("sent_pdf_path"),
+  // Who it went to, captured at send time — the contact may change later.
+  sentTo: jsonb("sent_to").$type<Array<{ name?: string; email: string }>>().default([]),
+
   // View tracking (client-view endpoint)
   viewCount: integer("view_count").notNull().default(0),
   lastViewedAt: timestamp("last_viewed_at"),
@@ -2934,6 +2940,10 @@ export const insertProposalSchema = createInsertSchema(proposals).omit({
   updatedAt: true,
 }).extend({
   status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired", "superseded"]).default("draft"),
+  // createInsertSchema infers jsonb loosely, which leaves `name` as unknown and
+  // stops the column's own $type from lining up. Declare the shape once here so
+  // the insert type and the column type agree.
+  sentTo: z.array(z.object({ name: z.string().optional(), email: z.string() })).optional(),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),
@@ -3132,7 +3142,9 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   pinnedBy: true,
 }).extend({
   activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "proposal", "project", "site_diary", "schedule", "manual", "other"]),
-  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "paid", "batch_updated", "note"]),
+  // "sent" covers a document leaving the business for a client or supplier —
+  // added for proposal send, which is neither a create nor a status change.
+  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "sent", "paid", "batch_updated", "note"]),
   pinned: z.boolean().optional(),
 });
 
