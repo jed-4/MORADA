@@ -1,0 +1,11 @@
+{
+  // The app's tsconfig sets "jsx": "preserve" because Vite does the transform.
+  // Node test runners (tsx/esbuild) then fall back to the classic runtime and
+  // every component file throws "React is not defined", since none of them
+  // import React. This override is only for running tests directly under Node —
+  // it changes nothing about how the app is built.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}

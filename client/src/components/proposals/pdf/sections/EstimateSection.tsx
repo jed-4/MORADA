@@ -6,6 +6,7 @@ import {
   lineAppearsOnProposal,
   lineCountsTowardProposalTotal,
 } from "@shared/proposalTotals";
+import { SectionIntro } from "./RichTextBlocks";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -494,6 +495,12 @@ export function EstimateSection({
           {section.name || "Estimate"}
         </Text>
 
+        {/* The section's own Description, same as every other section type. */}
+        <SectionIntro section={section} />
+
+        {/* The estimate editor's separate description field. Kept rendering so
+            proposals that already use it are unchanged; new text is better put
+            in the Description above, which every section shares. */}
         {typeof content.estimateDescription === "string" && content.estimateDescription && (
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}

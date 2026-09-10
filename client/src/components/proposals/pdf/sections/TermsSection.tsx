@@ -1,6 +1,6 @@
 import { Page, Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
+import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
@@ -48,6 +48,7 @@ export function TermsSection({
           <Text style={sharedSectionStyle.sectionTitle}>
             {section.name || 'Terms & Conditions'}
           </Text>
+          <SectionIntro section={section} />
           {html ? (
             <RichTextBlocks html={html} />
           ) : (

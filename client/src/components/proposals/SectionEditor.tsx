@@ -414,7 +414,9 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="estimate-description">Description</Label>
+        {/* Distinct from the section's "Intro text" above, which renders under
+            the heading. This one sits immediately above the estimate table. */}
+        <Label htmlFor="estimate-description">Text above the estimate table</Label>
         <RichTextEditor
           content={content.estimateDescriptionHtml || content.estimateDescription || ""}
           onChange={(html) =>

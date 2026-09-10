@@ -1,6 +1,6 @@
 import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
+import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
@@ -97,6 +97,7 @@ export function SummarySection({
           <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Summary'}
           </Text>
+          <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
           <View style={styles.totalsWrap}>
