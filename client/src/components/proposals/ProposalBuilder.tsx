@@ -171,14 +171,20 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor={`section-description-${section.id}`}>Description</Label>
+              {/* Named for where it lands. It used to be "Description", which
+                  said nothing about what it does — and on the Estimate section
+                  sat directly above a second field with the identical label. */}
+              <Label htmlFor={`section-description-${section.id}`}>Intro text</Label>
+              <p className="text-xs text-muted-foreground">
+                Appears under the section heading in the document.
+              </p>
               <RichTextEditor
                 content={localDescriptionHtml}
                 onChange={(html, text) => {
                   setLocalDescriptionHtml(html);
                   setLocalDescriptionText(text);
                 }}
-                placeholder="Optional description"
+                placeholder="Optional — a line or two introducing this section"
                 placeholders={PROPOSAL_PLACEHOLDERS}
                 data-testid={`richtext-section-description-${section.id}`}
               />

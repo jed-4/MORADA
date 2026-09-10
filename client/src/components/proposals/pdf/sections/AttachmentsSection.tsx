@@ -1,6 +1,6 @@
 import { Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
+import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
@@ -69,6 +69,7 @@ export function AttachmentsSection({
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
           <Text style={sharedSectionStyle.sectionTitle}>{section.name || 'Attachments'}</Text>
+          <SectionIntro section={section} />
           {introHtml ? <RichTextBlocks html={introHtml} /> : null}
 
           {rows.length === 0 ? (

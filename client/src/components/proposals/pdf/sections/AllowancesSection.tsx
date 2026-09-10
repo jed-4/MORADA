@@ -1,6 +1,6 @@
 import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalItem } from '@shared/schema';
-import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
+import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -107,6 +107,7 @@ export function AllowancesSection({
           <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Allowances'}
           </Text>
+          <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
           {rows.length > 0 ? (

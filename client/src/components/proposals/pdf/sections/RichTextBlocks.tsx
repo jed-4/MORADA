@@ -200,4 +200,33 @@ export const sharedSectionStyle = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, color: '#1F2937' },
   text: { fontSize: 11, lineHeight: 1.5, color: '#374151' },
   muted: { fontSize: 11, fontStyle: 'italic', color: '#6B7280' },
+  intro: { fontSize: 11, lineHeight: 1.5, color: '#374151', marginBottom: 12 },
 });
+
+/**
+ * The section's own "Description" — intro text under the heading.
+ *
+ * Every section accordion in the builder offers a Description field, and until
+ * now exactly one section type (the cover page) rendered it. On the other ten
+ * you could type into it, get "Section updated successfully", and never see the
+ * text anywhere in the document. This renders it wherever a section is drawn.
+ *
+ * Rich HTML is preferred over the plain mirror, since the editor writes both
+ * and only the HTML keeps the user's formatting. Placeholders have already been
+ * substituted into these two fields upstream by substituteSectionContent.
+ */
+export function SectionIntro({
+  section,
+}: {
+  section: { description?: string | null; descriptionHtml?: string | null };
+}) {
+  const html = section.descriptionHtml;
+  if (html && htmlToBlocks(html).length > 0) {
+    return <RichTextBlocks html={html} />;
+  }
+  const plain = section.description;
+  if (plain && plain.trim()) {
+    return <Text style={sharedSectionStyle.intro}>{plain}</Text>;
+  }
+  return null;
+}
