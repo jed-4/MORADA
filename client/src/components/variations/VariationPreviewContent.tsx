@@ -240,7 +240,7 @@ export function VariationPreviewContent({
   onSigned,
 }: VariationPreviewProps) {
   const { toast } = useToast();
-  const primaryColor = companySettings?.brandColor || "#6d28d9";
+  const primaryColor = companySettings?.brandColor || "#87749A";
   const cols = columns ?? DEFAULT_VARIATION_DOCUMENT_COLUMNS;
   // Same column set and order as the PDF, so the portal and the document a
   // client is emailed never disagree about what is on the page.

@@ -1490,7 +1490,10 @@ export default function VariationDetail() {
           labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
-          brandColor={companySettings?.brandColor || "#6d28d9"}
+          /* Morada plum. The fallback used to differ per call site — violet
+             here, Tailwind blue inside VariationDocument, Figma lavender in the
+             portal — so an unbranded company got a different colour in each. */
+          brandColor={companySettings?.brandColor || "#87749A"}
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
@@ -2698,7 +2701,7 @@ export default function VariationDetail() {
               labourTotalCents={dollarsToCents(calculateLabourTotal())}
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
-              brandColor={companySettings?.brandColor || "#6d28d9"}
+              brandColor={companySettings?.brandColor || "#87749A"}
               documentStyle={varDocStyle}
               logoUrl={varLogoUrl}
               originalContractCents={originalContractCents}
@@ -2744,7 +2747,7 @@ export default function VariationDetail() {
           labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
-          brandColor={companySettings?.brandColor || "#6d28d9"}
+          brandColor={companySettings?.brandColor || "#87749A"}
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}

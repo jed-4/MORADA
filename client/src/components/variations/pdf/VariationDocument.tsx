@@ -1,4 +1,9 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
+// Colours here are the Morada tokens written as literals, because @react-pdf
+// cannot read CSS custom properties — it renders outside the DOM. Keep them in
+// step with :root in client/src/index.css by hand. They were previously
+// Tailwind's cool grey ramp (#111827, #6b7280, #e5e7eb …), which is why the
+// PDF read as blue-grey next to the portal's warm ink.
 import type { Variation, VariationItem } from "@shared/schema";
 import { format } from "date-fns";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
@@ -110,7 +115,7 @@ export function VariationDocument({
   labourTotalCents = 0,
   company,
   project,
-  brandColor = "#3B82F6",
+  brandColor = "#87749A",
   documentStyle = "style1",
   logoUrl,
   originalContractCents,
@@ -121,11 +126,11 @@ export function VariationDocument({
   costCodeLabels,
 }: VariationDocumentProps) {
   const isS2 = documentStyle === "style2";
-  const thBg = isS2 ? brandColor : "#F8F8F8";
-  const thTextColor = isS2 ? "#ffffff" : "#374151";
-  const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
-  const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
-  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
+  const thBg = isS2 ? brandColor : "#FAF9F7";
+  const thTextColor = isS2 ? "#ffffff" : "#4A443F";
+  const altRowBg = isS2 ? brandColor + "14" : "#FAF9F7";
+  const accentBg = isS2 ? brandColor + "14" : "#F2F1EE";
+  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#E9E9E7";
 
   const statusCfg = variationStatusPresentation(variation.status);
 
@@ -167,7 +172,7 @@ export function VariationDocument({
   const cardLabel = {
     fontSize: 7,
     fontFamily: "Helvetica-Bold",
-    color: "#9ca3af",
+    color: "#A39C94",
     textTransform: "uppercase" as const,
     textAlign: "center" as const,
     minHeight: 18,
@@ -225,7 +230,7 @@ export function VariationDocument({
               style={{
                 fontSize: 8,
                 fontFamily: "Helvetica-Bold",
-                color: "#e8952a",
+                color: "#B8853A",
                 textTransform: "uppercase",
                 letterSpacing: 0.5,
                 marginBottom: 3,
@@ -234,12 +239,12 @@ export function VariationDocument({
               Variation Order
             </Text>
             <Text
-              style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#111827", marginBottom: 3 }}
+              style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#2C2825", marginBottom: 3 }}
             >
               {variation.variationNumber}
             </Text>
             {variation.approvalDeadline && (
-              <Text style={{ fontSize: 8, color: "#9ca3af", marginBottom: 4 }}>
+              <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 4 }}>
                 Effective until {format(new Date(variation.approvalDeadline), "d MMM yyyy")}
               </Text>
             )}
@@ -268,7 +273,7 @@ export function VariationDocument({
           {/* Right: price change card */}
           <View
             style={{
-              backgroundColor: "#FFF4E6",
+              backgroundColor: "#F8F3E8",
               borderRadius: 4,
               paddingHorizontal: 14,
               paddingVertical: 10,
@@ -281,11 +286,11 @@ export function VariationDocument({
             <View style={{ flex: 1, alignItems: "center" }}>
               <Text style={cardLabel}>Variation Amount</Text>
               <Text
-                style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#e8952a" }}
+                style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#B8853A" }}
               >
                 {formatAUD(totalCents / 100)}
               </Text>
-              <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>Inc. GST</Text>
+              <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>Inc. GST</Text>
             </View>
 
             {showContractCard && (
@@ -294,7 +299,7 @@ export function VariationDocument({
                 <View
                   style={{
                     width: 1,
-                    backgroundColor: "#e5e7eb",
+                    backgroundColor: "#E9E9E7",
                     marginHorizontal: 10,
                   }}
                 />
@@ -304,13 +309,17 @@ export function VariationDocument({
                   <Text
                     style={{
                       fontSize: 11,
-                      color: "#9ca3af",
-                      textDecorationLine: "line-through",
+                      color: "#A39C94",
+                      // `textDecorationLine` is the React Native spelling and is
+                      // not a @react-pdf Style property — it silently did
+                      // nothing, so the superseded contract sum never rendered
+                      // struck through.
+                      textDecoration: "line-through",
                     }}
                   >
                     {formatAUD(contractBeforeCents / 100)}
                   </Text>
-                  <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>
+                  <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>
                     Incl. approved variations
                   </Text>
                 </View>
@@ -319,7 +328,7 @@ export function VariationDocument({
                 <View
                   style={{
                     width: 1,
-                    backgroundColor: "#e5e7eb",
+                    backgroundColor: "#E9E9E7",
                     marginHorizontal: 10,
                   }}
                 />
@@ -329,11 +338,11 @@ export function VariationDocument({
                     {revisedIsAgreed ? "Revised Total" : "Proposed Revised Total"}
                   </Text>
                   <Text
-                    style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#111827" }}
+                    style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#2C2825" }}
                   >
                     {formatAUD((revisedContractCents ?? 0) / 100)}
                   </Text>
-                  <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>
+                  <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>
                     {revisedIsAgreed ? "New contract value" : "If approved"}
                   </Text>
                 </View>
@@ -349,7 +358,7 @@ export function VariationDocument({
             style={{
               fontSize: 8,
               fontFamily: "Helvetica-Bold",
-              color: "#9ca3af",
+              color: "#A39C94",
               textTransform: "uppercase",
               letterSpacing: 0.5,
               marginBottom: 6,
@@ -359,17 +368,17 @@ export function VariationDocument({
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
             <View style={{ width: "30%" }}>
-              <Text style={{ fontSize: 8, color: "#9ca3af", marginBottom: 2 }}>Name</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+              <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>Name</Text>
+              <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
                 {variation.name}
               </Text>
             </View>
             {!!variation.daysChanged && (
               <View style={{ width: "30%" }}>
-                <Text style={{ fontSize: 8, color: "#9ca3af", marginBottom: 2 }}>
+                <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>
                   Schedule Impact
                 </Text>
-                <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
                   {variation.daysChanged > 0 ? "+" : ""}
                   {variation.daysChanged} working day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
                 </Text>
@@ -379,7 +388,7 @@ export function VariationDocument({
 
           {/* Intro text */}
           {variation.introductionText ? (
-            <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5, marginBottom: 14 }}>
+            <Text style={{ fontSize: 9, color: "#4A443F", lineHeight: 1.5, marginBottom: 14 }}>
               {variation.introductionText}
             </Text>
           ) : null}
@@ -391,7 +400,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 6,
@@ -439,15 +448,15 @@ export function VariationDocument({
                       justifyContent: "space-between",
                       paddingHorizontal: 8,
                       paddingVertical: 4,
-                      backgroundColor: "#f3f4f6",
+                      backgroundColor: "#F2F1EE",
                       borderBottomWidth: 1,
-                      borderBottomColor: "#e5e7eb",
+                      borderBottomColor: "#E9E9E7",
                     }}
                   >
-                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
+                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6B6561" }}>
                       {group.label}
                     </Text>
-                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
+                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6B6561" }}>
                       {formatAUD(group.totalIncCents / 100)}
                     </Text>
                   </View>
@@ -460,22 +469,22 @@ export function VariationDocument({
                         paddingHorizontal: 8,
                         paddingVertical: 4,
                         borderBottomWidth: 1,
-                        borderBottomColor: "#f3f4f6",
+                        borderBottomColor: "#F2F1EE",
                         backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                       }}
                     >
                       {showTextCell && (
                         <View style={{ flex: 1 }}>
                           {columns.name && line.name ? (
-                            <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
                               {line.name}
                             </Text>
                           ) : null}
                           {columns.description && line.description ? (
-                            <Text style={{ fontSize: 8, color: "#6b7280" }}>{line.description}</Text>
+                            <Text style={{ fontSize: 8, color: "#6B6561" }}>{line.description}</Text>
                           ) : null}
                           {!(columns.name && line.name) && !(columns.description && line.description) ? (
-                            <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
+                            <Text style={{ fontSize: 9, color: "#4A443F" }}>—</Text>
                           ) : null}
                         </View>
                       )}
@@ -484,7 +493,7 @@ export function VariationDocument({
                           key={col.key}
                           style={{
                             fontSize: 9,
-                            color: "#374151",
+                            color: "#4A443F",
                             width: col.width,
                             textAlign: col.align,
                             paddingLeft: col.align === "left" ? 6 : 0,
@@ -511,15 +520,15 @@ export function VariationDocument({
                     paddingHorizontal: 8,
                     paddingVertical: 4,
                     borderBottomWidth: 1,
-                    borderBottomColor: "#f3f4f6",
+                    borderBottomColor: "#F2F1EE",
                   }}
                 >
-                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
                     {docModel.globalMarkupPercent
                       ? `Margin (${docModel.globalMarkupPercent}%)`
                       : "Margin"}
                   </Text>
-                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
                     {formatAUD(docModel.globalMarkupIncCents / 100)}
                   </Text>
                 </View>
@@ -535,11 +544,11 @@ export function VariationDocument({
                     paddingHorizontal: 8,
                     paddingVertical: 4,
                     borderBottomWidth: 1,
-                    borderBottomColor: "#f3f4f6",
+                    borderBottomColor: "#F2F1EE",
                   }}
                 >
-                  <Text style={{ fontSize: 9, color: "#374151" }}>Additional works (not itemised)</Text>
-                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F" }}>Additional works (not itemised)</Text>
+                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
                     {formatAUD(docModel.notItemisedIncCents / 100)}
                   </Text>
                 </View>
@@ -554,7 +563,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 6,
@@ -570,12 +579,12 @@ export function VariationDocument({
                     paddingHorizontal: 8,
                     paddingVertical: 4,
                     borderBottomWidth: 1,
-                    borderBottomColor: "#f3f4f6",
+                    borderBottomColor: "#F2F1EE",
                     backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                   }}
                 >
-                  <Text style={{ fontSize: 9, color: "#374151", flex: 1 }}>{line.description}</Text>
-                  <Text style={{ fontSize: 9, color: "#374151", width: 80, textAlign: "right" }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F", flex: 1 }}>{line.description}</Text>
+                  <Text style={{ fontSize: 9, color: "#4A443F", width: 80, textAlign: "right" }}>
                     {formatAUD(line.amountIncCents / 100)}
                   </Text>
                 </View>
@@ -590,7 +599,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 6,
@@ -629,22 +638,22 @@ export function VariationDocument({
                       paddingHorizontal: 8,
                       paddingVertical: 4,
                       borderBottomWidth: 1,
-                      borderBottomColor: "#f3f4f6",
+                      borderBottomColor: "#F2F1EE",
                       backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                     }}
                   >
-                    <Text style={{ fontSize: 9, color: "#374151", width: 70 }}>
+                    <Text style={{ fontSize: 9, color: "#4A443F", width: 70 }}>
                       {bill.billNumber || "—"}
                     </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", flex: 1 }}>
+                    <Text style={{ fontSize: 9, color: "#4A443F", flex: 1 }}>
                       {bill.supplierName || "—"}
                     </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 60, textAlign: "right" }}>
+                    <Text style={{ fontSize: 9, color: "#4A443F", width: 60, textAlign: "right" }}>
                       {bill.invoiceDate
                         ? format(new Date(bill.invoiceDate), "d MMM yy")
                         : "—"}
                     </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 70, textAlign: "right" }}>
+                    <Text style={{ fontSize: 9, color: "#4A443F", width: 70, textAlign: "right" }}>
                       {formatAUD(total)}
                     </Text>
                   </View>
@@ -660,7 +669,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 6,
@@ -675,11 +684,11 @@ export function VariationDocument({
                   paddingHorizontal: 8,
                   paddingVertical: 4,
                   borderBottomWidth: 1,
-                  borderBottomColor: "#f3f4f6",
+                  borderBottomColor: "#F2F1EE",
                 }}
               >
-                <Text style={{ fontSize: 9, color: "#374151" }}>Labour</Text>
-                <Text style={{ fontSize: 9, color: "#374151" }}>{formatAUD(docModel.labourIncCents / 100)}</Text>
+                <Text style={{ fontSize: 9, color: "#4A443F" }}>Labour</Text>
+                <Text style={{ fontSize: 9, color: "#4A443F" }}>{formatAUD(docModel.labourIncCents / 100)}</Text>
               </View>
             </View>
           )}
@@ -692,7 +701,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 6,
@@ -708,16 +717,16 @@ export function VariationDocument({
                     paddingHorizontal: 8,
                     paddingVertical: 3,
                     borderBottomWidth: 1,
-                    borderBottomColor: "#f3f4f6",
+                    borderBottomColor: "#F2F1EE",
                     backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                   }}
                 >
-                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
                     {att?.name || `Attachment ${idx + 1}`}
                   </Text>
                 </View>
               ))}
-              <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 4 }}>
+              <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 4 }}>
                 Attached files can be downloaded from your variation link.
               </Text>
             </View>
@@ -725,15 +734,15 @@ export function VariationDocument({
 
           {/* Summary */}
           <View style={{ alignItems: "flex-end", marginBottom: 16 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
-              <Text style={{ fontSize: 9, color: "#6b7280" }}>Subtotal (ex. GST)</Text>
-              <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
+              <Text style={{ fontSize: 9, color: "#6B6561" }}>Subtotal (ex. GST)</Text>
+              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: "Helvetica-Bold" }}>
                 {formatAUD(subtotalCents / 100)}
               </Text>
             </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
-              <Text style={{ fontSize: 9, color: "#6b7280" }}>GST (10%)</Text>
-              <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
+              <Text style={{ fontSize: 9, color: "#6B6561" }}>GST (10%)</Text>
+              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: "Helvetica-Bold" }}>
                 {formatAUD(gstCents / 100)}
               </Text>
             </View>
@@ -760,14 +769,14 @@ export function VariationDocument({
           <View
             style={{
               borderBottomWidth: 1,
-              borderBottomColor: isS2 ? tintOnWhite(brandColor, "33") : "#e5e7eb",
+              borderBottomColor: isS2 ? tintOnWhite(brandColor, "33") : "#E9E9E7",
               marginBottom: 12,
             }}
           />
 
           {/* Closing text / T&C */}
           {variation.closingText ? (
-            <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5, marginBottom: 12 }}>
+            <Text style={{ fontSize: 9, color: "#4A443F", lineHeight: 1.5, marginBottom: 12 }}>
               {variation.closingText}
             </Text>
           ) : null}
@@ -778,7 +787,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 4,
@@ -786,7 +795,7 @@ export function VariationDocument({
               >
                 Terms &amp; Conditions
               </Text>
-              <Text style={{ fontSize: 8, color: "#9ca3af", lineHeight: 1.4 }}>
+              <Text style={{ fontSize: 8, color: "#A39C94", lineHeight: 1.4 }}>
                 {variation.termsAndConditions}
               </Text>
             </View>
@@ -797,7 +806,7 @@ export function VariationDocument({
             style={{
               fontSize: 8,
               fontFamily: "Helvetica-Bold",
-              color: "#9ca3af",
+              color: "#A39C94",
               textTransform: "uppercase",
               letterSpacing: 0.5,
               marginBottom: 8,
@@ -811,7 +820,7 @@ export function VariationDocument({
               style={{
                 flex: 1,
                 borderWidth: 1,
-                borderColor: "#e5e7eb",
+                borderColor: "#E9E9E7",
                 borderRadius: 4,
                 padding: 10,
               }}
@@ -819,7 +828,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   fontFamily: "Helvetica-Bold",
                   marginBottom: 10,
                 }}
@@ -828,11 +837,11 @@ export function VariationDocument({
               </Text>
               {variation.builderSignedName ? (
                 <View>
-                  <Text style={{ fontSize: 9, color: "#374151", marginBottom: 2 }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F", marginBottom: 2 }}>
                     {variation.builderSignedName}
                   </Text>
                   {variation.builderSignedDate && (
-                    <Text style={{ fontSize: 8, color: "#9ca3af" }}>
+                    <Text style={{ fontSize: 8, color: "#A39C94" }}>
                       Signed {format(new Date(variation.builderSignedDate), "d MMM yyyy")}
                     </Text>
                   )}
@@ -840,16 +849,16 @@ export function VariationDocument({
               ) : (
                 <>
                   <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Name:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Name:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                   <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Signature:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Signature:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                   <View style={{ flexDirection: "row", gap: 4 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Date:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Date:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                 </>
               )}
@@ -860,7 +869,7 @@ export function VariationDocument({
               style={{
                 flex: 1,
                 borderWidth: 1,
-                borderColor: "#e5e7eb",
+                borderColor: "#E9E9E7",
                 borderRadius: 4,
                 padding: 10,
               }}
@@ -868,7 +877,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  color: "#9ca3af",
+                  color: "#A39C94",
                   fontFamily: "Helvetica-Bold",
                   marginBottom: 10,
                 }}
@@ -877,11 +886,11 @@ export function VariationDocument({
               </Text>
               {variation.clientSignedName ? (
                 <View>
-                  <Text style={{ fontSize: 9, color: "#374151", marginBottom: 2 }}>
+                  <Text style={{ fontSize: 9, color: "#4A443F", marginBottom: 2 }}>
                     {variation.clientSignedName}
                   </Text>
                   {variation.clientSignedDate && (
-                    <Text style={{ fontSize: 8, color: "#9ca3af" }}>
+                    <Text style={{ fontSize: 8, color: "#A39C94" }}>
                       Signed {format(new Date(variation.clientSignedDate), "d MMM yyyy")}
                     </Text>
                   )}
@@ -889,16 +898,16 @@ export function VariationDocument({
               ) : (
                 <>
                   <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Name:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Name:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                   <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Signature:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Signature:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                   <View style={{ flexDirection: "row", gap: 4 }}>
-                    <Text style={{ fontSize: 8, color: "#9ca3af", width: 50 }}>Date:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#d1d5db", height: 18 }} />
+                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Date:</Text>
+                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
                   </View>
                 </>
               )}
