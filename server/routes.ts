@@ -21762,14 +21762,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     createdAt: variation.createdAt,
   });
 
-  app.get("/api/portal/variation/:token", async (req, res) => {
-    try {
-      const { token } = req.params;
-      const { variations, projects } = await import("@shared/schema");
-
-      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
-      if (!variation) return res.status(404).json({ error: "Portal link not found" });
-
+  /**
+   * Everything the client portal renders for one variation.
+   *
+   * Extracted so the send route can freeze EXACTLY this as the snapshot. Two
+   * implementations of "what the client sees" would drift, and the whole point
+   * of the archive is that the stored copy is the same document.
+   *
+   * Column stripping happens here rather than in the renderer: the portal hands
+   * the client JSON, so a hidden unit cost has to never leave the server.
+   */
+  const buildVariationPortalPayload = async (variation: any) => {
+    const { projects } = await import("@shared/schema");
       const [projectRows, items, bills, timesheets] = await Promise.all([
         variation.projectId
           ? db.select().from(projects).where(eq(projects.id, variation.projectId))
@@ -21880,16 +21884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         0,
       );
 
-      // Record the client's first view. Fire-and-forget: a tracking write must
-      // never fail the page load. isSeen is kept in step so the builder's list
-      // column finally means "the client has seen it".
-      if (!(variation as any).portalViewedAt) {
-        storage
-          .updateVariation(variation.id, { portalViewedAt: new Date(), isSeen: true } as any)
-          .catch((err) => console.error("[portal] failed to record variation view:", err));
-      }
-
-      res.json({
+      return {
         variation: projectPortalVariation(variation),
         items: publicItems,
         bills: publicBills,
@@ -21918,7 +21913,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
               brandColor: (settings as any)?.brandColor ?? null,
             }
           : undefined,
-      });
+      };
+  };
+
+  app.get("/api/portal/variation/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { variations, variationSends } = await import("@shared/schema");
+
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      // Serve the archived document, not live data. Once a variation has been
+      // sent, editing it must not change what the client is looking at — they
+      // are being asked to sign this, and a document that moves under them is
+      // not something a signature can attach to.
+      const [latestSend] = await db
+        .select()
+        .from(variationSends)
+        .where(eq(variationSends.variationId, variation.id))
+        .orderBy(desc(variationSends.sentAt))
+        .limit(1);
+
+      const snapshot = (latestSend as any)?.contentSnapshot as any;
+      const payload = snapshot?.payload ?? (await buildVariationPortalPayload(variation));
+
+      // The signature block is state, not document — it has to reflect reality
+      // even when the rest is frozen.
+      payload.variation = { ...payload.variation, ...projectPortalVariation(variation) };
+
+      // Record the view. Fire-and-forget: a tracking write must never fail the
+      // page load. isSeen keeps the builder's list column honest.
+      if (!(variation as any).portalViewedAt) {
+        storage
+          .updateVariation(variation.id, { portalViewedAt: new Date(), isSeen: true } as any)
+          .catch((err) => console.error("[portal] failed to record variation view:", err));
+      }
+      if (latestSend) {
+        const now = new Date();
+        db.update(variationSends)
+          .set({
+            firstViewedAt: (latestSend as any).firstViewedAt ?? now,
+            lastViewedAt: now,
+            viewCount: ((latestSend as any).viewCount ?? 0) + 1,
+          })
+          .where(eq(variationSends.id, (latestSend as any).id))
+          .catch((err: unknown) => console.error("[portal] failed to record send view:", err));
+      }
+
+      res.json(payload);
     } catch (error) {
       console.error("Error fetching portal variation:", error);
       res.status(500).json({ error: "Failed to fetch portal data" });
@@ -22004,6 +22047,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Which document was signed. The client is looking at the latest send's
+      // snapshot, so the signature belongs to that row — not to the variation
+      // as it may later become.
+      const { variationSends } = await import("@shared/schema");
+      const [signedSend] = await db
+        .select()
+        .from(variationSends)
+        .where(eq(variationSends.variationId, variation.id))
+        .orderBy(desc(variationSends.sentAt))
+        .limit(1);
+
       // Audit trail: server timestamp + request origin (trust proxy is set,
       // so req.ip reflects the real client IP behind the proxy).
       const updates: Record<string, any> = {
@@ -22011,11 +22065,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clientSignedDate: new Date(),
         clientSignedIp: req.ip ?? null,
         clientSignedUserAgent: (req.headers["user-agent"] || "").toString().slice(0, 500) || null,
-        status: action === "approve" ? "pending" : "rejected",
+        signedSendId: (signedSend as any)?.id ?? null,
       };
-      if (action === "reject" && rejectionReason) updates.rejectionReason = rejectionReason;
+
+      if (action === "reject") {
+        updates.status = "rejected";
+        if (rejectionReason) updates.rejectionReason = rejectionReason;
+      } else {
+        // The client's signature IS the approval — confirmed by Jed 10 Sep.
+        // Previously this set "pending", the same value SENDING sets, so the
+        // status never moved and nothing on either screen changed when a client
+        // signed.
+        //
+        // Approving is consequential: it stamps the approver, makes the
+        // variation immutable, and extends the project's end date by
+        // daysChanged. Those live in buildVariationStatusUpdates and
+        // extendScheduleOnVariationApproval, which the PATCH and bulk routes
+        // call and this route did not — so flipping the string alone would
+        // have produced an approved variation with no approver and a schedule
+        // that silently never moved.
+        Object.assign(updates, buildVariationStatusUpdates(variation, "approved", null));
+        // approvedBy is a users FK and the signer is not a user, so the name
+        // lives in clientSignedName. Null here means "approved by the client",
+        // which clientSignedName then identifies.
+        updates.approvedBy = null;
+      }
 
       const updated = await storage.updateVariation(variation.id, updates as any);
+
+      if (action === "approve" && updated) {
+        // Fire the same side effect a builder-side approval fires. Not awaited
+        // into the response path: a schedule that fails to extend must not fail
+        // the client's signature, which is the part that cannot be retried.
+        extendScheduleOnVariationApproval(variation, updated).catch((err) =>
+          console.error("[portal] schedule extension failed after client signature:", err),
+        );
+      }
+
       res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
     } catch (error) {
       console.error("Error signing variation:", error);
@@ -22024,6 +22110,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send variation to client via email (with optional PDF)
+  /** The archived sends for a variation — what the activity feed is built from. */
+  app.get("/api/variations/:id/sends", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const { variationSends } = await import("@shared/schema");
+      const rows = await db
+        .select()
+        .from(variationSends)
+        .where(eq(variationSends.variationId, variation.id))
+        .orderBy(desc(variationSends.sentAt));
+      // The snapshot is large and the feed does not need it — only whether one
+      // exists, so the UI can offer the download.
+      res.json(
+        rows.map((r: any) => ({
+          id: r.id,
+          sentAt: r.sentAt,
+          sentById: r.sentById,
+          sentTo: r.sentTo,
+          subject: r.subject,
+          body: r.body,
+          hasPdf: !!r.sentPdfPath,
+          firstViewedAt: r.firstViewedAt,
+          lastViewedAt: r.lastViewedAt,
+          viewCount: r.viewCount,
+        })),
+      );
+    } catch (error) {
+      console.error("Error listing variation sends:", error);
+      res.status(500).json({ error: "Failed to load send history" });
+    }
+  });
+
+  /** The exact PDF a client was emailed. Never re-rendered — the variation can
+   *  have changed since, and a lookalike is not the document that was signed. */
+  app.get("/api/variations/:id/sends/:sendId/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const { variationSends } = await import("@shared/schema");
+      const [row] = await db
+        .select()
+        .from(variationSends)
+        .where(and(eq(variationSends.id, req.params.sendId), eq(variationSends.variationId, variation.id)))
+        .limit(1);
+      if (!row) return res.status(404).json({ error: "Send not found" });
+
+      const stored = (row as any).sentPdfPath as string | null;
+      // Sends made before the archive shipped have no stored PDF; the caller
+      // needs to be able to tell that apart from a broken path.
+      if (!stored) return res.status(404).json({ error: "No PDF was stored for this send" });
+
+      const oss = new ObjectStorageService();
+      // Stored as /objects/company/<cid>/uploads/<id>; the lookup wants the raw
+      // form. Same normalisation the proposals route does.
+      const normalisedPath = stored.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await oss.getObjectEntityFile(normalisedPath);
+      await oss.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Variation sent-pdf error:", error);
+      res.status(500).json({ error: "Failed to load the archived document" });
+    }
+  });
+
   app.post("/api/variations/:id/send", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const userId = req.user.id;
@@ -22045,7 +22198,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!token) {
         token = randomUUID();
         await storage.updateVariation(variation.id, { portalToken: token } as any);
+        (variation as any).portalToken = token;
       }
+
+      // ── Archive BEFORE emailing ──────────────────────────────────────────
+      // An email that goes out with no stored copy is the failure worth
+      // avoiding: the client then holds a document the system cannot produce.
+      // So this throws rather than warns, and the send fails loudly.
+      const { variationSends, VARIATION_SNAPSHOT_VERSION } = await import("@shared/schema");
+      // The archived PDF is written into a company-scoped storage path, so an
+      // absent company is a tenancy problem, not something to coerce past.
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ error: "No company context — cannot archive this send" });
+      }
+
+      let sentPdfPath: string | null = null;
+      if (pdfBase64) {
+        const oss = new ObjectStorageService();
+        sentPdfPath = await oss.uploadObjectEntity(
+          Buffer.from(pdfBase64, "base64"),
+          "application/pdf",
+          companyId,
+        );
+      }
+
+      // Freeze exactly what the portal would render, from the same builder the
+      // portal uses — a second implementation would drift, and then the stored
+      // copy would not be the document that was signed.
+      const snapshotPayload = await buildVariationPortalPayload(variation);
+
+      const [sendRow] = await db
+        .insert(variationSends)
+        .values({
+          variationId: variation.id,
+          companyId,
+          sentById: userId,
+          sentTo: [{ email: to }],
+          subject,
+          body,
+          contentSnapshot: {
+            version: VARIATION_SNAPSHOT_VERSION,
+            capturedAt: new Date().toISOString(),
+            payload: snapshotPayload,
+          },
+          sentPdfPath,
+        } as any)
+        .returning();
 
       const attachments = pdfBase64 ? [{
         filename: pdfFilename || `variation-${(variation as any).variationNumber || variation.id}.pdf`,
@@ -22078,7 +22277,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       await storage.updateVariation(variation.id, sendUpdates as any);
 
-      res.json({ success: true, status: sendUpdates.status ?? variation.status });
+      res.json({
+        success: true,
+        status: sendUpdates.status ?? variation.status,
+        sendId: (sendRow as any)?.id ?? null,
+        archived: !!sentPdfPath,
+      });
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });
