@@ -16,6 +16,7 @@ import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
+import { renderClientEmail } from "./services/clientEmailShell";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -22252,13 +22253,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
+      const settings = await storage.getCompanySettings(companyId);
       const fromName = settings?.companyName || "Morada";
+
+      // Branded as the BUILDER, not as Morada — this goes to a homeowner who has
+      // never heard of us. It also escapes the builder's message, which the old
+      // `body.replace(/\n/g, "<br>")` did not: an ampersand or an angle bracket
+      // in a note landed as broken markup.
+      const portalUrl = `${(process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "")}/portal/variations/${token}`;
+      const html = renderClientEmail({
+        brand: {
+          companyName: settings?.companyName,
+          logoUrl: (settings as any)?.logoUrl,
+          brandColor: (settings as any)?.brandColor,
+          phone: (settings as any)?.phone,
+          email: (settings as any)?.email,
+          address: (settings as any)?.address,
+        },
+        body,
+        cta: { href: portalUrl, label: "Review and approve" },
+        note: (variation as any).approvalDeadline
+          ? `Please respond by ${format(new Date((variation as any).approvalDeadline), "d MMMM yyyy")}.`
+          : null,
+        sender: {
+          name: [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") || null,
+          email: req.user?.email ?? null,
+        },
+      });
 
       await sendGenericEmail({
         to,
         subject,
-        html: body.replace(/\n/g, "<br>"),
+        html,
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId,
