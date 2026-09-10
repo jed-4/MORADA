@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
-import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit } from "@shared/money";
+import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -24918,13 +24918,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
+      const invoiceCompanyId = (invoice as any).companyId ?? getSessionCompanyId(req);
+      const settings = invoiceCompanyId
+        ? await storage.getCompanySettings(invoiceCompanyId)
+        : undefined;
       const fromName = settings?.companyName || "Morada";
+
+      // Same client-facing shell the variation send uses. This route had the
+      // byte-identical `body.replace(/\n/g, "<br>")` — no branding, no
+      // signature, and no escaping.
+      //
+      // No call to action: client invoices have no portal, so the attached PDF
+      // is the deliverable. The note carries what a client actually wants from
+      // an invoice email — what is owed and by when.
+      const dueDate = (invoice as any).dueDate;
+      const balanceCents = (invoice as any).balanceAmount ?? (invoice as any).totalAmount ?? 0;
+      const noteBits = [
+        balanceCents > 0 ? `${formatCents(balanceCents)} due` : null,
+        dueDate ? `by ${format(new Date(dueDate), "d MMMM yyyy")}` : null,
+      ].filter(Boolean);
+      const html = renderClientEmail({
+        brand: {
+          companyName: settings?.companyName,
+          logoUrl: (settings as any)?.logoUrl,
+          brandColor: (settings as any)?.brandColor,
+          phone: (settings as any)?.phone,
+          email: (settings as any)?.email,
+          address: (settings as any)?.address,
+        },
+        body,
+        cta: null,
+        note: noteBits.length ? noteBits.join(" ") + "." : null,
+        sender: {
+          name: [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") || null,
+          email: req.user?.email ?? null,
+        },
+      });
 
       await sendGenericEmail({
         to,
         subject,
-        html: body.replace(/\n/g, "<br>"),
+        html,
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId,

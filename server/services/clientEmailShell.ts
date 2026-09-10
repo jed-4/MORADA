@@ -104,9 +104,19 @@ export function renderClientEmail({ brand, body, cta, note, sender }: ClientEmai
          </table>`
       : "";
 
-  const noteHtml = note
-    ? `<p style="margin: 0 0 8px; text-align: center; color: #6B6561; font-size: 13px;">${escapeHtml(note)}</p>`
-    : "";
+  // Under a button the note is small print and centres with it. Standing alone
+  // — an invoice has no portal, so no button — centred small print reads as
+  // stranded, and the line is usually the most useful thing in the email
+  // ("$24,180.00 due by 24 September"). So it becomes a left-aligned callout.
+  const noteHtml = !note
+    ? ""
+    : ctaHtml
+      ? `<p style="margin: 0 0 8px; text-align: center; color: #6B6561; font-size: 13px;">${escapeHtml(note)}</p>`
+      : `<table role="presentation" style="width: 100%; margin: 22px 0 0;">
+           <tr><td style="padding: 12px 14px; background-color: #FAF9F7; border-left: 3px solid ${escapeHtml(accent)}; border-radius: 0 6px 6px 0;">
+             <p style="margin: 0; color: #2C2825; font-size: 14px; font-weight: 600;">${escapeHtml(note)}</p>
+           </td></tr>
+         </table>`;
 
   // The builder's own sign-off. Previously the message just stopped.
   const senderLine = sender?.name ? escapeHtml(sender.name) : null;
