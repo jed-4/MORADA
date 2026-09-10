@@ -6,6 +6,7 @@ import { Document, Page, Text, View } from "@react-pdf/renderer";
 // PDF read as blue-grey next to the portal's warm ink.
 import type { Variation, VariationItem } from "@shared/schema";
 import { format } from "date-fns";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
 import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
@@ -19,6 +20,9 @@ import {
   type VariationDocumentColumns,
 } from "@shared/variationDocumentColumns";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+
+// Registered at module load so the faces are ready before the first render.
+registerPdfFonts();
 
 interface Company {
   name: string;
@@ -171,7 +175,7 @@ export function VariationDocument({
   // Revised Total") doesn't push its own figure out of line with the others.
   const cardLabel = {
     fontSize: 7,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
     color: "#A39C94",
     textTransform: "uppercase" as const,
     textAlign: "center" as const,
@@ -185,7 +189,7 @@ export function VariationDocument({
         size="A4"
         style={{
           fontSize: 10,
-          fontFamily: "Helvetica",
+          fontFamily: PDF_FONT_FAMILY,
           backgroundColor: "#ffffff",
           paddingBottom: 60,
         }}
@@ -229,7 +233,7 @@ export function VariationDocument({
             <Text
               style={{
                 fontSize: 8,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                 color: "#B8853A",
                 textTransform: "uppercase",
                 letterSpacing: 0.5,
@@ -239,7 +243,7 @@ export function VariationDocument({
               Variation Order
             </Text>
             <Text
-              style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#2C2825", marginBottom: 3 }}
+              style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825", marginBottom: 3 }}
             >
               {variation.variationNumber}
             </Text>
@@ -261,7 +265,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: statusCfg.text,
                 }}
               >
@@ -286,7 +290,7 @@ export function VariationDocument({
             <View style={{ flex: 1, alignItems: "center" }}>
               <Text style={cardLabel}>Variation Amount</Text>
               <Text
-                style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#B8853A" }}
+                style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#B8853A" }}
               >
                 {formatAUD(totalCents / 100)}
               </Text>
@@ -338,7 +342,7 @@ export function VariationDocument({
                     {revisedIsAgreed ? "Revised Total" : "Proposed Revised Total"}
                   </Text>
                   <Text
-                    style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#2C2825" }}
+                    style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}
                   >
                     {formatAUD((revisedContractCents ?? 0) / 100)}
                   </Text>
@@ -357,7 +361,7 @@ export function VariationDocument({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
               color: "#A39C94",
               textTransform: "uppercase",
               letterSpacing: 0.5,
@@ -369,7 +373,7 @@ export function VariationDocument({
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
             <View style={{ width: "30%" }}>
               <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>Name</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
+              <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
                 {variation.name}
               </Text>
             </View>
@@ -378,7 +382,7 @@ export function VariationDocument({
                 <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>
                   Schedule Impact
                 </Text>
-                <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
+                <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
                   {variation.daysChanged > 0 ? "+" : ""}
                   {variation.daysChanged} working day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
                 </Text>
@@ -399,7 +403,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -418,7 +422,7 @@ export function VariationDocument({
                 }}
               >
                 {showTextCell && (
-                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
+                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, flex: 1 }}>
                     {columns.description ? "Description" : "Name"}
                   </Text>
                 )}
@@ -428,7 +432,7 @@ export function VariationDocument({
                     style={{
                       fontSize: 8,
                       color: thTextColor,
-                      fontFamily: "Helvetica-Bold",
+                      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                       width: col.width,
                       textAlign: col.align,
                       paddingLeft: col.align === "left" ? 6 : 0,
@@ -453,10 +457,10 @@ export function VariationDocument({
                       borderBottomColor: "#E9E9E7",
                     }}
                   >
-                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6B6561" }}>
+                    <Text style={{ fontSize: 8, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#6B6561" }}>
                       {group.label}
                     </Text>
-                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6B6561" }}>
+                    <Text style={{ fontSize: 8, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#6B6561" }}>
                       {formatAUD(group.totalIncCents / 100)}
                     </Text>
                   </View>
@@ -476,7 +480,7 @@ export function VariationDocument({
                       {showTextCell && (
                         <View style={{ flex: 1 }}>
                           {columns.name && line.name ? (
-                            <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#2C2825" }}>
+                            <Text style={{ fontSize: 9, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
                               {line.name}
                             </Text>
                           ) : null}
@@ -562,7 +566,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -598,7 +602,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -615,16 +619,16 @@ export function VariationDocument({
                   paddingVertical: 5,
                 }}
               >
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70 }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 70 }}>
                   Bill #
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, flex: 1 }}>
                   Supplier
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 60, textAlign: "right" }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 60, textAlign: "right" }}>
                   Date
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70, textAlign: "right" }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 70, textAlign: "right" }}>
                   Total
                 </Text>
               </View>
@@ -668,7 +672,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -700,7 +704,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -736,13 +740,13 @@ export function VariationDocument({
           <View style={{ alignItems: "flex-end", marginBottom: 16 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
               <Text style={{ fontSize: 9, color: "#6B6561" }}>Subtotal (ex. GST)</Text>
-              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: "Helvetica-Bold" }}>
+              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
                 {formatAUD(subtotalCents / 100)}
               </Text>
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
               <Text style={{ fontSize: 9, color: "#6B6561" }}>GST (10%)</Text>
-              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: "Helvetica-Bold" }}>
+              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
                 {formatAUD(gstCents / 100)}
               </Text>
             </View>
@@ -756,10 +760,10 @@ export function VariationDocument({
                 backgroundColor: accentBg,
               }}
             >
-              <Text style={{ fontSize: 10, color: brandColor, fontFamily: "Helvetica-Bold" }}>
+              <Text style={{ fontSize: 10, color: brandColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
                 Variation Total (inc. GST)
               </Text>
-              <Text style={{ fontSize: 12, color: brandColor, fontFamily: "Helvetica-Bold" }}>
+              <Text style={{ fontSize: 12, color: brandColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
                 {formatAUD(totalCents / 100)}
               </Text>
             </View>
@@ -786,7 +790,7 @@ export function VariationDocument({
               <Text
                 style={{
                   fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   color: "#A39C94",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
@@ -805,7 +809,7 @@ export function VariationDocument({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
               color: "#A39C94",
               textTransform: "uppercase",
               letterSpacing: 0.5,
@@ -829,7 +833,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   color: "#A39C94",
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   marginBottom: 10,
                 }}
               >
@@ -878,7 +882,7 @@ export function VariationDocument({
                 style={{
                   fontSize: 8,
                   color: "#A39C94",
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
                   marginBottom: 10,
                 }}
               >
