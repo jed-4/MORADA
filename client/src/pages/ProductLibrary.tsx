@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { ProductTaxonomyDialog } from "@/components/ProductTaxonomyDialog";
+import { ProductGroupTree, descendantIds, ALL, UNFILED } from "@/components/ProductGroupTree";
 import { formatCents } from "@shared/money";
 
 interface ProductImage { id: number; filePath: string; fileName: string | null }
@@ -75,8 +76,12 @@ export default function ProductLibrary() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [filterGroup, setFilterGroup] = useState("all");
   const [filterTag, setFilterTag] = useState("all");
+  // Where you are in the tree. ALL or UNFILED are pseudo-nodes; anything else is
+  // a group id.
+  const [branch, setBranch] = useState<string>(ALL);
+  const [includeSub, setIncludeSub] = useState(true);
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<"category" | "none">("category");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -107,18 +112,38 @@ export default function ProductLibrary() {
   const gridTemplate = `32px ${gridCols.gridTemplate} 1fr 72px`;
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  /** Counts for the tree are of ALL products, not the filtered set — a count
+   *  that moved as you typed would make the tree unreadable. */
+  const countByGroup = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of products) {
+      if (!p.groupId) continue;
+      m.set(p.groupId, (m.get(p.groupId) ?? 0) + 1);
+    }
+    return m;
+  }, [products]);
+  const unfiledCount = useMemo(() => products.filter((p) => !p.groupId).length, [products]);
+
+  /** The branch, resolved to the set of group ids it covers. */
+  const branchIds = useMemo(() => {
+    if (branch === ALL || branch === UNFILED) return null;
+    return includeSub ? descendantIds(groups_, branch) : new Set([branch]);
+  }, [branch, includeSub, groups_]);
+
   const filtered = useMemo(() => {
     const t = search.trim().toLowerCase();
     return products.filter((p) => {
-      if (filterGroup !== "all") {
-        if ((p.groupId ?? UNGROUPED) !== filterGroup) return false;
+      if (branch === UNFILED) {
+        if (p.groupId) return false;
+      } else if (branchIds) {
+        if (!p.groupId || !branchIds.has(p.groupId)) return false;
       }
       if (filterTag !== "all" && !(p.tagIds ?? []).includes(filterTag)) return false;
       if (!t) return true;
       return [p.name, p.brand, p.sku, p.subcategory, p.description]
         .some((f) => (f ?? "").toLowerCase().includes(t));
     });
-  }, [products, search, filterGroup, filterTag]);
+  }, [products, search, branch, branchIds, filterTag]);
 
   const groups = useMemo(() => {
     if (groupBy === "none") {
@@ -141,8 +166,20 @@ export default function ProductLibrary() {
   }, [filtered, groupBy, groupById]);
 
   const allExpanded = groups.every((g) => !collapsed.has(g.id));
-  const activeFilterCount =
-    (filterGroup !== "all" ? 1 : 0) + (filterTag !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0);
+  const activeFilterCount = (filterTag !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0);
+
+  /** "Include subgroups" is meaningless on a leaf — only offer it where it does
+   *  something. */
+  const branchHasChildren = useMemo(
+    () => groups_.some((g) => g.parentId === branch),
+    [groups_, branch],
+  );
+
+  /** The branch's own label, for the header above the grid. */
+  const branchLabel =
+    branch === ALL ? "All products" :
+    branch === UNFILED ? "Unfiled" :
+    groupLabel(branch);
 
   const createMutation = useMutation({
     mutationFn: (groupId?: string | null) =>
@@ -311,21 +348,6 @@ export default function ProductLibrary() {
 
             <PopoverContent align="start" className="w-56 p-3 space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Group</Label>
-                <Select value={filterGroup} onValueChange={setFilterGroup}>
-                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-group">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">All groups</SelectItem>
-                    {groups_.map((g) => (
-                      <SelectItem key={g.id} value={g.id} className="text-xs">{groupLabel(g.id)}</SelectItem>
-                    ))}
-                    <SelectItem value={UNGROUPED} className="text-xs">Unfiled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Tag</Label>
                 <Select value={filterTag} onValueChange={setFilterTag}>
                   <SelectTrigger className="h-7 text-xs" data-testid="select-filter-tag">
@@ -356,7 +378,7 @@ export default function ProductLibrary() {
                   variant="ghost"
                   size="sm"
                   className="h-6 w-full text-xs"
-                  onClick={() => { setFilterGroup("all"); setFilterTag("all"); setGroupBy("category"); }}
+                  onClick={() => { setFilterTag("all"); setGroupBy("category"); }}
                   data-testid="button-clear-filters"
                 >
                   Clear filters
@@ -380,7 +402,12 @@ export default function ProductLibrary() {
         <Button
           size="sm"
           className="h-6 px-2 text-xs flex-shrink-0"
-          onClick={() => { setCreating(true); createMutation.mutate(null); }}
+          onClick={() => {
+            setCreating(true);
+            // Where you are is where it lands — otherwise every new product goes
+            // to Unfiled and has to be moved.
+            createMutation.mutate(branch === ALL || branch === UNFILED ? null : branch);
+          }}
           disabled={creating}
           data-testid="button-add-product"
         >
@@ -391,6 +418,49 @@ export default function ProductLibrary() {
       </div>
 
       <ProductTaxonomyDialog open={taxonomyOpen} onOpenChange={setTaxonomyOpen} />
+
+      <div className="flex-1 min-h-0 flex">
+        {/* The hierarchy, browsable. Hidden on narrow screens, where search and
+            the filter popover are the way through. */}
+        <aside
+          className="hidden md:flex w-56 flex-shrink-0 flex-col border-r border-border overflow-y-auto px-2 py-1"
+          data-testid="product-library-tree-pane"
+        >
+          <ProductGroupTree
+            groups={groups_}
+            countByGroup={countByGroup}
+            unfiledCount={unfiledCount}
+            totalCount={products.length}
+            selected={branch}
+            onSelect={setBranch}
+            expanded={treeExpanded}
+            onToggle={(id) => setTreeExpanded((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })}
+          />
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Where you are, and whether you are seeing what sits beneath it. */}
+          <div className="h-8 flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
+            <span className="text-xs font-medium truncate" data-testid="text-branch-label">{branchLabel}</span>
+            <span className="text-[10px] text-muted-foreground flex-shrink-0">
+              {filtered.length} {filtered.length === 1 ? "product" : "products"}
+            </span>
+            {branch !== ALL && branch !== UNFILED && branchHasChildren && (
+              <label className="ml-auto flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer flex-shrink-0">
+                <Checkbox
+                  checked={includeSub}
+                  onCheckedChange={(v) => setIncludeSub(v === true)}
+                  aria-label="Include subgroups"
+                  data-testid="checkbox-include-subgroups"
+                />
+                Include subgroups
+              </label>
+            )}
+          </div>
 
       {/* Body — a card per group, exactly as the price list draws them. */}
       <div className="flex-1 min-h-0 overflow-auto px-3 py-3 space-y-3">
@@ -405,25 +475,37 @@ export default function ProductLibrary() {
             variant="inline"
             icon={Package}
             title={
-              search || filterGroup !== "all" || filterTag !== "all"
+              search || filterTag !== "all"
                 ? "No products match your filters."
-                : groups_.length === 0
-                  ? "Start with a group"
-                  : "No products yet"
+                : branch !== ALL
+                  ? "Nothing filed here yet"
+                  : groups_.length === 0
+                    ? "Start with a group"
+                    : "No products yet"
             }
             description={
-              search || filterGroup !== "all" || filterTag !== "all"
+              search || filterTag !== "all"
                 ? undefined
-                : groups_.length === 0
-                  ? "A group is where products live — “Electrical”, then “Exhaust fans” under it. Tags come next: tag every Colorbond colour once and a whole selection can take the set in one go."
-                  : "Add one here, or save an option to the library from any selection."
+                : branch !== ALL
+                  ? "Add a product here, or pick another group on the left."
+                  : groups_.length === 0
+                    ? "A group is where products live — “Electrical”, then “Exhaust fans” under it. Tags come next: tag every Colorbond colour once and a whole selection can take the set in one go."
+                    : "Add one here, or save an option to the library from any selection."
             }
             action={
-              search || filterGroup !== "all" || filterTag !== "all"
+              search || filterTag !== "all"
                 ? undefined
-                : groups_.length === 0
+                : groups_.length === 0 && branch === ALL
                   ? { label: "Groups & tags", onClick: () => setTaxonomyOpen(true), icon: FolderTree }
-                  : { label: "Add Product", onClick: () => { setCreating(true); createMutation.mutate(null); }, icon: Plus }
+                  : {
+                      label: "Add Product",
+                      // Adding while a branch is selected files it there.
+                      onClick: () => {
+                        setCreating(true);
+                        createMutation.mutate(branch === ALL || branch === UNFILED ? null : branch);
+                      },
+                      icon: Plus,
+                    }
             }
             className="py-16"
           />
@@ -572,6 +654,8 @@ export default function ProductLibrary() {
             );
           })
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
