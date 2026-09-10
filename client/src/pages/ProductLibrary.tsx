@@ -367,19 +367,16 @@ export default function ProductLibrary() {
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setTaxonomyOpen(true)}
-              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
-              data-testid="button-manage-taxonomy"
-              aria-label="Groups and tags"
-            >
-              <FolderTree className="h-3 w-3" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Groups &amp; tags</TooltipContent>
-        </Tooltip>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs gap-1"
+          onClick={() => setTaxonomyOpen(true)}
+          data-testid="button-manage-taxonomy"
+        >
+          <FolderTree className="h-3 w-3" />
+          Groups &amp; tags
+        </Button>
         <Button
           size="sm"
           className="h-6 px-2 text-xs flex-shrink-0"
@@ -407,16 +404,26 @@ export default function ProductLibrary() {
           <EmptyState
             variant="inline"
             icon={Package}
-            title={search || filterGroup !== "all" || filterTag !== "all" ? "No products match your filters." : "No products yet"}
+            title={
+              search || filterGroup !== "all" || filterTag !== "all"
+                ? "No products match your filters."
+                : groups_.length === 0
+                  ? "Start with a group"
+                  : "No products yet"
+            }
             description={
               search || filterGroup !== "all" || filterTag !== "all"
                 ? undefined
-                : "Add one here, or save an option to the library from any selection."
+                : groups_.length === 0
+                  ? "A group is where products live — “Electrical”, then “Exhaust fans” under it. Tags come next: tag every Colorbond colour once and a whole selection can take the set in one go."
+                  : "Add one here, or save an option to the library from any selection."
             }
             action={
               search || filterGroup !== "all" || filterTag !== "all"
                 ? undefined
-                : { label: "Add Product", onClick: () => { setCreating(true); createMutation.mutate(null); }, icon: Plus }
+                : groups_.length === 0
+                  ? { label: "Groups & tags", onClick: () => setTaxonomyOpen(true), icon: FolderTree }
+                  : { label: "Add Product", onClick: () => { setCreating(true); createMutation.mutate(null); }, icon: Plus }
             }
             className="py-16"
           />
