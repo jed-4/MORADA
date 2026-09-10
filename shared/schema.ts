@@ -2431,6 +2431,10 @@ export const variations = pgTable("variations", {
   clientSignedUserAgent: text("client_signed_user_agent"), // Audit: request user-agent at portal sign time
   builderSignedName: text("builder_signed_name"),
   builderSignedDate: timestamp("builder_signed_date"),
+  // Which archived send the client's signature belongs to. Null for anything
+  // signed before the archive shipped, and for variations never sent through
+  // the portal. See variationSends below.
+  signedSendId: varchar("signed_send_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2467,6 +2471,56 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
 
 export type InsertVariation = z.infer<typeof insertVariationSchema>;
 export type Variation = typeof variations.$inferSelect;
+
+/**
+ * One row per time a variation was emailed to a client — the archive.
+ *
+ * A row per send rather than columns on `variations`, which is where proposals
+ * put the equivalent (0069). Columns lose the first send the moment you send
+ * twice, and for a document someone signs that history IS the record: send v1,
+ * revise, send v2, they sign v2. The signature has to name which document it
+ * belongs to, and v1 has to stay provable.
+ *
+ * `sentTo`, `subject` and `body` are the only record of the message anywhere —
+ * `sendGenericEmail` persists nothing, across all eighteen of its call sites.
+ */
+export const variationSends = pgTable("variation_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull(),
+
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  sentById: varchar("sent_by_id").references(() => users.id, { onDelete: "set null" }),
+
+  /** Frozen at send time — the contact may be edited or deleted later. */
+  sentTo: jsonb("sent_to").$type<Array<{ name?: string; email: string }>>().notNull().default([]),
+  subject: text("subject"),
+  body: text("body"),
+
+  /** The document as it went out. `contentSnapshot` carries a `version` key —
+   *  proposals already needed a redactSnapshot helper "whose shape varies by
+   *  which route wrote it", which is the lesson not to learn twice. */
+  contentSnapshot: jsonb("content_snapshot"),
+  /** Object-storage path of the exact PDF emailed. Served back verbatim; never
+   *  re-rendered, because the variation can change afterwards. */
+  sentPdfPath: text("sent_pdf_path"),
+
+  /** Per-send engagement. `variations.portalViewedAt` is first-open only and
+   *  cannot tell one send from the next. */
+  firstViewedAt: timestamp("first_viewed_at"),
+  lastViewedAt: timestamp("last_viewed_at"),
+  viewCount: integer("view_count").notNull().default(0),
+});
+
+export const insertVariationSendSchema = createInsertSchema(variationSends).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertVariationSend = z.infer<typeof insertVariationSendSchema>;
+export type VariationSend = typeof variationSends.$inferSelect;
+
+/** Shape of `variationSends.contentSnapshot`. Versioned from day one. */
+export const VARIATION_SNAPSHOT_VERSION = 1 as const;
 
 // Variation Items (line items for variations)
 export const variationItems = pgTable("variation_items", {
