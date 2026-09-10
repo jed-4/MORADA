@@ -1,4 +1,5 @@
 import { View, Text, Image } from "@react-pdf/renderer";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "./registerPdfFonts";
 import { tintOnWhite } from "./pdfColor";
 
 interface DocProposalInnerHeaderProps {
@@ -10,6 +11,10 @@ interface DocProposalInnerHeaderProps {
   brandColor: string;
   docStyle: "style1" | "style2";
 }
+
+// Idempotent — the shared chrome is used by every document, so registering
+// here means none of them can render in Helvetica by omission.
+registerPdfFonts();
 
 export function DocProposalInnerHeader({
   companyName,
@@ -58,7 +63,7 @@ export function DocProposalInnerHeader({
           <Text
             style={{
               fontSize: 10,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
               color: "#111827",
             }}
           >

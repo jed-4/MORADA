@@ -21,6 +21,7 @@ import { DocumentHeader } from "@/components/detail/DocumentHeader";
 import { MoneySummary, type MoneyRow } from "@/components/detail/MoneySummary";
 import { AddLineRow } from "@/components/detail/AddLineRow";
 import { SigningStatusStrip } from "@/components/variations/SigningStatusStrip";
+import { VariationActivityFeed } from "@/components/variations/VariationActivityFeed";
 import { 
   MoreVertical,
   ArrowLeft, 
@@ -1058,6 +1059,22 @@ export default function VariationDetail() {
   // Canonical AUD formatter (shared/money.ts), fed dollars from the helpers above.
   const formatCurrency = (amount: number) => formatCents(dollarsToCents(amount));
 
+  /** A signed variation is finished as a document: no preview, and the archive
+   *  stands in for it. Keyed on the signature rather than the status, because a
+   *  rejection is also signed. */
+  const isSigned = !!(variation as any)?.clientSignedName;
+
+  /** Send history — also what the activity feed reads. */
+  const { data: variationSends = [] } = useQuery<any[]>({
+    queryKey: ["/api/variations", effectiveVariationId, "sends"],
+    enabled: !!effectiveVariationId && isEditMode,
+  });
+  /** The send the signature belongs to, falling back to the most recent for
+   *  anything signed before signed_send_id existed. */
+  const signedSend =
+    variationSends.find((s: any) => s.id === (variation as any)?.signedSendId) ??
+    variationSends[0];
+
   /** The summary rows.
    *
    *  Component rows use `!== 0`, not `> 0`. A vendor credit makes the bills
@@ -1490,7 +1507,10 @@ export default function VariationDetail() {
           labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
-          brandColor={companySettings?.brandColor || "#6d28d9"}
+          /* Morada plum. The fallback used to differ per call site — violet
+             here, Tailwind blue inside VariationDocument, Figma lavender in the
+             portal — so an unbranded company got a different colour in each. */
+          brandColor={companySettings?.brandColor || "#87749A"}
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}
@@ -1621,8 +1641,13 @@ export default function VariationDetail() {
             {isEditMode && variationLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
             {/* Preview sits beside Save rather than in the overflow menu: it is
                 the thing you reach for repeatedly while drafting, not a
-                once-per-document action. */}
-            {isEditMode && (
+                once-per-document action.
+
+                It disappears once the client has signed. A preview renders the
+                variation AS IT IS NOW, which is not necessarily what was
+                signed — so after a signature it is not merely redundant, it is
+                misleading. The archived document takes its place below. */}
+            {isEditMode && !isSigned && (
               <button
                 type="button"
                 onClick={() => setPreviewOpen(true)}
@@ -1797,6 +1822,67 @@ export default function VariationDetail() {
                         clientSignedDate={(variation as any).clientSignedDate}
                         status={variation?.status}
                         rejectionReason={(variation as any).rejectionReason}
+                      />
+                    </DocumentSection>
+
+                    {/* The signed document. Its own read-only slot rather than
+                        the attachments list — that list is for files a person
+                        chose to add and can delete, and the delete button is
+                        right there. An agreement the client signed should not
+                        sit one click from removal beside a site photo. */}
+                    {isSigned && signedSend && (
+                      <DocumentSection
+                        title="Signed Document"
+                        role="client"
+                        collapsible={false}
+                        data-testid="section-signed-document"
+                      >
+                        <div className="px-3.5 py-3 flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-body-sm font-medium text-foreground truncate">
+                              {`Variation ${form.watch("variationNumber") || ""}`.trim()} — as signed
+                            </p>
+                            <p className="doc-caption">
+                              Sent {format(new Date(signedSend.sentAt), "d MMM yyyy")}
+                              {(variation as any).clientSignedName
+                                ? ` · signed by ${(variation as any).clientSignedName}`
+                                : ""}
+                            </p>
+                          </div>
+                          {signedSend.hasPdf ? (
+                            <a
+                              href={`/api/variations/${effectiveVariationId}/sends/${signedSend.id}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="h-7 px-2.5 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 flex-shrink-0"
+                              data-testid="link-signed-document"
+                            >
+                              <Download className="h-3 w-3" />
+                              Download
+                            </a>
+                          ) : (
+                            /* Signed before the archive shipped, so there is no
+                               stored file. Say so rather than offer a download
+                               that 404s. */
+                            <span className="doc-caption flex-shrink-0" data-testid="text-no-archived-pdf">
+                              No copy archived
+                            </span>
+                          )}
+                        </div>
+                      </DocumentSection>
+                    )}
+
+                    <DocumentSection
+                      title="Activity"
+                      role="meta"
+                      divider={false}
+                      defaultOpen={isSigned}
+                      data-testid="section-activity"
+                    >
+                      <VariationActivityFeed
+                        variation={variation}
+                        variationId={effectiveVariationId!}
                       />
                     </DocumentSection>
                   </DocumentCard>
@@ -2698,7 +2784,7 @@ export default function VariationDetail() {
               labourTotalCents={dollarsToCents(calculateLabourTotal())}
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
-              brandColor={companySettings?.brandColor || "#6d28d9"}
+              brandColor={companySettings?.brandColor || "#87749A"}
               documentStyle={varDocStyle}
               logoUrl={varLogoUrl}
               originalContractCents={originalContractCents}
@@ -2744,7 +2830,7 @@ export default function VariationDetail() {
           labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
-          brandColor={companySettings?.brandColor || "#6d28d9"}
+          brandColor={companySettings?.brandColor || "#87749A"}
           documentStyle={varDocStyle}
           logoUrl={varLogoUrl}
           originalContractCents={originalContractCents}

@@ -1,10 +1,15 @@
 import { View, Text } from "@react-pdf/renderer";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "./registerPdfFonts";
 
 interface DocFooterProps {
   companyName?: string;
   brandColor: string;
   docStyle: "style1" | "style2";
 }
+
+// Idempotent — the shared chrome is used by every document, so registering
+// here means none of them can render in Helvetica by omission.
+registerPdfFonts();
 
 export function DocFooter({ companyName, brandColor, docStyle }: DocFooterProps) {
   const isS2 = docStyle === "style2";
@@ -31,7 +36,7 @@ export function DocFooter({ companyName, brandColor, docStyle }: DocFooterProps)
           fontSize: 9,
           color: isS2 ? brandColor : "#9ca3af",
           flex: 1,
-          fontFamily: "Helvetica",
+          fontFamily: PDF_FONT_FAMILY,
         }}
       >
         {companyName || ""}

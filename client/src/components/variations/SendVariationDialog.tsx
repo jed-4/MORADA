@@ -68,7 +68,7 @@ export function SendVariationDialog({
   labourTotalCents = 0,
   company,
   project,
-  brandColor = "#6d28d9",
+  brandColor = "#87749A",
   documentStyle = "style1",
   logoUrl,
   originalContractCents,

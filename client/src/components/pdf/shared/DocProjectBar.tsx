@@ -1,4 +1,5 @@
 import { View, Text } from "@react-pdf/renderer";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "./registerPdfFonts";
 import { tintOnWhite } from "./pdfColor";
 
 interface DocProjectBarProps {
@@ -10,6 +11,10 @@ interface DocProjectBarProps {
   brandColor: string;
   docStyle: "style1" | "style2";
 }
+
+// Idempotent — the shared chrome is used by every document, so registering
+// here means none of them can render in Helvetica by omission.
+registerPdfFonts();
 
 export function DocProjectBar({
   clientName,
@@ -48,7 +53,7 @@ export function DocProjectBar({
           <Text
             style={{
               fontSize: 7,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
               color: labelColor,
               textTransform: "uppercase",
               letterSpacing: 0.5,
@@ -58,7 +63,7 @@ export function DocProjectBar({
             Client
           </Text>
           {clientName ? (
-            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+            <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#111827" }}>
               {clientName}
             </Text>
           ) : null}
@@ -76,7 +81,7 @@ export function DocProjectBar({
           <Text
             style={{
               fontSize: 7,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
               color: labelColor,
               textTransform: "uppercase",
               letterSpacing: 0.5,
@@ -86,7 +91,7 @@ export function DocProjectBar({
             Project
           </Text>
           {projectName ? (
-            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+            <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#111827" }}>
               {projectName}
             </Text>
           ) : null}
