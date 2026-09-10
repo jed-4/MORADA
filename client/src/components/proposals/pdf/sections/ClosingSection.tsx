@@ -1,6 +1,6 @@
 import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { sharedSectionStyle, htmlToBlocks } from './RichTextBlocks';
+import { sharedSectionStyle, htmlToBlocks, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
@@ -61,6 +61,7 @@ export function ClosingSection({
           <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
             {section.name || 'Closing'}
           </Text>
+          <SectionIntro section={section} />
           {blocks.length > 0 ? (
             <View style={styles.body}>
               {blocks.map((b, i) => (

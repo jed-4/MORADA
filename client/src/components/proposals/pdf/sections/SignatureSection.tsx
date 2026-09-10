@@ -1,6 +1,6 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
-import { sharedSectionStyle } from './RichTextBlocks';
+import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
@@ -96,6 +96,7 @@ export function SignatureSection({
           <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Signature'}
           </Text>
+          <SectionIntro section={section} />
 
           <View style={styles.row}>
             <View style={styles.box}>
