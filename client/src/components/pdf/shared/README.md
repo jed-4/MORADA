@@ -248,15 +248,13 @@ Currency still fits at the floor: tightest result ~40pt, and `$46,062.50` needs
                paddingHorizontal: 10, paddingVertical: 6 }}>
 ```
 
-Two honest answers:
-
-- **It does not repeat on page breaks.** There is no `fixed` on it. The only
-  `fixed` element in the file is `PdfDocFooter`. On a table that spans pages the
-  second page has no header. **This is a known gap, not a decision** — I hit it
-  on the three-page kitchen-sink case and left it. If you solve it for the
-  proposal, the fix belongs here rather than in your document.
-- **It prints once per table, never per group.** That's the fix for the problem
-  you described. Groups are rendered inside the same panel under one header.
+- **It repeats at the top of every page the table spans**, via `fixed` on the
+  header View, controlled by `repeatHeader` (default `true`). A second page of
+  unlabelled figures makes the reader page back to find out which column is the
+  price. Turn it off for a short table sitting near a page boundary, where
+  @react-pdf can otherwise draw the header twice on one page.
+- **It prints once per table, never per group.** Groups render inside the same
+  panel under one header.
 
 ### Row separators
 
@@ -271,9 +269,9 @@ backgroundColor: idx % 2 === 1 ? PDF_COLORS.surfaceSubtle : PDF_COLORS.surface,
 
 1pt is the thinnest @react-pdf reliably draws; 0.5 renders inconsistently.
 
-Note the zebra index is **per group**, not continuous across the table — each
-group restarts at 0. Nobody has complained, but it's arbitrary rather than
-considered.
+Zebra runs **continuously down the table**, not per group. Restarting it at each
+group put two shaded rows back to back across a boundary, which reads as one
+tall row rather than two.
 
 ### Row padding and height
 
@@ -331,19 +329,39 @@ look like six tables.
 The group total sits **right-aligned on the heading row itself**, not as a
 separate subtotal row underneath. That buys a row per group and reads better.
 
-### Three things it does not do
+### Nesting
 
-- **No nesting.** `PdfTableGroup` is a flat `{ key, label, total, rows }`. There
-  is no concept of a child group and therefore no visual distinction. If the
-  proposal needs two levels, that's new work in this file — and I'd rather it
-  landed here than in your document.
-- **It prints a total whenever the caller supplies one**, and
-  `VariationDocument.tsx:420` supplies one unconditionally. **So the variation
-  has exactly the problem you described** — a subtotal on single-line groups.
-  The primitive already supports the fix (`total` is optional; omit it), but no
-  document does the earns-its-place test yet. Good candidate to fix once, here.
-- **There is no subtotal label.** The row is `LABEL … $figure`, so the wording
-  question doesn't arise. If you add a labelled subtotal, you're defining it.
+`PdfTableGroup` takes an optional `children: PdfTableGroup<T>[]`. A sub-group is
+distinguished from its parent by exactly two things:
+
+```
+LABOUR                                      ← depth 0: grey fill, uppercase,
+  Labour line 1                                tracked, muted ink
+SUBCONTRACTOR                    $9,000.00
+  Sub direct line 1
+    Electrical                   $4,000.00  ← depth 1: no fill, title case,
+      Elec line 1                              ink, indented 12pt
+```
+
+`paddingLeft` is `10 + depth * 12`. Past depth 1 it keeps indenting but stops
+getting visually distinct, which is a reasonable place for a document to stop.
+
+### Subtotals earn their place
+
+A group total prints only when the reader can't do the sum by eye:
+
+```ts
+const showsTotal = (g) =>
+  g.total != null &&
+  (g.showTotal ?? (g.rows.length > 1 || (g.children?.length ?? 0) > 0));
+```
+
+So a one-line group prints no subtotal — it would just repeat the figure
+directly beneath it — but a parent of sub-groups always does, because what it
+sums is spread across headings. `showTotal` overrides both ways.
+
+**There is no subtotal label.** The row is `LABEL … $figure`, so the wording
+question doesn't arise. If you add a labelled subtotal, you're defining it.
 
 Grouping is switched off with `grouped={false}`, which renders rows with no
 heading rows at all. Important: "off" means the caller should pass **one flat
@@ -486,13 +504,10 @@ Node. The separate tsconfig only flips JSX to the automatic runtime.
 
 ## Known gaps, collected
 
-Worth fixing in the kit rather than working around in one document:
-
-1. Table header **doesn't repeat across page breaks**.
-2. **No nested groups** — flat only.
-3. Group subtotals print **whenever supplied**; no earns-its-place rule, and the
-   variation supplies one unconditionally.
-4. Zebra index restarts per group rather than running continuously.
-5. `formatAUD` is duplicated in every document instead of living here.
-6. `DocBrandedHeader` / `DocFooter` / `DocProposalInnerHeader` only exist for the
+1. `formatAUD` is duplicated in every document instead of living here.
+2. `DocBrandedHeader` / `DocFooter` / `DocProposalInnerHeader` only exist for the
    proposal; moving it onto `PdfHeroBand` + `PdfDocFooter` retires all three.
+
+Four earlier gaps — no repeating header, no nesting, subtotals on single-line
+groups, and per-group zebra — were closed in the kit rather than worked around
+per document. All four are covered by `server/__tests__/pdf-documents.test.ts`.
