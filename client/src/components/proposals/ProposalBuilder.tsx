@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/hooks/use-auth';
-import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -44,6 +44,31 @@ const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
 /** Sentinel for the built-in structure, which is not a saved template. */
 const STANDARD_STRUCTURE = '__standard__';
+
+/**
+ * Sections whose whole body is prose. The generic "Intro text" field earns its
+ * place above a table — a lead-in over the estimate or the payment schedule —
+ * but above a cover letter it is only the first paragraph with extra steps, in
+ * a second editor that formats differently from the one below it. These two get
+ * one field; existing intro text is offered for merging rather than stranded.
+ */
+const PROSE_BODY_KEY: Record<string, string> = {
+  cover_letter: 'letterText',
+  scope: 'scopeText',
+};
+
+/** True when rich text holds something other than empty markup. */
+function hasRichText(html: string | null | undefined): boolean {
+  if (!html) return false;
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
@@ -160,6 +185,33 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
+  // Prose-only sections hide the intro editor. Anything already in it is
+  // surfaced for merging instead of quietly becoming uneditable.
+  const proseBodyKey = PROSE_BODY_KEY[section.sectionType || ""];
+  const [bodyEpoch, setBodyEpoch] = useState(0);
+  const strandedIntro =
+    !!proseBodyKey &&
+    (hasRichText(localDescriptionHtml) || !!localDescriptionText?.trim());
+
+  const mergeIntroIntoBody = () => {
+    if (!proseBodyKey) return;
+    const intro = hasRichText(localDescriptionHtml)
+      ? localDescriptionHtml
+      : localDescriptionText?.trim()
+      ? `<p>${escapeHtml(localDescriptionText.trim())}</p>`
+      : "";
+    const body = String((localContent as Record<string, unknown>)[proseBodyKey] ?? "");
+    setLocalContent({ ...localContent, [proseBodyKey]: `${intro}${body}` });
+    setLocalDescriptionHtml("");
+    setLocalDescriptionText("");
+    // RichTextEditor only pushes a new `content` prop into TipTap when its
+    // isInternalChange guard happens to be clear, so a programmatic rewrite can
+    // be swallowed — the text persists but the box still shows the old copy,
+    // which reads as "the merge deleted my letter". Bumping the key remounts
+    // the editor on the new content instead of hoping the sync lands.
+    setBodyEpoch((n) => n + 1);
+  };
+
   return (
     <div ref={setNodeRef} style={style} className="group/section">
       <AccordionItem
@@ -218,31 +270,57 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               />
             </div>
 
-            <div className="space-y-2">
-              {/* Named for where it lands. It used to be "Description", which
-                  said nothing about what it does — and on the Estimate section
-                  sat directly above a second field with the identical label. */}
-              <Label htmlFor={`section-description-${section.id}`}>Intro text</Label>
-              <p className="text-xs text-muted-foreground">
-                Appears under the section heading in the document.
-              </p>
-              <RichTextEditor
-                content={localDescriptionHtml}
-                onChange={(html, text) => {
-                  setLocalDescriptionHtml(html);
-                  setLocalDescriptionText(text);
-                }}
-                placeholder="Optional — a line or two introducing this section"
-                placeholders={PROPOSAL_PLACEHOLDERS}
-                data-testid={`richtext-section-description-${section.id}`}
-              />
-            </div>
+            {!proseBodyKey && (
+              <div className="space-y-2">
+                {/* Named for where it lands. It used to be "Description", which
+                    said nothing about what it does — and on the Estimate section
+                    sat directly above a second field with the identical label. */}
+                <Label htmlFor={`section-description-${section.id}`}>Intro text</Label>
+                <p className="text-xs text-muted-foreground">
+                  Appears under the section heading in the document.
+                </p>
+                <RichTextEditor
+                  content={localDescriptionHtml}
+                  onChange={(html, text) => {
+                    setLocalDescriptionHtml(html);
+                    setLocalDescriptionText(text);
+                  }}
+                  placeholder="Optional — a line or two introducing this section"
+                  placeholders={PROPOSAL_PLACEHOLDERS}
+                  data-testid={`richtext-section-description-${section.id}`}
+                />
+              </div>
+            )}
+
+            {strandedIntro && (
+              <div className="rounded-md border border-amber/40 bg-amber-light p-2.5 space-y-2">
+                <p className="text-xs text-foreground">
+                  This section has leftover intro text from when it had two separate
+                  fields. It still prints above the body.
+                </p>
+                <div className="rounded border bg-card px-2 py-1.5 text-xs text-muted-foreground max-h-24 overflow-auto">
+                  {localDescriptionText?.trim() ||
+                    localDescriptionHtml.replace(/<[^>]*>/g, " ").trim()}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={mergeIntroIntoBody}
+                  data-testid={`button-merge-intro-${section.id}`}
+                >
+                  <ArrowRight className="w-3 h-3 mr-1" />
+                  Move to the top of the {section.sectionType === "scope" ? "scope" : "letter"}
+                </Button>
+              </div>
+            )}
 
             {/* Section-specific content editors */}
             {section.sectionType === "cover_letter" && (
               <div className="space-y-2">
                 <Label>Letter Content</Label>
                 <RichTextEditor
+                  key={`letter-${bodyEpoch}`}
                   content={localContent.letterText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, letterText: html })}
                   placeholder="Enter your cover letter text..."
@@ -255,6 +333,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               <div className="space-y-2">
                 <Label>Scope of Work</Label>
                 <RichTextEditor
+                  key={`scope-${bodyEpoch}`}
                   content={localContent.scopeText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, scopeText: html })}
                   placeholder="Describe the scope of work..."
@@ -1029,24 +1108,6 @@ export function ProposalBuilder({
     onSectionsReorder(reorderedSections);
   }
 
-  const proposalDocument = (
-    <ProposalDocument
-      proposal={proposal}
-      sections={sections}
-      project={project}
-      client={client}
-      companyLogo={companyLogo}
-      companyName={companyName}
-      companyPhone={companyPhone}
-      primaryColor={primaryColor}
-      brandColor={brandColor}
-      documentStyle={documentStyle}
-      estimatesData={pdfEstimatesData}
-      milestones={milestones}
-      acceptance={latestAcceptance}
-      proposalItems={proposalItems}
-    />
-  );
 
   // Rebuilds the standard structure on a proposal that has no sections.
   const addStandardSections = useMutation({
@@ -1099,105 +1160,112 @@ export function ProposalBuilder({
     />
   ) : null;
 
-  // The overflow menu is portalled separately from the rest of the toolbar so
-  // the page can place it last in the header row, past Save. PDFDownloadLink
-  // wraps it because the Download PDF item needs the generated blob URL.
+  /**
+   * The overflow menu is portalled separately from the rest of the toolbar so
+   * the page can place it last in the header row.
+   *
+   * This used to be wrapped in <PDFDownloadLink> purely to obtain a download
+   * href — a second, live copy of the whole document, re-rendered on every
+   * keystroke, when the effect above has already produced the blob and an
+   * object URL for it. It also crashed: @react-pdf/renderer 4.3.1 ships a
+   * react-reconciler whose host config has no detachDeletedInstance, and
+   * React's detachFiber calls it for every host node a commit removes. So any
+   * edit that DELETED a node from the document — toggling a section off,
+   * removing a block of text — threw "<minified> is not a function" out of the
+   * live container. Rendering once, imperatively, never diffs a deletion.
+   */
   const menuContent = (
-  <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
-      {({ loading, url }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={
-                toolbarSlot
-                  ? 'h-6 w-6 rounded-md border border-border/50 text-muted-foreground'
-                  : undefined
-              }
-              data-testid="button-proposal-toolbar-menu"
-              aria-label="Proposal actions"
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className={
+              toolbarSlot
+                ? 'h-6 w-6 rounded-md border border-border/50 text-muted-foreground'
+                : undefined
+            }
+            data-testid="button-proposal-toolbar-menu"
+            aria-label="Proposal actions"
+          >
+            <MoreHorizontal className={toolbarSlot ? 'w-3 h-3' : 'w-4 h-4'} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>Revision</DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => newRevisionMutation.mutate()}
+            disabled={newRevisionMutation.isPending}
+            data-testid="menu-create-revision"
+          >
+            {newRevisionMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Copy className="w-4 h-4 mr-2" />
+            )}
+            Create new revision
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={handleCopyShareLink}
+            disabled={!proposal.shareToken}
+            data-testid="menu-copy-share-link"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Copy client share link
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setIsRemindersOpen(true)}
+            disabled={isDraft}
+            data-testid="menu-proposal-reminders"
+          >
+            <BellRing className="w-4 h-4 mr-2" />
+            Follow-ups
+            {proposal.remindersEnabled ? (
+              <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
+            ) : null}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setIsRevisionHistoryOpen(true)}
+            data-testid="menu-revision-history"
+          >
+            <History className="w-4 h-4 mr-2" />
+            Revision history
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Preview</DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => setShowPreview((v) => !v)}
+            data-testid="menu-toggle-preview"
+          >
+            {showPreview ? (
+              <EyeOff className="w-4 h-4 mr-2" />
+            ) : (
+              <Eye className="w-4 h-4 mr-2" />
+            )}
+            {showPreview ? 'Hide preview' : 'Show preview'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            asChild
+            disabled={!pdfUrl}
+            data-testid="menu-download-pdf"
+          >
+            <a
+              href={pdfUrl || '#'}
+              download={`${proposal.proposalNumber}.pdf`}
+              onClick={(e) => {
+                if (!pdfUrl) e.preventDefault();
+              }}
             >
-              <MoreHorizontal className={toolbarSlot ? 'w-3 h-3' : 'w-4 h-4'} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Revision</DropdownMenuLabel>
-            <DropdownMenuItem
-              onSelect={() => newRevisionMutation.mutate()}
-              disabled={newRevisionMutation.isPending}
-              data-testid="menu-create-revision"
-            >
-              {newRevisionMutation.isPending ? (
+              {pdfUrl ? (
+                <Download className="w-4 h-4 mr-2" />
+              ) : (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Copy className="w-4 h-4 mr-2" />
               )}
-              Create new revision
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={handleCopyShareLink}
-              disabled={!proposal.shareToken}
-              data-testid="menu-copy-share-link"
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Copy client share link
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setIsRemindersOpen(true)}
-              disabled={isDraft}
-              data-testid="menu-proposal-reminders"
-            >
-              <BellRing className="w-4 h-4 mr-2" />
-              Follow-ups
-              {proposal.remindersEnabled ? (
-                <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
-              ) : null}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setIsRevisionHistoryOpen(true)}
-              data-testid="menu-revision-history"
-            >
-              <History className="w-4 h-4 mr-2" />
-              Revision history
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Preview</DropdownMenuLabel>
-            <DropdownMenuItem
-              onSelect={() => setShowPreview((v) => !v)}
-              data-testid="menu-toggle-preview"
-            >
-              {showPreview ? (
-                <EyeOff className="w-4 h-4 mr-2" />
-              ) : (
-                <Eye className="w-4 h-4 mr-2" />
-              )}
-              {showPreview ? 'Hide preview' : 'Show preview'}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              asChild
-              disabled={loading || !url}
-              data-testid="menu-download-pdf"
-            >
-              <a
-                href={url || '#'}
-                download={`${proposal.proposalNumber}.pdf`}
-                onClick={(e) => {
-                  if (loading || !url) e.preventDefault();
-                }}
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 mr-2" />
-                )}
-                {loading ? 'Generating PDF…' : 'Download PDF'}
-              </a>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </PDFDownloadLink>
+              {pdfUrl ? 'Download PDF' : 'Generating PDF…'}
+            </a>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
   );
 
   // Toolbar JSX — when a toolbarSlot is provided we portal it into the page
