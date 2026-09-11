@@ -10,6 +10,10 @@ import { SectionIntro } from "./RichTextBlocks";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -37,7 +41,7 @@ export function EstimateSection({
   companyLogo,
   companyName,
   companyPhone,
-  primaryColor = "#3B82F6",
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = "style1",
   proposalName,
@@ -264,7 +268,7 @@ export function EstimateSection({
       color: "#ffffff",
       padding: 8,
       fontSize: 11,
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
       marginTop: 15,
       marginBottom: 0,
     },
@@ -280,7 +284,7 @@ export function EstimateSection({
       flexDirection: "row",
       backgroundColor: isS2 ? resolvedColor + "14" : "#f5f5f5",
       padding: 6,
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
       fontSize: 9,
       borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : "#cccccc"}`,
     },
@@ -294,7 +298,7 @@ export function EstimateSection({
       flexDirection: "row",
       padding: 6,
       backgroundColor: isS2 ? resolvedColor + "0d" : "#f9f9f9",
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
       fontSize: 9,
       marginTop: 0,
     },
@@ -303,7 +307,7 @@ export function EstimateSection({
       padding: 8,
       backgroundColor: resolvedColor,
       color: "#ffffff",
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
       fontSize: 11,
       marginTop: 15,
     },
@@ -472,7 +476,7 @@ export function EstimateSection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: "Helvetica", backgroundColor: "#ffffff" }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
     >
       <DocProposalInnerHeader
         companyName={companyName}
@@ -487,7 +491,7 @@ export function EstimateSection({
         <Text
           style={{
             fontSize: 16,
-            fontFamily: "Helvetica-Bold",
+            fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
             color: resolvedColor,
             marginBottom: 12,
           }}

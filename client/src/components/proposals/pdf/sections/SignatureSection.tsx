@@ -3,6 +3,10 @@ import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/sche
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 interface SignatureSectionProps {
   proposal: Proposal;
@@ -23,7 +27,7 @@ export function SignatureSection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
 }: SignatureSectionProps) {
@@ -43,21 +47,27 @@ export function SignatureSection({
       borderBottom: `${isS2 ? 2 : 1}px solid ${resolvedColor}`,
       height: 36,
     },
-    label: { fontSize: 10, marginTop: 4, color: '#6B7280' },
+    label: { fontSize: 10, marginTop: 4, color: PDF_COLORS.inkMuted },
     drawnSig: { height: 60, marginBottom: 4, objectFit: 'contain' },
     typedSig: {
       fontSize: 22,
+      // The ONE place Helvetica survives, deliberately. A typed signature has
+      // to read as a signature rather than as body text, and Inter is only
+      // registered in upright weights — setting it here would render the
+      // client's name in the same face as the paragraph above it. If an
+      // italic Inter is ever vendored, this can move; a blanket sweep should
+      // not flatten it in the meantime.
       fontFamily: 'Helvetica-Oblique',
       marginBottom: 4,
-      color: '#1F2937',
+      color: PDF_COLORS.ink,
     },
     acceptedLine: {
       marginTop: 12,
       fontSize: 12,
-      fontFamily: 'Helvetica-Bold',
-      color: '#1F2937',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      color: PDF_COLORS.ink,
     },
-    meta: { marginTop: 8, fontSize: 10, color: '#374151' },
+    meta: { marginTop: 8, fontSize: 10, color: PDF_COLORS.ink },
     metaLine: { marginBottom: 2 },
     acceptedBadge: {
       marginTop: 16,
@@ -80,7 +90,7 @@ export function SignatureSection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
     >
       <DocProposalInnerHeader
         companyName={companyName}
@@ -127,7 +137,7 @@ export function SignatureSection({
             <>
               <View style={styles.acceptedBadge}>
                 <View style={styles.badgeDot} />
-                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: 'Helvetica-Bold' }}>
+                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
                   Proposal Accepted
                 </Text>
               </View>

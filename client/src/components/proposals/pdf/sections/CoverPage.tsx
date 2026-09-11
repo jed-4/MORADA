@@ -1,4 +1,5 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
 const styles = StyleSheet.create({
   page: {
@@ -22,20 +23,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: PDF_COLORS.ink,
     marginBottom: 20,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 18,
-    color: '#6B7280',
+    color: PDF_COLORS.inkMuted,
     marginBottom: 10,
     textAlign: 'center',
   },
   divider: {
     width: 100,
     height: 3,
-    backgroundColor: '#3B82F6',
+    backgroundColor: PDF_COLORS.brandFallback,
     marginVertical: 30,
   },
   infoContainer: {
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: '#374151',
+    color: PDF_COLORS.ink,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -69,7 +70,7 @@ export function CoverPage({
   projectName,
   date,
   expiryDate,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
 }: CoverPageProps) {
   return (
     <Page size="A4" style={styles.page}>

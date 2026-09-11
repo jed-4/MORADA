@@ -23,6 +23,7 @@ import { TermsSection } from './sections/TermsSection';
 import { ClosingSection } from './sections/ClosingSection';
 import { SignatureSection } from './sections/SignatureSection';
 import { AttachmentsSection } from './sections/AttachmentsSection';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
 interface ProposalDocumentProps {
   proposal: Proposal;
@@ -53,7 +54,9 @@ export function ProposalDocument({
   companyLogo,
   companyName,
   companyPhone,
-  primaryColor = '#3B82F6',
+  // Tailwind blue, a colour from nowhere in the product. Same default the
+  // invoice and the purchase order carried.
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
   estimatesData = {},

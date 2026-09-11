@@ -2441,6 +2441,12 @@ export const variations = pgTable("variations", {
   // signed before the archive shipped, and for variations never sent through
   // the portal. See variationSends below.
   signedSendId: varchar("signed_send_id"),
+  /** The variation this one revises, set by "Duplicate for revision". Reading
+   *  the other way — `WHERE supersedes_variation_id = me` — finds the revision
+   *  that replaced a rejected variation. Self-referencing, so a chain of
+   *  revisions walks naturally. Guarded against client writes; only the
+   *  duplicate route sets it. */
+  supersedesVariationId: varchar("supersedes_variation_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
