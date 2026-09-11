@@ -16937,8 +16937,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "A user account with this email already exists" });
       }
 
+      // Self-heal. Roles became per-company at some point, and companies created
+      // before that never got their own set — so a perfectly valid company could
+      // find no client role here and portal invites became impossible for it,
+      // with a 500 that read like a bug in the invite rather than missing setup.
       const clientRoles = await storage.getUserRoles("client", companyId);
-      const clientRole = clientRoles.find(r => r.isBuiltIn) || clientRoles[0];
+      const clientRole =
+        clientRoles.find(r => r.isBuiltIn) ||
+        clientRoles[0] ||
+        (await storage.ensureClientRole(companyId));
       if (!clientRole) {
         return res.status(500).json({ error: "No client role is configured for this company" });
       }

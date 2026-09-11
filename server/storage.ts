@@ -263,6 +263,10 @@ export interface IStorage {
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
   updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void>;
   seedDefaultRolesForCompany(companyId: string): Promise<string>;
+  /** The company's client-portal role, created with its default permissions
+   *  if it is missing. Companies created before roles became per-company
+   *  have none, which made portal invites impossible for them. */
+  ensureClientRole(companyId: string): Promise<UserRole | undefined>;
   resetDefaultPermissions(companyId: string): Promise<void>;
 
   // Permission operations
@@ -3047,6 +3051,22 @@ export class MemStorage implements IStorage {
         this.userRoles.set(update.id, updatedRole);
       }
     }
+  }
+
+  async ensureClientRole(companyId: string): Promise<UserRole | undefined> {
+    const existing = Array.from(this.userRoles.values()).find(
+      (r) => r.companyId === companyId && r.userCategory === "client",
+    );
+    if (existing) return existing;
+    return this.createUserRole({
+      companyId,
+      name: "Client",
+      description: "Client portal access — read-only view of project progress",
+      userCategory: "client",
+      isBuiltIn: true,
+      isActive: true,
+      displayOrder: 5,
+    } as InsertUserRole);
   }
 
   async seedDefaultRolesForCompany(companyId: string): Promise<string> {
@@ -9213,6 +9233,65 @@ export class DbStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in updateUserRolesOrder:", error);
+      throw error;
+    }
+  }
+
+  async ensureClientRole(companyId: string): Promise<UserRole | undefined> {
+    try {
+      const [existing] = await db
+        .select()
+        .from(schema.userRoles)
+        .where(and(eq(schema.userRoles.companyId, companyId), eq(schema.userRoles.userCategory, "client")))
+        .limit(1);
+      if (existing) return existing;
+
+      // Seeding only the missing role, not calling seedDefaultRolesForCompany:
+      // that inserts all seven unconditionally, so on a company that has its
+      // team roles but no client role it would duplicate the other six.
+      return await db.transaction(async (tx) => {
+        const [role] = await tx
+          .insert(schema.userRoles)
+          .values({
+            companyId,
+            name: "Client",
+            description: "Client portal access — read-only view of project progress",
+            userCategory: "client" as UserCategory,
+            isBuiltIn: true,
+            isActive: true,
+            displayOrder: 5,
+          })
+          .returning();
+        if (!role) return undefined;
+
+        // Without its permissions the role exists but grants nothing, and the
+        // invite would succeed into a portal that shows the client an empty app.
+        // `permissions.actions` is jsonb, so Drizzle types it `unknown`. The two
+        // existing call sites below have the same unfixed mismatch; casting here
+        // rather than widening the shared helper keeps this change to one bug.
+        const allPermissions = (await tx.select().from(schema.permissions)) as unknown as Array<{
+          id: string;
+          key: string;
+          actions: string[];
+        }>;
+        const permByKey: Record<string, typeof allPermissions[0]> = {};
+        for (const perm of allPermissions) permByKey[perm.key] = perm;
+        const defaultActions = getDefaultActionsForRole(role.name, allPermissions, permByKey);
+        const rolePerms = Object.entries(defaultActions)
+          .filter(([, actions]) => actions.length > 0)
+          .map(([permissionId, actions]) => ({
+            roleId: role.id,
+            permissionId,
+            allowedActions: actions as PermissionAction[],
+          }));
+        if (rolePerms.length > 0) {
+          await tx.insert(schema.rolePermissions).values(rolePerms);
+        }
+        console.log(`[roles] seeded missing client role for company ${companyId}`);
+        return role;
+      });
+    } catch (error) {
+      console.error("Database error in ensureClientRole:", error);
       throw error;
     }
   }
