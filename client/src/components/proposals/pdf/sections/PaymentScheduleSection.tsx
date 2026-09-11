@@ -2,6 +2,7 @@ import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalPaymentMilestone } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface PaymentScheduleSectionProps {
   proposal: Proposal;
@@ -98,8 +99,8 @@ export function PaymentScheduleSection({
       marginTop: 3,
       borderTop: `1px solid ${resolvedColor}`,
     },
-    grandLabel: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: '#1F2937' },
-    grandValue: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: resolvedColor },
+    grandLabel: { fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: '#1F2937' },
+    grandValue: { fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: resolvedColor },
   });
 
   const proposalTotalCents = totals?.totalCents ?? (Number(proposal.totalAmount) || 0);

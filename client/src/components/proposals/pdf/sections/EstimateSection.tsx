@@ -9,6 +9,7 @@ import {
 } from "@shared/proposalTotals";
 import { SectionIntro } from "./RichTextBlocks";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -29,6 +30,13 @@ interface EstimateSectionProps {
   expiryDate?: string;
   pricingMode?: "lump_sum" | "itemised" | "section_totals";
   showGst?: boolean;
+  /**
+   * True when another section shares this sheet. A `fixed` header repeats on
+   * every page of its <Page>, not just while the table runs — so on a shared
+   * sheet it reprints above whatever follows the table. Repeating is right for
+   * a long estimate on its own page and wrong here.
+   */
+  sharesPage?: boolean;
 }
 
 export function EstimateSection({
@@ -45,6 +53,7 @@ export function EstimateSection({
   proposalNumber,
   pricingMode = "itemised",
   showGst = true,
+  sharesPage = false,
 }: EstimateSectionProps) {
   if (!estimateData) {
     return null;
@@ -286,7 +295,7 @@ export function EstimateSection({
       color: "#ffffff",
       padding: 8,
       fontSize: 11,
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       marginTop: 15,
       marginBottom: 0,
     },
@@ -302,7 +311,7 @@ export function EstimateSection({
       flexDirection: "row",
       backgroundColor: isS2 ? resolvedColor + "14" : "#f5f5f5",
       padding: 6,
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
       borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : "#cccccc"}`,
     },
@@ -316,7 +325,7 @@ export function EstimateSection({
       flexDirection: "row",
       padding: 6,
       backgroundColor: isS2 ? resolvedColor + "0d" : "#f9f9f9",
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
       marginTop: 0,
     },
@@ -325,7 +334,7 @@ export function EstimateSection({
       padding: 8,
       backgroundColor: resolvedColor,
       color: "#ffffff",
-      fontFamily: "Helvetica-Bold",
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 11,
       marginTop: 15,
     },
@@ -372,13 +381,11 @@ export function EstimateSection({
       : colWidths.item;
 
   const renderTableHeader = () => (
-  // NOT `fixed`. A fixed element repeats on every sheet its <Page> spans, and
-  // a page now holds several sections — so a fixed table header reprinted
-  // itself above whatever followed the table, on sheets where the table had
-  // already ended. @react-pdf has no "repeat while this table continues"
-  // primitive; the headers stay put, and minPresenceAhead below keeps a table
-  // from starting so low on a page that it splits immediately.
-    <View style={styles.tableHeader}>
+    // Repeats while the table runs — a second page of unlabelled figures makes
+    // the reader page back to find out which column is the price. Only when the
+    // estimate has the sheet to itself: `fixed` is scoped to the <Page>, so on a
+    // shared sheet it would reprint above whatever follows the table.
+    <View fixed={!sharesPage} style={styles.tableHeader}>
       <Text style={[styles.col, { width: nameWidth }]}>Item</Text>
       {toggles.description && !descriptionUnderName && (
         <Text style={[styles.col, { width: colWidths.description }]}>Description</Text>
@@ -540,7 +547,7 @@ export function EstimateSection({
           minPresenceAhead={60}
           style={{
             fontSize: 16,
-            fontFamily: "Helvetica-Bold",
+            fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
             color: resolvedColor,
             marginBottom: 12,
           }}

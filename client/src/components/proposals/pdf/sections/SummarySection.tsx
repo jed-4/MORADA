@@ -1,6 +1,7 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface SummarySectionProps {
   proposal: Proposal;
@@ -108,12 +109,12 @@ export function SummarySection({
     },
     grandLabel: {
       fontSize: 14,
-      fontFamily: 'Helvetica-Bold',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: '#1F2937',
     },
     grandValue: {
       fontSize: 14,
-      fontFamily: 'Helvetica-Bold',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: resolvedColor,
     },
   });

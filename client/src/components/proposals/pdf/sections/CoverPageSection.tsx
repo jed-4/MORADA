@@ -1,6 +1,7 @@
 import { Page, Text, View, Image } from "@react-pdf/renderer";
 import type { Proposal, ProposalSection, Project, Contact } from "@shared/schema";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface CoverPageSectionProps {
   proposal: Proposal;
@@ -82,7 +83,7 @@ export function CoverPageSection({
     return (
       <Page
         size="A4"
-        style={{ paddingBottom: 60, fontFamily: "Helvetica", backgroundColor: "#ffffff" }}
+        style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
       >
         {/* Full-width brand hero block */}
         <View
@@ -116,7 +117,7 @@ export function CoverPageSection({
               <Text
                 style={{
                   fontSize: 13,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                   color: "#ffffff",
                 }}
               >
@@ -156,7 +157,7 @@ export function CoverPageSection({
                 <Text
                   style={{
                     fontSize: 8,
-                    fontFamily: "Helvetica-Bold",
+                    fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                     color: resolvedColor,
                     letterSpacing: 1.5,
                   }}
@@ -168,7 +169,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 30,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: "#ffffff",
                 lineHeight: 1.2,
               }}
@@ -220,7 +221,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 8,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: resolvedColor,
                 textTransform: "uppercase",
                 letterSpacing: 0.8,
@@ -233,7 +234,7 @@ export function CoverPageSection({
               <Text
                 style={{
                   fontSize: 13,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                   color: "#111827",
                 }}
               >
@@ -262,7 +263,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 8,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: resolvedColor,
                 textTransform: "uppercase",
                 letterSpacing: 0.8,
@@ -277,7 +278,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 8,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: resolvedColor,
                 textTransform: "uppercase",
                 letterSpacing: 0.8,
@@ -306,7 +307,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 8,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: resolvedColor,
                 textTransform: "uppercase",
                 letterSpacing: 0.8,
@@ -315,7 +316,7 @@ export function CoverPageSection({
             >
               {priceLabel}
             </Text>
-            <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color: "#1F2937" }}>
+            <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: "#1F2937" }}>
               {priceText}
             </Text>
           </View>
@@ -348,7 +349,7 @@ export function CoverPageSection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: "Helvetica", backgroundColor: "#ffffff" }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
     >
       {/* Top accent band */}
       <View style={{ height: 6, backgroundColor: resolvedColor }} />
@@ -381,7 +382,7 @@ export function CoverPageSection({
           <Text
             style={{
               fontSize: 13,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
               color: "#111827",
             }}
           >
@@ -411,7 +412,7 @@ export function CoverPageSection({
         style={{
           marginHorizontal: 40,
           fontSize: 9,
-          fontFamily: "Helvetica-Bold",
+          fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
           color: resolvedColor,
           letterSpacing: 1.5,
           marginBottom: 10,
@@ -425,7 +426,7 @@ export function CoverPageSection({
         style={{
           marginHorizontal: 40,
           fontSize: 30,
-          fontFamily: "Helvetica-Bold",
+          fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
           color: "#111827",
           lineHeight: 1.2,
         }}
@@ -482,7 +483,7 @@ export function CoverPageSection({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
@@ -495,7 +496,7 @@ export function CoverPageSection({
             <Text
               style={{
                 fontSize: 13,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
                 color: "#111827",
               }}
             >
@@ -515,7 +516,7 @@ export function CoverPageSection({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
@@ -530,7 +531,7 @@ export function CoverPageSection({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
@@ -559,7 +560,7 @@ export function CoverPageSection({
           <Text
             style={{
               fontSize: 8,
-              fontFamily: "Helvetica-Bold",
+              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
@@ -568,7 +569,7 @@ export function CoverPageSection({
           >
             {priceLabel}
           </Text>
-          <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color: "#1F2937" }}>
+          <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: "#1F2937" }}>
             {priceText}
           </Text>
         </View>

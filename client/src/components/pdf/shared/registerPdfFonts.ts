@@ -43,6 +43,17 @@ export function registerPdfFonts(): void {
       { src: "/fonts/Inter-500.woff", fontWeight: 500 },
       { src: "/fonts/Inter-600.woff", fontWeight: 600 },
       { src: "/fonts/Inter-700.woff", fontWeight: 700 },
+      // Italics are not optional. @react-pdf does NOT synthesise a slant: ask
+      // a registered family with no italic face for fontStyle "italic" and it
+      // throws "Could not resolve font" and takes the whole render down with
+      // it. RichTextBlocks maps a builder's <em> straight onto that style, so
+      // without these, italicising one word in a cover letter produces no PDF
+      // at all. All eight faces come from @fontsource/inter@5.1.0 so the
+      // metrics cannot mismatch.
+      { src: "/fonts/Inter-400i.woff", fontWeight: 400, fontStyle: "italic" },
+      { src: "/fonts/Inter-500i.woff", fontWeight: 500, fontStyle: "italic" },
+      { src: "/fonts/Inter-600i.woff", fontWeight: 600, fontStyle: "italic" },
+      { src: "/fonts/Inter-700i.woff", fontWeight: 700, fontStyle: "italic" },
     ],
   });
 

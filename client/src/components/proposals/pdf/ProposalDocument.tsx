@@ -157,7 +157,7 @@ export function ProposalDocument({
   };
 
   /** The body for one section, with no page chrome around it. */
-  const bodyFor = (section: ProposalSection) => {
+  const bodyFor = (section: ProposalSection, sharesPage = false) => {
         switch (section.sectionType) {
           case 'cover_page':
             return (
@@ -296,6 +296,7 @@ export function ProposalDocument({
             return (
               <EstimateSection
                 key={section.id}
+                sharesPage={sharesPage}
                 showFooter={footerFor(section)}
                 section={section}
                 estimateData={estimateData}
@@ -369,7 +370,7 @@ export function ProposalDocument({
         }
 
         const bodies = group
-          .map((section) => ({ section, body: bodyFor(section) }))
+          .map((section) => ({ section, body: bodyFor(section, group.length > 1) }))
           .filter((entry) => entry.body !== null);
         if (bodies.length === 0) return null;
 

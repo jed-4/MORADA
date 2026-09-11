@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 type InlineSeg = { text: string; bold?: boolean; italic?: boolean; underline?: boolean };
 export type RenderBlock = { type: 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol-li'; text: string; segs?: InlineSeg[] };
@@ -191,7 +192,7 @@ export function PageFooter({ companyName, primaryColor = '#3B82F6' }: PageFooter
 export const sharedPageStyle = {
   padding: 40,
   fontSize: 11,
-  fontFamily: 'Helvetica',
+  fontFamily: PDF_FONT_FAMILY,
   backgroundColor: '#ffffff',
 };
 

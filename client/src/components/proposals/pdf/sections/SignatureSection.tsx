@@ -1,6 +1,7 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface SignatureSectionProps {
   proposal: Proposal;
@@ -47,14 +48,14 @@ export function SignatureSection({
     drawnSig: { height: 60, marginBottom: 4, objectFit: 'contain' },
     typedSig: {
       fontSize: 22,
-      fontFamily: 'Helvetica-Oblique',
+      fontFamily: PDF_FONT_FAMILY, fontStyle: 'italic',
       marginBottom: 4,
       color: '#1F2937',
     },
     acceptedLine: {
       marginTop: 12,
       fontSize: 12,
-      fontFamily: 'Helvetica-Bold',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: '#1F2937',
     },
     meta: { marginTop: 8, fontSize: 10, color: '#374151' },
@@ -114,7 +115,7 @@ export function SignatureSection({
             <>
               <View style={styles.acceptedBadge}>
                 <View style={styles.badgeDot} />
-                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: 'Helvetica-Bold' }}>
+                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: PDF_FONT_FAMILY, fontWeight: 700 }}>
                   Proposal Accepted
                 </Text>
               </View>

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from '@/components/pdf/shared/pdfColor';
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface SectionPageProps {
   companyName?: string;
@@ -42,7 +43,7 @@ export function SectionPage({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, paddingTop: 0, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+      style={{ paddingBottom: 60, paddingTop: 0, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
     >
       <DocProposalInnerHeader
         fixed
