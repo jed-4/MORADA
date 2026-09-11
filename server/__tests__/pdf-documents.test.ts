@@ -383,6 +383,59 @@ async function main() {
     assert.ok(all.includes("Kid") && all.includes("Only"), "sub-groups did not render");
   });
 
+  await check("turning grouping off flattens the nesting, not just its labels", async () => {
+    // Hiding the headings but keeping the indentation leaves rows shunted
+    // right for no visible reason — a flat list with an arbitrary ragged edge.
+    // Measured on the rendered x-positions rather than asserted on the style,
+    // because the style is exactly what was wrong.
+    const { Document, Page, Text, View } = await import("@react-pdf/renderer");
+    const { PdfLineTable } = await import("../../client/src/components/pdf/shared/PdfLineTable");
+
+    type Row = { id: string; label: string };
+    const rows = (p: string, n: number): Row[] =>
+      Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, label: `${p} line ${i + 1}` }));
+
+    const groups = [
+      { key: "a", label: "Top", total: "$1.00", rows: rows("Top", 2) },
+      {
+        key: "b",
+        label: "Parent",
+        total: "$2.00",
+        rows: rows("Direct", 2),
+        children: [
+          { key: "c", label: "Child", total: "$3.00", rows: rows("Child", 2),
+            children: [{ key: "d", label: "Grandchild", total: "$4.00", rows: rows("Deep", 2) }] },
+        ],
+      },
+    ];
+
+    const build = (grouped: boolean) =>
+      createElement(Document, null,
+        createElement(Page, { size: "A4", style: { paddingBottom: 56 } },
+          createElement(View, { style: { paddingHorizontal: 40, paddingTop: 24 } },
+            createElement(PdfLineTable as any, {
+              brandColor: BRAND, grouped, textHeader: "Description",
+              renderText: (r: Row) => createElement(Text, null, r.label),
+              columns: [{ key: "x", label: "Amount", width: 90, align: "right", value: () => "-" }],
+              groups, rowKey: (r: Row) => r.id,
+            }))));
+
+    const leftEdges = async (grouped: boolean) => {
+      const buf = await renderToBuffer(build(grouped) as any);
+      const doc = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise;
+      const items: any[] = (await (await doc.getPage(1)).getTextContent()).items;
+      return new Set(
+        items.filter((i) => /line \d/.test(i.str)).map((i) => Math.round(i.transform[4])),
+      );
+    };
+
+    const flat = await leftEdges(false);
+    assert.strictEqual(flat.size, 1, `flat rows should share one left edge, got ${[...flat]}`);
+
+    const grouped = await leftEdges(true);
+    assert.strictEqual(grouped.size, 3, `three depths should give three left edges, got ${[...grouped]}`);
+  });
+
   console.log(`\n${passed} checks passed`);
 }
 

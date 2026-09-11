@@ -159,7 +159,11 @@ export function PdfLineTable<T>({
    */
   const renderGroup = (group: PdfTableGroup<T>, depth: number): ReactNode => {
     const nested = depth > 0;
-    const indent = 10 + depth * 12;
+    // Ungrouped means FLAT, all the way down. Indenting without the heading
+    // that explains it leaves rows shunted right for no visible reason — the
+    // reader sees a flat list with an arbitrary ragged edge. Turning grouping
+    // off has to collapse the nesting too, not just hide its labels.
+    const indent = grouped ? 10 + depth * 12 : 10;
     return (
       <View key={group.key}>
         {grouped && group.label && (
