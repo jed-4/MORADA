@@ -367,58 +367,73 @@ export function VariationPreviewContent({
       </div>
 
       <div className="p-8 space-y-8">
-        {/* Variation Information Grid */}
-        <div>
-          <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Variation Details</h2>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-muted">Name</p>
-              <p className="text-sm font-medium text-foreground">{variation.name}</p>
+        {/* The subject line. It used to be a field labelled "Name" inside the
+            details grid, which is the wrong shape — it IS the document. */}
+        {variation.name && (
+          <h1 className="text-xl font-bold text-foreground leading-tight -mb-2">{variation.name}</h1>
+        )}
+
+        {/* Parties: who it's for, where the job is, what this document is.
+            Three kinds of fact that the old grid ran together as one list.
+            Boxed and in three columns to match the PDF exactly — the two
+            renderers are one design, and this is the block that proves it. */}
+        <div className="border border-border rounded-xl overflow-hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-3">
+            <div className="p-4 sm:border-r border-border">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">To</p>
+              <p className="text-sm font-semibold text-foreground leading-snug">
+                {project?.clientName || "—"}
+              </p>
+              {project?.clientEmail && (
+                <p className="text-xs text-muted mt-0.5">{project.clientEmail}</p>
+              )}
+              {project?.clientPhone && (
+                <p className="text-xs text-muted mt-0.5">{project.clientPhone}</p>
+              )}
             </div>
-            <div>
-              <p className="text-xs text-muted">Project</p>
-              <p className="text-sm font-medium text-foreground">{project?.name || "—"}</p>
+
+            <div className="p-4 border-t sm:border-t-0 sm:border-r border-border">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Project</p>
+              <p className="text-sm font-semibold text-foreground leading-snug">
+                {project?.name || "—"}
+              </p>
+              {project?.address && (
+                <p className="text-xs text-muted mt-0.5 leading-snug">{project.address}</p>
+              )}
             </div>
-            {project?.address && (
-              <div>
-                <p className="text-xs text-muted">Site Address</p>
-                <p className="text-sm font-medium text-foreground">{project.address}</p>
-              </div>
-            )}
-            {project?.clientName && (
-              <div>
-                <p className="text-xs text-muted">Client</p>
-                <p className="text-sm font-medium text-foreground">{project.clientName}</p>
-              </div>
-            )}
-            {project?.clientEmail && (
-              <div>
-                <p className="text-xs text-muted">Client Email</p>
-                <p className="text-sm font-medium text-foreground">{project.clientEmail}</p>
-              </div>
-            )}
-            {project?.clientPhone && (
-              <div>
-                <p className="text-xs text-muted">Client Phone</p>
-                <p className="text-sm font-medium text-foreground">{project.clientPhone}</p>
-              </div>
-            )}
-            {variation.approvalDeadline && (
-              <div>
-                <p className="text-xs text-muted">Effective Until</p>
-                <p className="text-sm font-medium text-foreground">
-                  {format(new Date(variation.approvalDeadline), "d MMM yyyy")}
-                </p>
-              </div>
-            )}
-            {variation.daysChanged ? (
-              <div>
-                <p className="text-xs text-muted">Schedule Impact</p>
-                <p className="text-sm font-medium text-foreground">
-                  {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} working day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
-                </p>
-              </div>
-            ) : null}
+
+            <div className="p-4 border-t sm:border-t-0 border-border">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Document</p>
+              <dl className="space-y-1">
+                {[
+                  {
+                    label: "Issued",
+                    value: (variation as any).createdAt
+                      ? format(new Date((variation as any).createdAt), "d MMMM yyyy")
+                      : null,
+                  },
+                  {
+                    label: "Respond by",
+                    value: variation.approvalDeadline
+                      ? format(new Date(variation.approvalDeadline), "d MMMM yyyy")
+                      : null,
+                  },
+                  {
+                    label: "Days changed",
+                    value: variation.daysChanged
+                      ? `${variation.daysChanged > 0 ? "+" : ""}${variation.daysChanged} working day${Math.abs(variation.daysChanged) !== 1 ? "s" : ""}`
+                      : null,
+                  },
+                ]
+                  .filter((f) => f.value)
+                  .map((f) => (
+                    <div key={f.label} className="flex justify-between gap-3">
+                      <dt className="text-xs text-muted flex-shrink-0">{f.label}</dt>
+                      <dd className="text-xs font-medium text-foreground text-right">{f.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
           </div>
         </div>
 
@@ -429,8 +444,10 @@ export function VariationPreviewContent({
           </div>
         )}
 
-        {/* Cost Lines grouped by type */}
-        {docModel.costGroups.length > 0 && (
+        {/* Cost Lines. Trade breakdown off means ONE flat list in the order
+            the builder arranged them — not the same clusters with their
+            headings hidden, which is what this used to do. */}
+        {docModel.costLines.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Cost Lines</h2>
             <div className="border border-border rounded-lg overflow-hidden">
@@ -447,7 +464,10 @@ export function VariationPreviewContent({
                 ))}
               </div>
 
-              {docModel.costGroups.map((group) => (
+              {(cols.grouping
+                ? docModel.costGroups
+                : [{ type: "all", label: "", lines: docModel.costLines, totalIncCents: 0 }]
+              ).map((group) => (
                 <div key={group.type}>
                   {/* Type header row */}
                   {cols.grouping && (

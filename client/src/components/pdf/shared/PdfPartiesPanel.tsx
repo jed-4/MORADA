@@ -38,10 +38,11 @@ export interface PdfPartiesPanelProps {
   project?: PdfPartyBlock | null;
   document?: PdfPartyBlock | null;
   /**
-   * "columns" puts all three side by side in one row — a third of the height,
-   * which matters on a document that already runs to three pages.
-   * "stacked" puts recipient and project on top and the document metadata
-   * underneath, separated by a rule.
+   * "columns" — the default, and Jed's pick from the two rendered side by
+   * side: all three blocks in one row. "stacked" puts recipient and project on
+   * top with the document metadata underneath. Both were built because the
+   * choice could not be made from a description; the loser stays because the
+   * other documents may want it (a site diary has no recipient at all).
    */
   layout?: "columns" | "stacked";
 }

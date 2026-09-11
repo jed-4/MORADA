@@ -265,20 +265,26 @@ export function VariationDocument({
           <PdfSection>
             <PdfPartiesPanel
               layout={partiesLayout}
+              // An em dash rather than an empty block when a field is missing:
+              // the layout stays stable, and a builder looking at their own
+              // document can see the client has not been filled in. Matches
+              // what the portal does.
               recipient={{
                 label: "To",
-                title: project?.clientName,
+                title: project?.clientName || "—",
                 lines: [project?.clientEmail, project?.clientPhone],
               }}
               project={{
                 label: "Project",
-                title: project?.name,
+                title: project?.name || "—",
                 lines: [project?.address],
               }}
               document={{
                 label: "Document",
                 fields: [
-                  { label: "Number", value: variation.variationNumber },
+                  // No "Number" row: the masthead already captions the figure
+                  // with it, and repeating it is what made this column read as
+                  // busy.
                   { label: "Issued", value: fmtDate((variation as any).createdAt) },
                   { label: "Respond by", value: fmtDate((variation as any).approvalDeadline) },
                   {
@@ -369,7 +375,7 @@ export function VariationDocument({
           )}
 
           {/* Cost lines */}
-          {docModel.costGroups.length > 0 && (
+          {docModel.costLines.length > 0 && (
             <PdfSection label="Cost Lines">
               <PdfLineTable<VariationDocLine>
                 brandColor={brandColor}
@@ -404,12 +410,18 @@ export function VariationDocument({
                       )
                     : undefined
                 }
-                groups={docModel.costGroups.map((g) => ({
-                  key: g.type,
-                  label: g.label,
-                  total: formatAUD(g.totalIncCents / 100),
-                  rows: g.lines,
-                }))}
+                // Trade breakdown off means ONE flat list in the builder's own
+                // order — not the same clusters with their headings hidden.
+                groups={
+                  columns.grouping
+                    ? docModel.costGroups.map((g) => ({
+                        key: g.type,
+                        label: g.label,
+                        total: formatAUD(g.totalIncCents / 100),
+                        rows: g.lines,
+                      }))
+                    : [{ key: "all", rows: docModel.costLines }]
+                }
                 trailingRows={trailingRows}
                 rowKey={(line, i) => line.id || `line-${i}`}
               />
