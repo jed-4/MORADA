@@ -24,7 +24,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
 import { format as formatDate } from 'date-fns';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem, InsertProposal } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
@@ -37,6 +37,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { revisionLabel } from '@/components/proposals/proposalDisplay';
+import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
+import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
@@ -417,8 +419,12 @@ interface ProposalBuilderProps {
    * inline at the top of the builder.
    */
   toolbarSlot?: HTMLElement | null;
-  /** Separate slot for the overflow menu, so it can sit right of the page's Save. */
+  /** Separate slot for the overflow menu, so it sits last in the header row. */
   menuSlot?: HTMLElement | null;
+  projects?: Project[];
+  lockProject?: boolean;
+  onProposalUpdate?: (updates: Partial<InsertProposal>) => void;
+  companySettings?: CompanySettingsForSections | null;
   /**
    * Called when the user picks an estimate revision from the toolbar
    * selector. The page-level handler is responsible for cascading the new
@@ -690,6 +696,10 @@ export function ProposalBuilder({
   documentStyle,
   toolbarSlot,
   menuSlot,
+  projects = [],
+  lockProject,
+  onProposalUpdate,
+  companySettings,
   onEstimateRevisionPick,
 }: ProposalBuilderProps) {
   const [, setLocation] = useLocation();
@@ -976,6 +986,57 @@ export function ProposalBuilder({
     />
   );
 
+  // Rebuilds the standard structure on a proposal that has no sections.
+  const addStandardSections = useMutation({
+    mutationFn: async () => {
+      const specs = buildDefaultSections(companySettings);
+      // Sequential, not Promise.all: the create route derives nothing from
+      // order, but a partial failure halfway through a parallel batch leaves a
+      // scrambled document with no way to tell which ones landed.
+      for (const spec of specs) {
+        await apiRequest(`/api/proposals/${proposal.id}/sections`, 'POST', {
+          ...spec,
+          proposalId: proposal.id,
+          description: '',
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id, 'sections'] });
+    },
+    onError: () => {
+      toast({ title: 'Could not add the standard sections', variant: 'destructive' });
+    },
+  });
+
+  // Picking the estimate revision is a proposal-level setting, so it renders
+  // inside the Details card rather than as a stray select in the header.
+  const estimateSelector = project?.id ? (
+    <EstimateRevisionSelector
+      projectId={project.id}
+      currentEstimateId={proposal.estimateId || null}
+      hideLabel
+      triggerClassName="h-7 text-xs"
+      // When no page-level cascade is wired, fall back to persisting
+      // proposal.estimateId from inside the selector itself.
+      persistOnProposalId={onEstimateRevisionPick ? undefined : proposal.id}
+      onPick={(newEstimateId) => {
+        if (onEstimateRevisionPick) {
+          return onEstimateRevisionPick(newEstimateId);
+        }
+        // Fallback cascade: update each estimate section so the live preview
+        // stays in sync. Proposal-level persist is handled by
+        // `persistOnProposalId` above.
+        for (const s of sections) {
+          if (s.sectionType !== 'estimate') continue;
+          const c = (s.content as Record<string, unknown> | null) ?? {};
+          if (c.estimateId === newEstimateId) continue;
+          onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
+        }
+      }}
+    />
+  ) : null;
+
   // The overflow menu is portalled separately from the rest of the toolbar so
   // the page can place it last in the header row, past Save. PDFDownloadLink
   // wraps it because the Download PDF item needs the generated blob URL.
@@ -1085,35 +1146,6 @@ export function ProposalBuilder({
       className={toolbarSlot ? 'flex items-center gap-2' : 'rounded-md border p-2 flex items-center gap-2'}
       data-testid="proposal-toolbar"
     >
-      <div className={toolbarSlot ? 'min-w-0' : 'flex-1 min-w-0'}>
-        {project?.id ? (
-          <EstimateRevisionSelector
-            projectId={project.id}
-            currentEstimateId={proposal.estimateId || null}
-            compact={!!toolbarSlot}
-            // When no page-level cascade is wired, fall back to persisting
-            // proposal.estimateId from inside the selector itself.
-            persistOnProposalId={onEstimateRevisionPick ? undefined : proposal.id}
-            onPick={(newEstimateId) => {
-              if (onEstimateRevisionPick) {
-                return onEstimateRevisionPick(newEstimateId);
-              }
-              // Fallback cascade: update each estimate section so the live
-              // preview stays in sync. Proposal-level persist is handled by
-              // `persistOnProposalId` above.
-              for (const s of sections) {
-                if (s.sectionType !== 'estimate') continue;
-                const c = (s.content as Record<string, unknown> | null) ?? {};
-                if (c.estimateId === newEstimateId) continue;
-                onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
-              }
-            }}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground">No project linked</span>
-        )}
-      </div>
-
       {!toolbarSlot && menuContent}
 
       {isSuperseded && (
@@ -1131,7 +1163,11 @@ export function ProposalBuilder({
           size="sm"
           onClick={() => setIsSendOpen(true)}
           disabled={!pdfBlob}
-          className={toolbarSlot ? 'h-6 gap-1 px-2 text-xs [&>svg]:h-3 [&>svg]:w-3' : undefined}
+          className={
+            toolbarSlot
+              ? 'h-6 gap-1 px-2 text-xs bg-sage text-white hover:bg-sage/90 [&>svg]:h-3 [&>svg]:w-3'
+              : 'bg-sage text-white hover:bg-sage/90'
+          }
           data-testid="button-send-proposal"
         >
           <Send className={toolbarSlot ? '' : 'w-4 h-4 mr-2'} />
@@ -1351,6 +1387,17 @@ export function ProposalBuilder({
             value="sections"
             className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden"
           >
+            {onProposalUpdate && (
+              <ProposalDetailsCard
+                proposal={proposal}
+                projects={projects}
+                lockProject={lockProject}
+                onProposalUpdate={onProposalUpdate}
+                estimateSelector={estimateSelector}
+                hasEstimate={!!proposal.estimateId}
+              />
+            )}
+
             <div className="flex-1 overflow-auto">
               <DndContext
                 sensors={sensors}
@@ -1378,7 +1425,7 @@ export function ProposalBuilder({
               </DndContext>
 
               {sections.length === 0 && (
-                <Card className="p-8 text-center">
+                <Card className="p-6 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="rounded-full bg-muted p-3">
                       <FileText className="w-6 h-6 text-muted-foreground" />
@@ -1386,13 +1433,33 @@ export function ProposalBuilder({
                     <div className="space-y-1">
                       <p className="font-medium text-sm">No sections yet</p>
                       <p className="text-sm text-muted-foreground">
-                        Add a section to start building your proposal.
+                        Start from the standard structure — cover page through to
+                        signature — and change what you don't need.
                       </p>
                     </div>
-                    <Button size="sm" onClick={onAddSection} data-testid="button-add-first-section">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Section
+                    {/* The standard set used to exist only at the moment a
+                        proposal was created, so a proposal that arrived without
+                        it could only be rebuilt ten sections at a time. */}
+                    <Button
+                      size="sm"
+                      onClick={() => addStandardSections.mutate()}
+                      disabled={addStandardSections.isPending}
+                      data-testid="button-add-standard-sections"
+                    >
+                      {addStandardSections.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4 mr-2" />
+                      )}
+                      Add standard sections
                     </Button>
+                    <button
+                      onClick={onAddSection}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      data-testid="button-add-first-section"
+                    >
+                      Or add a single section
+                    </button>
                   </div>
                 </Card>
               )}
@@ -1876,8 +1943,12 @@ interface EstimateRevisionSelectorProps {
    * rejects, the optimistic trigger label is rolled back automatically.
    */
   onPick: (id: string) => void | Promise<void>;
-  /** Compact mode: no Label, slim trigger — for use inside the page header. */
+  /** Compact mode: no Label, slim ghost trigger — for use inside a toolbar. */
   compact?: boolean;
+  /** Suppress the built-in Label when the caller supplies its own. */
+  hideLabel?: boolean;
+  /** Overrides the trigger sizing, e.g. to match a form's h-7 fields. */
+  triggerClassName?: string;
   /**
    * If provided, the selector will internally PATCH `proposals.estimateId`
    * after `onPick`. Use this for legacy callsites where the parent doesn't
@@ -1888,7 +1959,7 @@ interface EstimateRevisionSelectorProps {
   persistOnProposalId?: string;
 }
 
-function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact, persistOnProposalId }: EstimateRevisionSelectorProps) {
+function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact, hideLabel, triggerClassName, persistOnProposalId }: EstimateRevisionSelectorProps) {
   const { toast } = useToast();
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
@@ -1938,9 +2009,10 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
     >
       <SelectTrigger
         className={
-          compact
+          triggerClassName ??
+          (compact
             ? 'h-6 w-auto max-w-[15rem] gap-1 border-border/50 px-2 text-xs text-muted-foreground [&>svg]:h-3 [&>svg]:w-3'
-            : 'h-9 text-xs'
+            : 'h-9 text-xs')
         }
         aria-label={noAnchor ? 'Link estimate' : 'Estimate revision'}
         data-testid="select-estimate-revision"
@@ -1958,7 +2030,7 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
     </Select>
   );
 
-  if (compact) return trigger;
+  if (compact || hideLabel) return trigger;
 
   return (
     <div className="space-y-1">

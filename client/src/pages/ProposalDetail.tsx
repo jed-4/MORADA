@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, Loader2, Eye, ChevronRight, Settings2 } from "lucide-react";
+import { Loader2, Eye, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatViewedTooltip, revisionLabel } from "@/components/proposals/proposalDisplay";
 import {
@@ -29,7 +29,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   type Proposal, 
   type ProposalSection,
@@ -44,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import { buildDefaultSections } from "@/components/proposals/defaultSections";
 
 interface ProposalDetailParams {
   id?: string;
@@ -155,32 +155,8 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Create all default sections after creating the proposal
         if (result.id) {
-          const tpls = companySettings?.termsTemplates ?? [];
-          const proposalDefaultTpl = tpls.find(
-            (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
-          );
-          const defaultTermsContent =
-            proposalDefaultTpl?.content || companySettings?.termsAndConditions || '';
-
-          const companyName = companySettings?.companyName || '[Company Name]';
-          const defaultClosingHtml =
-            `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
-
-          const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: Record<string, unknown> }> = [
-            { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
-            { sectionType: 'cover_letter', name: 'Cover Letter', order: 1 },
-            { sectionType: 'estimate', name: 'Estimate', order: 2 },
-            { sectionType: 'summary', name: 'Summary', order: 3 },
-            { sectionType: 'allowances', name: 'Allowances', order: 4 },
-            { sectionType: 'payment_schedule', name: 'Payment Schedule', order: 5 },
-            { sectionType: 'closing', name: 'Closing', order: 6, content: { closingText: defaultClosingHtml } },
-            { sectionType: 'attachments', name: 'Attachments', order: 7 },
-            { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 8, content: { termsText: defaultTermsContent } },
-            { sectionType: 'signature', name: 'Signature', order: 9 },
-          ];
-
           await Promise.all(
-            defaultSections.map(section =>
+            buildDefaultSections(companySettings).map(section =>
               apiRequest(`/api/proposals/${result.id}/sections`, "POST", {
                 ...section,
                 proposalId: result.id,
@@ -378,8 +354,8 @@ export default function ProposalDetail() {
   // DOM slot for the proposal toolbar (rendered into the title row via portal
   // by ProposalBuilder).
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
-  // The overflow menu belongs at the far right of the row, past Save, so it
-  // gets its own slot rather than riding along inside the toolbar.
+  // The overflow menu belongs at the far right of the row, so it gets its own
+  // slot rather than riding along inside the toolbar.
   const [menuSlot, setMenuSlot] = useState<HTMLDivElement | null>(null);
 
   const handleAddSection = () => {
@@ -422,6 +398,32 @@ export default function ProposalDetail() {
   const handleSave = () => {
     const data = form.getValues();
     updateProposalMutation.mutate(data);
+  };
+
+  /**
+   * Proposal-level fields (name, project, validity) save themselves, the way
+   * section bodies already do. There is no Save button any more: one used to
+   * sit beside Send, both filled plum, and the only thing distinguishing "save
+   * my draft" from "email this to the client" was the label.
+   */
+  const saveFieldsMutation = useMutation({
+    mutationFn: async (updates: Partial<InsertProposal>) =>
+      apiRequest(`/api/proposals/${params.id}`, "PATCH", updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Could not save",
+        description: "Your last change was not saved. Check your connection and try again.",
+      });
+    },
+  });
+
+  const handleProposalFieldUpdate = (updates: Partial<InsertProposal>) => {
+    saveFieldsMutation.mutate(updates);
   };
 
   if (proposalLoading || sectionsLoading) {
@@ -508,102 +510,18 @@ export default function ProposalDetail() {
             </Tooltip>
           )}
 
-          {/* Name, validity and project are set-once fields — they no longer
-              occupy a whole row of the page. */}
-          {!isNewProposal && (
-            <Popover>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PopoverTrigger asChild>
-                    <button
-                      className="h-6 w-6 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                      aria-label="Proposal details"
-                      data-testid="button-proposal-details"
-                    >
-                      <Settings2 className="w-3 h-3" />
-                    </button>
-                  </PopoverTrigger>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Details</TooltipContent>
-              </Tooltip>
-              <PopoverContent className="w-80 p-3" align="start">
-                <Form {...form}>
-                  <div className="space-y-3">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Details</span>
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground">Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} className="h-7 text-xs" placeholder="Proposal name" data-testid="input-proposal-name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="expiryDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground">Pricing valid until</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="date"
-                              className="h-7 text-xs"
-                              value={field.value ? new Date(field.value as unknown as string).toISOString().slice(0, 10) : ""}
-                              onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
-                              data-testid="input-proposal-expiry"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="projectId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground">Project</FormLabel>
-                          <Select value={field.value || ""} onValueChange={field.onChange} disabled={isProjectContext}>
-                            <FormControl>
-                              <SelectTrigger className="h-7 text-xs" data-testid="select-project">
-                                <SelectValue placeholder="Select project" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {projects.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </Form>
-              </PopoverContent>
-            </Popover>
+          {/* Autosave state, where the Save button used to be. */}
+          {saveFieldsMutation.isPending && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid="text-save-state">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Saving…
+            </span>
           )}
 
           <div className="flex-1" />
 
           {/* Estimate selector + Send + ⋯ are portalled in here by the builder */}
           <div ref={setToolbarSlot} className="flex items-center gap-2" data-testid="proposal-toolbar-slot" />
-
-          <button
-            onClick={handleSave}
-            disabled={updateProposalMutation.isPending}
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60"
-            data-testid="button-save"
-          >
-            {updateProposalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            Save
-          </button>
 
           {/* Overflow menu — last thing in the row, as on every other page */}
           <div ref={setMenuSlot} className="flex items-center" data-testid="proposal-menu-slot" />
@@ -656,6 +574,10 @@ export default function ProposalDetail() {
                 toolbarSlot={toolbarSlot}
                 menuSlot={menuSlot}
                 onEstimateRevisionPick={handleEstimateRevisionPick}
+                projects={projects}
+                onProposalUpdate={handleProposalFieldUpdate}
+                lockProject={isProjectContext}
+                companySettings={companySettings}
               />
             </div>
           </div>
