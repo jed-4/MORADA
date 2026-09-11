@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { Document, Page } from "react-pdf";
+import { Page } from "react-pdf";
+import { PdfDocument as Document } from "@/components/PdfDocument";
 // Required for the selectable text spans to line up with the rendered page.
 import "react-pdf/dist/Page/TextLayer.css";
-import { ensurePdfWorker } from "@/lib/pdfWorker";
 
 interface PdfInlineViewerProps {
   url: string;
 }
 
 export default function PdfInlineViewer({ url }: PdfInlineViewerProps) {
-  ensurePdfWorker();
   const [numPages, setNumPages] = useState<number>(0);
 
   return (

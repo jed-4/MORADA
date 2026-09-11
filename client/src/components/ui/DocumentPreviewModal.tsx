@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { pdf } from "@react-pdf/renderer";
-import { Document as PdfDocument, Page as PdfPage } from "react-pdf";
-import { ensurePdfWorker } from "@/lib/pdfWorker";
+import { Page as PdfPage } from "react-pdf";
+import { PdfDocument } from "@/components/PdfDocument";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Download, Send, Loader2, X } from "lucide-react";
@@ -30,7 +30,6 @@ export function DocumentPreviewModal({
   sidebar,
   documentKey,
 }: DocumentPreviewModalProps) {
-  ensurePdfWorker();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Document, Page } from 'react-pdf';
-import { ensurePdfWorker } from '@/lib/pdfWorker';
+import { usePdfWorkerReady } from '@/lib/pdfWorker';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,7 +14,8 @@ interface PDFPreviewProps {
 }
 
 export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
-  ensurePdfWorker();
+  // Wait for the pdf.js worker before rendering <Document>; see lib/pdfWorker.
+  const workerState = usePdfWorkerReady();
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -26,6 +27,16 @@ export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error);
     setLoading(false);
+  }
+
+  if (workerState !== "ready") {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm text-muted-foreground">
+          {workerState === "error" ? "Could not start the PDF viewer." : "Preparing preview…"}
+        </p>
+      </div>
+    );
   }
 
   return (

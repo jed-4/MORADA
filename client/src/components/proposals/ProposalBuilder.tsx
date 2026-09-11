@@ -12,13 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, LayoutTemplate } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -35,14 +36,9 @@ import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
+import { revisionLabel } from '@/components/proposals/proposalDisplay';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
-
-function revisionLabel(version: number | null | undefined): string {
-  const v = Math.max(1, Number(version || 1));
-  if (v <= 26) return `Rev ${String.fromCharCode(64 + v)}`;
-  return `Rev ${v}`;
-}
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
@@ -110,14 +106,52 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
     onSectionUpdate(section.id, { isEnabled: enabled });
   };
 
-  const handleSave = () => {
-    onSectionUpdate(section.id, {
+  /**
+   * Autosave.
+   *
+   * These fields used to live in local state behind a per-section "Save
+   * Changes" button, next to the page's own Save. Collapse the accordion or
+   * leave the page without pressing the inner one and the text was gone, with
+   * no warning and no way back — the outer Save did not cover it.
+   *
+   * Edits now persist on their own a beat after you stop typing, and any
+   * pending edit is flushed on unmount, which is what navigating away and
+   * closing the accordion both do.
+   */
+  const pending = useRef<Partial<ProposalSection> | null>(null);
+  const firstRun = useRef(true);
+  const onSectionUpdateRef = useRef(onSectionUpdate);
+  onSectionUpdateRef.current = onSectionUpdate;
+
+  useEffect(() => {
+    // Skip the mount pass, and the re-seed when switching section, or every
+    // section would write itself back to the server just for being rendered.
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    pending.current = {
       name: localName,
       description: localDescriptionText,
       descriptionHtml: localDescriptionHtml,
       content: localContent,
-    } as Partial<ProposalSection>);
-  };
+    } as Partial<ProposalSection>;
+
+    const t = setTimeout(() => {
+      if (!pending.current) return;
+      onSectionUpdateRef.current(section.id, pending.current);
+      pending.current = null;
+    }, 700);
+    return () => clearTimeout(t);
+  }, [localName, localDescriptionText, localDescriptionHtml, localContent, section.id]);
+
+  // Flush whatever the debounce still holds when this row goes away.
+  useEffect(() => () => {
+    if (pending.current) {
+      onSectionUpdateRef.current(section.id, pending.current);
+      pending.current = null;
+    }
+  }, [section.id]);
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
@@ -126,36 +160,45 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
       <AccordionItem
         value={value}
         className={cn(
-          "border border-border rounded-md mb-2 bg-card transition-colors",
+          "border border-border rounded-md mb-1 bg-card transition-colors",
           !localIsEnabled && "opacity-60",
           "hover:border-primary/40",
         )}
       >
-        <div className="flex items-center gap-2 px-3">
+        <div className="flex items-center gap-1.5 px-2">
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing py-4 opacity-0 group-hover/section:opacity-100 transition-opacity"
+            className="cursor-grab active:cursor-grabbing py-2 opacity-0 group-hover/section:opacity-100 transition-opacity"
             aria-label="Reorder section"
             data-testid={`drag-handle-${section.id}`}
           >
-            <GripVertical className="w-4 h-4 text-muted-foreground" />
+            <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
-          <div className="flex-1 min-w-0 py-4 flex flex-col gap-1">
-            <p className="font-medium text-sm truncate">{section.name}</p>
-            <Badge variant="secondary" className="self-start font-normal text-[10px] tracking-wide uppercase">
-              {sectionTypeLabel}
-            </Badge>
+          {/* One line per section. The type badge used to sit under the name
+              repeating it almost verbatim — "Cover Page" above "COVER PAGE" —
+              and pushed every row to ~72px, so ten sections never fit on
+              screen. It is only shown where it adds something: a renamed or
+              custom section, where the name no longer says what the section is. */}
+          <div className="flex-1 min-w-0 py-2 flex items-baseline gap-2">
+            <p className={`text-sm truncate ${localIsEnabled ? "font-medium" : "text-muted-foreground"}`}>
+              {section.name}
+            </p>
+            {section.name?.trim().toLowerCase() !== sectionTypeLabel.toLowerCase() && (
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 shrink-0">
+                {sectionTypeLabel}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3 py-4">
+          <div className="flex items-center gap-2 py-2">
             <Switch
               checked={localIsEnabled}
               onCheckedChange={handleToggleEnabled}
               onClick={(e) => e.stopPropagation()}
+              className="scale-90"
               data-testid={`switch-section-enabled-${section.id}`}
             />
-            <AccordionTrigger className="hover:no-underline px-2">
-            </AccordionTrigger>
+            <AccordionTrigger className="hover:no-underline px-1.5" />
           </div>
         </div>
         <AccordionContent className="px-4 pb-4">
@@ -347,11 +390,8 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               </div>
             )}
 
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleSave} size="sm">
-                Save Changes
-              </Button>
-            </div>
+            {/* No Save button — edits persist on their own. See the autosave
+                effect above for why this used to lose work. */}
           </div>
         </AccordionContent>
       </AccordionItem>
@@ -377,6 +417,8 @@ interface ProposalBuilderProps {
    * inline at the top of the builder.
    */
   toolbarSlot?: HTMLElement | null;
+  /** Separate slot for the overflow menu, so it can sit right of the page's Save. */
+  menuSlot?: HTMLElement | null;
   /**
    * Called when the user picks an estimate revision from the toolbar
    * selector. The page-level handler is responsible for cascading the new
@@ -534,73 +576,93 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
   });
 
   return (
-    <div className="space-y-2 mb-3" data-testid="proposal-template-bar">
-      <div className="flex items-center gap-2 flex-wrap">
-        {templates.length > 0 && (
-          <Select
-            onValueChange={(id) => {
-              if (!id) return;
-              const tpl = templates.find((t) => t.id === id);
-              if (!tpl) return;
-              if (sections.length === 0) {
-                applyMutation.mutate(id);
-                return;
-              }
-              setConfirmAction({
-                title: `Apply template "${tpl.name}"?`,
-                description: `This will replace all ${sections.length} current section(s).`,
-                confirmLabel: 'Apply',
-                run: () => applyMutation.mutate(id),
-              });
-            }}
-            disabled={applyMutation.isPending}
-          >
-            <SelectTrigger className="h-8 flex-1 text-xs" data-testid="select-apply-proposal-template">
-              <SelectValue
-                placeholder={
-                  applyMutation.isPending ? 'Applying…' : 'Apply template'
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
+    <>
+      {/* Templates are an occasional action, not part of building a proposal,
+          so they live behind one icon rather than a select plus a button
+          taking a row each above the section list. */}
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                aria-label="Templates"
+                data-testid="button-proposal-templates"
+              >
+                {applyMutation.isPending || saveMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <LayoutTemplate className="w-3 h-3" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Templates</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-56">
+          {templates.length > 0 && (
+            <>
+              <DropdownMenuLabel>Apply template</DropdownMenuLabel>
               {templates.map((t) => (
-                <SelectItem key={t.id} value={t.id} className="text-xs">
+                <DropdownMenuItem
+                  key={t.id}
+                  disabled={applyMutation.isPending}
+                  onSelect={() => {
+                    if (sections.length === 0) {
+                      applyMutation.mutate(t.id);
+                      return;
+                    }
+                    setConfirmAction({
+                      title: `Apply template "${t.name}"?`,
+                      description: `This will replace all ${sections.length} current section(s).`,
+                      confirmLabel: 'Apply',
+                      run: () => applyMutation.mutate(t.id),
+                    });
+                  }}
+                  data-testid={`menu-apply-proposal-template-${t.id}`}
+                >
                   {t.name}
-                </SelectItem>
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowSave((v) => !v)}
-          disabled={sections.length === 0}
-          data-testid="button-toggle-save-proposal-template"
-        >
-          Save as template
-        </Button>
-      </div>
-      {showSave && (
-        <div className="flex gap-2">
-          <Input
-            placeholder="Template name"
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            className="h-8 text-xs"
-            data-testid="input-proposal-template-name"
-          />
-          <Button
-            size="sm"
-            disabled={!templateName.trim() || saveMutation.isPending}
-            onClick={() => saveMutation.mutate(templateName.trim())}
-            data-testid="button-save-proposal-template"
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuItem
+            disabled={sections.length === 0}
+            // Keeps the menu open: the name field renders in its place.
+            onSelect={(e) => { e.preventDefault(); setShowSave(true); }}
+            data-testid="button-toggle-save-proposal-template"
           >
-            {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-            Save
-          </Button>
-        </div>
-      )}
+            <Plus className="w-4 h-4 mr-2" />
+            Save as template
+          </DropdownMenuItem>
+          {showSave && (
+            <div className="flex gap-1 p-1.5 pt-1">
+              <Input
+                placeholder="Template name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && templateName.trim()) saveMutation.mutate(templateName.trim());
+                }}
+                className="h-7 text-xs"
+                autoFocus
+                data-testid="input-proposal-template-name"
+              />
+              <Button
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={!templateName.trim() || saveMutation.isPending}
+                onClick={() => saveMutation.mutate(templateName.trim())}
+                data-testid="button-save-proposal-template"
+              >
+                {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
@@ -610,7 +672,7 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
         destructive={confirmAction?.destructive}
         onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
       />
-    </div>
+    </>
   );
 }
 
@@ -627,10 +689,12 @@ export function ProposalBuilder({
   brandColor,
   documentStyle,
   toolbarSlot,
+  menuSlot,
   onEstimateRevisionPick,
 }: ProposalBuilderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [sidebarTab, setSidebarTab] = useState<'sections' | 'layout'>('sections');
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
@@ -912,6 +976,107 @@ export function ProposalBuilder({
     />
   );
 
+  // The overflow menu is portalled separately from the rest of the toolbar so
+  // the page can place it last in the header row, past Save. PDFDownloadLink
+  // wraps it because the Download PDF item needs the generated blob URL.
+  const menuContent = (
+  <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
+      {({ loading, url }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={
+                toolbarSlot
+                  ? 'h-6 w-6 rounded-md border border-border/50 text-muted-foreground'
+                  : undefined
+              }
+              data-testid="button-proposal-toolbar-menu"
+              aria-label="Proposal actions"
+            >
+              <MoreHorizontal className={toolbarSlot ? 'w-3 h-3' : 'w-4 h-4'} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Revision</DropdownMenuLabel>
+            <DropdownMenuItem
+              onSelect={() => newRevisionMutation.mutate()}
+              disabled={newRevisionMutation.isPending}
+              data-testid="menu-create-revision"
+            >
+              {newRevisionMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Copy className="w-4 h-4 mr-2" />
+              )}
+              Create new revision
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={handleCopyShareLink}
+              disabled={!proposal.shareToken}
+              data-testid="menu-copy-share-link"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Copy client share link
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => setIsRemindersOpen(true)}
+              disabled={isDraft}
+              data-testid="menu-proposal-reminders"
+            >
+              <BellRing className="w-4 h-4 mr-2" />
+              Follow-ups
+              {proposal.remindersEnabled ? (
+                <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
+              ) : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => setIsRevisionHistoryOpen(true)}
+              data-testid="menu-revision-history"
+            >
+              <History className="w-4 h-4 mr-2" />
+              Revision history
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Preview</DropdownMenuLabel>
+            <DropdownMenuItem
+              onSelect={() => setShowPreview((v) => !v)}
+              data-testid="menu-toggle-preview"
+            >
+              {showPreview ? (
+                <EyeOff className="w-4 h-4 mr-2" />
+              ) : (
+                <Eye className="w-4 h-4 mr-2" />
+              )}
+              {showPreview ? 'Hide preview' : 'Show preview'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              asChild
+              disabled={loading || !url}
+              data-testid="menu-download-pdf"
+            >
+              <a
+                href={url || '#'}
+                download={`${proposal.proposalNumber}.pdf`}
+                onClick={(e) => {
+                  if (loading || !url) e.preventDefault();
+                }}
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                {loading ? 'Generating PDF…' : 'Download PDF'}
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </PDFDownloadLink>
+  );
+
   // Toolbar JSX — when a toolbarSlot is provided we portal it into the page
   // header (next to Save). Otherwise we render it inline at the top of the
   // builder for backwards compatibility.
@@ -920,7 +1085,7 @@ export function ProposalBuilder({
       className={toolbarSlot ? 'flex items-center gap-2' : 'rounded-md border p-2 flex items-center gap-2'}
       data-testid="proposal-toolbar"
     >
-      <div className={toolbarSlot ? 'min-w-[14rem]' : 'flex-1 min-w-0'}>
+      <div className={toolbarSlot ? 'min-w-0' : 'flex-1 min-w-0'}>
         {project?.id ? (
           <EstimateRevisionSelector
             projectId={project.id}
@@ -949,6 +1114,8 @@ export function ProposalBuilder({
         )}
       </div>
 
+      {!toolbarSlot && menuContent}
+
       {isSuperseded && (
         <Badge variant="outline" className="text-xs" data-testid="badge-superseded">
           Superseded
@@ -964,104 +1131,15 @@ export function ProposalBuilder({
           size="sm"
           onClick={() => setIsSendOpen(true)}
           disabled={!pdfBlob}
+          className={toolbarSlot ? 'h-6 gap-1 px-2 text-xs [&>svg]:h-3 [&>svg]:w-3' : undefined}
           data-testid="button-send-proposal"
         >
-          <Send className="w-4 h-4 mr-2" />
+          <Send className={toolbarSlot ? '' : 'w-4 h-4 mr-2'} />
           Send
         </Button>
       )}
 
-      <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
-          {({ loading, url }) => (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  data-testid="button-proposal-toolbar-menu"
-                  aria-label="Proposal actions"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Revision</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onSelect={() => newRevisionMutation.mutate()}
-                  disabled={newRevisionMutation.isPending}
-                  data-testid="menu-create-revision"
-                >
-                  {newRevisionMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Copy className="w-4 h-4 mr-2" />
-                  )}
-                  Create new revision
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={handleCopyShareLink}
-                  disabled={!proposal.shareToken}
-                  data-testid="menu-copy-share-link"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Copy client share link
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => setIsRemindersOpen(true)}
-                  disabled={isDraft}
-                  data-testid="menu-proposal-reminders"
-                >
-                  <BellRing className="w-4 h-4 mr-2" />
-                  Follow-ups
-                  {proposal.remindersEnabled ? (
-                    <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
-                  ) : null}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => setIsRevisionHistoryOpen(true)}
-                  data-testid="menu-revision-history"
-                >
-                  <History className="w-4 h-4 mr-2" />
-                  Revision history
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Preview</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onSelect={() => setShowPreview((v) => !v)}
-                  data-testid="menu-toggle-preview"
-                >
-                  {showPreview ? (
-                    <EyeOff className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Eye className="w-4 h-4 mr-2" />
-                  )}
-                  {showPreview ? 'Hide preview' : 'Show preview'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  asChild
-                  disabled={loading || !url}
-                  data-testid="menu-download-pdf"
-                >
-                  <a
-                    href={url || '#'}
-                    download={`${proposal.proposalNumber}.pdf`}
-                    onClick={(e) => {
-                      if (loading || !url) e.preventDefault();
-                    }}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4 mr-2" />
-                    )}
-                    {loading ? 'Generating PDF…' : 'Download PDF'}
-                  </a>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </PDFDownloadLink>
-      </div>
+    </div>
   );
 
   return (
@@ -1069,6 +1147,7 @@ export function ProposalBuilder({
       {/* When a toolbarSlot is provided (e.g. the page header), portal the
           toolbar there. Otherwise render it inline above the preview. */}
       {toolbarSlot ? createPortal(toolbarContent, toolbarSlot) : toolbarContent}
+      {toolbarSlot ? createPortal(menuContent, menuSlot ?? toolbarSlot) : null}
 
       <ProposalRemindersDialog
         open={isRemindersOpen}
@@ -1223,27 +1302,55 @@ export function ProposalBuilder({
 
       {/* Sidebar - Sections / Layout - 40% */}
       <div className="w-96 flex flex-col min-h-0">
-        <Tabs defaultValue="sections" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full">
-            <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
-            <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
-          </TabsList>
-          <TabsContent value="sections" className="flex-1 flex flex-col min-h-0 mt-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Sections</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onAddSection}
-                data-testid="button-add-section"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Section
-              </Button>
+        <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as 'sections' | 'layout')} className="flex-1 flex flex-col min-h-0">
+          {/* One h-8 toolbar row, matching the list pages: the tab chips name
+              the panel, so the duplicate "Sections" heading is gone and the
+              template controls have collapsed into a single icon. */}
+          <div className="h-8 flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-0.5" data-testid="tabs-proposal-sidebar">
+              {([
+                { key: 'sections', label: 'Sections' },
+                { key: 'layout', label: 'Layout' },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setSidebarTab(t.key)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 ${
+                    sidebarTab === t.key
+                      ? 'bg-primary/10 text-primary border-primary/20'
+                      : 'border-border/50 text-muted-foreground'
+                  }`}
+                  data-testid={`tab-${t.key}`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
 
-            <ProposalTemplateBar proposal={proposal} sections={sections} />
+            <div className="flex-1" />
 
+            {sidebarTab === 'sections' && (
+              <>
+                <button
+                  onClick={onAddSection}
+                  className="h-6 w-auto px-2 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-add-section"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+                <ProposalTemplateBar proposal={proposal} sections={sections} />
+              </>
+            )}
+          </div>
+
+          {/* `flex` outranks the UA rule behind Radix's `hidden` attribute, so
+              without the data-state guard the inactive Sections panel keeps its
+              full height and shoves the Layout panel off the bottom. */}
+          <TabsContent
+            value="sections"
+            className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden"
+          >
             <div className="flex-1 overflow-auto">
               <DndContext
                 sensors={sensors}
@@ -1292,7 +1399,7 @@ export function ProposalBuilder({
             </div>
           </TabsContent>
 
-          <TabsContent value="layout" className="flex-1 min-h-0 mt-4 overflow-auto">
+          <TabsContent value="layout" className="flex-1 min-h-0 mt-2 overflow-auto">
             <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
           </TabsContent>
         </Tabs>
@@ -1830,7 +1937,11 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
       }}
     >
       <SelectTrigger
-        className="h-9 text-xs"
+        className={
+          compact
+            ? 'h-6 w-auto max-w-[15rem] gap-1 border-border/50 px-2 text-xs text-muted-foreground [&>svg]:h-3 [&>svg]:w-3'
+            : 'h-9 text-xs'
+        }
         aria-label={noAnchor ? 'Link estimate' : 'Estimate revision'}
         data-testid="select-estimate-revision"
       >
