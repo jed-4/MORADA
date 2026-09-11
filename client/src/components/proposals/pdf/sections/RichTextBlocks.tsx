@@ -120,16 +120,16 @@ export function RichTextBlocks({ html }: RichTextBlocksProps) {
   return (
     <View>
       {blocks.map((b, i) => {
-        if (b.type === 'h1') return <Text key={i} style={blockStyles.h1}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'h2') return <Text key={i} style={blockStyles.h2}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'h3') return <Text key={i} style={blockStyles.h3}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'li') return <Text key={i} style={blockStyles.li}>{'\u2022 '}{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h1') return <Text key={i} minPresenceAhead={40} style={blockStyles.h1}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h2') return <Text key={i} minPresenceAhead={40} style={blockStyles.h2}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h3') return <Text key={i} minPresenceAhead={40} style={blockStyles.h3}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'li') return <Text key={i} wrap={false} style={blockStyles.li}>{'\u2022 '}{renderSegs(b.segs, b.text)}</Text>;
         if (b.type === 'ol-li') {
           olIdx += 1;
-          return <Text key={i} style={blockStyles.li}>{`${olIdx}. `}{renderSegs(b.segs, b.text)}</Text>;
+          return <Text key={i} wrap={false} style={blockStyles.li}>{`${olIdx}. `}{renderSegs(b.segs, b.text)}</Text>;
         }
         olIdx = 0;
-        return <Text key={i} style={blockStyles.p}>{renderSegs(b.segs, b.text)}</Text>;
+        return <Text key={i} orphans={2} widows={2} style={blockStyles.p}>{renderSegs(b.segs, b.text)}</Text>;
       })}
     </View>
   );

@@ -10,6 +10,8 @@ interface DocProposalInnerHeaderProps {
   proposalName?: string | null;
   brandColor: string;
   docStyle: "style1" | "style2";
+  /** Repeat on every page the parent <Page> spills onto. */
+  fixed?: boolean;
 }
 
 // Idempotent — the shared chrome is used by every document, so registering
@@ -24,11 +26,13 @@ export function DocProposalInnerHeader({
   proposalName,
   brandColor,
   docStyle,
+  fixed,
 }: DocProposalInnerHeaderProps) {
   const isS2 = docStyle === "style2";
 
   return (
     <View
+      fixed={fixed}
       style={{
         flexDirection: "row",
         alignItems: "center",

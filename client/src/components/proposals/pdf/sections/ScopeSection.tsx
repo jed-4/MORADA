@@ -1,8 +1,6 @@
-import { Page, Text, View } from '@react-pdf/renderer';
+import { Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface ScopeSectionProps {
   proposal: Proposal;
@@ -39,22 +37,9 @@ export function ScopeSection({
   const emptyMessage = isCoverLetter ? 'No cover letter content provided.' : 'No scope content provided.';
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || defaultTitle}
           </Text>
           <SectionIntro section={section} />
@@ -65,12 +50,5 @@ export function ScopeSection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

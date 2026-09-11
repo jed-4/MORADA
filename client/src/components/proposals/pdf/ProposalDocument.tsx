@@ -1,4 +1,5 @@
-import { Document } from '@react-pdf/renderer';
+import { Document, View } from '@react-pdf/renderer';
+import { SectionPage, SectionDivider } from './SectionPage';
 import type {
   Proposal,
   ProposalSection,
@@ -15,7 +16,7 @@ import { computeProposalTotals, EMPTY_PROPOSAL_TOTALS } from '@shared/proposalTo
 import { substituteSectionContent, type PlaceholderContext } from './placeholders';
 import { CoverPageSection } from './sections/CoverPageSection';
 import { EstimateSection } from './sections/EstimateSection';
-import { SummarySection } from './sections/SummarySection';
+import { SummarySection, summaryHasContent } from './sections/SummarySection';
 import { AllowancesSection } from './sections/AllowancesSection';
 import { PaymentScheduleSection } from './sections/PaymentScheduleSection';
 import { ScopeSection } from './sections/ScopeSection';
@@ -155,9 +156,8 @@ export function ProposalDocument({
     documentStyle,
   };
 
-  return (
-    <Document>
-      {sortedSections.map((section) => {
+  /** The body for one section, with no page chrome around it. */
+  const bodyFor = (section: ProposalSection) => {
         switch (section.sectionType) {
           case 'cover_page':
             return (
@@ -326,6 +326,74 @@ export function ProposalDocument({
               />
             );
         }
+  };
+
+  /**
+   * Sections into sheets.
+   *
+   * A section opens a new sheet unless it is marked to continue, in which case
+   * its body is appended to the sheet before it. Nothing is forced together:
+   * @react-pdf flows content, so a continuing section fills whatever space is
+   * left and spills onto the next page by itself if there isn't any. The
+   * toggle is really "don't force a break here".
+   *
+   * The cover page never joins a group — it has its own layout, no running
+   * header, and is the one page that should never have something land on it.
+   */
+  const ALWAYS_STANDALONE = new Set(['cover_page']);
+
+  // Asked here rather than inside the component: a section that returns null
+  // from its own render is too late — the sheet already exists, and you get a
+  // page with a header, a footer and nothing between them.
+  const willRender = (section: ProposalSection): boolean =>
+    section.sectionType !== 'summary' || summaryHasContent(section, !hasPaymentSchedule);
+
+  const pageGroups: ProposalSection[][] = [];
+  for (const section of sortedSections.filter(willRender)) {
+    const prev = pageGroups[pageGroups.length - 1];
+    const startsNew =
+      !prev ||
+      ALWAYS_STANDALONE.has(section.sectionType) ||
+      ALWAYS_STANDALONE.has(prev[0].sectionType) ||
+      (section.content as Record<string, unknown> | null)?.startOnNewPage !== false;
+    if (startsNew) pageGroups.push([section]);
+    else prev.push(section);
+  }
+
+  return (
+    <Document>
+      {pageGroups.map((group) => {
+        // The cover page renders its own <Page>: a different layout entirely.
+        if (ALWAYS_STANDALONE.has(group[0].sectionType)) {
+          return group.map((section) => bodyFor(section));
+        }
+
+        const bodies = group
+          .map((section) => ({ section, body: bodyFor(section) }))
+          .filter((entry) => entry.body !== null);
+        if (bodies.length === 0) return null;
+
+        return (
+          <SectionPage
+            key={group[0].id}
+            companyName={companyName}
+            companyPhone={companyPhone}
+            logoUrl={effectiveLogo}
+            proposalNumber={proposal.proposalNumber}
+            proposalName={proposal.name}
+            brandColor={resolvedColor}
+            docStyle={documentStyle}
+            // One sheet, one footer: the first section in the group owns it.
+            showFooter={footerFor(group[0])}
+          >
+            {bodies.map((entry, i) => (
+              <View key={entry.section.id}>
+                {i > 0 && <SectionDivider brandColor={resolvedColor} />}
+                {entry.body}
+              </View>
+            ))}
+          </SectionPage>
+        );
       })}
     </Document>
   );

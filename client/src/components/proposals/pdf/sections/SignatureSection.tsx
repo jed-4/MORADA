@@ -1,8 +1,6 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface SignatureSectionProps {
   proposal: Proposal;
@@ -80,27 +78,14 @@ export function SignatureSection({
   const isImage = !!sigData && sigData.startsWith('data:image');
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Signature'}
           </Text>
           <SectionIntro section={section} />
 
-          <View style={styles.row}>
+          <View wrap={false} style={styles.row}>
             <View style={styles.box}>
               {isAccepted && sigData ? (
                 isImage ? (
@@ -157,12 +142,5 @@ export function SignatureSection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

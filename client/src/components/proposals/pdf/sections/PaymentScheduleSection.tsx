@@ -1,8 +1,6 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection, ProposalPaymentMilestone } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface PaymentScheduleSectionProps {
@@ -136,22 +134,9 @@ export function PaymentScheduleSection({
   const totalCents = sortedMilestones.reduce((s, m) => s + m._amount, 0);
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Payment Schedule'}
           </Text>
           <SectionIntro section={section} />
@@ -161,7 +146,7 @@ export function PaymentScheduleSection({
               its own headed "Summary" — three lines of figures and a page
               break, immediately before the schedule that divides them up. */}
           {showContractPrice && (
-            <View style={styles.priceWrap}>
+            <View wrap={false} style={styles.priceWrap}>
               {showGst ? (
                 <>
                   <View style={styles.priceRow}>
@@ -186,7 +171,7 @@ export function PaymentScheduleSection({
             </View>
           )}
 
-          <View style={{ marginTop: 8 }}>
+          <View minPresenceAhead={90} style={{ marginTop: 8 }}>
             <View style={styles.headerRow}>
               <Text style={[styles.th, styles.name]}>Milestone</Text>
               <Text style={[styles.th, styles.pct]}>%</Text>
@@ -197,7 +182,7 @@ export function PaymentScheduleSection({
               <Text style={sharedSectionStyle.muted}>No payment milestones defined.</Text>
             ) : (
               sortedMilestones.map((m) => (
-                <View key={m.id} style={styles.row}>
+                <View key={m.id} wrap={false} style={styles.row}>
                   <Text style={[sharedSectionStyle.text, styles.name]}>{m.name}</Text>
                   <Text style={[sharedSectionStyle.text, styles.pct]}>
                     {m._pct > 0 ? `${m._pct.toFixed(2)}%` : '—'}
@@ -210,7 +195,7 @@ export function PaymentScheduleSection({
               ))
             )}
             {sortedMilestones.length > 0 && (
-              <View style={styles.totalRow}>
+              <View wrap={false} style={styles.totalRow}>
                 <Text style={[styles.th, styles.name]}>Total</Text>
                 <Text style={[styles.th, styles.pct]}>
                   {totalPct > 0 ? `${totalPct.toFixed(2)}%` : '—'}
@@ -222,17 +207,10 @@ export function PaymentScheduleSection({
               </View>
             )}
             {sortedMilestones.length > 0 && showGst && (
-              <Text style={styles.note}>Amounts shown inclusive of GST.</Text>
+              <Text wrap={false} minPresenceAhead={20} style={styles.note}>Amounts shown inclusive of GST.</Text>
             )}
           </View>
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

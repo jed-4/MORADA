@@ -1,8 +1,6 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { sharedSectionStyle, htmlToBlocks, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface ClosingSectionProps {
   proposal: Proposal;
@@ -45,22 +43,9 @@ export function ClosingSection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
             {section.name || 'Closing'}
           </Text>
           <SectionIntro section={section} />
@@ -77,12 +62,5 @@ export function ClosingSection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

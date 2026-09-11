@@ -1,4 +1,4 @@
-import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
 import { round2 } from "@shared/pricing";
 import {
@@ -8,8 +8,6 @@ import {
   lineCountsTowardProposalTotal,
 } from "@shared/proposalTotals";
 import { SectionIntro } from "./RichTextBlocks";
-import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
-import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
 interface EstimateSectionProps {
@@ -377,6 +375,12 @@ export function EstimateSection({
       : colWidths.item;
 
   const renderTableHeader = () => (
+  // NOT `fixed`. A fixed element repeats on every sheet its <Page> spans, and
+  // a page now holds several sections — so a fixed table header reprinted
+  // itself above whatever followed the table, on sheets where the table had
+  // already ended. @react-pdf has no "repeat while this table continues"
+  // primitive; the headers stay put, and minPresenceAhead below keeps a table
+  // from starting so low on a page that it splits immediately.
     <View style={styles.tableHeader}>
       <Text style={[styles.col, { width: nameWidth }]}>Item</Text>
       {toggles.description && !descriptionUnderName && (
@@ -424,7 +428,7 @@ export function EstimateSection({
     const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
 
     return (
-      <View key={item.id} style={styles.tableRow}>
+      <View key={item.id} wrap={false} style={styles.tableRow}>
         <View style={[styles.col, { width: nameWidth }]}>
           <View style={styles.itemCell}>
             <Text>{item.name || "Untitled"}</Text>
@@ -488,7 +492,7 @@ export function EstimateSection({
   ).filter((a) => a in ALLOWANCE_LABELS);
 
   const subtotalRow = (label: string, value: number) => (
-    <View style={styles.subtotalRow}>
+    <View wrap={false} minPresenceAhead={30} style={styles.subtotalRow}>
       <Text style={[styles.col, { flex: 1 }]}>{label}</Text>
       <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
         {formatCurrency(value)}
@@ -511,7 +515,7 @@ export function EstimateSection({
 
     return (
       <View key={group.id}>
-        <View style={styles.groupHeader}>
+        <View minPresenceAhead={70} style={styles.groupHeader}>
           <Text style={{ color: "#ffffff" }}>{group.name}</Text>
         </View>
         {/* The group's description is the section's specification — it reads as
@@ -538,21 +542,9 @@ export function EstimateSection({
   };
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: "Helvetica", backgroundColor: "#ffffff" }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={companyLogo}
-        proposalNumber={proposalNumber}
-        proposalName={proposalName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40, paddingTop: 16 }}>
         <Text
+          minPresenceAhead={60}
           style={{
             fontSize: 16,
             fontFamily: "Helvetica-Bold",
@@ -594,7 +586,7 @@ export function EstimateSection({
         )}
 
         {toggles.amountExTax && (
-          <View style={styles.totalRow}>
+          <View wrap={false} style={styles.totalRow}>
             <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
               Total Price (ex. tax)
             </Text>
@@ -604,7 +596,7 @@ export function EstimateSection({
           </View>
         )}
         {toggles.amountIncTax && showGst && (
-          <View style={styles.totalRow}>
+          <View wrap={false} style={styles.totalRow}>
             <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
               Total Price (inc. tax)
             </Text>
@@ -614,7 +606,7 @@ export function EstimateSection({
           </View>
         )}
         {!toggles.amountExTax && !(toggles.amountIncTax && showGst) && (
-          <View style={styles.totalRow}>
+          <View wrap={false} style={styles.totalRow}>
             <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>Total Price</Text>
             <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
               {formatCurrency(showGst ? grandTotalIncTax : grandTotalExTax)}
@@ -622,12 +614,5 @@ export function EstimateSection({
           </View>
         )}
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

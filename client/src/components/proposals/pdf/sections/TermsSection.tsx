@@ -1,8 +1,6 @@
-import { Page, Text, View } from '@react-pdf/renderer';
+import { Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface TermsSectionProps {
   proposal: Proposal;
@@ -32,22 +30,9 @@ export function TermsSection({
   const html = (content.termsText as string) || '';
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={sharedSectionStyle.sectionTitle}>
+          <Text minPresenceAhead={60} style={sharedSectionStyle.sectionTitle}>
             {section.name || 'Terms & Conditions'}
           </Text>
           <SectionIntro section={section} />
@@ -58,12 +43,5 @@ export function TermsSection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

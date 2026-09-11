@@ -1,4 +1,4 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type {
   Proposal,
   ProposalSection,
@@ -8,8 +8,6 @@ import type {
   EstimateItem,
 } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import {
   clientLineAmounts,
@@ -153,36 +151,23 @@ export function AllowancesSection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Allowances'}
           </Text>
           <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
           {rows.length > 0 ? (
-            <View style={{ marginTop: 8 }}>
+            <View minPresenceAhead={90} style={{ marginTop: 8 }}>
               <View style={styles.headerRow}>
                 <Text style={[styles.th, styles.name]}>Item</Text>
                 <Text style={[styles.th, styles.amount]}>Amount</Text>
                 <Text style={[styles.th, styles.notes]}>Notes</Text>
               </View>
               {rows.map((r, i) => (
-                <View key={i} style={styles.row}>
+                <View key={i} wrap={false} style={styles.row}>
                   <View style={styles.name}>
                     <Text style={sharedSectionStyle.text}>{r.name}</Text>
                     {r.kind ? <Text style={styles.kind}>{r.kind}</Text> : null}
@@ -194,13 +179,13 @@ export function AllowancesSection({
                 </View>
               ))}
               {total > 0 && (
-                <View style={styles.totalRow}>
+                <View wrap={false} style={styles.totalRow}>
                   <Text style={[styles.th, styles.name]}>Total Allowances</Text>
                   <Text style={[styles.th, styles.amount]}>{formatCurrency(total)}</Text>
                   <Text style={[styles.th, styles.notes]}> </Text>
                 </View>
               )}
-              <Text style={styles.note}>
+              <Text wrap={false} minPresenceAhead={20} style={styles.note}>
                 Allowances are provisional. Final amounts are reconciled against actual costs and may vary.
               </Text>
             </View>
@@ -211,12 +196,5 @@ export function AllowancesSection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

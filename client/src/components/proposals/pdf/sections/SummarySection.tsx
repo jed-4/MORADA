@@ -1,8 +1,6 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface SummarySectionProps {
   proposal: Proposal;
@@ -32,6 +30,30 @@ interface SummarySectionProps {
 const formatCurrency = (cents: number) =>
   `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/**
+ * Whether a Summary section has anything to print.
+ *
+ * With the figures on the payment schedule, a Summary that was only ever its
+ * totals has nothing left to say, and every existing proposal has one — so
+ * without this they all gained a page holding a heading and white space.
+ *
+ * ProposalDocument has to ask this BEFORE it opens a sheet: returning null
+ * from inside the component is too late, the page already exists.
+ */
+export function summaryHasContent(
+  section: { content?: unknown; description?: string | null; descriptionHtml?: string | null },
+  showTotals: boolean,
+): boolean {
+  if (showTotals) return true;
+  const strip = (v: string | null | undefined) => (v ?? '').replace(/<[^>]*>/g, '').trim();
+  const body = ((section.content as Record<string, unknown> | null)?.summaryText as string) || '';
+  return (
+    strip(body).length > 0 ||
+    strip(section.descriptionHtml).length > 0 ||
+    strip(section.description).length > 0
+  );
+}
+
 export function SummarySection({
   proposal,
   section,
@@ -52,17 +74,7 @@ export function SummarySection({
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.summaryText as string) || '';
 
-  /**
-   * With the figures now on the payment schedule, a Summary that was only ever
-   * its totals has nothing left to print. Existing proposals all have one, so
-   * without this they gained a page containing a heading and white space.
-   * Prose keeps the page; emptiness does not earn one.
-   */
-  const hasProse =
-    html.replace(/<[^>]*>/g, '').trim().length > 0 ||
-    (section.descriptionHtml ?? '').replace(/<[^>]*>/g, '').trim().length > 0 ||
-    (section.description ?? '').trim().length > 0;
-  if (!showTotals && !hasProse) return null;
+  if (!summaryHasContent(section, showTotals)) return null;
 
   const subtotal = totals?.subtotalCents ?? (Number(proposal.subtotal) || 0);
   const gst = totals?.gstCents ?? (Number(proposal.gstAmount) || 0);
@@ -107,29 +119,16 @@ export function SummarySection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Summary'}
           </Text>
           <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
           {showTotals && (
-          <View style={styles.totalsWrap}>
+          <View wrap={false} style={styles.totalsWrap}>
             {showGst ? (
               <>
                 <View style={styles.row}>
@@ -155,12 +154,5 @@ export function SummarySection({
           )}
         </View>
       </View>
-      <DocFooter
-        show={showFooter}
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

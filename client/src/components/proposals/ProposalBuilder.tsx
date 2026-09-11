@@ -19,7 +19,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, LayoutTemplate } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, LayoutTemplate, CornerDownRight } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -37,6 +37,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { revisionLabel } from '@/components/proposals/proposalDisplay';
+import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 
@@ -99,9 +100,17 @@ interface SortableSectionItemProps {
   client?: Contact;
   /** Whether a payment schedule is in the document — it carries the totals. */
   hasPaymentSchedule?: boolean;
+  /** False for the first row and for the cover page, which always stands alone. */
+  canJoinPrevious?: boolean;
+  /** Named in the hint, so "continues under…" says under what. */
+  previousSectionName?: string;
+  /** True when this section is set to continue the sheet above it. */
+  joinsPrevious?: boolean;
+  /** True when the section is enabled but has nothing to render. */
+  printsNothing?: boolean;
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -218,12 +227,22 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="group/section">
+    <div ref={setNodeRef} style={style} className={cn("group/section", joinsPrevious && "pl-4 relative")}>
+      {/* A joined section is indented under the one that opened the sheet, so
+          the page structure is legible from the list without opening ten
+          editors to find out. */}
+      {joinsPrevious && (
+        <CornerDownRight
+          className="absolute left-0.5 top-3 w-3 h-3 text-muted-foreground/60"
+          aria-hidden="true"
+        />
+      )}
       <AccordionItem
         value={value}
         className={cn(
           "border border-border rounded-md mb-1 bg-card transition-colors",
           !localIsEnabled && "opacity-60",
+          joinsPrevious ? "border-dashed border-border/70" : "",
           "hover:border-primary/40",
         )}
       >
@@ -249,6 +268,13 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.name?.trim().toLowerCase() !== sectionTypeLabel.toLowerCase() && (
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 shrink-0">
                 {sectionTypeLabel}
+              </span>
+            )}
+            {/* A switch reading ON above a section that prints nothing is worse
+                than the blank page the suppression was avoiding. */}
+            {printsNothing && (
+              <span className="text-[10px] uppercase tracking-wide text-amber shrink-0">
+                Not printing
               </span>
             )}
           </div>
@@ -499,20 +525,43 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               </div>
             )}
 
-            {/* Page furniture, at the foot of every section's editor. Undefined
-                means "whatever Layout says"; the switch sets an explicit
-                override for this section only. */}
+            {/* Page furniture, at the foot of every section's editor. */}
+            {canJoinPrevious && (
+              <div className="flex items-center justify-between border-t pt-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor={`new-page-${section.id}`} className="text-xs">Start on a new page</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {localContent.startOnNewPage === false
+                      ? `Continues under ${previousSectionName ?? 'the section above'}, if there is room`
+                      : 'Off lets it fill the space left on the previous page'}
+                  </p>
+                </div>
+                <Switch
+                  id={`new-page-${section.id}`}
+                  checked={localContent.startOnNewPage !== false}
+                  onCheckedChange={(v) => setLocalContent({ ...localContent, startOnNewPage: v })}
+                  data-testid={`switch-section-new-page-${section.id}`}
+                />
+              </div>
+            )}
+
+            {/* Undefined means "whatever Layout says"; the switch sets an
+                explicit override. A joined section shares the sheet's footer,
+                so the setting belongs to whichever section opened it. */}
             <div className="flex items-center justify-between border-t pt-3">
               <div className="space-y-0.5">
                 <Label htmlFor={`show-footer-${section.id}`} className="text-xs">Show footer</Label>
                 <p className="text-xs text-muted-foreground">
-                  {localContent.showFooter === undefined
+                  {localContent.startOnNewPage === false
+                    ? 'Set by the section that starts this page'
+                    : localContent.showFooter === undefined
                     ? 'Following the document default'
                     : 'Overriding the document default'}
                 </p>
               </div>
               <Switch
                 id={`show-footer-${section.id}`}
+                disabled={localContent.startOnNewPage === false}
                 checked={localContent.showFooter !== false}
                 onCheckedChange={(v) => setLocalContent({ ...localContent, showFooter: v })}
                 data-testid={`switch-section-footer-${section.id}`}
@@ -1576,7 +1625,7 @@ export function ProposalBuilder({
                   strategy={verticalListSortingStrategy}
                 >
                   <Accordion type="single" collapsible className="w-full">
-                    {sections.map((section) => (
+                    {sections.map((section, idx) => (
                       <SortableSectionItem
                         key={section.id}
                         section={section}
@@ -1588,6 +1637,28 @@ export function ProposalBuilder({
                         hasPaymentSchedule={sections.some(
                           (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
                         )}
+                        canJoinPrevious={
+                          idx > 0 &&
+                          section.sectionType !== 'cover_page' &&
+                          sections[idx - 1]?.sectionType !== 'cover_page'
+                        }
+                        previousSectionName={sections[idx - 1]?.name}
+                        printsNothing={
+                          section.isEnabled !== false &&
+                          section.sectionType === 'summary' &&
+                          !summaryHasContent(
+                            section,
+                            !sections.some(
+                              (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
+                            ),
+                          )
+                        }
+                        joinsPrevious={
+                          idx > 0 &&
+                          section.sectionType !== 'cover_page' &&
+                          sections[idx - 1]?.sectionType !== 'cover_page' &&
+                          (section.content as Record<string, unknown> | null)?.startOnNewPage === false
+                        }
                       />
                     ))}
                   </Accordion>
