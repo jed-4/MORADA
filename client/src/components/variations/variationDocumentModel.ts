@@ -94,6 +94,15 @@ export interface VariationDocAttachment {
 
 export interface VariationDocModel {
   costGroups: VariationDocGroup[];
+  /**
+   * Every cost line in the order the builder arranged them, ignoring type.
+   *
+   * What "Trade breakdown: off" is supposed to mean. Both renderers used to
+   * walk costGroups and merely hide the headings, which left the lines still
+   * clustered Materials-then-Labour-then-Subcontractor — so turning grouping
+   * off silently reordered the document rather than flattening it.
+   */
+  costLines: VariationDocLine[];
   allowanceLines: Array<{ id: string; description: string; amountIncCents: Cents }>;
   bills: VariationDocBill[];
   labourIncCents: Cents;
@@ -151,6 +160,7 @@ export function buildVariationDocumentModel(input: {
   const visibleCostItems = costItems.filter((i: any) => i?.showInPdf !== false);
 
   const groupsByType = new Map<string, VariationDocGroup>();
+  const costLines: VariationDocLine[] = [];
   for (const item of visibleCostItems) {
     const type = normaliseVariationType(item?.type);
     let group = groupsByType.get(type);
@@ -167,7 +177,7 @@ export function buildVariationDocumentModel(input: {
     // unitCostExTax is DOLLARS (doublePrecision) while everything else here is
     // cents — convert once, at the boundary.
     const unitCostExCents = Math.round((Number(item.unitCostExTax) || 0) * 100);
-    group.lines.push({
+    const line: VariationDocLine = {
       id: item.id,
       name: item.name,
       description: item.description,
@@ -180,7 +190,11 @@ export function buildVariationDocumentModel(input: {
       markupAmountExCents: amountExCents - Math.round(unitCostExCents * quantity),
       amountExCents,
       amountIncCents,
-    });
+    };
+    // The same object in both shapes, so grouped and ungrouped can never carry
+    // different figures for one line.
+    group.lines.push(line);
+    costLines.push(line);
     group.totalIncCents += amountIncCents;
   }
 
@@ -230,6 +244,7 @@ export function buildVariationDocumentModel(input: {
 
   return {
     costGroups,
+    costLines,
     allowanceLines,
     bills: docBills,
     labourIncCents,

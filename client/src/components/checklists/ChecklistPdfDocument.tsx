@@ -1,13 +1,24 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ChecklistInstance, ChecklistInstanceItem } from "@shared/schema";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
-const PDF_PRIMARY = "#A890D4";
+registerPdfFonts();
+
+/** The app's positive accent, deepened so a white tick stays legible on the
+ *  fill. Was Tailwind's green-500, which appears nowhere else in Morada. */
+const PDF_DONE = "#3F7D5C";
+
+// #A890D4 was the FIGMA swatch, not the colour the app ships. Every other
+// document takes the company's own brand colour; these internal ones had
+// no brandColor prop at all, so they printed in a purple from nowhere.
+const PDF_PRIMARY = PDF_COLORS.brandFallback;
 
 const styles = StyleSheet.create({
   page: {
     padding: 40,
     fontSize: 10,
-    fontFamily: "Helvetica",
+    fontFamily: PDF_FONT_FAMILY,
   },
   header: {
     marginBottom: 20,
@@ -16,23 +27,23 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontFamily: "Helvetica-Bold",
-    color: "#1a1a2e",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.ink,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 11,
-    color: "#666666",
+    color: PDF_COLORS.inkMuted,
   },
   meta: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 6,
     fontSize: 9,
-    color: "#888888",
+    color: PDF_COLORS.inkFaint,
   },
   groupHeader: {
-    backgroundColor: "#f8f7fa",
+    backgroundColor: PDF_COLORS.surfaceSubtle,
     padding: 8,
     marginTop: 12,
     marginBottom: 4,
@@ -41,12 +52,12 @@ const styles = StyleSheet.create({
   },
   groupTitle: {
     fontSize: 12,
-    fontFamily: "Helvetica-Bold",
-    color: "#333333",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.ink,
   },
   groupAssignee: {
     fontSize: 8,
-    color: "#888888",
+    color: PDF_COLORS.inkFaint,
     marginTop: 2,
   },
   itemRow: {
@@ -54,12 +65,12 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     padding: 6,
     paddingLeft: 16,
-    borderBottom: "0.5 solid #f0f0f0",
+    borderBottom: `0.5 solid ${PDF_COLORS.border}`,
   },
   checkbox: {
     width: 12,
     height: 12,
-    border: "1 solid #cccccc",
+    border: `1 solid ${PDF_COLORS.border}`,
     borderRadius: 2,
     marginRight: 8,
     marginTop: 1,
@@ -69,8 +80,8 @@ const styles = StyleSheet.create({
   checkboxChecked: {
     width: 12,
     height: 12,
-    border: "1 solid #22c55e",
-    backgroundColor: "#22c55e",
+    border: `1 solid ${PDF_DONE}`,
+    backgroundColor: PDF_DONE,
     borderRadius: 2,
     marginRight: 8,
     marginTop: 1,
@@ -80,8 +91,8 @@ const styles = StyleSheet.create({
   checkboxNA: {
     width: 12,
     height: 12,
-    border: "1 solid #94a3b8",
-    backgroundColor: "#f1f5f9",
+    border: `1 solid ${PDF_COLORS.inkFaint}`,
+    backgroundColor: PDF_COLORS.surfaceMuted,
     borderRadius: 2,
     marginRight: 8,
     marginTop: 1,
@@ -91,23 +102,23 @@ const styles = StyleSheet.create({
   checkmark: {
     fontSize: 8,
     color: "#ffffff",
-    fontFamily: "Helvetica-Bold",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
   },
   naText: {
     fontSize: 7,
-    color: "#64748b",
-    fontFamily: "Helvetica-Bold",
+    color: PDF_COLORS.inkMuted,
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
   },
   itemContent: {
     flex: 1,
   },
   itemDescription: {
     fontSize: 10,
-    color: "#333333",
+    color: PDF_COLORS.ink,
   },
   itemDescriptionCompleted: {
     fontSize: 10,
-    color: "#94a3b8",
+    color: PDF_COLORS.inkFaint,
     textDecoration: "line-through",
   },
   itemMeta: {
@@ -115,25 +126,25 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 2,
     fontSize: 8,
-    color: "#888888",
+    color: PDF_COLORS.inkFaint,
   },
   itemNotes: {
     fontSize: 8,
-    color: "#666666",
+    color: PDF_COLORS.inkMuted,
     marginTop: 3,
     paddingLeft: 4,
-    borderLeft: "1 solid #e2e8f0",
+    borderLeft: `1 solid ${PDF_COLORS.border}`,
   },
   summary: {
     marginTop: 20,
     padding: 12,
-    backgroundColor: "#f8f7fa",
+    backgroundColor: PDF_COLORS.surfaceSubtle,
     borderRadius: 4,
   },
   summaryTitle: {
     fontSize: 12,
-    fontFamily: "Helvetica-Bold",
-    color: "#333333",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.ink,
     marginBottom: 6,
   },
   summaryRow: {
@@ -144,7 +155,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 6,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: PDF_COLORS.border,
     borderRadius: 3,
     marginTop: 6,
     overflow: "hidden",
@@ -162,7 +173,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     fontSize: 8,
-    color: "#aaaaaa",
+    color: PDF_COLORS.inkFaint,
   },
 });
 
@@ -212,7 +223,7 @@ export function ChecklistPdfDocument({ checklist, groups, projectName, exportDat
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
           </View>
-          <Text style={{ fontSize: 8, color: "#888888", marginTop: 3, textAlign: "right" }}>{progressPct}% complete</Text>
+          <Text style={{ fontSize: 8, color: PDF_COLORS.inkFaint, marginTop: 3, textAlign: "right" }}>{progressPct}% complete</Text>
         </View>
 
         {groups.map((group) => (

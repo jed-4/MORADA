@@ -3,6 +3,10 @@ import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 interface AttachmentRow {
   name?: string;
@@ -28,7 +32,7 @@ export function AttachmentsSection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
 }: AttachmentsSectionProps) {
@@ -46,16 +50,16 @@ export function AttachmentsSection({
       paddingVertical: 6,
       borderBottom: `1px solid ${resolvedColor}`,
     },
-    cellName: { flex: 3, fontSize: 11, color: '#1F2937' },
-    cellType: { flex: 1, fontSize: 11, color: '#6B7280' },
+    cellName: { flex: 3, fontSize: 11, color: PDF_COLORS.ink },
+    cellType: { flex: 1, fontSize: 11, color: PDF_COLORS.inkMuted },
     cellLink: { flex: 3, fontSize: 10, color: resolvedColor },
-    headerCell: { fontSize: 10, fontWeight: 'bold', color: '#6B7280', textTransform: 'uppercase' },
+    headerCell: { fontSize: 10, fontWeight: 'bold', color: PDF_COLORS.inkMuted, textTransform: 'uppercase' },
   });
 
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
     >
       <DocProposalInnerHeader
         companyName={companyName}

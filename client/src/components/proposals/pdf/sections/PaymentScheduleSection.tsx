@@ -4,6 +4,10 @@ import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBloc
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 interface PaymentScheduleSectionProps {
   proposal: Proposal;
@@ -28,7 +32,7 @@ export function PaymentScheduleSection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
   showGst = true,
@@ -65,7 +69,7 @@ export function PaymentScheduleSection({
       paddingHorizontal: isS2 ? 6 : 0,
       paddingVertical: isS2 ? 4 : 0,
     },
-    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: '#6B7280' },
+    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
   });
 
   const proposalTotalCents = Number(proposal.totalAmount) || 0;
@@ -85,7 +89,7 @@ export function PaymentScheduleSection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
     >
       <DocProposalInnerHeader
         companyName={companyName}
