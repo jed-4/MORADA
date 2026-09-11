@@ -55,10 +55,17 @@ const escapeHtml = (s: string) =>
     .replace(/'/g, "&#39;");
 
 /** A URL safe to drop into an href. Anything not http(s) is dropped entirely —
- *  `javascript:` in a link is the obvious way this would be abused. */
+ *  `javascript:` in a link is the obvious way this would be abused.
+ *
+ *  Relative paths are resolved against APP_BASE_URL first. An email is read
+ *  outside the app, so "/api/public/company/x/logo" means nothing in a mail
+ *  client — before this it parsed as an invalid URL and the logo was silently
+ *  dropped from every branded email. Resolving keeps the http(s)-only rule:
+ *  the base is ours, so the result is still one of our own origins. */
 const safeUrl = (url: string): string | null => {
+  const base = (process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "");
   try {
-    const u = new URL(url);
+    const u = url.startsWith("/") ? new URL(`${base}${url}`) : new URL(url);
     return u.protocol === "http:" || u.protocol === "https:" ? escapeHtml(u.toString()) : null;
   } catch {
     return null;

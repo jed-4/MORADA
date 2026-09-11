@@ -1134,7 +1134,13 @@ export const companySettings = pgTable("company_settings", {
   phone: text("phone"), 
   website: text("website"),
   address: text("address"),
-  logoUrl: text("logo_url"), // Path to uploaded logo file
+  /** The PUBLIC url of the logo — what the PDFs, the portal and the client
+   *  emails read. Written by the logo upload route; never edited by hand. */
+  logoUrl: text("logo_url"),
+  /** The logo itself, base64. Small, bounded and read by exactly one route.
+   *  See migrations/0076 for why this is not in object storage. */
+  logoData: text("logo_data"),
+  logoMime: text("logo_mime"),
   
   // Social Media Links
   facebook: text("facebook"),
