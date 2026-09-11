@@ -377,11 +377,26 @@ export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
     showAllowanceType: true,
   };
 
+  /**
+   * Column visibility has two storage shapes: `visibleColumns`, an array, and
+   * `columnToggles`, an object — and EstimateSection reads the array in
+   * PREFERENCE to the object. A proposal that had ever been through the Layout
+   * tab's old column checkboxes carried an array, so these switches wrote the
+   * object and the PDF ignored them. Writing both keeps the two in step
+   * whichever one a given proposal happens to hold.
+   */
+  const COLUMN_KEYS = [
+    'description', 'quantity', 'unit', 'unitCostExTax',
+    'unitCostIncTax', 'markup', 'amountExTax', 'amountIncTax',
+  ];
+
   const updateToggle = (key: string, value: boolean) => {
-    setContent({
-      ...content,
-      columnToggles: { ...toggles, [key]: value },
-    });
+    const nextToggles = { ...toggles, [key]: value };
+    const next: Record<string, any> = { ...content, columnToggles: nextToggles };
+    if (COLUMN_KEYS.includes(key) || Array.isArray(content.visibleColumns)) {
+      next.visibleColumns = COLUMN_KEYS.filter((k) => nextToggles[k]);
+    }
+    setContent(next);
   };
 
   return (

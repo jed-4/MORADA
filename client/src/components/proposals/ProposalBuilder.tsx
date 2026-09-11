@@ -2142,37 +2142,13 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
         />
       </div>
 
-      {estimateSections.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-3">
-            <Label>Estimate columns visible in PDF</Label>
-            {estimateSections.map((s) => (
-              <div key={s.id} className="border rounded-md p-3 space-y-2" data-testid={`layout-estimate-${s.id}`}>
-                <p className="text-xs font-medium">{s.name}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {ESTIMATE_COLUMNS.map((col) => {
-                    const checked = isColumnVisible(s, col.key);
-                    return (
-                      <label
-                        key={col.key}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                        data-testid={`checkbox-col-${s.id}-${col.key}`}
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => updateVisibleColumns(s, col.key, !!v)}
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      {/* "Estimate columns visible in PDF" used to live here as well as in the
+          Estimate section's own Column Visibility panel — the same five
+          checkboxes in two places, and worse, writing two different keys. This
+          wrote `visibleColumns`, the section editor wrote `columnToggles`, and
+          the PDF prefers `visibleColumns`. So once you had touched this panel
+          even once, the section editor's switches silently stopped doing
+          anything. Columns belong to the section; this is document layout. */}
 
       <Button onClick={handleSave} disabled={saveLayoutMutation.isPending} className="w-full" data-testid="button-save-layout">
         {saveLayoutMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

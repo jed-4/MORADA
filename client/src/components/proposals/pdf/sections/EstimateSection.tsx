@@ -214,12 +214,14 @@ export function EstimateSection({
    * of dollar figures cannot tell which is which, so they are named on the
    * line.
    */
-  const ALLOWANCE_LABELS: Record<string, string> = {
-    "Prime Cost": "PC",
-    "Provisional Sum": "PS",
+  const ALLOWANCE_TYPES = new Set(["Prime Cost", "Provisional Sum"]);
+  // Spelled out, not "PC" / "PS". The client reading this has no reason to know
+  // the trade shorthand, and the whole point of the tag is that they can tell
+  // an allowance from a fixed price at a glance.
+  const allowanceLabel = (item: EstimateItem): string | null => {
+    const kind = String((item as { allowance?: string }).allowance ?? "None");
+    return ALLOWANCE_TYPES.has(kind) ? kind : null;
   };
-  const allowanceLabel = (item: EstimateItem): string | null =>
-    ALLOWANCE_LABELS[String((item as { allowance?: string }).allowance ?? "None")] ?? null;
   const formatQuantity = (qty: number) => qty.toFixed(2).replace(/\.?0+$/, "");
 
   // The stored priceIncTax is the PRE-margin line amount (line markup only).
@@ -340,13 +342,8 @@ export function EstimateSection({
       color: "#666666",
       lineHeight: 1.35,
     },
-    allowanceLegend: {
-      marginTop: 10,
-      fontSize: 8,
-      color: "#666666",
-    },
     allowanceTag: {
-      marginLeft: 4,
+      marginLeft: 5,
       paddingHorizontal: 3,
       paddingVertical: 1,
       fontSize: 7,
@@ -486,10 +483,6 @@ export function EstimateSection({
     );
   };
 
-  // Named once at the foot of the table rather than expanded on every line.
-  const usedAllowanceTypes = Array.from(
-    new Set(items.map((i) => String((i as { allowance?: string }).allowance ?? "None"))),
-  ).filter((a) => a in ALLOWANCE_LABELS);
 
   const subtotalRow = (label: string, value: number) => (
     <View wrap={false} minPresenceAhead={30} style={styles.subtotalRow}>
@@ -575,14 +568,6 @@ export function EstimateSection({
             {toggles.showColumnHeader && renderTableHeader()}
             {ungroupedItems.map(renderTableRow)}
           </View>
-        )}
-
-        {toggles.showAllowanceType && usedAllowanceTypes.length > 0 && (
-          <Text style={styles.allowanceLegend}>
-            {usedAllowanceTypes
-              .map((a) => `${ALLOWANCE_LABELS[a]} — ${a}`)
-              .join("    ")}
-          </Text>
         )}
 
         {toggles.amountExTax && (

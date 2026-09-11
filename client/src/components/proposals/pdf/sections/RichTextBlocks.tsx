@@ -196,7 +196,12 @@ export const sharedPageStyle = {
 };
 
 export const sharedSectionStyle = StyleSheet.create({
-  section: { marginTop: 20, marginBottom: 20 },
+  // Leading edge only. A TRAILING margin on the last section of a page tips
+  // past the boundary and @react-pdf opens another sheet for it — you get a
+  // page containing nothing but the fixed footer. A leading margin collapses
+  // into the page padding instead. (The variation document kit hit the same
+  // thing and documents it; see its shared/README.md §8.)
+  section: { marginTop: 20, marginBottom: 0 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, color: '#1F2937' },
   text: { fontSize: 11, lineHeight: 1.5, color: '#374151' },
   muted: { fontSize: 11, fontStyle: 'italic', color: '#6B7280' },
