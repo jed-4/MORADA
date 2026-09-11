@@ -42,6 +42,9 @@ import { buildDefaultSections, type CompanySettingsForSections } from '@/compone
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
+/** Sentinel for the built-in structure, which is not a saved template. */
+const STANDARD_STRUCTURE = '__standard__';
+
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
   cover_letter: "Cover Letter",
@@ -453,9 +456,18 @@ type ProposalTemplate = {
 interface ProposalTemplateBarProps {
   proposal: Proposal;
   sections: ProposalSection[];
+  /**
+   * 'picker' is the labelled select in the Details card — choosing the
+   * structure is part of setting a proposal up. 'menu' is the toolbar icon,
+   * which only saves the current proposal as a new template.
+   */
+  mode?: 'picker' | 'menu';
+  /** For 'picker': rebuilds the standard structure. */
+  onApplyStandard?: () => void;
+  applyingStandard?: boolean;
 }
 
-function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
+function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandard, applyingStandard }: ProposalTemplateBarProps) {
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState('');
   const [showSave, setShowSave] = useState(false);
@@ -581,6 +593,63 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
     },
   });
 
+  if (mode === 'picker') {
+    const run = (label: string, go: () => void) => {
+      if (sections.length === 0) { go(); return; }
+      setConfirmAction({
+        title: `Apply "${label}"?`,
+        description: `This will replace all ${sections.length} current section(s).`,
+        confirmLabel: 'Apply',
+        run: go,
+      });
+    };
+    return (
+      <>
+        <Select
+          // Deliberately uncontrolled: nothing on the proposal records which
+          // template built it, so this is a chooser, not a stored value.
+          value=""
+          disabled={applyMutation.isPending || !!applyingStandard}
+          onValueChange={(id) => {
+            if (id === STANDARD_STRUCTURE) {
+              run('Standard structure', () => onApplyStandard?.());
+              return;
+            }
+            const tpl = templates.find((t) => t.id === id);
+            if (tpl) run(tpl.name, () => applyMutation.mutate(id));
+          }}
+        >
+          <SelectTrigger className="h-7 text-xs" data-testid="select-apply-proposal-template">
+            <SelectValue
+              placeholder={
+                applyMutation.isPending || applyingStandard ? 'Applying…' : 'Choose a structure…'
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STANDARD_STRUCTURE} className="text-xs">
+              Standard structure
+            </SelectItem>
+            {templates.map((t) => (
+              <SelectItem key={t.id} value={t.id} className="text-xs">
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+          title={confirmAction?.title ?? ''}
+          description={confirmAction?.description}
+          confirmLabel={confirmAction?.confirmLabel ?? 'Confirm'}
+          destructive={confirmAction?.destructive}
+          onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       {/* Templates are an occasional action, not part of building a proposal,
@@ -606,33 +675,6 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
           <TooltipContent side="bottom">Templates</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="w-56">
-          {templates.length > 0 && (
-            <>
-              <DropdownMenuLabel>Apply template</DropdownMenuLabel>
-              {templates.map((t) => (
-                <DropdownMenuItem
-                  key={t.id}
-                  disabled={applyMutation.isPending}
-                  onSelect={() => {
-                    if (sections.length === 0) {
-                      applyMutation.mutate(t.id);
-                      return;
-                    }
-                    setConfirmAction({
-                      title: `Apply template "${t.name}"?`,
-                      description: `This will replace all ${sections.length} current section(s).`,
-                      confirmLabel: 'Apply',
-                      run: () => applyMutation.mutate(t.id),
-                    });
-                  }}
-                  data-testid={`menu-apply-proposal-template-${t.id}`}
-                >
-                  {t.name}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-            </>
-          )}
           <DropdownMenuItem
             disabled={sections.length === 0}
             // Keeps the menu open: the name field renders in its place.
@@ -1163,9 +1205,12 @@ export function ProposalBuilder({
           size="sm"
           onClick={() => setIsSendOpen(true)}
           disabled={!pdfBlob}
+          // min-h-6 is not redundant: size="sm" sets min-h-8, and a min-height
+          // is a different property from h-6's height, so the button kept its
+          // full 32px inside a 32px row and touched both dividers.
           className={
             toolbarSlot
-              ? 'h-6 gap-1 px-2 text-xs bg-sage text-white hover:bg-sage/90 [&>svg]:h-3 [&>svg]:w-3'
+              ? 'h-6 min-h-6 gap-1 px-2 text-xs bg-sage text-white hover:bg-sage/90 [&>svg]:h-3 [&>svg]:w-3'
               : 'bg-sage text-white hover:bg-sage/90'
           }
           data-testid="button-send-proposal"
@@ -1395,6 +1440,15 @@ export function ProposalBuilder({
                 onProposalUpdate={onProposalUpdate}
                 estimateSelector={estimateSelector}
                 hasEstimate={!!proposal.estimateId}
+                templateSelector={
+                  <ProposalTemplateBar
+                    proposal={proposal}
+                    sections={sections}
+                    mode="picker"
+                    onApplyStandard={() => addStandardSections.mutate()}
+                    applyingStandard={addStandardSections.isPending}
+                  />
+                }
               />
             )}
 
@@ -1608,7 +1662,14 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 
   const saveLayoutMutation = useMutation({
     mutationFn: async (layoutSettings: LayoutSettings) => {
-      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', { layoutSettings });
+      // Merge, don't replace. layoutSettings is a shared jsonb bag: the
+      // milestone seeder stores `milestonesSeeded` in it, so writing a fresh
+      // object here cleared that flag and the payment schedule re-seeded
+      // itself the next time the proposal loaded.
+      const existing = (proposal.layoutSettings as Record<string, unknown> | null) ?? {};
+      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
+        layoutSettings: { ...existing, ...layoutSettings },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });

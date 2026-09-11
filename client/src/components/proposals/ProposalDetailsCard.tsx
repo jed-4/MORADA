@@ -15,6 +15,8 @@ interface Props {
   estimateSelector?: ReactNode;
   /** Whether an estimate revision is linked — drives the open-by-default rule. */
   hasEstimate: boolean;
+  /** Structure picker: the standard set, or any saved company template. */
+  templateSelector?: ReactNode;
 }
 
 const SAVE_DEBOUNCE_MS = 700;
@@ -38,6 +40,7 @@ export function ProposalDetailsCard({
   onProposalUpdate,
   estimateSelector,
   hasEstimate,
+  templateSelector,
 }: Props) {
   // Open while the proposal is incomplete: an unlinked estimate means every
   // price in the document is blank, and that is not something to discover in
@@ -151,6 +154,19 @@ export function ProposalDetailsCard({
               </p>
             )}
           </div>
+
+          {templateSelector && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Structure</Label>
+              {templateSelector}
+              {/* Nothing on the proposal records which template built it, so
+                  this reads as a chooser rather than showing the last one
+                  applied. */}
+              <p className="text-xs text-muted-foreground/70">
+                Replaces every section with the chosen structure.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Pricing valid until</Label>
