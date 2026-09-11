@@ -21,6 +21,7 @@ interface AllowancesSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 const formatCurrency = (cents: number) =>
@@ -36,6 +37,7 @@ export function AllowancesSection({
   primaryColor = '#3B82F6',
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: AllowancesSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
@@ -145,6 +147,7 @@ export function AllowancesSection({
         </View>
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

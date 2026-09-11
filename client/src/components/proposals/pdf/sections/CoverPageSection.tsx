@@ -13,6 +13,7 @@ interface CoverPageSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: "style1" | "style2";
+  showFooter?: boolean;
 }
 
 const formatDate = (date: Date | string | null | undefined) => {
@@ -35,6 +36,7 @@ export function CoverPageSection({
   primaryColor = "#3B82F6",
   brandColor,
   documentStyle = "style1",
+  showFooter,
 }: CoverPageSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === "style2";
@@ -285,6 +287,7 @@ export function CoverPageSection({
         ) : null}
 
         <DocFooter
+          show={showFooter}
           companyName={companyName}
           brandColor={resolvedColor}
           docStyle="style2"
@@ -523,6 +526,7 @@ export function CoverPageSection({
       ) : null}
 
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle="style1"

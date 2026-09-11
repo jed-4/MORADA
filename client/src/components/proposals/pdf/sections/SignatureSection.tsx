@@ -14,6 +14,7 @@ interface SignatureSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function SignatureSection({
@@ -26,6 +27,7 @@ export function SignatureSection({
   primaryColor = '#3B82F6',
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: SignatureSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
@@ -156,6 +158,7 @@ export function SignatureSection({
         </View>
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

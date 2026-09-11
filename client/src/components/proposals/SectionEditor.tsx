@@ -383,6 +383,8 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
     amountIncTax: false,
     showSubtotals: true,
     showZeroLines: false,
+    showColumnHeader: true,
+    showAllowanceType: true,
   };
 
   const updateToggle = (key: string, value: boolean) => {
@@ -522,6 +524,36 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
               checked={toggles.showZeroLines}
               onCheckedChange={(checked) => updateToggle("showZeroLines", checked)}
               data-testid="toggle-showZeroLines"
+            />
+          </div>
+
+          {/* With only a name column on, the Item/Description header is a
+              caption for something obvious, repeated above every group. */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="toggle-showColumnHeader" className="cursor-pointer">Column header row</Label>
+              <p className="text-xs text-muted-foreground">Repeats above each group</p>
+            </div>
+            <Switch
+              id="toggle-showColumnHeader"
+              checked={toggles.showColumnHeader !== false}
+              onCheckedChange={(checked) => updateToggle("showColumnHeader", checked)}
+              data-testid="toggle-showColumnHeader"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="toggle-showAllowanceType" className="cursor-pointer">Mark PC / PS lines</Label>
+              <p className="text-xs text-muted-foreground">
+                Tags prime cost and provisional sum lines, with a key below the table
+              </p>
+            </div>
+            <Switch
+              id="toggle-showAllowanceType"
+              checked={toggles.showAllowanceType !== false}
+              onCheckedChange={(checked) => updateToggle("showAllowanceType", checked)}
+              data-testid="toggle-showAllowanceType"
             />
           </div>
         </div>

@@ -15,6 +15,7 @@ interface PaymentScheduleSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
   showGst?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function PaymentScheduleSection({
   primaryColor = '#3B82F6',
   brandColor,
   documentStyle = 'style1',
+  showFooter,
   showGst = true,
 }: PaymentScheduleSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
@@ -146,6 +148,7 @@ export function PaymentScheduleSection({
         </View>
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

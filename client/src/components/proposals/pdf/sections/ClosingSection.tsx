@@ -13,6 +13,7 @@ interface ClosingSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function ClosingSection({
@@ -24,6 +25,7 @@ export function ClosingSection({
   primaryColor = '#3B82F6',
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: ClosingSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
@@ -76,6 +78,7 @@ export function ClosingSection({
         </View>
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

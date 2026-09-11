@@ -68,10 +68,19 @@ export function ProposalDocument({
     pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
     showGst?: boolean;
     showLogo?: boolean;
+    showFooter?: boolean;
   } | null) ?? null;
   const pricingMode = layout?.pricingMode ?? 'itemised';
   const showGst = layout?.showGst ?? true;
   const showLogo = layout?.showLogo ?? true;
+  // The Layout panel has always written showFooter and nothing has ever read
+  // it, so the switch did nothing. A section can now override the document
+  // default — a cover page or a signature sheet usually wants a clean edge.
+  const showFooterDefault = layout?.showFooter ?? true;
+  const footerFor = (s: ProposalSection): boolean => {
+    const override = (s.content as Record<string, unknown> | null)?.showFooter;
+    return typeof override === 'boolean' ? override : showFooterDefault;
+  };
   const effectiveLogo = showLogo ? companyLogo : undefined;
 
   const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined): string | undefined => {
@@ -126,6 +135,7 @@ export function ProposalDocument({
             return (
               <CoverPageSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 project={project}
@@ -143,6 +153,7 @@ export function ProposalDocument({
             return (
               <ScopeSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -153,6 +164,7 @@ export function ProposalDocument({
             return (
               <SummarySection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -164,6 +176,7 @@ export function ProposalDocument({
             return (
               <AllowancesSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 proposalItems={proposalItems}
@@ -175,6 +188,7 @@ export function ProposalDocument({
             return (
               <PaymentScheduleSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 milestones={milestones}
@@ -187,6 +201,7 @@ export function ProposalDocument({
             return (
               <InclusionsExclusionsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -197,6 +212,7 @@ export function ProposalDocument({
             return (
               <TermsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -208,6 +224,7 @@ export function ProposalDocument({
             return (
               <ClosingSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -218,6 +235,7 @@ export function ProposalDocument({
             return (
               <AttachmentsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -228,6 +246,7 @@ export function ProposalDocument({
             return (
               <SignatureSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 acceptance={acceptance}
@@ -243,6 +262,7 @@ export function ProposalDocument({
             return (
               <EstimateSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 section={section}
                 estimateData={estimateData}
                 companyLogo={effectiveLogo}
@@ -264,6 +284,7 @@ export function ProposalDocument({
             return (
               <ScopeSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}

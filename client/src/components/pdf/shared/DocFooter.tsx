@@ -5,13 +5,16 @@ interface DocFooterProps {
   companyName?: string;
   brandColor: string;
   docStyle: "style1" | "style2";
+  /** False hides the footer on this page. Defaults to shown. */
+  show?: boolean;
 }
 
 // Idempotent — the shared chrome is used by every document, so registering
 // here means none of them can render in Helvetica by omission.
 registerPdfFonts();
 
-export function DocFooter({ companyName, brandColor, docStyle }: DocFooterProps) {
+export function DocFooter({ companyName, brandColor, docStyle, show = true }: DocFooterProps) {
+  if (!show) return null;
   const isS2 = docStyle === "style2";
 
   return (

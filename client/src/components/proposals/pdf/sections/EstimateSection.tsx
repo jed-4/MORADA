@@ -24,6 +24,7 @@ interface EstimateSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: "style1" | "style2";
+  showFooter?: boolean;
   proposalName?: string;
   proposalNumber?: string;
   expiryDate?: string;
@@ -40,6 +41,7 @@ export function EstimateSection({
   primaryColor = "#3B82F6",
   brandColor,
   documentStyle = "style1",
+  showFooter,
   proposalName,
   proposalNumber,
   pricingMode = "itemised",
@@ -66,6 +68,8 @@ export function EstimateSection({
     amountIncTax: false,
     showSubtotals: true,
     showZeroLines: false,
+    showColumnHeader: true,
+    showAllowanceType: true,
   };
   const baseToggles: Record<string, boolean> = visibleColumns
     ? {
@@ -79,6 +83,8 @@ export function EstimateSection({
         amountIncTax: visibleColumns.includes("amountIncTax"),
         showSubtotals: fallbackToggles.showSubtotals !== false,
         showZeroLines: fallbackToggles.showZeroLines === true,
+        showColumnHeader: fallbackToggles.showColumnHeader !== false,
+        showAllowanceType: fallbackToggles.showAllowanceType !== false,
       }
     : fallbackToggles;
 
@@ -95,6 +101,8 @@ export function EstimateSection({
         amountIncTax: false,
         showSubtotals: false,
         showZeroLines: false,
+        showColumnHeader: false,
+        showAllowanceType: false,
       };
     }
     const next = { ...baseToggles };
@@ -178,7 +186,22 @@ export function EstimateSection({
     return kids.reduce((acc, k) => acc.concat(collectGroupItems(k.id, seen)), [...own]);
   };
 
-  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
+  const formatCurrency = (amount: number) =>
+    `$${amount.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  /**
+   * Prime Cost and Provisional Sum lines are a different promise from a fixed
+   * price — PC is an allowance the client still chooses within, PS is the
+   * builder's estimate of work not yet fully scoped. A client reading a column
+   * of dollar figures cannot tell which is which, so they are named on the
+   * line.
+   */
+  const ALLOWANCE_LABELS: Record<string, string> = {
+    "Prime Cost": "PC",
+    "Provisional Sum": "PS",
+  };
+  const allowanceLabel = (item: EstimateItem): string | null =>
+    ALLOWANCE_LABELS[String((item as { allowance?: string }).allowance ?? "None")] ?? null;
   const formatQuantity = (qty: number) => qty.toFixed(2).replace(/\.?0+$/, "");
 
   // The stored priceIncTax is the PRE-margin line amount (line markup only).
@@ -310,6 +333,24 @@ export function EstimateSection({
     col: {
       paddingHorizontal: 4,
     },
+    itemCell: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    allowanceLegend: {
+      marginTop: 10,
+      fontSize: 8,
+      color: "#666666",
+    },
+    allowanceTag: {
+      marginLeft: 4,
+      paddingHorizontal: 3,
+      paddingVertical: 1,
+      fontSize: 7,
+      color: resolvedColor,
+      backgroundColor: tintOnWhite(resolvedColor, "1f"),
+      borderRadius: 2,
+    },
     textRight: {
       textAlign: "right",
     },
@@ -370,7 +411,12 @@ export function EstimateSection({
 
     return (
       <View key={item.id} style={styles.tableRow}>
-        <Text style={[styles.col, { width: colWidths.item }]}>{item.name || "Untitled"}</Text>
+        <View style={[styles.col, styles.itemCell, { width: colWidths.item }]}>
+          <Text>{item.name || "Untitled"}</Text>
+          {toggles.showAllowanceType && allowanceLabel(item) ? (
+            <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+          ) : null}
+        </View>
         {toggles.description && (
           <Text style={[styles.col, { width: colWidths.description }]}>
             {item.description || "-"}
@@ -413,6 +459,11 @@ export function EstimateSection({
     );
   };
 
+  // Named once at the foot of the table rather than expanded on every line.
+  const usedAllowanceTypes = Array.from(
+    new Set(items.map((i) => String((i as { allowance?: string }).allowance ?? "None"))),
+  ).filter((a) => a in ALLOWANCE_LABELS);
+
   const renderGroup = (group: EstimateGroup): any => {
     const directItems = itemsByGroup[group.id] || [];
     const subgroups = subgroupsByParent[group.id] || [];
@@ -430,7 +481,7 @@ export function EstimateSection({
         {group.description ? (
           <Text style={styles.groupDescription}>{group.description}</Text>
         ) : null}
-        {!hideLineItems && directItems.length > 0 && renderTableHeader()}
+        {!hideLineItems && toggles.showColumnHeader && directItems.length > 0 && renderTableHeader()}
         {!hideLineItems && directItems.map(renderTableRow)}
         {subgroups.map((sg) => renderGroup(sg))}
         {toggles.showSubtotals && (
@@ -512,9 +563,17 @@ export function EstimateSection({
             <View style={styles.groupHeader}>
               <Text style={{ color: "#ffffff" }}>Other Items</Text>
             </View>
-            {renderTableHeader()}
+            {toggles.showColumnHeader && renderTableHeader()}
             {ungroupedItems.map(renderTableRow)}
           </View>
+        )}
+
+        {toggles.showAllowanceType && usedAllowanceTypes.length > 0 && (
+          <Text style={styles.allowanceLegend}>
+            {usedAllowanceTypes
+              .map((a) => `${ALLOWANCE_LABELS[a]} — ${a}`)
+              .join("    ")}
+          </Text>
         )}
 
         {toggles.amountExTax && (
@@ -547,6 +606,7 @@ export function EstimateSection({
         )}
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

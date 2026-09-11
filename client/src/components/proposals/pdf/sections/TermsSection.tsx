@@ -13,6 +13,7 @@ interface TermsSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function TermsSection({
@@ -24,6 +25,7 @@ export function TermsSection({
   primaryColor = '#3B82F6',
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: TermsSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
@@ -57,6 +59,7 @@ export function TermsSection({
         </View>
       </View>
       <DocFooter
+        show={showFooter}
         companyName={companyName}
         brandColor={resolvedColor}
         docStyle={documentStyle}

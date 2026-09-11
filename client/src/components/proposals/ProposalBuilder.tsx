@@ -395,6 +395,26 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               </div>
             )}
 
+            {/* Page furniture, at the foot of every section's editor. Undefined
+                means "whatever Layout says"; the switch sets an explicit
+                override for this section only. */}
+            <div className="flex items-center justify-between border-t pt-3">
+              <div className="space-y-0.5">
+                <Label htmlFor={`show-footer-${section.id}`} className="text-xs">Show footer</Label>
+                <p className="text-xs text-muted-foreground">
+                  {localContent.showFooter === undefined
+                    ? 'Following the document default'
+                    : 'Overriding the document default'}
+                </p>
+              </div>
+              <Switch
+                id={`show-footer-${section.id}`}
+                checked={localContent.showFooter !== false}
+                onCheckedChange={(v) => setLocalContent({ ...localContent, showFooter: v })}
+                data-testid={`switch-section-footer-${section.id}`}
+              />
+            </div>
+
             {/* No Save button — edits persist on their own. See the autosave
                 effect above for why this used to lose work. */}
           </div>
