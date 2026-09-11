@@ -21,6 +21,12 @@ interface SummarySectionProps {
    * under an estimate table showing real money.
    */
   totals?: { subtotalCents: number; gstCents: number; totalCents: number };
+  /**
+   * False when a payment schedule is in the document: it carries the contract
+   * price above its milestones, and printing the same three figures twice
+   * invites the reader to look for the difference.
+   */
+  showTotals?: boolean;
 }
 
 const formatCurrency = (cents: number) =>
@@ -38,12 +44,25 @@ export function SummarySection({
   showFooter,
   showGst = true,
   totals,
+  showTotals = true,
 }: SummarySectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
 
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.summaryText as string) || '';
+
+  /**
+   * With the figures now on the payment schedule, a Summary that was only ever
+   * its totals has nothing left to print. Existing proposals all have one, so
+   * without this they gained a page containing a heading and white space.
+   * Prose keeps the page; emptiness does not earn one.
+   */
+  const hasProse =
+    html.replace(/<[^>]*>/g, '').trim().length > 0 ||
+    (section.descriptionHtml ?? '').replace(/<[^>]*>/g, '').trim().length > 0 ||
+    (section.description ?? '').trim().length > 0;
+  if (!showTotals && !hasProse) return null;
 
   const subtotal = totals?.subtotalCents ?? (Number(proposal.subtotal) || 0);
   const gst = totals?.gstCents ?? (Number(proposal.gstAmount) || 0);
@@ -109,6 +128,7 @@ export function SummarySection({
           <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
+          {showTotals && (
           <View style={styles.totalsWrap}>
             {showGst ? (
               <>
@@ -132,6 +152,7 @@ export function SummarySection({
               </View>
             )}
           </View>
+          )}
         </View>
       </View>
       <DocFooter

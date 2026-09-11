@@ -138,6 +138,10 @@ export function ProposalDocument({
     estimateTotalIncGstCents,
   };
   const enabledSections = sections.filter((s) => s.isEnabled !== false);
+  // The price appears once. The payment schedule owns it — the milestones are
+  // percentages of it — and a proposal with no schedule keeps it on Summary
+  // rather than losing it.
+  const hasPaymentSchedule = enabledSections.some((s) => s.sectionType === 'payment_schedule');
   const sortedSections = [...enabledSections]
     .sort((a, b) => a.order - b.order)
     .map((s) => substituteSectionContent(s, placeholderCtx));
@@ -192,6 +196,7 @@ export function ProposalDocument({
                 key={section.id}
                 showFooter={footerFor(section)}
                 totals={totals}
+                showTotals={!hasPaymentSchedule}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -217,6 +222,7 @@ export function ProposalDocument({
               <PaymentScheduleSection
                 key={section.id}
                 showFooter={footerFor(section)}
+                totals={totals}
                 proposal={proposal}
                 section={section}
                 milestones={milestones}

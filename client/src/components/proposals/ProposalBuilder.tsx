@@ -97,9 +97,11 @@ interface SortableSectionItemProps {
   projectId: string;
   project?: Project;
   client?: Contact;
+  /** Whether a payment schedule is in the document — it carries the totals. */
+  hasPaymentSchedule?: boolean;
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -360,6 +362,14 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "summary" && (
               <div className="space-y-2">
                 <Label>Summary Content</Label>
+                {/* Says where the figures went, so their absence reads as a
+                    decision rather than a bug. */}
+                {hasPaymentSchedule && (
+                  <p className="text-xs text-muted-foreground">
+                    The totals print on the Payment Schedule, above the milestones they
+                    are divided into. Turn that section off and they come back here.
+                  </p>
+                )}
                 <RichTextEditor
                   content={localContent.summaryText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, summaryText: html })}
@@ -1575,6 +1585,9 @@ export function ProposalBuilder({
                         projectId={proposal.projectId}
                         project={project}
                         client={client}
+                        hasPaymentSchedule={sections.some(
+                          (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
+                        )}
                       />
                     ))}
                   </Accordion>

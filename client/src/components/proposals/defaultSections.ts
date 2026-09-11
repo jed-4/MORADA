@@ -30,16 +30,20 @@ export function buildDefaultSections(
   const companyName = settings?.companyName || "[Company Name]";
   const closingText = `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
 
+  // No Summary section: the payment schedule carries the contract price above
+  // its milestones, which are percentages of it. Summary was a page break and
+  // three lines of figures immediately before the page that divides them up.
+  // The type still exists for proposals that want prose there, and keeps its
+  // own totals when there is no schedule to carry them.
   return [
     { sectionType: "cover_page", name: "Cover Page", order: 0 },
     { sectionType: "cover_letter", name: "Cover Letter", order: 1 },
     { sectionType: "estimate", name: "Estimate", order: 2 },
-    { sectionType: "summary", name: "Summary", order: 3 },
-    { sectionType: "allowances", name: "Allowances", order: 4 },
-    { sectionType: "payment_schedule", name: "Payment Schedule", order: 5 },
-    { sectionType: "closing", name: "Closing", order: 6, content: { closingText } },
-    { sectionType: "attachments", name: "Attachments", order: 7 },
-    { sectionType: "terms_conditions", name: "Terms & Conditions", order: 8, content: { termsText } },
-    { sectionType: "signature", name: "Signature", order: 9 },
+    { sectionType: "allowances", name: "Allowances", order: 3 },
+    { sectionType: "payment_schedule", name: "Payment Schedule", order: 4 },
+    { sectionType: "closing", name: "Closing", order: 5, content: { closingText } },
+    { sectionType: "attachments", name: "Attachments", order: 6 },
+    { sectionType: "terms_conditions", name: "Terms & Conditions", order: 7, content: { termsText } },
+    { sectionType: "signature", name: "Signature", order: 8 },
   ];
 }
