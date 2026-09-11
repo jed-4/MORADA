@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, ProposalPaymentMilestone } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -75,7 +76,7 @@ export function PaymentScheduleSection({
       paddingHorizontal: isS2 ? 6 : 0,
       paddingVertical: isS2 ? 4 : 0,
     },
-    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: '#6B7280' },
+    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
     priceWrap: {
       marginTop: 4,
       marginBottom: 18,
@@ -90,8 +91,8 @@ export function PaymentScheduleSection({
         : { paddingTop: 10, borderTop: `1px solid ${resolvedColor}` }),
     },
     priceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-    priceLabel: { fontSize: 10, color: '#4B5563' },
-    priceValue: { fontSize: 10, color: '#1F2937' },
+    priceLabel: { fontSize: 10, color: PDF_COLORS.inkMuted },
+    priceValue: { fontSize: 10, color: PDF_COLORS.ink },
     grandRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -99,7 +100,7 @@ export function PaymentScheduleSection({
       marginTop: 3,
       borderTop: `1px solid ${resolvedColor}`,
     },
-    grandLabel: { fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: '#1F2937' },
+    grandLabel: { fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: PDF_COLORS.ink },
     grandValue: { fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: resolvedColor },
   });
 

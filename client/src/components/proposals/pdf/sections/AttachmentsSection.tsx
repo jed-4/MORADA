@@ -1,4 +1,5 @@
 import { Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 
@@ -40,16 +41,16 @@ export function AttachmentsSection({
 
   const styles = StyleSheet.create({
     table: { marginTop: 12, borderTop: `1px solid ${resolvedColor}`, opacity: 1 },
-    row: { flexDirection: 'row', paddingVertical: 6, borderBottom: '1px solid #E5E7EB' },
+    row: { flexDirection: 'row', paddingVertical: 6, borderBottom: '1px solid ${PDF_COLORS.border}' },
     headerRow: {
       flexDirection: 'row',
       paddingVertical: 6,
       borderBottom: `1px solid ${resolvedColor}`,
     },
-    cellName: { flex: 3, fontSize: 11, color: '#1F2937' },
-    cellType: { flex: 1, fontSize: 11, color: '#6B7280' },
+    cellName: { flex: 3, fontSize: 11, color: PDF_COLORS.ink },
+    cellType: { flex: 1, fontSize: 11, color: PDF_COLORS.inkMuted },
     cellLink: { flex: 3, fontSize: 10, color: resolvedColor },
-    headerCell: { fontSize: 10, fontWeight: 'bold', color: '#6B7280', textTransform: 'uppercase' },
+    headerCell: { fontSize: 10, fontWeight: 'bold', color: PDF_COLORS.inkMuted, textTransform: 'uppercase' },
   });
 
   return (

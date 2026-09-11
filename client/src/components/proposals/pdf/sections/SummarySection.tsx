@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
@@ -98,8 +99,8 @@ export function SummarySection({
           }),
     },
     row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-    label: { fontSize: 11, color: '#374151' },
-    value: { fontSize: 11, color: '#1F2937' },
+    label: { fontSize: 11, color: PDF_COLORS.inkMuted },
+    value: { fontSize: 11, color: PDF_COLORS.ink },
     grandRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -110,7 +111,7 @@ export function SummarySection({
     grandLabel: {
       fontSize: 14,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-      color: '#1F2937',
+      color: PDF_COLORS.ink,
     },
     grandValue: {
       fontSize: 14,

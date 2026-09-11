@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type {
   Proposal,
   ProposalSection,
@@ -147,7 +148,7 @@ export function AllowancesSection({
       paddingHorizontal: isS2 ? 6 : 0,
     },
     kind: { fontSize: 8, color: resolvedColor, marginTop: 1 },
-    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: '#6B7280' },
+    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
   });
 
   return (

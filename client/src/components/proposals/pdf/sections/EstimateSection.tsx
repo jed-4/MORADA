@@ -9,6 +9,9 @@ import {
 } from "@shared/proposalTotals";
 import { SectionIntro } from "./RichTextBlocks";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { PdfLineTable, type PdfTableColumn, type PdfTableGroup } from "@/components/pdf/shared/PdfLineTable";
+import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
+import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface EstimateSectionProps {
@@ -288,11 +291,11 @@ export function EstimateSection({
     description: {
       marginBottom: 15,
       fontSize: 10,
-      color: "#333333",
+      color: PDF_COLORS.ink,
     },
     groupHeader: {
       backgroundColor: resolvedColor,
-      color: "#ffffff",
+      color: PDF_COLORS.surface,
       padding: 8,
       fontSize: 11,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
@@ -301,7 +304,7 @@ export function EstimateSection({
     },
     groupDescription: {
       fontSize: 9,
-      color: "#444444",
+      color: PDF_COLORS.inkMuted,
       lineHeight: 1.4,
       paddingTop: 6,
       paddingBottom: 2,
@@ -309,22 +312,22 @@ export function EstimateSection({
     },
     tableHeader: {
       flexDirection: "row",
-      backgroundColor: isS2 ? resolvedColor + "14" : "#f5f5f5",
+      backgroundColor: isS2 ? resolvedColor + "14" : PDF_COLORS.surfaceMuted,
       padding: 6,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
-      borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : "#cccccc"}`,
+      borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : PDF_COLORS.borderStrong}`,
     },
     tableRow: {
       flexDirection: "row",
       padding: 6,
-      borderBottom: "1px solid #eeeeee",
+      borderBottom: "1px solid ${PDF_COLORS.border}",
       fontSize: 9,
     },
     subtotalRow: {
       flexDirection: "row",
       padding: 6,
-      backgroundColor: isS2 ? resolvedColor + "0d" : "#f9f9f9",
+      backgroundColor: isS2 ? resolvedColor + "0d" : PDF_COLORS.surfaceSubtle,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
       marginTop: 0,
@@ -333,7 +336,7 @@ export function EstimateSection({
       flexDirection: "row",
       padding: 8,
       backgroundColor: resolvedColor,
-      color: "#ffffff",
+      color: PDF_COLORS.surface,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 11,
       marginTop: 15,
@@ -348,7 +351,7 @@ export function EstimateSection({
     itemDescription: {
       marginTop: 2,
       fontSize: 8,
-      color: "#666666",
+      color: PDF_COLORS.inkFaint,
       lineHeight: 1.35,
     },
     allowanceTag: {
@@ -380,175 +383,97 @@ export function EstimateSection({
       ? colWidths.item + colWidths.description
       : colWidths.item;
 
-  const renderTableHeader = () => (
-    // Repeats while the table runs — a second page of unlabelled figures makes
-    // the reader page back to find out which column is the price. Only when the
-    // estimate has the sheet to itself: `fixed` is scoped to the <Page>, so on a
-    // shared sheet it would reprint above whatever follows the table.
-    <View fixed={!sharesPage} style={styles.tableHeader}>
-      <Text style={[styles.col, { width: nameWidth }]}>Item</Text>
-      {toggles.description && !descriptionUnderName && (
-        <Text style={[styles.col, { width: colWidths.description }]}>Description</Text>
-      )}
-      {toggles.quantity && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Qty</Text>
-      )}
-      {toggles.unit && (
-        <Text style={[styles.col, { width: colWidths.numeric }]}>Unit</Text>
-      )}
-      {toggles.unitCostExTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Unit Cost (ex)
-        </Text>
-      )}
-      {toggles.unitCostIncTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Unit Cost (inc)
-        </Text>
-      )}
-      {toggles.markup && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Markup %</Text>
-      )}
-      {toggles.amountExTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Amount (ex)
-        </Text>
-      )}
-      {toggles.amountIncTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Amount (inc)
-        </Text>
-      )}
-    </View>
-  );
-
-  const renderTableRow = (item: EstimateItem) => {
-    // Use the recomputed amount (not the possibly-stale cache) so a zeroed
-    // priced line is correctly hidden.
-    if (!toggles.showZeroLines && preMarginIncTax(item) === 0) {
-      return null;
-    }
-    const unitCostTax = Math.round(item.unitCostExTax * (estimate.taxRate || 10)) / 100;
-    const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
-
-    return (
-      <View key={item.id} wrap={false} style={styles.tableRow}>
-        <View style={[styles.col, { width: nameWidth }]}>
-          <View style={styles.itemCell}>
-            <Text>{item.name || "Untitled"}</Text>
-            {toggles.showAllowanceType && allowanceLabel(item) ? (
-              <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
-            ) : null}
-          </View>
-          {/* Under the name rather than in a column of its own: descriptions
-              are sentences, and a 200pt column of wrapped prose beside a short
-              name left the table ragged and the page half empty. A dash is not
-              printed for lines that simply have no description. */}
-          {toggles.description && descriptionUnderName && item.description ? (
-            <Text style={styles.itemDescription}>{item.description}</Text>
-          ) : null}
-        </View>
-        {toggles.description && !descriptionUnderName && (
-          <Text style={[styles.col, { width: colWidths.description }]}>
-            {item.description || "-"}
-          </Text>
-        )}
-        {toggles.quantity && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatQuantity(item.quantity)}
-          </Text>
-        )}
-        {toggles.unit && (
-          <Text style={[styles.col, { width: colWidths.numeric }]}>{item.unitType || ""}</Text>
-        )}
-        {toggles.unitCostExTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(item.unitCostExTax)}
-          </Text>
-        )}
-        {toggles.unitCostIncTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(unitCostIncTax)}
-          </Text>
-        )}
-        {toggles.markup && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {item.markupPercent ?? 0}%
-          </Text>
-        )}
-        {toggles.amountExTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {amountCell(item, lineExTaxClient(item))}
-          </Text>
-        )}
-        {toggles.amountIncTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {amountCell(item, lineIncTaxClient(item))}
-          </Text>
-        )}
-      </View>
-    );
-  };
-
-
-  const subtotalRow = (label: string, value: number) => (
-    <View wrap={false} minPresenceAhead={30} style={styles.subtotalRow}>
-      <Text style={[styles.col, { flex: 1 }]}>{label}</Text>
-      <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-        {formatCurrency(value)}
-      </Text>
-    </View>
-  );
-
-  /**
-   * `isRoot` because a subtotal is only meaningful once per top-level group.
-   * Nested groups used to print their own as well, so "Subtotal — Joinery
-   * $1,100.00" sat directly above "Subtotal — Kitchen $2,200.00" with nothing
-   * saying the second contained the first — it read as $3,300 of work.
+  /* ── Model for the shared table ──────────────────────────────────────────
+   *
+   * The rendering moved to PdfLineTable, the same component the variation,
+   * invoice, purchase order and RFQ documents use. What it brings that the
+   * hand-rolled table did not:
+   *
+   *  - column widths that fill the page, and a squeeze that gives width back
+   *    to the text cell when too many numeric columns are switched on;
+   *  - a neutral grey group heading instead of a full-width brand bar, which
+   *    made a six-group estimate look like six separate tables;
+   *  - the group total right-aligned ON the heading row, so it costs no row,
+   *    and only where it earns its place (more than one line, or sub-groups);
+   *  - nesting shown by indent and weight rather than a second identical bar;
+   *  - continuous zebra and 1pt hairlines (0.5 renders unevenly).
    */
-  const renderGroup = (group: EstimateGroup, isRoot = false): any => {
-    const directItems = itemsByGroup[group.id] || [];
-    const subgroups = subgroupsByParent[group.id] || [];
-    // Spans the group AND its descendants, so the printed subtotals add up to
-    // the printed grand total even when a group is a pure container.
-    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(group.id));
+  const money = (n: number) => formatCurrency(n);
 
-    return (
-      <View key={group.id}>
-        <View minPresenceAhead={70} style={styles.groupHeader}>
-          <Text style={{ color: "#ffffff" }}>{group.name}</Text>
-        </View>
-        {/* The group's description is the section's specification — it reads as
-            the blurb under the heading, above that section's lines. */}
-        {group.description ? (
-          <Text style={styles.groupDescription}>{group.description}</Text>
-        ) : null}
-        {!hideLineItems && toggles.showColumnHeader && directItems.length > 0 && renderTableHeader()}
-        {!hideLineItems && directItems.map(renderTableRow)}
-        {subgroups.map((sg) => renderGroup(sg))}
-        {toggles.showSubtotals && isRoot && (
-          <>
-            {(subtotalBasis === "ex" || subtotalBasis === "both") &&
-              subtotalRow(
-                `${group.name} subtotal${showGst ? " (ex GST)" : ""}`,
-                exTax,
-              )}
-            {(subtotalBasis === "inc" || subtotalBasis === "both") &&
-              subtotalRow(`${group.name} subtotal (inc GST)`, incTax)}
-          </>
-        )}
-      </View>
-    );
+  const columns: Array<PdfTableColumn<EstimateItem>> = [];
+  if (toggles.quantity)
+    columns.push({ key: "qty", label: "Qty", width: 34, align: "right",
+      value: (i) => formatQuantity(i.quantity) });
+  if (toggles.unit)
+    columns.push({ key: "unit", label: "Unit", width: 32, align: "left",
+      value: (i) => i.unitType || "" });
+  if (toggles.unitCostExTax)
+    columns.push({ key: "uex", label: "Unit (ex)", width: 56, align: "right",
+      value: (i) => money(i.unitCostExTax) });
+  if (toggles.unitCostIncTax)
+    columns.push({ key: "uinc", label: "Unit (inc)", width: 56, align: "right",
+      value: (i) => {
+        const tax = Math.round(i.unitCostExTax * (estimate.taxRate || 10)) / 100;
+        return money(Math.round((i.unitCostExTax + tax) * 100) / 100);
+      } });
+  if (toggles.markup)
+    columns.push({ key: "mkup", label: "Markup %", width: 38, align: "right",
+      value: (i) => `${i.markupPercent ?? 0}%` });
+  if (toggles.amountExTax)
+    columns.push({ key: "aex", label: "Amount (ex)", width: 60, align: "right",
+      value: (i) => amountCell(i, lineExTaxClient(i)) });
+  if (toggles.amountIncTax)
+    columns.push({ key: "ainc", label: "Amount (inc)", width: 64, align: "right",
+      value: (i) => amountCell(i, lineIncTaxClient(i)) });
+
+  const visibleItems = (rows: EstimateItem[]) =>
+    rows.filter((i) => toggles.showZeroLines || preMarginIncTax(i) !== 0);
+
+  const groupTotal = (groupId: string): string => {
+    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(groupId));
+    if (subtotalBasis === "ex") return money(exTax);
+    if (subtotalBasis === "both") return `${money(exTax)} ex · ${money(incTax)} inc`;
+    return money(incTax);
   };
+
+  const toTableGroup = (group: EstimateGroup): PdfTableGroup<EstimateItem> => ({
+    key: group.id,
+    label: group.name,
+    total: toggles.showSubtotals ? groupTotal(group.id) : undefined,
+    rows: hideLineItems ? [] : visibleItems(itemsByGroup[group.id] || []),
+    children: (subgroupsByParent[group.id] || []).map(toTableGroup),
+  });
+
+  const tableGroups: Array<PdfTableGroup<EstimateItem>> = rootGroups.map(toTableGroup);
+  if (ungroupedItems.length > 0 && !hideLineItems) {
+    tableGroups.push({
+      key: "__ungrouped__",
+      label: "Other items",
+      rows: visibleItems(ungroupedItems),
+    });
+  }
+
+  // The grand total moves into the shared totals card: a bordered panel with
+  // the figure in the brand colour, rather than a full-width brand bar. The
+  // kit's note is that a fill behind the total fights the table above it.
+  const totalRows = [] as Array<{ label: string; value: string }>;
+  if (showGst) {
+    totalRows.push({ label: "Subtotal (ex GST)", value: money(grandTotalExTax) });
+    totalRows.push({
+      label: `GST (${Number(estimate?.taxRate ?? 10)}%)`,
+      value: money(round2(grandTotalIncTax - grandTotalExTax)),
+    });
+  }
 
   return (
-      <View style={{ paddingHorizontal: 40, paddingTop: 16 }}>
+      <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: 16 }}>
         <Text
           minPresenceAhead={60}
           style={{
-            fontSize: 16,
-            fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-            color: resolvedColor,
+            fontSize: PDF_TYPE.docTitle,
+            fontFamily: PDF_FONT_FAMILY,
+            fontWeight: PDF_WEIGHT.bold,
+            color: PDF_COLORS.ink,
             marginBottom: 12,
           }}
         >
@@ -565,46 +490,36 @@ export function EstimateSection({
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}
 
-        {rootGroups.map((g) => renderGroup(g, true))}
-
-        {ungroupedItems.length > 0 && !hideLineItems && (
-          <View>
-            <View style={styles.groupHeader}>
-              <Text style={{ color: "#ffffff" }}>Other Items</Text>
+        <PdfLineTable<EstimateItem>
+          columns={columns}
+          groups={tableGroups}
+          textHeader={toggles.showColumnHeader ? "Item" : null}
+          renderText={(item) => (
+            <View>
+              <View style={styles.itemCell}>
+                <Text>{item.name || "Untitled"}</Text>
+                {toggles.showAllowanceType && allowanceLabel(item) ? (
+                  <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+                ) : null}
+              </View>
+              {toggles.description && item.description ? (
+                <Text style={styles.itemDescription}>{item.description}</Text>
+              ) : null}
             </View>
-            {toggles.showColumnHeader && renderTableHeader()}
-            {ungroupedItems.map(renderTableRow)}
-          </View>
-        )}
+          )}
+          brandColor={resolvedColor}
+          rowKey={(item) => item.id}
+          repeatHeader={!sharesPage}
+        />
 
-        {toggles.amountExTax && (
-          <View wrap={false} style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
-              Total Price (ex. tax)
-            </Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(grandTotalExTax)}
-            </Text>
-          </View>
-        )}
-        {toggles.amountIncTax && showGst && (
-          <View wrap={false} style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
-              Total Price (inc. tax)
-            </Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(grandTotalIncTax)}
-            </Text>
-          </View>
-        )}
-        {!toggles.amountExTax && !(toggles.amountIncTax && showGst) && (
-          <View wrap={false} style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>Total Price</Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(showGst ? grandTotalIncTax : grandTotalExTax)}
-            </Text>
-          </View>
-        )}
+        <View style={{ marginTop: PDF_SPACE.lg }}>
+          <PdfTotalsCard
+            rows={totalRows}
+            totalLabel={showGst ? "Total (inc GST)" : "Total"}
+            totalValue={money(showGst ? grandTotalIncTax : grandTotalExTax)}
+            brandColor={resolvedColor}
+          />
+        </View>
       </View>
   );
 }

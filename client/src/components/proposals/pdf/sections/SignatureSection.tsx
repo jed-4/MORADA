@@ -1,4 +1,5 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
@@ -44,21 +45,21 @@ export function SignatureSection({
       borderBottom: `${isS2 ? 2 : 1}px solid ${resolvedColor}`,
       height: 36,
     },
-    label: { fontSize: 10, marginTop: 4, color: '#6B7280' },
+    label: { fontSize: 10, marginTop: 4, color: PDF_COLORS.inkMuted },
     drawnSig: { height: 60, marginBottom: 4, objectFit: 'contain' },
     typedSig: {
       fontSize: 22,
       fontFamily: PDF_FONT_FAMILY, fontStyle: 'italic',
       marginBottom: 4,
-      color: '#1F2937',
+      color: PDF_COLORS.ink,
     },
     acceptedLine: {
       marginTop: 12,
       fontSize: 12,
       fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-      color: '#1F2937',
+      color: PDF_COLORS.ink,
     },
-    meta: { marginTop: 8, fontSize: 10, color: '#374151' },
+    meta: { marginTop: 8, fontSize: 10, color: PDF_COLORS.inkMuted },
     metaLine: { marginBottom: 2 },
     acceptedBadge: {
       marginTop: 16,

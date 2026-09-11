@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { sharedSectionStyle, htmlToBlocks, SectionIntro } from './RichTextBlocks';
 
@@ -35,7 +36,7 @@ export function ClosingSection({
     paragraph: {
       fontSize: 14,
       lineHeight: 1.6,
-      color: '#4B5563',
+      color: PDF_COLORS.inkMuted,
       textAlign: 'center',
       marginBottom: 8,
       maxWidth: 420,

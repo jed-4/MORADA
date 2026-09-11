@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
 import { tintOnWhite } from '@/components/pdf/shared/pdfColor';
-import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS, PDF_TYPE } from '@/components/pdf/shared/pdfTokens';
+import { PDF_FONT_FAMILY } from '@/components/pdf/shared/registerPdfFonts';
 
 interface SectionPageProps {
   companyName?: string;
@@ -43,7 +44,17 @@ export function SectionPage({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, paddingTop: 0, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
+      // fontSize on the page is what every unstyled <Text> inherits. Without
+      // it @react-pdf falls back to 18pt, which is why estimate line names
+      // printed larger than their own group headings.
+      style={{
+        fontSize: PDF_TYPE.body,
+        fontFamily: PDF_FONT_FAMILY,
+        color: PDF_COLORS.ink,
+        backgroundColor: PDF_COLORS.surface,
+        paddingBottom: 60,
+        paddingTop: 0,
+      }}
     >
       <DocProposalInnerHeader
         fixed

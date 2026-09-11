@@ -1,4 +1,5 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
 const styles = StyleSheet.create({
   page: {
@@ -6,7 +7,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 40,
-    backgroundColor: '#ffffff',
+    backgroundColor: PDF_COLORS.surface,
   },
   logoContainer: {
     marginBottom: 60,
@@ -22,13 +23,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: PDF_COLORS.ink,
     marginBottom: 20,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 18,
-    color: '#6B7280',
+    color: PDF_COLORS.inkMuted,
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: '#374151',
+    color: PDF_COLORS.inkMuted,
     marginBottom: 8,
     textAlign: 'center',
   },

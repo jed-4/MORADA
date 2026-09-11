@@ -1,4 +1,5 @@
 import { Page, Text, View, Image } from "@react-pdf/renderer";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, Project, Contact } from "@shared/schema";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
@@ -83,7 +84,7 @@ export function CoverPageSection({
     return (
       <Page
         size="A4"
-        style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
+        style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: PDF_COLORS.surface }}
       >
         {/* Full-width brand hero block */}
         <View
@@ -118,7 +119,7 @@ export function CoverPageSection({
                 style={{
                   fontSize: 13,
                   fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-                  color: "#ffffff",
+                  color: PDF_COLORS.surface,
                 }}
               >
                 {companyName}
@@ -148,7 +149,7 @@ export function CoverPageSection({
             >
               <View
                 style={{
-                  backgroundColor: "#ffffff",
+                  backgroundColor: PDF_COLORS.surface,
                   paddingHorizontal: 10,
                   paddingVertical: 3,
                   borderRadius: 2,
@@ -170,7 +171,7 @@ export function CoverPageSection({
               style={{
                 fontSize: 30,
                 fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-                color: "#ffffff",
+                color: PDF_COLORS.surface,
                 lineHeight: 1.2,
               }}
             >
@@ -235,17 +236,17 @@ export function CoverPageSection({
                 style={{
                   fontSize: 13,
                   fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-                  color: "#111827",
+                  color: PDF_COLORS.ink,
                 }}
               >
                 {clientName}
               </Text>
             ) : (
-              <Text style={{ fontSize: 11, color: "#9ca3af" }}>—</Text>
+              <Text style={{ fontSize: 11, color: PDF_COLORS.inkFaint }}>—</Text>
             )}
             {clientEmail ? (
               <Text
-                style={{ fontSize: 9, color: "#6b7280", marginTop: 3 }}
+                style={{ fontSize: 9, color: PDF_COLORS.inkMuted, marginTop: 3 }}
               >
                 {clientEmail}
               </Text>
@@ -272,7 +273,7 @@ export function CoverPageSection({
             >
               REFERENCE
             </Text>
-            <Text style={{ fontSize: 11, color: "#374151" }}>
+            <Text style={{ fontSize: 11, color: PDF_COLORS.inkMuted }}>
               {proposal.proposalNumber || "—"}
             </Text>
             <Text
@@ -288,7 +289,7 @@ export function CoverPageSection({
             >
               DATE
             </Text>
-            <Text style={{ fontSize: 11, color: "#374151" }}>
+            <Text style={{ fontSize: 11, color: PDF_COLORS.inkMuted }}>
               {formatDate(proposal.createdAt)}
             </Text>
           </View>
@@ -316,7 +317,7 @@ export function CoverPageSection({
             >
               {priceLabel}
             </Text>
-            <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: "#1F2937" }}>
+            <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: PDF_COLORS.ink }}>
               {priceText}
             </Text>
           </View>
@@ -327,7 +328,7 @@ export function CoverPageSection({
             style={{
               paddingHorizontal: 32,
               fontSize: 9,
-              color: "#9ca3af",
+              color: PDF_COLORS.inkFaint,
               marginTop: 16,
             }}
           >
@@ -349,7 +350,7 @@ export function CoverPageSection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: PDF_COLORS.surface }}
     >
       {/* Top accent band */}
       <View style={{ height: 6, backgroundColor: resolvedColor }} />
@@ -369,7 +370,7 @@ export function CoverPageSection({
             width: 80,
             height: 50,
             borderRadius: 4,
-            backgroundColor: "#e5e7eb",
+            backgroundColor: PDF_COLORS.border,
             overflow: "hidden",
             marginRight: 14,
           }}
@@ -383,13 +384,13 @@ export function CoverPageSection({
             style={{
               fontSize: 13,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: "#111827",
+              color: PDF_COLORS.ink,
             }}
           >
             {companyName}
           </Text>
           {companyPhone ? (
-            <Text style={{ fontSize: 9, color: "#6b7280", marginTop: 2 }}>
+            <Text style={{ fontSize: 9, color: PDF_COLORS.inkMuted, marginTop: 2 }}>
               {companyPhone}
             </Text>
           ) : null}
@@ -427,7 +428,7 @@ export function CoverPageSection({
           marginHorizontal: 40,
           fontSize: 30,
           fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-          color: "#111827",
+          color: PDF_COLORS.ink,
           lineHeight: 1.2,
         }}
       >
@@ -439,7 +440,7 @@ export function CoverPageSection({
           style={{
             marginHorizontal: 40,
             fontSize: 13,
-            color: "#6b7280",
+            color: PDF_COLORS.inkMuted,
             marginTop: 8,
           }}
         >
@@ -452,7 +453,7 @@ export function CoverPageSection({
           style={{
             marginHorizontal: 40,
             fontSize: 10,
-            color: "#9ca3af",
+            color: PDF_COLORS.inkFaint,
             marginTop: 4,
           }}
         >
@@ -465,7 +466,7 @@ export function CoverPageSection({
         style={{
           marginHorizontal: 40,
           height: 1,
-          backgroundColor: "#e5e7eb",
+          backgroundColor: PDF_COLORS.border,
           marginTop: 28,
           marginBottom: 24,
         }}
@@ -484,7 +485,7 @@ export function CoverPageSection({
             style={{
               fontSize: 8,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: "#9ca3af",
+              color: PDF_COLORS.inkFaint,
               textTransform: "uppercase",
               letterSpacing: 0.8,
               marginBottom: 6,
@@ -497,16 +498,16 @@ export function CoverPageSection({
               style={{
                 fontSize: 13,
                 fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-                color: "#111827",
+                color: PDF_COLORS.ink,
               }}
             >
               {clientName}
             </Text>
           ) : (
-            <Text style={{ fontSize: 11, color: "#9ca3af" }}>—</Text>
+            <Text style={{ fontSize: 11, color: PDF_COLORS.inkFaint }}>—</Text>
           )}
           {clientEmail ? (
-            <Text style={{ fontSize: 9, color: "#6b7280", marginTop: 3 }}>
+            <Text style={{ fontSize: 9, color: PDF_COLORS.inkMuted, marginTop: 3 }}>
               {clientEmail}
             </Text>
           ) : null}
@@ -517,7 +518,7 @@ export function CoverPageSection({
             style={{
               fontSize: 8,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: "#9ca3af",
+              color: PDF_COLORS.inkFaint,
               textTransform: "uppercase",
               letterSpacing: 0.8,
               marginBottom: 6,
@@ -525,14 +526,14 @@ export function CoverPageSection({
           >
             DATE
           </Text>
-          <Text style={{ fontSize: 11, color: "#374151" }}>
+          <Text style={{ fontSize: 11, color: PDF_COLORS.inkMuted }}>
             {formatDate(proposal.createdAt)}
           </Text>
           <Text
             style={{
               fontSize: 8,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: "#9ca3af",
+              color: PDF_COLORS.inkFaint,
               textTransform: "uppercase",
               letterSpacing: 0.8,
               marginTop: 14,
@@ -541,7 +542,7 @@ export function CoverPageSection({
           >
             REFERENCE
           </Text>
-          <Text style={{ fontSize: 11, color: "#374151" }}>
+          <Text style={{ fontSize: 11, color: PDF_COLORS.inkMuted }}>
             {proposal.proposalNumber || "—"}
           </Text>
         </View>
@@ -561,7 +562,7 @@ export function CoverPageSection({
             style={{
               fontSize: 8,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: "#9ca3af",
+              color: PDF_COLORS.inkFaint,
               textTransform: "uppercase",
               letterSpacing: 0.8,
               marginBottom: 4,
@@ -569,7 +570,7 @@ export function CoverPageSection({
           >
             {priceLabel}
           </Text>
-          <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: "#1F2937" }}>
+          <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: PDF_COLORS.ink }}>
             {priceText}
           </Text>
         </View>
@@ -580,7 +581,7 @@ export function CoverPageSection({
           style={{
             marginHorizontal: 40,
             fontSize: 9,
-            color: "#9ca3af",
+            color: PDF_COLORS.inkFaint,
             marginTop: 24,
           }}
         >
@@ -593,7 +594,7 @@ export function CoverPageSection({
           style={{
             marginHorizontal: 40,
             fontSize: 11,
-            color: "#374151",
+            color: PDF_COLORS.inkMuted,
             lineHeight: 1.6,
             marginTop: 16,
           }}
