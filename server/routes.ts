@@ -17,6 +17,7 @@ import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { renderClientEmail } from "./services/clientEmailShell";
+import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -9955,6 +9956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to: user.email,
           subject: 'Reset Your Morada Password',
           from: 'Morada <noreply@moradaco.com.au>',
+          context: { type: 'password_reset', id: user.id, companyId: (user as any).companyId ?? null },
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${user.firstName || 'there'},</p>
@@ -10170,7 +10172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         <p>${esc(description).replace(/\n/g, '<br>')}</p>
       `;
 
-      await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email });
+      await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email, context: { type: 'bug_report', companyId: user.companyId ?? null } });
 
       // Secondary delivery: post to Slack #morada-triage. Email is primary, so
       // any Slack failure is logged but never breaks the response.
@@ -12155,6 +12157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to: targetUser.email,
           subject: "Reset Your Morada Password",
           from: 'Morada <noreply@moradaco.com.au>',
+          context: { type: 'password_reset', id: targetUser.id, companyId: (targetUser as any).companyId ?? null },
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${targetUser.firstName || 'there'},</p>
@@ -14545,6 +14548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           inviteUrl,
           recipientName: invitation.firstName || undefined,
           userId: invitation.invitedBy, // Pass inviter's userId for Gmail sending
+          companyId: invitation.companyId,
         });
         
         console.log(`Invitation email sent to ${invitation.email}`);
@@ -14697,6 +14701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           inviteUrl,
           recipientName: invitation.firstName || undefined,
           userId: currentUser.id,
+          companyId: invitation.companyId,
         });
         
         console.log(`Invitation resent to ${invitation.email}`);
@@ -15622,6 +15627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId: req.user.id,
+        context: { type: "selection", id: selection.id, companyId: req.user.companyId ?? null },
       });
 
       const sentAt = new Date();
@@ -16979,6 +16985,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           companyName: companyDisplayName || 'your builder',
           projectNames: projects.map(p => p.name),
           inviteUrl,
+          companyId,
+          contactId: contact.id,
         });
       } catch (emailError) {
         console.error('Failed to send client portal invite email:', emailError);
@@ -17032,6 +17040,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           companyName: company?.nickname || company?.name || 'your builder',
           projectNames: projects.map(p => p.name),
           inviteUrl,
+          companyId,
+          contactId: contact.id,
         });
       } catch (emailError) {
         console.error('Failed to resend client portal invite email:', emailError);
@@ -17859,6 +17869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               from: `${companyName} via Morada <noreply@moradaco.com.au>`,
               replyTo: req.user!.email,
               userId: req.user!.id,
+              context: { type: "rfq", id: rfq.id, companyId: (req.user as any)?.companyId ?? null },
               attachments: parsed.data.pdfBase64
                 ? [{
                     filename: parsed.data.pdfFilename || `RFQ-${rfq.rfqNumber}.pdf`,
@@ -22116,16 +22127,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const variation = await getOwnedVariation(req, res, req.params.id);
       if (!variation) return;
-      const { variationSends } = await import("@shared/schema");
+      const { variationSends, emailDeliveries } = await import("@shared/schema");
+      // Left join: sends made before the delivery log shipped have no row, and
+      // an inner join would erase them from the history entirely.
       const rows = await db
-        .select()
+        .select({ send: variationSends, delivery: emailDeliveries })
         .from(variationSends)
+        .leftJoin(emailDeliveries, eq(emailDeliveries.id, variationSends.emailDeliveryId))
         .where(eq(variationSends.variationId, variation.id))
         .orderBy(desc(variationSends.sentAt));
       // The snapshot is large and the feed does not need it — only whether one
       // exists, so the UI can offer the download.
       res.json(
-        rows.map((r: any) => ({
+        rows.map(({ send: r, delivery: d }: any) => ({
           id: r.id,
           sentAt: r.sentAt,
           sentById: r.sentById,
@@ -22136,6 +22150,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           firstViewedAt: r.firstViewedAt,
           lastViewedAt: r.lastViewedAt,
           viewCount: r.viewCount,
+          delivery: d
+            ? {
+                status: d.status,
+                detail: d.statusDetail,
+                updatedAt: d.statusUpdatedAt,
+                provider: d.provider,
+              }
+            : null,
         })),
       );
     } catch (error) {
@@ -22281,7 +22303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
 
-      await sendGenericEmail({
+      const emailResult = await sendGenericEmail({
         to,
         subject,
         html,
@@ -22289,7 +22311,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         replyTo: req.user.email,
         userId,
         attachments,
+        context: { type: "variation", id: variation.id, companyId },
       });
+
+      // Tie this send to its delivery record. Best-effort on purpose: the email
+      // is already gone, and failing to annotate the archive row must not turn
+      // a successful send into a 500.
+      if (emailResult?.deliveryId && sendRow?.id) {
+        await db
+          .update(variationSends)
+          .set({ emailDeliveryId: emailResult.deliveryId } as any)
+          .where(eq(variationSends.id, sendRow.id))
+          .catch((err: any) => console.error("[variation-send] could not link delivery:", err?.message));
+      }
 
       // Mark portalSentAt, and advance an unissued variation to "pending".
       // The portal presents an approve/reject signature panel, so once the
@@ -22720,6 +22754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
+          context: { type: "purchase_order", id: po.id, companyId: req.user.companyId ?? null },
           attachments: pdfBase64 ? [{
             filename: pdfFilename || `PO-${(po as any).poNumber}.pdf`,
             content: pdfBase64,
@@ -24963,6 +24998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         replyTo: req.user.email,
         userId,
         attachments,
+        context: { type: "client_invoice", id: invoice.id, companyId: invoiceCompanyId ?? null },
       });
 
       // Mark the invoice as sent — but never clobber payment-derived states
@@ -25626,6 +25662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             from: `${companyName} via Morada <noreply@moradaco.com.au>`,
             replyTo: (req.user as any)?.email,
             userId: (req.user as any)?.id,
+            context: { type: "proposal", id: req.params.id, companyId: priced.companyId ?? getSessionCompanyId(req) },
             attachments: [{
               filename: parsed.data.pdfFilename || `${proposal!.proposalNumber}.pdf`,
               content: pdfBase64,
@@ -27063,6 +27100,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error uploading file:", error);
       res.status(500).json({ message: "Failed to upload file", error: error.message });
+    }
+  });
+
+  /**
+   * Resend delivery events — what actually became of an email.
+   *
+   * Public and unauthenticated by necessity, so it verifies a signature and
+   * says as little as possible on failure. Always 200s on a verified event,
+   * including ones we do not map: returning an error would make Resend retry
+   * something we deliberately ignore.
+   *
+   * Inert until RESEND_WEBHOOK_SECRET is set and the endpoint is registered in
+   * the Resend dashboard. It returns 503 in that state rather than 200, so a
+   * misconfiguration is visible instead of looking like silence.
+   */
+  app.post("/api/webhooks/resend", async (req: any, res) => {
+    try {
+      const secret = process.env.RESEND_WEBHOOK_SECRET;
+      if (!secret) {
+        console.warn("[resend-webhook] RESEND_WEBHOOK_SECRET is not set — event ignored");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+
+      const rawBody = (req as any).rawBody ?? JSON.stringify(req.body);
+      if (!verifyResendSignature(rawBody, req.headers, secret)) {
+        return res.status(401).json({ error: "Invalid signature" });
+      }
+
+      const event = parseResendEvent(req.body);
+      // Verified but unmapped — acknowledge so it is not retried forever.
+      if (!event) return res.json({ ok: true, ignored: true });
+
+      const { emailDeliveries } = await import("@shared/schema");
+      const updated = await db
+        .update(emailDeliveries)
+        .set({
+          status: event.status,
+          statusDetail: event.detail ?? null,
+          statusUpdatedAt: event.occurredAt ?? new Date(),
+        })
+        .where(eq(emailDeliveries.providerMessageId, event.messageId))
+        .returning({ id: emailDeliveries.id });
+
+      if (updated.length === 0) {
+        // Emails sent before this shipped have no row. Worth a log line — a
+        // flood of these means the message ids are not being stored.
+        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.status})`);
+      } else if (event.status === "bounced" || event.status === "complained") {
+        console.warn(`[resend-webhook] ${event.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+      }
+
+      res.json({ ok: true, matched: updated.length });
+    } catch (error) {
+      console.error("[resend-webhook] error:", error);
+      res.status(500).json({ error: "Webhook processing failed" });
     }
   });
 
@@ -45480,6 +45572,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId: req.user.id,
+        context: { type: "review_item", id: item.id, companyId },
       });
 
       const sentAt = new Date();

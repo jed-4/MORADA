@@ -92,6 +92,7 @@ export async function sendProposalReminder({
       subject,
       html: body.replace(/\n/g, "<br>"),
       from: `${companyName || "Morada"} via Morada <noreply@moradaco.com.au>`,
+      context: { type: "proposal_reminder", id: proposal.id, companyId: (proposal as any).companyId ?? null },
     } as any);
     return { email: recipient.email, status: "sent" };
   } catch (error: any) {

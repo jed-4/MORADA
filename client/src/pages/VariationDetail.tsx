@@ -1075,6 +1075,9 @@ export default function VariationDetail() {
     variationSends.find((s: any) => s.id === (variation as any)?.signedSendId) ??
     variationSends[0];
 
+  /** What became of the most recent email. The list is ordered newest first. */
+  const latestDelivery = (variationSends[0] as any)?.delivery ?? null;
+
   /** The summary rows.
    *
    *  Component rows use `!== 0`, not `> 0`. A vendor credit makes the bills
@@ -1822,6 +1825,7 @@ export default function VariationDetail() {
                         clientSignedDate={(variation as any).clientSignedDate}
                         status={variation?.status}
                         rejectionReason={(variation as any).rejectionReason}
+                        delivery={latestDelivery}
                       />
                     </DocumentSection>
 

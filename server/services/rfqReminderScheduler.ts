@@ -92,6 +92,7 @@ export async function sendRfqReminder({
       html: body.replace(/\n/g, "<br>"),
       from: `${companyName || "Morada"} via Morada <noreply@moradaco.com.au>`,
       attachments: undefined,
+      context: { type: "rfq_reminder", id: rfq.id, companyId: (rfq as any).companyId ?? null },
     } as any);
 
     await storage.updateRFQRecipient(recipient.id, {
