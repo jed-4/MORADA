@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Check, Download, Eye, FileText, PenLine, Send, X } from "lucide-react";
+import { AlertTriangle, Check, Download, Eye, FileText, MailCheck, PenLine, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,6 +28,13 @@ export interface VariationSendRow {
   firstViewedAt?: string | Date | null;
   lastViewedAt?: string | Date | null;
   viewCount?: number | null;
+  /** From the delivery log. Null for sends made before it shipped. */
+  delivery?: {
+    status?: string | null;
+    detail?: string | null;
+    updatedAt?: string | Date | null;
+    provider?: string | null;
+  } | null;
 }
 
 interface Entry {
@@ -90,6 +97,29 @@ export function VariationActivityFeed({
               )}
             </span>
           ),
+        });
+      }
+
+      // What the receiving server did with it, once it told us. "sent" adds
+      // nothing here — the Sent entry above already says that — so only an
+      // actual outcome earns a row.
+      const d = s.delivery;
+      const outcomeAt = toDate(d?.updatedAt);
+      if (d && d.status && d.status !== "sent" && outcomeAt) {
+        const bad = d.status === "bounced" || d.status === "failed" || d.status === "complained";
+        out.push({
+          at: outcomeAt,
+          icon: bad ? AlertTriangle : MailCheck,
+          label:
+            d.status === "delivered"
+              ? "Delivered"
+              : d.status === "bounced"
+                ? "Bounced"
+                : d.status === "complained"
+                  ? "Marked as spam"
+                  : "Failed to send",
+          tone: bad ? "bad" : "good",
+          detail: d.detail || undefined,
         });
       }
 

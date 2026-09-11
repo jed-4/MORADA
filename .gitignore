@@ -31,3 +31,10 @@ expo-mobile/.env.local
 
 # Fingerprint harness output — a local run artefact, diffed by hand, never committed.
 /fingerprints/
+
+# Runtime file uploads — contact avatars, e-note attachments, gear photos.
+# Written by the app at runtime and by uploads-access.test.ts, which creates
+# its own fixtures at setup. Five of those fixtures had been committed by
+# accident, so every test run left the tree dirty and the files kept drifting
+# in and out of commits.
+uploads/

@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { Check, Eye, PenLine, Send, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, PenLine, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,6 +17,12 @@ import { cn } from "@/lib/utils";
  * only `clientSignedName` does, and it was invisible.
  */
 
+/** What became of the last email, from the delivery log. */
+export interface SigningDelivery {
+  status?: string | null;
+  detail?: string | null;
+}
+
 export interface SigningStatusStripProps {
   portalSentAt?: string | Date | null;
   portalViewedAt?: string | Date | null;
@@ -24,6 +30,10 @@ export interface SigningStatusStripProps {
   clientSignedDate?: string | Date | null;
   status?: string | null;
   rejectionReason?: string | null;
+  /** The outcome of the most recent send. Without it "Sent" means only that a
+   *  provider accepted the message — which is exactly how a variation went to
+   *  a mistyped address and sat there looking fine. */
+  delivery?: SigningDelivery | null;
   className?: string;
 }
 
@@ -85,6 +95,7 @@ export function SigningStatusStrip({
   clientSignedDate,
   status,
   rejectionReason,
+  delivery,
   className,
 }: SigningStatusStripProps) {
   const sent = when(portalSentAt);
@@ -92,13 +103,30 @@ export function SigningStatusStrip({
   const signed = when(clientSignedDate);
   const rejected = status === "rejected";
 
+  // A bounce or a hard failure means the client never received it. That has to
+  // outrank the timestamp, or the strip keeps reassuring you about an email
+  // that was rejected minutes later.
+  const undelivered =
+    delivery?.status === "bounced" || delivery?.status === "failed" || delivery?.status === "complained";
+  const deliveryLabel =
+    delivery?.status === "bounced"
+      ? "Bounced"
+      : delivery?.status === "failed"
+        ? "Failed to send"
+        : delivery?.status === "complained"
+          ? "Marked as spam"
+          : delivery?.status === "delivered"
+            ? "Delivered"
+            : "Sent";
+
   return (
     <div className={cn("px-3.5 py-3 flex flex-wrap items-center gap-x-5 gap-y-3", className)}>
       <Step
-        icon={Send}
-        label="Sent"
+        icon={undelivered ? AlertTriangle : Send}
+        label={sent ? deliveryLabel : "Sent"}
         detail={sent ?? "Not sent yet"}
         done={!!sent}
+        tone={undelivered ? "bad" : "done"}
       />
       <Step
         icon={Eye}
@@ -129,6 +157,13 @@ export function SigningStatusStrip({
           done={!!clientSignedName}
           last
         />
+      )}
+
+      {undelivered && (
+        <p className="w-full text-body-sm text-coral border-t border-border/60 pt-2.5" data-testid="text-delivery-problem">
+          <span className="doc-field-label mr-1.5 text-coral">Not delivered</span>
+          {delivery?.detail || "The email did not reach the recipient. Check the address and send it again."}
+        </p>
       )}
 
       {rejected && rejectionReason && (

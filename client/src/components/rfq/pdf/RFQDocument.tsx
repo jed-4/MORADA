@@ -1,16 +1,37 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import type { Rfq, RfqItem } from "@shared/schema";
-import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
-import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
-import { DocFooter } from "@/components/pdf/shared/DocFooter";
-import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PdfHeroBand } from "@/components/pdf/shared/PdfHeroBand";
+import { PdfPartiesPanel, PdfDocumentTitle } from "@/components/pdf/shared/PdfPartiesPanel";
+import { PdfSection, PdfCallout } from "@/components/pdf/shared/PdfPrimitives";
+import { PdfLineTable, PdfDocFooter } from "@/components/pdf/shared/PdfLineTable";
+import { PDF_COLORS, PDF_PAGE_MARGIN, PDF_SPACE, PDF_TYPE } from "@/components/pdf/shared/pdfTokens";
+import { statusPaint } from "@/components/pdf/shared/pdfStatus";
 
-// The RFQ used to render from its own StyleSheet with its own header, footer
-// and colour handling — the only client-facing document that did. That is why
-// it drifted: it took a hardcoded green while every other document took the
-// company's brand colour, and it read the logo from a field that does not
-// exist. It now renders from the same primitives as Variations, Invoices and
-// Purchase Orders, so a branding change lands everywhere at once.
+/**
+ * The request for quote, on the shared document kit.
+ *
+ * The RFQ used to render from its own StyleSheet with its own header, footer
+ * and colour handling — the only client-facing document that did. That is why
+ * it drifted: it took a hardcoded green while every other document took the
+ * company's brand colour, and it read the logo from a field that does not
+ * exist. It was moved onto the shared chrome once already; this moves it the
+ * rest of the way, onto the same tokens, type and primitives as the others.
+ *
+ * Its own five-state status palette in Tailwind colours goes with it. The
+ * labels it carried were better than the raw keys, though, so they are kept
+ * and passed to the shared resolver rather than thrown away: a supplier
+ * reading "Awaiting Quotes" learns more than one reading "Sent".
+ *
+ * The headline slot carries the RESPONSE DEADLINE rather than a figure. An RFQ
+ * has no total — the whole point is that the supplier supplies one — and the
+ * date is what the recipient needs to see first.
+ *
+ * Internal notes are not rendered here and never were. See the purchase order,
+ * which did print them.
+ */
+
+registerPdfFonts();
 
 interface Company {
   name: string;
@@ -29,23 +50,35 @@ interface RFQDocumentProps {
   items: RfqItem[];
   company?: Company | null;
   project?: Project | null;
+  /** Who this copy is addressed to, when it is being sent to one supplier. */
+  supplier?: { name?: string | null; email?: string | null } | null;
   brandColor?: string;
   documentStyle?: "style1" | "style2";
   logoUrl?: string | null;
 }
 
-const RFQ_STATUS_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  draft: { label: "Draft", bg: "#e5e7eb", text: "#374151" },
-  sent: { label: "Awaiting Quotes", bg: "#dbeafe", text: "#1e40af" },
-  quoted: { label: "Quotes Received", bg: "#d1fae5", text: "#065f46" },
-  closed: { label: "Closed", bg: "#e5e7eb", text: "#374151" },
-  cancelled: { label: "Cancelled", bg: "#fee2e2", text: "#991b1b" },
+/** Wording worth keeping — it says more than the status key does. */
+const RFQ_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Awaiting Quotes",
+  quoted: "Quotes Received",
+  closed: "Closed",
+  cancelled: "Cancelled",
 };
 
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return "—";
+function formatDate(date: Date | string | null | undefined): string | null {
+  if (!date) return null;
   const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-AU", { year: "numeric", month: "long", day: "numeric" });
+}
+
+/** The masthead slot is sized for currency. A long date ("18 September 2026")
+ *  crowds it enough to wrap the company name onto two lines. */
+function formatDateShort(date: Date | string | null | undefined): string | null {
+  if (!date) return null;
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -62,300 +95,127 @@ export function RFQDocument({
   items,
   company,
   project,
-  brandColor = "#3B82F6",
+  supplier,
+  brandColor = PDF_COLORS.brandFallback,
   documentStyle = "style1",
   logoUrl,
 }: RFQDocumentProps) {
-  const isS2 = documentStyle === "style2";
-  const thBg = isS2 ? brandColor : "#F8F8F8";
-  const thTextColor = isS2 ? "#ffffff" : "#374151";
-  const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
-
-  const statusCfg = RFQ_STATUS_LABELS[rfq.status] ?? RFQ_STATUS_LABELS.draft;
+  const chip = statusPaint(rfq.status, RFQ_STATUS_LABELS[rfq.status]);
+  const due = formatDate(rfq.dueDate);
 
   return (
     <Document title={`RFQ ${rfq.rfqNumber}`}>
       <Page
         size="A4"
         style={{
-          fontSize: 10,
-          fontFamily: "Helvetica",
-          backgroundColor: "#ffffff",
-          paddingBottom: 60,
+          fontSize: PDF_TYPE.body,
+          fontFamily: PDF_FONT_FAMILY,
+          color: PDF_COLORS.ink,
+          backgroundColor: PDF_COLORS.surface,
+          paddingBottom: 56,
         }}
       >
-        <DocBrandedHeader
-          companyName={company?.name || ""}
-          abn={company?.abn}
-          phone={company?.phone}
-          email={company?.email}
+        <PdfHeroBand
+          variant={documentStyle === "style2" ? "brand" : "light"}
+          companyName={company?.name || "—"}
           logoUrl={logoUrl}
           brandColor={brandColor}
-          docStyle={documentStyle}
+          contactLines={[company?.phone, company?.email, company?.abn ? `ABN ${company.abn}` : null]}
+          status={chip}
+          // No total: the supplier is the one who supplies that. The deadline
+          // is what they need to see first, so it takes the headline slot.
+          figure={formatDateShort(rfq.dueDate) ?? "—"}
+          figureLabel="Quotes due by"
+          figureCaption={rfq.rfqNumber}
         />
 
-        {/* Project only — deliberately no client details. This document goes to
-            suppliers, who have no business receiving the homeowner's name,
-            email or phone number. */}
-        <DocProjectBar
-          projectName={project?.name}
-          projectAddress={project?.address}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: PDF_SPACE.xl }}>
+          <PdfDocumentTitle>
+            {rfq.title || `Request for Quote ${rfq.rfqNumber}`}
+          </PdfDocumentTitle>
 
-        {/* Document bar: what this is, and the date that matters */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 40,
-            paddingVertical: 14,
-            borderBottomWidth: 1,
-            borderBottomColor: isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb",
-          }}
-        >
-          <View>
-            <Text
-              style={{
-                fontSize: 8,
-                fontFamily: "Helvetica-Bold",
-                color: brandColor,
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                marginBottom: 3,
+          <PdfSection>
+            <PdfPartiesPanel
+              recipient={{
+                label: "Supplier",
+                title: supplier?.name || "—",
+                lines: [supplier?.email],
               }}
-            >
-              Request for Quote
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                fontFamily: "Helvetica-Bold",
-                color: "#111827",
-                marginBottom: 4,
+              project={{
+                label: "Project",
+                title: project?.name || "—",
+                lines: [project?.address],
               }}
-            >
-              {rfq.rfqNumber}
-            </Text>
-            <View
-              style={{
-                alignSelf: "flex-start",
-                backgroundColor: statusCfg.bg,
-                borderRadius: 3,
-                paddingHorizontal: 6,
-                paddingVertical: 2,
+              document={{
+                label: "Request",
+                fields: [
+                  { label: "Number", value: rfq.rfqNumber },
+                  { label: "Quotes due", value: due },
+                ],
               }}
-            >
-              <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: statusCfg.text }}>
-                {statusCfg.label}
-              </Text>
-            </View>
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#FFF4E6",
-              borderRadius: 4,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              alignItems: "center",
-              minWidth: 150,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 7,
-                fontFamily: "Helvetica-Bold",
-                color: "#9ca3af",
-                textTransform: "uppercase",
-                marginBottom: 4,
-              }}
-            >
-              Quote Due
-            </Text>
-            <Text style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#e8952a" }}>
-              {formatDate(rfq.dueDate)}
-            </Text>
-            <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 2 }}>
-              Issued {formatDate(rfq.createdAt)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={{ paddingHorizontal: 40, paddingTop: 14 }}>
-          {rfq.title && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 4,
-                }}
-              >
-                Works Requested
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: "Helvetica-Bold", color: "#111827" }}>
-                {rfq.title}
-              </Text>
-            </View>
-          )}
+            />
+          </PdfSection>
 
           {rfq.scope && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Scope of Work
-              </Text>
-              <View
-                style={{
-                  backgroundColor: isS2 ? brandColor + "0D" : "#f9fafb",
-                  borderLeftWidth: 3,
-                  borderLeftColor: brandColor,
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
-                }}
-              >
-                <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5 }}>{rfq.scope}</Text>
-              </View>
-            </View>
+            <PdfSection label="Scope of Work">
+              <PdfCallout>{rfq.scope}</PdfCallout>
+            </PdfSection>
           )}
 
           {items.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Items
-              </Text>
-              <View style={{ borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 3 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    backgroundColor: thBg,
-                    paddingHorizontal: 8,
-                    paddingVertical: 5,
-                  }}
-                >
-                  <Text
-                    style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}
-                  >
-                    Description
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 8,
-                      color: thTextColor,
-                      fontFamily: "Helvetica-Bold",
-                      width: 55,
-                      textAlign: "right",
-                    }}
-                  >
-                    Qty
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 8,
-                      color: thTextColor,
-                      fontFamily: "Helvetica-Bold",
-                      width: 55,
-                      textAlign: "right",
-                    }}
-                  >
-                    Unit
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 8,
-                      color: thTextColor,
-                      fontFamily: "Helvetica-Bold",
-                      width: 150,
-                      paddingLeft: 10,
-                    }}
-                  >
-                    Notes
-                  </Text>
-                </View>
-
-                {items.map((item, idx) => (
-                  <View
-                    key={item.id}
-                    style={{
-                      flexDirection: "row",
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#f3f4f6",
-                      backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                    }}
-                  >
-                    <Text style={{ fontSize: 9, color: "#111827", flex: 1 }}>
+            <PdfSection label="Items">
+              <PdfLineTable<RfqItem>
+                brandColor={brandColor}
+                grouped={false}
+                textHeader="Description"
+                renderText={(item) => (
+                  <View>
+                    <Text style={{ fontSize: PDF_TYPE.tableCell, color: PDF_COLORS.ink }}>
                       {item.description}
                     </Text>
-                    <Text
-                      style={{ fontSize: 9, color: "#374151", width: 55, textAlign: "right" }}
-                    >
-                      {formatQuantity(item.quantity)}
-                    </Text>
-                    <Text
-                      style={{ fontSize: 9, color: "#374151", width: 55, textAlign: "right" }}
-                    >
-                      {item.unit || "—"}
-                    </Text>
-                    <Text style={{ fontSize: 8, color: "#6b7280", width: 150, paddingLeft: 10 }}>
-                      {item.notes || ""}
-                    </Text>
+                    {item.notes ? (
+                      <Text style={{ fontSize: PDF_TYPE.caption + 0.5, color: PDF_COLORS.inkMuted }}>
+                        {item.notes}
+                      </Text>
+                    ) : null}
                   </View>
-                ))}
-              </View>
-            </View>
+                )}
+                columns={[
+                  { key: "qty", label: "Qty", width: 55, align: "right", value: (i) => formatQuantity(i.quantity) },
+                  { key: "unit", label: "Unit", width: 50, align: "right", value: (i) => i.unit || "—" },
+                  // Deliberately no price column: this is a request, and a
+                  // pre-filled rate anchors the quote we are asking for.
+                  { key: "yourRate", label: "Your Rate", width: 80, align: "right", value: () => "" },
+                  { key: "yourTotal", label: "Your Total", width: 80, align: "right", value: () => "" },
+                ]}
+                groups={[{ key: "items", rows: items }]}
+                rowKey={(item, i) => item.id || `rfq-item-${i}`}
+              />
+            </PdfSection>
           )}
 
           <View
             style={{
-              marginTop: 4,
-              paddingTop: 10,
+              marginTop: PDF_SPACE.xl,
+              paddingTop: PDF_SPACE.lg,
               borderTopWidth: 1,
-              borderTopColor: "#e5e7eb",
+              borderTopColor: PDF_COLORS.border,
             }}
           >
-            <Text style={{ fontSize: 9, color: "#374151", marginBottom: 3 }}>
-              Please review the scope and items above and return your quote by{" "}
-              {formatDate(rfq.dueDate)}.
+            <Text style={{ fontSize: PDF_TYPE.body, color: PDF_COLORS.ink, lineHeight: 1.5, marginBottom: 3 }}>
+              {due
+                ? `Please review the scope and items above and return your quote by ${due}.`
+                : "Please review the scope and items above and return your quote."}
             </Text>
             {company?.email && (
-              <Text style={{ fontSize: 9, color: "#6b7280" }}>
-                Questions? Contact us at {company.email}
-                {company.phone ? ` or ${company.phone}` : ""}.
+              <Text style={{ fontSize: PDF_TYPE.bodySmall, color: PDF_COLORS.inkMuted }}>
+                {`Questions? Contact us at ${company.email}${company.phone ? ` or ${company.phone}` : ""}.`}
               </Text>
             )}
           </View>
         </View>
 
-        <DocFooter
-          companyName={company?.name}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <PdfDocFooter companyName={company?.name} />
       </Page>
     </Document>
   );

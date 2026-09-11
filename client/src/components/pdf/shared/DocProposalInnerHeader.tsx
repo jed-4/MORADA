@@ -1,6 +1,7 @@
 import { View, Text, Image } from "@react-pdf/renderer";
 import { registerPdfFonts, PDF_FONT_FAMILY } from "./registerPdfFonts";
 import { tintOnWhite } from "./pdfColor";
+import { PDF_COLORS, PDF_RADIUS } from "./pdfTokens";
 
 interface DocProposalInnerHeaderProps {
   companyName?: string;
@@ -39,7 +40,7 @@ export function DocProposalInnerHeader({
         borderTopWidth: 3,
         borderTopColor: brandColor,
         borderBottomWidth: 1,
-        borderBottomColor: isS2 ? tintOnWhite(brandColor, "30") : "#e5e7eb",
+        borderBottomColor: isS2 ? tintOnWhite(brandColor, "30") : PDF_COLORS.border,
         ...(isS2 ? { borderLeftWidth: 3, borderLeftColor: brandColor } : {}),
       }}
     >
@@ -48,7 +49,7 @@ export function DocProposalInnerHeader({
           width: 40,
           height: 28,
           borderRadius: 3,
-          backgroundColor: isS2 ? "rgba(255,255,255,0.35)" : "#e5e7eb",
+          backgroundColor: isS2 ? "rgba(255,255,255,0.35)" : PDF_COLORS.border,
           overflow: "hidden",
           marginRight: 10,
         }}
@@ -64,7 +65,7 @@ export function DocProposalInnerHeader({
             style={{
               fontSize: 10,
               fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-              color: "#111827",
+              color: PDF_COLORS.ink,
             }}
           >
             {companyName}
@@ -74,7 +75,7 @@ export function DocProposalInnerHeader({
           <Text
             style={{
               fontSize: 8,
-              color: isS2 ? brandColor : "#9ca3af",
+              color: isS2 ? brandColor : PDF_COLORS.inkFaint,
               marginTop: 1,
             }}
           >
@@ -82,7 +83,7 @@ export function DocProposalInnerHeader({
           </Text>
         ) : null}
         {companyPhone ? (
-          <Text style={{ fontSize: 8, color: "#9ca3af", marginTop: 1 }}>
+          <Text style={{ fontSize: 8, color: PDF_COLORS.inkFaint, marginTop: 1 }}>
             {companyPhone}
           </Text>
         ) : null}
@@ -92,8 +93,11 @@ export function DocProposalInnerHeader({
         <Text
           style={{
             fontSize: 9,
-            color: isS2 ? brandColor : "#6b7280",
-            fontFamily: "Helvetica-Oblique",
+            color: isS2 ? brandColor : PDF_COLORS.inkMuted,
+            // Inter italic, now that the family ships one. This was the last
+            // Helvetica in the running header of every proposal page.
+            fontFamily: PDF_FONT_FAMILY,
+            fontStyle: "italic",
             maxWidth: 200,
             textAlign: "right",
           }}

@@ -1,4 +1,10 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS, PDF_LEADING } from "@/components/pdf/shared/pdfTokens";
+
+// Registering here covers every proposal section: all eleven of them render
+// their prose through this module, so none can fall back to Helvetica.
+registerPdfFonts();
 
 type InlineSeg = { text: string; bold?: boolean; italic?: boolean; underline?: boolean };
 export type RenderBlock = { type: 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol-li'; text: string; segs?: InlineSeg[] };
@@ -87,11 +93,11 @@ export function htmlToBlocks(html: string): RenderBlock[] {
 }
 
 const blockStyles = StyleSheet.create({
-  p: { fontSize: 11, lineHeight: 1.5, color: '#374151', marginBottom: 6 },
-  h1: { fontSize: 18, fontWeight: 'bold', marginTop: 8, marginBottom: 6, color: '#1F2937' },
-  h2: { fontSize: 15, fontWeight: 'bold', marginTop: 8, marginBottom: 4, color: '#1F2937' },
-  h3: { fontSize: 13, fontWeight: 'bold', marginTop: 6, marginBottom: 4, color: '#1F2937' },
-  li: { fontSize: 11, lineHeight: 1.5, color: '#374151', marginLeft: 12 },
+  p: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginBottom: 6 },
+  h1: { fontSize: 18, fontWeight: 'bold', marginTop: 8, marginBottom: 6, color: PDF_COLORS.ink },
+  h2: { fontSize: 15, fontWeight: 'bold', marginTop: 8, marginBottom: 4, color: PDF_COLORS.ink },
+  h3: { fontSize: 13, fontWeight: 'bold', marginTop: 6, marginBottom: 4, color: PDF_COLORS.ink },
+  li: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginLeft: 12 },
 });
 
 function renderSegs(segs: InlineSeg[] | undefined, fallback: string) {
@@ -143,11 +149,11 @@ interface PageHeaderProps {
   companyLogo?: string;
 }
 
-export function PageHeader({ proposalName, proposalNumber, expiryDate, primaryColor = '#3B82F6' }: PageHeaderProps) {
+export function PageHeader({ proposalName, proposalNumber, expiryDate, primaryColor = PDF_COLORS.brandFallback }: PageHeaderProps) {
   const styles = StyleSheet.create({
     header: { marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid ${primaryColor}` },
-    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, color: '#1F2937' },
-    subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 5 },
+    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, color: PDF_COLORS.ink },
+    subtitle: { fontSize: 14, color: PDF_COLORS.inkMuted, marginBottom: 5 },
   });
   return (
     <View style={styles.header}>
@@ -167,7 +173,7 @@ interface PageFooterProps {
   primaryColor?: string;
 }
 
-export function PageFooter({ companyName, primaryColor = '#3B82F6' }: PageFooterProps) {
+export function PageFooter({ companyName, primaryColor = PDF_COLORS.brandFallback }: PageFooterProps) {
   const styles = StyleSheet.create({
     footer: {
       position: 'absolute',
@@ -191,16 +197,16 @@ export function PageFooter({ companyName, primaryColor = '#3B82F6' }: PageFooter
 export const sharedPageStyle = {
   padding: 40,
   fontSize: 11,
-  fontFamily: 'Helvetica',
+  fontFamily: PDF_FONT_FAMILY,
   backgroundColor: '#ffffff',
 };
 
 export const sharedSectionStyle = StyleSheet.create({
   section: { marginTop: 20, marginBottom: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, color: '#1F2937' },
-  text: { fontSize: 11, lineHeight: 1.5, color: '#374151' },
-  muted: { fontSize: 11, fontStyle: 'italic', color: '#6B7280' },
-  intro: { fontSize: 11, lineHeight: 1.5, color: '#374151', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, color: PDF_COLORS.ink },
+  text: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink },
+  muted: { fontSize: 11, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
+  intro: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginBottom: 12 },
 });
 
 /**

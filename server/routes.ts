@@ -17,6 +17,7 @@ import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { renderClientEmail } from "./services/clientEmailShell";
+import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -2134,6 +2135,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Xero webhook — must be publicly accessible so Xero can POST without a session
     if (path === '/xero/webhook') {
+      return next();
+    }
+
+    // The company logo. Rendered by a homeowner's mail client, which has no
+    // session and never will. Narrow on purpose — this matches ONE resource
+    // per company, and the route it reaches takes the object path from the
+    // settings row rather than from the URL.
+    if (/^\/public\/company\/[^/]+\/logo$/.test(path)) {
       return next();
     }
 
@@ -9955,6 +9964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to: user.email,
           subject: 'Reset Your Morada Password',
           from: 'Morada <noreply@moradaco.com.au>',
+          context: { type: 'password_reset', id: user.id, companyId: (user as any).companyId ?? null },
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${user.firstName || 'there'},</p>
@@ -10170,7 +10180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         <p>${esc(description).replace(/\n/g, '<br>')}</p>
       `;
 
-      await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email });
+      await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email, context: { type: 'bug_report', companyId: user.companyId ?? null } });
 
       // Secondary delivery: post to Slack #morada-triage. Email is primary, so
       // any Slack failure is logged but never breaks the response.
@@ -12155,6 +12165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to: targetUser.email,
           subject: "Reset Your Morada Password",
           from: 'Morada <noreply@moradaco.com.au>',
+          context: { type: 'password_reset', id: targetUser.id, companyId: (targetUser as any).companyId ?? null },
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${targetUser.firstName || 'there'},</p>
@@ -14545,6 +14556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           inviteUrl,
           recipientName: invitation.firstName || undefined,
           userId: invitation.invitedBy, // Pass inviter's userId for Gmail sending
+          companyId: invitation.companyId,
         });
         
         console.log(`Invitation email sent to ${invitation.email}`);
@@ -14697,6 +14709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           inviteUrl,
           recipientName: invitation.firstName || undefined,
           userId: currentUser.id,
+          companyId: invitation.companyId,
         });
         
         console.log(`Invitation resent to ${invitation.email}`);
@@ -15622,6 +15635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId: req.user.id,
+        context: { type: "selection", id: selection.id, companyId: req.user.companyId ?? null },
       });
 
       const sentAt = new Date();
@@ -16986,6 +17000,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           companyName: companyDisplayName || 'your builder',
           projectNames: projects.map(p => p.name),
           inviteUrl,
+          companyId,
+          contactId: contact.id,
         });
       } catch (emailError) {
         console.error('Failed to send client portal invite email:', emailError);
@@ -17039,6 +17055,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           companyName: company?.nickname || company?.name || 'your builder',
           projectNames: projects.map(p => p.name),
           inviteUrl,
+          companyId,
+          contactId: contact.id,
         });
       } catch (emailError) {
         console.error('Failed to resend client portal invite email:', emailError);
@@ -17866,6 +17884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               from: `${companyName} via Morada <noreply@moradaco.com.au>`,
               replyTo: req.user!.email,
               userId: req.user!.id,
+              context: { type: "rfq", id: rfq.id, companyId: (req.user as any)?.companyId ?? null },
               attachments: parsed.data.pdfBase64
                 ? [{
                     filename: parsed.data.pdfFilename || `RFQ-${rfq.rfqNumber}.pdf`,
@@ -20994,6 +21013,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     builderSignedDate: true,
     approvedBy: true,
     approvedDate: true,
+    supersedesVariationId: true,
   } as const;
   const createVariationSchema = insertVariationSchema.omit(VARIATION_GUARDED_FIELDS);
   const updateVariationSchema = insertVariationSchema.partial().omit(VARIATION_GUARDED_FIELDS);
@@ -21027,6 +21047,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { invoiceVariations: ivTbl } = await import("@shared/schema");
     const rows = await db.select({ id: ivTbl.id }).from(ivTbl).where(eq(ivTbl.variationId, variationId));
     return rows.length;
+  };
+
+  // Next number in a project's variation sequence. Numbering comes from
+  // Settings (variationPrefix/variationStartNumber) with a per-project
+  // max-existing-suffix + 1, so deleting a variation never reuses its number.
+  // `bump` is the retry offset when a concurrent create wins the unique index.
+  const nextVariationNumber = async (projectId: string, bump: number): Promise<string> => {
+    const config = await storage.getSystemConfiguration().catch(() => undefined);
+    const prefix = (config as any)?.variationPrefix || "VAR-";
+    const startNumber = (config as any)?.variationStartNumber ?? 1;
+    const existing = await storage.getVariations(projectId);
+    let maxSeen = 0;
+    for (const v of existing) {
+      const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
+      if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+    }
+    const seq = Math.max(startNumber, maxSeen + 1) + bump;
+    return `${prefix}${String(seq).padStart(3, "0")}`;
   };
 
   // Recompute and persist a variation's money totals from its stored
@@ -21278,8 +21316,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const variation = await getOwnedVariation(req, res, req.params.id);
       if (!variation) return;
-      res.json(variation);
+
+      // Both ends of the revision chain in ONE round trip. Neon is ~400ms from
+      // Australia, so two queries here would be felt on every detail page open;
+      // an OR over the same table is not.
+      const v = variation as any;
+      const { variations: varTbl } = await import("@shared/schema");
+      const neighbours = await db
+        .select({
+          id: varTbl.id,
+          variationNumber: varTbl.variationNumber,
+          name: varTbl.name,
+          status: varTbl.status,
+          supersedesVariationId: varTbl.supersedesVariationId,
+          createdAt: varTbl.createdAt,
+        })
+        .from(varTbl)
+        .where(
+          or(
+            v.supersedesVariationId ? eq(varTbl.id, v.supersedesVariationId) : sql`false`,
+            eq(varTbl.supersedesVariationId, v.id),
+          ),
+        )
+        .orderBy(desc(varTbl.createdAt));
+
+      // Nothing stops a variation being duplicated twice, so there can be more
+      // than one successor. Newest wins the link — it is the live revision —
+      // and the count is reported so the UI never implies there is only one.
+      const successors = neighbours.filter((r: any) => r.supersedesVariationId === v.id);
+      const link = (r: any) => (r ? { id: r.id, variationNumber: r.variationNumber, name: r.name, status: r.status } : null);
+      res.json({
+        ...v,
+        /** The variation this one revises. */
+        supersedes: link(neighbours.find((r: any) => r.id === v.supersedesVariationId)),
+        /** The most recent revision made from this one. */
+        supersededBy: link(successors[0]),
+        supersededByCount: successors.length,
+      });
     } catch (error) {
+      console.error("Error fetching variation:", error);
       res.status(500).json({ error: "Failed to fetch variation" });
     }
   });
@@ -21304,19 +21379,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // reuses its number the way the old count-based scheme did.
       const providedNumber = validationResult.data.variationNumber;
       const autoNumber = !providedNumber || providedNumber === "Auto-generated";
-      const generateVariationNumber = async (bump: number): Promise<string> => {
-        const config = await storage.getSystemConfiguration().catch(() => undefined);
-        const prefix = (config as any)?.variationPrefix || "VAR-";
-        const startNumber = (config as any)?.variationStartNumber ?? 1;
-        const existingVariations = await storage.getVariations(validationResult.data.projectId);
-        let maxSeen = 0;
-        for (const v of existingVariations) {
-          const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
-          if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
-        }
-        const seq = Math.max(startNumber, maxSeen + 1) + bump;
-        return `${prefix}${String(seq).padStart(3, "0")}`;
-      };
+      const generateVariationNumber = (bump: number) =>
+        nextVariationNumber(validationResult.data.projectId, bump);
 
       // Money totals start at zero — recomputeVariationTotals fills them as
       // items/bills/timesheets are attached (guarded fields are stripped from
@@ -21349,6 +21413,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation" });
+    }
+  });
+
+  /**
+   * Duplicate a variation — the "reject, then re-price" loop.
+   *
+   * A rejected variation used to be a dead end: an approved one is immutable
+   * on purpose, and a rejected one keeps its reason on record, so re-pricing
+   * the same work meant rebuilding it by hand with nothing linking the two.
+   *
+   * What carries across, and what pointedly does not:
+   *
+   *   copied   the document — name, intro/closing text, terms, attachments,
+   *            days changed, global markup, PDF column layout, and every line
+   *            item including allowance lines (they are variation_items with
+   *            itemType "allowance").
+   *
+   *   fresh    a new number in the project's sequence, status draft, and the
+   *            caller as author. Every portal, signature, approval and
+   *            rejection stamp is left null: a revision has not been sent,
+   *            seen, signed or decided, and copying those would fabricate an
+   *            audit trail.
+   *
+   *   MOVED    linked bills and timesheets — and only when the source was
+   *            rejected. This is Jed's rule and it is the right one. A bill is
+   *            a real cost that happened once; copying the link would count it
+   *            against two variations and overstate the project's actual cost.
+   *            Moving is only safe because a rejected variation is out of the
+   *            contract — while the source is still live it keeps its own
+   *            costs and the revision starts with none.
+   */
+  app.post("/api/variations/:id/duplicate", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const source = await getOwnedVariation(req, res, req.params.id);
+      if (!source) return;
+
+      const { variationItems: itemsTbl, variationBills: billsTbl, variationTimesheets: tsTbl } =
+        await import("@shared/schema");
+
+      const src = source as any;
+      let created: any;
+      for (let attempt = 0; ; attempt++) {
+        const variationNumber = await nextVariationNumber(src.projectId, attempt);
+        try {
+          created = await storage.createVariation({
+            projectId: src.projectId,
+            variationNumber,
+            name: src.name,
+            introductionText: src.introductionText,
+            closingText: src.closingText,
+            approvalDeadline: src.approvalDeadline,
+            daysChanged: src.daysChanged ?? 0,
+            relatedTo: src.relatedTo,
+            termsAndConditions: src.termsAndConditions,
+            attachments: src.attachments ?? [],
+            globalMarkupPercent: src.globalMarkupPercent ?? 0,
+            pdfColumns: src.pdfColumns,
+            status: "draft",
+            createdById: req.user?.id ?? null,
+            supersedesVariationId: src.id,
+            // Totals are recomputed below once the lines are in place.
+            subtotal: 0,
+            gstAmount: 0,
+            totalAmount: 0,
+            paidAmount: 0,
+            balanceAmount: 0,
+          } as any);
+          break;
+        } catch (err: any) {
+          // Unique (project_id, variation_number): a concurrent create can win
+          // the race — take the next number and try again.
+          if (err?.code === "23505" && attempt < 2) continue;
+          throw err;
+        }
+      }
+
+      const sourceItems = await storage.getVariationItems(src.id);
+      if (sourceItems.length > 0) {
+        await db.insert(itemsTbl).values(
+          sourceItems.map((item: any) => ({
+            variationId: created.id,
+            name: item.name,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            taxable: item.taxable,
+            sortOrder: item.sortOrder,
+            itemType: item.itemType,
+            type: item.type,
+            unitType: item.unitType,
+            unitCostExTax: item.unitCostExTax,
+            markupPercent: item.markupPercent,
+            costCode: item.costCode,
+            showInPdf: item.showInPdf,
+          })),
+        );
+      }
+
+      // Costs move only out of a rejected variation. See the note above.
+      const movesCosts = src.status === "rejected";
+      let movedBills = 0;
+      let movedTimesheets = 0;
+      if (movesCosts) {
+        const billRows = await db
+          .update(billsTbl)
+          .set({ variationId: created.id })
+          .where(eq(billsTbl.variationId, src.id))
+          .returning({ id: billsTbl.id });
+        movedBills = billRows.length;
+        const tsRows = await db
+          .update(tsTbl)
+          .set({ variationId: created.id })
+          .where(eq(tsTbl.variationId, src.id))
+          .returning({ id: tsTbl.id });
+        movedTimesheets = tsRows.length;
+      }
+
+      const duplicate = (await recomputeVariationTotals(created.id)) ?? created;
+      // The source lost those costs, so its own totals are now stale.
+      if (movesCosts && (movedBills > 0 || movedTimesheets > 0)) {
+        await recomputeVariationTotals(src.id);
+      }
+
+      res.status(201).json({
+        ...duplicate,
+        // So the client can say what actually happened rather than guessing.
+        duplicatedFrom: { id: src.id, variationNumber: src.variationNumber, status: src.status },
+        movedBills,
+        movedTimesheets,
+      });
+    } catch (error) {
+      console.error("Error duplicating variation:", error);
+      res.status(500).json({ error: "Failed to duplicate variation" });
     }
   });
 
@@ -21924,8 +22122,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
   };
 
+  /** The client's own view of a variation, opened from the link they were
+   *  emailed. */
   app.get("/api/portal/variation/:token", async (req, res) => {
     try {
+      // Tenancy: there is no session and so no companyId to scope by — the
+      // caller is a homeowner, not a user of the app. The unguessable portal
+      // token IS the authorisation and resolves to exactly one variation, so
+      // a company check would have nothing to compare against. What the
+      // response contains is filtered by the document's own visibility config
+      // rather than by tenant.
       const { token } = req.params;
       const { variations, variationSends } = await import("@shared/schema");
 
@@ -22123,16 +22329,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const variation = await getOwnedVariation(req, res, req.params.id);
       if (!variation) return;
-      const { variationSends } = await import("@shared/schema");
+      const { variationSends, emailDeliveries } = await import("@shared/schema");
+      // Left join: sends made before the delivery log shipped have no row, and
+      // an inner join would erase them from the history entirely.
       const rows = await db
-        .select()
+        .select({ send: variationSends, delivery: emailDeliveries })
         .from(variationSends)
+        .leftJoin(emailDeliveries, eq(emailDeliveries.id, variationSends.emailDeliveryId))
         .where(eq(variationSends.variationId, variation.id))
         .orderBy(desc(variationSends.sentAt));
       // The snapshot is large and the feed does not need it — only whether one
       // exists, so the UI can offer the download.
       res.json(
-        rows.map((r: any) => ({
+        rows.map(({ send: r, delivery: d }: any) => ({
           id: r.id,
           sentAt: r.sentAt,
           sentById: r.sentById,
@@ -22143,6 +22352,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           firstViewedAt: r.firstViewedAt,
           lastViewedAt: r.lastViewedAt,
           viewCount: r.viewCount,
+          delivery: d
+            ? {
+                status: d.status,
+                detail: d.statusDetail,
+                updatedAt: d.statusUpdatedAt,
+                provider: d.provider,
+              }
+            : null,
         })),
       );
     } catch (error) {
@@ -22267,7 +22484,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // never heard of us. It also escapes the builder's message, which the old
       // `body.replace(/\n/g, "<br>")` did not: an ampersand or an angle bracket
       // in a note landed as broken markup.
-      const portalUrl = `${(process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "")}/portal/variations/${token}`;
+      // Singular "variation" — it must match the route registered in App.tsx.
+      // This said "variations" when the branded email shipped, so the CTA in
+      // every variation email led the client to a 404.
+      const portalUrl = `${(process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "")}/portal/variation/${token}`;
       const html = renderClientEmail({
         brand: {
           companyName: settings?.companyName,
@@ -22288,7 +22508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
 
-      await sendGenericEmail({
+      const emailResult = await sendGenericEmail({
         to,
         subject,
         html,
@@ -22296,7 +22516,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         replyTo: req.user.email,
         userId,
         attachments,
+        context: { type: "variation", id: variation.id, companyId },
       });
+
+      // Tie this send to its delivery record. Best-effort on purpose: the email
+      // is already gone, and failing to annotate the archive row must not turn
+      // a successful send into a 500.
+      if (emailResult?.deliveryId && sendRow?.id) {
+        await db
+          .update(variationSends)
+          .set({ emailDeliveryId: emailResult.deliveryId } as any)
+          .where(eq(variationSends.id, sendRow.id))
+          .catch((err: any) => console.error("[variation-send] could not link delivery:", err?.message));
+      }
 
       // Mark portalSentAt, and advance an unissued variation to "pending".
       // The portal presents an approve/reject signature panel, so once the
@@ -22727,6 +22959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
+          context: { type: "purchase_order", id: po.id, companyId: req.user.companyId ?? null },
           attachments: pdfBase64 ? [{
             filename: pdfFilename || `PO-${(po as any).poNumber}.pdf`,
             content: pdfBase64,
@@ -24970,6 +25203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         replyTo: req.user.email,
         userId,
         attachments,
+        context: { type: "client_invoice", id: invoice.id, companyId: invoiceCompanyId ?? null },
       });
 
       // Mark the invoice as sent — but never clobber payment-derived states
@@ -25633,6 +25867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             from: `${companyName} via Morada <noreply@moradaco.com.au>`,
             replyTo: (req.user as any)?.email,
             userId: (req.user as any)?.id,
+            context: { type: "proposal", id: req.params.id, companyId: priced.companyId ?? getSessionCompanyId(req) },
             attachments: [{
               filename: parsed.data.pdfFilename || `${proposal!.proposalNumber}.pdf`,
               content: pdfBase64,
@@ -26376,7 +26611,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Scoped to the caller's company (previously one global row was shared
       // by every company).
       const settings = await storage.getCompanySettings((req.user as any)?.companyId);
-      res.json(settings || {});
+      if (!settings) return res.json({});
+      // The logo bytes never go over this endpoint. It is fetched on most
+      // pages in the app, and shipping a base64 image with every one of those
+      // reads would be a real cost for data the client cannot use — it renders
+      // the logo from logoUrl, which is a few dozen characters.
+      const { logoData, ...rest } = settings as any;
+      res.json(rest);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company settings" });
     }
@@ -26447,6 +26688,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update company settings" });
+    }
+  });
+
+  // ── Company logo ──────────────────────────────────────────────────────────
+  //
+  // The Upload Logo button in Settings has been hard-coded `disabled` since it
+  // was written — no file input, no handler, no route. "Drag and drop to
+  // upload files" was static text under it. This is the feature.
+  //
+  // It needs more than a button because of where the logo has to render: a
+  // client email, opened by a homeowner whose mail client has no session and
+  // never will. Every existing object route is behind requireAuth AND a tenant
+  // check, so the file also needs a deliberately public door.
+
+  const LOGO_MIME_EXT: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    // SVG is deliberately absent. It is a script-bearing format, this route
+    // serves with no session, and a logo that can carry <script> is a stored
+    // XSS on every page that renders it. The Settings copy promises .svg
+    // today; that copy is corrected rather than the format admitted.
+  };
+
+  const companyLogoUpload = multer({
+    storage: multer.memoryStorage(),
+    // A logo is a few tens of KB. The old Settings copy said 100 MB, which is
+    // not a limit so much as an invitation. 2 MB base64s to ~2.7 MB, which is
+    // a comfortable Postgres row.
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (LOGO_MIME_EXT[file.mimetype]) return cb(null, true);
+      cb(new Error("Logo must be a JPEG, PNG, GIF or WebP image"));
+    },
+  });
+
+  app.post(
+    "/api/company-settings/logo",
+    requireAuth,
+    requireAdmin,
+    companyLogoUpload.single("file"),
+    // `res` is annotated because the trailing error-handling middleware below
+    // takes this call off Express's typed overloads.
+    async (req: any, res: import("express").Response) => {
+      try {
+        const companyId = req.user?.companyId;
+        if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+        // Stored on the settings row rather than in object storage or the
+        // uploads/ directory — see migrations/0076. Local disk is ephemeral on
+        // this host, so a redeploy would silently take every builder's logo
+        // off their documents and out of their emails.
+        //
+        // The cache buster is the point of the query string: the public URL is
+        // stable per company, so without it a replaced logo would keep serving
+        // the old bytes out of every mail client that had cached it.
+        const publicUrl = `/api/public/company/${companyId}/logo?v=${Date.now()}`;
+
+        const settings = await storage.updateCompanySettings(
+          {
+            logoUrl: publicUrl,
+            logoData: req.file.buffer.toString("base64"),
+            logoMime: req.file.mimetype,
+          } as any,
+          companyId,
+        );
+        res.json({ logoUrl: publicUrl, settings });
+      } catch (error: any) {
+        console.error("Logo upload failed:", error);
+        res.status(500).json({ error: "Failed to upload logo" });
+      }
+    },
+    // Multer rejects an oversize or wrong-type file BEFORE the handler runs, so
+    // its error never reaches the try/catch above — it falls through to the
+    // global handler and comes back as a 500 with a `message` key the client
+    // does not read. A four-argument middleware on this route is the only
+    // place it can be caught.
+    (err: any, _req: unknown, res: import("express").Response, next: (e?: any) => void) => {
+      if (!err) return next();
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Logo must be smaller than 2 MB" });
+      }
+      if (/must be a JPEG/i.test(err.message || "")) {
+        return res.status(400).json({ error: err.message });
+      }
+      return next(err);
+    },
+  );
+
+  app.delete("/api/company-settings/logo", requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const settings = await storage.updateCompanySettings(
+        { logoUrl: null, logoData: null, logoMime: null } as any,
+        companyId,
+      );
+      res.json({ settings });
+    } catch (error) {
+      console.error("Logo removal failed:", error);
+      res.status(500).json({ error: "Failed to remove logo" });
+    }
+  });
+
+  /**
+   * The company logo, servable with no session. Deliberately public.
+   *
+   * This is the only unauthenticated object route in the app, so the shape
+   * matters: the caller supplies a COMPANY ID and nothing else. The object
+   * path comes from that company's settings row, never from the request, so
+   * the route can serve exactly one file per company and cannot be walked into
+   * a reader for anything else in the bucket.
+   *
+   * What it exposes is a builder's logo to anyone holding their company UUID.
+   * That is the minimum that makes a branded email render for a homeowner, and
+   * a logo is public-facing branding by its nature — it is already on every
+   * document they send.
+   */
+  app.get("/api/public/company/:companyId/logo", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const settings = await storage.getCompanySettings(companyId);
+      const data = (settings as any)?.logoData as string | null | undefined;
+      if (!data) return res.status(404).json({ error: "No logo" });
+
+      const mime = ((settings as any)?.logoMime as string | null) || "image/png";
+      const buffer = Buffer.from(data, "base64");
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Content-Length", String(buffer.length));
+      // Long cache: the URL is cache-busted on every upload, so a stale copy
+      // is not reachable once the logo changes.
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      // No session is involved, so nothing here is per-user; but say so, or a
+      // shared proxy has to guess.
+      res.setHeader("Vary", "Accept-Encoding");
+      res.end(buffer);
+    } catch (error: any) {
+      console.error("Error serving company logo:", error);
+      res.status(500).json({ error: "Failed to serve logo" });
     }
   });
 
@@ -27070,6 +27452,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error uploading file:", error);
       res.status(500).json({ message: "Failed to upload file", error: error.message });
+    }
+  });
+
+  /**
+   * Resend delivery events — what actually became of an email.
+   *
+   * Public and unauthenticated by necessity, so it verifies a signature and
+   * says as little as possible on failure. Always 200s on a verified event,
+   * including ones we do not map: returning an error would make Resend retry
+   * something we deliberately ignore.
+   *
+   * Inert until RESEND_WEBHOOK_SECRET is set and the endpoint is registered in
+   * the Resend dashboard. It returns 503 in that state rather than 200, so a
+   * misconfiguration is visible instead of looking like silence.
+   */
+  app.post("/api/webhooks/resend", async (req: any, res) => {
+    try {
+      // Tenancy: none, and none is possible. Resend posts this with no session
+      // and no companyId — the request is from a mail provider, not a user.
+      // The event is authorised by its HMAC signature, and the row it updates
+      // is found by the provider's own message id, which we wrote when we sent
+      // the message. A caller cannot name a company or reach another one's
+      // rows: the only input they control is a message id they would have to
+      // already know, and forging the event still needs the signing secret.
+      const secret = process.env.RESEND_WEBHOOK_SECRET;
+      if (!secret) {
+        console.warn("[resend-webhook] RESEND_WEBHOOK_SECRET is not set — event ignored");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+
+      const rawBody = (req as any).rawBody ?? JSON.stringify(req.body);
+      if (!verifyResendSignature(rawBody, req.headers, secret)) {
+        return res.status(401).json({ error: "Invalid signature" });
+      }
+
+      const event = parseResendEvent(req.body);
+      // Verified but unmapped — acknowledge so it is not retried forever.
+      if (!event) return res.json({ ok: true, ignored: true });
+
+      const { emailDeliveries } = await import("@shared/schema");
+      const updated = await db
+        .update(emailDeliveries)
+        .set({
+          status: event.status,
+          statusDetail: event.detail ?? null,
+          statusUpdatedAt: event.occurredAt ?? new Date(),
+        })
+        .where(eq(emailDeliveries.providerMessageId, event.messageId))
+        .returning({ id: emailDeliveries.id });
+
+      if (updated.length === 0) {
+        // Emails sent before this shipped have no row. Worth a log line — a
+        // flood of these means the message ids are not being stored.
+        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.status})`);
+      } else if (event.status === "bounced" || event.status === "complained") {
+        console.warn(`[resend-webhook] ${event.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+      }
+
+      res.json({ ok: true, matched: updated.length });
+    } catch (error) {
+      console.error("[resend-webhook] error:", error);
+      res.status(500).json({ error: "Webhook processing failed" });
     }
   });
 
@@ -45487,6 +45931,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId: req.user.id,
+        context: { type: "review_item", id: item.id, companyId },
       });
 
       const sentAt = new Date();
