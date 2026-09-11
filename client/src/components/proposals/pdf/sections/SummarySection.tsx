@@ -3,6 +3,10 @@ import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
 import { DocFooter } from '@/components/pdf/shared/DocFooter';
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 interface SummarySectionProps {
   proposal: Proposal;
@@ -25,7 +29,7 @@ export function SummarySection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
   showGst = true,
@@ -57,8 +61,8 @@ export function SummarySection({
           }),
     },
     row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-    label: { fontSize: 11, color: '#374151' },
-    value: { fontSize: 11, color: '#1F2937' },
+    label: { fontSize: 11, color: PDF_COLORS.ink },
+    value: { fontSize: 11, color: PDF_COLORS.ink },
     grandRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -68,12 +72,12 @@ export function SummarySection({
     },
     grandLabel: {
       fontSize: 14,
-      fontFamily: 'Helvetica-Bold',
-      color: '#1F2937',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      color: PDF_COLORS.ink,
     },
     grandValue: {
       fontSize: 14,
-      fontFamily: 'Helvetica-Bold',
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
       color: resolvedColor,
     },
   });
@@ -81,7 +85,7 @@ export function SummarySection({
   return (
     <Page
       size="A4"
-      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
     >
       <DocProposalInnerHeader
         companyName={companyName}

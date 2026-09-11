@@ -1,0 +1,33 @@
+-- The company logo.
+--
+-- company_settings.logo_url already existed and was always null, because the
+-- Upload Logo button in Settings has been hard-coded `disabled` since it was
+-- written — no file input, no handler, no route. "Drag and drop to upload
+-- files" was static text.
+--
+-- ── Why the bytes live in Postgres and not in object storage ────────────────
+--
+-- Every other upload in this app goes to object storage, and for attachments
+-- and PDFs that is right. The logo is a different shape of thing:
+--
+--   * It is tiny and bounded. One per company, capped at 2 MB, realistically
+--     30-80 KB. There is no growth curve to worry about.
+--
+--   * It has to render for a homeowner's mail client, which has no session.
+--     Serving it from the DB needs one query; serving it from object storage
+--     needs the storage sidecar to be up on every branded email that renders.
+--
+--   * It has to survive the move off Replit. Object paths are being preserved
+--     across that migration deliberately, but the logo is the asset that
+--     breaks most visibly if anything slips, and a row does not migrate.
+--
+--   * It is testable. PRIVATE_OBJECT_DIR is unset outside Replit, so an
+--     object-storage logo cannot be exercised locally at all — the upload
+--     path would ship unverified.
+--
+-- logo_url stays a URL because roughly fifteen call sites already read it as
+-- one (the PDFs, the portal, the client emails). It points at the public logo
+-- route, cache-busted on every upload.
+ALTER TABLE company_settings
+  ADD COLUMN IF NOT EXISTS logo_data text,
+  ADD COLUMN IF NOT EXISTS logo_mime text;

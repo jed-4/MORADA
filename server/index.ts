@@ -59,6 +59,20 @@ app.use('/api/xero/webhook', express.raw({ type: 'application/json', limit: '1mb
   next();
 });
 
+// Resend delivery webhook — same reason as Xero: the Svix signature covers the
+// exact bytes, so the raw body has to survive express.json().
+app.use('/api/webhooks/resend', express.raw({ type: 'application/json', limit: '1mb' }), (req: Request, _res: Response, next: NextFunction) => {
+  if (Buffer.isBuffer(req.body)) {
+    (req as any).rawBody = req.body.toString('utf8');
+    try {
+      req.body = JSON.parse((req as any).rawBody);
+    } catch {
+      req.body = {};
+    }
+  }
+  next();
+});
+
 // Stripe webhook — must receive the raw body for signature verification, so it
 // is mounted BEFORE express.json(). No-op (200) when Stripe is not configured
 // so the app boots and Stripe can ping without keys present.

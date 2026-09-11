@@ -1950,6 +1950,8 @@ export default function ClientInvoiceDetail() {
           dueDate={form.watch("dueDate") || invoice?.dueDate}
           company={companyInfo}
           clientName={clientContact?.name}
+          clientEmail={(clientContact as any)?.email}
+          clientPhone={(clientContact as any)?.phone}
           projectName={currentProject?.name}
           projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
           lineItems={buildInvoicePdfLineItems()}
@@ -5276,6 +5278,8 @@ export default function ClientInvoiceDetail() {
               dueDate={form.watch("dueDate") || invoice.dueDate}
               company={companyInfo}
               clientName={clientContact?.name}
+              clientEmail={(clientContact as any)?.email}
+              clientPhone={(clientContact as any)?.phone}
               projectName={currentProject?.name}
               projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
               lineItems={buildInvoicePdfLineItems()}
