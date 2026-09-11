@@ -246,6 +246,40 @@ async function main() {
     assert.strictEqual(statusPaint("in-progress").bg, statusPaint("inprogress").bg);
   });
 
+  await check("italic text renders instead of killing the document", async () => {
+    // @react-pdf does not synthesise a slant. Registering Inter without italic
+    // faces made `fontStyle: "italic"` throw "Could not resolve font" and take
+    // the whole render with it — and the proposal's rich-text renderer maps a
+    // builder's <em> straight onto that style, so italicising one word in a
+    // proposal would have produced no PDF at all.
+    //
+    // Rendered through a document rather than asserted on the font store,
+    // because the failure was at render time.
+    const { Document, Page, Text, renderToBuffer: render } = await import("@react-pdf/renderer");
+    const { registerPdfFonts, PDF_FONT_FAMILY } = await import(
+      "../../client/src/components/pdf/shared/registerPdfFonts"
+    );
+    registerPdfFonts();
+
+    for (const weight of [400, 500, 600, 700] as const) {
+      const el = createElement(
+        Document,
+        null,
+        createElement(
+          Page,
+          { size: "A4" },
+          createElement(
+            Text,
+            { style: { fontFamily: PDF_FONT_FAMILY, fontWeight: weight, fontStyle: "italic" } },
+            `Italic at ${weight}`,
+          ),
+        ),
+      );
+      const buf = await render(el as any);
+      assert.ok(buf.length > 0, `italic ${weight} produced no bytes`);
+    }
+  });
+
   console.log(`\n${passed} checks passed`);
 }
 
