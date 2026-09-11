@@ -131,7 +131,6 @@
     "server/routes.ts POST /api/proposals/:id/view",
     "server/routes.ts POST /api/purchase-orders/sign/:token",
     "server/routes.ts POST /api/reminder-notifications/:id/read",
-    "server/routes.ts POST /api/report-issue",
     "server/routes.ts POST /api/timesheets/clock-in",
     "server/routes.ts POST /api/timesheets/clock-out",
     "server/routes.ts POST /api/users",

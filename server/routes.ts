@@ -21928,8 +21928,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
   };
 
+  /** The client's own view of a variation, opened from the link they were
+   *  emailed. */
   app.get("/api/portal/variation/:token", async (req, res) => {
     try {
+      // Tenancy: there is no session and so no companyId to scope by — the
+      // caller is a homeowner, not a user of the app. The unguessable portal
+      // token IS the authorisation and resolves to exactly one variation, so
+      // a company check would have nothing to compare against. What the
+      // response contains is filtered by the document's own visibility config
+      // rather than by tenant.
       const { token } = req.params;
       const { variations, variationSends } = await import("@shared/schema");
 
@@ -27117,6 +27125,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
    */
   app.post("/api/webhooks/resend", async (req: any, res) => {
     try {
+      // Tenancy: none, and none is possible. Resend posts this with no session
+      // and no companyId — the request is from a mail provider, not a user.
+      // The event is authorised by its HMAC signature, and the row it updates
+      // is found by the provider's own message id, which we wrote when we sent
+      // the message. A caller cannot name a company or reach another one's
+      // rows: the only input they control is a message id they would have to
+      // already know, and forging the event still needs the signing secret.
       const secret = process.env.RESEND_WEBHOOK_SECRET;
       if (!secret) {
         console.warn("[resend-webhook] RESEND_WEBHOOK_SECRET is not set — event ignored");
