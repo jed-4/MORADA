@@ -2982,7 +2982,11 @@ export default function VariationDetail() {
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
-          onSend={() => { setPreviewOpen(false); setSendModalOpen(true); }}
+          /* handleOpenSendModal, not setSendModalOpen — it is what mints the
+             portal token and composes the subject and message. Opening the
+             dialog directly gave the preview's Send button an empty form,
+             while the same dialog from the overflow menu came prefilled. */
+          onSend={() => { setPreviewOpen(false); void handleOpenSendModal(); }}
           sidebar={
             docColumns && (
               <VariationColumnSidebar
