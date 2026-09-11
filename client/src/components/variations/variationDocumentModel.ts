@@ -63,6 +63,18 @@ export interface VariationDocLine {
    *  the document's column config explicitly asks for it. */
   unitCostExCents: Cents;
   unitPriceExCents: Cents;
+  /**
+   * Client price per unit, INC GST.
+   *
+   * Derived from the line's own inc-GST total rather than by multiplying the
+   * ex-GST unit price by 1.1, for two reasons. It is automatically right for a
+   * non-taxable line, which carries no GST at all. And it keeps the column
+   * reconciling with Amount: a client who multiplies the unit price by the
+   * quantity should land on the line total, and rounding a per-unit figure up
+   * first is how you end up a few cents out on the page you are asking them to
+   * sign.
+   */
+  unitPriceIncCents: Cents;
   markupPercent: number | null;
   /** Per-line markup in ex-GST cents: line total minus (cost x quantity). */
   markupAmountExCents: Cents;
@@ -186,6 +198,8 @@ export function buildVariationDocumentModel(input: {
       unitType: item.unitType,
       unitCostExCents,
       unitPriceExCents: item.unitPrice ?? 0,
+      unitPriceIncCents:
+        quantity > 0 ? Math.round(amountIncCents / quantity) : amountIncCents,
       markupPercent: item.markupPercent ?? null,
       markupAmountExCents: amountExCents - Math.round(unitCostExCents * quantity),
       amountExCents,

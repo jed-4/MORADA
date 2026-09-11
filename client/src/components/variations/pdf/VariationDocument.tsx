@@ -138,17 +138,21 @@ interface VariationDocumentProps {
  * on the page, not just what the numbers are.
  */
 const LINE_COLUMN_SPECS: Array<PdfTableColumn<VariationDocLine> & {
-  key: "costCode" | "quantity" | "unit" | "unitCost" | "unitPrice" | "markupPercent" | "markupAmount" | "amountEx" | "amountInc";
+  key: "costCode" | "quantity" | "unit" | "unitCost" | "unitPrice" | "unitPriceInc" | "markupPercent" | "markupAmount" | "amountEx" | "amountInc";
 }> = [
   { key: "costCode", label: "Cost Code", width: 52, align: "left", value: (l) => l.costCode || "" },
   { key: "quantity", label: "Qty", width: 34, align: "right", value: (l) => String(l.quantity ?? "") },
   { key: "unit", label: "Unit", width: 32, align: "right", value: (l) => l.unitType || "" },
-  { key: "unitCost", label: "Unit Cost", width: 56, align: "right", value: (l) => formatAUD(l.unitCostExCents / 100) },
-  { key: "unitPrice", label: "Unit Price", width: 56, align: "right", value: (l) => formatAUD(l.unitPriceExCents / 100) },
+  // Every money column names its GST basis. "Unit Cost" beside "Unit Price"
+  // read as one figure before and after tax, when they are the builder's buy
+  // price and the client's price — a difference of margin, not GST.
+  { key: "unitCost", label: "Unit Cost ex GST", width: 60, align: "right", value: (l) => formatAUD(l.unitCostExCents / 100) },
+  { key: "unitPrice", label: "Unit Price ex GST", width: 60, align: "right", value: (l) => formatAUD(l.unitPriceExCents / 100) },
+  { key: "unitPriceInc", label: "Unit Price inc GST", width: 62, align: "right", value: (l) => formatAUD(l.unitPriceIncCents / 100) },
   { key: "markupPercent", label: "Mkup %", width: 38, align: "right", value: (l) => (l.markupPercent == null ? "" : `${l.markupPercent}%`) },
-  { key: "markupAmount", label: "Markup", width: 56, align: "right", value: (l) => formatAUD(l.markupAmountExCents / 100) },
-  { key: "amountEx", label: "Amt ex. GST", width: 60, align: "right", value: (l) => formatAUD(l.amountExCents / 100) },
-  { key: "amountInc", label: "Amt inc. GST", width: 64, align: "right", value: (l) => formatAUD(l.amountIncCents / 100) },
+  { key: "markupAmount", label: "Markup ex GST", width: 58, align: "right", value: (l) => formatAUD(l.markupAmountExCents / 100) },
+  { key: "amountEx", label: "Amount ex GST", width: 62, align: "right", value: (l) => formatAUD(l.amountExCents / 100) },
+  { key: "amountInc", label: "Amount inc GST", width: 64, align: "right", value: (l) => formatAUD(l.amountIncCents / 100) },
 ];
 
 function formatAUD(dollars: number): string {
