@@ -2484,6 +2484,59 @@ export type Variation = typeof variations.$inferSelect;
  * `sentTo`, `subject` and `body` are the only record of the message anywhere —
  * `sendGenericEmail` persists nothing, across all eighteen of its call sites.
  */
+/**
+ * Every email the app sends, and what became of it.
+ *
+ * Written inside `sendGenericEmail` — the single choke point all eighteen call
+ * sites go through — rather than per feature. Before this, "Sent" meant only
+ * that a provider had accepted the request: a variation went to an address that
+ * did not exist, the provider accepted it, Google bounced it asynchronously,
+ * and the app carried on showing Sent with no message id to look up and nothing
+ * listening for the bounce.
+ */
+export const emailDeliveries = pgTable("email_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  /** Nullable — onboarding and the reminder schedulers send with no company in
+   *  scope, and those sends still deserve a record. */
+  companyId: varchar("company_id"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  toAddresses: jsonb("to_addresses").$type<string[]>().notNull().default([]),
+  subject: text("subject"),
+
+  /** "gmail" when it went through the user's own account, "resend" otherwise. */
+  provider: text("provider"),
+  /** The provider's id. Without it a specific send cannot be looked up at all. */
+  providerMessageId: text("provider_message_id"),
+
+  /** sent · delivered · bounced · complained · failed — see EMAIL_DELIVERY_STATUS. */
+  status: text("status").notNull().default("sent"),
+  statusDetail: text("status_detail"),
+  statusUpdatedAt: timestamp("status_updated_at"),
+
+  /** What the email was about, so a document can show its own delivery history
+   *  without a join table per feature. */
+  contextType: text("context_type"),
+  contextId: varchar("context_id"),
+});
+
+export const insertEmailDeliverySchema = createInsertSchema(emailDeliveries).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertEmailDelivery = z.infer<typeof insertEmailDeliverySchema>;
+export type EmailDelivery = typeof emailDeliveries.$inferSelect;
+
+/**
+ * `sent` is the only status we can set ourselves — it means a provider accepted
+ * the request and nothing more. Everything past it arrives by webhook, which is
+ * the whole point: acceptance is not delivery.
+ */
+export const EMAIL_DELIVERY_STATUS = ["sent", "delivered", "bounced", "complained", "failed"] as const;
+export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUS)[number];
+
 export const variationSends = pgTable("variation_sends", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
@@ -2510,6 +2563,11 @@ export const variationSends = pgTable("variation_sends", {
   firstViewedAt: timestamp("first_viewed_at"),
   lastViewedAt: timestamp("last_viewed_at"),
   viewCount: integer("view_count").notNull().default(0),
+
+  /** The email_deliveries row for this send, so the feed can say whether the
+   *  message arrived and not merely that it was handed to a provider.
+   *  Deliberately not a FK — a log line must never block deleting a send. */
+  emailDeliveryId: varchar("email_delivery_id"),
 });
 
 export const insertVariationSendSchema = createInsertSchema(variationSends).omit({

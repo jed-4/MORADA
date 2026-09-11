@@ -95,6 +95,7 @@ interface SendInvitationEmailParams {
   inviteUrl: string;
   recipientName?: string;
   userId?: string;
+  companyId?: string | null;
 }
 
 export async function sendInvitationEmail({
@@ -104,6 +105,7 @@ export async function sendInvitationEmail({
   inviteUrl,
   recipientName,
   userId,
+  companyId,
 }: SendInvitationEmailParams) {
   console.log(`📧 Attempting to send invitation email to ${to}`);
   
@@ -185,22 +187,26 @@ export async function sendInvitationEmail({
     </html>
   `;
 
+  const subject = `You've been invited to join ${companyName} on Morada`;
+  const record = { to, subject, userId, context: { type: 'team_invite', companyId } };
+
   try {
-    const result = await sendEmailWithFallback({
-      to,
-      subject: `You've been invited to join ${companyName} on Morada`,
-      html,
-      userId,
-    });
+    const result = await sendEmailWithFallback({ to, subject, html, userId });
 
     console.log(`✅ Invitation email sent via ${result.sentVia}!`);
     console.log(`   Message ID: ${result.messageId}`);
     console.log(`   Sent to: ${to}`);
+    await recordDelivery(record, {
+      provider: result.sentVia,
+      messageId: result.messageId,
+      status: 'sent',
+    });
     return { id: result.messageId };
   } catch (error: any) {
     console.error('❌ Error sending invitation email:');
     console.error(`   Error type: ${error.constructor.name}`);
     console.error(`   Error message: ${error.message}`);
+    await recordDelivery(record, { status: 'failed', detail: error?.message?.slice(0, 500) });
     throw error;
   }
 }
@@ -211,6 +217,8 @@ interface SendClientPortalInviteEmailParams {
   companyName: string;
   projectNames: string[];
   inviteUrl: string;
+  companyId?: string | null;
+  contactId?: string | null;
 }
 
 // Client portal invites always send via Resend from the Morada address (no
@@ -221,6 +229,8 @@ export async function sendClientPortalInviteEmail({
   companyName,
   projectNames,
   inviteUrl,
+  companyId,
+  contactId,
 }: SendClientPortalInviteEmailParams) {
   console.log(`📧 Attempting to send client portal invite email to ${to}`);
 
@@ -307,20 +317,25 @@ export async function sendClientPortalInviteEmail({
     </html>
   `;
 
+  const subject = `${companyName} has invited you to view your project on Morada`;
+  const record = { to, subject, context: { type: 'client_portal_invite', id: contactId, companyId } };
+
   try {
-    const result = await sendEmailWithFallback({
-      to,
-      subject: `${companyName} has invited you to view your project on Morada`,
-      html,
-    });
+    const result = await sendEmailWithFallback({ to, subject, html });
 
     console.log(`✅ Client portal invite email sent via ${result.sentVia}!`);
     console.log(`   Message ID: ${result.messageId}`);
     console.log(`   Sent to: ${to}`);
+    await recordDelivery(record, {
+      provider: result.sentVia,
+      messageId: result.messageId,
+      status: 'sent',
+    });
     return { id: result.messageId };
   } catch (error: any) {
     console.error('❌ Error sending client portal invite email:');
     console.error(`   Error message: ${error.message}`);
+    await recordDelivery(record, { status: 'failed', detail: error?.message?.slice(0, 500) });
     throw error;
   }
 }
@@ -334,6 +349,7 @@ interface SendReminderEmailParams {
   linkedItemTitle?: string;
   priority?: string;
   userId?: string;
+  companyId?: string | null;
 }
 
 export async function sendReminderEmail({
@@ -345,6 +361,7 @@ export async function sendReminderEmail({
   linkedItemTitle,
   priority,
   userId,
+  companyId,
 }: SendReminderEmailParams) {
   console.log(`📧 Attempting to send reminder email to ${to}`);
   
@@ -425,21 +442,25 @@ export async function sendReminderEmail({
     </html>
   `;
 
+  const subject = `Reminder: ${reminderTitle}`;
+  const record = { to, subject, userId, context: { type: 'reminder', companyId } };
+
   try {
-    const result = await sendEmailWithFallback({
-      to,
-      subject: `Reminder: ${reminderTitle}`,
-      html,
-      userId,
-    });
+    const result = await sendEmailWithFallback({ to, subject, html, userId });
 
     console.log(`✅ Reminder email sent via ${result.sentVia}!`);
     console.log(`   Message ID: ${result.messageId}`);
     console.log(`   Sent to: ${to}`);
+    await recordDelivery(record, {
+      provider: result.sentVia,
+      messageId: result.messageId,
+      status: 'sent',
+    });
     return { id: result.messageId };
   } catch (error: any) {
     console.error('❌ Error sending reminder email:');
     console.error(`   Error message: ${error.message}`);
+    await recordDelivery(record, { status: 'failed', detail: error?.message?.slice(0, 500) });
     throw error;
   }
 }
@@ -452,20 +473,88 @@ export interface SendGenericEmailParams {
   attachments?: SendEmailAttachment[];
   from?: string;
   replyTo?: string;
+  /** What this email is about. Optional — a send with no context is still
+   *  recorded, it just can't be shown against a document. */
+  context?: EmailContext;
+}
+
+/** What an email was about, so its record can be shown against the document
+ *  that caused it. */
+export interface EmailContext {
+  type: string;
+  id?: string | null;
+  companyId?: string | null;
+}
+
+interface DeliveryRecord {
+  to: string | string[];
+  subject: string;
+  userId?: string;
+  context?: EmailContext;
+}
+
+/**
+ * Record the attempt. Deliberately best-effort: a logging failure must never
+ * stop an email going out, or turn a delivered message into a 500.
+ *
+ * Every sender in this file goes through here, not just sendGenericEmail — the
+ * send that prompted all this was a client portal invite, which has its own
+ * function and would otherwise have stayed exactly as invisible as before.
+ *
+ * Returns the row id so the caller can link the send to its own record.
+ */
+async function recordDelivery(
+  params: DeliveryRecord,
+  outcome: { provider?: string; messageId?: string; status: string; detail?: string },
+): Promise<string | undefined> {
+  try {
+    const { db } = await import("../db");
+    const { emailDeliveries } = await import("@shared/schema");
+    const [row] = await db
+      .insert(emailDeliveries)
+      .values({
+        companyId: params.context?.companyId ?? null,
+        userId: params.userId ?? null,
+        toAddresses: Array.isArray(params.to) ? params.to : [params.to],
+        subject: params.subject,
+        provider: outcome.provider ?? null,
+        providerMessageId: outcome.messageId ?? null,
+        status: outcome.status,
+        statusDetail: outcome.detail ?? null,
+        contextType: params.context?.type ?? null,
+        contextId: params.context?.id ?? null,
+      } as any)
+      .returning({ id: emailDeliveries.id });
+    return row?.id;
+  } catch (err: any) {
+    console.error("[email] failed to record delivery:", err?.message);
+    return undefined;
+  }
 }
 
 export async function sendGenericEmail(params: SendGenericEmailParams) {
   console.log(`📧 Attempting to send email to ${Array.isArray(params.to) ? params.to.join(', ') : params.to}`);
-  
+
   try {
     const result = await sendEmailWithFallback(params);
-    
+
     console.log(`✅ Email sent via ${result.sentVia}!`);
     console.log(`   Message ID: ${result.messageId}`);
-    return { id: result.messageId, sentVia: result.sentVia };
+
+    // "sent" means a provider accepted the request and nothing more. Delivery
+    // is decided later, by the receiving server, and only reaches us by webhook.
+    const deliveryId = await recordDelivery(params, {
+      provider: result.sentVia,
+      messageId: result.messageId,
+      status: "sent",
+    });
+    return { id: result.messageId, sentVia: result.sentVia, deliveryId };
   } catch (error: any) {
     console.error('❌ Error sending email:');
     console.error(`   Error message: ${error.message}`);
+    // A hard failure previously left no trace at all — the only evidence was a
+    // line in the server log nobody was reading.
+    await recordDelivery(params, { status: "failed", detail: error?.message?.slice(0, 500) });
     throw error;
   }
 }
