@@ -247,8 +247,9 @@ async function main() {
   await check("every optional column on still leaves a readable description", async () => {
     const allCols: any = {
       name: true, description: true, costCode: true, quantity: true, unit: true,
-      unitCost: true, unitPrice: true, markupPercent: true, markupAmount: true,
-      amountEx: true, amountInc: true, grouping: true, bills: true, contractSummary: false,
+      unitCost: true, unitPrice: true, unitPriceInc: true, markupPercent: true,
+      markupAmount: true, amountEx: true, amountInc: true, grouping: true,
+      bills: true, contractSummary: false,
     };
     const pages = await renderText({ variation: variation(), columns: allCols });
     const all = pages.join(" ");
@@ -256,7 +257,56 @@ async function main() {
     // at which point a description sets one word per line. Asserting the words
     // are adjacent proves the cell is still wide enough to be a column.
     assert.ok(all.includes("Relocate the plumbing"), "description broke apart under full columns");
-    assert.ok(all.includes("Amt inc. GST"), "last column missing");
+    assert.ok(all.includes("Amount inc GST"), "last column missing");
+  });
+
+  await check("every money column states its GST basis", async () => {
+    // "Unit Cost" beside "Unit Price" read as one figure before and after tax,
+    // when they are the builder's buy price and the client's price — a
+    // difference of margin. Naming the basis is what stops that misreading.
+    const allCols: any = {
+      name: true, description: true, costCode: false, quantity: true, unit: true,
+      unitCost: true, unitPrice: true, unitPriceInc: true, markupPercent: false,
+      markupAmount: false, amountEx: true, amountInc: true, grouping: true,
+      bills: false, contractSummary: false,
+    };
+    const [page1] = await renderText({ variation: variation(), columns: allCols });
+    for (const header of [
+      "Unit Cost ex GST",
+      "Unit Price ex GST",
+      "Unit Price inc GST",
+      "Amount ex GST",
+      "Amount inc GST",
+    ]) {
+      // pdfjs may break a wrapped header across items, so compare on the
+      // whitespace-stripped text.
+      assert.ok(
+        page1.replace(/\s/g, "").includes(header.replace(/\s/g, "")),
+        `"${header}" missing from the table header`,
+      );
+    }
+  });
+
+  await check("the inc-GST unit price is derived, not multiplied by 1.1", async () => {
+    // A GST-free line carries no GST at all. Deriving the per-unit inc figure
+    // from the line's own inc total gets that right for free, and keeps the
+    // column reconciling with Amount — a client multiplying unit by quantity
+    // has to land on the line total.
+    const cols: any = {
+      name: true, description: false, costCode: false, quantity: true, unit: false,
+      unitCost: false, unitPrice: true, unitPriceInc: true, markupPercent: false,
+      markupAmount: false, amountEx: false, amountInc: true, grouping: false,
+      bills: false, contractSummary: false,
+    };
+    const taxable = { ...ITEM, id: "t", name: "Taxable", quantity: 10, unitPrice: 50000, totalPrice: 500000, taxable: true };
+    const free = { ...ITEM, id: "f", name: "GST free", quantity: 1, unitPrice: 100000, totalPrice: 100000, taxable: false };
+    const [page1] = await renderText({ variation: variation(), items: [taxable, free], columns: cols });
+
+    assert.ok(page1.includes("$550.00"), "taxable unit price did not gain GST");
+    assert.ok(page1.includes("$5,500.00"), "taxable line total wrong");
+    // The one that matters: a blind x1.1 would print $1,100.00 here.
+    assert.ok(!page1.includes("$1,100.00"), "GST was added to a GST-free line");
+    assert.ok(page1.includes("$1,000.00"), "GST-free unit price missing");
   });
 
   console.log(`\n${passed} checks passed`);

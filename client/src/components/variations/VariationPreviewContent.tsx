@@ -255,12 +255,13 @@ export function VariationPreviewContent({
     { key: "costCode", label: "Cost Code", width: "90px", align: "left", value: (l) => l.costCode || "" },
     { key: "quantity", label: "Qty", width: "60px", align: "right", value: (l) => String(l.quantity ?? "") },
     { key: "unit", label: "Unit", width: "60px", align: "right", value: (l) => l.unitType || "" },
-    { key: "unitCost", label: "Unit Cost", width: "90px", align: "right", value: (l) => formatCents(l.unitCostExCents) },
-    { key: "unitPrice", label: "Unit Price", width: "90px", align: "right", value: (l) => formatCents(l.unitPriceExCents) },
+    { key: "unitCost", label: "Unit Cost ex GST", width: "100px", align: "right", value: (l) => formatCents(l.unitCostExCents) },
+    { key: "unitPrice", label: "Unit Price ex GST", width: "100px", align: "right", value: (l) => formatCents(l.unitPriceExCents) },
+    { key: "unitPriceInc", label: "Unit Price inc GST", width: "100px", align: "right", value: (l) => formatCents(l.unitPriceIncCents) },
     { key: "markupPercent", label: "Mkup %", width: "70px", align: "right", value: (l) => (l.markupPercent == null ? "" : `${l.markupPercent}%`) },
-    { key: "markupAmount", label: "Markup", width: "90px", align: "right", value: (l) => formatCents(l.markupAmountExCents) },
-    { key: "amountEx", label: "Amt ex. GST", width: "100px", align: "right", value: (l) => formatCents(l.amountExCents) },
-    { key: "amountInc", label: "Amt inc. GST", width: "100px", align: "right", value: (l) => formatCents(l.amountIncCents) },
+    { key: "markupAmount", label: "Markup ex GST", width: "95px", align: "right", value: (l) => formatCents(l.markupAmountExCents) },
+    { key: "amountEx", label: "Amount ex GST", width: "100px", align: "right", value: (l) => formatCents(l.amountExCents) },
+    { key: "amountInc", label: "Amount inc GST", width: "105px", align: "right", value: (l) => formatCents(l.amountIncCents) },
   ] as PortalLineCol[]).filter((c) => (cols as any)[c.key]);
   const showTextCell = cols.name || cols.description;
   const gridCols = [showTextCell ? "1fr" : null, ...lineCols.map((c) => c.width)]

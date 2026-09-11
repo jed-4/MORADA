@@ -20,6 +20,8 @@ export interface VariationDocumentColumns {
   unitCost: boolean;
   /** Client price per unit, ex GST. */
   unitPrice: boolean;
+  /** Client price per unit, inc GST. Derived — see variationDocumentModel. */
+  unitPriceInc: boolean;
   /** Per-line markup percentage. Reveals margin. */
   markupPercent: boolean;
   /** Per-line markup in dollars. Reveals margin. */
@@ -50,6 +52,12 @@ export const DEFAULT_VARIATION_DOCUMENT_COLUMNS: VariationDocumentColumns = {
   unit: true,
   unitCost: false,
   unitPrice: true,
+  // On by default, unlike every other key added since this config shipped.
+  // The warning above is about keys that REVEAL MARGIN — defaulting one of
+  // those to visible would retroactively expose a buy price. This is the
+  // client's own price with GST added, which they are being asked to pay and
+  // which the Total already states, so there is nothing to leak.
+  unitPriceInc: true,
   markupPercent: false,
   markupAmount: false,
   amountEx: false,
@@ -73,13 +81,23 @@ export const VARIATION_DOCUMENT_COLUMN_LABELS: Record<
   costCode: { label: "Cost code", hint: "Usually internal" },
   quantity: { label: "Quantity", hint: "e.g. 12" },
   unit: { label: "Unit", hint: "e.g. m2, hr" },
-  unitCost: { label: "Unit cost", hint: "Your buy price, ex GST", revealsMargin: true },
-  unitPrice: { label: "Unit price", hint: "Client price per unit, ex GST" },
+  // Every money column names its GST basis, because "Unit cost" and "Unit
+  // price" sitting together read as the same figure before and after tax when
+  // they are actually YOUR buy price and THE CLIENT'S price — a difference of
+  // margin, not of GST.
+  unitCost: { label: "Unit cost (ex GST)", hint: "Your buy price — not the client's", revealsMargin: true },
+  unitPrice: { label: "Unit price (ex GST)", hint: "What the client pays per unit, before GST" },
+  unitPriceInc: { label: "Unit price (inc GST)", hint: "What the client pays per unit, with GST" },
   markupPercent: { label: "Markup %", hint: "Per-line markup", revealsMargin: true },
-  markupAmount: { label: "Markup $", hint: "Per-line markup in dollars", revealsMargin: true },
+  markupAmount: { label: "Markup $ (ex GST)", hint: "Per-line markup in dollars", revealsMargin: true },
   amountEx: { label: "Amount (ex GST)", hint: "Line total before GST" },
   amountInc: { label: "Amount (inc GST)", hint: "Line total including GST" },
-  grouping: { label: "Trade breakdown", hint: "Materials / Labour headings and subtotals" },
+  // Named for what turning it OFF does, because that is what people come
+  // looking for. "Trade breakdown" described what it adds and nobody found it.
+  grouping: {
+    label: "Group by trade",
+    hint: "Materials / Labour headings with subtotals. Off gives one flat list.",
+  },
   bills: { label: "Linked bills", hint: "Supplier invoices on this variation" },
   contractSummary: { label: "Contract summary", hint: "Original, current and revised figures" },
 };
@@ -95,6 +113,7 @@ export const VARIATION_DOCUMENT_COLUMN_GROUPS: VariationColumnGroup[] = [
       "unit",
       "unitCost",
       "unitPrice",
+      "unitPriceInc",
       "markupPercent",
       "markupAmount",
       "amountEx",
