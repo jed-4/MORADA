@@ -1,6 +1,14 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { ScopeItem } from "@shared/schema";
-import { PRIMARY_COLOR } from "./types";
+// Deliberately NOT the screen's PRIMARY_COLOR (hsl(261,44%,70%) in
+// scope/types.ts). That is a third purple again — neither the app's
+// --primary nor any company's brand colour — and this document printed in
+// it. The screen keeps its own value; the PDF joins the rest of the kit.
+const PRIMARY_COLOR = PDF_COLORS.brandFallback;
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+
+registerPdfFonts();
 
 // Helper function to convert Tiptap JSON to plain text for PDF
 export const tiptapJsonToText = (jsonOrHtml: string | null | undefined): string => {
@@ -137,17 +145,17 @@ export const ScopePDF = ({ stage, items, hideClientCosts = false }: { stage: str
 );
 
 const pdfStyles = StyleSheet.create({
-  page: { padding: 40, fontSize: 11 },
+  page: { padding: 40, fontSize: 11, fontFamily: PDF_FONT_FAMILY },
   header: { marginBottom: 20, borderBottom: `2px solid ${PRIMARY_COLOR}` },
   title: { fontSize: 24, fontWeight: 'bold', color: PRIMARY_COLOR, marginBottom: 10 },
-  subtitle: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 4 },
+  subtitle: { fontSize: 12, color: PDF_COLORS.inkFaint, fontStyle: 'italic', marginTop: 4 },
   item: { flexDirection: 'row', marginBottom: 12 },
   itemNumber: { width: 30, fontWeight: 'bold' },
   itemContent: { flex: 1 },
   itemTitle: { fontWeight: 'bold', marginBottom: 4 },
-  itemDescription: { color: '#666', fontSize: 10, marginBottom: 2 },
+  itemDescription: { color: PDF_COLORS.inkMuted, fontSize: 10, marginBottom: 2 },
   bulletRow: { flexDirection: 'row', marginBottom: 2 },
-  bulletMarker: { color: '#666', fontSize: 10, width: 12 },
+  bulletMarker: { color: PDF_COLORS.inkMuted, fontSize: 10, width: 12 },
   itemCostCode: { color: PRIMARY_COLOR, fontSize: 9, marginTop: 4, fontStyle: 'italic' },
 });
 

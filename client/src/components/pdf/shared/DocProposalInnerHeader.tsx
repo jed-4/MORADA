@@ -94,7 +94,10 @@ export function DocProposalInnerHeader({
           style={{
             fontSize: 9,
             color: isS2 ? brandColor : PDF_COLORS.inkMuted,
-            fontFamily: "Helvetica-Oblique",
+            // Inter italic, now that the family ships one. This was the last
+            // Helvetica in the running header of every proposal page.
+            fontFamily: PDF_FONT_FAMILY,
+            fontStyle: "italic",
             maxWidth: 200,
             textAlign: "right",
           }}
