@@ -513,7 +513,7 @@ export function VariationDocument({
             </PdfSection>
           ) : null}
 
-          <View style={{ marginBottom: PDF_SPACE.xl }}>
+          <View style={{ marginTop: PDF_SPACE.xl }}>
             <PdfTotalsCard
               brandColor={brandColor}
               rows={[
@@ -531,7 +531,7 @@ export function VariationDocument({
                 borderTopWidth: 1,
                 borderTopColor: PDF_COLORS.border,
                 paddingTop: PDF_SPACE.lg,
-                marginBottom: PDF_SPACE.xl,
+                marginTop: PDF_SPACE.xl,
               }}
             >
               <PdfProse>{variation.closingText}</PdfProse>

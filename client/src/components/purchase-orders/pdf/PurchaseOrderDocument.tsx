@@ -1,9 +1,37 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import { format } from "date-fns";
-import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
-import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
-import { DocFooter } from "@/components/pdf/shared/DocFooter";
-import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PdfHeroBand } from "@/components/pdf/shared/PdfHeroBand";
+import { PdfPartiesPanel, PdfDocumentTitle } from "@/components/pdf/shared/PdfPartiesPanel";
+import { PdfSection, PdfProse, PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
+import { PdfLineTable, PdfDocFooter } from "@/components/pdf/shared/PdfLineTable";
+import { PDF_COLORS, PDF_PAGE_MARGIN, PDF_SPACE, PDF_TYPE, PDF_WEIGHT } from "@/components/pdf/shared/pdfTokens";
+import { statusPaint } from "@/components/pdf/shared/pdfStatus";
+
+/**
+ * The purchase order, on the shared document kit.
+ *
+ * Two real defects fixed along with the look:
+ *
+ *   1. INTERNAL NOTES WERE PRINTED ON THE SUPPLIER'S COPY. The schema is
+ *      explicit — purchase_orders.internal_notes is commented "Internal only,
+ *      not on PDF" — and this document rendered them in a highlighted NOTES
+ *      box on the page that gets emailed to the supplier. The RFQ document
+ *      omits its equivalent field correctly; this one never did. The prop is
+ *      gone rather than merely unused, so it cannot be reinstated by accident.
+ *
+ *   2. THE SUPPLIER WAS NOT NAMED IN THE PARTIES BLOCK. DocProjectBar's props
+ *      are hard-coded to a client, so this document passed only the project
+ *      and the recipient appeared, if at all, in an ad-hoc block further down.
+ *      A purchase order that does not say who it is addressed to is not a
+ *      purchase order.
+ *
+ * The headline figure is the order total inc GST, and the parties block's
+ * recipient is labelled "Supplier" rather than "To" — the same primitive, told
+ * who is on the other end.
+ */
+
+registerPdfFonts();
 
 interface Company {
   name: string;
@@ -43,7 +71,6 @@ interface PurchaseOrderDocumentProps {
     requiredByDate?: Date | string | null;
     title?: string | null;
     description?: string | null;
-    internalNotes?: string | null;
     subtotal: number;
     gstAmount: number;
     total: number;
@@ -67,12 +94,12 @@ function formatAUD(cents: number): string {
   }).format(cents / 100);
 }
 
-function safeFormatDate(d?: Date | string | null): string {
-  if (!d) return "—";
+function safeFormatDate(d?: Date | string | null): string | null {
+  if (!d) return null;
   try {
-    return format(new Date(d), "d MMM yyyy");
+    return format(new Date(d), "d MMMM yyyy");
   } catch {
-    return "—";
+    return null;
   }
 }
 
@@ -82,328 +109,131 @@ export function PurchaseOrderDocument({
   company,
   supplier,
   project,
-  brandColor = "#3B82F6",
+  brandColor = PDF_COLORS.brandFallback,
   documentStyle = "style1",
   logoUrl,
 }: PurchaseOrderDocumentProps) {
-  const isS2 = documentStyle === "style2";
-  const thBg = isS2 ? brandColor : "#F8F8F8";
-  const thTextColor = isS2 ? "#ffffff" : "#374151";
-  const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
-  const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
-  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#e5e7eb";
+  const chip = statusPaint(purchaseOrder.status);
 
   return (
     <Document title={`Purchase Order ${purchaseOrder.poNumber}`}>
       <Page
         size="A4"
         style={{
-          fontSize: 10,
-          fontFamily: "Helvetica",
-          backgroundColor: "#ffffff",
-          paddingBottom: 60,
+          fontSize: PDF_TYPE.body,
+          fontFamily: PDF_FONT_FAMILY,
+          color: PDF_COLORS.ink,
+          backgroundColor: PDF_COLORS.surface,
+          paddingBottom: 56,
         }}
       >
-        {/* Header */}
-        <DocBrandedHeader
-          companyName={company?.name || ""}
-          abn={company?.abn}
-          phone={company?.phone}
-          email={company?.email}
+        <PdfHeroBand
+          variant={documentStyle === "style2" ? "brand" : "light"}
+          companyName={company?.name || "—"}
           logoUrl={logoUrl}
           brandColor={brandColor}
-          docStyle={documentStyle}
+          contactLines={[company?.phone, company?.email, company?.abn ? `ABN ${company.abn}` : null]}
+          status={purchaseOrder.status ? chip : null}
+          figure={formatAUD(purchaseOrder.total)}
+          figureLabel="Order total inc. GST"
+          figureCaption={purchaseOrder.poNumber}
         />
 
-        {/* Project bar (no client on POs) */}
-        <DocProjectBar
-          projectName={project?.name}
-          projectAddress={project?.address}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: PDF_SPACE.xl }}>
+          <PdfDocumentTitle>
+            {purchaseOrder.title || `Purchase Order ${purchaseOrder.poNumber}`}
+          </PdfDocumentTitle>
 
-        {/* Document bar */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 40,
-            paddingVertical: 14,
-            borderBottomWidth: 1,
-            borderBottomColor: docBarBorderColor,
-            gap: 20,
-            minHeight: 70,
-          }}
-        >
-          {/* Left: PO info */}
-          <View style={{ flex: 2 }}>
-            <Text
-              style={{
-                fontSize: 8,
-                fontFamily: "Helvetica-Bold",
-                color: brandColor,
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                marginBottom: 3,
+          <PdfSection>
+            <PdfPartiesPanel
+              recipient={{
+                label: "Supplier",
+                title: supplier?.name || "—",
+                lines: [
+                  supplier?.email,
+                  supplier?.phone,
+                  supplier?.abn ? `ABN ${supplier.abn}` : null,
+                  supplier?.address,
+                ],
               }}
-            >
-              Purchase Order
-            </Text>
-            <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#111827" }}>
-              {purchaseOrder.poNumber}
-            </Text>
-            <Text style={{ fontSize: 8, color: "#9ca3af", marginTop: 3 }}>
-              {safeFormatDate(purchaseOrder.poDate)}
-              {purchaseOrder.requiredByDate
-                ? `  ·  Required by ${safeFormatDate(purchaseOrder.requiredByDate)}`
-                : ""}
-            </Text>
-          </View>
+              project={{
+                label: "Deliver to",
+                title: project?.name || "—",
+                lines: [project?.address || company?.address],
+              }}
+              document={{
+                label: "Order",
+                fields: [
+                  { label: "Ordered", value: safeFormatDate(purchaseOrder.poDate) },
+                  { label: "Required by", value: safeFormatDate(purchaseOrder.requiredByDate) },
+                  {
+                    label: "Pricing",
+                    value: purchaseOrder.gstMode === "inclusive" ? "Inc. GST" : "Ex. GST",
+                  },
+                ],
+              }}
+            />
+          </PdfSection>
 
-          {/* Right: supplier */}
-          {supplier?.name && (
-            <View style={{ alignItems: "flex-end" }}>
-              <Text
-                style={{
-                  fontSize: 7,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 3,
-                }}
-              >
-                Supplier
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: "Helvetica-Bold", color: "#111827" }}>
-                {supplier.name}
-              </Text>
-              {supplier.email && (
-                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 2 }}>{supplier.email}</Text>
-              )}
-              {supplier.phone && (
-                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 1 }}>{supplier.phone}</Text>
-              )}
-              {supplier.abn && (
-                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 1 }}>ABN {supplier.abn}</Text>
-              )}
-            </View>
-          )}
-        </View>
-
-        {/* Content */}
-        <View style={{ paddingHorizontal: 40, paddingTop: 14 }}>
-          {/* Description */}
           {purchaseOrder.description ? (
-            <View style={{ marginBottom: 14 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 4,
-                }}
-              >
-                Description
-              </Text>
-              <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5 }}>
-                {purchaseOrder.description}
-              </Text>
-            </View>
+            <PdfSection>
+              <PdfProse>{purchaseOrder.description}</PdfProse>
+            </PdfSection>
           ) : null}
 
-          {/* Line items */}
           {items.length > 0 && (
-            <View style={{ marginBottom: 4 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Line Items
-              </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  backgroundColor: thBg,
-                  paddingHorizontal: 8,
-                  paddingVertical: 5,
-                  // react-pdf throws on a numeric 0 radius — omit it instead
-                  borderRadius: isS2 ? undefined : 2,
-                }}
-              >
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
-                  Description
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 40, textAlign: "right" }}>
-                  Qty
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 40, textAlign: "center" }}>
-                  Unit
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70, textAlign: "right" }}>
-                  Unit Price
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70, textAlign: "right" }}>
-                  Amount
-                </Text>
-              </View>
-              {items.map((item, idx) => {
-                const qty = parseFloat(String(item.quantity || "1"));
-                const unitPrice = item.unitPrice || 0;
-                const lineTotal = item.total || Math.round(qty * unitPrice);
-                return (
-                  <View
-                    key={idx}
-                    style={{
-                      flexDirection: "row",
-                      paddingHorizontal: 8,
-                      paddingVertical: 5,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#f3f4f6",
-                      backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 9, color: "#374151" }}>{item.description || "—"}</Text>
-                      {item.isGstFree && (
-                        <Text style={{ fontSize: 8, color: "#9ca3af" }}>GST Free</Text>
-                      )}
-                    </View>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 40, textAlign: "right" }}>
-                      {qty}
-                    </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 40, textAlign: "center" }}>
-                      {item.unit || ""}
-                    </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 70, textAlign: "right" }}>
-                      {formatAUD(unitPrice)}
-                    </Text>
-                    <Text style={{ fontSize: 9, color: "#374151", width: 70, textAlign: "right" }}>
-                      {formatAUD(lineTotal)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
+            <PdfSection label="Order Items">
+              <PdfLineTable<POItem>
+                brandColor={brandColor}
+                grouped={false}
+                textHeader="Description"
+                renderText={(item) => (
+                  <Text style={{ fontSize: PDF_TYPE.tableCell, color: PDF_COLORS.ink }}>
+                    {item.description}
+                    {item.isGstFree ? (
+                      <Text style={{ color: PDF_COLORS.inkMuted }}> (GST free)</Text>
+                    ) : null}
+                  </Text>
+                )}
+                columns={[
+                  { key: "qty", label: "Qty", width: 44, align: "right", value: (i) => String(i.quantity ?? "") },
+                  { key: "unit", label: "Unit", width: 40, align: "right", value: (i) => i.unit || "" },
+                  { key: "price", label: "Unit Price", width: 74, align: "right", value: (i) => formatAUD(i.unitPrice) },
+                  {
+                    key: "total",
+                    label: "Total",
+                    width: 80,
+                    align: "right",
+                    value: (i) =>
+                      formatAUD(i.total || Math.round(Number(i.quantity || 0) * (i.unitPrice || 0))),
+                  },
+                ]}
+                groups={[{ key: "items", rows: items }]}
+                rowKey={(_, i) => `po-line-${i}`}
+              />
+            </PdfSection>
           )}
 
-          {/* Summary */}
-          <View style={{ alignItems: "flex-end", marginTop: 12, marginBottom: 16 }}>
-            <View
-              style={{
-                width: 220,
-                borderWidth: 1,
-                borderColor: "#e5e7eb",
-                borderRadius: 4,
-                overflow: "hidden",
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 12,
-                  paddingVertical: 5,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#f3f4f6",
-                }}
-              >
-                <Text style={{ fontSize: 9, color: "#6b7280" }}>Subtotal (ex. GST)</Text>
-                <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
-                  {formatAUD(purchaseOrder.subtotal)}
-                </Text>
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 12,
-                  paddingVertical: 5,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#f3f4f6",
-                }}
-              >
-                <Text style={{ fontSize: 9, color: "#6b7280" }}>GST (10%)</Text>
-                <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
-                  {formatAUD(purchaseOrder.gstAmount)}
-                </Text>
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  backgroundColor: accentBg,
-                }}
-              >
-                <Text style={{ fontSize: 10, color: brandColor, fontFamily: "Helvetica-Bold" }}>
-                  Total (inc. GST)
-                </Text>
-                <Text style={{ fontSize: 12, color: brandColor, fontFamily: "Helvetica-Bold" }}>
-                  {formatAUD(purchaseOrder.total)}
-                </Text>
-              </View>
-            </View>
+          <View style={{ marginTop: PDF_SPACE.xl }}>
+            <PdfTotalsCard
+              brandColor={brandColor}
+              rows={[
+                { label: "Subtotal (ex. GST)", value: formatAUD(purchaseOrder.subtotal) },
+                { label: "GST (10%)", value: formatAUD(purchaseOrder.gstAmount) },
+              ]}
+              totalLabel="Order total (inc. GST)"
+              totalValue={formatAUD(purchaseOrder.total)}
+            />
           </View>
 
-          {/* Notes */}
-          {purchaseOrder.internalNotes ? (
-            <View
-              style={{
-                borderWidth: 1,
-                borderColor: "#e5e7eb",
-                borderRadius: 4,
-                padding: "10 12",
-                marginBottom: 16,
-                backgroundColor: "#fffbeb",
-              }}
-            >
-              <Text
-                style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#92400e", marginBottom: 4 }}
-              >
-                NOTES
-              </Text>
-              <Text style={{ fontSize: 9, color: "#78350f", lineHeight: 1.5 }}>
-                {purchaseOrder.internalNotes}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Supplier address block (if not shown in doc bar) */}
-          {supplier?.address && (
-            <View style={{ marginBottom: 14 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: "Helvetica-Bold",
-                  color: "#9ca3af",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 4,
-                }}
-              >
-                Delivery Address
-              </Text>
-              <Text style={{ fontSize: 9, color: "#374151" }}>{supplier.address}</Text>
-            </View>
-          )}
+          <PdfSection>
+            <Text style={{ fontSize: PDF_TYPE.caption, color: PDF_COLORS.inkFaint, lineHeight: 1.5 }}>
+              {`Please quote ${purchaseOrder.poNumber} on all invoices and delivery dockets.`}
+            </Text>
+          </PdfSection>
         </View>
 
-        <DocFooter
-          companyName={company?.name}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <PdfDocFooter companyName={company?.name} />
       </Page>
     </Document>
   );

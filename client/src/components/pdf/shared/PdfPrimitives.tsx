@@ -43,7 +43,19 @@ export function PdfSectionLabel({ children, style }: { children: ReactNode; styl
   );
 }
 
-/** A section: label, then content, with the spacing already right. */
+/**
+ * A section: label, then content, with the spacing already right.
+ *
+ * The gap goes on TOP, not the bottom. With a trailing margin the last section
+ * of a document occupies 24pt of space after its own content, and on a page
+ * that otherwise just fits, that pushes the document onto a second page
+ * carrying nothing but the fixed footer — which is exactly what the invoice
+ * was doing: a two-page invoice whose second page was blank. Leading margins
+ * collapse into the page padding instead of past it.
+ *
+ * The body container therefore supplies the space above the FIRST element
+ * (usually the title) and each section spaces itself from what came before.
+ */
 export function PdfSection({
   label,
   children,
@@ -55,7 +67,7 @@ export function PdfSection({
   wrap?: boolean;
 }) {
   return (
-    <View style={{ marginBottom: PDF_SPACE.xl }} wrap={wrap}>
+    <View style={{ marginTop: PDF_SPACE.xl }} wrap={wrap}>
       {label && <PdfSectionLabel>{label}</PdfSectionLabel>}
       {children}
     </View>
@@ -148,6 +160,11 @@ export interface PdfTotalRow {
   value: string;
   /** Struck through — a superseded contract sum, say. */
   strikethrough?: boolean;
+  /** Heavier, with a rule above: an intermediate total such as an invoice's
+   *  contract total sitting above payments received. */
+  subtotal?: boolean;
+  /** Money coming back the other way — a payment already received. */
+  tone?: "normal" | "credit";
 }
 
 /**
@@ -179,15 +196,31 @@ export function PdfTotalsCard({
           {rows.map((r, i) => (
             <View
               key={`${r.label}-${i}`}
-              style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: PDF_SPACE.sm }}
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: PDF_SPACE.sm,
+                borderTopWidth: r.subtotal ? 1 : 0,
+                borderTopColor: PDF_COLORS.border,
+                paddingTop: r.subtotal ? PDF_SPACE.sm : 0,
+              }}
             >
-              <Text style={{ fontSize: PDF_TYPE.bodySmall, color: PDF_COLORS.inkMuted }}>{r.label}</Text>
+              <Text
+                style={{
+                  fontSize: PDF_TYPE.bodySmall,
+                  color: r.subtotal ? PDF_COLORS.ink : PDF_COLORS.inkMuted,
+                  fontFamily: PDF_FONT_FAMILY,
+                  fontWeight: r.subtotal ? PDF_WEIGHT.semibold : PDF_WEIGHT.regular,
+                }}
+              >
+                {r.label}
+              </Text>
               <Text
                 style={{
                   fontFamily: PDF_FONT_FAMILY,
-                  fontWeight: PDF_WEIGHT.medium,
+                  fontWeight: r.subtotal ? PDF_WEIGHT.semibold : PDF_WEIGHT.medium,
                   fontSize: PDF_TYPE.bodySmall,
-                  color: PDF_COLORS.ink,
+                  color: r.tone === "credit" ? "#3F7D5C" : PDF_COLORS.ink,
                   // "textDecoration", not the React Native spelling —
                   // textDecorationLine is silently ignored by @react-pdf.
                   textDecoration: r.strikethrough ? "line-through" : "none",

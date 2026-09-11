@@ -253,7 +253,6 @@ export function PdfDocumentTitle({ children }: { children: string }) {
         fontSize: PDF_TYPE.heroTitle,
         color: PDF_COLORS.ink,
         lineHeight: PDF_LEADING.tight,
-        marginBottom: PDF_SPACE.lg,
       }}
     >
       {children}
