@@ -20998,6 +20998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     builderSignedDate: true,
     approvedBy: true,
     approvedDate: true,
+    supersedesVariationId: true,
   } as const;
   const createVariationSchema = insertVariationSchema.omit(VARIATION_GUARDED_FIELDS);
   const updateVariationSchema = insertVariationSchema.partial().omit(VARIATION_GUARDED_FIELDS);
@@ -21031,6 +21032,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { invoiceVariations: ivTbl } = await import("@shared/schema");
     const rows = await db.select({ id: ivTbl.id }).from(ivTbl).where(eq(ivTbl.variationId, variationId));
     return rows.length;
+  };
+
+  // Next number in a project's variation sequence. Numbering comes from
+  // Settings (variationPrefix/variationStartNumber) with a per-project
+  // max-existing-suffix + 1, so deleting a variation never reuses its number.
+  // `bump` is the retry offset when a concurrent create wins the unique index.
+  const nextVariationNumber = async (projectId: string, bump: number): Promise<string> => {
+    const config = await storage.getSystemConfiguration().catch(() => undefined);
+    const prefix = (config as any)?.variationPrefix || "VAR-";
+    const startNumber = (config as any)?.variationStartNumber ?? 1;
+    const existing = await storage.getVariations(projectId);
+    let maxSeen = 0;
+    for (const v of existing) {
+      const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
+      if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+    }
+    const seq = Math.max(startNumber, maxSeen + 1) + bump;
+    return `${prefix}${String(seq).padStart(3, "0")}`;
   };
 
   // Recompute and persist a variation's money totals from its stored
@@ -21282,8 +21301,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const variation = await getOwnedVariation(req, res, req.params.id);
       if (!variation) return;
-      res.json(variation);
+
+      // Both ends of the revision chain in ONE round trip. Neon is ~400ms from
+      // Australia, so two queries here would be felt on every detail page open;
+      // an OR over the same table is not.
+      const v = variation as any;
+      const { variations: varTbl } = await import("@shared/schema");
+      const neighbours = await db
+        .select({
+          id: varTbl.id,
+          variationNumber: varTbl.variationNumber,
+          name: varTbl.name,
+          status: varTbl.status,
+          supersedesVariationId: varTbl.supersedesVariationId,
+          createdAt: varTbl.createdAt,
+        })
+        .from(varTbl)
+        .where(
+          or(
+            v.supersedesVariationId ? eq(varTbl.id, v.supersedesVariationId) : sql`false`,
+            eq(varTbl.supersedesVariationId, v.id),
+          ),
+        )
+        .orderBy(desc(varTbl.createdAt));
+
+      // Nothing stops a variation being duplicated twice, so there can be more
+      // than one successor. Newest wins the link — it is the live revision —
+      // and the count is reported so the UI never implies there is only one.
+      const successors = neighbours.filter((r: any) => r.supersedesVariationId === v.id);
+      const link = (r: any) => (r ? { id: r.id, variationNumber: r.variationNumber, name: r.name, status: r.status } : null);
+      res.json({
+        ...v,
+        /** The variation this one revises. */
+        supersedes: link(neighbours.find((r: any) => r.id === v.supersedesVariationId)),
+        /** The most recent revision made from this one. */
+        supersededBy: link(successors[0]),
+        supersededByCount: successors.length,
+      });
     } catch (error) {
+      console.error("Error fetching variation:", error);
       res.status(500).json({ error: "Failed to fetch variation" });
     }
   });
@@ -21308,19 +21364,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // reuses its number the way the old count-based scheme did.
       const providedNumber = validationResult.data.variationNumber;
       const autoNumber = !providedNumber || providedNumber === "Auto-generated";
-      const generateVariationNumber = async (bump: number): Promise<string> => {
-        const config = await storage.getSystemConfiguration().catch(() => undefined);
-        const prefix = (config as any)?.variationPrefix || "VAR-";
-        const startNumber = (config as any)?.variationStartNumber ?? 1;
-        const existingVariations = await storage.getVariations(validationResult.data.projectId);
-        let maxSeen = 0;
-        for (const v of existingVariations) {
-          const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
-          if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
-        }
-        const seq = Math.max(startNumber, maxSeen + 1) + bump;
-        return `${prefix}${String(seq).padStart(3, "0")}`;
-      };
+      const generateVariationNumber = (bump: number) =>
+        nextVariationNumber(validationResult.data.projectId, bump);
 
       // Money totals start at zero — recomputeVariationTotals fills them as
       // items/bills/timesheets are attached (guarded fields are stripped from
@@ -21353,6 +21398,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation" });
+    }
+  });
+
+  /**
+   * Duplicate a variation — the "reject, then re-price" loop.
+   *
+   * A rejected variation used to be a dead end: an approved one is immutable
+   * on purpose, and a rejected one keeps its reason on record, so re-pricing
+   * the same work meant rebuilding it by hand with nothing linking the two.
+   *
+   * What carries across, and what pointedly does not:
+   *
+   *   copied   the document — name, intro/closing text, terms, attachments,
+   *            days changed, global markup, PDF column layout, and every line
+   *            item including allowance lines (they are variation_items with
+   *            itemType "allowance").
+   *
+   *   fresh    a new number in the project's sequence, status draft, and the
+   *            caller as author. Every portal, signature, approval and
+   *            rejection stamp is left null: a revision has not been sent,
+   *            seen, signed or decided, and copying those would fabricate an
+   *            audit trail.
+   *
+   *   MOVED    linked bills and timesheets — and only when the source was
+   *            rejected. This is Jed's rule and it is the right one. A bill is
+   *            a real cost that happened once; copying the link would count it
+   *            against two variations and overstate the project's actual cost.
+   *            Moving is only safe because a rejected variation is out of the
+   *            contract — while the source is still live it keeps its own
+   *            costs and the revision starts with none.
+   */
+  app.post("/api/variations/:id/duplicate", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const source = await getOwnedVariation(req, res, req.params.id);
+      if (!source) return;
+
+      const { variationItems: itemsTbl, variationBills: billsTbl, variationTimesheets: tsTbl } =
+        await import("@shared/schema");
+
+      const src = source as any;
+      let created: any;
+      for (let attempt = 0; ; attempt++) {
+        const variationNumber = await nextVariationNumber(src.projectId, attempt);
+        try {
+          created = await storage.createVariation({
+            projectId: src.projectId,
+            variationNumber,
+            name: src.name,
+            introductionText: src.introductionText,
+            closingText: src.closingText,
+            approvalDeadline: src.approvalDeadline,
+            daysChanged: src.daysChanged ?? 0,
+            relatedTo: src.relatedTo,
+            termsAndConditions: src.termsAndConditions,
+            attachments: src.attachments ?? [],
+            globalMarkupPercent: src.globalMarkupPercent ?? 0,
+            pdfColumns: src.pdfColumns,
+            status: "draft",
+            createdById: req.user?.id ?? null,
+            supersedesVariationId: src.id,
+            // Totals are recomputed below once the lines are in place.
+            subtotal: 0,
+            gstAmount: 0,
+            totalAmount: 0,
+            paidAmount: 0,
+            balanceAmount: 0,
+          } as any);
+          break;
+        } catch (err: any) {
+          // Unique (project_id, variation_number): a concurrent create can win
+          // the race — take the next number and try again.
+          if (err?.code === "23505" && attempt < 2) continue;
+          throw err;
+        }
+      }
+
+      const sourceItems = await storage.getVariationItems(src.id);
+      if (sourceItems.length > 0) {
+        await db.insert(itemsTbl).values(
+          sourceItems.map((item: any) => ({
+            variationId: created.id,
+            name: item.name,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            taxable: item.taxable,
+            sortOrder: item.sortOrder,
+            itemType: item.itemType,
+            type: item.type,
+            unitType: item.unitType,
+            unitCostExTax: item.unitCostExTax,
+            markupPercent: item.markupPercent,
+            costCode: item.costCode,
+            showInPdf: item.showInPdf,
+          })),
+        );
+      }
+
+      // Costs move only out of a rejected variation. See the note above.
+      const movesCosts = src.status === "rejected";
+      let movedBills = 0;
+      let movedTimesheets = 0;
+      if (movesCosts) {
+        const billRows = await db
+          .update(billsTbl)
+          .set({ variationId: created.id })
+          .where(eq(billsTbl.variationId, src.id))
+          .returning({ id: billsTbl.id });
+        movedBills = billRows.length;
+        const tsRows = await db
+          .update(tsTbl)
+          .set({ variationId: created.id })
+          .where(eq(tsTbl.variationId, src.id))
+          .returning({ id: tsTbl.id });
+        movedTimesheets = tsRows.length;
+      }
+
+      const duplicate = (await recomputeVariationTotals(created.id)) ?? created;
+      // The source lost those costs, so its own totals are now stale.
+      if (movesCosts && (movedBills > 0 || movedTimesheets > 0)) {
+        await recomputeVariationTotals(src.id);
+      }
+
+      res.status(201).json({
+        ...duplicate,
+        // So the client can say what actually happened rather than guessing.
+        duplicatedFrom: { id: src.id, variationNumber: src.variationNumber, status: src.status },
+        movedBills,
+        movedTimesheets,
+      });
+    } catch (error) {
+      console.error("Error duplicating variation:", error);
+      res.status(500).json({ error: "Failed to duplicate variation" });
     }
   });
 
