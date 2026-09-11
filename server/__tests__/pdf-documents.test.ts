@@ -280,6 +280,109 @@ async function main() {
     }
   });
 
+  await check("the table header repeats on every page it spans", async () => {
+    // A second page of unlabelled figures makes the reader page back to find
+    // out which column is the price.
+    const { Document, Page, Text, View } = await import("@react-pdf/renderer");
+    const { PdfLineTable } = await import("../../client/src/components/pdf/shared/PdfLineTable");
+
+    type Row = { id: string; n: number };
+    const rows: Row[] = Array.from({ length: 60 }, (_, i) => ({ id: `r${i}`, n: i + 1 }));
+    const build = (repeatHeader: boolean) =>
+      createElement(
+        Document,
+        null,
+        createElement(
+          Page,
+          { size: "A4", style: { paddingBottom: 56 } },
+          createElement(
+            View,
+            { style: { paddingHorizontal: 40, paddingTop: 24 } },
+            createElement(PdfLineTable as any, {
+              brandColor: BRAND,
+              grouped: false,
+              repeatHeader,
+              textHeader: "Description",
+              renderText: (r: Row) => createElement(Text, null, `Line ${r.n}`),
+              columns: [{ key: "n", label: "Amount", width: 90, align: "right", value: (r: Row) => String(r.n) }],
+              groups: [{ key: "all", rows }],
+              rowKey: (r: Row) => r.id,
+            }),
+          ),
+        ),
+      );
+
+    const headerPerPage = async (el: any) => {
+      const pages = await pagesOf(el);
+      return pages.map((t) => t.includes("Description") && t.includes("Amount"));
+    };
+
+    const on = await headerPerPage(build(true));
+    assert.ok(on.length > 1, "the fixture did not span pages, so this proves nothing");
+    assert.ok(on.every(Boolean), `header missing on some page: ${JSON.stringify(on)}`);
+
+    // And it is genuinely the flag doing it, not the fixture.
+    const off = await headerPerPage(build(false));
+    assert.ok(!off.every(Boolean), "repeatHeader=false still repeated the header");
+  });
+
+  await check("a group subtotal only prints where it earns its place", async () => {
+    const { Document, Page, Text, View } = await import("@react-pdf/renderer");
+    const { PdfLineTable } = await import("../../client/src/components/pdf/shared/PdfLineTable");
+
+    type Row = { id: string; label: string };
+    const rows = (p: string, n: number): Row[] =>
+      Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, label: `${p} ${i + 1}` }));
+
+    const el = createElement(
+      Document,
+      null,
+      createElement(
+        Page,
+        { size: "A4", style: { paddingBottom: 56 } },
+        createElement(
+          View,
+          { style: { paddingHorizontal: 40, paddingTop: 24 } },
+          createElement(PdfLineTable as any, {
+            brandColor: BRAND,
+            grouped: true,
+            textHeader: "Description",
+            renderText: (r: Row) => createElement(Text, null, r.label),
+            columns: [{ key: "a", label: "Amount", width: 90, align: "right", value: () => "-" }],
+            groups: [
+              // One line: the "subtotal" would repeat the row under it.
+              { key: "solo", label: "Solo", total: "$111.00", rows: rows("Solo", 1) },
+              // Several lines: the reader cannot add them by eye.
+              { key: "many", label: "Many", total: "$222.00", rows: rows("Many", 3) },
+              // One line but sub-groups: what it sums is spread across headings.
+              {
+                key: "parent",
+                label: "Parent",
+                total: "$333.00",
+                rows: rows("Direct", 1),
+                children: [
+                  { key: "kid", label: "Kid", total: "$444.00", rows: rows("Kid", 2) },
+                  { key: "only", label: "Only", total: "$555.00", rows: rows("Only", 1) },
+                ],
+              },
+            ],
+            rowKey: (r: Row) => r.id,
+          }),
+        ),
+      ),
+    );
+
+    const all = (await pagesOf(el)).join(" ");
+    assert.ok(!all.includes("$111.00"), "a single-line group printed a subtotal");
+    assert.ok(all.includes("$222.00"), "a multi-line group lost its subtotal");
+    assert.ok(all.includes("$333.00"), "a parent of sub-groups lost its subtotal");
+    assert.ok(all.includes("$444.00"), "a multi-line sub-group lost its subtotal");
+    assert.ok(!all.includes("$555.00"), "a single-line sub-group printed a subtotal");
+
+    // Nesting is visible at all: the child labels reach the page.
+    assert.ok(all.includes("Kid") && all.includes("Only"), "sub-groups did not render");
+  });
+
   console.log(`\n${passed} checks passed`);
 }
 

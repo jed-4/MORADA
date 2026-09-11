@@ -29,9 +29,25 @@ export interface PdfTableColumn<T> {
 export interface PdfTableGroup<T> {
   key: string;
   label?: string;
-  /** Shown right-aligned on the group header row. */
+  /**
+   * Shown right-aligned on the group header row — but only where it earns its
+   * place. A group of one line has a "subtotal" identical to the line above
+   * it, which is noise, so by default it is suppressed. See `showTotal`.
+   */
   total?: string;
   rows: T[];
+  /**
+   * Sub-groups, rendered indented and lighter than their parent. One level of
+   * nesting is supported; deeper nesting renders but stops getting visually
+   * distinct, which is a reasonable place for a document to stop.
+   */
+  children?: Array<PdfTableGroup<T>>;
+  /**
+   * Override the earns-its-place rule for this group. Rarely needed — a
+   * parent of sub-groups always shows its total, because it is summing
+   * something the reader cannot add up by eye.
+   */
+  showTotal?: boolean;
 }
 
 export interface PdfTrailingRow {
@@ -53,6 +69,15 @@ interface PdfLineTableProps<T> {
   /** Show the group header rows. Off means a flat list. */
   grouped?: boolean;
   rowKey: (row: T, index: number) => string;
+  /**
+   * Repeat the column header at the top of each page the table spans.
+   *
+   * On by default, because a table whose second page has no header is a table
+   * of unlabelled numbers. Turn it off for a table you know is short and that
+   * sits near a page boundary, where @react-pdf can otherwise emit the header
+   * twice on one page.
+   */
+  repeatHeader?: boolean;
 }
 
 /** A4 (595pt) less both 40pt margins, less the panel's own 20pt of padding. */
@@ -70,6 +95,7 @@ export function PdfLineTable<T>({
   brandColor,
   grouped = true,
   rowKey,
+  repeatHeader = true,
 }: PdfLineTableProps<T>) {
   const brand = brandRamp(brandColor);
   const showText = !!textHeader || !!renderText;
@@ -104,11 +130,131 @@ export function PdfLineTable<T>({
     paddingLeft: align === "right" ? 5 : 0,
   });
 
+  /**
+   * A group heading earns its total when the reader cannot do the sum by eye.
+   *
+   * One line means the "subtotal" repeats the figure directly under it, which
+   * is the noise every one of these documents used to print. A parent of
+   * sub-groups always shows one, because what it sums is spread across
+   * headings the reader would otherwise have to add up themselves.
+   */
+  const showsTotal = (g: PdfTableGroup<T>) =>
+    g.total != null &&
+    (g.showTotal ?? (g.rows.length > 1 || (g.children?.length ?? 0) > 0));
+
+  /**
+   * Zebra runs continuously down the table rather than restarting per group.
+   * Restarting put two shaded rows back to back across a group boundary, which
+   * reads as one row rather than two.
+   */
+  let stripe = 0;
+
+  /**
+   * One group, and any groups under it.
+   *
+   * `depth` drives the only two things that separate a sub-group from its
+   * parent: it indents, and it drops the fill for a plain rule. A nested group
+   * wearing the same grey band as its parent reads as a sibling, which is
+   * exactly the confusion this exists to avoid.
+   */
+  const renderGroup = (group: PdfTableGroup<T>, depth: number): ReactNode => {
+    const nested = depth > 0;
+    const indent = 10 + depth * 12;
+    return (
+      <View key={group.key}>
+        {grouped && group.label && (
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingLeft: indent,
+              paddingRight: 10,
+              paddingVertical: nested ? 3 : 4,
+              backgroundColor: nested ? PDF_COLORS.surface : PDF_COLORS.surfaceMuted,
+              borderTopWidth: 1,
+              borderTopColor: PDF_COLORS.border,
+            }}
+            wrap={false}
+          >
+            <Text
+              style={{
+                fontFamily: PDF_FONT_FAMILY,
+                fontWeight: nested ? PDF_WEIGHT.medium : PDF_WEIGHT.semibold,
+                fontSize: PDF_TYPE.tableHeader,
+                letterSpacing: nested ? 0 : 0.4,
+                textTransform: nested ? "none" : "uppercase",
+                color: nested ? PDF_COLORS.ink : PDF_COLORS.inkMuted,
+              }}
+            >
+              {group.label}
+            </Text>
+            {showsTotal(group) && (
+              <Text
+                style={{
+                  fontFamily: PDF_FONT_FAMILY,
+                  fontWeight: nested ? PDF_WEIGHT.medium : PDF_WEIGHT.semibold,
+                  fontSize: PDF_TYPE.tableHeader,
+                  color: nested ? PDF_COLORS.ink : PDF_COLORS.inkMuted,
+                }}
+              >
+                {group.total}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {group.rows.map((row, idx) => {
+          const shaded = stripe++ % 2 === 1;
+          return (
+            <View
+              key={rowKey(row, idx)}
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                paddingLeft: indent,
+                paddingRight: 10,
+                paddingVertical: 5,
+                borderTopWidth: 1,
+                borderTopColor: PDF_COLORS.border,
+                backgroundColor: shaded ? PDF_COLORS.surfaceSubtle : PDF_COLORS.surface,
+              }}
+              wrap={false}
+            >
+              {showText && <View style={cell("left")}>{renderText?.(row)}</View>}
+              {columns.map((c) => (
+                <Text
+                  key={c.key}
+                  style={{
+                    ...cell(c.align, widthOf(c)),
+                    fontSize: squeeze < 1 ? PDF_TYPE.caption + 0.5 : PDF_TYPE.tableCell,
+                    color: PDF_COLORS.ink,
+                  }}
+                >
+                  {c.value(row)}
+                </Text>
+              ))}
+            </View>
+          );
+        })}
+
+        {group.children?.map((child) => renderGroup(child, depth + 1))}
+      </View>
+    );
+  };
+
   return (
     <PdfPanel>
       {/* Header — brand fill, readable ink derived from it, so a pale brand
-          colour does not produce white-on-cream. */}
+          colour does not produce white-on-cream.
+
+          `fixed` repeats it at the top of every page the table spans. Without
+          it the second page of a long table was a block of unlabelled figures:
+          the reader had to page back to find out which column was the price.
+          @react-pdf re-renders a fixed element per page rather than floating
+          one, so this costs nothing on a single-page table. */}
       <View
+        fixed={repeatHeader}
         style={{
           flexDirection: "row",
           backgroundColor: brand.base,
@@ -145,79 +291,7 @@ export function PdfLineTable<T>({
         ))}
       </View>
 
-      {groups.map((group) => (
-        <View key={group.key}>
-          {grouped && group.label && (
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                paddingHorizontal: 10,
-                paddingVertical: 4,
-                backgroundColor: PDF_COLORS.surfaceMuted,
-                borderTopWidth: 1,
-                borderTopColor: PDF_COLORS.border,
-              }}
-            >
-              <Text
-                style={{
-                  fontFamily: PDF_FONT_FAMILY,
-                  fontWeight: PDF_WEIGHT.semibold,
-                  fontSize: PDF_TYPE.tableHeader,
-                  letterSpacing: 0.4,
-                  textTransform: "uppercase",
-                  color: PDF_COLORS.inkMuted,
-                }}
-              >
-                {group.label}
-              </Text>
-              {group.total && (
-                <Text
-                  style={{
-                    fontFamily: PDF_FONT_FAMILY,
-                    fontWeight: PDF_WEIGHT.semibold,
-                    fontSize: PDF_TYPE.tableHeader,
-                    color: PDF_COLORS.inkMuted,
-                  }}
-                >
-                  {group.total}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {group.rows.map((row, idx) => (
-            <View
-              key={rowKey(row, idx)}
-              style={{
-                flexDirection: "row",
-                alignItems: "flex-start",
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                borderTopWidth: 1,
-                borderTopColor: PDF_COLORS.border,
-                backgroundColor: idx % 2 === 1 ? PDF_COLORS.surfaceSubtle : PDF_COLORS.surface,
-              }}
-              wrap={false}
-            >
-              {showText && <View style={cell("left")}>{renderText?.(row)}</View>}
-              {columns.map((c) => (
-                <Text
-                  key={c.key}
-                  style={{
-                    ...cell(c.align, widthOf(c)),
-                    fontSize: squeeze < 1 ? PDF_TYPE.caption + 0.5 : PDF_TYPE.tableCell,
-                    color: PDF_COLORS.ink,
-                  }}
-                >
-                  {c.value(row)}
-                </Text>
-              ))}
-            </View>
-          ))}
-        </View>
-      ))}
+      {groups.map((group) => renderGroup(group, 0))}
 
       {/* Amounts that are not line items — a document-level margin, or value
           the builder chose not to itemise. They belong inside the table, or
