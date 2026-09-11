@@ -14,6 +14,9 @@ interface CoverPageSectionProps {
   brandColor?: string;
   documentStyle?: "style1" | "style2";
   showFooter?: boolean;
+  /** Live proposal total, for the optional headline price. */
+  totals?: { subtotalCents: number; gstCents: number; totalCents: number };
+  showGst?: boolean;
 }
 
 const formatDate = (date: Date | string | null | undefined) => {
@@ -37,8 +40,25 @@ export function CoverPageSection({
   brandColor,
   documentStyle = "style1",
   showFooter,
+  totals,
+  showGst = true,
 }: CoverPageSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
+
+  /**
+   * The headline price, off by default.
+   *
+   * Opt-in because it is a judgement call, not a default: some builders want
+   * the number where the client cannot miss it, others want them to read the
+   * scope first. Off, nothing about the page changes.
+   */
+  const coverContent = (section.content as Record<string, unknown> | null) ?? {};
+  const showPrice = coverContent.showPrice === true && (totals?.totalCents ?? 0) > 0;
+  const priceLabel = showGst ? 'Total (inc GST)' : 'Total';
+  const priceText = `$${((totals?.totalCents ?? 0) / 100).toLocaleString('en-AU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
   const isS2 = documentStyle === "style2";
 
   const content = (section.content ?? {}) as Record<string, unknown>;
@@ -273,6 +293,34 @@ export function CoverPageSection({
           </View>
         </View>
 
+        {showPrice ? (
+          <View
+            style={{
+              marginHorizontal: 32,
+              marginTop: 24,
+              paddingTop: 12,
+              borderTopWidth: 2,
+              borderTopColor: resolvedColor,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 8,
+                fontFamily: "Helvetica-Bold",
+                color: resolvedColor,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                marginBottom: 4,
+              }}
+            >
+              {priceLabel}
+            </Text>
+            <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color: "#1F2937" }}>
+              {priceText}
+            </Text>
+          </View>
+        ) : null}
+
         {proposal.expiryDate ? (
           <Text
             style={{
@@ -497,6 +545,34 @@ export function CoverPageSection({
           </Text>
         </View>
       </View>
+
+      {showPrice ? (
+        <View
+          style={{
+            marginHorizontal: 40,
+            marginTop: 28,
+            paddingTop: 12,
+            borderTopWidth: 2,
+            borderTopColor: resolvedColor,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 8,
+              fontFamily: "Helvetica-Bold",
+              color: "#9ca3af",
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+              marginBottom: 4,
+            }}
+          >
+            {priceLabel}
+          </Text>
+          <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color: "#1F2937" }}>
+            {priceText}
+          </Text>
+        </View>
+      ) : null}
 
       {proposal.expiryDate ? (
         <Text

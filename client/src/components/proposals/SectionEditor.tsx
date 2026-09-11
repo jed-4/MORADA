@@ -208,7 +208,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
             </div>
           )}
 
-          {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} projectId={projectId} />}
+          {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} />}
 
           {section.sectionType === "attachments" && (
             <AttachmentsEditor content={content} setContent={setContent} />
@@ -360,19 +360,9 @@ function AttachmentsEditor({ content, setContent }: AttachmentsEditorProps) {
 export interface EstimateEditorProps {
   content: Record<string, any>;
   setContent: (content: Record<string, any>) => void;
-  projectId?: string;
 }
 
-export function EstimateEditor({ content, setContent, projectId }: EstimateEditorProps) {
-  const { data: allEstimates, isLoading } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates"],
-  });
-
-  // Filter estimates by projectId if provided
-  const estimates = projectId 
-    ? allEstimates?.filter(est => est.projectId === projectId)
-    : allEstimates;
-
+export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
   const toggles = content.columnToggles || {
     description: true,
     quantity: false,
@@ -396,28 +386,15 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
 
   return (
     <div className="space-y-4" data-testid="estimate-editor">
+      {/* The estimate is chosen once, in the proposal's Details card, and
+          cascaded to every estimate section. A second picker here could point
+          a section at a different revision from the one the proposal is
+          linked to, so the printed table and the proposal total disagreed. */}
       <div className="space-y-2">
-        <Label htmlFor="estimate-id">Select Estimate</Label>
-        <Select
-          value={content.estimateId || ""}
-          onValueChange={(value) => setContent({ ...content, estimateId: value })}
-        >
-          <SelectTrigger id="estimate-id" data-testid="select-estimate">
-            <SelectValue placeholder="Select an estimate" />
-          </SelectTrigger>
-          <SelectContent>
-            {estimates?.map((estimate) => (
-              <SelectItem key={estimate.id} value={estimate.id}>
-                {estimate.name} (v{estimate.version})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        {/* Distinct from the section's "Intro text" above, which renders under
-            the heading. This one sits immediately above the estimate table. */}
+        {/* The only prose on this section. It used to sit below a generic
+            "Intro text" field that rendered a few millimetres higher on the
+            same page — two editors, two formats, one paragraph's worth of
+            purpose. The generic one is hidden for this type now. */}
         <Label htmlFor="estimate-description">Text above the estimate table</Label>
         <RichTextEditor
           content={content.estimateDescriptionHtml || content.estimateDescription || ""}
@@ -445,6 +422,23 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
             data-testid="toggle-description"
           />
         </div>
+
+        {toggles.description && (
+          <div className="flex items-center justify-between pl-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="toggle-descriptionUnderName" className="cursor-pointer text-xs">
+                Under the item name
+              </Label>
+              <p className="text-xs text-muted-foreground">Off puts it in its own column</p>
+            </div>
+            <Switch
+              id="toggle-descriptionUnderName"
+              checked={toggles.descriptionUnderName !== false}
+              onCheckedChange={(checked) => updateToggle("descriptionUnderName", checked)}
+              data-testid="toggle-descriptionUnderName"
+            />
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <Label htmlFor="toggle-quantity" className="cursor-pointer">Quantity</Label>
@@ -508,7 +502,10 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
 
         <div className="border-t pt-3 mt-3 space-y-3">
           <div className="flex items-center justify-between">
-            <Label htmlFor="toggle-showSubtotals" className="cursor-pointer">Show subtotals</Label>
+            <div className="space-y-0.5">
+              <Label htmlFor="toggle-showSubtotals" className="cursor-pointer">Show subtotals</Label>
+              <p className="text-xs text-muted-foreground">One per top-level group, covering everything in it</p>
+            </div>
             <Switch
               id="toggle-showSubtotals"
               checked={toggles.showSubtotals}
@@ -516,6 +513,28 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
               data-testid="toggle-showSubtotals"
             />
           </div>
+
+          {/* Which figure the subtotal shows used to be inferred from the
+              amount columns, so turning those off still printed an inc-tax
+              subtotal under lines with no prices on them. */}
+          {toggles.showSubtotals !== false && (
+            <div className="space-y-1.5">
+              <Label htmlFor="select-subtotal-basis" className="text-xs">Subtotal shows</Label>
+              <Select
+                value={content.subtotalBasis || "inc"}
+                onValueChange={(v) => setContent({ ...content, subtotalBasis: v })}
+              >
+                <SelectTrigger id="select-subtotal-basis" className="h-7 text-xs" data-testid="select-subtotal-basis">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inc" className="text-xs">Inc GST</SelectItem>
+                  <SelectItem value="ex" className="text-xs">Ex GST</SelectItem>
+                  <SelectItem value="both" className="text-xs">Both</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <Label htmlFor="toggle-showZeroLines" className="cursor-pointer">Show $0 lines</Label>

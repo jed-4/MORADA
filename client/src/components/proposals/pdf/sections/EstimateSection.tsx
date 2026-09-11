@@ -1,7 +1,8 @@
 import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
-import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
+import { round2 } from "@shared/pricing";
 import {
+  clientLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
   lineCountsTowardProposalTotal,
@@ -70,6 +71,7 @@ export function EstimateSection({
     showZeroLines: false,
     showColumnHeader: true,
     showAllowanceType: true,
+    descriptionUnderName: true,
   };
   const baseToggles: Record<string, boolean> = visibleColumns
     ? {
@@ -85,6 +87,7 @@ export function EstimateSection({
         showZeroLines: fallbackToggles.showZeroLines === true,
         showColumnHeader: fallbackToggles.showColumnHeader !== false,
         showAllowanceType: fallbackToggles.showAllowanceType !== false,
+        descriptionUnderName: fallbackToggles.descriptionUnderName !== false,
       }
     : fallbackToggles;
 
@@ -103,6 +106,7 @@ export function EstimateSection({
         showZeroLines: false,
         showColumnHeader: false,
         showAllowanceType: false,
+        descriptionUnderName: false,
       };
     }
     const next = { ...baseToggles };
@@ -127,6 +131,22 @@ export function EstimateSection({
     return next;
   })();
   const hideLineItems = pricingMode === "lump_sum" || pricingMode === "section_totals";
+
+  /**
+   * Which figure a subtotal shows. This used to be inferred from the amount
+   * columns, so turning both off still printed an inc-tax subtotal under lines
+   * with no prices on them — money in the summary rows and none in the table.
+   * It is a deliberate choice now, and GST off forces ex.
+   */
+  const subtotalBasis: "ex" | "inc" | "both" = (() => {
+    const stored = content.subtotalBasis;
+    if (!showGst) return "ex";
+    if (stored === "ex" || stored === "inc" || stored === "both") return stored;
+    // Legacy rows: keep what the amount-column inference used to produce.
+    if (baseToggles.amountExTax && baseToggles.amountIncTax) return "both";
+    if (baseToggles.amountExTax) return "ex";
+    return "inc";
+  })();
 
   const { estimate, groups, items: allItems } = estimateData;
 
@@ -212,46 +232,25 @@ export function EstimateSection({
   // contract price. It is also the right client-facing behaviour — the margin
   // is embedded in the prices, never shown as its own line. (Summing the raw
   // pre-margin cache here previously under-quoted by the whole margin.)
-  const marginFactor = 1 + (Number(estimate?.projectMarkupPercent ?? 0) / 100);
   const taxRatePct = Number(estimate?.taxRate ?? 10);
 
   // Pre-margin line amounts. Priced lines are RECOMPUTED from qty × unitCost ×
   // line markup (never the stored cache), so a legacy margin-baked cache can't
   // double-count the margin here. Fixed-price allowances use their authoritative
   // typed priceIncTax. This mirrors the estimate grid and computeEstimateSummary.
-  const preMarginIncTax = (item: EstimateItem): number => {
-    if (isFixedPriceLine(item.unitCostExTax)) return round2(Number(item.priceIncTax ?? 0));
-    return computeEstimateItemPrice({
-      unitCostExTax: item.unitCostExTax ?? 0,
-      quantity: item.quantity ?? 0,
-      markupPercent: item.markupPercent,
-      projectMarkupPercent: 0,
-      taxRate: taxRatePct,
-      wastagePercent: (item as any).wastagePercent,
-    }).lineIncTax;
-  };
-  const preMarginExTax = (item: EstimateItem): number => {
-    if (isFixedPriceLine(item.unitCostExTax)) {
-      const inc = round2(Number(item.priceIncTax ?? 0));
-      return round2(inc / (1 + taxRatePct / 100));
-    }
-    return computeEstimateItemPrice({
-      unitCostExTax: item.unitCostExTax ?? 0,
-      quantity: item.quantity ?? 0,
-      markupPercent: item.markupPercent,
-      projectMarkupPercent: 0,
-      taxRate: taxRatePct,
-      wastagePercent: (item as any).wastagePercent,
-    }).lineExTax;
-  };
+  // clientLineAmounts is shared with the Allowances page, so the two cannot
+  // quote the same line at two different prices.
+  const amountOpts = { projectMarkupPercent: estimate?.projectMarkupPercent, taxRate: taxRatePct };
+  const preMarginIncTax = (item: EstimateItem): number =>
+    clientLineAmounts(item, { projectMarkupPercent: 0, taxRate: taxRatePct }).incTax;
   // A line marked "excluded" is named on the proposal as NOT part of this
   // price, so it contributes nothing — matching lineCountsTowardProposalTotal
   // on the server. "included" and "empty" only change the printed cell; the
   // client is still paying for those lines.
   const lineIncTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginIncTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).incTax : 0;
   const lineExTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginExTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).exTax : 0;
 
   /**
    * What goes in an amount cell. "Included" and "Excluded" say in words what a
@@ -337,6 +336,12 @@ export function EstimateSection({
       flexDirection: "row",
       alignItems: "center",
     },
+    itemDescription: {
+      marginTop: 2,
+      fontSize: 8,
+      color: "#666666",
+      lineHeight: 1.35,
+    },
     allowanceLegend: {
       marginTop: 10,
       fontSize: 8,
@@ -362,10 +367,19 @@ export function EstimateSection({
     numeric: 60,
   };
 
+  // With the description tucked under the name, the name column absorbs the
+  // width the description column used to take, so the table still reaches the
+  // right-hand edge instead of stranding it.
+  const descriptionUnderName = toggles.descriptionUnderName !== false;
+  const nameWidth =
+    toggles.description && descriptionUnderName
+      ? colWidths.item + colWidths.description
+      : colWidths.item;
+
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
-      <Text style={[styles.col, { width: colWidths.item }]}>Item</Text>
-      {toggles.description && (
+      <Text style={[styles.col, { width: nameWidth }]}>Item</Text>
+      {toggles.description && !descriptionUnderName && (
         <Text style={[styles.col, { width: colWidths.description }]}>Description</Text>
       )}
       {toggles.quantity && (
@@ -411,13 +425,22 @@ export function EstimateSection({
 
     return (
       <View key={item.id} style={styles.tableRow}>
-        <View style={[styles.col, styles.itemCell, { width: colWidths.item }]}>
-          <Text>{item.name || "Untitled"}</Text>
-          {toggles.showAllowanceType && allowanceLabel(item) ? (
-            <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+        <View style={[styles.col, { width: nameWidth }]}>
+          <View style={styles.itemCell}>
+            <Text>{item.name || "Untitled"}</Text>
+            {toggles.showAllowanceType && allowanceLabel(item) ? (
+              <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+            ) : null}
+          </View>
+          {/* Under the name rather than in a column of its own: descriptions
+              are sentences, and a 200pt column of wrapped prose beside a short
+              name left the table ragged and the page half empty. A dash is not
+              printed for lines that simply have no description. */}
+          {toggles.description && descriptionUnderName && item.description ? (
+            <Text style={styles.itemDescription}>{item.description}</Text>
           ) : null}
         </View>
-        {toggles.description && (
+        {toggles.description && !descriptionUnderName && (
           <Text style={[styles.col, { width: colWidths.description }]}>
             {item.description || "-"}
           </Text>
@@ -464,11 +487,26 @@ export function EstimateSection({
     new Set(items.map((i) => String((i as { allowance?: string }).allowance ?? "None"))),
   ).filter((a) => a in ALLOWANCE_LABELS);
 
-  const renderGroup = (group: EstimateGroup): any => {
+  const subtotalRow = (label: string, value: number) => (
+    <View style={styles.subtotalRow}>
+      <Text style={[styles.col, { flex: 1 }]}>{label}</Text>
+      <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
+        {formatCurrency(value)}
+      </Text>
+    </View>
+  );
+
+  /**
+   * `isRoot` because a subtotal is only meaningful once per top-level group.
+   * Nested groups used to print their own as well, so "Subtotal — Joinery
+   * $1,100.00" sat directly above "Subtotal — Kitchen $2,200.00" with nothing
+   * saying the second contained the first — it read as $3,300 of work.
+   */
+  const renderGroup = (group: EstimateGroup, isRoot = false): any => {
     const directItems = itemsByGroup[group.id] || [];
     const subgroups = subgroupsByParent[group.id] || [];
-    // Subtotal spans the group AND its descendants so the printed subtotals add
-    // up to the printed grand total even when a group is a pure container.
+    // Spans the group AND its descendants, so the printed subtotals add up to
+    // the printed grand total even when a group is a pure container.
     const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(group.id));
 
     return (
@@ -484,36 +522,15 @@ export function EstimateSection({
         {!hideLineItems && toggles.showColumnHeader && directItems.length > 0 && renderTableHeader()}
         {!hideLineItems && directItems.map(renderTableRow)}
         {subgroups.map((sg) => renderGroup(sg))}
-        {toggles.showSubtotals && (
+        {toggles.showSubtotals && isRoot && (
           <>
-            {toggles.amountExTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>
-                  Subtotal (ex. tax) — {group.name}
-                </Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(exTax)}
-                </Text>
-              </View>
-            )}
-            {toggles.amountIncTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>
-                  Subtotal (inc. tax) — {group.name}
-                </Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(incTax)}
-                </Text>
-              </View>
-            )}
-            {!toggles.amountExTax && !toggles.amountIncTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>Subtotal — {group.name}</Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(incTax)}
-                </Text>
-              </View>
-            )}
+            {(subtotalBasis === "ex" || subtotalBasis === "both") &&
+              subtotalRow(
+                `${group.name} subtotal${showGst ? " (ex GST)" : ""}`,
+                exTax,
+              )}
+            {(subtotalBasis === "inc" || subtotalBasis === "both") &&
+              subtotalRow(`${group.name} subtotal (inc GST)`, incTax)}
           </>
         )}
       </View>
@@ -556,7 +573,7 @@ export function EstimateSection({
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}
 
-        {rootGroups.map((g) => renderGroup(g))}
+        {rootGroups.map((g) => renderGroup(g, true))}
 
         {ungroupedItems.length > 0 && !hideLineItems && (
           <View>

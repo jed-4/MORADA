@@ -11,6 +11,7 @@ import type {
   ProposalAcceptance,
   ProposalItem,
 } from '@shared/schema';
+import { computeProposalTotals, EMPTY_PROPOSAL_TOTALS } from '@shared/proposalTotals';
 import { substituteSectionContent, type PlaceholderContext } from './placeholders';
 import { CoverPageSection } from './sections/CoverPageSection';
 import { EstimateSection } from './sections/EstimateSection';
@@ -88,22 +89,45 @@ export function ProposalDocument({
     return explicit || proposal.estimateId || undefined;
   };
 
-  let estimateTotalIncGstCents: number | undefined;
-  for (const s of sections) {
-    if (s.sectionType !== 'estimate') continue;
-    const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
-    const estimateId = resolveEstimateId(sectionContent);
-    const data = estimateId ? estimatesData[estimateId] : undefined;
-    if (!data) continue;
-    const incDollars = data.items.reduce((acc: number, item: EstimateItem) => {
-      const value = item.priceIncTax;
-      return acc + (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
-    }, 0);
-    if (incDollars > 0) {
-      estimateTotalIncGstCents = Math.round(incDollars * 100);
-      break;
+  /**
+   * The document's own price, computed from the linked estimate.
+   *
+   * Two things used to be wrong here. It summed `item.priceIncTax` raw, which
+   * is the PRE-margin cache — so the figure was short by the whole project
+   * margin, and disagreed with the estimate table on the page after it. And
+   * the summary read `proposal.subtotal`/`gstAmount`/`totalAmount`, columns
+   * only written when a proposal is SENT, so every draft summarised itself as
+   * $0.00 while the estimate above it showed real money.
+   *
+   * computeProposalTotals is the same function the server uses on send, so the
+   * table, the summary, the placeholders and the sent record all agree.
+   */
+  const liveTotals = (() => {
+    for (const s of sections) {
+      if (s.sectionType !== 'estimate') continue;
+      const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
+      const estimateId = resolveEstimateId(sectionContent);
+      const data = estimateId ? estimatesData[estimateId] : undefined;
+      if (!data) continue;
+      return computeProposalTotals(data.items, {
+        projectMarkupPercent: data.estimate?.projectMarkupPercent,
+        taxRate: data.estimate?.taxRate,
+        estimateId,
+        groups: data.groups,
+      });
     }
-  }
+    return null;
+  })();
+
+  // Stored columns stand in when nothing is linked — an accepted proposal whose
+  // estimate was later unlinked still knows what it was accepted at.
+  const storedTotals = {
+    subtotalCents: Number(proposal.subtotal) || 0,
+    gstCents: Number(proposal.gstAmount) || 0,
+    totalCents: Number(proposal.totalAmount) || 0,
+  };
+  const totals = liveTotals ?? (storedTotals.totalCents > 0 ? storedTotals : EMPTY_PROPOSAL_TOTALS);
+  const estimateTotalIncGstCents = totals.totalCents || undefined;
 
   const placeholderCtx: PlaceholderContext = {
     proposal,
@@ -136,6 +160,8 @@ export function ProposalDocument({
               <CoverPageSection
                 key={section.id}
                 showFooter={footerFor(section)}
+                totals={totals}
+                showGst={showGst}
                 proposal={proposal}
                 section={section}
                 project={project}
@@ -165,6 +191,7 @@ export function ProposalDocument({
               <SummarySection
                 key={section.id}
                 showFooter={footerFor(section)}
+                totals={totals}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -177,6 +204,7 @@ export function ProposalDocument({
               <AllowancesSection
                 key={section.id}
                 showFooter={footerFor(section)}
+                estimateData={proposal.estimateId ? estimatesData[proposal.estimateId] : undefined}
                 proposal={proposal}
                 section={section}
                 proposalItems={proposalItems}

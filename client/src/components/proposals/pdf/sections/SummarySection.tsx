@@ -15,6 +15,12 @@ interface SummarySectionProps {
   documentStyle?: 'style1' | 'style2';
   showFooter?: boolean;
   showGst?: boolean;
+  /**
+   * Live figures from the linked estimate. The stored proposal columns are only
+   * written on send, so without these every draft summarised itself as $0.00
+   * under an estimate table showing real money.
+   */
+  totals?: { subtotalCents: number; gstCents: number; totalCents: number };
 }
 
 const formatCurrency = (cents: number) =>
@@ -31,6 +37,7 @@ export function SummarySection({
   documentStyle = 'style1',
   showFooter,
   showGst = true,
+  totals,
 }: SummarySectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
@@ -38,9 +45,9 @@ export function SummarySection({
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.summaryText as string) || '';
 
-  const subtotal = Number(proposal.subtotal) || 0;
-  const gst = Number(proposal.gstAmount) || 0;
-  const total = Number(proposal.totalAmount) || subtotal + gst;
+  const subtotal = totals?.subtotalCents ?? (Number(proposal.subtotal) || 0);
+  const gst = totals?.gstCents ?? (Number(proposal.gstAmount) || 0);
+  const total = totals?.totalCents ?? (Number(proposal.totalAmount) || subtotal + gst);
 
   const styles = StyleSheet.create({
     totalsWrap: {

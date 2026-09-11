@@ -55,6 +55,9 @@ const STANDARD_STRUCTURE = '__standard__';
 const PROSE_BODY_KEY: Record<string, string> = {
   cover_letter: 'letterText',
   scope: 'scopeText',
+  summary: 'summaryText',
+  closing: 'closingText',
+  estimate: 'estimateDescriptionHtml',
 };
 
 /** True when rich text holds something other than empty markup. */
@@ -430,11 +433,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                 {/* Per-section estimate revision selector removed — the
                     proposal-level toolbar selector now drives every estimate
                     section's linked revision in one place. */}
-                <EstimateEditor
-                  content={localContent}
-                  setContent={setLocalContent}
-                  projectId={projectId}
-                />
+                <EstimateEditor content={localContent} setContent={setLocalContent} />
               </div>
             )}
 
@@ -469,6 +468,22 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                     value={localContent.subtitle || ""}
                     onChange={(e) => setLocalContent({ ...localContent, subtitle: e.target.value })}
                     placeholder="Optional subtitle"
+                  />
+                </div>
+                {/* Off by default: whether the price belongs on page one or
+                    after the scope is a judgement call, not a default. */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor={`show-price-${section.id}`}>Show the total</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Puts the contract price on the cover, not ten pages in
+                    </p>
+                  </div>
+                  <Switch
+                    id={`show-price-${section.id}`}
+                    checked={localContent.showPrice === true}
+                    onCheckedChange={(v) => setLocalContent({ ...localContent, showPrice: v })}
+                    data-testid={`switch-cover-show-price-${section.id}`}
                   />
                 </div>
               </div>
