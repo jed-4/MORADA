@@ -1,5 +1,5 @@
 import { MORADA_PALETTE_HEXES } from '@/lib/colors';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import {
   Building2,
   Settings as SettingsIcon,
@@ -249,6 +250,74 @@ export default function Settings() {
   const [isEditing, setIsEditing] = useState(false);
   const [documentStyle, setDocumentStyle] = useState<"style1" | "style2">("style1");
   const { toast } = useToast();
+
+  // ── Company logo ────────────────────────────────────────────────────────
+  // The card below used to be a mockup: a `disabled` button, no file input and
+  // static "Drag and drop" text. Everything here is the missing half.
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoDragging, setLogoDragging] = useState(false);
+
+  const LOGO_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+  const uploadLogo = async (file: File) => {
+    // Checked here as well as on the server so the common mistakes get an
+    // instant answer rather than a round trip.
+    if (!LOGO_TYPES.includes(file.type)) {
+      toast({
+        title: "Unsupported file",
+        description: "Use a JPEG, PNG, GIF or WebP image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      toast({
+        title: "File too large",
+        description: `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 2 MB.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      // Not apiRequest: it sets a JSON content-type, and multipart needs the
+      // browser to set its own boundary.
+      const res = await fetch("/api/company-settings/logo", {
+        method: "POST",
+        body,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Logo updated", description: "It will appear on your documents and client emails." });
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    setLogoUploading(true);
+    try {
+      await apiRequest("/api/company-settings/logo", "DELETE");
+      await queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Logo removed" });
+    } catch (error: any) {
+      toast({ title: "Could not remove the logo", description: error.message, variant: "destructive" });
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const { user } = useAuth();
 
   // Company info form
@@ -1520,25 +1589,92 @@ export default function Settings() {
             <CardHeader className="pb-4">
               <CardTitle className="text-base font-semibold">Company Logo</CardTitle>
               <p className="text-sm text-muted-foreground">
-                The logo will be shown in Web views, Client portal and Emails. Max file size: 100 MB, preferred square shape. 
-                Allowed formats: .jpg, .jpeg, .png, .gif, .webp, .svg, .avif, .bmp, .heic, .tiff
+                Shown on your PDFs, the client portal and the emails you send clients.
+                JPEG, PNG, GIF or WebP, up to 2&nbsp;MB. A square or wide image works best.
               </p>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-muted rounded border-2 border-dashed flex items-center justify-center">
-                  <Upload className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-muted-foreground">
-                    Drag and drop to upload files
-                  </p>
-                  {isEditing && (
-                    <Button variant="outline" size="sm" className="mt-2" disabled>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload Logo
-                    </Button>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // Reset first: picking the SAME file twice fires no change
+                  // event otherwise, so a failed upload could not be retried.
+                  e.target.value = "";
+                  if (file) uploadLogo(file);
+                }}
+                data-testid="input-company-logo"
+              />
+
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setLogoDragging(true);
+                }}
+                onDragLeave={() => setLogoDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setLogoDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) uploadLogo(file);
+                }}
+                className={cn(
+                  "flex items-center gap-4 rounded-md border-2 border-dashed p-4 transition-colors",
+                  logoDragging ? "border-primary bg-primary/5" : "border-border",
+                )}
+                data-testid="dropzone-company-logo"
+              >
+                <div className="w-20 h-20 rounded border bg-card flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {companySettings?.logoUrl ? (
+                    <img
+                      src={companySettings.logoUrl}
+                      alt="Company logo"
+                      className="max-h-full max-w-full object-contain"
+                      data-testid="img-company-logo"
+                    />
+                  ) : (
+                    <Upload className="h-6 w-6 text-muted-foreground" />
                   )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-muted-foreground">
+                    {companySettings?.logoUrl
+                      ? "Drop a new image here to replace it."
+                      : "Drop an image here, or choose a file."}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={logoUploading}
+                      onClick={() => logoInputRef.current?.click()}
+                      data-testid="button-upload-logo"
+                    >
+                      {logoUploading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      {companySettings?.logoUrl ? "Replace logo" : "Upload logo"}
+                    </Button>
+                    {companySettings?.logoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={logoUploading}
+                        onClick={removeLogo}
+                        data-testid="button-remove-logo"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>

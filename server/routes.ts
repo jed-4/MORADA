@@ -2138,6 +2138,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
+    // The company logo. Rendered by a homeowner's mail client, which has no
+    // session and never will. Narrow on purpose — this matches ONE resource
+    // per company, and the route it reaches takes the object path from the
+    // settings row rather than from the URL.
+    if (/^\/public\/company\/[^/]+\/logo$/.test(path)) {
+      return next();
+    }
+
     // DEVELOPMENT-ONLY BYPASSES - Inject dev user when not authenticated
     if (process.env.NODE_ENV === 'development') {
       // If user is already authenticated, use their data
@@ -26596,7 +26604,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Scoped to the caller's company (previously one global row was shared
       // by every company).
       const settings = await storage.getCompanySettings((req.user as any)?.companyId);
-      res.json(settings || {});
+      if (!settings) return res.json({});
+      // The logo bytes never go over this endpoint. It is fetched on most
+      // pages in the app, and shipping a base64 image with every one of those
+      // reads would be a real cost for data the client cannot use — it renders
+      // the logo from logoUrl, which is a few dozen characters.
+      const { logoData, ...rest } = settings as any;
+      res.json(rest);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company settings" });
     }
@@ -26667,6 +26681,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update company settings" });
+    }
+  });
+
+  // ── Company logo ──────────────────────────────────────────────────────────
+  //
+  // The Upload Logo button in Settings has been hard-coded `disabled` since it
+  // was written — no file input, no handler, no route. "Drag and drop to
+  // upload files" was static text under it. This is the feature.
+  //
+  // It needs more than a button because of where the logo has to render: a
+  // client email, opened by a homeowner whose mail client has no session and
+  // never will. Every existing object route is behind requireAuth AND a tenant
+  // check, so the file also needs a deliberately public door.
+
+  const LOGO_MIME_EXT: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    // SVG is deliberately absent. It is a script-bearing format, this route
+    // serves with no session, and a logo that can carry <script> is a stored
+    // XSS on every page that renders it. The Settings copy promises .svg
+    // today; that copy is corrected rather than the format admitted.
+  };
+
+  const companyLogoUpload = multer({
+    storage: multer.memoryStorage(),
+    // A logo is a few tens of KB. The old Settings copy said 100 MB, which is
+    // not a limit so much as an invitation. 2 MB base64s to ~2.7 MB, which is
+    // a comfortable Postgres row.
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (LOGO_MIME_EXT[file.mimetype]) return cb(null, true);
+      cb(new Error("Logo must be a JPEG, PNG, GIF or WebP image"));
+    },
+  });
+
+  app.post(
+    "/api/company-settings/logo",
+    requireAuth,
+    requireAdmin,
+    companyLogoUpload.single("file"),
+    // `res` is annotated because the trailing error-handling middleware below
+    // takes this call off Express's typed overloads.
+    async (req: any, res: import("express").Response) => {
+      try {
+        const companyId = req.user?.companyId;
+        if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+        // Stored on the settings row rather than in object storage or the
+        // uploads/ directory — see migrations/0076. Local disk is ephemeral on
+        // this host, so a redeploy would silently take every builder's logo
+        // off their documents and out of their emails.
+        //
+        // The cache buster is the point of the query string: the public URL is
+        // stable per company, so without it a replaced logo would keep serving
+        // the old bytes out of every mail client that had cached it.
+        const publicUrl = `/api/public/company/${companyId}/logo?v=${Date.now()}`;
+
+        const settings = await storage.updateCompanySettings(
+          {
+            logoUrl: publicUrl,
+            logoData: req.file.buffer.toString("base64"),
+            logoMime: req.file.mimetype,
+          } as any,
+          companyId,
+        );
+        res.json({ logoUrl: publicUrl, settings });
+      } catch (error: any) {
+        console.error("Logo upload failed:", error);
+        res.status(500).json({ error: "Failed to upload logo" });
+      }
+    },
+    // Multer rejects an oversize or wrong-type file BEFORE the handler runs, so
+    // its error never reaches the try/catch above — it falls through to the
+    // global handler and comes back as a 500 with a `message` key the client
+    // does not read. A four-argument middleware on this route is the only
+    // place it can be caught.
+    (err: any, _req: unknown, res: import("express").Response, next: (e?: any) => void) => {
+      if (!err) return next();
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Logo must be smaller than 2 MB" });
+      }
+      if (/must be a JPEG/i.test(err.message || "")) {
+        return res.status(400).json({ error: err.message });
+      }
+      return next(err);
+    },
+  );
+
+  app.delete("/api/company-settings/logo", requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const settings = await storage.updateCompanySettings(
+        { logoUrl: null, logoData: null, logoMime: null } as any,
+        companyId,
+      );
+      res.json({ settings });
+    } catch (error) {
+      console.error("Logo removal failed:", error);
+      res.status(500).json({ error: "Failed to remove logo" });
+    }
+  });
+
+  /**
+   * The company logo, servable with no session. Deliberately public.
+   *
+   * This is the only unauthenticated object route in the app, so the shape
+   * matters: the caller supplies a COMPANY ID and nothing else. The object
+   * path comes from that company's settings row, never from the request, so
+   * the route can serve exactly one file per company and cannot be walked into
+   * a reader for anything else in the bucket.
+   *
+   * What it exposes is a builder's logo to anyone holding their company UUID.
+   * That is the minimum that makes a branded email render for a homeowner, and
+   * a logo is public-facing branding by its nature — it is already on every
+   * document they send.
+   */
+  app.get("/api/public/company/:companyId/logo", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const settings = await storage.getCompanySettings(companyId);
+      const data = (settings as any)?.logoData as string | null | undefined;
+      if (!data) return res.status(404).json({ error: "No logo" });
+
+      const mime = ((settings as any)?.logoMime as string | null) || "image/png";
+      const buffer = Buffer.from(data, "base64");
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Content-Length", String(buffer.length));
+      // Long cache: the URL is cache-busted on every upload, so a stale copy
+      // is not reachable once the logo changes.
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      // No session is involved, so nothing here is per-user; but say so, or a
+      // shared proxy has to guess.
+      res.setHeader("Vary", "Accept-Encoding");
+      res.end(buffer);
+    } catch (error: any) {
+      console.error("Error serving company logo:", error);
+      res.status(500).json({ error: "Failed to serve logo" });
     }
   });
 
