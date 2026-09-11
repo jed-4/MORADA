@@ -30,6 +30,18 @@ import { Font } from "@react-pdf/renderer";
 
 const INTER = "Inter";
 
+/**
+ * Where the font files live.
+ *
+ * In the browser these are same-origin absolute paths and the default is
+ * right. Under Node — a render test, or a future server-side render — fontkit
+ * resolves "/fonts/Inter-400.woff" against the FILESYSTEM root and throws
+ * ENOENT, so the base has to be a real directory instead. Set
+ * PDF_FONT_DIR for that case.
+ */
+const FONT_BASE =
+  (typeof process !== "undefined" && process.env?.PDF_FONT_DIR) || "/fonts";
+
 let registered = false;
 
 export function registerPdfFonts(): void {
@@ -39,10 +51,10 @@ export function registerPdfFonts(): void {
   Font.register({
     family: INTER,
     fonts: [
-      { src: "/fonts/Inter-400.woff", fontWeight: 400 },
-      { src: "/fonts/Inter-500.woff", fontWeight: 500 },
-      { src: "/fonts/Inter-600.woff", fontWeight: 600 },
-      { src: "/fonts/Inter-700.woff", fontWeight: 700 },
+      { src: `${FONT_BASE}/Inter-400.woff`, fontWeight: 400 },
+      { src: `${FONT_BASE}/Inter-500.woff`, fontWeight: 500 },
+      { src: `${FONT_BASE}/Inter-600.woff`, fontWeight: 600 },
+      { src: `${FONT_BASE}/Inter-700.woff`, fontWeight: 700 },
     ],
   });
 
