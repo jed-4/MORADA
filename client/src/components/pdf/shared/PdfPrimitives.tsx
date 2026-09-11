@@ -131,7 +131,7 @@ export function PdfPanel({ children, style }: { children: ReactNode; style?: obj
       style={{
         borderWidth: 1,
         borderColor: PDF_COLORS.border,
-        borderRadius: PDF_RADIUS.md,
+        borderRadius: PDF_RADIUS.lg,
         overflow: "hidden",
         ...style,
       }}
@@ -259,7 +259,7 @@ export function PdfSignatureCards({ signatories }: { signatories: PdfSignatory[]
       {signatories.map((s, i) => {
         const signed = !!(s.signedName && s.signedDate);
         return (
-          <PdfPanel key={`${s.title}-${i}`} style={{ flex: 1, borderRadius: PDF_RADIUS.md }}>
+          <PdfPanel key={`${s.title}-${i}`} style={{ flex: 1, borderRadius: PDF_RADIUS.lg }}>
             <View style={{ padding: 14, minHeight: 92 }}>
               <Text
                 style={{

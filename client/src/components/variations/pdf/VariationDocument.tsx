@@ -5,13 +5,16 @@ import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/regis
 import { PdfHeroBand } from "@/components/pdf/shared/PdfHeroBand";
 import {
   PdfSection,
-  PdfFieldGrid,
   PdfProse,
   PdfPanel,
   PdfTotalsCard,
   PdfSignatureCards,
   PdfCallout,
 } from "@/components/pdf/shared/PdfPrimitives";
+import {
+  PdfPartiesPanel,
+  PdfDocumentTitle,
+} from "@/components/pdf/shared/PdfPartiesPanel";
 import {
   PdfLineTable,
   PdfSimpleRows,
@@ -121,6 +124,8 @@ interface VariationDocumentProps {
   /** cost-code id -> "code - title". Without it the Cost Code column renders
    *  the stored UUID. */
   costCodeLabels?: Record<string, string>;
+  /** How the parties block lays out. See PdfPartiesPanel. */
+  partiesLayout?: "columns" | "stacked";
 }
 
 /**
@@ -173,6 +178,7 @@ export function VariationDocument({
   revisedIsAgreed = false,
   columns = DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   costCodeLabels,
+  partiesLayout = "columns",
 }: VariationDocumentProps) {
   const brand = brandRamp(brandColor);
   const statusCfg = variationStatusPresentation(variation.status);
@@ -250,32 +256,48 @@ export function VariationDocument({
         />
 
         <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: PDF_SPACE.xl }}>
-          {/* Details — a real grid, so a long variation name gets a full column
-              instead of breaking mid-bracket the way the old narrow cell did. */}
-          <PdfSection label="Variation Details">
-            <PdfFieldGrid
-              columns={3}
-              fields={[
-                { label: "Name", value: variation.name },
-                { label: "Project", value: project?.name },
-                { label: "Site Address", value: project?.address },
-                { label: "Client", value: project?.clientName },
-                { label: "Client Email", value: project?.clientEmail },
-                { label: "Client Phone", value: project?.clientPhone },
-                { label: "Approval Deadline", value: fmtDate((variation as any).approvalDeadline) },
-                {
-                  label: "Days Changed",
-                  value:
-                    variation.daysChanged && variation.daysChanged !== 0
-                      ? `${variation.daysChanged > 0 ? "+" : ""}${variation.daysChanged} working days`
-                      : null,
-                },
-              ]}
+          {/* The subject line. It was a field labelled "Name" inside the details
+              grid, which is the wrong shape — it IS the document. */}
+          {variation.name ? <PdfDocumentTitle>{variation.name}</PdfDocumentTitle> : null}
+
+          {/* Who it's for, where the job is, what this document is — three
+              kinds of fact that used to read as one undifferentiated list. */}
+          <PdfSection>
+            <PdfPartiesPanel
+              layout={partiesLayout}
+              recipient={{
+                label: "To",
+                title: project?.clientName,
+                lines: [project?.clientEmail, project?.clientPhone],
+              }}
+              project={{
+                label: "Project",
+                title: project?.name,
+                lines: [project?.address],
+              }}
+              document={{
+                label: "Document",
+                fields: [
+                  { label: "Number", value: variation.variationNumber },
+                  { label: "Issued", value: fmtDate((variation as any).createdAt) },
+                  { label: "Respond by", value: fmtDate((variation as any).approvalDeadline) },
+                  {
+                    label: "Days changed",
+                    value:
+                      variation.daysChanged && variation.daysChanged !== 0
+                        ? `${variation.daysChanged > 0 ? "+" : ""}${variation.daysChanged} working days`
+                        : null,
+                  },
+                ],
+              }}
             />
-            {variation.introductionText ? (
-              <PdfProse style={{ marginTop: PDF_SPACE.sm }}>{variation.introductionText}</PdfProse>
-            ) : null}
           </PdfSection>
+
+          {variation.introductionText ? (
+            <PdfSection>
+              <PdfProse>{variation.introductionText}</PdfProse>
+            </PdfSection>
+          ) : null}
 
           {/* What this does to the contract sum. */}
           {showContractCard && (

@@ -119,10 +119,19 @@ export const PDF_SPACE = {
   section: 18,
 } as const;
 
+/**
+ * Corner radii, in points.
+ *
+ * `lg` is the document block — Jed picked 12pt by eye against the live portal,
+ * which is rounder than the portal's own 9px panels because a PDF has no outer
+ * card to carry that softness for it. `md` is for small square elements like
+ * the logo tile, where 12pt on a 46pt box reads as a blob.
+ */
 export const PDF_RADIUS = {
   sm: 3,
-  md: 6,
-  lg: 8,
+  md: 8,
+  lg: 12,
+  pill: 999,
 } as const;
 
 /* ── Brand ───────────────────────────────────────────────────────────────── */

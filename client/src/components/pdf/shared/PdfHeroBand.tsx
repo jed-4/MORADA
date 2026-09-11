@@ -126,7 +126,7 @@ export function PdfHeroBand({
           style={{
             width: 46,
             height: 46,
-            borderRadius: PDF_RADIUS.lg,
+            borderRadius: PDF_RADIUS.md,
             backgroundColor: isBrand ? "rgba(255,255,255,0.22)" : ramp.wash,
             alignItems: "center",
             justifyContent: "center",
@@ -181,7 +181,7 @@ export function PdfHeroBand({
               backgroundColor: status.bg,
               paddingHorizontal: 8,
               paddingVertical: 3,
-              borderRadius: 999,
+              borderRadius: PDF_RADIUS.pill,
               marginBottom: PDF_SPACE.sm,
             }}
           >

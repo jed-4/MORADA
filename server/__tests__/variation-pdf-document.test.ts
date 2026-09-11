@@ -135,12 +135,37 @@ async function main() {
     const [page1] = await renderText({ variation: variation() });
     assert.ok(page1.includes("$6,875.00"), "total missing from page 1");
     assert.ok(page1.includes("VAR-001"), "variation number missing");
-    // It must sit ABOVE the details, i.e. in the band — not in a money card
-    // further down the page the way the old three-block header had it.
+    // It must sit ABOVE the parties block, i.e. in the band — not in a money
+    // card further down the page the way the old three-block header had it.
     assert.ok(
-      page1.indexOf("$6,875.00") < page1.indexOf("VARIATION DETAILS"),
-      "the total should be in the masthead, before the first section",
+      page1.indexOf("$6,875.00") < page1.indexOf("TO"),
+      "the total should be in the masthead, before the parties block",
     );
+  });
+
+  await check("the anatomy is masthead, title, parties, body", async () => {
+    const [page1] = await renderText({ variation: variation() });
+    const at = (needle: string) => {
+      const i = page1.indexOf(needle);
+      assert.notStrictEqual(i, -1, `"${needle}" missing from page 1`);
+      return i;
+    };
+    // The subject line is promoted out of the details grid — it is the
+    // document, not metadata about it — and sits between the band and the
+    // reference block.
+    assert.ok(at("$6,875.00") < at("Kitchen re-scope"), "title should follow the masthead");
+    assert.ok(at("Kitchen re-scope") < at("TO"), "parties block should follow the title");
+    assert.ok(at("TO") < at("PROJECT"), "recipient comes before the project");
+    assert.ok(at("PROJECT") < at("DOCUMENT"), "project comes before the document metadata");
+  });
+
+  await check("both parties layouts carry the same facts", async () => {
+    for (const partiesLayout of ["columns", "stacked"] as const) {
+      const [page1] = await renderText({ variation: variation(), partiesLayout });
+      for (const needle of ["TO", "PROJECT", "DOCUMENT", "Steve & Terri Irwin", "Irwin Wildlife Compound Reno"]) {
+        assert.ok(page1.includes(needle), `${partiesLayout}: "${needle}" missing`);
+      }
+    }
   });
 
   await check("a captured client signature is printed, not a blank rule", async () => {
