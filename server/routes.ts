@@ -22282,7 +22282,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // never heard of us. It also escapes the builder's message, which the old
       // `body.replace(/\n/g, "<br>")` did not: an ampersand or an angle bracket
       // in a note landed as broken markup.
-      const portalUrl = `${(process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "")}/portal/variations/${token}`;
+      // Singular "variation" — it must match the route registered in App.tsx.
+      // This said "variations" when the branded email shipped, so the CTA in
+      // every variation email led the client to a 404.
+      const portalUrl = `${(process.env.APP_BASE_URL || "https://app.moradaco.com.au").replace(/\/$/, "")}/portal/variation/${token}`;
       const html = renderClientEmail({
         brand: {
           companyName: settings?.companyName,
