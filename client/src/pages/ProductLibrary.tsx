@@ -57,6 +57,9 @@ interface Product {
   groupId: string | null;
   tagIds?: string[];
   images?: ProductImage[];
+  /** "library" | "template_shadow" — see migrations/0077. Only present on rows
+   *  fetched with includeTemplateOptions, which is the only time it matters. */
+  source?: string;
 }
 
 /** Same shape as the price list's GRID_COLUMNS so both grids resize alike. */
@@ -77,6 +80,11 @@ export default function ProductLibrary() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [filterTag, setFilterTag] = useState("all");
+  // Whether template-minted shadows are in the list. Off by default — they are
+  // artefacts, not library content — but reachable, because a hidden row with no
+  // way to see it is how migration 0072 emptied this page without a symptom
+  // anyone could act on. See migrations/0077_unhide_curated_products.sql.
+  const [showShadows, setShowShadows] = useState(false);
   // Where you are in the tree. ALL or UNFILED are pseudo-nodes; anything else is
   // a group id.
   const [branch, setBranch] = useState<string>(ALL);
@@ -88,7 +96,7 @@ export default function ProductLibrary() {
   const [taxonomyOpen, setTaxonomyOpen] = useState(false);
 
   const { data: products = [], isLoading } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: showShadows ? ["/api/products?includeTemplateOptions=true"] : ["/api/products"],
   });
   const { data: groups_ = [] } = useQuery<ProductGroup[]>({ queryKey: ["/api/product-groups"] });
   const { data: tags = [] } = useQuery<ProductTag[]>({ queryKey: ["/api/product-tags"] });
@@ -166,7 +174,8 @@ export default function ProductLibrary() {
   }, [filtered, groupBy, groupById]);
 
   const allExpanded = groups.every((g) => !collapsed.has(g.id));
-  const activeFilterCount = (filterTag !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0);
+  const activeFilterCount =
+    (filterTag !== "all" ? 1 : 0) + (groupBy !== "category" ? 1 : 0) + (showShadows ? 1 : 0);
 
   /** "Include subgroups" is meaningless on a leaf — only offer it where it does
    *  something. */
@@ -223,7 +232,16 @@ export default function ProductLibrary() {
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-medium truncate">{p.name}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs font-medium truncate">{p.name}</span>
+                {/* Only ever rendered while "Show template-only products" is on,
+                    so the list never mixes the two without saying which is which. */}
+                {p.source === "template_shadow" && (
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground border border-border rounded px-1 flex-shrink-0">
+                    Template
+                  </span>
+                )}
+              </div>
               {p.description && (
                 <div className="text-[10px] text-muted-foreground truncate">{p.description}</div>
               )}
@@ -346,7 +364,7 @@ export default function ProductLibrary() {
               <TooltipContent side="bottom">Filter</TooltipContent>
             </Tooltip>
 
-            <PopoverContent align="start" className="w-56 p-3 space-y-3">
+            <PopoverContent align="start" className="w-64 p-3 space-y-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Tag</Label>
                 <Select value={filterTag} onValueChange={setFilterTag}>
@@ -373,12 +391,26 @@ export default function ProductLibrary() {
                   </SelectContent>
                 </Select>
               </div>
+              <label className="flex items-start gap-2 cursor-pointer pt-2 border-t">
+                <Checkbox
+                  checked={showShadows}
+                  onCheckedChange={(c) => setShowShadows(!!c)}
+                  className="h-3.5 w-3.5 mt-px flex-shrink-0"
+                  data-testid="checkbox-show-shadows"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs leading-tight">Show template-only</span>
+                  <span className="block text-[10px] text-muted-foreground leading-tight mt-0.5">
+                    Minted from a template option, not added here.
+                  </span>
+                </span>
+              </label>
               {activeFilterCount > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-6 w-full text-xs"
-                  onClick={() => { setFilterTag("all"); setGroupBy("category"); }}
+                  onClick={() => { setFilterTag("all"); setGroupBy("category"); setShowShadows(false); }}
                   data-testid="button-clear-filters"
                 >
                   Clear filters
