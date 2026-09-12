@@ -42,6 +42,8 @@ import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySe
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
+import { buildProposalPlaceholderContext } from '@/components/proposals/pdf/proposalContext';
+import { substitutePlaceholders } from '@/components/proposals/pdf/placeholders';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
@@ -1148,7 +1150,24 @@ export function ProposalBuilder({
         let merged = blob;
         if (imports.length > 0) {
           try {
-            const { bytes, failures } = await mergeImportedPages(await blob.arrayBuffer(), imports);
+            /* The text boxes a builder drags onto an imported cover resolve
+               here, against the same context the document itself used — so a
+               stamped price and the summary two pages later are the same
+               number by construction, not by coincidence. */
+            const stampCtx = buildProposalPlaceholderContext({
+              proposal,
+              sections,
+              project,
+              client,
+              companyName,
+              companyPhone,
+              estimatesData: estimatesDataMap,
+            });
+            const { bytes, failures } = await mergeImportedPages(
+              await blob.arrayBuffer(),
+              imports,
+              { substitute: (text) => substitutePlaceholders(text, stampCtx) },
+            );
             merged = new Blob([bytes], { type: 'application/pdf' });
             if (failures.length > 0) {
               toast({

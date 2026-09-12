@@ -13,8 +13,13 @@ import type {
   ProposalAcceptance,
   ProposalItem,
 } from '@shared/schema';
-import { computeProposalTotals, EMPTY_PROPOSAL_TOTALS } from '@shared/proposalTotals';
-import { substituteSectionContent, type PlaceholderContext } from './placeholders';
+import { substituteSectionContent } from './placeholders';
+import {
+  buildProposalPlaceholderContext,
+  resolveEstimateId as resolveEstimateIdFor,
+  resolveProposalTotals,
+  resolveCompanyName,
+} from './proposalContext';
 import { CoverPageSection } from './sections/CoverPageSection';
 import { EstimateSection } from './sections/EstimateSection';
 import { SummarySection, summaryHasContent } from './sections/SummarySection';
@@ -75,7 +80,7 @@ export function ProposalDocument({
    * name goes. Normalised once here rather than defended against in twelve
    * places.
    */
-  const resolvedCompanyName = (companyName || "").trim() || "Your Company";
+  const resolvedCompanyName = resolveCompanyName(companyName);
 
   const layout = (proposal.layoutSettings as {
     pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
@@ -97,59 +102,26 @@ export function ProposalDocument({
   };
   const effectiveLogo = showLogo ? companyLogo : undefined;
 
-  const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined): string | undefined => {
-    const explicit = sectionContent && typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
-    return explicit || proposal.estimateId || undefined;
-  };
+  const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined) =>
+    resolveEstimateIdFor(proposal, sectionContent);
 
-  /**
-   * The document's own price, computed from the linked estimate.
-   *
-   * Two things used to be wrong here. It summed `item.priceIncTax` raw, which
-   * is the PRE-margin cache — so the figure was short by the whole project
-   * margin, and disagreed with the estimate table on the page after it. And
-   * the summary read `proposal.subtotal`/`gstAmount`/`totalAmount`, columns
-   * only written when a proposal is SENT, so every draft summarised itself as
-   * $0.00 while the estimate above it showed real money.
-   *
-   * computeProposalTotals is the same function the server uses on send, so the
-   * table, the summary, the placeholders and the sent record all agree.
+  /*
+   * The document's own price, and the context every {{token}} resolves
+   * against. Both come from proposalContext so that a cover page stamped by
+   * pdf-lib after this render finishes cannot print a different figure — see
+   * the note there.
    */
-  const liveTotals = (() => {
-    for (const s of sections) {
-      if (s.sectionType !== 'estimate') continue;
-      const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
-      const estimateId = resolveEstimateId(sectionContent);
-      const data = estimateId ? estimatesData[estimateId] : undefined;
-      if (!data) continue;
-      return computeProposalTotals(data.items, {
-        projectMarkupPercent: data.estimate?.projectMarkupPercent,
-        taxRate: data.estimate?.taxRate,
-        estimateId,
-        groups: data.groups,
-      });
-    }
-    return null;
-  })();
-
-  // Stored columns stand in when nothing is linked — an accepted proposal whose
-  // estimate was later unlinked still knows what it was accepted at.
-  const storedTotals = {
-    subtotalCents: Number(proposal.subtotal) || 0,
-    gstCents: Number(proposal.gstAmount) || 0,
-    totalCents: Number(proposal.totalAmount) || 0,
-  };
-  const totals = liveTotals ?? (storedTotals.totalCents > 0 ? storedTotals : EMPTY_PROPOSAL_TOTALS);
-  const estimateTotalIncGstCents = totals.totalCents || undefined;
-
-  const placeholderCtx: PlaceholderContext = {
+  const totals = resolveProposalTotals(proposal, sections, estimatesData);
+  const placeholderCtx = buildProposalPlaceholderContext({
     proposal,
+    sections,
     project,
     client,
     companyName: resolvedCompanyName,
     companyPhone,
-    estimateTotalIncGstCents,
-  };
+    estimatesData,
+  });
+
   const enabledSections = sections.filter((s) => s.isEnabled !== false);
   // The price appears once. The payment schedule owns it — the milestones are
   // percentages of it — and a proposal with no schedule keeps it on Summary

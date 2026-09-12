@@ -1,4 +1,5 @@
 import type { Proposal, Project, Contact, ProposalSection } from '@shared/schema';
+import { revisionLabel } from '../proposalDisplay';
 
 export interface PlaceholderContext {
   proposal: Proposal;
@@ -13,6 +14,7 @@ export interface PlaceholderContext {
 // shared schema. Using these instead of `as any` keeps the compiler happy
 // without lying about the underlying types.
 type ProjectAddressFields = Pick<Project, 'location'> & { address?: string | null };
+type ProposalVersionField = { version?: number | null };
 type ProposalDateFields = Pick<Proposal, 'sentDate' | 'expiryDate' | 'totalAmount'> & {
   createdAt?: Date | string | null;
 };
@@ -75,7 +77,11 @@ export const PROPOSAL_PLACEHOLDER_TOKENS: Array<{ token: string; label: string }
   { token: '{{client.name}}', label: 'Client Name' },
   { token: '{{client.email}}', label: 'Client Email' },
   { token: '{{project.name}}', label: 'Project Name' },
+  { token: '{{project.number}}', label: 'Project Number' },
   { token: '{{project.address}}', label: 'Project Address' },
+  { token: '{{proposal.name}}', label: 'Proposal Name' },
+  { token: '{{proposal.number}}', label: 'Proposal Number' },
+  { token: '{{proposal.revision}}', label: 'Revision' },
   { token: '{{proposal.date}}', label: 'Proposal Date' },
   { token: '{{proposal.expiry}}', label: 'Proposal Expiry' },
   { token: '{{estimate.total_inc_gst}}', label: 'Estimate Total (inc GST)' },
@@ -95,11 +101,17 @@ export function buildSubstitutionMap(ctx: PlaceholderContext): Record<string, st
     'client.name': client?.name || '[Client Name]',
     'client.email': client?.email || '[Client Email]',
     'project.name': project?.name || '[Project Name]',
+    'project.number': project?.jobNumber || '',
     'project.address': projectAddress(project) || '[Project Address]',
+    'proposal.name': proposal.name || '',
     'proposal.number': proposal.proposalNumber || '',
+    'proposal.revision': revisionLabel((proposal as ProposalVersionField).version),
     'proposal.date': formatDate(p.sentDate) || formatDate(p.createdAt) || todayString(),
     'proposal.expiry': formatDate(p.expiryDate),
-    'proposal.total': formatCurrencyCents(p.totalAmount),
+    // Both names for the price resolve to the same figure. `proposal.total`
+    // used to read proposals.totalAmount alone — a column written only on
+    // send — so every draft substituted it as "$0.00".
+    'proposal.total': formatCurrencyCents(estimateTotalIncGstCents ?? p.totalAmount),
     'estimate.total_inc_gst': formatCurrencyCents(estimateTotalIncGstCents ?? p.totalAmount),
     'builder.company': companyName || '[Company Name]',
     'builder.phone': companyPhone || '',

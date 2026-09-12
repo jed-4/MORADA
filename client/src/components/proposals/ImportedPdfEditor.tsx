@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
-import { FileText, Upload, Loader2, Trash2 } from "lucide-react";
+import { FileText, Upload, Loader2, Trash2, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useUpload } from "@/hooks/use-upload";
 import { useToast } from "@/hooks/use-toast";
 import { ensurePdfWorker } from "@/lib/pdfWorker";
+import { ImportedPdfTextBoxEditor } from "./ImportedPdfTextBoxEditor";
+import { normaliseTextBoxes, type ImportedTextBox } from "./pdf/importedTextBoxes";
 
 interface Props {
   content: Record<string, any>;
@@ -39,10 +41,15 @@ export function ImportedPdfEditor({ content, setContent }: Props) {
   const { uploadFile, isUploading } = useUpload();
   const inputRef = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
 
   const fileName = typeof content.fileName === "string" ? content.fileName : null;
+  const objectPath = typeof content.objectPath === "string" ? content.objectPath : null;
   const pageCount = Number(content.pageCount) || 0;
+  const textBoxes = normaliseTextBoxes(content.textBoxes);
   const busy = isUploading || reading;
+
+  const setTextBoxes = (boxes: ImportedTextBox[]) => setContent({ ...content, textBoxes: boxes });
 
   const handleFile = async (file: File) => {
     if (file.type !== "application/pdf") {
@@ -56,6 +63,10 @@ export function ImportedPdfEditor({ content, setContent }: Props) {
       // uploadFile resolves null when the presign or the PUT fails; it has
       // already surfaced why, so this just declines to store a broken path.
       if (!result) return;
+      /* textBoxes are deliberately kept. Replacing the file is almost always
+         a re-export of the same design — a colour changed, a line moved — and
+         wiping the merge fields would make every such tweak cost the builder
+         their whole layout. */
       setContent({
         ...content,
         objectPath: result.objectPath,
@@ -84,14 +95,25 @@ export function ImportedPdfEditor({ content, setContent }: Props) {
           <div className="min-w-0 flex-1">
             <p className="text-xs truncate">{fileName}</p>
             <p className="text-xs text-muted-foreground">
-              {pageCount} page{pageCount === 1 ? "" : "s"} · printed exactly as designed
+              {pageCount} page{pageCount === 1 ? "" : "s"} ·{" "}
+              {textBoxes.length === 0
+                ? "printed exactly as designed"
+                : `${textBoxes.length} merge field${textBoxes.length === 1 ? "" : "s"}`}
             </p>
           </div>
           <Button
             size="icon"
             variant="ghost"
             className="h-7 w-7 flex-shrink-0"
-            onClick={() => setContent({ ...content, objectPath: undefined, fileName: undefined, pageCount: undefined })}
+            onClick={() =>
+              setContent({
+                ...content,
+                objectPath: undefined,
+                fileName: undefined,
+                pageCount: undefined,
+                textBoxes: undefined,
+              })
+            }
             aria-label="Remove imported PDF"
             data-testid="button-remove-imported-pdf"
           >
@@ -118,17 +140,44 @@ export function ImportedPdfEditor({ content, setContent }: Props) {
         }}
         data-testid="input-imported-pdf"
       />
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs"
-        disabled={busy}
-        onClick={() => inputRef.current?.click()}
-        data-testid="button-upload-imported-pdf"
-      >
-        {busy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Upload className="w-3 h-3 mr-1" />}
-        {busy ? "Importing…" : fileName ? "Replace PDF" : "Choose PDF"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+          data-testid="button-upload-imported-pdf"
+        >
+          {busy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Upload className="w-3 h-3 mr-1" />}
+          {busy ? "Importing…" : fileName ? "Replace PDF" : "Choose PDF"}
+        </Button>
+
+        {objectPath && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setFieldsOpen(true)}
+            data-testid="button-edit-merge-fields"
+          >
+            <Type className="w-3 h-3 mr-1" />
+            {textBoxes.length === 0 ? "Add merge fields" : `Merge fields (${textBoxes.length})`}
+          </Button>
+        )}
+      </div>
+
+      {objectPath && (
+        <ImportedPdfTextBoxEditor
+          open={fieldsOpen}
+          onOpenChange={setFieldsOpen}
+          objectPath={objectPath}
+          fileName={fileName ?? undefined}
+          pageCount={Math.max(1, pageCount)}
+          boxes={textBoxes}
+          onChange={setTextBoxes}
+        />
+      )}
     </div>
   );
 }

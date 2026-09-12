@@ -1,5 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import type { ProposalSection } from "@shared/schema";
+import { normaliseTextBoxes, type ImportedTextBox } from "./importedTextBoxes";
+import { createFontBook, stampTextBoxes, type FontFetcher } from "./stampTextBoxes";
 
 /**
  * Splices imported PDF pages into the generated proposal.
@@ -30,6 +32,8 @@ export interface ImportedPdfContent {
   objectPath?: string;
   fileName?: string;
   pageCount?: number;
+  /** Merge fields the builder positioned over the design. */
+  textBoxes?: ImportedTextBox[];
 }
 
 export function importedPdfContent(section: ProposalSection): ImportedPdfContent | null {
@@ -41,6 +45,7 @@ export function importedPdfContent(section: ProposalSection): ImportedPdfContent
     objectPath,
     fileName: typeof c.fileName === "string" ? c.fileName : undefined,
     pageCount: Math.max(1, Number(c.pageCount) || 1),
+    textBoxes: normaliseTextBoxes(c.textBoxes),
   };
 }
 
@@ -60,6 +65,50 @@ async function fetchPdfBytes(objectPath: string): Promise<ArrayBuffer> {
 }
 
 /**
+ * Draws one import's text boxes onto the pages copied from it.
+ *
+ * Boxes are addressed by their page index WITHIN the import, so a two-page
+ * brochure keeps its second page's boxes on its second page no matter where
+ * the section ends up in the proposal.
+ */
+async function stampCopiedPages(
+  pages: Awaited<ReturnType<PDFDocument["copyPages"]>>,
+  item: ImportedPdfContent,
+  substitute: (text: string) => string,
+  fonts: ReturnType<typeof createFontBook>,
+  failures: string[],
+): Promise<void> {
+  const boxes = item.textBoxes ?? [];
+  if (boxes.length === 0) return;
+  for (let i = 0; i < pages.length; i++) {
+    const onThisPage = boxes
+      .filter((box) => box.page === i)
+      .map((box) => ({ ...box, text: substitute(box.text) }));
+    if (onThisPage.length === 0) continue;
+    const { failures: boxFailures } = await stampTextBoxes(pages[i], onThisPage, fonts);
+    if (boxFailures.length > 0) {
+      failures.push(
+        `${item.fileName || "imported PDF"} (${boxFailures.length} text ${
+          boxFailures.length === 1 ? "box" : "boxes"
+        } could not be printed)`,
+      );
+    }
+  }
+}
+
+export interface MergeOptions {
+  /**
+   * Resolves {{tokens}} in a text box. Passed in rather than imported so this
+   * module stays a PDF concern: the caller already holds the proposal, the
+   * project and the live totals, and resolving there is what keeps a stamped
+   * cover price identical to the one printed inside the document.
+   */
+  substitute?: (text: string) => string;
+  /** Overridden by the tests, which read the font files off disk. */
+  fetchFont?: FontFetcher;
+}
+
+/**
  * Returns the merged document, or the original bytes unchanged when there is
  * nothing to merge.
  *
@@ -70,6 +119,7 @@ async function fetchPdfBytes(objectPath: string): Promise<ArrayBuffer> {
 export async function mergeImportedPages(
   baseBytes: ArrayBuffer,
   imports: ImportedPdfContent[],
+  options: MergeOptions = {},
 ): Promise<{ bytes: Uint8Array; failures: string[] }> {
   // No early return for an empty `imports`: a document can still carry a slot
   // nobody claimed, and returning the bytes untouched would print it. The
@@ -78,6 +128,8 @@ export async function mergeImportedPages(
 
   const doc = await PDFDocument.load(baseBytes);
   const failures: string[] = [];
+  const fonts = createFontBook(doc, options.fetchFont);
+  const substitute = options.substitute ?? ((text: string) => text);
 
   /*
    * Everything is READ before anything is written.
@@ -114,6 +166,11 @@ export async function mergeImportedPages(
       const bytes = await fetchPdfBytes(item.objectPath!);
       const src = await PDFDocument.load(bytes);
       pages = await doc.copyPages(src, src.getPageIndices().slice(0, count));
+      /* Stamped BEFORE the pages are spliced in. copyPages returns pages that
+         already belong to this document, so drawing on them now is the same
+         operation as drawing on them later — and doing it here means a page
+         whose text could not be drawn still arrives, design intact. */
+      await stampCopiedPages(pages, item, substitute, fonts, failures);
     } catch {
       // The slot still gets removed: a reserved page the import never filled
       // would reach the client as a blank sheet.
