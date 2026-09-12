@@ -23,10 +23,10 @@ export interface TemplateOption {
    * Idempotency key, unique within a template.
    *
    * The option's own `id` where one is stored — it survives reordering. Many
-   * options have none: `getStableId` in SelectionTemplateItemDetail mints ids
-   * with crypto.randomUUID() into a React ref and they are persisted only on an
-   * explicit save, so they are neither guaranteed nor reproducible outside that
-   * page session. The fallback is positional:
+   * options have none: the editor minted ids with crypto.randomUUID() into a
+   * React ref and persisted them only on an explicit save, so an id is neither
+   * guaranteed nor reproducible from the blob alone. The fallback is
+   * positional:
    *
    *   idx:0    flat format, templateData[0]
    *   idx:2/1  legacy format, templateData[2].options[1]

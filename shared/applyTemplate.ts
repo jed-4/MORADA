@@ -23,13 +23,24 @@
  *       flat:   tpl.deadline || null                             — a raw string
  *     Drizzle coerces the string on the way in, so both work today.
  *
- *  3. `|| null` versus `?? null` on money.
- *       allowance:  item.budgetAmount || null   — a budget of 0 becomes NULL
- *       unitCost:   opt.unitCost ?? null        — a cost of 0 survives
- *     A $0 allowance is meaningful in Morada (the "not included" flow), so the
- *     first of these is a latent bug. It is NOT fixed here — fixing it would
- *     move the fingerprint, which is the one thing step 2 must not do. Fix it in
- *     its own change, where the diff is the point rather than the noise.
+ *  3. FIXED. `allowance: item.budgetAmount || null` turned a $0 budget into
+ *     NULL, while `unitCost: opt.unitCost ?? null` let a $0 cost through. A $0
+ *     allowance is meaningful in Morada — it is the "not included" flow — so
+ *     both are `??` now. The note below used to say this was left alone because
+ *     fixing it would move the fingerprint; step 2 has landed, so moving the
+ *     fingerprint is now the point of the change rather than noise in it.
+ *
+ * ── Deliberate behaviour changes since the extraction ────────────────────────
+ *
+ * Both move the fingerprint, and the reference copies in
+ * scripts/apply-template-fingerprint.ts were updated in the same commit so the
+ * EXTRACTION CHECK still catches every OTHER drift.
+ *
+ *  a. allowanceType is carried across. A template has always been able to say
+ *     Prime Cost or Provisional Sum and /apply dropped it, so a selection built
+ *     from a PC template was indistinguishable from a PS one. Needs migration
+ *     0078, which adds selections.allowance_type.
+ *  b. `?? null` on the allowance, per 3 above.
  */
 
 export interface ApplyContext {
@@ -102,7 +113,8 @@ export function buildLegacyApplyRows(items: any[], ctx: ApplyContext): ApplyRows
     room: item.room || null,
     selectionType: ctx.selectionType || "selection",
     status: "draft",
-    allowance: item.budgetAmount || null,
+    allowance: item.budgetAmount ?? null,
+    allowanceType: item.allowanceType ?? null,
     clientCanSeePrice: item.clientCanSeePrice ?? true,
     clientCanChange: item.clientCanChange ?? true,
     deadline: item.deadline ? new Date(item.deadline) : null,
@@ -147,7 +159,8 @@ export function buildFlatApplyRows(
     room: tpl.room || null,
     selectionType: ctx.selectionType || "selection",
     status: "draft",
-    allowance: tpl.budgetAmount || null,
+    allowance: tpl.budgetAmount ?? null,
+    allowanceType: tpl.allowanceType ?? null,
     clientCanSeePrice: tpl.clientCanSeePrice ?? true,
     clientCanChange: tpl.clientCanChange ?? true,
     deadline: tpl.deadline || null,

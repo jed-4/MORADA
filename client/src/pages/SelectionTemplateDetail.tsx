@@ -39,7 +39,6 @@ import {
   Edit3,
   Trash2,
   Package,
-  DollarSign,
   Loader2,
   Save,
   Eye,
@@ -48,14 +47,18 @@ import {
   Camera,
   X,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
-  LayoutGrid,
-  LayoutList,
+  Calendar as CalendarIcon,
+  MapPin,
+  Settings,
   Tags,
 } from "lucide-react";
+import { format } from "date-fns";
+import { formatCents } from "@shared/money";
 import type { SelectionTemplate, SelectionTemplateGroup, FieldCategory } from "@shared/schema";
-
-const CASVA_LILAC = 'hsl(var(--primary))';
+import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
+import { cn } from "@/lib/utils";
 
 interface SelectionOption {
   id: string;
@@ -177,8 +180,7 @@ export default function SelectionTemplateDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [optionsView, setOptionsView] = useState<"grid" | "list">("grid");
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [gstInclusive, setGstInclusive] = useState(false);
@@ -333,23 +335,27 @@ export default function SelectionTemplateDetail() {
     });
   };
 
+  /** Form state back to what is stored. Also what Cancel calls. */
+  const resetLocalMeta = () => {
+    if (!template) return;
+    const tAny = template as any;
+    setLocalMeta({
+      itemName: template.name,
+      description: template.description || "",
+      categoryName: template.category || "",
+      room: tAny.room || "",
+      allowanceType: tAny.allowanceType || undefined,
+      budgetAmount: tAny.budgetAmount || undefined,
+      deadline: tAny.deadline || null,
+      clientCanSeePrice: tAny.clientCanSeePrice ?? true,
+      clientCanChange: tAny.clientCanChange ?? true,
+      groupIds: tAny.groupIds || [],
+    });
+    setHasMetaChanges(false);
+  };
+
   useEffect(() => {
-    if (template) {
-      const tAny = template as any;
-      setLocalMeta({
-        itemName: template.name,
-        description: template.description || "",
-        categoryName: template.category || "",
-        room: tAny.room || "",
-        allowanceType: tAny.allowanceType || undefined,
-        budgetAmount: tAny.budgetAmount || undefined,
-        deadline: tAny.deadline || null,
-        clientCanSeePrice: tAny.clientCanSeePrice ?? true,
-        clientCanChange: tAny.clientCanChange ?? true,
-        groupIds: tAny.groupIds || [],
-      });
-      setHasMetaChanges(false);
-    }
+    resetLocalMeta();
   }, [template?.id]);
 
   // NOTE: Legacy templates (old SelectionItem[] format) are rendered read-compatibly below.
@@ -598,12 +604,37 @@ export default function SelectionTemplateDetail() {
     updateMutation.mutate({ templateData: updatedOptions });
   };
 
-  const filteredOptions = options.filter(option =>
-    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  /**
+   * templateData entry -> the shape OptionsSection reads.
+   *
+   * The hero comes out of the blob's `imageUrls` (or the older single
+   * `imageUrl`) rather than an option_attachments row, which is the one real
+   * difference between the two sources. Everything else lines up because
+   * templateData stores cents, exactly as selection_options does.
+   *
+   * approvedAt and lockedAt are absent on purpose: a template has neither, and
+   * passing a falsy value is what keeps the Approved/Locked badges off.
+   */
+  const optionViews: OptionView[] = options.map((o) => ({
+    id: o.id,
+    name: o.name,
+    brand: o.brand,
+    sku: o.sku,
+    description: o.description,
+    url: o.url,
+    quantity: o.quantity,
+    unitType: o.unitType,
+    unitCost: o.unitCost,
+    totalCost: o.totalCost,
+    markupPercent: o.markupPercent,
+    visibleToClient: o.visibleToClient,
+    isSelectedByClient: o.isSelectedByClient,
+    heroUrl: o.imageUrls?.[0] || o.imageUrl || null,
+    specsLine: formatSpecsOneLiner(o.specifications) || null,
+  }));
+
+  /** OptionsSection hands back an OptionView; the handlers want the blob entry. */
+  const rowOf = (v: OptionView) => options.find((o) => o.id === v.id)!;
 
   const templateGroups = useMemo(() => {
     const tAny = template as any;
@@ -631,453 +662,397 @@ export default function SelectionTemplateDetail() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Sticky header */}
-      <div className="flex-shrink-0 bg-background sticky top-0 z-10">
-        {/* Row 1 — Breadcrumbs */}
-        <div className="h-9 flex items-center px-3 gap-1.5 border-b">
-          <button
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate("/templates")}
-          >
-            Templates
-          </button>
-          <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          <button
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate("/selection-templates")}
-          >
-            Selections
-          </button>
-          <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          <span className="text-xs font-semibold truncate">{template.name || "Untitled"}</span>
-        </div>
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-6">
 
-        {/* Row 2 — Actions */}
-        <div className="h-9 flex items-center px-2 gap-2 border-b justify-end">
-          {hasMetaChanges && (
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              onClick={handleSaveMeta}
-              disabled={updateMutation.isPending}
-            >
-              {updateMutation.isPending ? (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-3 w-3 mr-1" />
-              )}
-              Save
-            </Button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {/* Title row. Same shape as a project selection: back arrow inline
+              with the name, Save and the kebab on the right. The old header was
+              two stacked 36px bars carrying a Templates › Selections › name
+              breadcrumb — a shape no other detail page in the app uses. */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-center gap-2">
               <button
-                className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
-                style={{ backgroundColor: CASVA_LILAC }}
+                onClick={() => navigate("/selection-templates")}
+                className="h-7 w-7 -ml-1 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+                data-testid="button-back"
+                aria-label="Back to Selection Templates"
               >
-                <Plus className="w-3 h-3" />
-                <span>Add Option</span>
-                <ChevronDown className="w-2.5 h-2.5 ml-0.5" />
+                <ChevronLeft className="w-4 h-4" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleAddOption}>
-                <Plus className="h-3.5 w-3.5 mr-2" />
-                New option
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }}>
-                <Package className="h-3.5 w-3.5 mr-2" />
-                From product library
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Main scrollable content */}
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto p-4 space-y-5">
-
-          {/* Item Details block */}
-          <div className="border rounded-md p-4 space-y-4">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide text-[11px]">Item Details</h3>
-
-            {/* Item Name */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Item Name</Label>
-              <Input
-                className="h-8 text-sm"
-                value={localMeta.itemName}
-                onChange={(e) => { setLocalMeta({ ...localMeta, itemName: e.target.value }); setHasMetaChanges(true); }}
-                placeholder="Template name..."
-              />
+              <h2 className="text-2xl font-bold leading-tight truncate">
+                {template.name || "Untitled"}
+              </h2>
+              <Badge variant="outline" className="h-5 text-[10px] shrink-0">Template</Badge>
             </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Description</Label>
-              <Textarea
-                value={localMeta.description}
-                onChange={(e) => { setLocalMeta({ ...localMeta, description: e.target.value }); setHasMetaChanges(true); }}
-                rows={3}
-                placeholder="Describe this selection item..."
-                className="text-sm resize-none"
-              />
-            </div>
-
-            {/* Category + Room + Deadline */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Category</Label>
-                <Select
-                  value={localMeta.categoryName || "_none"}
-                  onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
+            <div className="flex items-center gap-2">
+              {hasMetaChanges && (
+                <Button
+                  size="sm"
+                  onClick={handleSaveMeta}
+                  disabled={updateMutation.isPending}
+                  data-testid="button-save-template"
                 >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {categoryOptions.map(opt => (
-                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Room / Location</Label>
-                <Select
-                  value={localMeta.room || "_none"}
-                  onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select room" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {roomOptions.map(opt => (
-                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Deadline</Label>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={localMeta.deadline ? localMeta.deadline.substring(0, 10) : ""}
-                  onChange={(e) => { setLocalMeta({ ...localMeta, deadline: e.target.value || null }); setHasMetaChanges(true); }}
-                />
-              </div>
-            </div>
-
-            {/* Allowance type + Budget */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Allowance type</Label>
-                <Select
-                  value={localMeta.allowanceType || "none"}
-                  onValueChange={(v) => { setLocalMeta({ ...localMeta, allowanceType: v === "none" ? undefined : v as "PC" | "PS" }); setHasMetaChanges(true); }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="PC">Prime Cost (PC)</SelectItem>
-                    <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Budget ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="h-8 text-xs"
-                  value={localMeta.budgetAmount !== undefined ? localMeta.budgetAmount / 100 : ""}
-                  onChange={(e) => {
-                    setLocalMeta({ ...localMeta, budgetAmount: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined });
-                    setHasMetaChanges(true);
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Client permission switches */}
-            <div className="flex flex-wrap gap-6 pt-1">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={localMeta.clientCanSeePrice}
-                  onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanSeePrice: v }); setHasMetaChanges(true); }}
-                />
-                <Label className="text-sm">Client can see price</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={localMeta.clientCanChange}
-                  onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanChange: v }); setHasMetaChanges(true); }}
-                />
-                <Label className="text-sm">Client can change selection</Label>
-              </div>
-            </div>
-
-            {/* Groups */}
-            <div className="space-y-1.5 pt-1 border-t">
-              <Label className="text-xs text-muted-foreground">Groups</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {groups.map((g) => (
-                  <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
-                    <Checkbox
-                      checked={localMeta.groupIds.includes(g.id)}
-                      onCheckedChange={(checked) => {
-                        setLocalMeta(prev => ({
-                          ...prev,
-                          groupIds: checked
-                            ? [...prev.groupIds, g.id]
-                            : prev.groupIds.filter(id => id !== g.id),
-                        }));
-                        setHasMetaChanges(true);
-                      }}
-                      className="h-3.5 w-3.5"
-                    />
-                    <span className="text-xs">{g.name}</span>
-                  </label>
-                ))}
-                {groups.length === 0 && (
-                  <span className="text-xs text-muted-foreground italic">No groups created yet</span>
-                )}
-              </div>
+                  {updateMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  Save
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-template-menu">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
+                    <Settings className="w-4 h-4 mr-2" />
+                    Edit Details
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setGroupsDialogOpen(true)}>
+                    <Tags className="w-4 h-4 mr-2" />
+                    Manage Groups
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
-          {/* Options section */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <h3 className="font-semibold text-sm">Options</h3>
-              <Badge variant="outline" className="h-4 text-data">
-                {filteredOptions.length}
-              </Badge>
-              <div className="ml-auto flex items-center gap-1">
-                <div className="relative w-40">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                  <Input
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-7 h-7 text-xs"
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 ${optionsView === "grid" ? "bg-muted" : ""}`}
-                  onClick={() => setOptionsView("grid")}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 ${optionsView === "list" ? "bg-muted" : ""}`}
-                  onClick={() => setOptionsView("list")}
-                  title="List view"
-                >
-                  <LayoutList className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
+          {/* Template Details — summary strip OR inline edit form.
+              The strip is the project page's, field for field. Everything was
+              an always-live form field before, which made a template read as a
+              settings screen rather than as the selection it becomes. */}
+          <div className="surface-panel p-3" data-testid="template-details-block">
+            {!isEditingDetails ? (
+              <div className="flex items-start gap-4">
+                <div className="flex-1 min-w-0 flex items-center gap-6 flex-wrap">
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Category</div>
+                    <div className="text-sm font-medium">{template.category || "—"}</div>
+                  </div>
 
-            {filteredOptions.length === 0 ? (
-              <div className="text-center py-12 border rounded-md bg-muted/20">
-                <Package className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <h3 className="text-sm font-medium mb-2">
-                  {searchTerm ? "No matching options" : "No options yet"}
-                </h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {searchTerm ? "Try a different search term" : "Add options that clients can choose from"}
-                </p>
-                {!searchTerm && (
-                  <button
-                    className="h-6 px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
-                    style={{ backgroundColor: CASVA_LILAC }}
-                    onClick={handleAddOption}
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add Option
-                  </button>
-                )}
-              </div>
-            ) : optionsView === "grid" ? (
-              <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                {filteredOptions.map((option) => {
-                  const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
-                  const specsLine = formatSpecsOneLiner(option.specifications);
-                  return (
-                    <div
-                      key={option.id}
-                      className={`border rounded-lg overflow-hidden bg-card hover-elevate cursor-pointer transition-all ${option.isSelectedByClient ? "ring-2 ring-primary" : ""}`}
-                      onClick={() => handleEditOption(option)}
-                    >
-                      <div className="relative h-40 bg-muted flex items-center justify-center overflow-hidden">
-                        {heroUrl ? (
-                          <img
-                            src={heroUrl}
-                            alt={option.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
-                        ) : (
-                          <Camera className="h-8 w-8 text-muted-foreground/30" />
-                        )}
-                        <div className="absolute top-1 right-1" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 bg-black/40 text-white hover:bg-black/60"
-                              >
-                                <MoreVertical className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditOption(option)}>
-                                <Edit3 className="h-4 w-4 mr-2" />Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
-                                <Star className="h-4 w-4 mr-2" />
-                                {option.isSelectedByClient ? "Remove Default" : "Set as Default"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteOption(option.id)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <div className="absolute top-1 left-1 flex flex-col gap-1">
-                          {option.isSelectedByClient && (
-                            <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">Default</Badge>
-                          )}
-                          {!option.visibleToClient && (
-                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                              <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="p-3 space-y-1">
-                        <div className="flex items-start justify-between gap-1">
-                          <h4 className="font-semibold text-sm leading-tight line-clamp-1">{option.name}</h4>
-                          {option.unitCost && (
-                            <div className="text-sm font-semibold text-nowrap flex items-center gap-0.5 ml-2 shrink-0">
-                              <DollarSign className="h-3 w-3" />
-                              {(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
-                            </div>
-                          )}
-                        </div>
-                        {(option.brand || option.sku) && (
-                          <p className="text-xs text-muted-foreground">
-                            {option.brand}{option.sku ? ` · ${option.sku}` : ""}
-                          </p>
-                        )}
-                        {specsLine && (
-                          <p className="text-[10px] text-muted-foreground/80 line-clamp-1">{specsLine}</p>
-                        )}
-                        {option.quantity && option.quantity > 1 && (
-                          <p className="text-xs text-muted-foreground">Qty {option.quantity} {option.unitType || "ea"}</p>
-                        )}
-                      </div>
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Location</div>
+                    <div className="text-sm font-medium flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-muted-foreground" />
+                      {(template as any).room || "—"}
                     </div>
-                  );
-                })}
+                  </div>
+
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
+                    <div className="text-sm font-medium flex items-center gap-1">
+                      <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                      {(template as any).deadline
+                        ? format(new Date((template as any).deadline), "dd/MM/yyyy")
+                        : "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Groups</div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {templateGroups.length === 0
+                        ? <span className="text-sm font-medium">—</span>
+                        : templateGroups.map((g) => (
+                            <Badge key={g.id} variant="outline" className="h-4 px-1.5 text-data">{g.name}</Badge>
+                          ))}
+                    </div>
+                  </div>
+
+                  {template.description && (
+                    <div className="w-full mt-2">
+                      <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Description</div>
+                      <div className="text-sm text-foreground">{template.description}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right column: the money, divided off and read vertically —
+                    the project page's allowance block, with a template's
+                    budget in it. PC/PS is shown because it is the one field a
+                    template carries that a selection has nowhere to put; see
+                    migration 0078. */}
+                <div className="shrink-0 self-stretch border-l border-border/70 pl-5 pr-1 text-right">
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Budget</div>
+                  <div className="text-lg font-bold tabular-nums" data-testid="text-template-budget">
+                    {(template as any).budgetAmount != null
+                      ? formatCents((template as any).budgetAmount)
+                      : "—"}
+                  </div>
+                  <div className="text-data text-muted-foreground mt-1">
+                    {(template as any).allowanceType === "PC" ? "Prime Cost"
+                      : (template as any).allowanceType === "PS" ? "Provisional Sum"
+                      : "No allowance type"}
+                  </div>
+                  <div className="flex items-center justify-end gap-3 mt-2 text-data text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      {(template as any).clientCanSeePrice ?? true ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                      Price
+                    </span>
+                    <span className="flex items-center gap-1">
+                      {(template as any).clientCanChange ?? true ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                      Can change
+                    </span>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted/40 border-b">
-                    <tr>
-                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 w-12">Img</th>
-                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2">Option</th>
-                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Brand</th>
-                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden md:table-cell">SKU</th>
-                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Qty</th>
-                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Unit Cost</th>
-                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Visibility</th>
-                      <th className="p-2 w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOptions.map((option) => {
-                      const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
-                      return (
-                        <tr
-                          key={option.id}
-                          className="border-t hover-elevate cursor-pointer"
-                          onClick={() => handleEditOption(option)}
-                        >
-                          <td className="p-2">
-                            {heroUrl ? (
-                              <img src={heroUrl} alt={option.name} className="w-9 h-9 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                            ) : (
-                              <div className="w-9 h-9 rounded bg-muted flex items-center justify-center">
-                                <Camera className="h-4 w-4 text-muted-foreground/40" />
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-2">
-                            <div className="font-medium text-xs">{option.name}</div>
-                            {option.isSelectedByClient && <Badge className="text-[9px] h-3.5 px-1 mt-0.5">Default</Badge>}
-                          </td>
-                          <td className="p-2 hidden sm:table-cell text-xs text-muted-foreground">{option.brand || "—"}</td>
-                          <td className="p-2 hidden md:table-cell text-xs text-muted-foreground font-mono">{option.sku || "—"}</td>
-                          <td className="p-2 text-right text-xs tabular-nums">{option.quantity || 1}</td>
-                          <td className="p-2 text-right text-xs tabular-nums">
-                            {option.unitCost ? `$${(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}` : "—"}
-                          </td>
-                          <td className="p-2 hidden sm:table-cell">
-                            {!option.visibleToClient && (
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1">
-                                <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6">
-                                  <MoreVertical className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditOption(option)}>
-                                  <Edit3 className="h-4 w-4 mr-2" />Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
-                                  <Star className="h-4 w-4 mr-2" />
-                                  {option.isSelectedByClient ? "Remove Default" : "Set as Default"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDeleteOption(option.id)} className="text-destructive">
-                                  <Trash2 className="h-4 w-4 mr-2" />Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Template Name</Label>
+                    <Input
+                      className="h-9 text-sm"
+                      value={localMeta.itemName}
+                      onChange={(e) => { setLocalMeta({ ...localMeta, itemName: e.target.value }); setHasMetaChanges(true); }}
+                      placeholder="Template name..."
+                      data-testid="input-template-name"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Category</Label>
+                    <Select
+                      value={localMeta.categoryName || "_none"}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
+                    >
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-category">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">None</SelectItem>
+                        {categoryOptions.map(opt => (
+                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Description</Label>
+                  <Textarea
+                    value={localMeta.description}
+                    onChange={(e) => { setLocalMeta({ ...localMeta, description: e.target.value }); setHasMetaChanges(true); }}
+                    rows={3}
+                    placeholder="Describe this selection..."
+                    className="text-sm resize-none"
+                    data-testid="input-template-description"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Room / Location</Label>
+                    <Select
+                      value={localMeta.room || "_none"}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
+                    >
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-room">
+                        <SelectValue placeholder="Select room" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">None</SelectItem>
+                        {roomOptions.map(opt => (
+                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Deadline</Label>
+                    <Input
+                      type="date"
+                      className="h-9 text-sm"
+                      value={localMeta.deadline ? localMeta.deadline.substring(0, 10) : ""}
+                      onChange={(e) => { setLocalMeta({ ...localMeta, deadline: e.target.value || null }); setHasMetaChanges(true); }}
+                      data-testid="input-deadline"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Allowance type</Label>
+                    <Select
+                      value={localMeta.allowanceType || "none"}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, allowanceType: v === "none" ? undefined : v as "PC" | "PS" }); setHasMetaChanges(true); }}
+                    >
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-allowance-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="PC">Prime Cost (PC)</SelectItem>
+                        <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Budget ($)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="h-9 text-sm"
+                      value={localMeta.budgetAmount !== undefined ? localMeta.budgetAmount / 100 : ""}
+                      onChange={(e) => {
+                        setLocalMeta({ ...localMeta, budgetAmount: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined });
+                        setHasMetaChanges(true);
+                      }}
+                      data-testid="input-budget"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-6 pt-1">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={localMeta.clientCanSeePrice}
+                      onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanSeePrice: v }); setHasMetaChanges(true); }}
+                      data-testid="switch-client-can-see-price"
+                    />
+                    <Label className="text-sm">Client can see price</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={localMeta.clientCanChange}
+                      onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanChange: v }); setHasMetaChanges(true); }}
+                      data-testid="switch-client-can-change"
+                    />
+                    <Label className="text-sm">Client can change selection</Label>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t">
+                  <Label className="text-xs text-muted-foreground">Groups</Label>
+                  <div className="flex flex-wrap gap-3">
+                    {groups.map((g) => (
+                      <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <Checkbox
+                          checked={localMeta.groupIds.includes(g.id)}
+                          onCheckedChange={(checked) => {
+                            setLocalMeta(prev => ({
+                              ...prev,
+                              groupIds: checked
+                                ? [...prev.groupIds, g.id]
+                                : prev.groupIds.filter(id => id !== g.id),
+                            }));
+                            setHasMetaChanges(true);
+                          }}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="text-xs">{g.name}</span>
+                      </label>
+                    ))}
+                    {groups.length === 0 && (
+                      <span className="text-xs text-muted-foreground italic">No groups created yet</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { resetLocalMeta(); setIsEditingDetails(false); }}
+                    data-testid="button-cancel-edit-details"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => { handleSaveMeta(); setIsEditingDetails(false); }}
+                    disabled={updateMutation.isPending}
+                    data-testid="button-save-details"
+                  >
+                    {updateMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
+                    Save
+                  </Button>
+                </div>
               </div>
             )}
           </div>
+
+
+          {/* Options — the same block a project selection renders, from the same
+              component. A template passes fewer affordances: there is nothing to
+              approve, nothing to lock, and no allowance to vary from, so the
+              Approve button, the lock badge and the variance figure are simply
+              absent rather than drawn differently. */}
+          <OptionsSection
+            options={optionViews}
+            viewStorageKey="selection-options-view"
+            chosenLabel="Default"
+            onOpen={(v) => handleEditOption(rowOf(v))}
+            emptyHint="Add options that clients can choose from."
+            emptyAction={(
+              <Button onClick={handleAddOption} data-testid="button-add-first-option">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Option
+              </Button>
+            )}
+            addControl={(
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" data-testid="button-add-option">
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add Option
+                    <ChevronDown className="w-3 h-3 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleAddOption}>
+                    <Plus className="h-3.5 w-3.5 mr-2" />
+                    New option
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }}>
+                    <Package className="h-3.5 w-3.5 mr-2" />
+                    From product library
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            renderMenu={(v, place) => {
+              const option = rowOf(v);
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className={cn(
+                        "h-6 w-6",
+                        place === "grid" && "bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity",
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid={`button-menu-option-${option.id}`}
+                    >
+                      <MoreVertical className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
+                      <Edit3 className="h-4 w-4 mr-2" />Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleSelectOption(option.id); }}>
+                      <Star className="h-4 w-4 mr-2" />
+                      {option.isSelectedByClient ? "Deselect" : "Set as Default"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => { e.stopPropagation(); handleDeleteOption(option.id); }}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }}
+          />
         </div>
       </div>
 
@@ -1523,8 +1498,7 @@ export default function SelectionTemplateDetail() {
             <Button
               onClick={handleSaveOption}
               disabled={updateMutation.isPending}
-              style={{ backgroundColor: CASVA_LILAC }}
-              className="text-white hover:opacity-90"
+              data-testid="button-save-option"
             >
               {updateMutation.isPending ? "Saving..." : editingOption ? "Update Option" : "Add Option"}
             </Button>

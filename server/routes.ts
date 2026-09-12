@@ -36942,8 +36942,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const selectionIds = await applyTemplateItems(sourceItems, projectId, template.selectionType, storage);
         res.json({ created: selectionIds.length, selectionIds, source: usingRows ? "rows" : "templateData" });
       } else {
-        // New flat format: template itself is one selection item
-        const existingSelections = await storage.getSelectionsForProject(projectId);
+        // New flat format: template itself is one selection item.
+        //
+        // `getSelectionsForProject` has never existed — the method is
+        // `getSelections`. Every flat template therefore 500'd on
+        // "storage.getSelectionsForProject is not a function" before reaching
+        // any of the row-building below, and since the flatten every live
+        // template IS flat, applying a selection template to a job did not work
+        // at all. The legacy branch above uses applyTemplateItems and was fine,
+        // which is why the failure was invisible to the tests.
+        const existingSelections = await storage.getSelections(projectId);
         const maxOrder = existingSelections.reduce((m: number, s: any) => Math.max(m, s.sortOrder ?? 0), 0);
         // See the note in applyTemplateItems — one implementation, shared with
         // the fingerprint harness.

@@ -1484,7 +1484,28 @@ export default function Selections() {
                 <div className="text-center py-8 text-xs text-muted-foreground">No templates match your search</div>
               );
               return visibleTemplates.map((tmpl) => {
-                const tmplItems: any[] = (tmpl.templateData as any[]) || [];
+                const tmplData: any[] = (tmpl.templateData as any[]) || [];
+                /**
+                 * templateData is one of two shapes, told apart by `itemName` on
+                 * the first entry — the same test /apply uses.
+                 *
+                 *   LEGACY  a list of ITEMS, each becoming its own selection.
+                 *   FLAT    a list of OPTIONS; the template IS the selection.
+                 *
+                 * This panel only ever knew the legacy shape. Against a flat
+                 * template it rendered one row per OPTION labelled
+                 * `item.itemName` — undefined, so a column of blank rows — with
+                 * an Add button that posted to /apply-items, which answers
+                 * flat templates with 400 "Use /apply for new-format
+                 * templates". Since the flatten every live template is flat, so
+                 * expanding anything here produced blank rows and a dead
+                 * button.
+                 */
+                const isLegacy = tmplData.length > 0 && "itemName" in tmplData[0];
+                const tmplItems = isLegacy ? tmplData : [];
+                const optionCount = isLegacy
+                  ? tmplData.reduce((n: number, it: any) => n + (it.options?.length ?? 0), 0)
+                  : tmplData.length;
                 const isExpanded = expandedTemplateIds.has(tmpl.id);
                 return (
                   <div key={tmpl.id} className="border rounded-md overflow-hidden">
@@ -1498,7 +1519,9 @@ export default function Selections() {
                         {isExpanded ? <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />}
                         <span className="text-xs font-medium truncate">{tmpl.name}</span>
                         {tmpl.category && <span className="text-[10px] text-muted-foreground border rounded px-1 py-0 shrink-0">{tmpl.category}</span>}
-                        <span className="text-[10px] text-muted-foreground shrink-0">{tmplItems.length}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {isLegacy ? tmplData.length : optionCount}
+                        </span>
                       </button>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -1509,41 +1532,74 @@ export default function Selections() {
                             className="h-5 px-1.5 text-[10px] border border-primary/30 text-primary rounded hover-elevate active-elevate-2 disabled:opacity-40 shrink-0"
                             data-testid={`button-apply-template-${tmpl.id}`}
                           >
-                            Apply all
+                            {isLegacy ? "Apply all" : "Add"}
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent side="left">Apply all {tmplItems.length} items to this project</TooltipContent>
+                        <TooltipContent side="left">
+                          {isLegacy
+                            ? `Apply all ${tmplData.length} items to this project`
+                            : `Add this selection and its ${optionCount} option${optionCount === 1 ? "" : "s"} to this project`}
+                        </TooltipContent>
                       </Tooltip>
                     </div>
 
-                    {/* Expanded items */}
+                    {/* Expanded body.
+
+                        A legacy template lists its ITEMS, each of which can be
+                        added on its own — that is what /apply-items is for. A
+                        flat template lists its OPTIONS, which are not
+                        separately addable: the template is ONE selection and
+                        its options come with it. So there is no per-row button
+                        here, rather than a button that 400s. */}
                     {isExpanded && (
                       <div className="divide-y divide-border/50">
-                        {tmplItems.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground px-3 py-2">No items in this template</p>
+                        {isLegacy ? (
+                          tmplItems.length === 0 ? (
+                            <p className="text-[10px] text-muted-foreground px-3 py-2">No items in this template</p>
+                          ) : (
+                            tmplItems.map((item: any) => (
+                              <div key={item.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{item.itemName}</p>
+                                  {(item.categoryName || item.room) && (
+                                    <p className="text-[10px] text-muted-foreground truncate">
+                                      {[item.categoryName, item.room].filter(Boolean).join(" · ")}
+                                    </p>
+                                  )}
+                                </div>
+                                {item.budgetAmount && (
+                                  <span className="text-[10px] text-muted-foreground shrink-0">${(item.budgetAmount / 100).toLocaleString("en-AU", { maximumFractionDigits: 0 })}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={!projectId || applyTemplateMutation.isPending}
+                                  onClick={() => projectId && applyTemplateMutation.mutate({ templateId: tmpl.id, itemIds: [item.id] })}
+                                  className="h-5 px-1.5 text-[10px] border rounded hover-elevate active-elevate-2 disabled:opacity-40 shrink-0 text-muted-foreground"
+                                  data-testid={`button-apply-item-${item.id}`}
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            ))
+                          )
+                        ) : tmplData.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground px-3 py-2">No options in this template</p>
                         ) : (
-                          tmplItems.map((item: any) => (
-                            <div key={item.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                          tmplData.map((opt: any, i: number) => (
+                            <div key={opt.id ?? i} className="flex items-center gap-1.5 px-2 py-1.5">
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium truncate">{item.itemName}</p>
-                                {(item.categoryName || item.room) && (
+                                <p className="text-xs font-medium truncate">{opt.name || "Untitled option"}</p>
+                                {(opt.brand || opt.sku) && (
                                   <p className="text-[10px] text-muted-foreground truncate">
-                                    {[item.categoryName, item.room].filter(Boolean).join(" · ")}
+                                    {[opt.brand, opt.sku].filter(Boolean).join(" · ")}
                                   </p>
                                 )}
                               </div>
-                              {item.budgetAmount && (
-                                <span className="text-[10px] text-muted-foreground shrink-0">${(item.budgetAmount / 100).toLocaleString("en-AU", { maximumFractionDigits: 0 })}</span>
+                              {opt.unitCost != null && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  {formatMoneyCents(opt.unitCost)}
+                                </span>
                               )}
-                              <button
-                                type="button"
-                                disabled={!projectId || applyTemplateMutation.isPending}
-                                onClick={() => projectId && applyTemplateMutation.mutate({ templateId: tmpl.id, itemIds: [item.id] })}
-                                className="h-5 px-1.5 text-[10px] border rounded hover-elevate active-elevate-2 disabled:opacity-40 shrink-0 text-muted-foreground"
-                                data-testid={`button-apply-item-${item.id}`}
-                              >
-                                Add
-                              </button>
                             </div>
                           ))
                         )}

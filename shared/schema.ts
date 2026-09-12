@@ -1568,6 +1568,11 @@ export const selections = pgTable("selections", {
   status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
   deadline: timestamp("deadline"),
   allowance: integer("allowance"), // Budget allowance in cents
+  // "PC" | "PS" | null. Mirrors selection_templates.allowance_type so /apply is
+  // a copy rather than a translation; before migration 0078 the template's
+  // answer was simply dropped. NOT the same vocabulary as
+  // estimate_items.allowance, which spells the long forms.
+  allowanceType: text("allowance_type"),
   sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
@@ -8155,11 +8160,10 @@ export const selectionTemplateOptions = pgTable("selection_template_options", {
 
   // Provenance, and the backfill's idempotency key.
   //
-  // The option's `id` inside templateData where it has one. Many do not: ids are
-  // minted at read time by a React ref (getStableId in
-  // SelectionTemplateItemDetail) and persisted only on an explicit save, so they
-  // are neither guaranteed nor reproducible outside that page session. The
-  // fallback is positional — `idx:0` for a flat option, `idx:2/1` for
+  // The option's `id` inside templateData where it has one. Many do not: ids
+  // were minted at read time into a React ref and persisted only on an explicit
+  // save, so an id is neither guaranteed nor reproducible from the blob alone.
+  // The fallback is positional — `idx:0` for a flat option, `idx:2/1` for
   // items[2].options[1] in the legacy `itemName` format.
   templateOptionId: text("template_option_id"),
 

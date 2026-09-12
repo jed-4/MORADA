@@ -62,7 +62,6 @@ const EstimateTemplates = lazy(() => import("@/pages/EstimateTemplates"));
 const EstimateTemplateDetail = lazy(() => import("@/pages/EstimateTemplateDetail"));
 const SelectionTemplates = lazy(() => import("@/pages/SelectionTemplates"));
 const SelectionTemplateDetail = lazy(() => import("@/pages/SelectionTemplateDetail"));
-const SelectionTemplateItemDetail = lazy(() => import("@/pages/SelectionTemplateItemDetail"));
 const POTemplates = lazy(() => import("@/pages/POTemplates"));
 const POTemplateDetail = lazy(() => import("@/pages/POTemplateDetail"));
 const RfqTemplates = lazy(() => import("@/pages/RfqTemplates"));
@@ -333,7 +332,6 @@ function Router() {
       <Route path="/estimate-templates/:templateId" component={EstimateTemplateDetail} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/selection-templates/:templateId" component={SelectionTemplateDetail} />
-      <Route path="/selection-templates/:templateId/items/:itemId" component={SelectionTemplateItemDetail} />
       <Route path="/po-templates" component={POTemplates} />
       <Route path="/po-templates/:templateId" component={POTemplateDetail} />
       <Route path="/rfq-templates" component={RfqTemplates} />

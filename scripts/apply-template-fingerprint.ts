@@ -48,6 +48,20 @@ const OUT = outIdx !== -1 ? process.argv[outIdx + 1] : "fingerprints/apply-templ
 // The reference: server/routes.ts as it stood BEFORE the extraction.
 // Copied character for character apart from `randomUUID()` -> `ctx.newId()`.
 // Do not refactor. Its only job is to disagree if the extraction drifted.
+//
+// TWO LINES have been changed since, deliberately, and only these two. Both are
+// marked CHANGED below, and both were argued for in shared/applyTemplate.ts's
+// header before being made:
+//
+//   * `allowance: budgetAmount || null` -> `?? null`. A $0 allowance is the
+//     "not included" flow and was being turned into NULL.
+//   * `allowanceType` is carried across. A template could say Prime Cost or
+//     Provisional Sum and /apply dropped it. Needs migration 0078.
+//
+// Editing this reference is what the "do not refactor" note is guarding
+// against, so: change it ONLY alongside a deliberate change to the builders, in
+// the same commit, with a marker like the two below. Every other drift still
+// fails the check, which is the whole point of keeping a second copy.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function referenceLegacy(items: any[], ctx: ApplyContext): ApplyRows {
@@ -60,7 +74,8 @@ function referenceLegacy(items: any[], ctx: ApplyContext): ApplyRows {
     room: item.room || null,
     selectionType: ctx.selectionType || "selection",
     status: "draft",
-    allowance: item.budgetAmount || null,
+    allowance: item.budgetAmount ?? null,          // CHANGED — was `|| null`
+    allowanceType: item.allowanceType ?? null,     // CHANGED — was dropped
     clientCanSeePrice: item.clientCanSeePrice ?? true,
     clientCanChange: item.clientCanChange ?? true,
     deadline: item.deadline ? new Date(item.deadline) : null,
@@ -120,7 +135,8 @@ function referenceFlat(template: any, items: any[], maxOrder: number, ctx: Apply
     room: tpl.room || null,
     selectionType: template.selectionType || "selection",
     status: "draft",
-    allowance: tpl.budgetAmount || null,
+    allowance: tpl.budgetAmount ?? null,           // CHANGED — was `|| null`
+    allowanceType: tpl.allowanceType ?? null,      // CHANGED — was dropped
     clientCanSeePrice: tpl.clientCanSeePrice ?? true,
     clientCanChange: tpl.clientCanChange ?? true,
     deadline: tpl.deadline || null,
@@ -213,8 +229,10 @@ const CASES: Case[] = [
     key: "legacy-multi-item",
     format: "legacy",
     data: [
-      { id: "i1", itemName: "Gutter profile", categoryName: "Roofing", sortOrder: 0, options: [{ name: "Quad" }, { name: "Half round" }] },
-      { id: "i2", itemName: "Fascia colour", categoryName: "Roofing", sortOrder: 1, options: [{ name: "Monument" }] },
+      // Two items, two different allowance types — PC and PS must not be
+      // collapsed into one another on the way through.
+      { id: "i1", itemName: "Gutter profile", categoryName: "Roofing", sortOrder: 0, allowanceType: "PC", options: [{ name: "Quad" }, { name: "Half round" }] },
+      { id: "i2", itemName: "Fascia colour", categoryName: "Roofing", sortOrder: 1, allowanceType: "PS", options: [{ name: "Monument" }] },
     ],
   },
   {
@@ -231,11 +249,16 @@ const CASES: Case[] = [
   {
     key: "legacy-falsy-traps",
     format: "legacy",
-    // budgetAmount 0 -> `|| null` makes it NULL; a $0 allowance is meaningful in
-    // Morada. unitCost 0 -> `?? null` keeps the zero. Both pinned deliberately.
+    // budgetAmount 0 used to hit `|| null` and become NULL; a $0 allowance is
+    // the "not included" flow and is meaningful in Morada, so it is `??` now and
+    // the zero survives. unitCost 0 always survived. Both pinned deliberately.
     data: [{
       itemName: "Zeroes",
       budgetAmount: 0,
+      // PS rather than PC so the mutant that nulls allowanceType is caught here
+      // too: with every case leaving it undefined, "dropped" and "absent" were
+      // the same row and the corpus could not tell them apart.
+      allowanceType: "PS",
       description: "",
       room: "",
       notes: "",
@@ -407,12 +430,28 @@ const MUTANTS: { name: string; builder: Builder }[] = [
     },
   },
   {
-    name: "a $0 allowance survives instead of becoming null",
+    // Inverted when the `|| null` bug was fixed. It used to mutate `||` into
+    // `??` and assert the corpus noticed; `??` is now the real behaviour, so a
+    // mutant that applies it is inert. The regression worth catching is the
+    // other direction — a $0 allowance quietly becoming NULL again, which is
+    // what breaks the "not included" flow.
+    name: "a $0 allowance is swallowed back into null",
     builder: {
       ...REAL,
       legacy: (items, ctx) => {
         const r = REAL.legacy(items, ctx);
-        r.selections.forEach((s, i) => { s.allowance = items[i].budgetAmount ?? null; });
+        r.selections.forEach((s, i) => { s.allowance = items[i].budgetAmount || null; });
+        return r;
+      },
+    },
+  },
+  {
+    name: "allowanceType is dropped on the way through",
+    builder: {
+      ...REAL,
+      legacy: (items, ctx) => {
+        const r = REAL.legacy(items, ctx);
+        r.selections.forEach((s) => { s.allowanceType = null; });
         return r;
       },
     },

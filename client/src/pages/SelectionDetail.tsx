@@ -28,6 +28,7 @@ import {
   isRestricted,
 } from "@/components/selections/selectionHelpers";
 import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
+import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -256,9 +257,7 @@ export default function SelectionDetail() {
   const { exportPdf, isExporting: isExportingPdf } = useSelectionPdfExport();
   const [isAddingOption, setIsAddingOption] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [optionsView, setOptionsView] = useState<"table" | "grid">("grid");
   const [localNotes, setLocalNotes] = useState<string>("");
   const [notesInitialized, setNotesInitialized] = useState(false);
   const [optionSpecifications, setOptionSpecifications] = useState<Record<string, any>>({});
@@ -267,9 +266,6 @@ export default function SelectionDetail() {
   const [descOpen, setDescOpen] = useState(false);
   const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [detailSpecImageUrlInput, setDetailSpecImageUrlInput] = useState("");
-  const [optionsSearchExpanded, setOptionsSearchExpanded] = useState(false);
-  const optionsSearchRef = useRef<HTMLInputElement>(null);
-  const optionsSearchWrapRef = useRef<HTMLDivElement>(null);
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
   // Allowance linking: a selection can point at a PC/PS estimate line so its
@@ -368,21 +364,6 @@ export default function SelectionDetail() {
     });
     return () => subscription.unsubscribe();
   }, [selectionForm.watch]);
-
-  useEffect(() => {
-    if (optionsSearchExpanded) optionsSearchRef.current?.focus();
-  }, [optionsSearchExpanded]);
-
-  useEffect(() => {
-    if (!optionsSearchExpanded) return;
-    const handler = (e: MouseEvent) => {
-      if (optionsSearchWrapRef.current && !optionsSearchWrapRef.current.contains(e.target as Node) && !searchTerm) {
-        setOptionsSearchExpanded(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [optionsSearchExpanded, searchTerm]);
 
   const updateSelectionMutation = useMutation({
     mutationFn: async (data: Partial<InsertSelection>) => {
@@ -1097,18 +1078,41 @@ export default function SelectionDetail() {
     }
   };
 
-  const filteredOptions = (selection?.options || []).filter((option) =>
-    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-    // Once a decision exists, the chosen/approved option leads — the rest are
-    // history and get muted in the card grid below
-    .sort((a, b) => {
-      const rank = (o: typeof a) => (o.approvedAt ? 0 : o.isSelectedByClient ? 1 : 2);
-      return rank(a) - rank(b) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-    });
+  // Once a decision exists, the chosen/approved option leads — the rest are
+  // history and get muted in the card grid below. Searching now happens inside
+  // OptionsSection, so this is ordering only.
+  const orderedOptions = (selection?.options || []).slice().sort((a, b) => {
+    const rank = (o: typeof a) => (o.approvedAt ? 0 : o.isSelectedByClient ? 1 : 2);
+    return rank(a) - rank(b) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  });
+
+  /**
+   * selection_options row + its attachments -> the shape OptionsSection reads.
+   * The hero is the first attachment, which is what both views used to dig out
+   * for themselves.
+   */
+  const optionViews: OptionView[] = orderedOptions.map((o) => ({
+    id: o.id,
+    name: o.name,
+    brand: o.brand,
+    sku: o.sku,
+    description: o.description,
+    url: o.url,
+    quantity: o.quantity,
+    unitType: o.unitType,
+    unitCost: o.unitCost,
+    totalCost: o.totalCost,
+    markupPercent: o.markupPercent,
+    visibleToClient: o.visibleToClient,
+    isSelectedByClient: o.isSelectedByClient,
+    approvedAt: o.approvedAt as any,
+    approvedBy: o.approvedBy,
+    lockedAt: o.lockedAt as any,
+    heroUrl: o.attachments?.[0]?.filePath ?? null,
+  }));
+
+  /** OptionsSection hands back an OptionView; the handlers want the real row. */
+  const rowOf = (v: OptionView) => orderedOptions.find((o) => o.id === v.id)!;
   const hasDecision = (selection?.options || []).some((o) => o.isSelectedByClient || o.approvedAt);
 
   // A withheld stub arrives without description/deadline/allowance/flags, so
@@ -1856,560 +1860,188 @@ export default function SelectionDetail() {
             )}
           </div>
 
-          {/* Options Section */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                Options ({selection.options?.length || 0})
-              </h2>
-              <div className="flex items-center gap-1.5">
-                {/* View toggle */}
-                <div className="flex items-center border border-border rounded-md overflow-hidden">
-                  <button
-                    onClick={() => setOptionsView("grid")}
-                    className={cn(
-                      "h-7 w-7 flex items-center justify-center transition-colors",
-                      optionsView === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
-                    )}
-                    data-testid="button-view-grid"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setOptionsView("table")}
-                    className={cn(
-                      "h-7 w-7 flex items-center justify-center transition-colors",
-                      optionsView === "table" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
-                    )}
-                    data-testid="button-view-table"
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Expandable search */}
-                <div ref={optionsSearchWrapRef} className="flex items-center flex-shrink-0">
-                  <div className={cn("flex items-center transition-all duration-200 overflow-hidden", optionsSearchExpanded ? "w-44" : "w-7")}>
-                    {optionsSearchExpanded ? (
-                      <div className="relative w-full">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                        <Input
-                          ref={optionsSearchRef}
-                          placeholder="Search options…"
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") { setSearchTerm(""); setOptionsSearchExpanded(false); }
-                          }}
-                          className="h-7 pl-7 pr-6 text-xs"
-                          data-testid="input-search-options"
-                        />
-                        {searchTerm && (
-                          <button
-                            type="button"
-                            onClick={() => { setSearchTerm(""); optionsSearchRef.current?.focus(); }}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover-elevate text-muted-foreground"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setOptionsSearchExpanded(true)}
-                        className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover-elevate active-elevate-2"
-                        data-testid="button-search-options"
-                      >
-                        <Search className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Add option — withheld selections are read-only here */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" className={cn(restricted && "hidden")} data-testid="button-add-option">
-                      <Plus className="w-3.5 h-3.5 mr-1" />
-                      Add Product
-                      <ChevronDown className="w-3 h-3 ml-1" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleAddOption} data-testid="menu-add-new-product">
-                      <Plus className="h-3.5 w-3.5 mr-2" />
-                      New product
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }} data-testid="menu-add-from-library">
-                      <BookMarked className="h-3.5 w-3.5 mr-2" />
-                      From product library
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setImportUrl(""); setUrlImportOpen(true); }} data-testid="menu-add-from-url">
-                      <Link2 className="h-3.5 w-3.5 mr-2" />
-                      Import from URL
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-            
-            {restricted ? (
+          {/* Options — the shared block, identical to the one on a selection
+              template. What differs is what a project can DO to an option:
+              approve, unapprove, lock, save to the library, and measure against
+              the allowance. Those are passed in as render props rather than
+              branched on inside the view. */}
+          <OptionsSection
+            options={optionViews}
+            viewStorageKey="selection-options-view"
+            allowanceCents={selection.allowance}
+            hasDecision={hasDecision}
+            chosenLabel="Client selected"
+            onOpen={(v) => {
+              const option = rowOf(v);
+              if (option.lockedAt) handleViewOption(option); else handleEditOption(option);
+            }}
+            bodyOverride={restricted ? (
               /* Not "no options" — the options exist and were withheld. */
               <RestrictedNotice className="py-4" />
-            ) : filteredOptions.length === 0 ? (
-              <div className="text-center py-12 border rounded-lg bg-muted/20">
-                <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No options yet</h3>
-                <p className="text-muted-foreground mb-4">
-                  {searchTerm ? "Try adjusting your search terms." : "Add options for your client to choose from."}
-                </p>
-                {!searchTerm && (
-                  <Button onClick={handleAddOption} data-testid="button-add-first-option">
-                    <Plus className="w-4 h-4 mr-2" />
+            ) : undefined}
+            emptyAction={(
+              <Button onClick={handleAddOption} data-testid="button-add-first-option">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Product
+              </Button>
+            )}
+            addControl={(
+              /* Add option — withheld selections are read-only here */
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className={cn(restricted && "hidden")} data-testid="button-add-option">
+                    <Plus className="w-3.5 h-3.5 mr-1" />
                     Add Product
+                    <ChevronDown className="w-3 h-3 ml-1" />
                   </Button>
-                )}
-              </div>
-            ) : optionsView === "grid" ? (
-              /* Grid View - Gallery Style */
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredOptions.map((option) => {
-                  const heroAttachment = option.attachments?.[0];
-                  const isApproved = !!option.approvedAt;
-                  const isLocked = !!option.lockedAt;
-                  return (
-                    <Card 
-                      key={option.id}
-                      className={cn(
-                        "transition-all duration-200 group hover-elevate cursor-pointer",
-                        option.isSelectedByClient && !isApproved && "ring-1 ring-[hsl(var(--amber))]",
-                        isApproved && "ring-1 ring-[hsl(var(--sage))]",
-                        // Not the pick — fade back so the decision reads first
-                        hasDecision && !option.isSelectedByClient && !isApproved &&
-                          "opacity-55 saturate-50 hover:opacity-100 hover:saturate-100"
-                      )}
-                      onClick={() => { if (isLocked) handleViewOption(option); else handleEditOption(option); }}
-                      data-testid={`card-option-${option.id}`}
-                    >
-                      {/* Hero image */}
-                      <div className="h-40 bg-muted flex items-center justify-center relative overflow-hidden">
-                        {heroAttachment?.filePath ? (
-                          <img
-                            src={heroAttachment.filePath}
-                            alt={option.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Camera className="w-10 h-10 text-muted-foreground/30" />
-                        )}
-                        <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {!option.visibleToClient && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                              <EyeOff className="w-3 h-3 mr-1" />
-                              Hidden
-                            </Badge>
-                          )}
-                          {isLocked && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                              <Lock className="w-3 h-3 mr-1" />
-                              Locked
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="absolute top-2 right-2 flex flex-row items-center gap-1">
-                          {isApproved ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate cursor-default">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  Approved
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                <p className="text-xs">
-                                  {option.approvedBy || "Admin"}{option.approvedAt ? ` · ${format(new Date(option.approvedAt), "d MMM yyyy")}` : ""}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : option.isSelectedByClient ? (
-                            <Badge className="bg-[hsl(var(--amber))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Client selected
-                            </Badge>
-                          ) : null}
-                          {/* Was `isAdminUser` alone, which hid the whole menu —
-                              and with it the only Approve control in the DEFAULT
-                              view — from a site manager who actually holds
-                              `projects.selections:approve`. The table view had
-                              been checking the permission all along; grid never
-                              did, which is a large part of why `approvedAt` is
-                              unset on every option in production. */}
-                          {(isAdminUser || canApproveSelections) && (
-                            <AlertDialog>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-6 w-6 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <MoreVertical className="w-3.5 h-3.5" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); handleViewOption(option); }}
-                                  >
-                                    <Eye className="w-4 h-4 mr-2" />
-                                    View
-                                  </DropdownMenuItem>
-                                  {canApproveSelections && !isApproved && (
-                                    <DropdownMenuItem
-                                      onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
-                                      disabled={approveMutation.isPending}
-                                    >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
-                                      Approve
-                                    </DropdownMenuItem>
-                                  )}
-                                  {isAdminUser && !isLocked && (
-                                    <DropdownMenuItem
-                                      onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
-                                    >
-                                      <Edit3 className="w-4 h-4 mr-2" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                  )}
-                                  {canApproveSelections && isApproved && (
-                                    <AlertDialogTrigger asChild>
-                                      <DropdownMenuItem
-                                        onSelect={(e) => e.preventDefault()}
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <XCircle className="w-4 h-4 mr-2" />
-                                        Remove approval
-                                      </DropdownMenuItem>
-                                    </AlertDialogTrigger>
-                                  )}
-                                  {/* Editing the catalogue and deleting an option
-                                      are not approval rights — they stay on
-                                      isAdminUser, unchanged. */}
-                                  {isAdminUser && (
-                                    <>
-                                      <DropdownMenuItem
-                                        onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
-                                        disabled={saveToLibraryMutation.isPending}
-                                      >
-                                        <BookMarked className="w-4 h-4 mr-2" />
-                                        Save to Product Library
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
-                                        className="text-destructive"
-                                        disabled={isLocked}
-                                      >
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                              <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Remove approval?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will unlock <span className="font-medium text-foreground">{option.name}</span> and revert the selection status to submitted.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => unapproveMutation.mutate(option.id)}>
-                                    Remove approval
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                      </div>
-                      <CardContent className="px-3 pt-2 pb-2">
-                        <div className="font-medium text-sm truncate">{option.name}</div>
-                        {(option.brand || option.sku) && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
-                          </div>
-                        )}
-                        <div className="mt-1.5 flex items-end justify-between gap-1">
-                          <span className="text-xs text-muted-foreground">
-                            {option.quantity} {option.unitType}
-                          </span>
-                          <div className="text-right">
-                            {(() => {
-                              const displayCents = option.totalCost != null
-                                ? option.totalCost
-                                : option.unitCost != null
-                                  ? Math.round(option.unitCost * (option.quantity || 1) * (1 + (option.markupPercent || 0) / 100))
-                                  : null;
-                              const showVariance = selection.allowance != null && selection.allowance > 0 && displayCents != null;
-                              const variance = showVariance ? displayCents! - selection.allowance! : null;
-                              return (
-                                <>
-                                  {showVariance && variance !== 0 && (
-                                    <div className={`text-[10px] font-medium ${variance! > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
-                                      {variance! > 0 ? "+" : ""}${(Math.abs(variance!) / 100).toFixed(0)}
-                                    </div>
-                                  )}
-                                  {displayCents != null && (
-                                    <div className="text-sm font-semibold">
-                                      ${(displayCents / 100).toFixed(2)}
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                        {/* Approve, promoted out of the hover-only kebab.
-                            `approvedAt` is what the server's visibility rules
-                            actually gate on (server/selectionVisibility.ts), and
-                            the ONLY control in the product that writes it used to
-                            be a menu item you had to hover the right card to
-                            find.
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleAddOption} data-testid="menu-add-new-product">
+                    <Plus className="h-3.5 w-3.5 mr-2" />
+                    New product
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }} data-testid="menu-add-from-library">
+                    <BookMarked className="h-3.5 w-3.5 mr-2" />
+                    From product library
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setImportUrl(""); setUrlImportOpen(true); }} data-testid="menu-add-from-url">
+                    <Link2 className="h-3.5 w-3.5 mr-2" />
+                    Import from URL
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            renderPrimaryAction={(v) => {
+              const option = rowOf(v);
+              const isApproved = !!option.approvedAt;
+              /* Approve, promoted out of the hover-only kebab. `approvedAt` is
+                 what the server's visibility rules actually gate on
+                 (server/selectionVisibility.ts), and the ONLY control in the
+                 product that writes it used to be a menu item you had to hover
+                 the right card to find.
 
-                            Shown on the client's pick when there is one. When
-                            nothing has been picked at all it shows on every
-                            option, because that is the state almost every
-                            production selection is actually in — gating purely on
-                            `isSelectedByClient` would leave the builder with no
-                            visible way to approve anything. Once a decision
-                            exists, the other cards fall back to the kebab. */}
-                        {canApproveSelections && !isApproved &&
-                          (option.isSelectedByClient || !hasDecision) && (
-                          <Button
-                            size="sm"
-                            className="mt-2 w-full h-7 text-xs"
-                            onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
-                            disabled={approveMutation.isPending}
-                            data-testid={`button-approve-option-${option.id}`}
-                          >
-                            {approveMutation.isPending ? (
-                              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                            ) : (
-                              <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                            )}
-                            Approve
-                          </Button>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Table View */
-              <div className="border rounded-lg overflow-hidden">
-                <LineItemTable
+                 Shown on the client's pick when there is one. When nothing has
+                 been picked at all it shows on every option, because that is the
+                 state almost every production selection is actually in — gating
+                 purely on `isSelectedByClient` would leave the builder with no
+                 visible way to approve anything. Once a decision exists, the
+                 other cards fall back to the kebab. */
+              if (!canApproveSelections || isApproved) return null;
+              if (!option.isSelectedByClient && hasDecision) return null;
+              return (
+                <Button
                   size="sm"
-                  data={filteredOptions}
-                  rowKey={(option) => option.id}
-                  rowTestId={(option) => `row-option-${option.id}`}
-                  onRowClick={(option) => { if (option.lockedAt) { handleViewOption(option); } else { handleEditOption(option); } }}
-                  rowClassName={(option, idx) => cn("hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
-                  columns={[
-                    {
-                      key: "image",
-                      header: "Image",
-                      width: 64,
-                      truncate: false,
-                      cell: (option) => {
-                        const heroAtt = option.attachments?.[0];
-                        return (
-                          <div className="w-10 h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
-                            {heroAtt?.filePath ? (
-                              <img src={heroAtt.filePath} alt={option.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <Camera className="w-4 h-4 text-muted-foreground/40" />
-                            )}
-                          </div>
-                        );
-                      },
-                    },
-                    {
-                      key: "option",
-                      header: "Option",
-                      truncate: false,
-                      cell: (option) => (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium text-sm">{option.name}</span>
-                          {option.brand && (
-                            <span className="text-xs text-muted-foreground">{option.brand}</span>
-                          )}
-                          {option.url && (
-                            <a
-                              href={option.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              View product
-                            </a>
-                          )}
-                        </div>
-                      ),
-                    },
-                    {
-                      key: "sku",
-                      header: "SKU",
-                      cell: (option) => (
-                        <span className="font-mono text-xs text-muted-foreground">{option.sku || "-"}</span>
-                      ),
-                    },
-                    {
-                      key: "qty",
-                      header: "Qty",
-                      align: "center",
-                      cell: (option) => `${option.quantity} ${option.unitType}`,
-                    },
-                    {
-                      key: "unitPrice",
-                      header: "Unit Price",
-                      align: "right",
-                      cell: (option) => `$${((option.unitCost || 0) / 100).toFixed(2)}`,
-                    },
-                    {
-                      key: "amount",
-                      header: "Amount",
-                      align: "right",
-                      className: "font-semibold",
-                      cell: (option) => `$${((option.totalCost || 0) / 100).toFixed(2)}`,
-                    },
-                    {
-                      key: "status",
-                      header: "Status",
-                      align: "center",
-                      truncate: false,
-                      cell: (option) => {
-                        const isApprovedRow = !!option.approvedAt;
-                        const isLockedRow = !!option.lockedAt;
-                        return (
-                          <div className="flex flex-col gap-1 items-center">
-                            {isApprovedRow ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 cursor-default no-default-active-elevate">
-                                    <CheckCircle className="w-3 h-3 mr-1" />
-                                    Approved
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="text-xs">
-                                    {option.approvedBy || "Admin"}{option.approvedAt ? ` · ${format(new Date(option.approvedAt), "d MMM yyyy")}` : ""}
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : isLockedRow ? (
-                              <Badge variant="outline" className="text-xs">
-                                <Lock className="w-3 h-3 mr-1" />
-                                Locked
-                              </Badge>
-                            ) : option.isSelectedByClient ? (
-                              <Badge variant="outline" className="text-xs">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Selected
-                              </Badge>
-                            ) : !option.visibleToClient ? (
-                              <Badge variant="outline" className="text-xs text-muted-foreground">
-                                <EyeOff className="w-3 h-3 mr-1" />
-                                Hidden
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                <Eye className="w-3 h-3 mr-1" />
-                                Visible
-                              </Badge>
-                            )}
-                          </div>
-                        );
-                      },
-                    },
-                  ]}
-                  actions={(option) => {
-                    const isLockedRow = !!option.lockedAt;
-                    const isApprovedRow = !!option.approvedAt;
-                    return (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          data-testid={`button-option-menu-${option.id}`}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                  className="mt-2 w-full h-7 text-xs"
+                  onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                  disabled={approveMutation.isPending}
+                  data-testid={`button-approve-option-${option.id}`}
+                >
+                  {approveMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  Approve
+                </Button>
+              );
+            }}
+            renderMenu={(v, place) => {
+              const option = rowOf(v);
+              const isApproved = !!option.approvedAt;
+              const isLocked = !!option.lockedAt;
+              /* Was `isAdminUser` alone, which hid the whole menu — and with it
+                 the only Approve control in the DEFAULT view — from a site
+                 manager who actually holds `projects.selections:approve`. */
+              if (!isAdminUser && !canApproveSelections) return null;
+              return (
+                <AlertDialog>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className={cn(
+                          "h-6 w-6",
+                          // Over the hero image in the grid, so it needs a
+                          // backdrop and only appears on card hover. In a table
+                          // row there is no `group` ancestor to hover.
+                          place === "grid" && "bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity",
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                        data-testid={`button-option-menu-${option.id}`}
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewOption(option); }}>
+                        <Eye className="w-4 h-4 mr-2" />
+                        View
+                      </DropdownMenuItem>
+                      {canApproveSelections && !isApproved && (
                         <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); handleViewOption(option); }}
+                          onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                          disabled={approveMutation.isPending}
                         >
-                          <Eye className="w-4 h-4 mr-2" />
-                          View
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Approve
                         </DropdownMenuItem>
-                        {!isLockedRow && (
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
-                        >
+                      )}
+                      {isAdminUser && !isLocked && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
                           <Edit3 className="w-4 h-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        )}
-                        {canApproveSelections && !isApprovedRow && (
-                          <DropdownMenuItem
-                            onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
-                            disabled={approveMutation.isPending}
-                          >
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Approve
-                          </DropdownMenuItem>
-                        )}
-                        {canApproveSelections && isApprovedRow && (
-                          <DropdownMenuItem
-                            onClick={(e) => { e.stopPropagation(); unapproveMutation.mutate(option.id); }}
-                            disabled={unapproveMutation.isPending}
-                          >
+                      )}
+                      {canApproveSelections && isApproved && (
+                        <AlertDialogTrigger asChild>
+                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
                             <XCircle className="w-4 h-4 mr-2" />
                             Remove approval
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
-                          disabled={saveToLibraryMutation.isPending}
-                        >
-                          <BookMarked className="w-4 h-4 mr-2" />
-                          Save to Product Library
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); if (!isLockedRow) deleteOptionMutation.mutate(option.id); }}
-                          className="text-destructive"
-                          disabled={isLockedRow}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  );
-                  }}
-                />
-              </div>
-            )}
-          </div>
+                        </AlertDialogTrigger>
+                      )}
+                      {/* Editing the catalogue and deleting an option are not
+                          approval rights — they stay on isAdminUser. */}
+                      {isAdminUser && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
+                            disabled={saveToLibraryMutation.isPending}
+                          >
+                            <BookMarked className="w-4 h-4 mr-2" />
+                            Save to Product Library
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
+                            className="text-destructive"
+                            disabled={isLocked}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove approval?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will unlock <span className="font-medium text-foreground">{option.name}</span> and revert the selection status to submitted.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => unapproveMutation.mutate(option.id)}>
+                        Remove approval
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              );
+            }}
+          />
 
           {/* Procurement section — only for ordered/received */}
           {((selection as any).status === "ordered" || (selection as any).status === "received") && (
