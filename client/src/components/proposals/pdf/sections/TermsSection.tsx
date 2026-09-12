@@ -1,6 +1,7 @@
 import { Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
 interface TermsSectionProps {
   proposal: Proposal;
@@ -20,7 +21,7 @@ export function TermsSection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
   showFooter,

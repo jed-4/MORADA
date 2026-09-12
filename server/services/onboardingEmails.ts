@@ -265,7 +265,7 @@ async function claimAndSend(
 
   try {
     const { subject, html } = await build();
-    await sendGenericEmail({ to: toEmail, subject, html, from: FROM });
+    await sendGenericEmail({ to: toEmail, subject, html, from: FROM, context: { type: `onboarding:${key}`, id: companyId, companyId } });
     console.log(`[onboarding-email] sent '${key}' to ${toEmail} (company ${companyId})`);
     return true;
   } catch (err) {

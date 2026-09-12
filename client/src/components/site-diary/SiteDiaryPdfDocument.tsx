@@ -1,13 +1,20 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { SiteDiaryEntry, SiteDiaryTemplate, TemplateFieldDefinition } from "@shared/schema";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 
-const PDF_PRIMARY = "#A890D4";
+registerPdfFonts();
+
+// #A890D4 was the FIGMA swatch, not the colour the app ships. Every other
+// document takes the company's own brand colour; these internal ones had
+// no brandColor prop at all, so they printed in a purple from nowhere.
+const PDF_PRIMARY = PDF_COLORS.brandFallback;
 
 const styles = StyleSheet.create({
   page: {
     padding: 40,
     fontSize: 10,
-    fontFamily: "Helvetica",
+    fontFamily: PDF_FONT_FAMILY,
   },
   header: {
     marginBottom: 20,
@@ -16,42 +23,42 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontFamily: "Helvetica-Bold",
-    color: "#1a1a2e",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.ink,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 11,
-    color: "#666666",
+    color: PDF_COLORS.inkMuted,
   },
   entryCard: {
     marginBottom: 14,
-    border: "1 solid #e2e8f0",
+    border: `1 solid ${PDF_COLORS.border}`,
     borderRadius: 4,
     overflow: "hidden",
   },
   entryHeader: {
-    backgroundColor: "#f8f6fc",
+    backgroundColor: PDF_COLORS.surfaceSubtle,
     padding: 8,
-    borderBottom: "1 solid #e2e8f0",
+    borderBottom: `1 solid ${PDF_COLORS.border}`,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   entryTitle: {
     fontSize: 11,
-    fontFamily: "Helvetica-Bold",
-    color: "#1a1a2e",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.ink,
     flex: 1,
   },
   entryDate: {
     fontSize: 9,
-    color: "#666666",
+    color: PDF_COLORS.inkMuted,
   },
   templateBadge: {
     fontSize: 8,
-    color: "#7c5bb0",
-    backgroundColor: "#f0ebf7",
+    color: PDF_COLORS.inkMuted,
+    backgroundColor: PDF_COLORS.surfaceMuted,
     padding: "2 6",
     borderRadius: 3,
     marginLeft: 8,
@@ -63,29 +70,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: 4,
     paddingBottom: 4,
-    borderBottom: "0.5 solid #f1f5f9",
+    borderBottom: `0.5 solid ${PDF_COLORS.surfaceMuted}`,
   },
   fieldLabel: {
     width: "30%",
     fontSize: 9,
-    fontFamily: "Helvetica-Bold",
-    color: "#64748b",
+    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+    color: PDF_COLORS.inkMuted,
   },
   fieldValue: {
     width: "70%",
     fontSize: 9,
-    color: "#334155",
+    color: PDF_COLORS.ink,
   },
   metaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    borderTop: "0.5 solid #e2e8f0",
+    borderTop: `0.5 solid ${PDF_COLORS.border}`,
     paddingTop: 6,
     marginTop: 4,
   },
   metaText: {
     fontSize: 8,
-    color: "#94a3b8",
+    color: PDF_COLORS.inkFaint,
   },
   footer: {
     position: "absolute",
@@ -94,16 +101,16 @@ const styles = StyleSheet.create({
     right: 40,
     flexDirection: "row",
     justifyContent: "space-between",
-    borderTop: "0.5 solid #e2e8f0",
+    borderTop: `0.5 solid ${PDF_COLORS.border}`,
     paddingTop: 6,
   },
   footerText: {
     fontSize: 7,
-    color: "#94a3b8",
+    color: PDF_COLORS.inkFaint,
   },
   noEntries: {
     textAlign: "center",
-    color: "#94a3b8",
+    color: PDF_COLORS.inkFaint,
     marginTop: 40,
     fontSize: 12,
   },

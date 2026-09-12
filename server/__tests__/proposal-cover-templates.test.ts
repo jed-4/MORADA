@@ -2,7 +2,11 @@
  * The three cover layouts, rendered for real and read back.
  *
  * Run:
- *   npx tsx --tsconfig tsconfig.test.json server/__tests__/proposal-cover-templates.test.ts
+ *   PDF_FONT_DIR="$PWD/client/public/fonts" \
+ *     npx tsx --tsconfig tsconfig.test.json server/__tests__/proposal-cover-templates.test.ts
+ *
+ * PDF_FONT_DIR because the faces are registered by browser path; under Node
+ * fontkit resolves "/fonts/..." against the filesystem root.
  *
  * A cover is one page that carries five facts. The way these break is not a
  * crash — it is a template that quietly drops the client's name, or the

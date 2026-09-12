@@ -20,8 +20,14 @@ import { Font } from "@react-pdf/renderer";
  * Inter is no longer published as static per-weight TTF — the current releases
  * are variable fonts, and fontkit renders only a variable font's default
  * instance, so every weight would come out identical. The @fontsource static
- * per-weight WOFF builds are the format that actually gives us four weights.
- * Latin subset: 4 files, ~89KB total.
+ * per-weight WOFF builds are the format that actually gives us real weights.
+ *
+ * All eight faces come from @fontsource/inter@5.1.0, deliberately one version.
+ * The uprights were originally taken from 4.5.15, which packages Inter 3 and
+ * ships NO italic at all — Inter only gained a true italic in v4. Mixing the
+ * two would set an italic word in noticeably different metrics from the
+ * upright text around it, so the whole family moved together.
+ * Latin subset: 8 files, ~260KB total.
  *
  * ── Registering twice ───────────────────────────────────────────────────────
  * `Font.register` is global and idempotent per family in practice, but this is
@@ -31,24 +37,16 @@ import { Font } from "@react-pdf/renderer";
 const INTER = "Inter";
 
 /**
- * Where the font files are, for whoever is doing the rendering.
+ * Where the font files live.
  *
- * In the browser `src` is a URL and "/fonts/Inter-400.woff" is exactly right.
- * Under Node — which is how the PDF render tests drive the real document —
- * @react-pdf hands the same string to the filesystem, so it looks for
- * /fonts/Inter-400.woff at the root of the disk and the render dies with
- * ENOENT. Registering Inter is what silently broke
- * server/__tests__/proposal-pdf-section-intro.test.ts.
- *
- * The Node branch is relative to the working directory because that is what
- * the tests document: they are run from the repository root.
+ * In the browser these are same-origin absolute paths and the default is
+ * right. Under Node — a render test, or a future server-side render — fontkit
+ * resolves "/fonts/Inter-400.woff" against the FILESYSTEM root and throws
+ * ENOENT, so the base has to be a real directory instead. Set
+ * PDF_FONT_DIR for that case.
  */
-const FONT_DIR =
-  typeof window === "undefined"
-    ? `${globalThis.process?.cwd?.() ?? "."}/client/public/fonts`
-    : "/fonts";
-
-const face = (file: string) => `${FONT_DIR}/${file}`;
+const FONT_BASE =
+  (typeof process !== "undefined" && process.env?.PDF_FONT_DIR) || "/fonts";
 
 let registered = false;
 
@@ -59,21 +57,20 @@ export function registerPdfFonts(): void {
   Font.register({
     family: INTER,
     fonts: [
-      { src: face("Inter-400.woff"), fontWeight: 400 },
-      { src: face("Inter-500.woff"), fontWeight: 500 },
-      { src: face("Inter-600.woff"), fontWeight: 600 },
-      { src: face("Inter-700.woff"), fontWeight: 700 },
-      // Italics are not optional. @react-pdf does NOT synthesise a slant: ask
-      // a registered family with no italic face for fontStyle "italic" and it
-      // throws "Could not resolve font" and takes the whole render down with
-      // it. RichTextBlocks maps a builder's <em> straight onto that style, so
-      // without these, italicising one word in a cover letter produces no PDF
-      // at all. All eight faces come from @fontsource/inter@5.1.0 so the
-      // metrics cannot mismatch.
-      { src: face("Inter-400i.woff"), fontWeight: 400, fontStyle: "italic" },
-      { src: face("Inter-500i.woff"), fontWeight: 500, fontStyle: "italic" },
-      { src: face("Inter-600i.woff"), fontWeight: 600, fontStyle: "italic" },
-      { src: face("Inter-700i.woff"), fontWeight: 700, fontStyle: "italic" },
+      { src: `${FONT_BASE}/Inter-400.woff`, fontWeight: 400 },
+      { src: `${FONT_BASE}/Inter-500.woff`, fontWeight: 500 },
+      { src: `${FONT_BASE}/Inter-600.woff`, fontWeight: 600 },
+      { src: `${FONT_BASE}/Inter-700.woff`, fontWeight: 700 },
+      // Italics are NOT optional. @react-pdf does not synthesise a slant: ask
+      // a family with no italic face for fontStyle "italic" and it throws
+      // "Could not resolve font", killing the whole render. The proposal's
+      // rich-text renderer maps a builder's <em> straight onto that style, so
+      // without these four faces italicising one word in a proposal would
+      // break the PDF entirely.
+      { src: `${FONT_BASE}/Inter-400i.woff`, fontWeight: 400, fontStyle: "italic" },
+      { src: `${FONT_BASE}/Inter-500i.woff`, fontWeight: 500, fontStyle: "italic" },
+      { src: `${FONT_BASE}/Inter-600i.woff`, fontWeight: 600, fontStyle: "italic" },
+      { src: `${FONT_BASE}/Inter-700i.woff`, fontWeight: 700, fontStyle: "italic" },
     ],
   });
 

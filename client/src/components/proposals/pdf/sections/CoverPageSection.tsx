@@ -46,7 +46,7 @@ export function CoverPageSection({
   companyLogo,
   companyName = "Your Company",
   companyPhone,
-  primaryColor = "#3B82F6",
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   secondaryColor,
   documentStyle = "style1",

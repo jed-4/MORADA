@@ -24,7 +24,7 @@ export function SignatureSection({
   companyName,
   companyPhone,
   logoUrl,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
   showFooter,

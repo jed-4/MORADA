@@ -45,6 +45,8 @@ import {
   Mail,
   Upload,
   ExternalLink,
+  Copy,
+  GitBranch,
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
@@ -1075,6 +1077,9 @@ export default function VariationDetail() {
     variationSends.find((s: any) => s.id === (variation as any)?.signedSendId) ??
     variationSends[0];
 
+  /** What became of the most recent email. The list is ordered newest first. */
+  const latestDelivery = (variationSends[0] as any)?.delivery ?? null;
+
   /** The summary rows.
    *
    *  Component rows use `!== 0`, not `> 0`. A vendor credit makes the bills
@@ -1444,6 +1449,94 @@ export default function VariationDetail() {
     },
   });
 
+  /**
+   * Duplicate for revision.
+   *
+   * Navigates to the copy rather than staying put: the whole point is to keep
+   * working on the new one, and leaving you on the original is how you end up
+   * editing the wrong document.
+   */
+  /** Shared by both doors into duplication — the kebab and the reject dialog. */
+  const onDuplicated = (copy: any) => {
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations"),
+    });
+    queryClient.invalidateQueries({
+      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects",
+    });
+    setRejectDialogOpen(false);
+    setRejectReason("");
+
+    // Say what moved. A silent duplicate that quietly took the bills off the
+    // original is the kind of thing you only discover at invoicing time.
+    const moved = [
+      copy?.movedBills ? `${copy.movedBills} bill${copy.movedBills === 1 ? "" : "s"}` : null,
+      copy?.movedTimesheets ? `${copy.movedTimesheets} timesheet${copy.movedTimesheets === 1 ? "" : "s"}` : null,
+    ].filter(Boolean);
+    toast({
+      title: `${copy?.variationNumber ?? "Variation"} created`,
+      description: moved.length
+        ? `${moved.join(" and ")} moved across from ${copy?.duplicatedFrom?.variationNumber ?? "the original"}.`
+        : "A draft copy you can re-price and send again.",
+    });
+
+    // Go to the copy. The point is to keep working on it, and leaving you on
+    // the original is how you end up editing the wrong document.
+    setLocation(
+      projectIdFromParams
+        ? `/projects/${projectIdFromParams}/variations/${copy.id}`
+        : `/variations/${copy.id}`,
+    );
+  };
+
+  const duplicateMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/variations/${effectiveVariationId}/duplicate`, "POST", {}),
+    onSuccess: onDuplicated,
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to duplicate variation", variant: "destructive" });
+    },
+  });
+
+  /**
+   * Reject, then duplicate — in that order, and the order matters.
+   *
+   * The server only moves bills and timesheets out of a *rejected* variation.
+   * Duplicating first would leave the costs on the original and hand back an
+   * empty revision, which is the bug this button exists to avoid.
+   */
+  const rejectAndReviseMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
+        status: "rejected",
+        rejectionReason: reason,
+      });
+      return apiRequest(`/api/variations/${effectiveVariationId}/duplicate`, "POST", {});
+    },
+    onSuccess: onDuplicated,
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate for revision",
+        variant: "destructive",
+      });
+    },
+  });
+
+  /** The copy is made from the saved record, so unsaved edits would not reach
+   *  it. Say so rather than quietly dropping them. */
+  const handleDuplicate = () => {
+    if (
+      isDirty &&
+      !window.confirm(
+        "You have unsaved changes. The copy is made from the last saved version, so those changes won't be included. Duplicate anyway?",
+      )
+    ) {
+      return;
+    }
+    duplicateMutation.mutate();
+  };
+
   // T002: Attachment upload handler
   const handleUploadAttachment = async (file: File) => {
     if (!effectiveVariationId) return;
@@ -1775,12 +1868,78 @@ export default function VariationDetail() {
                         Move to Action
                       </DropdownMenuItem>
                     )}
+                    {/* Always available. An approved variation is locked, which
+                        makes duplicating it the only way to draft a change to
+                        the same work without unpicking the approval. */}
+                    <DropdownMenuItem
+                      onClick={handleDuplicate}
+                      disabled={duplicateMutation.isPending}
+                      data-testid="button-duplicate-variation"
+                    >
+                      {duplicateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Copy className="w-3.5 h-3.5 mr-2" />}
+                      Duplicate
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
             </div>
           }
         />
+
+        {/* The revision chain. A rejected variation and the draft that replaced
+            it are two documents describing one piece of work; without this the
+            connection lives only in whoever pressed the button. Both ends are
+            shown, so you can walk it from either. */}
+        {isEditMode && ((variation as any)?.supersedes || (variation as any)?.supersededBy) && (
+          <div
+            className="rounded-[10px] bg-muted/60 border border-border px-4 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+            data-testid="banner-revision-chain"
+          >
+            <GitBranch className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            {(variation as any)?.supersedes && (
+              <span className="text-muted-foreground">
+                Revises{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLocation(
+                      projectIdFromParams
+                        ? `/projects/${projectIdFromParams}/variations/${(variation as any).supersedes.id}`
+                        : `/variations/${(variation as any).supersedes.id}`,
+                    )
+                  }
+                  className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+                  data-testid="link-supersedes"
+                >
+                  {(variation as any).supersedes.variationNumber}
+                </button>
+                {(variation as any).supersedes.status === "rejected" ? ", which was rejected." : "."}
+              </span>
+            )}
+            {(variation as any)?.supersededBy && (
+              <span className="text-muted-foreground">
+                Replaced by{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLocation(
+                      projectIdFromParams
+                        ? `/projects/${projectIdFromParams}/variations/${(variation as any).supersededBy.id}`
+                        : `/variations/${(variation as any).supersededBy.id}`,
+                    )
+                  }
+                  className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+                  data-testid="link-superseded-by"
+                >
+                  {(variation as any).supersededBy.variationNumber}
+                </button>
+                {((variation as any).supersededByCount ?? 1) > 1
+                  ? ` and ${(variation as any).supersededByCount - 1} earlier revision${(variation as any).supersededByCount - 1 === 1 ? "" : "s"}.`
+                  : "."}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Approved-lock banner. Sits under the header card rather than inside
             it — the card is the document's identity and figures, and a banner
@@ -1822,6 +1981,7 @@ export default function VariationDetail() {
                         clientSignedDate={(variation as any).clientSignedDate}
                         status={variation?.status}
                         rejectionReason={(variation as any).rejectionReason}
+                        delivery={latestDelivery}
                       />
                     </DocumentSection>
 
@@ -2762,10 +2922,36 @@ export default function VariationDetail() {
             rows={4}
             data-testid="textarea-reject-reason"
           />
-          <DialogFooter>
+          {/* Rejecting is rarely the end of it — usually the work still needs
+              doing at a different price. Offering the revision here saves
+              rebuilding the document by hand, and links the two on record. */}
+          <p className="text-body-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Duplicate for revision</span> rejects this
+            variation and opens a draft copy you can re-price
+            {(existingVariationBills.length > 0 || existingVariationTimesheets.length > 0) && (
+              <>
+                {" "}— its {[
+                  existingVariationBills.length > 0
+                    ? `${existingVariationBills.length} bill${existingVariationBills.length === 1 ? "" : "s"}`
+                    : null,
+                  existingVariationTimesheets.length > 0
+                    ? `${existingVariationTimesheets.length} timesheet${existingVariationTimesheets.length === 1 ? "" : "s"}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" and ")}{" "}
+                move across, so the cost is counted once
+              </>
+            )}
+            .
+          </p>
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button type="button" variant="outline" onClick={() => { setRejectDialogOpen(false); setRejectReason(""); }} data-testid="button-cancel-reject">Cancel</Button>
-            <Button type="button" variant="destructive" onClick={() => rejectMutation.mutate(rejectReason)} disabled={!rejectReason.trim() || rejectMutation.isPending} data-testid="button-confirm-reject">
-              {rejectMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting...</> : <><X className="mr-2 h-4 w-4" />Reject Variation</>}
+            <Button type="button" variant="destructive" onClick={() => rejectMutation.mutate(rejectReason)} disabled={!rejectReason.trim() || rejectMutation.isPending || rejectAndReviseMutation.isPending} data-testid="button-confirm-reject">
+              {rejectMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting...</> : <><X className="mr-2 h-4 w-4" />Reject</>}
+            </Button>
+            <Button type="button" onClick={() => rejectAndReviseMutation.mutate(rejectReason)} disabled={!rejectReason.trim() || rejectMutation.isPending || rejectAndReviseMutation.isPending} data-testid="button-reject-and-revise">
+              {rejectAndReviseMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Duplicating...</> : <><GitBranch className="mr-2 h-4 w-4" />Duplicate for revision</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2796,7 +2982,11 @@ export default function VariationDetail() {
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
-          onSend={() => { setPreviewOpen(false); setSendModalOpen(true); }}
+          /* handleOpenSendModal, not setSendModalOpen — it is what mints the
+             portal token and composes the subject and message. Opening the
+             dialog directly gave the preview's Send button an empty form,
+             while the same dialog from the overflow menu came prefilled. */
+          onSend={() => { setPreviewOpen(false); void handleOpenSendModal(); }}
           sidebar={
             docColumns && (
               <VariationColumnSidebar

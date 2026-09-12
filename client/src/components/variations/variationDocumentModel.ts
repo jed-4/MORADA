@@ -63,6 +63,18 @@ export interface VariationDocLine {
    *  the document's column config explicitly asks for it. */
   unitCostExCents: Cents;
   unitPriceExCents: Cents;
+  /**
+   * Client price per unit, INC GST.
+   *
+   * Derived from the line's own inc-GST total rather than by multiplying the
+   * ex-GST unit price by 1.1, for two reasons. It is automatically right for a
+   * non-taxable line, which carries no GST at all. And it keeps the column
+   * reconciling with Amount: a client who multiplies the unit price by the
+   * quantity should land on the line total, and rounding a per-unit figure up
+   * first is how you end up a few cents out on the page you are asking them to
+   * sign.
+   */
+  unitPriceIncCents: Cents;
   markupPercent: number | null;
   /** Per-line markup in ex-GST cents: line total minus (cost x quantity). */
   markupAmountExCents: Cents;
@@ -94,6 +106,15 @@ export interface VariationDocAttachment {
 
 export interface VariationDocModel {
   costGroups: VariationDocGroup[];
+  /**
+   * Every cost line in the order the builder arranged them, ignoring type.
+   *
+   * What "Trade breakdown: off" is supposed to mean. Both renderers used to
+   * walk costGroups and merely hide the headings, which left the lines still
+   * clustered Materials-then-Labour-then-Subcontractor — so turning grouping
+   * off silently reordered the document rather than flattening it.
+   */
+  costLines: VariationDocLine[];
   allowanceLines: Array<{ id: string; description: string; amountIncCents: Cents }>;
   bills: VariationDocBill[];
   labourIncCents: Cents;
@@ -151,6 +172,7 @@ export function buildVariationDocumentModel(input: {
   const visibleCostItems = costItems.filter((i: any) => i?.showInPdf !== false);
 
   const groupsByType = new Map<string, VariationDocGroup>();
+  const costLines: VariationDocLine[] = [];
   for (const item of visibleCostItems) {
     const type = normaliseVariationType(item?.type);
     let group = groupsByType.get(type);
@@ -167,7 +189,7 @@ export function buildVariationDocumentModel(input: {
     // unitCostExTax is DOLLARS (doublePrecision) while everything else here is
     // cents — convert once, at the boundary.
     const unitCostExCents = Math.round((Number(item.unitCostExTax) || 0) * 100);
-    group.lines.push({
+    const line: VariationDocLine = {
       id: item.id,
       name: item.name,
       description: item.description,
@@ -176,11 +198,17 @@ export function buildVariationDocumentModel(input: {
       unitType: item.unitType,
       unitCostExCents,
       unitPriceExCents: item.unitPrice ?? 0,
+      unitPriceIncCents:
+        quantity > 0 ? Math.round(amountIncCents / quantity) : amountIncCents,
       markupPercent: item.markupPercent ?? null,
       markupAmountExCents: amountExCents - Math.round(unitCostExCents * quantity),
       amountExCents,
       amountIncCents,
-    });
+    };
+    // The same object in both shapes, so grouped and ungrouped can never carry
+    // different figures for one line.
+    group.lines.push(line);
+    costLines.push(line);
     group.totalIncCents += amountIncCents;
   }
 
@@ -230,6 +258,7 @@ export function buildVariationDocumentModel(input: {
 
   return {
     costGroups,
+    costLines,
     allowanceLines,
     bills: docBills,
     labourIncCents,

@@ -61,6 +61,7 @@ export async function processReminders() {
               reminderDescription: reminder.description || undefined,
               linkedItemType: reminder.linkedItemType || undefined,
               priority: reminder.priority || undefined,
+              companyId: user.companyId ?? null,
             });
             
             await storage.createReminderNotification({
@@ -150,6 +151,7 @@ export async function processReminders() {
                 reminderTitle: businessReminder.title,
                 reminderDescription: businessReminder.message || undefined,
                 linkedItemType: businessReminder.reminderType || undefined,
+                companyId: user.companyId ?? null,
               });
               
               await storage.createReminderNotification({

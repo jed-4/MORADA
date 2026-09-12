@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   divider: {
     width: 100,
     height: 3,
-    backgroundColor: '#3B82F6',
+    backgroundColor: PDF_COLORS.brandFallback,
     marginVertical: 30,
   },
   infoContainer: {
@@ -70,7 +70,7 @@ export function CoverPage({
   projectName,
   date,
   expiryDate,
-  primaryColor = '#3B82F6',
+  primaryColor = PDF_COLORS.brandFallback,
 }: CoverPageProps) {
   return (
     <Page size="A4" style={styles.page}>

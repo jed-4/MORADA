@@ -1,15 +1,34 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
-// Colours here are the Morada tokens written as literals, because @react-pdf
-// cannot read CSS custom properties — it renders outside the DOM. Keep them in
-// step with :root in client/src/index.css by hand. They were previously
-// Tailwind's cool grey ramp (#111827, #6b7280, #e5e7eb …), which is why the
-// PDF read as blue-grey next to the portal's warm ink.
 import type { Variation, VariationItem } from "@shared/schema";
 import { format } from "date-fns";
 import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
-import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
-import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import { PdfHeroBand } from "@/components/pdf/shared/PdfHeroBand";
+import {
+  PdfSection,
+  PdfProse,
+  PdfPanel,
+  PdfTotalsCard,
+  PdfSignatureCards,
+  PdfCallout,
+} from "@/components/pdf/shared/PdfPrimitives";
+import {
+  PdfPartiesPanel,
+  PdfDocumentTitle,
+} from "@/components/pdf/shared/PdfPartiesPanel";
+import {
+  PdfLineTable,
+  PdfSimpleRows,
+  PdfDocFooter,
+  type PdfTableColumn,
+} from "@/components/pdf/shared/PdfLineTable";
+import {
+  PDF_COLORS,
+  PDF_PAGE_MARGIN,
+  PDF_SPACE,
+  PDF_TYPE,
+  PDF_WEIGHT,
+  brandRamp,
+} from "@/components/pdf/shared/pdfTokens";
 import {
   buildVariationDocumentModel,
   variationStatusPresentation,
@@ -19,9 +38,37 @@ import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   type VariationDocumentColumns,
 } from "@shared/variationDocumentColumns";
-import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 
-// Registered at module load so the faces are ready before the first render.
+/**
+ * The variation, as a PDF — built on the portal's composition.
+ *
+ * Jed's note, holding the two side by side: "Why does the app for the variation
+ * doc look so different to the pdf version. I really like the in app version."
+ * The figures were never the problem (both renderers share
+ * buildVariationDocumentModel, so they cannot disagree). The *look* was, and in
+ * four specific ways, all of which this rewrite removes:
+ *
+ *   1. Three identity blocks — a brand band with only the company in it, a grey
+ *      CLIENT/PROJECT bar, then a third row with the number, the status and a
+ *      money card — burned ~40% of page one before any content. The portal says
+ *      all of it in one band, so now this does too.
+ *
+ *   2. The headline figure printed in the *bills* amber (#F8F3E8 / #B8853A)
+ *      whatever the company's brand colour was, so a builder branded green got
+ *      an orange price. Every colour now derives from brandRamp().
+ *
+ *   3. The logo tile was drawn even with no logo, leaving an empty grey box in
+ *      the corner of every document. It falls back to initials.
+ *
+ *   4. The signature panel printed blank ruled lines for both parties even when
+ *      the client had signed in the portal — throwing away the one piece of
+ *      evidence you would reach for if the agreement were questioned. A captured
+ *      signature is now shown.
+ *
+ * Also new here, because the portal had it and the PDF did not: a rejected
+ * variation carries its rejection reason.
+ */
+
 registerPdfFonts();
 
 interface Company {
@@ -77,31 +124,35 @@ interface VariationDocumentProps {
   /** cost-code id -> "code - title". Without it the Cost Code column renders
    *  the stored UUID. */
   costCodeLabels?: Record<string, string>;
+  /** How the parties block lays out. See PdfPartiesPanel. */
+  partiesLayout?: "columns" | "stacked";
 }
 
-// Fixed-width numeric columns, in render order. Name/description share the one
-// flexible cell to their left, so they are not in here.
-//
-// Widths are deliberately tight: A4 leaves 515pt between the margins and a
-// builder who enables every column at once has little room left for the
-// description. That is their call to make — the alternative is silently
-// refusing a column they asked for.
-const LINE_COLUMN_SPECS: Array<{
-  key: "costCode" | "quantity" | "unit" | "unitCost" | "unitPrice" | "markupPercent" | "markupAmount" | "amountEx" | "amountInc";
-  label: string;
-  width: number;
-  align: "left" | "right";
-  value: (line: VariationDocLine) => string;
+/**
+ * Fixed-width numeric columns, in render order. The name/description cell is
+ * flexible and takes whatever is left, so enabling every column narrows the
+ * description rather than overflowing the page.
+ *
+ * Deliberately the same keys, order and labels as the portal's `lineCols`
+ * (VariationPreviewContent.tsx) — the two tables have to agree about what is
+ * on the page, not just what the numbers are.
+ */
+const LINE_COLUMN_SPECS: Array<PdfTableColumn<VariationDocLine> & {
+  key: "costCode" | "quantity" | "unit" | "unitCost" | "unitPrice" | "unitPriceInc" | "markupPercent" | "markupAmount" | "amountEx" | "amountInc";
 }> = [
   { key: "costCode", label: "Cost Code", width: 52, align: "left", value: (l) => l.costCode || "" },
   { key: "quantity", label: "Qty", width: 34, align: "right", value: (l) => String(l.quantity ?? "") },
   { key: "unit", label: "Unit", width: 32, align: "right", value: (l) => l.unitType || "" },
-  { key: "unitCost", label: "Unit Cost", width: 56, align: "right", value: (l) => formatAUD(l.unitCostExCents / 100) },
-  { key: "unitPrice", label: "Unit Price", width: 56, align: "right", value: (l) => formatAUD(l.unitPriceExCents / 100) },
+  // Every money column names its GST basis. "Unit Cost" beside "Unit Price"
+  // read as one figure before and after tax, when they are the builder's buy
+  // price and the client's price — a difference of margin, not GST.
+  { key: "unitCost", label: "Unit Cost ex GST", width: 60, align: "right", value: (l) => formatAUD(l.unitCostExCents / 100) },
+  { key: "unitPrice", label: "Unit Price ex GST", width: 60, align: "right", value: (l) => formatAUD(l.unitPriceExCents / 100) },
+  { key: "unitPriceInc", label: "Unit Price inc GST", width: 62, align: "right", value: (l) => formatAUD(l.unitPriceIncCents / 100) },
   { key: "markupPercent", label: "Mkup %", width: 38, align: "right", value: (l) => (l.markupPercent == null ? "" : `${l.markupPercent}%`) },
-  { key: "markupAmount", label: "Markup", width: 56, align: "right", value: (l) => formatAUD(l.markupAmountExCents / 100) },
-  { key: "amountEx", label: "Amt ex. GST", width: 60, align: "right", value: (l) => formatAUD(l.amountExCents / 100) },
-  { key: "amountInc", label: "Amt inc. GST", width: 64, align: "right", value: (l) => formatAUD(l.amountIncCents / 100) },
+  { key: "markupAmount", label: "Markup ex GST", width: 58, align: "right", value: (l) => formatAUD(l.markupAmountExCents / 100) },
+  { key: "amountEx", label: "Amount ex GST", width: 62, align: "right", value: (l) => formatAUD(l.amountExCents / 100) },
+  { key: "amountInc", label: "Amount inc GST", width: 64, align: "right", value: (l) => formatAUD(l.amountIncCents / 100) },
 ];
 
 function formatAUD(dollars: number): string {
@@ -112,6 +163,9 @@ function formatAUD(dollars: number): string {
   }).format(dollars);
 }
 
+const fmtDate = (d: string | Date | null | undefined) =>
+  d ? format(new Date(d), "d MMMM yyyy") : null;
+
 export function VariationDocument({
   variation,
   items,
@@ -119,7 +173,7 @@ export function VariationDocument({
   labourTotalCents = 0,
   company,
   project,
-  brandColor = "#87749A",
+  brandColor = PDF_COLORS.brandFallback,
   documentStyle = "style1",
   logoUrl,
   originalContractCents,
@@ -128,26 +182,16 @@ export function VariationDocument({
   revisedIsAgreed = false,
   columns = DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   costCodeLabels,
+  partiesLayout = "columns",
 }: VariationDocumentProps) {
-  const isS2 = documentStyle === "style2";
-  const thBg = isS2 ? brandColor : "#FAF9F7";
-  const thTextColor = isS2 ? "#ffffff" : "#4A443F";
-  const altRowBg = isS2 ? brandColor + "14" : "#FAF9F7";
-  const accentBg = isS2 ? brandColor + "14" : "#F2F1EE";
-  const docBarBorderColor = isS2 ? tintOnWhite(brandColor, "26") : "#E9E9E7";
-
+  const brand = brandRamp(brandColor);
   const statusCfg = variationStatusPresentation(variation.status);
 
-  // Which fixed-width columns this document shows, and whether the flexible
-  // text cell has anything to put in it.
   const activeLineCols = LINE_COLUMN_SPECS.filter((c) => columns[c.key]);
   const showTextCell = columns.name || columns.description;
-  // The trailing money column the group subtotals and the margin row have to
-  // line up with. Falls back to the last column when no amount is shown.
-  const trailingCol = activeLineCols[activeLineCols.length - 1];
 
   // Shared with the portal page so both documents group, label and total
-  // identically (they previously diverged on both wording and grouping).
+  // identically.
   const docModel = buildVariationDocumentModel({
     variation,
     items,
@@ -155,10 +199,6 @@ export function VariationDocument({
     labourExCents: labourTotalCents,
     costCodeLabels,
   });
-
-  const subtotalCents = docModel.subtotalCents;
-  const gstCents = docModel.gstCents;
-  const totalCents = docModel.totalCents;
 
   const attachmentList: Array<{ name?: string }> = Array.isArray((variation as any).attachments)
     ? ((variation as any).attachments as any[])
@@ -168,762 +208,377 @@ export function VariationDocument({
     columns.contractSummary &&
     originalContractCents !== undefined &&
     originalContractCents > 0;
-  // Contract as it stands today. Falls back to the original for callers that
-  // predate the three-figure card.
   const contractBeforeCents = currentContractCents ?? originalContractCents ?? 0;
-  // Reserves two lines for every caption so a label that wraps ("Proposed
-  // Revised Total") doesn't push its own figure out of line with the others.
-  const cardLabel = {
-    fontSize: 7,
-    fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-    color: "#A39C94",
-    textTransform: "uppercase" as const,
-    textAlign: "center" as const,
-    minHeight: 18,
-    marginBottom: 4,
-  };
+
+  // Rows that are real money but not line items. They live inside the table,
+  // or the rows above stop reconciling with the Total below it.
+  const trailingRows = [
+    docModel.globalMarkupIncCents !== 0
+      ? {
+          label: docModel.globalMarkupPercent
+            ? `Margin (${docModel.globalMarkupPercent}%)`
+            : "Margin",
+          value: formatAUD(docModel.globalMarkupIncCents / 100),
+          emphasis: true,
+        }
+      : null,
+    docModel.notItemisedIncCents !== 0
+      ? {
+          label: "Additional works (not itemised)",
+          value: formatAUD(docModel.notItemisedIncCents / 100),
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string; emphasis?: boolean }>;
 
   return (
     <Document title={`Variation ${variation.variationNumber}`}>
       <Page
         size="A4"
         style={{
-          fontSize: 10,
+          fontSize: PDF_TYPE.body,
           fontFamily: PDF_FONT_FAMILY,
-          backgroundColor: "#ffffff",
-          paddingBottom: 60,
+          color: PDF_COLORS.ink,
+          backgroundColor: PDF_COLORS.surface,
+          paddingBottom: 56,
         }}
       >
-        {/* Header */}
-        <DocBrandedHeader
-          companyName={company?.name || ""}
-          abn={company?.abn}
-          phone={company?.phone}
-          email={company?.email}
+        {/* One band: who it is from, what state it is in, and what it costs. */}
+        <PdfHeroBand
+          variant={documentStyle === "style2" ? "brand" : "light"}
+          companyName={company?.name || "—"}
           logoUrl={logoUrl}
           brandColor={brandColor}
-          docStyle={documentStyle}
+          contactLines={[
+            company?.phone,
+            company?.email,
+            company?.abn ? `ABN ${company.abn}` : null,
+          ]}
+          status={{ label: statusCfg.label, bg: statusCfg.bg, text: statusCfg.text }}
+          figure={formatAUD(docModel.totalCents / 100)}
+          figureLabel="Inc. GST"
+          figureCaption={variation.variationNumber || undefined}
         />
 
-        {/* Project bar */}
-        <DocProjectBar
-          clientName={project?.clientName}
-          clientEmail={project?.clientEmail}
-          projectName={project?.name}
-          projectAddress={project?.address}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: PDF_SPACE.xl }}>
+          {/* The subject line. It was a field labelled "Name" inside the details
+              grid, which is the wrong shape — it IS the document. */}
+          {variation.name ? <PdfDocumentTitle>{variation.name}</PdfDocumentTitle> : null}
 
-        {/* Document bar */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 40,
-            paddingVertical: 14,
-            borderBottomWidth: 1,
-            borderBottomColor: docBarBorderColor,
-            gap: 16,
-            minHeight: 82,
-          }}
-        >
-          {/* Left: variation info */}
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                fontSize: 8,
-                fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                color: "#B8853A",
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                marginBottom: 3,
+          {/* Who it's for, where the job is, what this document is — three
+              kinds of fact that used to read as one undifferentiated list. */}
+          <PdfSection>
+            <PdfPartiesPanel
+              layout={partiesLayout}
+              // An em dash rather than an empty block when a field is missing:
+              // the layout stays stable, and a builder looking at their own
+              // document can see the client has not been filled in. Matches
+              // what the portal does.
+              recipient={{
+                label: "To",
+                title: project?.clientName || "—",
+                lines: [project?.clientEmail, project?.clientPhone],
               }}
-            >
-              Variation Order
-            </Text>
-            <Text
-              style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825", marginBottom: 3 }}
-            >
-              {variation.variationNumber}
-            </Text>
-            {variation.approvalDeadline && (
-              <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 4 }}>
-                Effective until {format(new Date(variation.approvalDeadline), "d MMM yyyy")}
-              </Text>
-            )}
-            {/* Status chip */}
-            <View
-              style={{
-                alignSelf: "flex-start",
-                backgroundColor: statusCfg.bg,
-                paddingHorizontal: 7,
-                paddingVertical: 2,
-                borderRadius: 10,
+              project={{
+                label: "Project",
+                title: project?.name || "—",
+                lines: [project?.address],
               }}
-            >
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: statusCfg.text,
-                }}
-              >
-                {statusCfg.label}
-              </Text>
-            </View>
-          </View>
+              document={{
+                label: "Document",
+                fields: [
+                  // No "Number" row: the masthead already captions the figure
+                  // with it, and repeating it is what made this column read as
+                  // busy.
+                  { label: "Issued", value: fmtDate((variation as any).createdAt) },
+                  { label: "Respond by", value: fmtDate((variation as any).approvalDeadline) },
+                  {
+                    label: "Days changed",
+                    value:
+                      variation.daysChanged && variation.daysChanged !== 0
+                        ? `${variation.daysChanged > 0 ? "+" : ""}${variation.daysChanged} working days`
+                        : null,
+                  },
+                ],
+              }}
+            />
+          </PdfSection>
 
-          {/* Right: price change card */}
-          <View
-            style={{
-              backgroundColor: "#F8F3E8",
-              borderRadius: 4,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              flexDirection: "row",
-              gap: 0,
-              width: showContractCard ? 380 : 160,
-            }}
-          >
-            {/* Variation amount */}
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={cardLabel}>Variation Amount</Text>
-              <Text
-                style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#B8853A" }}
-              >
-                {formatAUD(totalCents / 100)}
-              </Text>
-              <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>Inc. GST</Text>
-            </View>
-
-            {showContractCard && (
-              <>
-                {/* Divider */}
-                <View
-                  style={{
-                    width: 1,
-                    backgroundColor: "#E9E9E7",
-                    marginHorizontal: 10,
-                  }}
-                />
-                {/* Contract as it stands today */}
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={cardLabel}>Current Contract Sum</Text>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: "#A39C94",
-                      // `textDecorationLine` is the React Native spelling and is
-                      // not a @react-pdf Style property — it silently did
-                      // nothing, so the superseded contract sum never rendered
-                      // struck through.
-                      textDecoration: "line-through",
-                    }}
-                  >
-                    {formatAUD(contractBeforeCents / 100)}
-                  </Text>
-                  <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>
-                    Incl. approved variations
-                  </Text>
-                </View>
-
-                {/* Divider */}
-                <View
-                  style={{
-                    width: 1,
-                    backgroundColor: "#E9E9E7",
-                    marginHorizontal: 10,
-                  }}
-                />
-                {/* Revised total */}
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={cardLabel}>
-                    {revisedIsAgreed ? "Revised Total" : "Proposed Revised Total"}
-                  </Text>
-                  <Text
-                    style={{ fontSize: 13, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}
-                  >
-                    {formatAUD((revisedContractCents ?? 0) / 100)}
-                  </Text>
-                  <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 2 }}>
-                    {revisedIsAgreed ? "New contract value" : "If approved"}
-                  </Text>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-
-        {/* Content */}
-        <View style={{ paddingHorizontal: 40, paddingTop: 14 }}>
-          {/* Details grid */}
-          <Text
-            style={{
-              fontSize: 8,
-              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-              color: "#A39C94",
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 6,
-            }}
-          >
-            Variation Details
-          </Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
-            <View style={{ width: "30%" }}>
-              <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>Name</Text>
-              <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
-                {variation.name}
-              </Text>
-            </View>
-            {!!variation.daysChanged && (
-              <View style={{ width: "30%" }}>
-                <Text style={{ fontSize: 8, color: "#A39C94", marginBottom: 2 }}>
-                  Schedule Impact
-                </Text>
-                <Text style={{ fontSize: 10, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
-                  {variation.daysChanged > 0 ? "+" : ""}
-                  {variation.daysChanged} working day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Intro text */}
           {variation.introductionText ? (
-            <Text style={{ fontSize: 9, color: "#4A443F", lineHeight: 1.5, marginBottom: 14 }}>
-              {variation.introductionText}
-            </Text>
+            <PdfSection>
+              <PdfProse>{variation.introductionText}</PdfProse>
+            </PdfSection>
           ) : null}
 
-          {/* Cost lines */}
-          {docModel.costGroups.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Cost Lines
-              </Text>
-              {/* Header */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  backgroundColor: thBg,
-                  paddingHorizontal: 8,
-                  paddingVertical: 5,
-                }}
-              >
-                {showTextCell && (
-                  <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, flex: 1 }}>
-                    {columns.description ? "Description" : "Name"}
-                  </Text>
-                )}
-                {activeLineCols.map((col) => (
-                  <Text
-                    key={col.key}
-                    style={{
-                      fontSize: 8,
-                      color: thTextColor,
-                      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                      width: col.width,
-                      textAlign: col.align,
-                      paddingLeft: col.align === "left" ? 6 : 0,
-                    }}
-                  >
-                    {col.label}
-                  </Text>
-                ))}
-              </View>
-
-              {docModel.costGroups.map((group) => (
-                <View key={group.type}>
-                  {columns.grouping && (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      backgroundColor: "#F2F1EE",
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#E9E9E7",
-                    }}
-                  >
-                    <Text style={{ fontSize: 8, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#6B6561" }}>
-                      {group.label}
-                    </Text>
-                    <Text style={{ fontSize: 8, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#6B6561" }}>
-                      {formatAUD(group.totalIncCents / 100)}
-                    </Text>
-                  </View>
-                  )}
-                  {group.lines.map((line, idx) => (
+          {/* What this does to the contract sum. */}
+          {showContractCard && (
+            <PdfSection label="Contract Summary" wrap={false}>
+              <PdfPanel>
+                <View style={{ flexDirection: "row" }}>
+                  {[
+                    {
+                      label: "Current Contract Sum",
+                      value: formatAUD(contractBeforeCents / 100),
+                      strong: false,
+                    },
+                    {
+                      label: "This Variation",
+                      value: formatAUD(docModel.totalCents / 100),
+                      strong: false,
+                    },
+                    {
+                      label: revisedIsAgreed ? "Revised Contract Sum" : "Proposed Revised Total",
+                      value: formatAUD(
+                        (revisedContractCents ?? contractBeforeCents + docModel.totalCents) / 100,
+                      ),
+                      strong: true,
+                    },
+                  ].map((c, i) => (
                     <View
-                      key={line.id}
+                      key={c.label}
                       style={{
-                        flexDirection: "row",
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderBottomWidth: 1,
-                        borderBottomColor: "#F2F1EE",
-                        backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
+                        flex: 1,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        borderLeftWidth: i === 0 ? 0 : 1,
+                        borderLeftColor: PDF_COLORS.border,
+                        backgroundColor: c.strong ? brand.wash : PDF_COLORS.surface,
                       }}
                     >
-                      {showTextCell && (
-                        <View style={{ flex: 1 }}>
+                      {/* Two lines reserved, so "Proposed Revised Total"
+                          wrapping cannot push its figure out of line with the
+                          figures beside it. */}
+                      <Text
+                        style={{
+                          fontSize: PDF_TYPE.caption,
+                          fontFamily: PDF_FONT_FAMILY,
+                          fontWeight: PDF_WEIGHT.semibold,
+                          letterSpacing: 0.4,
+                          textTransform: "uppercase",
+                          color: PDF_COLORS.inkFaint,
+                          minHeight: 18,
+                          marginBottom: 4,
+                        }}
+                      >
+                        {c.label}
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: PDF_FONT_FAMILY,
+                          fontWeight: PDF_WEIGHT.bold,
+                          fontSize: c.strong ? PDF_TYPE.totalFigure : PDF_TYPE.docTitle,
+                          color: c.strong ? brand.onWhite : PDF_COLORS.ink,
+                        }}
+                      >
+                        {c.value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </PdfPanel>
+            </PdfSection>
+          )}
+
+          {/* Cost lines */}
+          {docModel.costLines.length > 0 && (
+            <PdfSection label="Cost Lines">
+              <PdfLineTable<VariationDocLine>
+                brandColor={brandColor}
+                grouped={!!columns.grouping}
+                columns={activeLineCols}
+                textHeader={showTextCell ? (columns.description ? "Description" : "Name") : null}
+                renderText={
+                  showTextCell
+                    ? (line) => (
+                        <View>
                           {columns.name && line.name ? (
-                            <Text style={{ fontSize: 9, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, color: "#2C2825" }}>
+                            <Text
+                              style={{
+                                fontFamily: PDF_FONT_FAMILY,
+                                fontWeight: PDF_WEIGHT.semibold,
+                                fontSize: PDF_TYPE.tableCell,
+                                color: PDF_COLORS.ink,
+                              }}
+                            >
                               {line.name}
                             </Text>
                           ) : null}
                           {columns.description && line.description ? (
-                            <Text style={{ fontSize: 8, color: "#6B6561" }}>{line.description}</Text>
+                            <Text style={{ fontSize: PDF_TYPE.caption + 0.5, color: PDF_COLORS.inkMuted }}>
+                              {line.description}
+                            </Text>
                           ) : null}
                           {!(columns.name && line.name) && !(columns.description && line.description) ? (
-                            <Text style={{ fontSize: 9, color: "#4A443F" }}>—</Text>
+                            <Text style={{ fontSize: PDF_TYPE.tableCell, color: PDF_COLORS.inkFaint }}>—</Text>
                           ) : null}
                         </View>
-                      )}
-                      {activeLineCols.map((col) => (
-                        <Text
-                          key={col.key}
-                          style={{
-                            fontSize: 9,
-                            color: "#4A443F",
-                            width: col.width,
-                            textAlign: col.align,
-                            paddingLeft: col.align === "left" ? 6 : 0,
-                          }}
-                        >
-                          {col.value(line)}
-                        </Text>
-                      ))}
-                    </View>
-                  ))}
-                </View>
-              ))}
-
-              {/* Document-level markup, inc GST, sitting with the rows rather
-                  than in the ex-GST summary below — every amount in this table
-                  is inc-GST and the table has to add up to the Total. Per-line
-                  markup is already inside the line amounts and is never broken
-                  out; only this one is a separate, visible charge. */}
-              {docModel.globalMarkupIncCents !== 0 && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#F2F1EE",
-                  }}
-                >
-                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
-                    {docModel.globalMarkupPercent
-                      ? `Margin (${docModel.globalMarkupPercent}%)`
-                      : "Margin"}
-                  </Text>
-                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
-                    {formatAUD(docModel.globalMarkupIncCents / 100)}
-                  </Text>
-                </View>
-              )}
-
-              {/* Value not itemised for the client, shown so the rows above
-                  still reconcile with the Total. */}
-              {docModel.notItemisedIncCents !== 0 && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#F2F1EE",
-                  }}
-                >
-                  <Text style={{ fontSize: 9, color: "#4A443F" }}>Additional works (not itemised)</Text>
-                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
-                    {formatAUD(docModel.notItemisedIncCents / 100)}
-                  </Text>
-                </View>
-              )}
-            </View>
+                      )
+                    : undefined
+                }
+                // Trade breakdown off means ONE flat list in the builder's own
+                // order — not the same clusters with their headings hidden.
+                groups={
+                  columns.grouping
+                    ? docModel.costGroups.map((g) => ({
+                        key: g.type,
+                        label: g.label,
+                        total: formatAUD(g.totalIncCents / 100),
+                        rows: g.lines,
+                      }))
+                    : [{ key: "all", rows: docModel.costLines }]
+                }
+                trailingRows={trailingRows}
+                rowKey={(line, i) => line.id || `line-${i}`}
+              />
+            </PdfSection>
           )}
 
-          {/* Allowances */}
           {docModel.allowanceLines.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Allowances
-              </Text>
-              {docModel.allowanceLines.map((line, idx) => (
-                <View
-                  key={line.id}
-                  style={{
-                    flexDirection: "row",
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#F2F1EE",
-                    backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                  }}
-                >
-                  <Text style={{ fontSize: 9, color: "#4A443F", flex: 1 }}>{line.description}</Text>
-                  <Text style={{ fontSize: 9, color: "#4A443F", width: 80, textAlign: "right" }}>
-                    {formatAUD(line.amountIncCents / 100)}
-                  </Text>
-                </View>
-              ))}
-            </View>
+            <PdfSection label="Allowances">
+              <PdfSimpleRows
+                rows={docModel.allowanceLines.map((l) => ({
+                  key: l.id,
+                  label: l.description,
+                  value: formatAUD(l.amountIncCents / 100),
+                  negative: l.amountIncCents < 0,
+                }))}
+              />
+            </PdfSection>
           )}
 
-          {/* Bills */}
           {columns.bills && docModel.bills.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Linked Bills
-              </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  backgroundColor: thBg,
-                  paddingHorizontal: 8,
-                  paddingVertical: 5,
-                }}
-              >
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 70 }}>
-                  Bill #
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, flex: 1 }}>
-                  Supplier
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 60, textAlign: "right" }}>
-                  Date
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600, width: 70, textAlign: "right" }}>
-                  Total
-                </Text>
-              </View>
-              {docModel.bills.map((bill, idx) => {
-                const total = bill.totalIncCents / 100;
-                return (
-                  <View
-                    key={bill.id}
-                    style={{
-                      flexDirection: "row",
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#F2F1EE",
-                      backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                    }}
-                  >
-                    <Text style={{ fontSize: 9, color: "#4A443F", width: 70 }}>
-                      {bill.billNumber || "—"}
+            <PdfSection label="Linked Bills">
+              <PdfLineTable<(typeof docModel.bills)[number]>
+                brandColor={brandColor}
+                grouped={false}
+                textHeader="Supplier"
+                renderText={(b) => (
+                  <View>
+                    <Text style={{ fontSize: PDF_TYPE.tableCell, color: PDF_COLORS.ink }}>
+                      {b.supplierName || "—"}
                     </Text>
-                    <Text style={{ fontSize: 9, color: "#4A443F", flex: 1 }}>
-                      {bill.supplierName || "—"}
-                    </Text>
-                    <Text style={{ fontSize: 9, color: "#4A443F", width: 60, textAlign: "right" }}>
-                      {bill.invoiceDate
-                        ? format(new Date(bill.invoiceDate), "d MMM yy")
-                        : "—"}
-                    </Text>
-                    <Text style={{ fontSize: 9, color: "#4A443F", width: 70, textAlign: "right" }}>
-                      {formatAUD(total)}
+                    <Text style={{ fontSize: PDF_TYPE.caption + 0.5, color: PDF_COLORS.inkMuted }}>
+                      {b.billNumber || "—"}
                     </Text>
                   </View>
-                );
-              })}
-            </View>
+                )}
+                columns={[
+                  {
+                    key: "date",
+                    label: "Date",
+                    width: 70,
+                    align: "right",
+                    value: (b) => (b.invoiceDate ? format(new Date(b.invoiceDate), "d MMM yy") : "—"),
+                  },
+                  {
+                    key: "total",
+                    label: "Total",
+                    width: 80,
+                    align: "right",
+                    value: (b) => formatAUD(b.totalIncCents / 100),
+                  },
+                ]}
+                groups={[{ key: "bills", rows: docModel.bills }]}
+                rowKey={(b, i) => b.id || `bill-${i}`}
+              />
+            </PdfSection>
           )}
 
-          {/* On-charged site labour (aggregated) */}
           {docModel.labourIncCents > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Site Labour
-              </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#F2F1EE",
-                }}
-              >
-                <Text style={{ fontSize: 9, color: "#4A443F" }}>Labour</Text>
-                <Text style={{ fontSize: 9, color: "#4A443F" }}>{formatAUD(docModel.labourIncCents / 100)}</Text>
-              </View>
-            </View>
+            <PdfSection label="Site Labour">
+              <PdfSimpleRows
+                rows={[
+                  { key: "labour", label: "Labour", value: formatAUD(docModel.labourIncCents / 100) },
+                ]}
+              />
+            </PdfSection>
           )}
 
-          {/* Attachments — listed by name; the files themselves are available
-              through the client portal link. */}
           {attachmentList.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 6,
-                }}
-              >
-                Attachments
-              </Text>
-              {attachmentList.map((att, idx) => (
-                <View
-                  key={idx}
-                  style={{
-                    flexDirection: "row",
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#F2F1EE",
-                    backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                  }}
-                >
-                  <Text style={{ fontSize: 9, color: "#4A443F" }}>
-                    {att?.name || `Attachment ${idx + 1}`}
-                  </Text>
-                </View>
-              ))}
-              <Text style={{ fontSize: 7, color: "#A39C94", marginTop: 4 }}>
+            <PdfSection label="Attachments">
+              <PdfSimpleRows
+                rows={attachmentList.map((att, idx) => ({
+                  key: `att-${idx}`,
+                  label: att?.name || `Attachment ${idx + 1}`,
+                }))}
+              />
+              <Text style={{ fontSize: PDF_TYPE.caption, color: PDF_COLORS.inkFaint, marginTop: 4 }}>
                 Attached files can be downloaded from your variation link.
               </Text>
-            </View>
+            </PdfSection>
           )}
 
-          {/* Summary */}
-          <View style={{ alignItems: "flex-end", marginBottom: 16 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
-              <Text style={{ fontSize: 9, color: "#6B6561" }}>Subtotal (ex. GST)</Text>
-              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
-                {formatAUD(subtotalCents / 100)}
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F2F1EE" }}>
-              <Text style={{ fontSize: 9, color: "#6B6561" }}>GST (10%)</Text>
-              <Text style={{ fontSize: 9, color: "#2C2825", fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
-                {formatAUD(gstCents / 100)}
-              </Text>
-            </View>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                width: 220,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                backgroundColor: accentBg,
-              }}
-            >
-              <Text style={{ fontSize: 10, color: brandColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
-                Variation Total (inc. GST)
-              </Text>
-              <Text style={{ fontSize: 12, color: brandColor, fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
-                {formatAUD(totalCents / 100)}
-              </Text>
-            </View>
+          {/* Why it was refused. Captured at rejection, shown on the portal,
+              and previously missing from the document entirely. */}
+          {variation.status === "rejected" && variation.rejectionReason ? (
+            <PdfSection>
+              <PdfCallout label="Reason for rejection" tone="negative">
+                {variation.rejectionReason}
+              </PdfCallout>
+            </PdfSection>
+          ) : null}
+
+          <View style={{ marginTop: PDF_SPACE.xl }}>
+            <PdfTotalsCard
+              brandColor={brandColor}
+              rows={[
+                { label: "Subtotal (ex. GST)", value: formatAUD(docModel.subtotalCents / 100) },
+                { label: "GST (10%)", value: formatAUD(docModel.gstCents / 100) },
+              ]}
+              totalLabel="Total (inc. GST)"
+              totalValue={formatAUD(docModel.totalCents / 100)}
+            />
           </View>
 
-          {/* Divider */}
-          <View
-            style={{
-              borderBottomWidth: 1,
-              borderBottomColor: isS2 ? tintOnWhite(brandColor, "33") : "#E9E9E7",
-              marginBottom: 12,
-            }}
-          />
-
-          {/* Closing text / T&C */}
           {variation.closingText ? (
-            <Text style={{ fontSize: 9, color: "#4A443F", lineHeight: 1.5, marginBottom: 12 }}>
-              {variation.closingText}
-            </Text>
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: PDF_COLORS.border,
+                paddingTop: PDF_SPACE.lg,
+                marginTop: PDF_SPACE.xl,
+              }}
+            >
+              <PdfProse>{variation.closingText}</PdfProse>
+            </View>
           ) : null}
 
           {variation.termsAndConditions ? (
-            <View style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 8,
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  color: "#A39C94",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                  marginBottom: 4,
-                }}
-              >
-                Terms &amp; Conditions
-              </Text>
-              <Text style={{ fontSize: 8, color: "#A39C94", lineHeight: 1.4 }}>
-                {variation.termsAndConditions}
-              </Text>
+            <View style={{ borderTopWidth: 1, borderTopColor: PDF_COLORS.border, paddingTop: PDF_SPACE.lg }}>
+              <PdfSection label="Terms & Conditions">
+                <Text
+                  style={{
+                    fontSize: PDF_TYPE.bodySmall,
+                    color: PDF_COLORS.inkMuted,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {variation.termsAndConditions}
+                </Text>
+              </PdfSection>
             </View>
           ) : null}
 
-          {/* Signatures */}
-          <Text
-            style={{
-              fontSize: 8,
-              fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-              color: "#A39C94",
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 8,
-            }}
-          >
-            Signatures
-          </Text>
-          <View style={{ flexDirection: "row", gap: 16 }}>
-            {/* Builder */}
-            <View
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: "#E9E9E7",
-                borderRadius: 4,
-                padding: 10,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 8,
-                  color: "#A39C94",
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  marginBottom: 10,
-                }}
-              >
-                LEGAL REPRESENTATIVE OF {(company?.name || "BUILDER").toUpperCase()}
-              </Text>
-              {variation.builderSignedName ? (
-                <View>
-                  <Text style={{ fontSize: 9, color: "#4A443F", marginBottom: 2 }}>
-                    {variation.builderSignedName}
-                  </Text>
-                  {variation.builderSignedDate && (
-                    <Text style={{ fontSize: 8, color: "#A39C94" }}>
-                      Signed {format(new Date(variation.builderSignedDate), "d MMM yyyy")}
-                    </Text>
-                  )}
-                </View>
-              ) : (
-                <>
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Name:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Signature:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 4 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Date:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                </>
-              )}
-            </View>
-
-            {/* Client */}
-            <View
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: "#E9E9E7",
-                borderRadius: 4,
-                padding: 10,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 8,
-                  color: "#A39C94",
-                  fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-                  marginBottom: 10,
-                }}
-              >
-                CLIENT AUTHORISATION
-              </Text>
-              {variation.clientSignedName ? (
-                <View>
-                  <Text style={{ fontSize: 9, color: "#4A443F", marginBottom: 2 }}>
-                    {variation.clientSignedName}
-                  </Text>
-                  {variation.clientSignedDate && (
-                    <Text style={{ fontSize: 8, color: "#A39C94" }}>
-                      Signed {format(new Date(variation.clientSignedDate), "d MMM yyyy")}
-                    </Text>
-                  )}
-                </View>
-              ) : (
-                <>
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Name:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Signature:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 4 }}>
-                    <Text style={{ fontSize: 8, color: "#A39C94", width: 50 }}>Date:</Text>
-                    <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: "#D8D7D4", height: 18 }} />
-                  </View>
-                </>
-              )}
-            </View>
+          <View style={{ borderTopWidth: 1, borderTopColor: PDF_COLORS.border, paddingTop: PDF_SPACE.lg }}>
+            <PdfSection label="Signatures">
+              <PdfSignatureCards
+                signatories={[
+                  {
+                    title: `Legal Representative of ${company?.name || "Builder"}`,
+                    signedName: variation.builderSignedName,
+                    signedDate: fmtDate(variation.builderSignedDate),
+                  },
+                  {
+                    title: "Client Authorisation",
+                    signedName: variation.clientSignedName,
+                    signedDate: fmtDate(variation.clientSignedDate),
+                  },
+                ]}
+              />
+            </PdfSection>
           </View>
         </View>
 
-        <DocFooter
-          companyName={company?.name}
-          brandColor={brandColor}
-          docStyle={documentStyle}
-        />
+        <PdfDocFooter companyName={company?.name} />
       </Page>
     </Document>
   );
