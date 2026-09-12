@@ -11,6 +11,18 @@ interface DocProposalInnerHeaderProps {
   proposalName?: string | null;
   brandColor: string;
   docStyle: "style1" | "style2";
+  /** Repeat on every page the parent <Page> spills onto. */
+  fixed?: boolean;
+  /**
+   * How much of the masthead repeats on inner pages.
+   *
+   * "full" is the original: brand rule, logo tile, company, number, project.
+   * "compact" drops the logo tile — page one already showed it, and repeating
+   * it eight times is the company introducing itself to someone reading their
+   * proposal. "minimal" is a book-style running head: one line of small muted
+   * type, number left, project right, hairline under, no brand fill.
+   */
+  variant?: "minimal" | "compact" | "full";
 }
 
 // Idempotent — the shared chrome is used by every document, so registering
@@ -25,17 +37,52 @@ export function DocProposalInnerHeader({
   proposalName,
   brandColor,
   docStyle,
+  fixed,
+  variant = "full",
 }: DocProposalInnerHeaderProps) {
   const isS2 = docStyle === "style2";
 
+  if (variant === "minimal") {
+    return (
+      <View
+        fixed={fixed}
+        style={{
+          paddingHorizontal: 40,
+          paddingTop: 14,
+          paddingBottom: 5,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            borderBottomWidth: 1,
+            borderBottomColor: PDF_COLORS.border,
+            paddingBottom: 5,
+          }}
+        >
+          <Text style={{ fontSize: 8, color: PDF_COLORS.inkFaint, letterSpacing: 0.4 }}>
+            {proposalNumber ? `Proposal #${proposalNumber}` : companyName || ""}
+          </Text>
+          {proposalName ? (
+            <Text style={{ fontSize: 8, color: PDF_COLORS.inkFaint, maxWidth: 320, textAlign: "right" }}>
+              {proposalName}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View
+      fixed={fixed}
       style={{
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 40,
         paddingVertical: 8,
-        minHeight: 56,
+        minHeight: variant === "compact" ? 34 : 56,
         backgroundColor: isS2 ? brandColor + "14" : "#ffffff",
         borderTopWidth: 3,
         borderTopColor: brandColor,
@@ -44,20 +91,22 @@ export function DocProposalInnerHeader({
         ...(isS2 ? { borderLeftWidth: 3, borderLeftColor: brandColor } : {}),
       }}
     >
-      <View
-        style={{
-          width: 40,
-          height: 28,
-          borderRadius: 3,
-          backgroundColor: isS2 ? "rgba(255,255,255,0.35)" : PDF_COLORS.border,
-          overflow: "hidden",
-          marginRight: 10,
-        }}
-      >
-        {logoUrl ? (
-          <Image src={logoUrl} style={{ width: 40, height: 28 }} />
-        ) : null}
-      </View>
+      {variant === "full" && (
+        <View
+          style={{
+            width: 40,
+            height: 28,
+            borderRadius: 3,
+            backgroundColor: isS2 ? "rgba(255,255,255,0.35)" : PDF_COLORS.border,
+            overflow: "hidden",
+            marginRight: 10,
+          }}
+        >
+          {logoUrl ? (
+            <Image src={logoUrl} style={{ width: 40, height: 28 }} />
+          ) : null}
+        </View>
+      )}
 
       <View style={{ flex: 1 }}>
         {companyName ? (

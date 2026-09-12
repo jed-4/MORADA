@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Document, Page } from "react-pdf";
-import { ensurePdfWorker } from "@/lib/pdfWorker";
+import { Page } from "react-pdf";
+import { PdfDocument as Document } from "@/components/PdfDocument";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -42,10 +42,6 @@ interface Props {
 const STANDARD_SCALES = [10, 20, 50, 100, 200];
 
 export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClose }: Props) {
-  // Configure the pdf.js worker before rendering any <Document>. Without this
-  // pdf.js falls back to a "fake worker" that fails in production builds,
-  // surfacing as "Failed to load PDF".
-  ensurePdfWorker();
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfPageCount, setPdfPageCount] = useState(plan.pageCount || 1);

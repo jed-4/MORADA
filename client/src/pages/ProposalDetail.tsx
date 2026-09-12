@@ -3,9 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Save, Loader2, Eye } from "lucide-react";
+import { Loader2, Eye, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatViewedTooltip } from "@/components/proposals/proposalDisplay";
+import { formatViewedTooltip, revisionLabel } from "@/components/proposals/proposalDisplay";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,7 @@ import {
   type Project,
   type InsertProposal,
   type InsertProposalSection,
+  type FieldCategoryWithOptions,
   insertProposalSchema 
 } from "@shared/schema";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
@@ -42,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import { buildDefaultSections } from "@/components/proposals/defaultSections";
 
 interface ProposalDetailParams {
   id?: string;
@@ -61,6 +63,7 @@ const SECTION_TYPES = [
   { value: 'attachments', label: 'Attachments' },
   { value: 'terms_conditions', label: 'Terms & Conditions' },
   { value: 'signature', label: 'Signature' },
+  { value: 'imported_pdf', label: 'Imported PDF page' },
   { value: 'custom', label: 'Custom Section' },
 ];
 
@@ -153,32 +156,8 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Create all default sections after creating the proposal
         if (result.id) {
-          const tpls = companySettings?.termsTemplates ?? [];
-          const proposalDefaultTpl = tpls.find(
-            (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
-          );
-          const defaultTermsContent =
-            proposalDefaultTpl?.content || companySettings?.termsAndConditions || '';
-
-          const companyName = companySettings?.companyName || '[Company Name]';
-          const defaultClosingHtml =
-            `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
-
-          const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: Record<string, unknown> }> = [
-            { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
-            { sectionType: 'cover_letter', name: 'Cover Letter', order: 1 },
-            { sectionType: 'estimate', name: 'Estimate', order: 2 },
-            { sectionType: 'summary', name: 'Summary', order: 3 },
-            { sectionType: 'allowances', name: 'Allowances', order: 4 },
-            { sectionType: 'payment_schedule', name: 'Payment Schedule', order: 5 },
-            { sectionType: 'closing', name: 'Closing', order: 6, content: { closingText: defaultClosingHtml } },
-            { sectionType: 'attachments', name: 'Attachments', order: 7 },
-            { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 8, content: { termsText: defaultTermsContent } },
-            { sectionType: 'signature', name: 'Signature', order: 9 },
-          ];
-
           await Promise.all(
-            defaultSections.map(section =>
+            buildDefaultSections(companySettings).map(section =>
               apiRequest(`/api/proposals/${result.id}/sections`, "POST", {
                 ...section,
                 proposalId: result.id,
@@ -288,11 +267,17 @@ export default function ProposalDetail() {
     mutationFn: async ({ sectionId, updates }: { sectionId: string; updates: Partial<ProposalSection> }) => {
       return await apiRequest(`/api/proposal-sections/${sectionId}`, "PATCH", updates);
     },
+    // Silent on success: sections autosave as you type, so a toast per save
+    // would fire every time you paused. A failure still surfaces, because that
+    // is the case where you need to know your text did not land.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
+    },
+    onError: () => {
       toast({
-        title: "Success",
-        description: "Section updated successfully.",
+        variant: "destructive",
+        title: "Could not save section",
+        description: "Your last change was not saved. Check your connection and try again.",
       });
     },
   });
@@ -356,9 +341,23 @@ export default function ProposalDetail() {
     }
   };
 
+  // Status colours come from the configurable field category, the same source
+  // the list page reads, so the two views never disagree about what "sent"
+  // looks like.
+  const { data: proposalStatusesData } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/proposal.status"],
+  });
+  const statusOption = (proposalStatusesData?.options || []).find(
+    (o) => o.key === proposal?.status,
+  );
+  const statusColor = statusOption?.color || null;
+
   // DOM slot for the proposal toolbar (rendered into the title row via portal
   // by ProposalBuilder).
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  // The overflow menu belongs at the far right of the row, so it gets its own
+  // slot rather than riding along inside the toolbar.
+  const [menuSlot, setMenuSlot] = useState<HTMLDivElement | null>(null);
 
   const handleAddSection = () => {
     setIsAddingSectionOpen(true);
@@ -402,6 +401,32 @@ export default function ProposalDetail() {
     updateProposalMutation.mutate(data);
   };
 
+  /**
+   * Proposal-level fields (name, project, validity) save themselves, the way
+   * section bodies already do. There is no Save button any more: one used to
+   * sit beside Send, both filled plum, and the only thing distinguishing "save
+   * my draft" from "email this to the client" was the label.
+   */
+  const saveFieldsMutation = useMutation({
+    mutationFn: async (updates: Partial<InsertProposal>) =>
+      apiRequest(`/api/proposals/${params.id}`, "PATCH", updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Could not save",
+        description: "Your last change was not saved. Check your connection and try again.",
+      });
+    },
+  });
+
+  const handleProposalFieldUpdate = (updates: Partial<InsertProposal>) => {
+    saveFieldsMutation.mutate(updates);
+  };
+
   if (proposalLoading || sectionsLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -420,171 +445,92 @@ export default function ProposalDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="border-b bg-background p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (isProjectContext) {
-                  setLocation(`/projects/${params.projectId}/proposals`);
-                } else {
-                  setLocation('/proposals');
-                }
-              }}
-              data-testid="button-back"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold">
-                  {isNewProposal ? 'New Proposal' : proposal?.name}
-                </h1>
-                {proposal && (proposal as any).version > 1 && (
-                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border bg-muted" data-testid="chip-proposal-version">
-                    v{(proposal as any).version}
-                  </span>
-                )}
-                {proposal?.status && (
-                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border capitalize bg-muted" data-testid="chip-proposal-status">
-                    {proposal.status.replace('_', ' ')}
-                  </span>
-                )}
-                {proposal && (proposal.viewCount ?? 0) > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className="inline-flex items-center gap-1 px-2 h-6 rounded-md text-xs font-medium border bg-muted"
-                        data-testid="chip-proposal-views"
-                      >
-                        <Eye className="w-3.5 h-3.5 fill-current" />
-                        Seen {proposal.viewCount}×
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {formatViewedTooltip(
-                        proposal.viewCount ?? 0,
-                        proposal.lastViewedAt,
-                        proposal.viewerDevice,
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {isNewProposal ? 'Create a new proposal' : `#${proposal?.proposalNumber}`}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* Portal target for the proposal toolbar (estimate revision
-                selector + ⋯ menu). Filled by ProposalBuilder via createPortal. */}
-            <div ref={setToolbarSlot} className="flex items-center gap-2" data-testid="proposal-toolbar-slot" />
-            <Button
-              variant="default"
-              onClick={handleSave}
-              disabled={updateProposalMutation.isPending}
-              data-testid="button-save"
-            >
-              {updateProposalMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Quick settings */}
-        <Form {...form}>
-          <div className="flex gap-4 mt-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormControl>
-                    <Input
-                      placeholder="Proposal name"
-                      {...field}
-                      data-testid="input-proposal-name"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* Valid until. Until now nothing in the app could set this: the
-                list's "Valid Until" column, the PDF cover page and the
-                expiry-based follow-up all read a column no code ever wrote.
-                Extending it on an expired proposal brings it back rather than
-                forcing a revision for identical work. */}
-            <FormField
-              control={form.control}
-              name="expiryDate"
-              render={({ field }) => (
-                <FormItem className="w-48">
-                  <FormControl>
-                    <Input
-                      type="date"
-                      aria-label="Pricing valid until"
-                      value={
-                        field.value
-                          ? new Date(field.value as unknown as string).toISOString().slice(0, 10)
-                          : ""
-                      }
-                      onChange={(e) =>
-                        field.onChange(e.target.value ? new Date(e.target.value) : undefined)
-                      }
-                      data-testid="input-proposal-expiry"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="projectId"
-              render={({ field }) => (
-                <FormItem className="w-64">
-                  <Select
-                    value={field.value || ''}
-                    onValueChange={field.onChange}
-                    disabled={isProjectContext}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-project">
-                        <SelectValue placeholder="Select project" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {projects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        </Form>
+      {/* Breadcrumb strip — names the page, so there is no 24px title below.
+          The name used to appear twice: as an <h1> and again in an editable
+          input directly beneath it. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <button
+          onClick={() => setLocation(isProjectContext ? `/projects/${params.projectId}/proposals` : "/proposals")}
+          className="text-xs text-muted-foreground hover:text-foreground hover-elevate active-elevate-2 px-1 rounded"
+          data-testid="button-back"
+        >
+          {isProjectContext ? (project?.name ?? "Proposals") : "Proposals"}
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <div className="w-[3px] h-3.5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--primary))" }} aria-hidden="true" />
+        <span className="text-xs font-medium text-foreground truncate" data-testid="text-page-title">
+          {isNewProposal ? "New Proposal" : proposal?.name}
+        </span>
+        {!isNewProposal && proposal?.proposalNumber && (
+          <span className="text-xs text-muted-foreground/70 font-mono ml-1">#{proposal.proposalNumber}</span>
+        )}
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 min-h-0 overflow-hidden p-4">
+      {/* Header panel — one condensed row */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-8 flex items-center gap-2 px-3">
+          {/* Status, revision and view count are facts about the proposal, not
+              things you can press. Every bordered control in this row is a
+              button, so these carry no border: the status takes its tint from
+              the configured field colour (the same source the list uses) and
+              the rest are plain muted text. */}
+          {proposal?.status && (
+            <span
+              className={`inline-flex items-center h-6 px-2 rounded-md text-xs font-medium capitalize ${
+                statusColor ? "" : "bg-muted/70 text-muted-foreground"
+              }`}
+              style={
+                statusColor
+                  ? { backgroundColor: `${statusColor}15`, color: statusColor }
+                  : undefined
+              }
+              data-testid="chip-proposal-status"
+            >
+              {statusOption?.name || proposal.status.replace("_", " ")}
+            </span>
+          )}
+          {proposal && (proposal as any).version > 1 && (
+            <span className="text-xs text-muted-foreground" data-testid="chip-proposal-version">
+              {revisionLabel((proposal as any).version)}
+            </span>
+          )}
+          {proposal && (proposal.viewCount ?? 0) > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                  data-testid="chip-proposal-views"
+                >
+                  <Eye className="w-3 h-3 fill-current" />
+                  {proposal.viewCount}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {formatViewedTooltip(proposal.viewCount ?? 0, proposal.lastViewedAt, proposal.viewerDevice)}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* Autosave state, where the Save button used to be. */}
+          {saveFieldsMutation.isPending && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid="text-save-state">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Saving…
+            </span>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Estimate selector + Send + ⋯ are portalled in here by the builder */}
+          <div ref={setToolbarSlot} className="flex items-center gap-2" data-testid="proposal-toolbar-slot" />
+
+          {/* Overflow menu — last thing in the row, as on every other page */}
+          <div ref={setMenuSlot} className="flex items-center" data-testid="proposal-menu-slot" />
+        </div>
+      </div>
+
+      {/* Body closes the card */}
+      <div className="flex-1 min-h-0 overflow-hidden border-x border-b border-border rounded-b-lg bg-card p-3">
         {isNewProposal ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-md">
@@ -623,11 +569,30 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                primaryColor={(proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor || companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
-                brandColor={companySettings?.brandColor || undefined}
+                /* One colour, one chain. `brandColor` used to be passed
+                   alongside this and won inside ProposalDocument
+                   (`brandColor ?? primaryColor`) — and company_settings
+                   .brand_color DEFAULTS to #3B82F6, so it was never null and
+                   the four-level fallback below was dead. Every proposal
+                   printed the same blue no matter what the Layout panel's
+                   colour picker said. It is folded into the chain now, and
+                   nothing overrides it afterwards. */
+                primaryColor={
+                  (proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor
+                  || companySettings?.proposalPrimaryColor
+                  || companySettings?.primaryColor
+                  || companySettings?.brandColor
+                  || project?.color
+                  || undefined
+                }
                 documentStyle={(companySettings?.documentStyle as 'style1' | 'style2' | undefined) ?? 'style1'}
                 toolbarSlot={toolbarSlot}
+                menuSlot={menuSlot}
                 onEstimateRevisionPick={handleEstimateRevisionPick}
+                projects={projects}
+                onProposalUpdate={handleProposalFieldUpdate}
+                lockProject={isProjectContext}
+                companySettings={companySettings}
               />
             </div>
           </div>

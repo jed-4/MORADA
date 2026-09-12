@@ -1,19 +1,18 @@
-import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
-import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
+import { round2 } from "@shared/pricing";
 import {
+  clientLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
   lineCountsTowardProposalTotal,
 } from "@shared/proposalTotals";
 import { SectionIntro } from "./RichTextBlocks";
-import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
-import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
+import { PdfLineTable, type PdfTableColumn, type PdfTableGroup } from "@/components/pdf/shared/PdfLineTable";
+import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
+import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -28,11 +27,19 @@ interface EstimateSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: "style1" | "style2";
+  showFooter?: boolean;
   proposalName?: string;
   proposalNumber?: string;
   expiryDate?: string;
   pricingMode?: "lump_sum" | "itemised" | "section_totals";
   showGst?: boolean;
+  /**
+   * True when another section shares this sheet. A `fixed` header repeats on
+   * every page of its <Page>, not just while the table runs — so on a shared
+   * sheet it reprints above whatever follows the table. Repeating is right for
+   * a long estimate on its own page and wrong here.
+   */
+  sharesPage?: boolean;
 }
 
 export function EstimateSection({
@@ -44,10 +51,12 @@ export function EstimateSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = "style1",
+  showFooter,
   proposalName,
   proposalNumber,
   pricingMode = "itemised",
   showGst = true,
+  sharesPage = false,
 }: EstimateSectionProps) {
   if (!estimateData) {
     return null;
@@ -70,6 +79,9 @@ export function EstimateSection({
     amountIncTax: false,
     showSubtotals: true,
     showZeroLines: false,
+    showColumnHeader: true,
+    showAllowanceType: true,
+    descriptionUnderName: true,
   };
   const baseToggles: Record<string, boolean> = visibleColumns
     ? {
@@ -83,6 +95,9 @@ export function EstimateSection({
         amountIncTax: visibleColumns.includes("amountIncTax"),
         showSubtotals: fallbackToggles.showSubtotals !== false,
         showZeroLines: fallbackToggles.showZeroLines === true,
+        showColumnHeader: fallbackToggles.showColumnHeader !== false,
+        showAllowanceType: fallbackToggles.showAllowanceType !== false,
+        descriptionUnderName: fallbackToggles.descriptionUnderName !== false,
       }
     : fallbackToggles;
 
@@ -99,6 +114,9 @@ export function EstimateSection({
         amountIncTax: false,
         showSubtotals: false,
         showZeroLines: false,
+        showColumnHeader: false,
+        showAllowanceType: false,
+        descriptionUnderName: false,
       };
     }
     const next = { ...baseToggles };
@@ -123,6 +141,22 @@ export function EstimateSection({
     return next;
   })();
   const hideLineItems = pricingMode === "lump_sum" || pricingMode === "section_totals";
+
+  /**
+   * Which figure a subtotal shows. This used to be inferred from the amount
+   * columns, so turning both off still printed an inc-tax subtotal under lines
+   * with no prices on them — money in the summary rows and none in the table.
+   * It is a deliberate choice now, and GST off forces ex.
+   */
+  const subtotalBasis: "ex" | "inc" | "both" = (() => {
+    const stored = content.subtotalBasis;
+    if (!showGst) return "ex";
+    if (stored === "ex" || stored === "inc" || stored === "both") return stored;
+    // Legacy rows: keep what the amount-column inference used to produce.
+    if (baseToggles.amountExTax && baseToggles.amountIncTax) return "both";
+    if (baseToggles.amountExTax) return "ex";
+    return "inc";
+  })();
 
   const { estimate, groups, items: allItems } = estimateData;
 
@@ -182,7 +216,24 @@ export function EstimateSection({
     return kids.reduce((acc, k) => acc.concat(collectGroupItems(k.id, seen)), [...own]);
   };
 
-  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
+  const formatCurrency = (amount: number) =>
+    `$${amount.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  /**
+   * Prime Cost and Provisional Sum lines are a different promise from a fixed
+   * price — PC is an allowance the client still chooses within, PS is the
+   * builder's estimate of work not yet fully scoped. A client reading a column
+   * of dollar figures cannot tell which is which, so they are named on the
+   * line.
+   */
+  const ALLOWANCE_TYPES = new Set(["Prime Cost", "Provisional Sum"]);
+  // Spelled out, not "PC" / "PS". The client reading this has no reason to know
+  // the trade shorthand, and the whole point of the tag is that they can tell
+  // an allowance from a fixed price at a glance.
+  const allowanceLabel = (item: EstimateItem): string | null => {
+    const kind = String((item as { allowance?: string }).allowance ?? "None");
+    return ALLOWANCE_TYPES.has(kind) ? kind : null;
+  };
   const formatQuantity = (qty: number) => qty.toFixed(2).replace(/\.?0+$/, "");
 
   // The stored priceIncTax is the PRE-margin line amount (line markup only).
@@ -193,46 +244,25 @@ export function EstimateSection({
   // contract price. It is also the right client-facing behaviour — the margin
   // is embedded in the prices, never shown as its own line. (Summing the raw
   // pre-margin cache here previously under-quoted by the whole margin.)
-  const marginFactor = 1 + (Number(estimate?.projectMarkupPercent ?? 0) / 100);
   const taxRatePct = Number(estimate?.taxRate ?? 10);
 
   // Pre-margin line amounts. Priced lines are RECOMPUTED from qty × unitCost ×
   // line markup (never the stored cache), so a legacy margin-baked cache can't
   // double-count the margin here. Fixed-price allowances use their authoritative
   // typed priceIncTax. This mirrors the estimate grid and computeEstimateSummary.
-  const preMarginIncTax = (item: EstimateItem): number => {
-    if (isFixedPriceLine(item.unitCostExTax)) return round2(Number(item.priceIncTax ?? 0));
-    return computeEstimateItemPrice({
-      unitCostExTax: item.unitCostExTax ?? 0,
-      quantity: item.quantity ?? 0,
-      markupPercent: item.markupPercent,
-      projectMarkupPercent: 0,
-      taxRate: taxRatePct,
-      wastagePercent: (item as any).wastagePercent,
-    }).lineIncTax;
-  };
-  const preMarginExTax = (item: EstimateItem): number => {
-    if (isFixedPriceLine(item.unitCostExTax)) {
-      const inc = round2(Number(item.priceIncTax ?? 0));
-      return round2(inc / (1 + taxRatePct / 100));
-    }
-    return computeEstimateItemPrice({
-      unitCostExTax: item.unitCostExTax ?? 0,
-      quantity: item.quantity ?? 0,
-      markupPercent: item.markupPercent,
-      projectMarkupPercent: 0,
-      taxRate: taxRatePct,
-      wastagePercent: (item as any).wastagePercent,
-    }).lineExTax;
-  };
+  // clientLineAmounts is shared with the Allowances page, so the two cannot
+  // quote the same line at two different prices.
+  const amountOpts = { projectMarkupPercent: estimate?.projectMarkupPercent, taxRate: taxRatePct };
+  const preMarginIncTax = (item: EstimateItem): number =>
+    clientLineAmounts(item, { projectMarkupPercent: 0, taxRate: taxRatePct }).incTax;
   // A line marked "excluded" is named on the proposal as NOT part of this
   // price, so it contributes nothing — matching lineCountsTowardProposalTotal
   // on the server. "included" and "empty" only change the printed cell; the
   // client is still paying for those lines.
   const lineIncTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginIncTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).incTax : 0;
   const lineExTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? round2(preMarginExTax(item) * marginFactor) : 0;
+    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).exTax : 0;
 
   /**
    * What goes in an amount cell. "Included" and "Excluded" say in words what a
@@ -261,20 +291,20 @@ export function EstimateSection({
     description: {
       marginBottom: 15,
       fontSize: 10,
-      color: "#333333",
+      color: PDF_COLORS.ink,
     },
     groupHeader: {
       backgroundColor: resolvedColor,
-      color: "#ffffff",
+      color: PDF_COLORS.surface,
       padding: 8,
       fontSize: 11,
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       marginTop: 15,
       marginBottom: 0,
     },
     groupDescription: {
       fontSize: 9,
-      color: "#444444",
+      color: PDF_COLORS.inkMuted,
       lineHeight: 1.4,
       paddingTop: 6,
       paddingBottom: 2,
@@ -282,23 +312,23 @@ export function EstimateSection({
     },
     tableHeader: {
       flexDirection: "row",
-      backgroundColor: isS2 ? resolvedColor + "14" : "#f5f5f5",
+      backgroundColor: isS2 ? resolvedColor + "14" : PDF_COLORS.surfaceMuted,
       padding: 6,
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
-      borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : "#cccccc"}`,
+      borderBottom: `1px solid ${isS2 ? tintOnWhite(resolvedColor, "40") : PDF_COLORS.borderStrong}`,
     },
     tableRow: {
       flexDirection: "row",
       padding: 6,
-      borderBottom: "1px solid #eeeeee",
+      borderBottom: "1px solid ${PDF_COLORS.border}",
       fontSize: 9,
     },
     subtotalRow: {
       flexDirection: "row",
       padding: 6,
-      backgroundColor: isS2 ? resolvedColor + "0d" : "#f9f9f9",
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      backgroundColor: isS2 ? resolvedColor + "0d" : PDF_COLORS.surfaceSubtle,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 9,
       marginTop: 0,
     },
@@ -306,13 +336,32 @@ export function EstimateSection({
       flexDirection: "row",
       padding: 8,
       backgroundColor: resolvedColor,
-      color: "#ffffff",
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      color: PDF_COLORS.surface,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       fontSize: 11,
       marginTop: 15,
     },
     col: {
       paddingHorizontal: 4,
+    },
+    itemCell: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    itemDescription: {
+      marginTop: 2,
+      fontSize: 8,
+      color: PDF_COLORS.inkFaint,
+      lineHeight: 1.35,
+    },
+    allowanceTag: {
+      marginLeft: 5,
+      paddingHorizontal: 3,
+      paddingVertical: 1,
+      fontSize: 7,
+      color: resolvedColor,
+      backgroundColor: tintOnWhite(resolvedColor, "1f"),
+      borderRadius: 2,
     },
     textRight: {
       textAlign: "right",
@@ -325,174 +374,128 @@ export function EstimateSection({
     numeric: 60,
   };
 
-  const renderTableHeader = () => (
-    <View style={styles.tableHeader}>
-      <Text style={[styles.col, { width: colWidths.item }]}>Item</Text>
-      {toggles.description && (
-        <Text style={[styles.col, { width: colWidths.description }]}>Description</Text>
-      )}
-      {toggles.quantity && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Qty</Text>
-      )}
-      {toggles.unit && (
-        <Text style={[styles.col, { width: colWidths.numeric }]}>Unit</Text>
-      )}
-      {toggles.unitCostExTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Unit Cost (ex)
-        </Text>
-      )}
-      {toggles.unitCostIncTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Unit Cost (inc)
-        </Text>
-      )}
-      {toggles.markup && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Markup %</Text>
-      )}
-      {toggles.amountExTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Amount (ex)
-        </Text>
-      )}
-      {toggles.amountIncTax && (
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-          Amount (inc)
-        </Text>
-      )}
+  // With the description tucked under the name, the name column absorbs the
+  // width the description column used to take, so the table still reaches the
+  // right-hand edge instead of stranding it.
+  const descriptionUnderName = toggles.descriptionUnderName !== false;
+  const nameWidth =
+    toggles.description && descriptionUnderName
+      ? colWidths.item + colWidths.description
+      : colWidths.item;
+
+  /* ── Model for the shared table ──────────────────────────────────────────
+   *
+   * The rendering moved to PdfLineTable, the same component the variation,
+   * invoice, purchase order and RFQ documents use. What it brings that the
+   * hand-rolled table did not:
+   *
+   *  - column widths that fill the page, and a squeeze that gives width back
+   *    to the text cell when too many numeric columns are switched on;
+   *  - a neutral grey group heading instead of a full-width brand bar, which
+   *    made a six-group estimate look like six separate tables;
+   *  - the group total right-aligned ON the heading row, so it costs no row,
+   *    and only where it earns its place (more than one line, or sub-groups);
+   *  - nesting shown by indent and weight rather than a second identical bar;
+   *  - continuous zebra and 1pt hairlines (0.5 renders unevenly).
+   */
+  const money = (n: number) => formatCurrency(n);
+
+  const columns: Array<PdfTableColumn<EstimateItem>> = [];
+  if (toggles.quantity)
+    columns.push({ key: "qty", label: "Qty", width: 34, align: "right",
+      value: (i) => formatQuantity(i.quantity) });
+  if (toggles.unit)
+    columns.push({ key: "unit", label: "Unit", width: 32, align: "left",
+      value: (i) => i.unitType || "" });
+  if (toggles.unitCostExTax)
+    columns.push({ key: "uex", label: "Unit (ex)", width: 56, align: "right",
+      value: (i) => money(i.unitCostExTax) });
+  if (toggles.unitCostIncTax)
+    columns.push({ key: "uinc", label: "Unit (inc)", width: 56, align: "right",
+      value: (i) => {
+        const tax = Math.round(i.unitCostExTax * (estimate.taxRate || 10)) / 100;
+        return money(Math.round((i.unitCostExTax + tax) * 100) / 100);
+      } });
+  if (toggles.markup)
+    columns.push({ key: "mkup", label: "Markup %", width: 38, align: "right",
+      value: (i) => `${i.markupPercent ?? 0}%` });
+  if (toggles.amountExTax)
+    columns.push({ key: "aex", label: "Amount (ex)", width: 60, align: "right",
+      value: (i) => amountCell(i, lineExTaxClient(i)) });
+  if (toggles.amountIncTax)
+    columns.push({ key: "ainc", label: "Amount (inc)", width: 64, align: "right",
+      value: (i) => amountCell(i, lineIncTaxClient(i)) });
+
+  const visibleItems = (rows: EstimateItem[]) =>
+    rows.filter((i) => toggles.showZeroLines || preMarginIncTax(i) !== 0);
+
+  const groupTotal = (groupId: string): string => {
+    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(groupId));
+    if (subtotalBasis === "ex") return money(exTax);
+    if (subtotalBasis === "both") return `${money(exTax)} ex · ${money(incTax)} inc`;
+    return money(incTax);
+  };
+
+  const toTableGroup = (group: EstimateGroup): PdfTableGroup<EstimateItem> => {
+    const rows = hideLineItems ? [] : visibleItems(itemsByGroup[group.id] || []);
+    const children = (subgroupsByParent[group.id] || []).map(toTableGroup);
+    // The kit's rule, applied here because the group's own band — where the
+    // kit enforced it — is suppressed in favour of the header row. A group of
+    // one line has a "total" identical to the line above it.
+    const earnsTotal = rows.length > 1 || children.length > 0;
+    return {
+      key: group.id,
+      label: group.name,
+      total: toggles.showSubtotals && earnsTotal ? groupTotal(group.id) : undefined,
+      rows,
+      children,
+    };
+  };
+
+  const renderRowText = (item: EstimateItem) => (
+    <View>
+      <View style={styles.itemCell}>
+        <Text>{item.name || "Untitled"}</Text>
+        {toggles.showAllowanceType && allowanceLabel(item) ? (
+          <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+        ) : null}
+      </View>
+      {toggles.description && item.description ? (
+        <Text style={styles.itemDescription}>{item.description}</Text>
+      ) : null}
     </View>
   );
 
-  const renderTableRow = (item: EstimateItem) => {
-    // Use the recomputed amount (not the possibly-stale cache) so a zeroed
-    // priced line is correctly hidden.
-    if (!toggles.showZeroLines && preMarginIncTax(item) === 0) {
-      return null;
-    }
-    const unitCostTax = Math.round(item.unitCostExTax * (estimate.taxRate || 10)) / 100;
-    const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
+  const tableGroups: Array<PdfTableGroup<EstimateItem>> = rootGroups.map(toTableGroup);
+  if (ungroupedItems.length > 0 && !hideLineItems) {
+    tableGroups.push({
+      key: "__ungrouped__",
+      label: "Other items",
+      rows: visibleItems(ungroupedItems),
+    });
+  }
 
-    return (
-      <View key={item.id} style={styles.tableRow}>
-        <Text style={[styles.col, { width: colWidths.item }]}>{item.name || "Untitled"}</Text>
-        {toggles.description && (
-          <Text style={[styles.col, { width: colWidths.description }]}>
-            {item.description || "-"}
-          </Text>
-        )}
-        {toggles.quantity && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatQuantity(item.quantity)}
-          </Text>
-        )}
-        {toggles.unit && (
-          <Text style={[styles.col, { width: colWidths.numeric }]}>{item.unitType || ""}</Text>
-        )}
-        {toggles.unitCostExTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(item.unitCostExTax)}
-          </Text>
-        )}
-        {toggles.unitCostIncTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(unitCostIncTax)}
-          </Text>
-        )}
-        {toggles.markup && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {item.markupPercent ?? 0}%
-          </Text>
-        )}
-        {toggles.amountExTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {amountCell(item, lineExTaxClient(item))}
-          </Text>
-        )}
-        {toggles.amountIncTax && (
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {amountCell(item, lineIncTaxClient(item))}
-          </Text>
-        )}
-      </View>
-    );
-  };
-
-  const renderGroup = (group: EstimateGroup): any => {
-    const directItems = itemsByGroup[group.id] || [];
-    const subgroups = subgroupsByParent[group.id] || [];
-    // Subtotal spans the group AND its descendants so the printed subtotals add
-    // up to the printed grand total even when a group is a pure container.
-    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(group.id));
-
-    return (
-      <View key={group.id}>
-        <View style={styles.groupHeader}>
-          <Text style={{ color: "#ffffff" }}>{group.name}</Text>
-        </View>
-        {/* The group's description is the section's specification — it reads as
-            the blurb under the heading, above that section's lines. */}
-        {group.description ? (
-          <Text style={styles.groupDescription}>{group.description}</Text>
-        ) : null}
-        {!hideLineItems && directItems.length > 0 && renderTableHeader()}
-        {!hideLineItems && directItems.map(renderTableRow)}
-        {subgroups.map((sg) => renderGroup(sg))}
-        {toggles.showSubtotals && (
-          <>
-            {toggles.amountExTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>
-                  Subtotal (ex. tax) — {group.name}
-                </Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(exTax)}
-                </Text>
-              </View>
-            )}
-            {toggles.amountIncTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>
-                  Subtotal (inc. tax) — {group.name}
-                </Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(incTax)}
-                </Text>
-              </View>
-            )}
-            {!toggles.amountExTax && !toggles.amountIncTax && (
-              <View style={styles.subtotalRow}>
-                <Text style={[styles.col, { flex: 1 }]}>Subtotal — {group.name}</Text>
-                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-                  {formatCurrency(incTax)}
-                </Text>
-              </View>
-            )}
-          </>
-        )}
-      </View>
-    );
-  };
+  // The grand total moves into the shared totals card: a bordered panel with
+  // the figure in the brand colour, rather than a full-width brand bar. The
+  // kit's note is that a fill behind the total fights the table above it.
+  const totalRows = [] as Array<{ label: string; value: string }>;
+  if (showGst) {
+    totalRows.push({ label: "Subtotal (ex GST)", value: money(grandTotalExTax) });
+    totalRows.push({
+      label: `GST (${Number(estimate?.taxRate ?? 10)}%)`,
+      value: money(round2(grandTotalIncTax - grandTotalExTax)),
+    });
+  }
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: "#ffffff" }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={companyLogo}
-        proposalNumber={proposalNumber}
-        proposalName={proposalName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-      <View style={{ paddingHorizontal: 40, paddingTop: 16 }}>
+      <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: 16 }}>
         <Text
+          minPresenceAhead={60}
           style={{
-            fontSize: 16,
-            fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
-            color: resolvedColor,
+            fontSize: PDF_TYPE.docTitle,
+            fontFamily: PDF_FONT_FAMILY,
+            fontWeight: PDF_WEIGHT.bold,
+            color: PDF_COLORS.ink,
             marginBottom: 12,
           }}
         >
@@ -509,52 +512,65 @@ export function EstimateSection({
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}
 
-        {rootGroups.map((g) => renderGroup(g))}
+        {/* One table per top-level group rather than a single continuous
+            block. A 60-line estimate reads as one undifferentiated slab
+            otherwise; a builder thinks in trades and areas, and so does the
+            client reading it. Sub-groups still nest INSIDE their parent's
+            table — splitting those out too would lose the containment that
+            makes Joinery read as part of Kitchen. */}
+        {tableGroups.map((group, i) => (
+          <View key={group.key} style={i > 0 ? { marginTop: PDF_SPACE.lg } : undefined}>
+            <PdfLineTable<EstimateItem>
+              columns={columns}
+              // The group's own band is suppressed: its name and total are the
+              // header row now. "Item" above a block already headed KITCHEN
+              // was labelling the obvious.
+              groups={[{ ...group, label: undefined, total: undefined }]}
+              textHeader={group.label}
+              // Only where the right edge is free. With an amount column on,
+              // the figures own that edge and the group total stays with the
+              // trailing row instead.
+              headerRight={columns.length === 0 ? group.total : undefined}
+              renderText={renderRowText}
+              brandColor={resolvedColor}
+              rowKey={(item) => item.id}
+              repeatHeader={!sharesPage}
+            />
+          </View>
+        ))}
 
-        {ungroupedItems.length > 0 && !hideLineItems && (
-          <View>
-            <View style={styles.groupHeader}>
-              <Text style={{ color: "#ffffff" }}>Other Items</Text>
-            </View>
-            {renderTableHeader()}
-            {ungroupedItems.map(renderTableRow)}
-          </View>
-        )}
-
-        {toggles.amountExTax && (
-          <View style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
-              Total Price (ex. tax)
-            </Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(grandTotalExTax)}
-            </Text>
-          </View>
-        )}
-        {toggles.amountIncTax && showGst && (
-          <View style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>
-              Total Price (inc. tax)
-            </Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(grandTotalIncTax)}
+        {/* The estimate's own total, not the Summary section — it belongs to
+            the table above it, so it is named and ruled off rather than
+            floating after the last group. */}
+        <View style={{ marginTop: PDF_SPACE.xl }}>
+          <View
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: PDF_COLORS.border,
+              paddingTop: PDF_SPACE.md,
+              marginBottom: PDF_SPACE.sm,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: PDF_FONT_FAMILY,
+                fontWeight: PDF_WEIGHT.semibold,
+                fontSize: PDF_TYPE.sectionLabel,
+                letterSpacing: PDF_TYPE.sectionLabelTracking,
+                textTransform: "uppercase",
+                color: PDF_COLORS.inkMuted,
+              }}
+            >
+              Estimate total
             </Text>
           </View>
-        )}
-        {!toggles.amountExTax && !(toggles.amountIncTax && showGst) && (
-          <View style={styles.totalRow}>
-            <Text style={[styles.col, { flex: 1, color: "#ffffff" }]}>Total Price</Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric, color: "#ffffff" }]}>
-              {formatCurrency(showGst ? grandTotalIncTax : grandTotalExTax)}
-            </Text>
-          </View>
-        )}
+          <PdfTotalsCard
+            rows={totalRows}
+            totalLabel={showGst ? "Total (inc GST)" : "Total"}
+            totalValue={money(showGst ? grandTotalIncTax : grandTotalExTax)}
+            brandColor={resolvedColor}
+          />
+        </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

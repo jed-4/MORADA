@@ -1,12 +1,7 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { sharedSectionStyle, htmlToBlocks, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
 
 interface ClosingSectionProps {
   proposal: Proposal;
@@ -17,6 +12,7 @@ interface ClosingSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function ClosingSection({
@@ -28,6 +24,7 @@ export function ClosingSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: ClosingSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
@@ -47,22 +44,9 @@ export function ClosingSection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
             {section.name || 'Closing'}
           </Text>
           <SectionIntro section={section} />
@@ -79,11 +63,5 @@ export function ClosingSection({
           )}
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

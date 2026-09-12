@@ -1,12 +1,8 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface SummarySectionProps {
   proposal: Proposal;
@@ -17,11 +13,48 @@ interface SummarySectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
   showGst?: boolean;
+  /**
+   * Live figures from the linked estimate. The stored proposal columns are only
+   * written on send, so without these every draft summarised itself as $0.00
+   * under an estimate table showing real money.
+   */
+  totals?: { subtotalCents: number; gstCents: number; totalCents: number };
+  /**
+   * False when a payment schedule is in the document: it carries the contract
+   * price above its milestones, and printing the same three figures twice
+   * invites the reader to look for the difference.
+   */
+  showTotals?: boolean;
 }
 
 const formatCurrency = (cents: number) =>
   `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Whether a Summary section has anything to print.
+ *
+ * With the figures on the payment schedule, a Summary that was only ever its
+ * totals has nothing left to say, and every existing proposal has one — so
+ * without this they all gained a page holding a heading and white space.
+ *
+ * ProposalDocument has to ask this BEFORE it opens a sheet: returning null
+ * from inside the component is too late, the page already exists.
+ */
+export function summaryHasContent(
+  section: { content?: unknown; description?: string | null; descriptionHtml?: string | null },
+  showTotals: boolean,
+): boolean {
+  if (showTotals) return true;
+  const strip = (v: string | null | undefined) => (v ?? '').replace(/<[^>]*>/g, '').trim();
+  const body = ((section.content as Record<string, unknown> | null)?.summaryText as string) || '';
+  return (
+    strip(body).length > 0 ||
+    strip(section.descriptionHtml).length > 0 ||
+    strip(section.description).length > 0
+  );
+}
 
 export function SummarySection({
   proposal,
@@ -32,7 +65,10 @@ export function SummarySection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
   showGst = true,
+  totals,
+  showTotals = true,
 }: SummarySectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
@@ -40,9 +76,11 @@ export function SummarySection({
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.summaryText as string) || '';
 
-  const subtotal = Number(proposal.subtotal) || 0;
-  const gst = Number(proposal.gstAmount) || 0;
-  const total = Number(proposal.totalAmount) || subtotal + gst;
+  if (!summaryHasContent(section, showTotals)) return null;
+
+  const subtotal = totals?.subtotalCents ?? (Number(proposal.subtotal) || 0);
+  const gst = totals?.gstCents ?? (Number(proposal.gstAmount) || 0);
+  const total = totals?.totalCents ?? (Number(proposal.totalAmount) || subtotal + gst);
 
   const styles = StyleSheet.create({
     totalsWrap: {
@@ -61,7 +99,7 @@ export function SummarySection({
           }),
     },
     row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-    label: { fontSize: 11, color: PDF_COLORS.ink },
+    label: { fontSize: 11, color: PDF_COLORS.inkMuted },
     value: { fontSize: 11, color: PDF_COLORS.ink },
     grandRow: {
       flexDirection: 'row',
@@ -72,39 +110,27 @@ export function SummarySection({
     },
     grandLabel: {
       fontSize: 14,
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: PDF_COLORS.ink,
     },
     grandValue: {
       fontSize: 14,
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: resolvedColor,
     },
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Summary'}
           </Text>
           <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 
-          <View style={styles.totalsWrap}>
+          {showTotals && (
+          <View wrap={false} style={styles.totalsWrap}>
             {showGst ? (
               <>
                 <View style={styles.row}>
@@ -127,13 +153,8 @@ export function SummarySection({
               </View>
             )}
           </View>
+          )}
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

@@ -7,7 +7,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 40,
-    backgroundColor: '#ffffff',
+    backgroundColor: PDF_COLORS.surface,
   },
   logoContainer: {
     marginBottom: 60,
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: PDF_COLORS.ink,
+    color: PDF_COLORS.inkMuted,
     marginBottom: 8,
     textAlign: 'center',
   },

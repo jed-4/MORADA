@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/hooks/use-auth';
-import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -12,21 +12,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, LayoutTemplate, CornerDownRight } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
 import { format as formatDate } from 'date-fns';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem, InsertProposal } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
+import { ImportedPdfEditor } from './ImportedPdfEditor';
+import { CoverTemplatePicker } from './CoverTemplatePicker';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
@@ -35,17 +38,50 @@ import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
+import { revisionLabel } from '@/components/proposals/proposalDisplay';
+import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
+import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
+import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
+import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
+import { buildProposalPlaceholderContext } from '@/components/proposals/pdf/proposalContext';
+import { substitutePlaceholders } from '@/components/proposals/pdf/placeholders';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
-function revisionLabel(version: number | null | undefined): string {
-  const v = Math.max(1, Number(version || 1));
-  if (v <= 26) return `Rev ${String.fromCharCode(64 + v)}`;
-  return `Rev ${v}`;
+/** Sentinel for the built-in structure, which is not a saved template. */
+const STANDARD_STRUCTURE = '__standard__';
+
+/**
+ * Sections whose whole body is prose. The generic "Intro text" field earns its
+ * place above a table — a lead-in over the estimate or the payment schedule —
+ * but above a cover letter it is only the first paragraph with extra steps, in
+ * a second editor that formats differently from the one below it. These two get
+ * one field; existing intro text is offered for merging rather than stranded.
+ */
+const PROSE_BODY_KEY: Record<string, string> = {
+  cover_letter: 'letterText',
+  scope: 'scopeText',
+  summary: 'summaryText',
+  closing: 'closingText',
+  estimate: 'estimateDescriptionHtml',
+};
+
+/** True when rich text holds something other than empty markup. */
+function hasRichText(html: string | null | undefined): boolean {
+  if (!html) return false;
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
+  imported_pdf: "Imported PDF",
   cover_letter: "Cover Letter",
   scope: "Scope of Work",
   estimate: "Estimate",
@@ -68,9 +104,21 @@ interface SortableSectionItemProps {
   projectId: string;
   project?: Project;
   client?: Contact;
+  /** Whether a payment schedule is in the document — it carries the totals. */
+  hasPaymentSchedule?: boolean;
+  /** False for the first row and for the cover page, which always stands alone. */
+  canJoinPrevious?: boolean;
+  /** Named in the hint, so "continues under…" says under what. */
+  previousSectionName?: string;
+  /** True when this section is set to continue the sheet above it. */
+  joinsPrevious?: boolean;
+  /** True when the section is enabled but has nothing to render. */
+  printsNothing?: boolean;
+  /** The company-wide masthead setting, which still picks the default cover. */
+  documentStyle?: 'style1' | 'style2';
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing, documentStyle }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -110,52 +158,143 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
     onSectionUpdate(section.id, { isEnabled: enabled });
   };
 
-  const handleSave = () => {
-    onSectionUpdate(section.id, {
+  /**
+   * Autosave.
+   *
+   * These fields used to live in local state behind a per-section "Save
+   * Changes" button, next to the page's own Save. Collapse the accordion or
+   * leave the page without pressing the inner one and the text was gone, with
+   * no warning and no way back — the outer Save did not cover it.
+   *
+   * Edits now persist on their own a beat after you stop typing, and any
+   * pending edit is flushed on unmount, which is what navigating away and
+   * closing the accordion both do.
+   */
+  const pending = useRef<Partial<ProposalSection> | null>(null);
+  const firstRun = useRef(true);
+  const onSectionUpdateRef = useRef(onSectionUpdate);
+  onSectionUpdateRef.current = onSectionUpdate;
+
+  useEffect(() => {
+    // Skip the mount pass, and the re-seed when switching section, or every
+    // section would write itself back to the server just for being rendered.
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    pending.current = {
       name: localName,
       description: localDescriptionText,
       descriptionHtml: localDescriptionHtml,
       content: localContent,
-    } as Partial<ProposalSection>);
-  };
+    } as Partial<ProposalSection>;
+
+    const t = setTimeout(() => {
+      if (!pending.current) return;
+      onSectionUpdateRef.current(section.id, pending.current);
+      pending.current = null;
+    }, 700);
+    return () => clearTimeout(t);
+  }, [localName, localDescriptionText, localDescriptionHtml, localContent, section.id]);
+
+  // Flush whatever the debounce still holds when this row goes away.
+  useEffect(() => () => {
+    if (pending.current) {
+      onSectionUpdateRef.current(section.id, pending.current);
+      pending.current = null;
+    }
+  }, [section.id]);
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
+  // Prose-only sections hide the intro editor. Anything already in it is
+  // surfaced for merging instead of quietly becoming uneditable.
+  const proseBodyKey = PROSE_BODY_KEY[section.sectionType || ""];
+  const [bodyEpoch, setBodyEpoch] = useState(0);
+  const strandedIntro =
+    !!proseBodyKey &&
+    (hasRichText(localDescriptionHtml) || !!localDescriptionText?.trim());
+
+  const mergeIntroIntoBody = () => {
+    if (!proseBodyKey) return;
+    const intro = hasRichText(localDescriptionHtml)
+      ? localDescriptionHtml
+      : localDescriptionText?.trim()
+      ? `<p>${escapeHtml(localDescriptionText.trim())}</p>`
+      : "";
+    const body = String((localContent as Record<string, unknown>)[proseBodyKey] ?? "");
+    setLocalContent({ ...localContent, [proseBodyKey]: `${intro}${body}` });
+    setLocalDescriptionHtml("");
+    setLocalDescriptionText("");
+    // RichTextEditor only pushes a new `content` prop into TipTap when its
+    // isInternalChange guard happens to be clear, so a programmatic rewrite can
+    // be swallowed — the text persists but the box still shows the old copy,
+    // which reads as "the merge deleted my letter". Bumping the key remounts
+    // the editor on the new content instead of hoping the sync lands.
+    setBodyEpoch((n) => n + 1);
+  };
+
   return (
-    <div ref={setNodeRef} style={style} className="group/section">
+    <div ref={setNodeRef} style={style} className={cn("group/section", joinsPrevious && "pl-4 relative")}>
+      {/* A joined section is indented under the one that opened the sheet, so
+          the page structure is legible from the list without opening ten
+          editors to find out. */}
+      {joinsPrevious && (
+        <CornerDownRight
+          className="absolute left-0.5 top-3 w-3 h-3 text-muted-foreground/60"
+          aria-hidden="true"
+        />
+      )}
       <AccordionItem
         value={value}
         className={cn(
-          "border border-border rounded-md mb-2 bg-card transition-colors",
+          "border border-border rounded-md mb-1 bg-card transition-colors",
           !localIsEnabled && "opacity-60",
+          joinsPrevious ? "border-dashed border-border/70" : "",
           "hover:border-primary/40",
         )}
       >
-        <div className="flex items-center gap-2 px-3">
+        <div className="flex items-center gap-1.5 px-2">
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing py-4 opacity-0 group-hover/section:opacity-100 transition-opacity"
+            className="cursor-grab active:cursor-grabbing py-2 opacity-0 group-hover/section:opacity-100 transition-opacity"
             aria-label="Reorder section"
             data-testid={`drag-handle-${section.id}`}
           >
-            <GripVertical className="w-4 h-4 text-muted-foreground" />
+            <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
-          <div className="flex-1 min-w-0 py-4 flex flex-col gap-1">
-            <p className="font-medium text-sm truncate">{section.name}</p>
-            <Badge variant="secondary" className="self-start font-normal text-[10px] tracking-wide uppercase">
-              {sectionTypeLabel}
-            </Badge>
+          {/* One line per section. The type badge used to sit under the name
+              repeating it almost verbatim — "Cover Page" above "COVER PAGE" —
+              and pushed every row to ~72px, so ten sections never fit on
+              screen. It is only shown where it adds something: a renamed or
+              custom section, where the name no longer says what the section is. */}
+          <div className="flex-1 min-w-0 py-2 flex items-baseline gap-2">
+            <p className={`text-sm truncate ${localIsEnabled ? "font-medium" : "text-muted-foreground"}`}>
+              {section.name}
+            </p>
+            {section.name?.trim().toLowerCase() !== sectionTypeLabel.toLowerCase() && (
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 shrink-0">
+                {sectionTypeLabel}
+              </span>
+            )}
+            {/* A switch reading ON above a section that prints nothing is worse
+                than the blank page the suppression was avoiding. */}
+            {printsNothing && (
+              <span className="text-[10px] uppercase tracking-wide text-amber shrink-0">
+                Not printing
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3 py-4">
+          <div className="flex items-center gap-2 py-2">
             <Switch
               checked={localIsEnabled}
               onCheckedChange={handleToggleEnabled}
               onClick={(e) => e.stopPropagation()}
+              className="scale-90"
               data-testid={`switch-section-enabled-${section.id}`}
             />
-            <AccordionTrigger className="hover:no-underline px-2">
-            </AccordionTrigger>
+            <AccordionTrigger className="hover:no-underline px-1.5" />
           </div>
         </div>
         <AccordionContent className="px-4 pb-4">
@@ -170,31 +309,57 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               />
             </div>
 
-            <div className="space-y-2">
-              {/* Named for where it lands. It used to be "Description", which
-                  said nothing about what it does — and on the Estimate section
-                  sat directly above a second field with the identical label. */}
-              <Label htmlFor={`section-description-${section.id}`}>Intro text</Label>
-              <p className="text-xs text-muted-foreground">
-                Appears under the section heading in the document.
-              </p>
-              <RichTextEditor
-                content={localDescriptionHtml}
-                onChange={(html, text) => {
-                  setLocalDescriptionHtml(html);
-                  setLocalDescriptionText(text);
-                }}
-                placeholder="Optional — a line or two introducing this section"
-                placeholders={PROPOSAL_PLACEHOLDERS}
-                data-testid={`richtext-section-description-${section.id}`}
-              />
-            </div>
+            {!proseBodyKey && (
+              <div className="space-y-2">
+                {/* Named for where it lands. It used to be "Description", which
+                    said nothing about what it does — and on the Estimate section
+                    sat directly above a second field with the identical label. */}
+                <Label htmlFor={`section-description-${section.id}`}>Intro text</Label>
+                <p className="text-xs text-muted-foreground">
+                  Appears under the section heading in the document.
+                </p>
+                <RichTextEditor
+                  content={localDescriptionHtml}
+                  onChange={(html, text) => {
+                    setLocalDescriptionHtml(html);
+                    setLocalDescriptionText(text);
+                  }}
+                  placeholder="Optional — a line or two introducing this section"
+                  placeholders={PROPOSAL_PLACEHOLDERS}
+                  data-testid={`richtext-section-description-${section.id}`}
+                />
+              </div>
+            )}
+
+            {strandedIntro && (
+              <div className="rounded-md border border-amber/40 bg-amber-light p-2.5 space-y-2">
+                <p className="text-xs text-foreground">
+                  This section has leftover intro text from when it had two separate
+                  fields. It still prints above the body.
+                </p>
+                <div className="rounded border bg-card px-2 py-1.5 text-xs text-muted-foreground max-h-24 overflow-auto">
+                  {localDescriptionText?.trim() ||
+                    localDescriptionHtml.replace(/<[^>]*>/g, " ").trim()}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={mergeIntroIntoBody}
+                  data-testid={`button-merge-intro-${section.id}`}
+                >
+                  <ArrowRight className="w-3 h-3 mr-1" />
+                  Move to the top of the {section.sectionType === "scope" ? "scope" : "letter"}
+                </Button>
+              </div>
+            )}
 
             {/* Section-specific content editors */}
             {section.sectionType === "cover_letter" && (
               <div className="space-y-2">
                 <Label>Letter Content</Label>
                 <RichTextEditor
+                  key={`letter-${bodyEpoch}`}
                   content={localContent.letterText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, letterText: html })}
                   placeholder="Enter your cover letter text..."
@@ -207,6 +372,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               <div className="space-y-2">
                 <Label>Scope of Work</Label>
                 <RichTextEditor
+                  key={`scope-${bodyEpoch}`}
                   content={localContent.scopeText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, scopeText: html })}
                   placeholder="Describe the scope of work..."
@@ -230,6 +396,14 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "summary" && (
               <div className="space-y-2">
                 <Label>Summary Content</Label>
+                {/* Says where the figures went, so their absence reads as a
+                    decision rather than a bug. */}
+                {hasPaymentSchedule && (
+                  <p className="text-xs text-muted-foreground">
+                    The totals print on the Payment Schedule, above the milestones they
+                    are divided into. Turn that section off and they come back here.
+                  </p>
+                )}
                 <RichTextEditor
                   content={localContent.summaryText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, summaryText: html })}
@@ -303,12 +477,12 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                 {/* Per-section estimate revision selector removed — the
                     proposal-level toolbar selector now drives every estimate
                     section's linked revision in one place. */}
-                <EstimateEditor
-                  content={localContent}
-                  setContent={setLocalContent}
-                  projectId={projectId}
-                />
+                <EstimateEditor content={localContent} setContent={setLocalContent} />
               </div>
+            )}
+
+            {section.sectionType === "imported_pdf" && (
+              <ImportedPdfEditor content={localContent} setContent={setLocalContent} />
             )}
 
             {section.sectionType === "payment_schedule" && (
@@ -317,6 +491,12 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {section.sectionType === "cover_page" && (
               <div className="space-y-4">
+                <CoverTemplatePicker
+                  section={section}
+                  content={localContent}
+                  setContent={setLocalContent}
+                  documentStyle={documentStyle}
+                />
                 <div className="space-y-2">
                   <Label htmlFor={`project-title-${section.id}`}>Project Title</Label>
                   <Input
@@ -344,14 +524,70 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                     placeholder="Optional subtitle"
                   />
                 </div>
+                {/* Off by default: whether the price belongs on page one or
+                    after the scope is a judgement call, not a default. */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor={`show-price-${section.id}`}>Show the total</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Puts the contract price on the cover, not ten pages in
+                    </p>
+                  </div>
+                  <Switch
+                    id={`show-price-${section.id}`}
+                    checked={localContent.showPrice === true}
+                    onCheckedChange={(v) => setLocalContent({ ...localContent, showPrice: v })}
+                    data-testid={`switch-cover-show-price-${section.id}`}
+                  />
+                </div>
               </div>
             )}
 
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleSave} size="sm">
-                Save Changes
-              </Button>
+            {/* Page furniture, at the foot of every section's editor. */}
+            {canJoinPrevious && (
+              <div className="flex items-center justify-between border-t pt-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor={`new-page-${section.id}`} className="text-xs">Start on a new page</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {localContent.startOnNewPage === false
+                      ? `Continues under ${previousSectionName ?? 'the section above'}, if there is room`
+                      : 'Off lets it fill the space left on the previous page'}
+                  </p>
+                </div>
+                <Switch
+                  id={`new-page-${section.id}`}
+                  checked={localContent.startOnNewPage !== false}
+                  onCheckedChange={(v) => setLocalContent({ ...localContent, startOnNewPage: v })}
+                  data-testid={`switch-section-new-page-${section.id}`}
+                />
+              </div>
+            )}
+
+            {/* Undefined means "whatever Layout says"; the switch sets an
+                explicit override. A joined section shares the sheet's footer,
+                so the setting belongs to whichever section opened it. */}
+            <div className="flex items-center justify-between border-t pt-3">
+              <div className="space-y-0.5">
+                <Label htmlFor={`show-footer-${section.id}`} className="text-xs">Show footer</Label>
+                <p className="text-xs text-muted-foreground">
+                  {localContent.startOnNewPage === false
+                    ? 'Set by the section that starts this page'
+                    : localContent.showFooter === undefined
+                    ? 'Following the document default'
+                    : 'Overriding the document default'}
+                </p>
+              </div>
+              <Switch
+                id={`show-footer-${section.id}`}
+                disabled={localContent.startOnNewPage === false}
+                checked={localContent.showFooter !== false}
+                onCheckedChange={(v) => setLocalContent({ ...localContent, showFooter: v })}
+                data-testid={`switch-section-footer-${section.id}`}
+              />
             </div>
+
+            {/* No Save button — edits persist on their own. See the autosave
+                effect above for why this used to lose work. */}
           </div>
         </AccordionContent>
       </AccordionItem>
@@ -377,6 +613,12 @@ interface ProposalBuilderProps {
    * inline at the top of the builder.
    */
   toolbarSlot?: HTMLElement | null;
+  /** Separate slot for the overflow menu, so it sits last in the header row. */
+  menuSlot?: HTMLElement | null;
+  projects?: Project[];
+  lockProject?: boolean;
+  onProposalUpdate?: (updates: Partial<InsertProposal>) => void;
+  companySettings?: CompanySettingsForSections | null;
   /**
    * Called when the user picks an estimate revision from the toolbar
    * selector. The page-level handler is responsible for cascading the new
@@ -405,9 +647,18 @@ type ProposalTemplate = {
 interface ProposalTemplateBarProps {
   proposal: Proposal;
   sections: ProposalSection[];
+  /**
+   * 'picker' is the labelled select in the Details card — choosing the
+   * structure is part of setting a proposal up. 'menu' is the toolbar icon,
+   * which only saves the current proposal as a new template.
+   */
+  mode?: 'picker' | 'menu';
+  /** For 'picker': rebuilds the standard structure. */
+  onApplyStandard?: () => void;
+  applyingStandard?: boolean;
 }
 
-function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
+function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandard, applyingStandard }: ProposalTemplateBarProps) {
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState('');
   const [showSave, setShowSave] = useState(false);
@@ -533,74 +784,124 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
     },
   });
 
-  return (
-    <div className="space-y-2 mb-3" data-testid="proposal-template-bar">
-      <div className="flex items-center gap-2 flex-wrap">
-        {templates.length > 0 && (
-          <Select
-            onValueChange={(id) => {
-              if (!id) return;
-              const tpl = templates.find((t) => t.id === id);
-              if (!tpl) return;
-              if (sections.length === 0) {
-                applyMutation.mutate(id);
-                return;
-              }
-              setConfirmAction({
-                title: `Apply template "${tpl.name}"?`,
-                description: `This will replace all ${sections.length} current section(s).`,
-                confirmLabel: 'Apply',
-                run: () => applyMutation.mutate(id),
-              });
-            }}
-            disabled={applyMutation.isPending}
-          >
-            <SelectTrigger className="h-8 flex-1 text-xs" data-testid="select-apply-proposal-template">
-              <SelectValue
-                placeholder={
-                  applyMutation.isPending ? 'Applying…' : 'Apply template'
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {templates.map((t) => (
-                <SelectItem key={t.id} value={t.id} className="text-xs">
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowSave((v) => !v)}
-          disabled={sections.length === 0}
-          data-testid="button-toggle-save-proposal-template"
+  if (mode === 'picker') {
+    const run = (label: string, go: () => void) => {
+      if (sections.length === 0) { go(); return; }
+      setConfirmAction({
+        title: `Apply "${label}"?`,
+        description: `This will replace all ${sections.length} current section(s).`,
+        confirmLabel: 'Apply',
+        run: go,
+      });
+    };
+    return (
+      <>
+        <Select
+          // Deliberately uncontrolled: nothing on the proposal records which
+          // template built it, so this is a chooser, not a stored value.
+          value=""
+          disabled={applyMutation.isPending || !!applyingStandard}
+          onValueChange={(id) => {
+            if (id === STANDARD_STRUCTURE) {
+              run('Standard structure', () => onApplyStandard?.());
+              return;
+            }
+            const tpl = templates.find((t) => t.id === id);
+            if (tpl) run(tpl.name, () => applyMutation.mutate(id));
+          }}
         >
-          Save as template
-        </Button>
-      </div>
-      {showSave && (
-        <div className="flex gap-2">
-          <Input
-            placeholder="Template name"
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            className="h-8 text-xs"
-            data-testid="input-proposal-template-name"
-          />
-          <Button
-            size="sm"
-            disabled={!templateName.trim() || saveMutation.isPending}
-            onClick={() => saveMutation.mutate(templateName.trim())}
-            data-testid="button-save-proposal-template"
+          <SelectTrigger className="h-7 text-xs" data-testid="select-apply-proposal-template">
+            <SelectValue
+              placeholder={
+                applyMutation.isPending || applyingStandard ? 'Applying…' : 'Choose a structure…'
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STANDARD_STRUCTURE} className="text-xs">
+              Standard structure
+            </SelectItem>
+            {templates.map((t) => (
+              <SelectItem key={t.id} value={t.id} className="text-xs">
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+          title={confirmAction?.title ?? ''}
+          description={confirmAction?.description}
+          confirmLabel={confirmAction?.confirmLabel ?? 'Confirm'}
+          destructive={confirmAction?.destructive}
+          onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Templates are an occasional action, not part of building a proposal,
+          so they live behind one icon rather than a select plus a button
+          taking a row each above the section list. */}
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                aria-label="Templates"
+                data-testid="button-proposal-templates"
+              >
+                {applyMutation.isPending || saveMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <LayoutTemplate className="w-3 h-3" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Templates</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem
+            disabled={sections.length === 0}
+            // Keeps the menu open: the name field renders in its place.
+            onSelect={(e) => { e.preventDefault(); setShowSave(true); }}
+            data-testid="button-toggle-save-proposal-template"
           >
-            {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-            Save
-          </Button>
-        </div>
-      )}
+            <Plus className="w-4 h-4 mr-2" />
+            Save as template
+          </DropdownMenuItem>
+          {showSave && (
+            <div className="flex gap-1 p-1.5 pt-1">
+              <Input
+                placeholder="Template name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && templateName.trim()) saveMutation.mutate(templateName.trim());
+                }}
+                className="h-7 text-xs"
+                autoFocus
+                data-testid="input-proposal-template-name"
+              />
+              <Button
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={!templateName.trim() || saveMutation.isPending}
+                onClick={() => saveMutation.mutate(templateName.trim())}
+                data-testid="button-save-proposal-template"
+              >
+                {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
@@ -610,7 +911,7 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
         destructive={confirmAction?.destructive}
         onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
       />
-    </div>
+    </>
   );
 }
 
@@ -627,10 +928,16 @@ export function ProposalBuilder({
   brandColor,
   documentStyle,
   toolbarSlot,
+  menuSlot,
+  projects = [],
+  lockProject,
+  onProposalUpdate,
+  companySettings,
   onEstimateRevisionPick,
 }: ProposalBuilderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [sidebarTab, setSidebarTab] = useState<'sections' | 'layout'>('sections');
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
@@ -843,7 +1150,52 @@ export function ProposalBuilder({
             proposalItems={proposalItems}
           />
         ).toBlob();
-        
+
+        /* Imported pages are spliced in here, at the single point the proposal
+           PDF comes into existence — the preview, the download and the copy
+           that is emailed to the client all read this same blob, so none of
+           them can end up with a different document. */
+        const imports = importedSectionsInOrder(sections);
+        let merged = blob;
+        if (imports.length > 0) {
+          try {
+            /* The text boxes a builder drags onto an imported cover resolve
+               here, against the same context the document itself used — so a
+               stamped price and the summary two pages later are the same
+               number by construction, not by coincidence. */
+            const stampCtx = buildProposalPlaceholderContext({
+              proposal,
+              sections,
+              project,
+              client,
+              companyName,
+              companyPhone,
+              estimatesData: estimatesDataMap,
+            });
+            const { bytes, failures } = await mergeImportedPages(
+              await blob.arrayBuffer(),
+              imports,
+              { substitute: (text) => substitutePlaceholders(text, stampCtx) },
+            );
+            merged = new Blob([bytes], { type: 'application/pdf' });
+            if (failures.length > 0) {
+              toast({
+                variant: 'destructive',
+                title: 'Some imported pages could not be loaded',
+                description: `${failures.join(', ')} — the rest of the proposal is unaffected.`,
+              });
+            }
+          } catch (err) {
+            // A merge failure must not cost the builder their preview.
+            console.error('Failed to merge imported PDF pages:', err);
+            toast({
+              variant: 'destructive',
+              title: 'Imported pages were left out',
+              description: 'The proposal rendered without them.',
+            });
+          }
+        }
+
         if (!isCancelled) {
           // Revoke previous URL
           if (pdfUrlRef.current) {
@@ -851,12 +1203,12 @@ export function ProposalBuilder({
           }
           
           // Create and store new URL for download
-          const url = URL.createObjectURL(blob);
+          const url = URL.createObjectURL(merged);
           pdfUrlRef.current = url;
           setPdfUrl(url);
-          
+
           // Store blob directly for preview
-          setPdfBlob(blob);
+          setPdfBlob(merged);
         }
       } catch (error) {
         console.error('Error generating PDF:', error);
@@ -893,23 +1245,164 @@ export function ProposalBuilder({
     onSectionsReorder(reorderedSections);
   }
 
-  const proposalDocument = (
-    <ProposalDocument
-      proposal={proposal}
-      sections={sections}
-      project={project}
-      client={client}
-      companyLogo={companyLogo}
-      companyName={companyName}
-      companyPhone={companyPhone}
-      primaryColor={primaryColor}
-      brandColor={brandColor}
-      documentStyle={documentStyle}
-      estimatesData={pdfEstimatesData}
-      milestones={milestones}
-      acceptance={latestAcceptance}
-      proposalItems={proposalItems}
+
+  // Rebuilds the standard structure on a proposal that has no sections.
+  const addStandardSections = useMutation({
+    mutationFn: async () => {
+      const specs = buildDefaultSections(companySettings);
+      // Sequential, not Promise.all: the create route derives nothing from
+      // order, but a partial failure halfway through a parallel batch leaves a
+      // scrambled document with no way to tell which ones landed.
+      for (const spec of specs) {
+        await apiRequest(`/api/proposals/${proposal.id}/sections`, 'POST', {
+          ...spec,
+          proposalId: proposal.id,
+          description: '',
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id, 'sections'] });
+    },
+    onError: () => {
+      toast({ title: 'Could not add the standard sections', variant: 'destructive' });
+    },
+  });
+
+  // Picking the estimate revision is a proposal-level setting, so it renders
+  // inside the Details card rather than as a stray select in the header.
+  const estimateSelector = project?.id ? (
+    <EstimateRevisionSelector
+      projectId={project.id}
+      currentEstimateId={proposal.estimateId || null}
+      hideLabel
+      triggerClassName="h-7 text-xs"
+      // When no page-level cascade is wired, fall back to persisting
+      // proposal.estimateId from inside the selector itself.
+      persistOnProposalId={onEstimateRevisionPick ? undefined : proposal.id}
+      onPick={(newEstimateId) => {
+        if (onEstimateRevisionPick) {
+          return onEstimateRevisionPick(newEstimateId);
+        }
+        // Fallback cascade: update each estimate section so the live preview
+        // stays in sync. Proposal-level persist is handled by
+        // `persistOnProposalId` above.
+        for (const s of sections) {
+          if (s.sectionType !== 'estimate') continue;
+          const c = (s.content as Record<string, unknown> | null) ?? {};
+          if (c.estimateId === newEstimateId) continue;
+          onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
+        }
+      }}
     />
+  ) : null;
+
+  /**
+   * The overflow menu is portalled separately from the rest of the toolbar so
+   * the page can place it last in the header row.
+   *
+   * This used to be wrapped in <PDFDownloadLink> purely to obtain a download
+   * href — a second, live copy of the whole document, re-rendered on every
+   * keystroke, when the effect above has already produced the blob and an
+   * object URL for it. It also crashed: @react-pdf/renderer 4.3.1 ships a
+   * react-reconciler whose host config has no detachDeletedInstance, and
+   * React's detachFiber calls it for every host node a commit removes. So any
+   * edit that DELETED a node from the document — toggling a section off,
+   * removing a block of text — threw "<minified> is not a function" out of the
+   * live container. Rendering once, imperatively, never diffs a deletion.
+   */
+  const menuContent = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className={
+              toolbarSlot
+                ? 'h-6 w-6 rounded-md border border-border/50 text-muted-foreground'
+                : undefined
+            }
+            data-testid="button-proposal-toolbar-menu"
+            aria-label="Proposal actions"
+          >
+            <MoreHorizontal className={toolbarSlot ? 'w-3 h-3' : 'w-4 h-4'} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>Revision</DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => newRevisionMutation.mutate()}
+            disabled={newRevisionMutation.isPending}
+            data-testid="menu-create-revision"
+          >
+            {newRevisionMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Copy className="w-4 h-4 mr-2" />
+            )}
+            Create new revision
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={handleCopyShareLink}
+            disabled={!proposal.shareToken}
+            data-testid="menu-copy-share-link"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Copy client share link
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setIsRemindersOpen(true)}
+            disabled={isDraft}
+            data-testid="menu-proposal-reminders"
+          >
+            <BellRing className="w-4 h-4 mr-2" />
+            Follow-ups
+            {proposal.remindersEnabled ? (
+              <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
+            ) : null}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setIsRevisionHistoryOpen(true)}
+            data-testid="menu-revision-history"
+          >
+            <History className="w-4 h-4 mr-2" />
+            Revision history
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Preview</DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => setShowPreview((v) => !v)}
+            data-testid="menu-toggle-preview"
+          >
+            {showPreview ? (
+              <EyeOff className="w-4 h-4 mr-2" />
+            ) : (
+              <Eye className="w-4 h-4 mr-2" />
+            )}
+            {showPreview ? 'Hide preview' : 'Show preview'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            asChild
+            disabled={!pdfUrl}
+            data-testid="menu-download-pdf"
+          >
+            <a
+              href={pdfUrl || '#'}
+              download={`${proposal.proposalNumber}.pdf`}
+              onClick={(e) => {
+                if (!pdfUrl) e.preventDefault();
+              }}
+            >
+              {pdfUrl ? (
+                <Download className="w-4 h-4 mr-2" />
+              ) : (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              {pdfUrl ? 'Download PDF' : 'Generating PDF…'}
+            </a>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
   );
 
   // Toolbar JSX — when a toolbarSlot is provided we portal it into the page
@@ -920,34 +1413,7 @@ export function ProposalBuilder({
       className={toolbarSlot ? 'flex items-center gap-2' : 'rounded-md border p-2 flex items-center gap-2'}
       data-testid="proposal-toolbar"
     >
-      <div className={toolbarSlot ? 'min-w-[14rem]' : 'flex-1 min-w-0'}>
-        {project?.id ? (
-          <EstimateRevisionSelector
-            projectId={project.id}
-            currentEstimateId={proposal.estimateId || null}
-            compact={!!toolbarSlot}
-            // When no page-level cascade is wired, fall back to persisting
-            // proposal.estimateId from inside the selector itself.
-            persistOnProposalId={onEstimateRevisionPick ? undefined : proposal.id}
-            onPick={(newEstimateId) => {
-              if (onEstimateRevisionPick) {
-                return onEstimateRevisionPick(newEstimateId);
-              }
-              // Fallback cascade: update each estimate section so the live
-              // preview stays in sync. Proposal-level persist is handled by
-              // `persistOnProposalId` above.
-              for (const s of sections) {
-                if (s.sectionType !== 'estimate') continue;
-                const c = (s.content as Record<string, unknown> | null) ?? {};
-                if (c.estimateId === newEstimateId) continue;
-                onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
-              }
-            }}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground">No project linked</span>
-        )}
-      </div>
+      {!toolbarSlot && menuContent}
 
       {isSuperseded && (
         <Badge variant="outline" className="text-xs" data-testid="badge-superseded">
@@ -964,104 +1430,22 @@ export function ProposalBuilder({
           size="sm"
           onClick={() => setIsSendOpen(true)}
           disabled={!pdfBlob}
+          // min-h-6 is not redundant: size="sm" sets min-h-8, and a min-height
+          // is a different property from h-6's height, so the button kept its
+          // full 32px inside a 32px row and touched both dividers.
+          className={
+            toolbarSlot
+              ? 'h-6 min-h-6 gap-1 px-2 text-xs bg-sage text-white hover:bg-sage/90 [&>svg]:h-3 [&>svg]:w-3'
+              : 'bg-sage text-white hover:bg-sage/90'
+          }
           data-testid="button-send-proposal"
         >
-          <Send className="w-4 h-4 mr-2" />
+          <Send className={toolbarSlot ? '' : 'w-4 h-4 mr-2'} />
           Send
         </Button>
       )}
 
-      <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
-          {({ loading, url }) => (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  data-testid="button-proposal-toolbar-menu"
-                  aria-label="Proposal actions"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Revision</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onSelect={() => newRevisionMutation.mutate()}
-                  disabled={newRevisionMutation.isPending}
-                  data-testid="menu-create-revision"
-                >
-                  {newRevisionMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Copy className="w-4 h-4 mr-2" />
-                  )}
-                  Create new revision
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={handleCopyShareLink}
-                  disabled={!proposal.shareToken}
-                  data-testid="menu-copy-share-link"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Copy client share link
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => setIsRemindersOpen(true)}
-                  disabled={isDraft}
-                  data-testid="menu-proposal-reminders"
-                >
-                  <BellRing className="w-4 h-4 mr-2" />
-                  Follow-ups
-                  {proposal.remindersEnabled ? (
-                    <Badge variant="secondary" className="ml-auto text-[10px]">On</Badge>
-                  ) : null}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => setIsRevisionHistoryOpen(true)}
-                  data-testid="menu-revision-history"
-                >
-                  <History className="w-4 h-4 mr-2" />
-                  Revision history
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Preview</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onSelect={() => setShowPreview((v) => !v)}
-                  data-testid="menu-toggle-preview"
-                >
-                  {showPreview ? (
-                    <EyeOff className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Eye className="w-4 h-4 mr-2" />
-                  )}
-                  {showPreview ? 'Hide preview' : 'Show preview'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  asChild
-                  disabled={loading || !url}
-                  data-testid="menu-download-pdf"
-                >
-                  <a
-                    href={url || '#'}
-                    download={`${proposal.proposalNumber}.pdf`}
-                    onClick={(e) => {
-                      if (loading || !url) e.preventDefault();
-                    }}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4 mr-2" />
-                    )}
-                    {loading ? 'Generating PDF…' : 'Download PDF'}
-                  </a>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </PDFDownloadLink>
-      </div>
+    </div>
   );
 
   return (
@@ -1069,6 +1453,7 @@ export function ProposalBuilder({
       {/* When a toolbarSlot is provided (e.g. the page header), portal the
           toolbar there. Otherwise render it inline above the preview. */}
       {toolbarSlot ? createPortal(toolbarContent, toolbarSlot) : toolbarContent}
+      {toolbarSlot ? createPortal(menuContent, menuSlot ?? toolbarSlot) : null}
 
       <ProposalRemindersDialog
         open={isRemindersOpen}
@@ -1223,26 +1608,74 @@ export function ProposalBuilder({
 
       {/* Sidebar - Sections / Layout - 40% */}
       <div className="w-96 flex flex-col min-h-0">
-        <Tabs defaultValue="sections" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full">
-            <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
-            <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
-          </TabsList>
-          <TabsContent value="sections" className="flex-1 flex flex-col min-h-0 mt-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Sections</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onAddSection}
-                data-testid="button-add-section"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Section
-              </Button>
+        <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as 'sections' | 'layout')} className="flex-1 flex flex-col min-h-0">
+          {/* One h-8 toolbar row, matching the list pages: the tab chips name
+              the panel, so the duplicate "Sections" heading is gone and the
+              template controls have collapsed into a single icon. */}
+          <div className="h-8 flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-0.5" data-testid="tabs-proposal-sidebar">
+              {([
+                { key: 'sections', label: 'Sections' },
+                { key: 'layout', label: 'Layout' },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setSidebarTab(t.key)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 ${
+                    sidebarTab === t.key
+                      ? 'bg-primary/10 text-primary border-primary/20'
+                      : 'border-border/50 text-muted-foreground'
+                  }`}
+                  data-testid={`tab-${t.key}`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
 
-            <ProposalTemplateBar proposal={proposal} sections={sections} />
+            <div className="flex-1" />
+
+            {sidebarTab === 'sections' && (
+              <>
+                <button
+                  onClick={onAddSection}
+                  className="h-6 w-auto px-2 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-add-section"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+                <ProposalTemplateBar proposal={proposal} sections={sections} />
+              </>
+            )}
+          </div>
+
+          {/* `flex` outranks the UA rule behind Radix's `hidden` attribute, so
+              without the data-state guard the inactive Sections panel keeps its
+              full height and shoves the Layout panel off the bottom. */}
+          <TabsContent
+            value="sections"
+            className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden"
+          >
+            {onProposalUpdate && (
+              <ProposalDetailsCard
+                proposal={proposal}
+                projects={projects}
+                lockProject={lockProject}
+                onProposalUpdate={onProposalUpdate}
+                estimateSelector={estimateSelector}
+                hasEstimate={!!proposal.estimateId}
+                templateSelector={
+                  <ProposalTemplateBar
+                    proposal={proposal}
+                    sections={sections}
+                    mode="picker"
+                    onApplyStandard={() => addStandardSections.mutate()}
+                    applyingStandard={addStandardSections.isPending}
+                  />
+                }
+              />
+            )}
 
             <div className="flex-1 overflow-auto">
               <DndContext
@@ -1255,7 +1688,7 @@ export function ProposalBuilder({
                   strategy={verticalListSortingStrategy}
                 >
                   <Accordion type="single" collapsible className="w-full">
-                    {sections.map((section) => (
+                    {sections.map((section, idx) => (
                       <SortableSectionItem
                         key={section.id}
                         section={section}
@@ -1264,6 +1697,32 @@ export function ProposalBuilder({
                         projectId={proposal.projectId}
                         project={project}
                         client={client}
+                        documentStyle={documentStyle}
+                        hasPaymentSchedule={sections.some(
+                          (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
+                        )}
+                        canJoinPrevious={
+                          idx > 0 &&
+                          section.sectionType !== 'cover_page' &&
+                          sections[idx - 1]?.sectionType !== 'cover_page'
+                        }
+                        previousSectionName={sections[idx - 1]?.name}
+                        printsNothing={
+                          section.isEnabled !== false &&
+                          section.sectionType === 'summary' &&
+                          !summaryHasContent(
+                            section,
+                            !sections.some(
+                              (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
+                            ),
+                          )
+                        }
+                        joinsPrevious={
+                          idx > 0 &&
+                          section.sectionType !== 'cover_page' &&
+                          sections[idx - 1]?.sectionType !== 'cover_page' &&
+                          (section.content as Record<string, unknown> | null)?.startOnNewPage === false
+                        }
                       />
                     ))}
                   </Accordion>
@@ -1271,7 +1730,7 @@ export function ProposalBuilder({
               </DndContext>
 
               {sections.length === 0 && (
-                <Card className="p-8 text-center">
+                <Card className="p-6 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="rounded-full bg-muted p-3">
                       <FileText className="w-6 h-6 text-muted-foreground" />
@@ -1279,20 +1738,40 @@ export function ProposalBuilder({
                     <div className="space-y-1">
                       <p className="font-medium text-sm">No sections yet</p>
                       <p className="text-sm text-muted-foreground">
-                        Add a section to start building your proposal.
+                        Start from the standard structure — cover page through to
+                        signature — and change what you don't need.
                       </p>
                     </div>
-                    <Button size="sm" onClick={onAddSection} data-testid="button-add-first-section">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Section
+                    {/* The standard set used to exist only at the moment a
+                        proposal was created, so a proposal that arrived without
+                        it could only be rebuilt ten sections at a time. */}
+                    <Button
+                      size="sm"
+                      onClick={() => addStandardSections.mutate()}
+                      disabled={addStandardSections.isPending}
+                      data-testid="button-add-standard-sections"
+                    >
+                      {addStandardSections.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4 mr-2" />
+                      )}
+                      Add standard sections
                     </Button>
+                    <button
+                      onClick={onAddSection}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      data-testid="button-add-first-section"
+                    >
+                      Or add a single section
+                    </button>
                   </div>
                 </Card>
               )}
             </div>
           </TabsContent>
 
-          <TabsContent value="layout" className="flex-1 min-h-0 mt-4 overflow-auto">
+          <TabsContent value="layout" className="flex-1 min-h-0 mt-2 overflow-auto">
             <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
           </TabsContent>
         </Tabs>
@@ -1314,8 +1793,11 @@ type PresetKey = 'lump_sum_quote' | 'itemised_quote' | 'standard_residential';
 
 type LayoutSettings = {
   primaryColor?: string;
+  /** The cover's accent. Per-proposal only: there is no company default. */
+  secondaryColor?: string;
   showPageNumbers?: boolean;
   showFooter?: boolean;
+  pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
   pageSize?: string;
   pricingMode?: PricingMode;
   showGst?: boolean;
@@ -1410,8 +1892,10 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const canEdit = canEditCompanyDefaults && editCompanyDefaults;
 
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
+  const [secondaryColor, setSecondaryColor] = useState<string>(settings.secondaryColor || '');
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
   const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
+  const [pageHeader, setPageHeader] = useState<'none' | 'minimal' | 'compact' | 'full'>(settings.pageHeader ?? 'full');
   const [pageSize, setPageSize] = useState<string>(settings.pageSize || 'A4');
   const [pricingMode, setPricingMode] = useState<PricingMode>(settings.pricingMode || 'itemised');
   const [showGst, setShowGst] = useState<boolean>(settings.showGst ?? true);
@@ -1434,7 +1918,14 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 
   const saveLayoutMutation = useMutation({
     mutationFn: async (layoutSettings: LayoutSettings) => {
-      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', { layoutSettings });
+      // Merge, don't replace. layoutSettings is a shared jsonb bag: the
+      // milestone seeder stores `milestonesSeeded` in it, so writing a fresh
+      // object here cleared that flag and the payment schedule re-seeded
+      // itself the next time the proposal loaded.
+      const existing = (proposal.layoutSettings as Record<string, unknown> | null) ?? {};
+      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
+        layoutSettings: { ...existing, ...layoutSettings },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
@@ -1473,8 +1964,12 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const handleSave = () => {
     saveLayoutMutation.mutate({
       primaryColor,
+      // Empty means "no accent" — stored as undefined so the document falls
+      // back to the primary rather than reading a blank as a colour.
+      secondaryColor: secondaryColor.trim() || undefined,
       showPageNumbers,
       showFooter,
+      pageHeader,
       pageSize,
       pricingMode,
       showGst,
@@ -1502,6 +1997,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 
     saveLayoutMutation.mutate({
       primaryColor,
+      secondaryColor: secondaryColor.trim() || undefined,
       showPageNumbers: nextShowPageNumbers,
       showFooter: nextShowFooter,
       pageSize: nextPageSize,
@@ -1631,6 +2127,43 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="layout-secondary-color">
+          Accent colour <span className="text-xs text-muted-foreground">(this proposal)</span>
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Used on the cover — the rule under the masthead, the tint behind the client card.
+          Leave it empty to use the primary colour throughout.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            id="layout-secondary-color"
+            type="color"
+            value={secondaryColor || primaryColor}
+            onChange={(e) => setSecondaryColor(e.target.value)}
+            data-testid="input-layout-secondary-color"
+            className="w-16 h-9 p-1"
+          />
+          <Input
+            value={secondaryColor}
+            placeholder="None"
+            onChange={(e) => setSecondaryColor(e.target.value)}
+            className="flex-1"
+            data-testid="input-layout-secondary-color-text"
+          />
+          {secondaryColor ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSecondaryColor('')}
+              data-testid="button-clear-secondary-color"
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="layout-page-size">Page size</Label>
         <Select value={pageSize} onValueChange={setPageSize}>
           <SelectTrigger id="layout-page-size" data-testid="select-layout-page-size">
@@ -1673,6 +2206,50 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
           data-testid="switch-layout-page-numbers"
         />
       </div>
+      {/* Page header — what repeats at the top of every page AFTER the cover.
+          Described rather than named, because "minimal" tells you nothing
+          about what you'd actually see. */}
+      <div className="space-y-1.5">
+        <Label htmlFor="layout-page-header">Page header</Label>
+        <Select value={pageHeader} onValueChange={(v) => setPageHeader(v as typeof pageHeader)}>
+          <SelectTrigger id="layout-page-header" data-testid="select-layout-page-header">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-w-[22rem]">
+            {([
+              {
+                value: 'minimal',
+                name: 'Running head',
+                desc: 'One line of small grey type — proposal number left, project right, a hairline under. Lightest, and gives every page back about 36pt of room.',
+              },
+              {
+                value: 'compact',
+                name: 'Compact',
+                desc: 'Brand rule, company name and proposal number, project on the right. Same as full without the logo repeating on every page.',
+              },
+              {
+                value: 'full',
+                name: 'Full',
+                desc: 'Brand rule, logo, company name, proposal number and project. Most identity on each page, and the most space it takes.',
+              },
+              {
+                value: 'none',
+                name: 'None',
+                desc: 'Nothing at the top; the footer still carries the company and page numbers. Most room for content, but a loose page cannot identify itself.',
+              },
+            ] as const).map((o) => (
+              <SelectItem key={o.value} value={o.value} className="items-start">
+                <div className="space-y-0.5">
+                  <p className="text-sm">{o.name}</p>
+                  <p className="text-xs text-muted-foreground whitespace-normal">{o.desc}</p>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Applies to every page except the cover.</p>
+      </div>
+
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="layout-footer">Show footer</Label>
         <Switch
@@ -1720,37 +2297,13 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
         />
       </div>
 
-      {estimateSections.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-3">
-            <Label>Estimate columns visible in PDF</Label>
-            {estimateSections.map((s) => (
-              <div key={s.id} className="border rounded-md p-3 space-y-2" data-testid={`layout-estimate-${s.id}`}>
-                <p className="text-xs font-medium">{s.name}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {ESTIMATE_COLUMNS.map((col) => {
-                    const checked = isColumnVisible(s, col.key);
-                    return (
-                      <label
-                        key={col.key}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                        data-testid={`checkbox-col-${s.id}-${col.key}`}
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => updateVisibleColumns(s, col.key, !!v)}
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      {/* "Estimate columns visible in PDF" used to live here as well as in the
+          Estimate section's own Column Visibility panel — the same five
+          checkboxes in two places, and worse, writing two different keys. This
+          wrote `visibleColumns`, the section editor wrote `columnToggles`, and
+          the PDF prefers `visibleColumns`. So once you had touched this panel
+          even once, the section editor's switches silently stopped doing
+          anything. Columns belong to the section; this is document layout. */}
 
       <Button onClick={handleSave} disabled={saveLayoutMutation.isPending} className="w-full" data-testid="button-save-layout">
         {saveLayoutMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -1769,8 +2322,12 @@ interface EstimateRevisionSelectorProps {
    * rejects, the optimistic trigger label is rolled back automatically.
    */
   onPick: (id: string) => void | Promise<void>;
-  /** Compact mode: no Label, slim trigger — for use inside the page header. */
+  /** Compact mode: no Label, slim ghost trigger — for use inside a toolbar. */
   compact?: boolean;
+  /** Suppress the built-in Label when the caller supplies its own. */
+  hideLabel?: boolean;
+  /** Overrides the trigger sizing, e.g. to match a form's h-7 fields. */
+  triggerClassName?: string;
   /**
    * If provided, the selector will internally PATCH `proposals.estimateId`
    * after `onPick`. Use this for legacy callsites where the parent doesn't
@@ -1781,7 +2338,7 @@ interface EstimateRevisionSelectorProps {
   persistOnProposalId?: string;
 }
 
-function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact, persistOnProposalId }: EstimateRevisionSelectorProps) {
+function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact, hideLabel, triggerClassName, persistOnProposalId }: EstimateRevisionSelectorProps) {
   const { toast } = useToast();
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
@@ -1830,7 +2387,12 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
       }}
     >
       <SelectTrigger
-        className="h-9 text-xs"
+        className={
+          triggerClassName ??
+          (compact
+            ? 'h-6 w-auto max-w-[15rem] gap-1 border-border/50 px-2 text-xs text-muted-foreground [&>svg]:h-3 [&>svg]:w-3'
+            : 'h-9 text-xs')
+        }
         aria-label={noAnchor ? 'Link estimate' : 'Estimate revision'}
         data-testid="select-estimate-revision"
       >
@@ -1847,7 +2409,7 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
     </Select>
   );
 
-  if (compact) return trigger;
+  if (compact || hideLabel) return trigger;
 
   return (
     <div className="space-y-1">

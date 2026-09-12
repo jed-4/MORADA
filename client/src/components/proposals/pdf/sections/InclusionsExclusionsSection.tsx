@@ -1,12 +1,7 @@
-import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
 
 interface InclusionsExclusionsSectionProps {
   proposal: Proposal;
@@ -17,6 +12,7 @@ interface InclusionsExclusionsSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function InclusionsExclusionsSection({
@@ -28,6 +24,7 @@ export function InclusionsExclusionsSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: InclusionsExclusionsSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
@@ -49,22 +46,9 @@ export function InclusionsExclusionsSection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Inclusions & Exclusions'}
           </Text>
           <SectionIntro section={section} />
@@ -90,11 +74,5 @@ export function InclusionsExclusionsSection({
           </View>
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

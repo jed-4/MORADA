@@ -1,4 +1,6 @@
-import { Document } from '@react-pdf/renderer';
+import { Document, Page, View } from '@react-pdf/renderer';
+import { SectionPage, SectionDivider } from './SectionPage';
+import { importedPdfContent } from './mergeImportedPages';
 import type {
   Proposal,
   ProposalSection,
@@ -11,10 +13,16 @@ import type {
   ProposalAcceptance,
   ProposalItem,
 } from '@shared/schema';
-import { substituteSectionContent, type PlaceholderContext } from './placeholders';
+import { substituteSectionContent } from './placeholders';
+import {
+  buildProposalPlaceholderContext,
+  resolveEstimateId as resolveEstimateIdFor,
+  resolveProposalTotals,
+  resolveCompanyName,
+} from './proposalContext';
 import { CoverPageSection } from './sections/CoverPageSection';
 import { EstimateSection } from './sections/EstimateSection';
-import { SummarySection } from './sections/SummarySection';
+import { SummarySection, summaryHasContent } from './sections/SummarySection';
 import { AllowancesSection } from './sections/AllowancesSection';
 import { PaymentScheduleSection } from './sections/PaymentScheduleSection';
 import { ScopeSection } from './sections/ScopeSection';
@@ -67,77 +75,100 @@ export function ProposalDocument({
   // Resolved brand color: explicit brandColor overrides primaryColor for new-style rendering
   const resolvedColor = brandColor ?? primaryColor;
 
+  /**
+   * company_settings.company_name is NULL until a builder fills it in, and a
+   * default parameter only fires for undefined — so every `companyName =
+   * "Your Company"` down the section tree has been dead code, and the footer,
+   * the running header and the cover all printed a blank where the company's
+   * name goes. Normalised once here rather than defended against in twelve
+   * places.
+   */
+  const resolvedCompanyName = resolveCompanyName(companyName);
+
   const layout = (proposal.layoutSettings as {
     pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
     showGst?: boolean;
     showLogo?: boolean;
+    showFooter?: boolean;
+    pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
+    secondaryColor?: string;
   } | null) ?? null;
   const pricingMode = layout?.pricingMode ?? 'itemised';
+  /* The cover's accent. Stored beside primaryColor in layoutSettings rather
+     than in its own column: the primary already lives there, and a second
+     source of truth for "what colour is this proposal" is how the two ended
+     up disagreeing in the first place. */
+  const secondaryColor = layout?.secondaryColor;
   const showGst = layout?.showGst ?? true;
   const showLogo = layout?.showLogo ?? true;
+  // The Layout panel has always written showFooter and nothing has ever read
+  // it, so the switch did nothing. A section can now override the document
+  // default — a cover page or a signature sheet usually wants a clean edge.
+  const showFooterDefault = layout?.showFooter ?? true;
+  const footerFor = (s: ProposalSection): boolean => {
+    const override = (s.content as Record<string, unknown> | null)?.showFooter;
+    return typeof override === 'boolean' ? override : showFooterDefault;
+  };
   const effectiveLogo = showLogo ? companyLogo : undefined;
 
-  const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined): string | undefined => {
-    const explicit = sectionContent && typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
-    return explicit || proposal.estimateId || undefined;
-  };
+  const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined) =>
+    resolveEstimateIdFor(proposal, sectionContent);
 
-  let estimateTotalIncGstCents: number | undefined;
-  for (const s of sections) {
-    if (s.sectionType !== 'estimate') continue;
-    const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
-    const estimateId = resolveEstimateId(sectionContent);
-    const data = estimateId ? estimatesData[estimateId] : undefined;
-    if (!data) continue;
-    const incDollars = data.items.reduce((acc: number, item: EstimateItem) => {
-      const value = item.priceIncTax;
-      return acc + (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
-    }, 0);
-    if (incDollars > 0) {
-      estimateTotalIncGstCents = Math.round(incDollars * 100);
-      break;
-    }
-  }
-
-  const placeholderCtx: PlaceholderContext = {
+  /*
+   * The document's own price, and the context every {{token}} resolves
+   * against. Both come from proposalContext so that a cover page stamped by
+   * pdf-lib after this render finishes cannot print a different figure — see
+   * the note there.
+   */
+  const totals = resolveProposalTotals(proposal, sections, estimatesData);
+  const placeholderCtx = buildProposalPlaceholderContext({
     proposal,
+    sections,
     project,
     client,
-    companyName,
+    companyName: resolvedCompanyName,
     companyPhone,
-    estimateTotalIncGstCents,
-  };
+    estimatesData,
+  });
+
   const enabledSections = sections.filter((s) => s.isEnabled !== false);
+  // The price appears once. The payment schedule owns it — the milestones are
+  // percentages of it — and a proposal with no schedule keeps it on Summary
+  // rather than losing it.
+  const hasPaymentSchedule = enabledSections.some((s) => s.sectionType === 'payment_schedule');
   const sortedSections = [...enabledSections]
     .sort((a, b) => a.order - b.order)
     .map((s) => substituteSectionContent(s, placeholderCtx));
 
   // Shared props forwarded to every inner-page section
   const sharedSectionProps = {
-    companyName,
+    companyName: resolvedCompanyName,
     companyPhone,
     logoUrl: effectiveLogo,
     brandColor: resolvedColor,
     documentStyle,
   };
 
-  return (
-    <Document>
-      {sortedSections.map((section) => {
+  /** The body for one section, with no page chrome around it. */
+  const bodyFor = (section: ProposalSection, sharesPage = false) => {
         switch (section.sectionType) {
           case 'cover_page':
             return (
               <CoverPageSection
                 key={section.id}
+                showFooter={footerFor(section)}
+                totals={totals}
+                showGst={showGst}
                 proposal={proposal}
                 section={section}
                 project={project}
                 client={client}
                 companyLogo={effectiveLogo}
-                companyName={companyName}
+                companyName={resolvedCompanyName}
                 companyPhone={companyPhone}
                 primaryColor={primaryColor}
                 brandColor={resolvedColor}
+                secondaryColor={secondaryColor}
                 documentStyle={documentStyle}
               />
             );
@@ -146,6 +177,7 @@ export function ProposalDocument({
             return (
               <ScopeSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -156,6 +188,9 @@ export function ProposalDocument({
             return (
               <SummarySection
                 key={section.id}
+                showFooter={footerFor(section)}
+                totals={totals}
+                showTotals={!hasPaymentSchedule}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -167,6 +202,8 @@ export function ProposalDocument({
             return (
               <AllowancesSection
                 key={section.id}
+                showFooter={footerFor(section)}
+                estimateData={proposal.estimateId ? estimatesData[proposal.estimateId] : undefined}
                 proposal={proposal}
                 section={section}
                 proposalItems={proposalItems}
@@ -178,6 +215,8 @@ export function ProposalDocument({
             return (
               <PaymentScheduleSection
                 key={section.id}
+                showFooter={footerFor(section)}
+                totals={totals}
                 proposal={proposal}
                 section={section}
                 milestones={milestones}
@@ -190,6 +229,7 @@ export function ProposalDocument({
             return (
               <InclusionsExclusionsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -200,6 +240,7 @@ export function ProposalDocument({
             return (
               <TermsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -211,6 +252,7 @@ export function ProposalDocument({
             return (
               <ClosingSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -221,6 +263,7 @@ export function ProposalDocument({
             return (
               <AttachmentsSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -231,6 +274,7 @@ export function ProposalDocument({
             return (
               <SignatureSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 acceptance={acceptance}
@@ -246,10 +290,12 @@ export function ProposalDocument({
             return (
               <EstimateSection
                 key={section.id}
+                sharesPage={sharesPage}
+                showFooter={footerFor(section)}
                 section={section}
                 estimateData={estimateData}
                 companyLogo={effectiveLogo}
-                companyName={companyName}
+                companyName={resolvedCompanyName}
                 companyPhone={companyPhone}
                 primaryColor={primaryColor}
                 brandColor={resolvedColor}
@@ -267,6 +313,7 @@ export function ProposalDocument({
             return (
               <ScopeSection
                 key={section.id}
+                showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
                 {...sharedSectionProps}
@@ -274,6 +321,91 @@ export function ProposalDocument({
               />
             );
         }
+  };
+
+  /**
+   * Sections into sheets.
+   *
+   * A section opens a new sheet unless it is marked to continue, in which case
+   * its body is appended to the sheet before it. Nothing is forced together:
+   * @react-pdf flows content, so a continuing section fills whatever space is
+   * left and spills onto the next page by itself if there isn't any. The
+   * toggle is really "don't force a break here".
+   *
+   * The cover page never joins a group — it has its own layout, no running
+   * header, and is the one page that should never have something land on it.
+   */
+  // An imported page is a finished design; nothing may share its sheet.
+  const ALWAYS_STANDALONE = new Set(['cover_page', 'imported_pdf']);
+
+  // Asked here rather than inside the component: a section that returns null
+  // from its own render is too late — the sheet already exists, and you get a
+  // page with a header, a footer and nothing between them.
+  const willRender = (section: ProposalSection): boolean =>
+    section.sectionType !== 'summary' || summaryHasContent(section, !hasPaymentSchedule);
+
+  const pageGroups: ProposalSection[][] = [];
+  for (const section of sortedSections.filter(willRender)) {
+    const prev = pageGroups[pageGroups.length - 1];
+    const startsNew =
+      !prev ||
+      ALWAYS_STANDALONE.has(section.sectionType) ||
+      ALWAYS_STANDALONE.has(prev[0].sectionType) ||
+      (section.content as Record<string, unknown> | null)?.startOnNewPage !== false;
+    if (startsNew) pageGroups.push([section]);
+    else prev.push(section);
+  }
+
+  return (
+    <Document>
+      {pageGroups.map((group) => {
+        /* An imported PDF reserves its slot rather than rendering anything.
+           One bare page per imported page, spliced out by mergeImportedPages
+           once @react-pdf has finished — which is also what makes the footer's
+           "Page 3 of 12" count them. See that file for why by size. */
+        if (group[0].sectionType === 'imported_pdf') {
+          const imported = importedPdfContent(group[0]);
+          // A section with nothing uploaded yet reserves nothing. Reserving a
+          // slot it never fills leaves a 10x10pt page in the finished document
+          // — a blank sheet the client would receive.
+          if (!imported) return null;
+          return Array.from({ length: imported.pageCount ?? 1 }, (_, i) => (
+            <Page key={`${group[0].id}-slot-${i}`} size={[10, 10]} />
+          ));
+        }
+
+        // The cover page renders its own <Page>: a different layout entirely.
+        if (ALWAYS_STANDALONE.has(group[0].sectionType)) {
+          return group.map((section) => bodyFor(section));
+        }
+
+        const bodies = group
+          .map((section) => ({ section, body: bodyFor(section, group.length > 1) }))
+          .filter((entry) => entry.body !== null);
+        if (bodies.length === 0) return null;
+
+        return (
+          <SectionPage
+            key={group[0].id}
+            companyName={resolvedCompanyName}
+            companyPhone={companyPhone}
+            logoUrl={effectiveLogo}
+            proposalNumber={proposal.proposalNumber}
+            proposalName={proposal.name}
+            brandColor={resolvedColor}
+            docStyle={documentStyle}
+            // One sheet, one footer: the first section in the group owns it.
+            showFooter={footerFor(group[0])}
+            headerStyle={layout?.pageHeader ?? 'full'}
+          >
+            {bodies.map((entry, i) => (
+              <View key={entry.section.id}>
+                {i > 0 && <SectionDivider brandColor={resolvedColor} />}
+                {entry.body}
+              </View>
+            ))}
+          </SectionPage>
+        );
       })}
     </Document>
   );

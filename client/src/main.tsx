@@ -121,3 +121,20 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </RootErrorBoundary>
 );
+
+// Register the pdf.js worker once the app is up, so any viewer opened later
+// finds it already configured. Viewers still gate on usePdfWorkerReady — this
+// only removes the wait — but it is what stops the common case (open a
+// proposal, a plan or a document a moment after load) from racing at all.
+// Deferred to idle so it never competes with the first paint, and failures are
+// swallowed: a viewer that needs it will retry and surface its own error.
+const warmPdfWorker = () => {
+  import("@/lib/pdfWorker")
+    .then((m) => m.ensurePdfWorker())
+    .catch(() => {});
+};
+if (typeof requestIdleCallback === "function") {
+  requestIdleCallback(warmPdfWorker, { timeout: 3000 });
+} else {
+  setTimeout(warmPdfWorker, 1500);
+}
