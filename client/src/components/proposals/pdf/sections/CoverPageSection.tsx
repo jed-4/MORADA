@@ -1,5 +1,6 @@
 import { Page, Text, View, Image } from "@react-pdf/renderer";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+import { PDF_COLORS, PDF_SPACE, brandRamp } from "@/components/pdf/shared/pdfTokens";
+import { PdfHeroBand } from "@/components/pdf/shared/PdfHeroBand";
 import type { Proposal, ProposalSection, Project, Contact } from "@shared/schema";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
@@ -29,6 +30,14 @@ const formatDate = (date: Date | string | null | undefined) => {
     day: "numeric",
   });
 };
+
+
+/** The band's status chip. Muted on purpose — "Proposal" names the document,
+ *  it is not a state the reader needs flagging. */
+function proposalStatusChip(brandColor: string): { bg: string; text: string } {
+  const ramp = brandRamp(brandColor);
+  return { bg: ramp.wash, text: ramp.onWhite };
+}
 
 export function CoverPageSection({
   proposal,
@@ -352,50 +361,26 @@ export function CoverPageSection({
       size="A4"
       style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: PDF_COLORS.surface }}
     >
-      {/* Top accent band */}
-      <View style={{ height: 6, backgroundColor: resolvedColor }} />
+      {/* One band carrying identity, status and the headline figure, rather
+          than an accent rule, a logo row and a total block three separate
+          places down the page. The kit's note: "three identity blocks is two
+          too many". The band honours the company's masthead setting, so
+          nobody's documents change palette without asking. */}
+      <PdfHeroBand
+        companyName={companyName || ""}
+        logoUrl={companyLogo}
+        contactLines={[companyPhone]}
+        brandColor={resolvedColor}
+        status={{ label: "Proposal", ...proposalStatusChip(resolvedColor) }}
+        figure={showPrice ? priceText : null}
+        figureLabel={showPrice ? priceLabel : null}
+        figureCaption={proposal.proposalNumber || null}
+        // Style 2 returns earlier with its own full-bleed treatment; this is
+        // the style-1 branch, so the masthead stays light by definition.
+        variant="light"
+      />
 
-      {/* Logo + company name row */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 40,
-          paddingTop: 28,
-          paddingBottom: 18,
-        }}
-      >
-        <View
-          style={{
-            width: 80,
-            height: 50,
-            borderRadius: 4,
-            backgroundColor: PDF_COLORS.border,
-            overflow: "hidden",
-            marginRight: 14,
-          }}
-        >
-          {companyLogo ? (
-            <Image src={companyLogo} style={{ width: 80, height: 50 }} />
-          ) : null}
-        </View>
-        <View style={{ flex: 1, alignItems: "flex-end" }}>
-          <Text
-            style={{
-              fontSize: 13,
-              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: PDF_COLORS.ink,
-            }}
-          >
-            {companyName}
-          </Text>
-          {companyPhone ? (
-            <Text style={{ fontSize: 9, color: PDF_COLORS.inkMuted, marginTop: 2 }}>
-              {companyPhone}
-            </Text>
-          ) : null}
-        </View>
-      </View>
+      <View style={{ paddingTop: PDF_SPACE.xl }} />
 
       {/* Brand accent divider (80 px wide) */}
       <View
@@ -407,20 +392,6 @@ export function CoverPageSection({
           marginBottom: 10,
         }}
       />
-
-      {/* PROPOSAL badge */}
-      <Text
-        style={{
-          marginHorizontal: 40,
-          fontSize: 9,
-          fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-          color: resolvedColor,
-          letterSpacing: 1.5,
-          marginBottom: 10,
-        }}
-      >
-        PROPOSAL
-      </Text>
 
       {/* Project title */}
       <Text
@@ -548,33 +519,8 @@ export function CoverPageSection({
         </View>
       </View>
 
-      {showPrice ? (
-        <View
-          style={{
-            marginHorizontal: 40,
-            marginTop: 28,
-            paddingTop: 12,
-            borderTopWidth: 2,
-            borderTopColor: resolvedColor,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 8,
-              fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
-              color: PDF_COLORS.inkFaint,
-              textTransform: "uppercase",
-              letterSpacing: 0.8,
-              marginBottom: 4,
-            }}
-          >
-            {priceLabel}
-          </Text>
-          <Text style={{ fontSize: 24, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, color: PDF_COLORS.ink }}>
-            {priceText}
-          </Text>
-        </View>
-      ) : null}
+      {/* No price block here: the hero band above carries the figure. Printing
+          it twice on one page invites the reader to check they match. */}
 
       {proposal.expiryDate ? (
         <Text

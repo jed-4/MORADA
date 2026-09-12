@@ -66,6 +66,16 @@ export function ProposalDocument({
   // Resolved brand color: explicit brandColor overrides primaryColor for new-style rendering
   const resolvedColor = brandColor ?? primaryColor;
 
+  /**
+   * company_settings.company_name is NULL until a builder fills it in, and a
+   * default parameter only fires for undefined — so every `companyName =
+   * "Your Company"` down the section tree has been dead code, and the footer,
+   * the running header and the cover all printed a blank where the company's
+   * name goes. Normalised once here rather than defended against in twelve
+   * places.
+   */
+  const resolvedCompanyName = (companyName || "").trim() || "Your Company";
+
   const layout = (proposal.layoutSettings as {
     pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
     showGst?: boolean;
@@ -134,7 +144,7 @@ export function ProposalDocument({
     proposal,
     project,
     client,
-    companyName,
+    companyName: resolvedCompanyName,
     companyPhone,
     estimateTotalIncGstCents,
   };
@@ -149,7 +159,7 @@ export function ProposalDocument({
 
   // Shared props forwarded to every inner-page section
   const sharedSectionProps = {
-    companyName,
+    companyName: resolvedCompanyName,
     companyPhone,
     logoUrl: effectiveLogo,
     brandColor: resolvedColor,
@@ -171,7 +181,7 @@ export function ProposalDocument({
                 project={project}
                 client={client}
                 companyLogo={effectiveLogo}
-                companyName={companyName}
+                companyName={resolvedCompanyName}
                 companyPhone={companyPhone}
                 primaryColor={primaryColor}
                 brandColor={resolvedColor}
@@ -301,7 +311,7 @@ export function ProposalDocument({
                 section={section}
                 estimateData={estimateData}
                 companyLogo={effectiveLogo}
-                companyName={companyName}
+                companyName={resolvedCompanyName}
                 companyPhone={companyPhone}
                 primaryColor={primaryColor}
                 brandColor={resolvedColor}
@@ -377,7 +387,7 @@ export function ProposalDocument({
         return (
           <SectionPage
             key={group[0].id}
-            companyName={companyName}
+            companyName={resolvedCompanyName}
             companyPhone={companyPhone}
             logoUrl={effectiveLogo}
             proposalNumber={proposal.proposalNumber}
