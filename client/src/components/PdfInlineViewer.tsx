@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { Page } from "react-pdf";
 import { PdfDocument as Document } from "@/components/PdfDocument";
+import { usePdfPageCount } from "@/lib/usePdfPageCount";
 // Required for the selectable text spans to line up with the rendered page.
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -9,7 +10,12 @@ interface PdfInlineViewerProps {
 }
 
 export default function PdfInlineViewer({ url }: PdfInlineViewerProps) {
-  const [numPages, setNumPages] = useState<number>(0);
+  /* react-pdf compares `file` by identity, so a fresh object literal here
+     would re-open the document on every render of this component's parent.
+     Memoised for that, and the page count is keyed on the URL for the same
+     reason — see usePdfPageCount. */
+  const file = useMemo(() => ({ url, withCredentials: true }), [url]);
+  const { epoch, numPages, onLoadSuccess } = usePdfPageCount(url);
 
   return (
     <div
@@ -17,8 +23,9 @@ export default function PdfInlineViewer({ url }: PdfInlineViewerProps) {
       data-testid="pdf-inline-viewer"
     >
       <Document
-        file={{ url, withCredentials: true }}
-        onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+        key={epoch}
+        file={file}
+        onLoadSuccess={onLoadSuccess}
         loading={
           <div className="p-8 text-sm text-muted-foreground">Loading PDF…</div>
         }

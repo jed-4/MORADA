@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePdfPageCount } from "@/lib/usePdfPageCount";
 import { pdf } from "@react-pdf/renderer";
 import { Page as PdfPage } from "react-pdf";
 import { PdfDocument } from "@/components/PdfDocument";
@@ -31,9 +32,12 @@ export function DocumentPreviewModal({
   documentKey,
 }: DocumentPreviewModalProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  /* The count belongs to the blob it was read from. Re-rendering the document
+     (a sidebar toggle) replaces the blob, and a count left over from the
+     previous one outlives it — see usePdfPageCount. */
+  const { epoch, numPages, onLoadSuccess } = usePdfPageCount(blobUrl);
 
   // Rendering a PDF is expensive, so a re-render is debounced: toggling three
   // checkboxes in quick succession should produce one render, not three.
@@ -70,6 +74,11 @@ export function DocumentPreviewModal({
     // — callers signal "the document actually changed" via documentKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, documentKey]);
+
+  /* A shorter document can arrive while the reader is deep in a longer one —
+     hiding a column drops pages. Asking pdf.js for page 9 of 4 throws, so the
+     request is clamped to what the document currently has. */
+  const safePage = numPages > 0 ? Math.min(currentPage, numPages) : currentPage;
 
   const handleDownload = () => {
     if (!blobUrl) return;
@@ -144,12 +153,13 @@ export function DocumentPreviewModal({
             </div>
           ) : blobUrl ? (
             <PdfDocument
+              key={epoch}
               file={blobUrl}
-              onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+              onLoadSuccess={onLoadSuccess}
               className="flex flex-col items-center gap-4"
             >
               <PdfPage
-                pageNumber={currentPage}
+                pageNumber={safePage}
                 width={720}
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
@@ -173,17 +183,17 @@ export function DocumentPreviewModal({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(Math.max(1, safePage - 1))}
+              disabled={safePage === 1}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            Page {currentPage} of {numPages}
+            Page {safePage} of {numPages}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-              disabled={currentPage === numPages}
+              onClick={() => setCurrentPage(Math.min(numPages, safePage + 1))}
+              disabled={safePage === numPages}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
