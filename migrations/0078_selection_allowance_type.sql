@@ -1,0 +1,22 @@
+-- A selection can say whether its allowance is PC or PS. (migration 0078)
+--
+-- `selection_templates` has carried `allowance_type` since the flatten, and the
+-- template editor has always offered Prime Cost / Provisional Sum. `selections`
+-- had nowhere to put it, so applying a template threw the answer away:
+-- buildLegacyApplyRows and buildFlatApplyRows in shared/applyTemplate.ts copy
+-- budgetAmount into `allowance` and never look at allowanceType.
+--
+-- That is not a cosmetic loss. PC and PS behave differently everywhere else in
+-- Morada — a PC item is one the client picks and the builder charges at cost
+-- plus markup, a PS item is one the builder estimates and reconciles against
+-- actual spend (see CLAUDE.md, Allowances). A selection created from a template
+-- marked PC arrived indistinguishable from one marked PS.
+--
+-- Nullable with no default, matching the template column: "no allowance type"
+-- is a real answer and is what every existing row means. The values are the
+-- template's own, 'PC' and 'PS', so /apply is a copy rather than a translation
+-- — `estimate_items.allowance` uses the long forms ("Prime Cost") and is a
+-- different column on a different table; the short forms here follow
+-- selection_templates, which is the only thing that writes this.
+ALTER TABLE selections
+  ADD COLUMN IF NOT EXISTS allowance_type text;

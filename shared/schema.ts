@@ -1568,6 +1568,11 @@ export const selections = pgTable("selections", {
   status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
   deadline: timestamp("deadline"),
   allowance: integer("allowance"), // Budget allowance in cents
+  // "PC" | "PS" | null. Mirrors selection_templates.allowance_type so /apply is
+  // a copy rather than a translation; before migration 0078 the template's
+  // answer was simply dropped. NOT the same vocabulary as
+  // estimate_items.allowance, which spells the long forms.
+  allowanceType: text("allowance_type"),
   sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
