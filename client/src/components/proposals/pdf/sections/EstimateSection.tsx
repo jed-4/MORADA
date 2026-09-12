@@ -436,13 +436,21 @@ export function EstimateSection({
     return money(incTax);
   };
 
-  const toTableGroup = (group: EstimateGroup): PdfTableGroup<EstimateItem> => ({
-    key: group.id,
-    label: group.name,
-    total: toggles.showSubtotals ? groupTotal(group.id) : undefined,
-    rows: hideLineItems ? [] : visibleItems(itemsByGroup[group.id] || []),
-    children: (subgroupsByParent[group.id] || []).map(toTableGroup),
-  });
+  const toTableGroup = (group: EstimateGroup): PdfTableGroup<EstimateItem> => {
+    const rows = hideLineItems ? [] : visibleItems(itemsByGroup[group.id] || []);
+    const children = (subgroupsByParent[group.id] || []).map(toTableGroup);
+    // The kit's rule, applied here because the group's own band — where the
+    // kit enforced it — is suppressed in favour of the header row. A group of
+    // one line has a "total" identical to the line above it.
+    const earnsTotal = rows.length > 1 || children.length > 0;
+    return {
+      key: group.id,
+      label: group.name,
+      total: toggles.showSubtotals && earnsTotal ? groupTotal(group.id) : undefined,
+      rows,
+      children,
+    };
+  };
 
   const renderRowText = (item: EstimateItem) => (
     <View>
@@ -514,11 +522,15 @@ export function EstimateSection({
           <View key={group.key} style={i > 0 ? { marginTop: PDF_SPACE.lg } : undefined}>
             <PdfLineTable<EstimateItem>
               columns={columns}
-              groups={[group]}
-              // Each block is its own table, so each labels its own columns.
-              // (The noise we removed was a header repeated INSIDE one
-              // continuous table, once per group.)
-              textHeader={toggles.showColumnHeader ? "Item" : null}
+              // The group's own band is suppressed: its name and total are the
+              // header row now. "Item" above a block already headed KITCHEN
+              // was labelling the obvious.
+              groups={[{ ...group, label: undefined, total: undefined }]}
+              textHeader={group.label}
+              // Only where the right edge is free. With an amount column on,
+              // the figures own that edge and the group total stays with the
+              // trailing row instead.
+              headerRight={columns.length === 0 ? group.total : undefined}
               renderText={renderRowText}
               brandColor={resolvedColor}
               rowKey={(item) => item.id}
@@ -527,7 +539,31 @@ export function EstimateSection({
           </View>
         ))}
 
-        <View style={{ marginTop: PDF_SPACE.lg }}>
+        {/* The estimate's own total, not the Summary section — it belongs to
+            the table above it, so it is named and ruled off rather than
+            floating after the last group. */}
+        <View style={{ marginTop: PDF_SPACE.xl }}>
+          <View
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: PDF_COLORS.border,
+              paddingTop: PDF_SPACE.md,
+              marginBottom: PDF_SPACE.sm,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: PDF_FONT_FAMILY,
+                fontWeight: PDF_WEIGHT.semibold,
+                fontSize: PDF_TYPE.sectionLabel,
+                letterSpacing: PDF_TYPE.sectionLabelTracking,
+                textTransform: "uppercase",
+                color: PDF_COLORS.inkMuted,
+              }}
+            >
+              Estimate total
+            </Text>
+          </View>
           <PdfTotalsCard
             rows={totalRows}
             totalLabel={showGst ? "Total (inc GST)" : "Total"}

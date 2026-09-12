@@ -1,5 +1,5 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+import { PDF_COLORS, PDF_RADIUS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
@@ -33,6 +33,16 @@ export function SignatureSection({
   const isS2 = documentStyle === 'style2';
 
   const styles = StyleSheet.create({
+    signatureCard: {
+      borderWidth: 1,
+      borderColor: PDF_COLORS.border,
+      borderRadius: PDF_RADIUS.lg,
+      backgroundColor: PDF_COLORS.surfaceSubtle,
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 12,
+      marginTop: 10,
+    },
     row: { marginTop: 24, flexDirection: 'row', gap: 32 },
     box: {
       flex: 1,
@@ -87,7 +97,12 @@ export function SignatureSection({
           </Text>
           <SectionIntro section={section} />
 
-          <View wrap={false} style={styles.row}>
+          {/* Boxed. A pair of ruled lines floating on the page reads as an
+              afterthought; the thing the client is actually asked to do
+              deserves a container. wrap={false} keeps it whole — half a
+              signature block across a page break is unusable. */}
+          <View wrap={false} style={styles.signatureCard}>
+          <View style={styles.row}>
             <View style={styles.box}>
               {isAccepted && sigData ? (
                 isImage ? (
@@ -110,6 +125,7 @@ export function SignatureSection({
               )}
               <Text style={styles.label}>Date</Text>
             </View>
+          </View>
           </View>
 
           {isAccepted && (
