@@ -22316,6 +22316,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
+      // Tell the builder. Until this, a client could sign — approving the
+      // variation outright, locking it, and moving the project end date — and
+      // nothing anywhere said so. You found out by opening the variation.
+      //
+      // Not awaited, for the same reason as the schedule extension: the
+      // signature has already been recorded and must not be undone by a bell
+      // that would not ring.
+      {
+        const { notifyClientDecision } = await import("./services/clientDecisionNotifier");
+        const project = await storage.getProject(variation.projectId).catch(() => undefined);
+        notifyClientDecision({
+          decision: action === "approve" ? "approved" : "rejected",
+          recipientUserId: (variation as any).createdById ?? null,
+          companyId: (project as any)?.companyId ?? null,
+          projectId: variation.projectId,
+          documentNumber: (variation as any).variationNumber ?? null,
+          documentName: variation.name ?? null,
+          documentId: variation.id,
+          signerName: String(name).trim(),
+          totalCents: (updated as any)?.totalAmount ?? (variation as any).totalAmount ?? null,
+          rejectionReason: action === "reject" ? rejectionReason ?? null : null,
+          link: `/projects/${variation.projectId}/variations/${variation.id}`,
+        }).catch((err) =>
+          console.error("[portal] client-decision notification failed:", err),
+        );
+      }
+
       res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
     } catch (error) {
       console.error("Error signing variation:", error);
