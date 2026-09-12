@@ -99,6 +99,12 @@ export function PdfLineTable<T>({
 }: PdfLineTableProps<T>) {
   const brand = brandRamp(brandColor);
   const showText = !!textHeader || !!renderText;
+  // A header row with no column labels and no text header is a filled brand
+  // bar with nothing in it. That never came up while each document rendered
+  // one table, but a caller that splits its groups into separate tables —
+  // the proposal's estimate does — asks for a header on the first only, and
+  // got an empty bar on all the rest.
+  const showHeaderRow = !!textHeader || columns.length > 0;
 
   /**
    * Keep the description readable when every optional column is switched on.
@@ -257,6 +263,7 @@ export function PdfLineTable<T>({
           the reader had to page back to find out which column was the price.
           @react-pdf re-renders a fixed element per page rather than floating
           one, so this costs nothing on a single-page table. */}
+      {showHeaderRow && (
       <View
         fixed={repeatHeader}
         style={{
@@ -294,6 +301,7 @@ export function PdfLineTable<T>({
           </Text>
         ))}
       </View>
+      )}
 
       {groups.map((group) => renderGroup(group, 0))}
 

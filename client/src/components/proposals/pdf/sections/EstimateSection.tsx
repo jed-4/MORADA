@@ -444,6 +444,20 @@ export function EstimateSection({
     children: (subgroupsByParent[group.id] || []).map(toTableGroup),
   });
 
+  const renderRowText = (item: EstimateItem) => (
+    <View>
+      <View style={styles.itemCell}>
+        <Text>{item.name || "Untitled"}</Text>
+        {toggles.showAllowanceType && allowanceLabel(item) ? (
+          <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+        ) : null}
+      </View>
+      {toggles.description && item.description ? (
+        <Text style={styles.itemDescription}>{item.description}</Text>
+      ) : null}
+    </View>
+  );
+
   const tableGroups: Array<PdfTableGroup<EstimateItem>> = rootGroups.map(toTableGroup);
   if (ungroupedItems.length > 0 && !hideLineItems) {
     tableGroups.push({
@@ -490,27 +504,28 @@ export function EstimateSection({
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}
 
-        <PdfLineTable<EstimateItem>
-          columns={columns}
-          groups={tableGroups}
-          textHeader={toggles.showColumnHeader ? "Item" : null}
-          renderText={(item) => (
-            <View>
-              <View style={styles.itemCell}>
-                <Text>{item.name || "Untitled"}</Text>
-                {toggles.showAllowanceType && allowanceLabel(item) ? (
-                  <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
-                ) : null}
-              </View>
-              {toggles.description && item.description ? (
-                <Text style={styles.itemDescription}>{item.description}</Text>
-              ) : null}
-            </View>
-          )}
-          brandColor={resolvedColor}
-          rowKey={(item) => item.id}
-          repeatHeader={!sharesPage}
-        />
+        {/* One table per top-level group rather than a single continuous
+            block. A 60-line estimate reads as one undifferentiated slab
+            otherwise; a builder thinks in trades and areas, and so does the
+            client reading it. Sub-groups still nest INSIDE their parent's
+            table — splitting those out too would lose the containment that
+            makes Joinery read as part of Kitchen. */}
+        {tableGroups.map((group, i) => (
+          <View key={group.key} style={i > 0 ? { marginTop: PDF_SPACE.lg } : undefined}>
+            <PdfLineTable<EstimateItem>
+              columns={columns}
+              groups={[group]}
+              // Each block is its own table, so each labels its own columns.
+              // (The noise we removed was a header repeated INSIDE one
+              // continuous table, once per group.)
+              textHeader={toggles.showColumnHeader ? "Item" : null}
+              renderText={renderRowText}
+              brandColor={resolvedColor}
+              rowKey={(item) => item.id}
+              repeatHeader={!sharesPage}
+            />
+          </View>
+        ))}
 
         <View style={{ marginTop: PDF_SPACE.lg }}>
           <PdfTotalsCard
