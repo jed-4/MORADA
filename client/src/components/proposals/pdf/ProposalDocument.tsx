@@ -1,5 +1,6 @@
-import { Document, View } from '@react-pdf/renderer';
+import { Document, Page, View } from '@react-pdf/renderer';
 import { SectionPage, SectionDivider } from './SectionPage';
+import { importedPdfContent } from './mergeImportedPages';
 import type {
   Proposal,
   ProposalSection,
@@ -352,7 +353,8 @@ export function ProposalDocument({
    * The cover page never joins a group — it has its own layout, no running
    * header, and is the one page that should never have something land on it.
    */
-  const ALWAYS_STANDALONE = new Set(['cover_page']);
+  // An imported page is a finished design; nothing may share its sheet.
+  const ALWAYS_STANDALONE = new Set(['cover_page', 'imported_pdf']);
 
   // Asked here rather than inside the component: a section that returns null
   // from its own render is too late — the sheet already exists, and you get a
@@ -375,6 +377,21 @@ export function ProposalDocument({
   return (
     <Document>
       {pageGroups.map((group) => {
+        /* An imported PDF reserves its slot rather than rendering anything.
+           One bare page per imported page, spliced out by mergeImportedPages
+           once @react-pdf has finished — which is also what makes the footer's
+           "Page 3 of 12" count them. See that file for why by size. */
+        if (group[0].sectionType === 'imported_pdf') {
+          const imported = importedPdfContent(group[0]);
+          // A section with nothing uploaded yet reserves nothing. Reserving a
+          // slot it never fills leaves a 10x10pt page in the finished document
+          // — a blank sheet the client would receive.
+          if (!imported) return null;
+          return Array.from({ length: imported.pageCount ?? 1 }, (_, i) => (
+            <Page key={`${group[0].id}-slot-${i}`} size={[10, 10]} />
+          ));
+        }
+
         // The cover page renders its own <Page>: a different layout entirely.
         if (ALWAYS_STANDALONE.has(group[0].sectionType)) {
           return group.map((section) => bodyFor(section));

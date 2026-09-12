@@ -28,6 +28,7 @@ import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, Prop
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
+import { ImportedPdfEditor } from './ImportedPdfEditor';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
@@ -40,6 +41,7 @@ import { revisionLabel } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
+import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
@@ -76,6 +78,7 @@ function escapeHtml(text: string): string {
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
+  imported_pdf: "Imported PDF",
   cover_letter: "Cover Letter",
   scope: "Scope of Work",
   estimate: "Estimate",
@@ -471,6 +474,10 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                     section's linked revision in one place. */}
                 <EstimateEditor content={localContent} setContent={setLocalContent} />
               </div>
+            )}
+
+            {section.sectionType === "imported_pdf" && (
+              <ImportedPdfEditor content={localContent} setContent={setLocalContent} />
             )}
 
             {section.sectionType === "payment_schedule" && (
@@ -1132,7 +1139,35 @@ export function ProposalBuilder({
             proposalItems={proposalItems}
           />
         ).toBlob();
-        
+
+        /* Imported pages are spliced in here, at the single point the proposal
+           PDF comes into existence — the preview, the download and the copy
+           that is emailed to the client all read this same blob, so none of
+           them can end up with a different document. */
+        const imports = importedSectionsInOrder(sections);
+        let merged = blob;
+        if (imports.length > 0) {
+          try {
+            const { bytes, failures } = await mergeImportedPages(await blob.arrayBuffer(), imports);
+            merged = new Blob([bytes], { type: 'application/pdf' });
+            if (failures.length > 0) {
+              toast({
+                variant: 'destructive',
+                title: 'Some imported pages could not be loaded',
+                description: `${failures.join(', ')} — the rest of the proposal is unaffected.`,
+              });
+            }
+          } catch (err) {
+            // A merge failure must not cost the builder their preview.
+            console.error('Failed to merge imported PDF pages:', err);
+            toast({
+              variant: 'destructive',
+              title: 'Imported pages were left out',
+              description: 'The proposal rendered without them.',
+            });
+          }
+        }
+
         if (!isCancelled) {
           // Revoke previous URL
           if (pdfUrlRef.current) {
@@ -1140,12 +1175,12 @@ export function ProposalBuilder({
           }
           
           // Create and store new URL for download
-          const url = URL.createObjectURL(blob);
+          const url = URL.createObjectURL(merged);
           pdfUrlRef.current = url;
           setPdfUrl(url);
-          
+
           // Store blob directly for preview
-          setPdfBlob(blob);
+          setPdfBlob(merged);
         }
       } catch (error) {
         console.error('Error generating PDF:', error);

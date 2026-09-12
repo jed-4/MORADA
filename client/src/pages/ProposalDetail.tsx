@@ -63,6 +63,7 @@ const SECTION_TYPES = [
   { value: 'attachments', label: 'Attachments' },
   { value: 'terms_conditions', label: 'Terms & Conditions' },
   { value: 'signature', label: 'Signature' },
+  { value: 'imported_pdf', label: 'Imported PDF page' },
   { value: 'custom', label: 'Custom Section' },
 ];
 
