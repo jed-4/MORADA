@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, CheckCircle2, Calendar, FileText, DollarSign, Users, ArrowRight } from "lucide-react";
 import moradaLogo from "@assets/icon_1783074833445.png";
+import { PricingSection } from "@/components/pricing/PricingSection";
 
 export default function LandingPage() {
   const [, navigate] = useLocation();
@@ -16,7 +17,14 @@ export default function LandingPage() {
             <span className="text-2xl font-bold text-foreground" data-testid="text-logo">Morada</span>
           </div>
           <div className="flex items-center gap-3">
-            <Button 
+            <Button
+              onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
+              variant="ghost"
+              data-testid="button-pricing-header"
+            >
+              Pricing
+            </Button>
+            <Button
               onClick={() => window.location.href = '/auth'}
               variant="default"
               data-testid="button-login-header"
@@ -91,6 +99,8 @@ export default function LandingPage() {
               />
             </div>
           </div>
+
+          <PricingSection />
 
           <div className="mt-20 text-center">
             <Card className="mx-auto max-w-3xl">

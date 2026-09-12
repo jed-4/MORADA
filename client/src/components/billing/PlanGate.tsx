@@ -21,7 +21,7 @@ interface BillingStatus {
   stripeConfigured: boolean;
 }
 
-const PORTAL_PREFIXES = ["/portal/", "/auth", "/reset-password", "/privacy", "/terms", "/billing/"];
+const PORTAL_PREFIXES = ["/portal/", "/auth", "/reset-password", "/privacy", "/terms", "/billing/", "/pricing"];
 
 /**
  * Global paywall. When the signed-in user's company no longer has an active
