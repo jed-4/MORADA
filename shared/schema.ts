@@ -8160,11 +8160,10 @@ export const selectionTemplateOptions = pgTable("selection_template_options", {
 
   // Provenance, and the backfill's idempotency key.
   //
-  // The option's `id` inside templateData where it has one. Many do not: ids are
-  // minted at read time by a React ref (getStableId in
-  // SelectionTemplateItemDetail) and persisted only on an explicit save, so they
-  // are neither guaranteed nor reproducible outside that page session. The
-  // fallback is positional — `idx:0` for a flat option, `idx:2/1` for
+  // The option's `id` inside templateData where it has one. Many do not: ids
+  // were minted at read time into a React ref and persisted only on an explicit
+  // save, so an id is neither guaranteed nor reproducible from the blob alone.
+  // The fallback is positional — `idx:0` for a flat option, `idx:2/1` for
   // items[2].options[1] in the legacy `itemName` format.
   templateOptionId: text("template_option_id"),
 
