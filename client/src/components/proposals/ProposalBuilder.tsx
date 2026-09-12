@@ -29,6 +29,7 @@ import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
 import { ImportedPdfEditor } from './ImportedPdfEditor';
+import { CoverTemplatePicker } from './CoverTemplatePicker';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
@@ -113,9 +114,11 @@ interface SortableSectionItemProps {
   joinsPrevious?: boolean;
   /** True when the section is enabled but has nothing to render. */
   printsNothing?: boolean;
+  /** The company-wide masthead setting, which still picks the default cover. */
+  documentStyle?: 'style1' | 'style2';
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing, documentStyle }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -488,6 +491,12 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {section.sectionType === "cover_page" && (
               <div className="space-y-4">
+                <CoverTemplatePicker
+                  section={section}
+                  content={localContent}
+                  setContent={setLocalContent}
+                  documentStyle={documentStyle}
+                />
                 <div className="space-y-2">
                   <Label htmlFor={`project-title-${section.id}`}>Project Title</Label>
                   <Input
@@ -1688,6 +1697,7 @@ export function ProposalBuilder({
                         projectId={proposal.projectId}
                         project={project}
                         client={client}
+                        documentStyle={documentStyle}
                         hasPaymentSchedule={sections.some(
                           (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
                         )}
@@ -1783,6 +1793,8 @@ type PresetKey = 'lump_sum_quote' | 'itemised_quote' | 'standard_residential';
 
 type LayoutSettings = {
   primaryColor?: string;
+  /** The cover's accent. Per-proposal only: there is no company default. */
+  secondaryColor?: string;
   showPageNumbers?: boolean;
   showFooter?: boolean;
   pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
@@ -1880,6 +1892,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const canEdit = canEditCompanyDefaults && editCompanyDefaults;
 
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
+  const [secondaryColor, setSecondaryColor] = useState<string>(settings.secondaryColor || '');
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
   const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
   const [pageHeader, setPageHeader] = useState<'none' | 'minimal' | 'compact' | 'full'>(settings.pageHeader ?? 'full');
@@ -1951,6 +1964,9 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const handleSave = () => {
     saveLayoutMutation.mutate({
       primaryColor,
+      // Empty means "no accent" — stored as undefined so the document falls
+      // back to the primary rather than reading a blank as a colour.
+      secondaryColor: secondaryColor.trim() || undefined,
       showPageNumbers,
       showFooter,
       pageHeader,
@@ -1981,6 +1997,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 
     saveLayoutMutation.mutate({
       primaryColor,
+      secondaryColor: secondaryColor.trim() || undefined,
       showPageNumbers: nextShowPageNumbers,
       showFooter: nextShowFooter,
       pageSize: nextPageSize,
@@ -2106,6 +2123,43 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
               Save as company default
             </Button>
           )}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="layout-secondary-color">
+          Accent colour <span className="text-xs text-muted-foreground">(this proposal)</span>
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Used on the cover — the rule under the masthead, the tint behind the client card.
+          Leave it empty to use the primary colour throughout.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            id="layout-secondary-color"
+            type="color"
+            value={secondaryColor || primaryColor}
+            onChange={(e) => setSecondaryColor(e.target.value)}
+            data-testid="input-layout-secondary-color"
+            className="w-16 h-9 p-1"
+          />
+          <Input
+            value={secondaryColor}
+            placeholder="None"
+            onChange={(e) => setSecondaryColor(e.target.value)}
+            className="flex-1"
+            data-testid="input-layout-secondary-color-text"
+          />
+          {secondaryColor ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSecondaryColor('')}
+              data-testid="button-clear-secondary-color"
+            >
+              Clear
+            </Button>
+          ) : null}
         </div>
       </div>
 

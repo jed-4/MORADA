@@ -569,8 +569,22 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                primaryColor={(proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor || companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
-                brandColor={companySettings?.brandColor || undefined}
+                /* One colour, one chain. `brandColor` used to be passed
+                   alongside this and won inside ProposalDocument
+                   (`brandColor ?? primaryColor`) — and company_settings
+                   .brand_color DEFAULTS to #3B82F6, so it was never null and
+                   the four-level fallback below was dead. Every proposal
+                   printed the same blue no matter what the Layout panel's
+                   colour picker said. It is folded into the chain now, and
+                   nothing overrides it afterwards. */
+                primaryColor={
+                  (proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor
+                  || companySettings?.proposalPrimaryColor
+                  || companySettings?.primaryColor
+                  || companySettings?.brandColor
+                  || project?.color
+                  || undefined
+                }
                 documentStyle={(companySettings?.documentStyle as 'style1' | 'style2' | undefined) ?? 'style1'}
                 toolbarSlot={toolbarSlot}
                 menuSlot={menuSlot}

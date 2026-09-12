@@ -88,8 +88,14 @@ export function ProposalDocument({
     showLogo?: boolean;
     showFooter?: boolean;
     pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
+    secondaryColor?: string;
   } | null) ?? null;
   const pricingMode = layout?.pricingMode ?? 'itemised';
+  /* The cover's accent. Stored beside primaryColor in layoutSettings rather
+     than in its own column: the primary already lives there, and a second
+     source of truth for "what colour is this proposal" is how the two ended
+     up disagreeing in the first place. */
+  const secondaryColor = layout?.secondaryColor;
   const showGst = layout?.showGst ?? true;
   const showLogo = layout?.showLogo ?? true;
   // The Layout panel has always written showFooter and nothing has ever read
@@ -159,6 +165,7 @@ export function ProposalDocument({
                 companyPhone={companyPhone}
                 primaryColor={primaryColor}
                 brandColor={resolvedColor}
+                secondaryColor={secondaryColor}
                 documentStyle={documentStyle}
               />
             );

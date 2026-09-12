@@ -30,6 +30,26 @@ import { Font } from "@react-pdf/renderer";
 
 const INTER = "Inter";
 
+/**
+ * Where the font files are, for whoever is doing the rendering.
+ *
+ * In the browser `src` is a URL and "/fonts/Inter-400.woff" is exactly right.
+ * Under Node — which is how the PDF render tests drive the real document —
+ * @react-pdf hands the same string to the filesystem, so it looks for
+ * /fonts/Inter-400.woff at the root of the disk and the render dies with
+ * ENOENT. Registering Inter is what silently broke
+ * server/__tests__/proposal-pdf-section-intro.test.ts.
+ *
+ * The Node branch is relative to the working directory because that is what
+ * the tests document: they are run from the repository root.
+ */
+const FONT_DIR =
+  typeof window === "undefined"
+    ? `${globalThis.process?.cwd?.() ?? "."}/client/public/fonts`
+    : "/fonts";
+
+const face = (file: string) => `${FONT_DIR}/${file}`;
+
 let registered = false;
 
 export function registerPdfFonts(): void {
@@ -39,10 +59,10 @@ export function registerPdfFonts(): void {
   Font.register({
     family: INTER,
     fonts: [
-      { src: "/fonts/Inter-400.woff", fontWeight: 400 },
-      { src: "/fonts/Inter-500.woff", fontWeight: 500 },
-      { src: "/fonts/Inter-600.woff", fontWeight: 600 },
-      { src: "/fonts/Inter-700.woff", fontWeight: 700 },
+      { src: face("Inter-400.woff"), fontWeight: 400 },
+      { src: face("Inter-500.woff"), fontWeight: 500 },
+      { src: face("Inter-600.woff"), fontWeight: 600 },
+      { src: face("Inter-700.woff"), fontWeight: 700 },
       // Italics are not optional. @react-pdf does NOT synthesise a slant: ask
       // a registered family with no italic face for fontStyle "italic" and it
       // throws "Could not resolve font" and takes the whole render down with
@@ -50,10 +70,10 @@ export function registerPdfFonts(): void {
       // without these, italicising one word in a cover letter produces no PDF
       // at all. All eight faces come from @fontsource/inter@5.1.0 so the
       // metrics cannot mismatch.
-      { src: "/fonts/Inter-400i.woff", fontWeight: 400, fontStyle: "italic" },
-      { src: "/fonts/Inter-500i.woff", fontWeight: 500, fontStyle: "italic" },
-      { src: "/fonts/Inter-600i.woff", fontWeight: 600, fontStyle: "italic" },
-      { src: "/fonts/Inter-700i.woff", fontWeight: 700, fontStyle: "italic" },
+      { src: face("Inter-400i.woff"), fontWeight: 400, fontStyle: "italic" },
+      { src: face("Inter-500i.woff"), fontWeight: 500, fontStyle: "italic" },
+      { src: face("Inter-600i.woff"), fontWeight: 600, fontStyle: "italic" },
+      { src: face("Inter-700i.woff"), fontWeight: 700, fontStyle: "italic" },
     ],
   });
 
