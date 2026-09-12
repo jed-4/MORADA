@@ -120,7 +120,6 @@
     "server/routes.ts POST /api/notifications/unregister-device",
     "server/routes.ts POST /api/permissions",
     "server/routes.ts POST /api/portal/rfq/:token/submit-quote",
-    "server/routes.ts POST /api/portal/variation/:token/sign",
     "server/routes.ts POST /api/products/scrape-url",
     "server/routes.ts POST /api/project-workflows",
     "server/routes.ts POST /api/projects/:projectId/cost-codes",

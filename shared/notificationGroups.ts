@@ -6,6 +6,7 @@
 // with expo-mobile/src/screens/SettingsScreen.tsx.
 
 export type PushNotificationGroupKey =
+  | "clientDecisions"
   | "tasks"
   | "messages"
   | "notes"
@@ -23,6 +24,19 @@ export interface PushNotificationGroup {
 }
 
 export const PUSH_NOTIFICATION_GROUPS: PushNotificationGroup[] = [
+  {
+    key: "clientDecisions",
+    label: "Client decisions",
+    description: "When a client approves, rejects or responds to something you sent them.",
+    types: [
+      "variation_client_approved",
+      "variation_client_rejected",
+      // Already fired but never grouped, so it could not be muted and never
+      // qualified for email.
+      "selection_client_choice",
+      "selection_client_comment",
+    ],
+  },
   {
     key: "tasks",
     label: "Tasks & checklists",
@@ -115,4 +129,41 @@ export const PUSH_PREFS_VIEW_KEY = "push-notification-prefs";
 
 export interface PushPreferences {
   mutedGroups: PushNotificationGroupKey[];
+}
+
+/* ── Email ────────────────────────────────────────────────────────────────── */
+
+/**
+ * Email is OPT-IN per group, stored alongside the push mutes in the same
+ * user_view_preferences row.
+ *
+ * Opt-in rather than opt-out because an in-app notification you miss costs you
+ * nothing, and an email you did not ask for costs you attention every time.
+ * The exception is below.
+ */
+export interface EmailNotificationPreferences {
+  emailGroups: PushNotificationGroupKey[];
+}
+
+/**
+ * Groups that email by default.
+ *
+ * Only client decisions. Everything else in this list happens while you are
+ * working and the bell is enough; a client signing a variation happens on their
+ * schedule, often out of hours, and is the one event you are actually waiting
+ * on. A builder who disagrees turns it off in one click.
+ */
+export const DEFAULT_EMAIL_GROUPS: PushNotificationGroupKey[] = ["clientDecisions"];
+
+/** Whether `type` should email this user, given their saved opt-ins. */
+export function shouldEmailForType(
+  type: string | null | undefined,
+  emailGroups: string[] | null | undefined,
+): boolean {
+  const group = getPushGroupForType(type);
+  // An ungrouped type has no toggle in the notification centre, so emailing
+  // for it would be an email nobody can turn off.
+  if (!group) return false;
+  const chosen = Array.isArray(emailGroups) ? emailGroups : DEFAULT_EMAIL_GROUPS;
+  return chosen.includes(group);
 }

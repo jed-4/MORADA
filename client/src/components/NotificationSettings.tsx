@@ -22,19 +22,25 @@ import {
 import {
   PUSH_NOTIFICATION_GROUPS,
   PUSH_PREFS_VIEW_KEY,
+  DEFAULT_EMAIL_GROUPS,
 } from "@shared/notificationGroups";
+import { Mail } from "lucide-react";
 
 interface NotificationSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-type PushPrefsResponse = { preferences?: { mutedGroups?: string[] } } | null;
+type PushPrefsResponse = {
+  preferences?: { mutedGroups?: string[]; emailGroups?: string[] };
+} | null;
 
 export function NotificationSettings({ open, onOpenChange }: NotificationSettingsProps) {
   const { toast } = useToast();
   const [prefs, setPrefs] = useState<NotificationPreferences>(getNotificationPreferences());
   const [mutedGroups, setMutedGroups] = useState<string[]>([]);
+  // Email is opt-IN, so an absent list means the defaults rather than "none".
+  const [emailGroups, setEmailGroups] = useState<string[]>(DEFAULT_EMAIL_GROUPS);
 
   const { isFetching: pushPrefsFetching, refetch } = useQuery<PushPrefsResponse>({
     queryKey: ["/api/user-view-preferences", PUSH_PREFS_VIEW_KEY],
@@ -55,6 +61,8 @@ export function NotificationSettings({ open, onOpenChange }: NotificationSetting
       if (cancelled) return;
       const muted = res.data?.preferences?.mutedGroups;
       setMutedGroups(Array.isArray(muted) ? muted : []);
+      const emails = res.data?.preferences?.emailGroups;
+      setEmailGroups(Array.isArray(emails) ? emails : DEFAULT_EMAIL_GROUPS);
     });
     return () => {
       cancelled = true;
@@ -62,10 +70,10 @@ export function NotificationSettings({ open, onOpenChange }: NotificationSetting
   }, [open, refetch]);
 
   const saveMutation = useMutation({
-    mutationFn: async (next: string[]) =>
+    mutationFn: async (next: { mutedGroups: string[]; emailGroups: string[] }) =>
       apiRequest("/api/user-view-preferences", "POST", {
         viewKey: PUSH_PREFS_VIEW_KEY,
-        preferences: { mutedGroups: next },
+        preferences: next,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -77,7 +85,7 @@ export function NotificationSettings({ open, onOpenChange }: NotificationSetting
   const handleSave = async () => {
     saveNotificationPreferences(prefs);
     try {
-      await saveMutation.mutateAsync(mutedGroups);
+      await saveMutation.mutateAsync({ mutedGroups, emailGroups });
     } catch {
       // Keep the dialog open so the user knows the cross-device sync failed
       // (the device-only prefs above are already saved locally).
@@ -100,6 +108,14 @@ export function NotificationSettings({ open, onOpenChange }: NotificationSetting
       enabled
         ? prev.filter(k => k !== key)
         : Array.from(new Set([...prev, key])),
+    );
+  };
+
+  const toggleEmail = (key: string, enabled: boolean) => {
+    setEmailGroups(prev =>
+      enabled
+        ? Array.from(new Set([...prev, key]))
+        : prev.filter(k => k !== key),
     );
   };
 
@@ -129,20 +145,44 @@ export function NotificationSettings({ open, onOpenChange }: NotificationSetting
             {PUSH_NOTIFICATION_GROUPS.map(group => {
               const enabled = !mutedGroups.includes(group.key);
               return (
-                <div key={group.key} className="flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <Label htmlFor={`group-${group.key}`} className="text-base">
-                      {group.label}
-                    </Label>
-                    <p className="text-sm text-muted-foreground">{group.description}</p>
+                <div key={group.key} className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor={`group-${group.key}`} className="text-base">
+                        {group.label}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">{group.description}</p>
+                    </div>
+                    <Switch
+                      id={`group-${group.key}`}
+                      checked={enabled}
+                      disabled={pushPrefsFetching}
+                      onCheckedChange={(checked) => toggleGroup(group.key, checked)}
+                      data-testid={`switch-group-${group.key}`}
+                    />
                   </div>
-                  <Switch
-                    id={`group-${group.key}`}
-                    checked={enabled}
-                    disabled={pushPrefsFetching}
-                    onCheckedChange={(checked) => toggleGroup(group.key, checked)}
-                    data-testid={`switch-group-${group.key}`}
-                  />
+
+                  {/* Email is a separate, opt-in channel per category. Hidden
+                      when the category is off entirely — offering to email
+                      about something you have muted makes no sense. */}
+                  {enabled && (
+                    <div className="flex items-center justify-between gap-3 pl-4 border-l-2 border-border">
+                      <Label
+                        htmlFor={`email-${group.key}`}
+                        className="text-sm font-normal text-muted-foreground flex items-center gap-1.5"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        Also email me
+                      </Label>
+                      <Switch
+                        id={`email-${group.key}`}
+                        checked={emailGroups.includes(group.key)}
+                        disabled={pushPrefsFetching}
+                        onCheckedChange={(checked) => toggleEmail(group.key, checked)}
+                        data-testid={`switch-email-${group.key}`}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

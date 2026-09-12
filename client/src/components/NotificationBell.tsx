@@ -6,8 +6,9 @@ import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { 
   Bell, Clock, Check, AlarmClock, AlarmClockOff, 
   CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal,
-  UserPlus, Trash2, CheckCheck, ExternalLink, Loader2
+  UserPlus, Trash2, CheckCheck, ExternalLink, Loader2, Settings
 } from "lucide-react";
+import { NotificationSettings } from "@/components/NotificationSettings";
 
 const TaskEditModal = lazy(() => import("@/components/TaskEditModal"));
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ export function NotificationBell() {
   const [, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("notifications");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const { user } = useAuth();
   const { effectiveTimezone } = useTimezone();
@@ -271,18 +273,34 @@ export function NotificationBell() {
                 Reminders {activeReminders.length > 0 && `(${activeReminders.length})`}
               </TabsTrigger>
             </TabsList>
-            {activeTab === "notifications" && unreadNotifications.length > 0 && (
+            <div className="flex items-center gap-1">
+              {activeTab === "notifications" && unreadNotifications.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => markAllReadMutation.mutate()}
+                  data-testid="button-mark-all-read"
+                >
+                  <CheckCheck className="h-3 w-3 mr-1" />
+                  All read
+                </Button>
+              )}
+              {/* NotificationSettings has existed since it was written and was
+                  imported by nothing — 272 lines of unreachable dialog. This is
+                  the way in. */}
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() => markAllReadMutation.mutate()}
-                data-testid="button-mark-all-read"
+                size="icon"
+                className="h-6 w-6"
+                aria-label="Notification settings"
+                title="Notification settings"
+                onClick={() => setSettingsOpen(true)}
+                data-testid="button-notification-settings"
               >
-                <CheckCheck className="h-3 w-3 mr-1" />
-                All read
+                <Settings className="h-3.5 w-3.5" />
               </Button>
-            )}
+            </div>
           </div>
           
           <TabsContent value="notifications" className="m-0">
@@ -493,6 +511,8 @@ export function NotificationBell() {
         />
       </Suspense>
     )}
+
+    <NotificationSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
   );
 }
