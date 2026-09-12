@@ -1,6 +1,6 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { PDF_COLORS, PDF_LEADING } from "@/components/pdf/shared/pdfTokens";
+import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 // Registering here covers every proposal section: all eleven of them render
 // their prose through this module, so none can fall back to Helvetica.
@@ -93,11 +93,11 @@ export function htmlToBlocks(html: string): RenderBlock[] {
 }
 
 const blockStyles = StyleSheet.create({
-  p: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginBottom: 6 },
+  p: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginBottom: 6 },
   h1: { fontSize: 18, fontWeight: 'bold', marginTop: 8, marginBottom: 6, color: PDF_COLORS.ink },
   h2: { fontSize: 15, fontWeight: 'bold', marginTop: 8, marginBottom: 4, color: PDF_COLORS.ink },
   h3: { fontSize: 13, fontWeight: 'bold', marginTop: 6, marginBottom: 4, color: PDF_COLORS.ink },
-  li: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginLeft: 12 },
+  li: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginLeft: 12 },
 });
 
 function renderSegs(segs: InlineSeg[] | undefined, fallback: string) {
@@ -126,16 +126,16 @@ export function RichTextBlocks({ html }: RichTextBlocksProps) {
   return (
     <View>
       {blocks.map((b, i) => {
-        if (b.type === 'h1') return <Text key={i} style={blockStyles.h1}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'h2') return <Text key={i} style={blockStyles.h2}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'h3') return <Text key={i} style={blockStyles.h3}>{renderSegs(b.segs, b.text)}</Text>;
-        if (b.type === 'li') return <Text key={i} style={blockStyles.li}>{'\u2022 '}{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h1') return <Text key={i} minPresenceAhead={40} style={blockStyles.h1}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h2') return <Text key={i} minPresenceAhead={40} style={blockStyles.h2}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'h3') return <Text key={i} minPresenceAhead={40} style={blockStyles.h3}>{renderSegs(b.segs, b.text)}</Text>;
+        if (b.type === 'li') return <Text key={i} wrap={false} style={blockStyles.li}>{'\u2022 '}{renderSegs(b.segs, b.text)}</Text>;
         if (b.type === 'ol-li') {
           olIdx += 1;
-          return <Text key={i} style={blockStyles.li}>{`${olIdx}. `}{renderSegs(b.segs, b.text)}</Text>;
+          return <Text key={i} wrap={false} style={blockStyles.li}>{`${olIdx}. `}{renderSegs(b.segs, b.text)}</Text>;
         }
         olIdx = 0;
-        return <Text key={i} style={blockStyles.p}>{renderSegs(b.segs, b.text)}</Text>;
+        return <Text key={i} orphans={2} widows={2} style={blockStyles.p}>{renderSegs(b.segs, b.text)}</Text>;
       })}
     </View>
   );
@@ -198,15 +198,20 @@ export const sharedPageStyle = {
   padding: 40,
   fontSize: 11,
   fontFamily: PDF_FONT_FAMILY,
-  backgroundColor: '#ffffff',
+  backgroundColor: PDF_COLORS.surface,
 };
 
 export const sharedSectionStyle = StyleSheet.create({
-  section: { marginTop: 20, marginBottom: 20 },
+  // Leading edge only. A TRAILING margin on the last section of a page tips
+  // past the boundary and @react-pdf opens another sheet for it — you get a
+  // page containing nothing but the fixed footer. A leading margin collapses
+  // into the page padding instead. (The variation document kit hit the same
+  // thing and documents it; see its shared/README.md §8.)
+  section: { marginTop: 20, marginBottom: 0 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, color: PDF_COLORS.ink },
-  text: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink },
+  text: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted },
   muted: { fontSize: 11, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
-  intro: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.ink, marginBottom: 12 },
+  intro: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginBottom: 12 },
 });
 
 /**

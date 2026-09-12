@@ -22,6 +22,13 @@ export default function Takeoff({ projectId: projectIdProp }: { projectId?: stri
   if (viewingPlan) {
     return (
       <TakeoffPlanViewer
+        /* A different plan is a different PDF. The viewer holds a page count
+           and an open-tabs list that belong to the file it loaded, and today
+           it can only be reached by closing this one first — so a swap in
+           place is impossible and nothing resets them. The key keeps that
+           true if a plan switcher is ever added inside the viewer, rather
+           than leaving the next person a stale-state bug to find. */
+        key={viewingPlan.plan.id}
         plan={viewingPlan.plan}
         initialPage={viewingPlan.page}
         projectId={projectId}

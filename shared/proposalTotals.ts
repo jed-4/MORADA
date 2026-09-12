@@ -24,7 +24,13 @@
  * Estimate money is in DOLLARS (estimate_items price fields are
  * doublePrecision); proposals store CENTS. The conversion happens here, once.
  */
-import { computeEstimateSummary, type EstimateItemSummaryInput } from "./pricing";
+import {
+  computeEstimateSummary,
+  computeEstimateItemPrice,
+  isFixedPriceLine,
+  round2,
+  type EstimateItemSummaryInput,
+} from "./pricing";
 import { dollarsToCents, type Cents } from "./money";
 
 /** How a line is presented to the client on the proposal. */
@@ -163,3 +169,49 @@ export const EMPTY_PROPOSAL_TOTALS: ProposalTotals = {
   includedItemCount: 0,
   excludedItemCount: 0,
 };
+
+/**
+ * What ONE line is worth to the client, in dollars, with the project margin
+ * applied.
+ *
+ * Every page that prints a per-line figure has to agree with every other and
+ * with the grand total, so the rule lives here once rather than being
+ * re-derived per section. The rules it encodes:
+ *
+ *  - Priced lines are RECOMPUTED from qty x unit cost x line markup. The stored
+ *    `priceIncTax` is a pre-margin cache and a legacy row may have the margin
+ *    baked in, which would double-count it.
+ *  - Fixed-price lines (unit cost 0 — allowances quoted as a lump) trust their
+ *    typed `priceIncTax`, which is authoritative for them.
+ *  - The project margin is a flat percentage on the ex-GST subtotal, so
+ *    distributing it proportionally across lines is exact: the parts still sum
+ *    to the whole.
+ */
+export function clientLineAmounts(
+  item: EstimateItemSummaryInput,
+  options: { projectMarkupPercent?: number | null; taxRate?: number | null },
+): { exTax: number; incTax: number } {
+  const taxRate = Number(options.taxRate ?? 10);
+  const marginFactor = 1 + Number(options.projectMarkupPercent ?? 0) / 100;
+
+  if (isFixedPriceLine(item.unitCostExTax)) {
+    const inc = round2(Number(item.priceIncTax ?? 0));
+    return {
+      incTax: round2(inc * marginFactor),
+      exTax: round2((inc / (1 + taxRate / 100)) * marginFactor),
+    };
+  }
+
+  const line = computeEstimateItemPrice({
+    unitCostExTax: item.unitCostExTax ?? 0,
+    quantity: item.quantity ?? 0,
+    markupPercent: item.markupPercent,
+    projectMarkupPercent: 0,
+    taxRate,
+    wastagePercent: (item as { wastagePercent?: number | null }).wastagePercent ?? undefined,
+  });
+  return {
+    incTax: round2(line.lineIncTax * marginFactor),
+    exTax: round2(line.lineExTax * marginFactor),
+  };
+}

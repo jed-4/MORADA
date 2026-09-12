@@ -66,7 +66,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DndContext, closestCenter, DragOverlay, DragEndEvent, DragOverEvent, DragStartEvent, useSensor, useSensors, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import { StageCard } from "@/components/scope/StageCard";
 import { ScopeItemDetailPanel } from "@/components/scope/ScopeItemDetailPanel";
 import { ScopePDF } from "@/components/scope/ScopePDF";
@@ -99,6 +99,7 @@ export default function ProjectScope() {
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
   const [pdfStage, setPdfStage] = useState<string>('');
   const [hideClientCosts, setHideClientCosts] = useState(false); // Client toggle for PDF
+  const [isBuildingPdf, setIsBuildingPdf] = useState(false);
   const [addingForStage, setAddingForStage] = useState<string | null>(null); // Inline blank-row add — which stage is in adding mode
   const [detailItemId, setDetailItemId] = useState<string | null>(null); // Which item's detail panel is open
 
@@ -864,6 +865,42 @@ export default function ProjectScope() {
   // Returns items for PDF export — applies role visibility only (ignores UI chip toggles so all
   // role-permitted types export). Guard uses scopeItemTypeDefs.length so a zero-visible-types
   // role correctly exports nothing rather than bypassing the filter.
+  /**
+   * Builds the scope PDF when the button is pressed, rather than keeping a
+   * live renderer mounted.
+   *
+   * This was a <PDFDownloadLink>, which renders its `document` continuously so
+   * the href is always ready. Two problems with that here. It re-rendered the
+   * whole scope PDF on every keystroke-equivalent — opening the dialog, picking
+   * a stage, ticking "client-facing" — for a file most visits never download.
+   * And @react-pdf 4.3.1 bundles a react-reconciler with NO
+   * detachDeletedInstance (the host-config slot is literally null), which React
+   * calls for every host node a commit removes: switching stage or hiding the
+   * cost columns deletes nodes from that tree, so it threw
+   * "<minified> is not a function" and took the page down. Same fix as the
+   * proposal builder — build on demand, nothing live to tear down.
+   */
+  const handleDownloadScopePdf = async () => {
+    setIsBuildingPdf(true);
+    try {
+      const blob = await pdf(
+        <ScopePDF stage={pdfStage} items={getPdfItemsByStage(pdfStage)} hideClientCosts={hideClientCosts} />,
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `scope-${pdfStage.toLowerCase()}${hideClientCosts ? '-client' : ''}.pdf`;
+      link.click();
+      // Revoke on a delay; revoking immediately can cancel the download.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (error) {
+      console.error('Error generating scope PDF:', error);
+      toast({ title: 'Could not generate the PDF', variant: 'destructive' });
+    } finally {
+      setIsBuildingPdf(false);
+    }
+  };
+
   const getPdfItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
@@ -1351,16 +1388,9 @@ export default function ProjectScope() {
                 </p>
               </div>
               <DialogFooter>
-                <PDFDownloadLink
-                  document={<ScopePDF stage={pdfStage} items={getPdfItemsByStage(pdfStage)} hideClientCosts={hideClientCosts} />}
-                  fileName={`scope-${pdfStage.toLowerCase()}${hideClientCosts ? '-client' : ''}.pdf`}
-                >
-                  {({ loading }) => (
-                    <Button disabled={loading}>
-                      {loading ? 'Generating...' : 'Download PDF'}
-                    </Button>
-                  )}
-                </PDFDownloadLink>
+                <Button onClick={handleDownloadScopePdf} disabled={isBuildingPdf} data-testid="button-download-scope-pdf">
+                  {isBuildingPdf ? 'Generating…' : 'Download PDF'}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

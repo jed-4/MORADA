@@ -1,12 +1,7 @@
 import { Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
+import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
 
 interface AttachmentRow {
   name?: string;
@@ -24,6 +19,7 @@ interface AttachmentsSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function AttachmentsSection({
@@ -35,6 +31,7 @@ export function AttachmentsSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: AttachmentsSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
@@ -44,7 +41,7 @@ export function AttachmentsSection({
 
   const styles = StyleSheet.create({
     table: { marginTop: 12, borderTop: `1px solid ${resolvedColor}`, opacity: 1 },
-    row: { flexDirection: 'row', paddingVertical: 6, borderBottom: '1px solid #E5E7EB' },
+    row: { flexDirection: 'row', paddingVertical: 6, borderBottom: '1px solid ${PDF_COLORS.border}' },
     headerRow: {
       flexDirection: 'row',
       paddingVertical: 6,
@@ -57,22 +54,9 @@ export function AttachmentsSection({
   });
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={sharedSectionStyle.sectionTitle}>{section.name || 'Attachments'}</Text>
+          <Text minPresenceAhead={60} style={sharedSectionStyle.sectionTitle}>{section.name || 'Attachments'}</Text>
           <SectionIntro section={section} />
           {introHtml ? <RichTextBlocks html={introHtml} /> : null}
 
@@ -103,11 +87,5 @@ export function AttachmentsSection({
           )}
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus,
   FileText,
@@ -15,12 +14,13 @@ import {
   CheckCircle,
   XCircle,
   FileCheck,
-  ChevronDown,
   Archive,
   ArchiveRestore,
   Columns3,
   Eye,
   ChevronRight,
+  Filter,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   Tooltip,
@@ -127,50 +127,99 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
     return proposalStatusesData?.options || [];
   }, [proposalStatusesData]);
 
-  const filteredProposals = useMemo(() => {
-    let filtered = proposals.filter(proposal => {
-      let matchesTab = true;
-      if (!isProjectContext) {
-        if (activeTab === "archived") {
-          matchesTab = proposal.isArchived;
-        } else if (activeTab === "completed") {
-          matchesTab = !proposal.isArchived && (proposal.status === "accepted" || proposal.status === "rejected");
-        } else {
-          matchesTab = !proposal.isArchived && proposal.status !== "accepted" && proposal.status !== "rejected";
-        }
-      }
+  /**
+   * Revisions of one proposal are one thing, not several.
+   *
+   * Every revision carries parentProposalId pointing at the original, so a
+   * family is keyed by `parentProposalId ?? id`. The row you see is the family's
+   * CURRENT revision — the highest version that hasn't been superseded — and the
+   * older ones collapse underneath it. Listing them flat showed the same job
+   * three times, identical but for a version chip, and buried the live one
+   * among its own history.
+   */
+  const familyKey = (p: Proposal) => p.parentProposalId ?? p.id;
 
-      const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (proposal.notes || "").toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesProject = selectedProject === "All" || proposal.projectId === selectedProject;
-      const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
+  const families = useMemo(() => {
+    const byFamily = new Map<string, Proposal[]>();
+    for (const p of proposals) {
+      const key = familyKey(p);
+      const list = byFamily.get(key);
+      if (list) list.push(p);
+      else byFamily.set(key, [p]);
+    }
+
+    return Array.from(byFamily.values()).map((members) => {
+      const newestFirst = [...members].sort((a, b) => (b.version ?? 1) - (a.version ?? 1));
+      // The live one leads. Every revision superseded means the family is
+      // finished with; show its newest rather than nothing.
+      const current = newestFirst.find((p) => p.status !== "superseded") ?? newestFirst[0];
+      return {
+        current,
+        history: newestFirst.filter((p) => p.id !== current.id),
+        members,
+      };
+    });
+  }, [proposals]);
+
+  /** Does this family belong on the given tab? Judged on its current revision. */
+  const onTab = (current: Proposal, tab: typeof activeTab) => {
+    if (tab === "archived") return current.isArchived;
+    const decided = current.status === "accepted" || current.status === "rejected";
+    return tab === "completed" ? !current.isArchived && decided : !current.isArchived && !decided;
+  };
+
+  const filteredFamilies = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    let matched = families.filter(({ current, members }) => {
+      const matchesTab = isProjectContext || onTab(current, activeTab);
+      // Search spans the whole family: an old revision's name or notes should
+      // still surface the job, rather than appearing to have vanished.
+      const matchesSearch = !term || members.some((m) =>
+        (m.name || "").toLowerCase().includes(term) ||
+        (m.notes || "").toLowerCase().includes(term) ||
+        (m.proposalNumber || "").toLowerCase().includes(term),
+      );
+      const matchesProject = selectedProject === "All" || current.projectId === selectedProject;
+      // A status filter looks inside the family too, so filtering by "accepted"
+      // still finds a job whose accepted revision has since been revised.
+      const matchesStatus = selectedStatus === "All" || members.some((m) => m.status === selectedStatus);
       return matchesTab && matchesSearch && matchesProject && matchesStatus;
     });
 
     if (isProjectContext) {
       if (sortBy === "alphabetical") {
-        filtered = [...filtered].sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "")
-        );
+        matched = [...matched].sort((a, b) => (a.current.name || "").localeCompare(b.current.name || ""));
       } else {
         const statusOrder = { draft: 0, sent: 1, accepted: 2, rejected: 3 };
-        filtered = [...filtered].sort((a, b) => {
-          const statusA = statusOrder[a.status as keyof typeof statusOrder] ?? 999;
-          const statusB = statusOrder[b.status as keyof typeof statusOrder] ?? 999;
-          return statusA - statusB;
+        matched = [...matched].sort((a, b) => {
+          const sa = statusOrder[a.current.status as keyof typeof statusOrder] ?? 999;
+          const sb = statusOrder[b.current.status as keyof typeof statusOrder] ?? 999;
+          return sa - sb;
         });
       }
     }
 
-    return filtered;
-  }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab, isProjectContext, sortBy]);
+    return matched;
+  }, [families, searchTerm, selectedProject, selectedStatus, activeTab, isProjectContext, sortBy]);
 
-  const tabCounts = useMemo(() => {
-    const active = proposals.filter(p => !p.isArchived && p.status !== "accepted" && p.status !== "rejected").length;
-    const completed = proposals.filter(p => !p.isArchived && (p.status === "accepted" || p.status === "rejected")).length;
-    const archived = proposals.filter(p => p.isArchived).length;
-    return { active, completed, archived };
-  }, [proposals]);
+  // Only filters that are actually narrowing anything count towards the badge.
+  const activeFilterCount =
+    (!isProjectContext && selectedProject !== "All" ? 1 : 0) +
+    (selectedStatus !== "All" ? 1 : 0);
+
+  /** Rows handed to the table: one per family, history hanging off it. */
+  const filteredProposals = useMemo(
+    () => filteredFamilies.map((f) => f.current),
+    [filteredFamilies],
+  );
+
+  const historyByProposalId = useMemo(() => {
+    const map = new Map<string, Proposal[]>();
+    for (const f of filteredFamilies) map.set(f.current.id, f.history);
+    return map;
+  }, [filteredFamilies]);
+
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -274,11 +323,13 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
       });
     }
 
-    const hasRevisions = filteredProposals.some((p) => (p.version ?? 1) > 1);
+    const hasRevisions = filteredProposals.some(
+      (p) => (p.version ?? 1) > 1 || (historyByProposalId.get(p.id)?.length ?? 0) > 0,
+    );
     if (hasRevisions) {
       cols.push({
         id: "version",
-        header: "Version",
+        header: "Rev",
         accessorFn: (p) => p.version ?? 1,
         cell: ({ row }) => {
           const v = row.original.version ?? 1;
@@ -288,8 +339,8 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
             </Badge>
           );
         },
-        size: 90,
-        meta: { defaultWidth: 90, headerLabel: "Version" } satisfies DataTableColumnMeta,
+        size: 72,
+        meta: { defaultWidth: 72, headerLabel: "Revision" } satisfies DataTableColumnMeta,
       });
     }
 
@@ -315,8 +366,8 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
             {row.original.expiryDate ? format(new Date(row.original.expiryDate), 'MMM d, yyyy') : "—"}
           </span>
         ),
-        size: 120,
-        meta: { defaultWidth: 120, headerLabel: "Valid Until" } satisfies DataTableColumnMeta,
+        size: 132,
+        meta: { defaultWidth: 132, headerLabel: "Valid Until" } satisfies DataTableColumnMeta,
       },
       {
         id: "sentDate",
@@ -347,72 +398,32 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
         header: "Status",
         accessorFn: (p) => p.status,
         enableSorting: false,
+        // Presentational. The chevron used to open a status picker, which was
+        // how you could mark a proposal accepted with no acceptance record;
+        // the server refuses that now, so an affordance here would only
+        // promise something it cannot do. Archive moved to the actions column.
         cell: ({ row }) => {
           const proposal = row.original;
           const statusColor = getStatusColor(proposal.status);
-          const statusOption = proposalStatuses.find(s => s.key === proposal.status);
+          const statusOption = proposalStatuses.find((s) => s.key === proposal.status);
           return (
-            <span onClick={(e) => e.stopPropagation()}>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex"
-                    data-testid={`badge-proposal-status-${proposal.id}`}
-                  >
-                    <Badge
-                      variant={getStatusBadgeVariant(proposal.status)}
-                      className="gap-1 px-2 py-0.5 hover-elevate cursor-pointer"
-                      style={statusColor ? {
-                        backgroundColor: `${statusColor}15`,
-                        color: statusColor,
-                        borderColor: `${statusColor}30`
-                      } : undefined}
-                    >
-                      {getStatusIcon(proposal.status)}
-                      <span className="font-medium">{statusOption?.name || proposal.status}</span>
-                      <ChevronDown className="w-3 h-3 ml-0.5" />
-                    </Badge>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  {/* Status is not editable here. It belongs to the proposal
-                      state machine — Send, the client's own accept or decline,
-                      and Create revision — and setting it directly used to let
-                      you mark a proposal accepted with no acceptance record,
-                      no signature and no snapshot. The server refuses it now,
-                      so offering the choice would only produce an error. */}
-                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                    Status is set by sending, and by the client's response.
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => toggleArchiveMutation.mutate({
-                      proposalId: proposal.id,
-                      isArchived: !proposal.isArchived
-                    })}
-                    className="gap-2"
-                    data-testid={`menu-item-archive-${proposal.id}`}
-                  >
-                    {proposal.isArchived ? (
-                      <>
-                        <ArchiveRestore className="w-4 h-4" />
-                        <span>Restore</span>
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="w-4 h-4" />
-                        <span>Archive</span>
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </span>
+            <Badge
+              variant={getStatusBadgeVariant(proposal.status)}
+              className="gap-1 px-2 py-0.5"
+              style={statusColor ? {
+                backgroundColor: `${statusColor}15`,
+                color: statusColor,
+                borderColor: `${statusColor}30`,
+              } : undefined}
+              data-testid={`badge-proposal-status-${proposal.id}`}
+            >
+              {getStatusIcon(proposal.status)}
+              <span className="font-medium">{statusOption?.name || proposal.status}</span>
+            </Badge>
           );
         },
-        size: 160,
-        meta: { defaultWidth: 160, headerLabel: "Status" } satisfies DataTableColumnMeta,
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Status" } satisfies DataTableColumnMeta,
       },
       {
         id: "viewCount",
@@ -470,10 +481,62 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
         size: 120,
         meta: { defaultWidth: 120, align: "right", headerLabel: "Total" } satisfies DataTableColumnMeta,
       },
+      {
+        // Row actions, pinned right — the shared table auto-detects id "actions"
+        // and keeps it flush against the columns on horizontal overflow.
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const proposal = row.original;
+          return (
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                    aria-label="Proposal actions"
+                    data-testid={`button-row-actions-${proposal.id}`}
+                  >
+                    <MoreHorizontal className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onClick={() => handleRowClick(proposal.id)}
+                    className="gap-2"
+                    data-testid={`menu-item-open-${proposal.id}`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Open
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => toggleArchiveMutation.mutate({
+                      proposalId: proposal.id,
+                      isArchived: !proposal.isArchived,
+                    })}
+                    className="gap-2"
+                    data-testid={`menu-item-archive-${proposal.id}`}
+                  >
+                    {proposal.isArchived ? (
+                      <><ArchiveRestore className="w-4 h-4" />Restore</>
+                    ) : (
+                      <><Archive className="w-4 h-4" />Archive</>
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+        size: 56,
+        meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
     );
 
     return cols;
-  }, [projects, proposalStatuses, isProjectContext, toggleArchiveMutation, filteredProposals]);
+  }, [projects, proposalStatuses, isProjectContext, toggleArchiveMutation, filteredProposals, historyByProposalId]);
 
   const pickerColumns = useMemo(() => {
     return proposalColumns.map((c) => {
@@ -502,132 +565,185 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
             {params.projectId ? (projects.find(p => p.id === params.projectId)?.name ?? "All Projects") : "All Projects"}
           </span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <div className="w-[3px] h-3.5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--primary))" }} aria-hidden="true" />
           <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Proposals</span>
         </div>
       )}
-      {/* Header */}
-      <div className="border-b bg-background">
-        <div className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold" data-testid="text-proposals-heading">{pageTitle}</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Create and manage project proposals
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-column-picker">
-                    <Columns3 className="w-4 h-4" />
-                    Columns
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="p-0">
-                  <DataTableColumnPicker storageKey="proposals" columns={pickerColumns} />
-                </PopoverContent>
-              </Popover>
-              <Button
-                onClick={handleNewProposal}
-                data-testid="button-new-proposal"
-                className="gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                New Proposal
-              </Button>
-            </div>
+      {/* Header panel — one condensed row, matching Tasks/Timesheets. The
+          breadcrumb above already names the page, so there is no 24px title
+          and no subtitle; the three stacked rows this replaces (title, tabs,
+          filter row) cost ~120px before any data appeared. */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-8 flex items-center gap-2 px-3">
+          {/* Search — always visible, Timesheets width */}
+          <div className="relative w-40">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-proposals"
+            />
           </div>
 
+          {/* Project + status roll up behind one icon. As always-visible
+              Selects they sat there reading "All Projects" / "All Statuses",
+              taking prime space to say that nothing was filtered. */}
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className={`relative h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center ${
+                      activeFilterCount > 0 ? "bg-primary/10 text-primary border-primary/40" : "border-border/50 text-muted-foreground"
+                    }`}
+                    data-testid="button-filters"
+                    aria-label="Filters"
+                  >
+                    <Filter className="w-3 h-3" />
+                    {activeFilterCount > 0 && (
+                      <span
+                        className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                        data-testid="badge-filters-count"
+                      >
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-72 p-3" align="start">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={() => { setSelectedProject(params.projectId ?? "All"); setSelectedStatus("All"); }}
+                      className="text-xs text-muted-foreground hover:text-foreground hover-elevate active-elevate-2 px-1 rounded"
+                      data-testid="button-filters-clear"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {!isProjectContext && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-muted-foreground">Project</span>
+                    <Select value={selectedProject} onValueChange={setSelectedProject}>
+                      <SelectTrigger className="h-7 text-xs" data-testid="select-project-filter">
+                        <SelectValue placeholder="All Projects" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Projects</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger className="h-7 text-xs" data-testid="select-status-filter">
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="All">All Statuses</SelectItem>
+                      {proposalStatuses.map((status) => (
+                        <SelectItem key={status.key} value={status.key}>{status.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {isProjectContext && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-muted-foreground">Sort</span>
+                    <Select value={sortBy} onValueChange={(v) => setSortBy(v as "status" | "alphabetical")}>
+                      <SelectTrigger className="h-7 text-xs" data-testid="select-sort-proposals">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="status">Sort by Status</SelectItem>
+                        <SelectItem value="alphabetical">Sort Alphabetically</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Active / Completed / Archived as segmented chips, in the bar */}
           {!isProjectContext && (
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "completed" | "archived")} className="mt-6">
-              <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
-                <TabsTrigger value="active" className="gap-2" data-testid="tab-active-proposals">
-                  <FileText className="w-4 h-4" />
-                  Active
-                  {tabCounts.active > 0 && (
-                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                      {tabCounts.active}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="completed" className="gap-2" data-testid="tab-completed-proposals">
-                  <FileCheck className="w-4 h-4" />
-                  Completed
-                  {tabCounts.completed > 0 && (
-                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                      {tabCounts.completed}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="archived" className="gap-2" data-testid="tab-archived-proposals">
-                  <Archive className="w-4 h-4" />
-                  Archived
-                  {tabCounts.archived > 0 && (
-                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                      {tabCounts.archived}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-0.5" data-testid="tabs-proposals">
+              {([
+                { key: "active", label: "Active" },
+                { key: "completed", label: "Completed" },
+                { key: "archived", label: "Archived" },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 ${
+                    activeTab === t.key
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "border-border/50 text-muted-foreground"
+                  }`}
+                  data-testid={`tab-${t.key}-proposals`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           )}
 
-          <div className="flex flex-col sm:flex-row gap-3 mt-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search proposals..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-                data-testid="input-search-proposals"
-              />
-            </div>
-            {!isProjectContext && (
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="w-full sm:w-48" data-testid="select-project-filter">
-                  <SelectValue placeholder="All Projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All Projects</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Statuses</SelectItem>
-                {proposalStatuses.map((status) => (
-                  <SelectItem key={status.key} value={status.key}>
-                    {status.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {isProjectContext && (
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as "status" | "alphabetical")}>
-                <SelectTrigger className="w-full sm:w-48" data-testid="select-sort-proposals">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="status">Sort by Status</SelectItem>
-                  <SelectItem value="alphabetical">Sort Alphabetically</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+          <div className="flex-1" />
+
+          {/* Columns lives in the overflow, as on Timesheets */}
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-6 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                    data-testid="button-column-picker"
+                    aria-label="Columns"
+                  >
+                    <Columns3 className="w-3 h-3" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Columns</TooltipContent>
+            </Tooltip>
+            <PopoverContent align="end" className="p-0">
+              <DataTableColumnPicker storageKey="proposals-v2" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
+
+          {/* Primary CTA is a raw button with the token classes — a shadcn
+              <Button> here is visibly chunkier than everything around it. */}
+          <button
+            onClick={handleNewProposal}
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+            data-testid="button-new-proposal"
+          >
+            <Plus className="w-3 h-3" />
+            New Proposal
+          </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
+      {/* Body closes the card */}
+      <div className="flex-1 overflow-hidden border-x border-b border-border rounded-b-lg bg-card">
         {filteredProposals.length === 0 ? (
           <EmptyState
             variant="card"
@@ -647,10 +763,25 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
           <DataTable
             data={filteredProposals}
             columns={proposalColumns}
-            storageKey="proposals"
-            legacyConfigKey="proposals-column-config-v1"
+            // Bumped from "proposals" with the 2026-09 restyle. Saved widths,
+            // order and visibility are per user in localStorage and survive a
+            // redesign, so without a new key every existing user would keep the
+            // old layout and never see these defaults. Costs them their column
+            // customisations once, deliberately.
+            //
+            // legacyConfigKey is deliberately NOT carried over: it only fires
+            // when the new keys are empty, which is exactly the state this bump
+            // creates, so it would re-import the pre-DataTable layout and undo
+            // the reset for anyone still holding that key.
+            storageKey="proposals-v2"
             rowKey={(p) => p.id}
             onRowClick={(p) => handleRowClick(p.id)}
+            // Earlier revisions collapse under their current one. The table
+            // hides the chevron by itself on families with no history.
+            getSubRows={(p) => historyByProposalId.get(p.id) ?? undefined}
+            rowClassName={(p) =>
+              historyByProposalId.has(p.id) ? "" : "text-muted-foreground"
+            }
           />
         )}
       </div>

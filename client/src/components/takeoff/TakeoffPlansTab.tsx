@@ -1,6 +1,7 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Page, pdfjs } from "react-pdf";
+import { PdfDocument as Document } from "@/components/PdfDocument";
 import { ensurePdfWorker } from "@/lib/pdfWorker";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useUpload } from "@/hooks/use-upload";
@@ -43,6 +44,9 @@ interface Props {
 }
 
 async function getPdfPageCount(file: File): Promise<number> {
+  // Reads the page count straight through pdf.js rather than via <Document>,
+  // so it has to register the worker itself.
+  await ensurePdfWorker();
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buffer }).promise;
   const count = pdf.numPages;
@@ -51,10 +55,6 @@ async function getPdfPageCount(file: File): Promise<number> {
 }
 
 export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
-  // Configure the pdf.js worker before any <Document> renders. Without this
-  // pdf.js falls back to a "fake worker" that fails in production builds,
-  // surfacing as "Failed to load PDF".
-  ensurePdfWorker();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDelete, setPendingDelete] = useState<TakeoffPlan | null>(null);

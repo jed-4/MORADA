@@ -1,12 +1,7 @@
-import { Page, Text, View } from '@react-pdf/renderer';
+import { Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
 
 interface TermsSectionProps {
   proposal: Proposal;
@@ -17,6 +12,7 @@ interface TermsSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function TermsSection({
@@ -28,28 +24,16 @@ export function TermsSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: TermsSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.termsText as string) || '';
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={sharedSectionStyle.sectionTitle}>
+          <Text minPresenceAhead={60} style={sharedSectionStyle.sectionTitle}>
             {section.name || 'Terms & Conditions'}
           </Text>
           <SectionIntro section={section} />
@@ -60,11 +44,5 @@ export function TermsSection({
           )}
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

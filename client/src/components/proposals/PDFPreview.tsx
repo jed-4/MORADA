@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { Document, Page } from 'react-pdf';
-import { ensurePdfWorker } from '@/lib/pdfWorker';
+import { usePdfWorkerReady } from '@/lib/pdfWorker';
+import { usePdfPageCount } from '@/lib/usePdfPageCount';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,18 +14,23 @@ interface PDFPreviewProps {
 }
 
 export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
-  ensurePdfWorker();
-  const [numPages, setNumPages] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
-    setLoading(false);
-  }
+  // Wait for the pdf.js worker before rendering <Document>; see lib/pdfWorker.
+  const workerState = usePdfWorkerReady();
+  // The page count belongs to the document that produced it — see the hook.
+  const { epoch, numPages, onLoadSuccess: onDocumentLoadSuccess } = usePdfPageCount(pdfBlob);
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error);
-    setLoading(false);
+  }
+
+  if (workerState !== "ready") {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm text-muted-foreground">
+          {workerState === "error" ? "Could not start the PDF viewer." : "Preparing preview…"}
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -33,6 +38,7 @@ export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
       {/* PDF Document - All pages scrollable */}
       <div className="flex-1 overflow-auto bg-muted flex flex-col items-center p-4 gap-4">
         <Document
+          key={epoch}
           file={pdfBlob}
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}

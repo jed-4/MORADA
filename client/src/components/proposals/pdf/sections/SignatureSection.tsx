@@ -1,12 +1,8 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { PDF_COLORS, PDF_RADIUS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
-import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
-import { DocFooter } from '@/components/pdf/shared/DocFooter';
-import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
-
-registerPdfFonts();
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 
 interface SignatureSectionProps {
   proposal: Proposal;
@@ -18,6 +14,7 @@ interface SignatureSectionProps {
   primaryColor?: string;
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
+  showFooter?: boolean;
 }
 
 export function SignatureSection({
@@ -30,11 +27,22 @@ export function SignatureSection({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   documentStyle = 'style1',
+  showFooter,
 }: SignatureSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
 
   const styles = StyleSheet.create({
+    signatureCard: {
+      borderWidth: 1,
+      borderColor: PDF_COLORS.border,
+      borderRadius: PDF_RADIUS.lg,
+      backgroundColor: PDF_COLORS.surfaceSubtle,
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 12,
+      marginTop: 10,
+    },
     row: { marginTop: 24, flexDirection: 'row', gap: 32 },
     box: {
       flex: 1,
@@ -51,23 +59,17 @@ export function SignatureSection({
     drawnSig: { height: 60, marginBottom: 4, objectFit: 'contain' },
     typedSig: {
       fontSize: 22,
-      // The ONE place Helvetica survives, deliberately. A typed signature has
-      // to read as a signature rather than as body text, and Inter is only
-      // registered in upright weights — setting it here would render the
-      // client's name in the same face as the paragraph above it. If an
-      // italic Inter is ever vendored, this can move; a blanket sweep should
-      // not flatten it in the meantime.
-      fontFamily: 'Helvetica-Oblique',
+      fontFamily: PDF_FONT_FAMILY, fontStyle: 'italic',
       marginBottom: 4,
       color: PDF_COLORS.ink,
     },
     acceptedLine: {
       marginTop: 12,
       fontSize: 12,
-      fontFamily: PDF_FONT_FAMILY, fontWeight: 600,
+      fontFamily: PDF_FONT_FAMILY, fontWeight: 700,
       color: PDF_COLORS.ink,
     },
-    meta: { marginTop: 8, fontSize: 10, color: PDF_COLORS.ink },
+    meta: { marginTop: 8, fontSize: 10, color: PDF_COLORS.inkMuted },
     metaLine: { marginBottom: 2 },
     acceptedBadge: {
       marginTop: 16,
@@ -88,26 +90,18 @@ export function SignatureSection({
   const isImage = !!sigData && sigData.startsWith('data:image');
 
   return (
-    <Page
-      size="A4"
-      style={{ paddingBottom: 60, fontFamily: PDF_FONT_FAMILY, backgroundColor: '#ffffff' }}
-    >
-      <DocProposalInnerHeader
-        companyName={companyName}
-        companyPhone={companyPhone}
-        logoUrl={logoUrl}
-        proposalNumber={proposal.proposalNumber}
-        proposalName={proposal.name}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Signature'}
           </Text>
           <SectionIntro section={section} />
 
+          {/* Boxed. A pair of ruled lines floating on the page reads as an
+              afterthought; the thing the client is actually asked to do
+              deserves a container. wrap={false} keeps it whole — half a
+              signature block across a page break is unusable. */}
+          <View wrap={false} style={styles.signatureCard}>
           <View style={styles.row}>
             <View style={styles.box}>
               {isAccepted && sigData ? (
@@ -132,12 +126,13 @@ export function SignatureSection({
               <Text style={styles.label}>Date</Text>
             </View>
           </View>
+          </View>
 
           {isAccepted && (
             <>
               <View style={styles.acceptedBadge}>
                 <View style={styles.badgeDot} />
-                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: PDF_FONT_FAMILY, fontWeight: 600 }}>
+                <Text style={{ fontSize: 11, color: '#16a34a', fontFamily: PDF_FONT_FAMILY, fontWeight: 700 }}>
                   Proposal Accepted
                 </Text>
               </View>
@@ -165,11 +160,5 @@ export function SignatureSection({
           )}
         </View>
       </View>
-      <DocFooter
-        companyName={companyName}
-        brandColor={resolvedColor}
-        docStyle={documentStyle}
-      />
-    </Page>
   );
 }

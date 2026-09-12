@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, Copy, Check } from "lucide-react";
 import * as Sentry from "@sentry/react";
 import { Button } from "@/components/ui/button";
 import { isDynamicImportError, attemptChunkReload } from "@/lib/chunk-reload";
@@ -20,6 +20,9 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  /** Kept so the crash screen can show where it came from, not just what it said. */
+  componentStack?: string;
+  copied?: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -39,6 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return;
     }
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
+    this.setState({ componentStack: info.componentStack });
     Sentry.captureException(error, {
       tags: { context: this.props.context },
       contexts: { react: { componentStack: info.componentStack } },
@@ -79,6 +83,29 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: undefined });
   }
 
+  /** Everything worth pasting into a bug report, in one block. */
+  private details = () =>
+    [
+      `Context: ${this.props.context ?? "unknown"}`,
+      `URL: ${typeof location !== "undefined" ? location.href : ""}`,
+      `Message: ${this.state.error?.message ?? ""}`,
+      "",
+      this.state.error?.stack ?? "",
+      "",
+      "Component stack:",
+      this.state.componentStack ?? "",
+    ].join("\n");
+
+  private copyDetails = () => {
+    navigator.clipboard?.writeText(this.details()).then(
+      () => {
+        this.setState({ copied: true });
+        setTimeout(() => this.setState({ copied: false }), 2000);
+      },
+      () => undefined,
+    );
+  };
+
   render() {
     if (this.state.hasError) {
       if (isDynamicImportError(this.state.error)) {
@@ -101,16 +128,32 @@ export class ErrorBoundary extends Component<Props, State> {
               {this.state.error?.message || "An unexpected error occurred"}
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              this.setState({ hasError: false, error: undefined });
-              window.location.reload();
-            }}
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Reload page
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                this.setState({ hasError: false, error: undefined, componentStack: undefined });
+                window.location.reload();
+              }}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Reload page
+            </Button>
+            {/* A minified message like "AU is not a function" names nothing you
+                can act on. The stack has always gone to Sentry and the server
+                log; this puts it where the person looking at the crash is. */}
+            <Button variant="ghost" onClick={this.copyDetails} data-testid="button-copy-crash-details">
+              {this.state.copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+              {this.state.copied ? "Copied" : "Copy details"}
+            </Button>
+          </div>
+
+          <details className="w-full max-w-2xl text-left">
+            <summary className="text-xs text-muted-foreground cursor-pointer">Technical details</summary>
+            <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-2 text-[11px] leading-relaxed whitespace-pre-wrap">
+              {this.details()}
+            </pre>
+          </details>
         </div>
       );
     }

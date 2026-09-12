@@ -78,6 +78,14 @@ interface PdfLineTableProps<T> {
    * twice on one page.
    */
   repeatHeader?: boolean;
+  /**
+   * Right-aligned in the header row, after any columns. For a caller that has
+   * split its groups into a table each, this is where the group's total goes
+   * — the header row becomes the group's identity rather than a row of column
+   * labels repeated above every block. Leave unset when a numeric column
+   * already occupies the right edge.
+   */
+  headerRight?: string | null;
 }
 
 /** A4 (595pt) less both 40pt margins, less the panel's own 20pt of padding. */
@@ -96,9 +104,16 @@ export function PdfLineTable<T>({
   grouped = true,
   rowKey,
   repeatHeader = true,
+  headerRight,
 }: PdfLineTableProps<T>) {
   const brand = brandRamp(brandColor);
   const showText = !!textHeader || !!renderText;
+  // A header row with no column labels and no text header is a filled brand
+  // bar with nothing in it. That never came up while each document rendered
+  // one table, but a caller that splits its groups into separate tables —
+  // the proposal's estimate does — asks for a header on the first only, and
+  // got an empty bar on all the rest.
+  const showHeaderRow = !!textHeader || columns.length > 0 || !!headerRight;
 
   /**
    * Keep the description readable when every optional column is switched on.
@@ -257,6 +272,7 @@ export function PdfLineTable<T>({
           the reader had to page back to find out which column was the price.
           @react-pdf re-renders a fixed element per page rather than floating
           one, so this costs nothing on a single-page table. */}
+      {showHeaderRow && (
       <View
         fixed={repeatHeader}
         style={{
@@ -293,7 +309,21 @@ export function PdfLineTable<T>({
             {c.label}
           </Text>
         ))}
+        {headerRight ? (
+          <Text
+            style={{
+              marginLeft: "auto",
+              fontFamily: PDF_FONT_FAMILY,
+              fontWeight: PDF_WEIGHT.semibold,
+              fontSize: PDF_TYPE.tableHeader,
+              color: brand.onBrand,
+            }}
+          >
+            {headerRight}
+          </Text>
+        ) : null}
       </View>
+      )}
 
       {groups.map((group) => renderGroup(group, 0))}
 

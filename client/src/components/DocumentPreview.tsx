@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { FileText, Download, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
-import { Document, Page } from "react-pdf";
+import { Page } from "react-pdf";
+import { PdfDocument as Document } from "@/components/PdfDocument";
 // Positions the selectable text spans over the rendered page. Without this the
 // text layer is mis-aligned and shows as ghost text, so it must stay imported
 // alongside renderTextLayer.
 import "react-pdf/dist/Page/TextLayer.css";
-import { ensurePdfWorker } from "@/lib/pdfWorker";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3.0;
@@ -72,7 +72,6 @@ function isSameOrigin(url: string): boolean {
 }
 
 export function DocumentPreview({ src, mimeType, filename, className, height = 300 }: Props) {
-  ensurePdfWorker();
   const kind = detectKind(src, mimeType);
   const displayName = filename || decodeURIComponent(src.split("/").pop() || "document");
   const heightStyle = typeof height === "number" ? `${height}px` : height;
