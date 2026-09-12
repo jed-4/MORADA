@@ -81,6 +81,7 @@ export function ProposalDocument({
     showGst?: boolean;
     showLogo?: boolean;
     showFooter?: boolean;
+    pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
   } | null) ?? null;
   const pricingMode = layout?.pricingMode ?? 'itemised';
   const showGst = layout?.showGst ?? true;
@@ -396,6 +397,7 @@ export function ProposalDocument({
             docStyle={documentStyle}
             // One sheet, one footer: the first section in the group owns it.
             showFooter={footerFor(group[0])}
+            headerStyle={layout?.pageHeader ?? 'full'}
           >
             {bodies.map((entry, i) => (
               <View key={entry.section.id}>

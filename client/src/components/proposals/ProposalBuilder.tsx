@@ -1731,6 +1731,7 @@ type LayoutSettings = {
   primaryColor?: string;
   showPageNumbers?: boolean;
   showFooter?: boolean;
+  pageHeader?: 'none' | 'minimal' | 'compact' | 'full';
   pageSize?: string;
   pricingMode?: PricingMode;
   showGst?: boolean;
@@ -1827,6 +1828,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
   const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
+  const [pageHeader, setPageHeader] = useState<'none' | 'minimal' | 'compact' | 'full'>(settings.pageHeader ?? 'full');
   const [pageSize, setPageSize] = useState<string>(settings.pageSize || 'A4');
   const [pricingMode, setPricingMode] = useState<PricingMode>(settings.pricingMode || 'itemised');
   const [showGst, setShowGst] = useState<boolean>(settings.showGst ?? true);
@@ -1897,6 +1899,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
       primaryColor,
       showPageNumbers,
       showFooter,
+      pageHeader,
       pageSize,
       pricingMode,
       showGst,
@@ -2095,6 +2098,50 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
           data-testid="switch-layout-page-numbers"
         />
       </div>
+      {/* Page header — what repeats at the top of every page AFTER the cover.
+          Described rather than named, because "minimal" tells you nothing
+          about what you'd actually see. */}
+      <div className="space-y-1.5">
+        <Label htmlFor="layout-page-header">Page header</Label>
+        <Select value={pageHeader} onValueChange={(v) => setPageHeader(v as typeof pageHeader)}>
+          <SelectTrigger id="layout-page-header" data-testid="select-layout-page-header">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-w-[22rem]">
+            {([
+              {
+                value: 'minimal',
+                name: 'Running head',
+                desc: 'One line of small grey type — proposal number left, project right, a hairline under. Lightest, and gives every page back about 36pt of room.',
+              },
+              {
+                value: 'compact',
+                name: 'Compact',
+                desc: 'Brand rule, company name and proposal number, project on the right. Same as full without the logo repeating on every page.',
+              },
+              {
+                value: 'full',
+                name: 'Full',
+                desc: 'Brand rule, logo, company name, proposal number and project. Most identity on each page, and the most space it takes.',
+              },
+              {
+                value: 'none',
+                name: 'None',
+                desc: 'Nothing at the top; the footer still carries the company and page numbers. Most room for content, but a loose page cannot identify itself.',
+              },
+            ] as const).map((o) => (
+              <SelectItem key={o.value} value={o.value} className="items-start">
+                <div className="space-y-0.5">
+                  <p className="text-sm">{o.name}</p>
+                  <p className="text-xs text-muted-foreground whitespace-normal">{o.desc}</p>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Applies to every page except the cover.</p>
+      </div>
+
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="layout-footer">Show footer</Label>
         <Switch

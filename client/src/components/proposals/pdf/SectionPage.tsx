@@ -15,6 +15,8 @@ interface SectionPageProps {
   brandColor: string;
   docStyle: 'style1' | 'style2';
   showFooter?: boolean;
+  /** How much masthead repeats on inner pages; "none" drops it entirely. */
+  headerStyle?: "none" | "minimal" | "compact" | "full";
   children: ReactNode;
 }
 
@@ -39,6 +41,7 @@ export function SectionPage({
   brandColor,
   docStyle,
   showFooter,
+  headerStyle = "full",
   children,
 }: SectionPageProps) {
   return (
@@ -56,8 +59,10 @@ export function SectionPage({
         paddingTop: 0,
       }}
     >
+      {headerStyle !== 'none' && (
       <DocProposalInnerHeader
         fixed
+        variant={headerStyle}
         companyName={companyName}
         companyPhone={companyPhone}
         logoUrl={logoUrl}
@@ -66,6 +71,10 @@ export function SectionPage({
         brandColor={brandColor}
         docStyle={docStyle}
       />
+      )}
+      {/* With no running header the page needs its own top margin; the header
+          was providing it. */}
+      {headerStyle === 'none' && <View style={{ height: 34 }} />}
       {children}
       <DocFooter
         show={showFooter}
