@@ -154,6 +154,7 @@ export default function Header() {
         {/* Shared project switcher (same popover as the sidebar) with a compact icon trigger.
             Clients can still switch between their own projects, but can't create one. */}
         <ProjectSwitcher
+          alwaysOpenOverview
           trigger={
             <button
               className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"

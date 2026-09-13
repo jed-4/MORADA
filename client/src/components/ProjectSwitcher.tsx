@@ -53,9 +53,16 @@ interface ProjectSwitcherProps {
   trigger?: ReactNode;
   /** When provided, a "Create New Project" action is shown in the popover footer. */
   onCreateProject?: () => void;
+  /**
+   * Land on the project's overview instead of carrying the current sub-route
+   * across. The sidebar switcher keeps you where you were — switching project
+   * while reading bills should leave you in bills — but the header's project
+   * list is a jump-to-project control, so it always opens the overview.
+   */
+  alwaysOpenOverview?: boolean;
 }
 
-export function ProjectSwitcher({ compact = false, trigger, onCreateProject }: ProjectSwitcherProps) {
+export function ProjectSwitcher({ compact = false, trigger, onCreateProject, alwaysOpenOverview = false }: ProjectSwitcherProps) {
   const [location, navigate] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
@@ -247,7 +254,9 @@ export function ProjectSwitcher({ compact = false, trigger, onCreateProject }: P
       if (project.isBusiness) {
         navigate('/business');
       } else {
-        const suffix = location.match(/^\/projects\/[^/]+(\/[^?#]*)?/)?.[1] ?? "";
+        const suffix = alwaysOpenOverview
+          ? ""
+          : (location.match(/^\/projects\/[^/]+(\/[^?#]*)?/)?.[1] ?? "");
         navigate(`/projects/${project.id}${suffix}`);
       }
     });
