@@ -196,6 +196,16 @@ await check("sampleData fills the estimate and allowance pages, and says so", as
   );
 });
 
+await check("the $0 'not included' allowance still prints a row", async () => {
+  const items = await renderItems(estimateSections, { sampleData: true });
+  const text = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
+  // A nil allowance is a statement, not an empty row: dropping it, or letting a
+  // future "hide empty lines" pass swallow it, silently removes the thing that
+  // tells a client the item is outside the price.
+  assert.ok(text.includes("Heated towel rail"), "the nil allowance line is missing");
+  assert.ok(/\$0\.00/.test(text), `no $0.00 on the page — got: ${text.slice(0, 400)}`);
+});
+
 await check("real estimate data always beats the stand-ins", async () => {
   const items = await renderItems(estimateSections, {
     sampleData: true,

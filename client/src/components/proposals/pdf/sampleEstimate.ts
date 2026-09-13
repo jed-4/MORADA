@@ -19,6 +19,10 @@ import type { Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
  *   - two top-level groups, so the "one table per group" split is visible
  *   - a nested group, so indentation and group subtotals show
  *   - a Prime Cost and a Provisional Sum line, so the Allowances section fills
+ *   - a $0 Prime Cost line, which is Morada's "not included" flow: the item is
+ *     listed so the client can see it was considered, priced at nothing so it
+ *     is plainly outside this figure. It is easy to design a table that looks
+ *     right only because every row has money in it
  *   - a long description, so wrapping and the description-under-name setting
  *     can actually be judged
  *   - round-ish numbers that still produce awkward GST, so column alignment is
@@ -86,7 +90,12 @@ export const SAMPLE_ITEMS: EstimateItem[] = [
   item('sample-i7', 'sample-g2a', 'Shower screen & mirror', 1, 'item', 1450, {
     allowance: 'Provisional Sum',
   }),
-  item('sample-i8', 'sample-g2a', 'Plumbing fit-off', 1, 'item', 1320),
+  item('sample-i8', 'sample-g2a', 'Heated towel rail', 1, 'item', 0, {
+    allowance: 'Prime Cost',
+    description:
+      'Not included in this price. Allowed at nil so the item is on record — it can be added as a variation if you decide to proceed.',
+  }),
+  item('sample-i9', 'sample-g2a', 'Plumbing fit-off', 1, 'item', 1320),
 ];
 
 export const SAMPLE_ESTIMATE = {
