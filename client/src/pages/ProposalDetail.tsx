@@ -570,7 +570,7 @@ export default function ProposalDetail() {
                    columns defaulted to #3B82F6, so whichever came first was
                    never null and every proposal printed that blue whatever
                    Settings said. brand_color is the one the Settings page
-                   writes, so it is the only company source, and 0078 removed
+                   writes, so it is the only company source, and 0080 removed
                    the default that made proposal_primary_color look chosen.
                    Adding a column with a default to this chain reintroduces
                    the bug. */
