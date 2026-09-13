@@ -59,6 +59,7 @@ import { formatCents } from "@shared/money";
 import type { SelectionTemplate, SelectionTemplateGroup, FieldCategory } from "@shared/schema";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
 import { OptionDialog, type OptionDialogValues } from "@/components/selections/OptionDialog";
+import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
 import { cn } from "@/lib/utils";
 
 interface SelectionOption {
@@ -161,40 +162,9 @@ export default function SelectionTemplateDetail() {
   });
   const [hasMetaChanges, setHasMetaChanges] = useState(false);
 
-  const { data: categoryFieldCategory } = useQuery<FieldCategory>({
-    queryKey: ["/api/field-categories/by-key/selection.category"],
-    queryFn: async () => {
-      const res = await fetch("/api/field-categories/by-key/selection.category", { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
-  const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!categoryFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!categoryFieldCategory?.id,
-  });
-
-  const { data: roomFieldCategory } = useQuery<any>({
-    queryKey: ["/api/field-categories/by-key/selection.room"],
-  });
-
-  const { data: roomOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", roomFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!roomFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${roomFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!roomFieldCategory?.id,
-  });
+  // The two field-category queries that used to live here are gone:
+  // CreatableFieldSelect fetches by key itself, and the mapping they fed read
+  // `opt.value` / `opt.label`, neither of which field_options has.
 
   const { data: template, isLoading } = useQuery<SelectionTemplate>({
     queryKey: ["/api/selection-templates", params.templateId],
@@ -208,6 +178,34 @@ export default function SelectionTemplateDetail() {
 
   const { data: groups = [] } = useQuery<SelectionTemplateGroup[]>({
     queryKey: ["/api/selection-template-groups"],
+  });
+
+  /**
+   * Create a group from here.
+   *
+   * The dialog used to say "Create groups from the templates list page" over an
+   * empty list, which is a dead end at the exact moment you have decided you
+   * want one. Same endpoint the list page's Manage Groups dialog posts to.
+   */
+  const [newGroupName, setNewGroupName] = useState("");
+  const createGroupMutation = useMutation({
+    mutationFn: async (name: string) =>
+      await apiRequest("/api/selection-template-groups", "POST", { name: name.trim() }),
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-template-groups"] });
+      setNewGroupName("");
+      // Tick the group you just made — making one and not being in it is never
+      // what you meant.
+      if (created?.id) {
+        setLocalMeta((prev) => ({ ...prev, groupIds: [...prev.groupIds, created.id] }));
+        setHasMetaChanges(true);
+      }
+    },
+    onError: (e: any) => toast({
+      title: "Couldn't create group",
+      description: e?.message?.replace(/^\d+:\s*/, "") ?? "Please try again.",
+      variant: "destructive",
+    }),
   });
 
   const { data: products = [] } = useQuery<any[]>({
@@ -831,20 +829,19 @@ export default function SelectionTemplateDetail() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Category</Label>
-                    <Select
-                      value={localMeta.categoryName || "_none"}
-                      onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
-                    >
-                      <SelectTrigger className="h-9 text-sm" data-testid="select-category">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {categoryOptions.map(opt => (
-                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* CreatableFieldSelect, the same control the project page
+                        uses. The hand-rolled Select here read `opt.value` and
+                        `opt.label`; field_options has neither — the columns are
+                        `key` and `name` — so every real option rendered as a
+                        blank row with an undefined value. */}
+                    <CreatableFieldSelect
+                      categoryKey="selection.category"
+                      value={localMeta.categoryName || ""}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v }); setHasMetaChanges(true); }}
+                      placeholder="Select category"
+                      triggerClassName="h-9 text-sm"
+                      data-testid="select-category"
+                    />
                   </div>
                 </div>
 
@@ -863,20 +860,14 @@ export default function SelectionTemplateDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Room / Location</Label>
-                    <Select
-                      value={localMeta.room || "_none"}
-                      onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
-                    >
-                      <SelectTrigger className="h-9 text-sm" data-testid="select-room">
-                        <SelectValue placeholder="Select room" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {roomOptions.map(opt => (
-                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CreatableFieldSelect
+                      categoryKey="selection.room"
+                      value={localMeta.room || ""}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v }); setHasMetaChanges(true); }}
+                      placeholder="Select location"
+                      triggerClassName="h-9 text-sm"
+                      data-testid="select-room"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Deadline</Label>
@@ -965,7 +956,16 @@ export default function SelectionTemplateDetail() {
                       </label>
                     ))}
                     {groups.length === 0 && (
-                      <span className="text-xs text-muted-foreground italic">No groups created yet</span>
+                      // Was a flat "No groups created yet", which told you the
+                      // state and not what to do about it.
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => setGroupsDialogOpen(true)}
+                        data-testid="button-create-first-group"
+                      >
+                        No groups yet — create one
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1113,10 +1113,36 @@ export default function SelectionTemplateDetail() {
               </label>
             ))}
             {groups.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No groups created yet. Create groups from the templates list page.
+              <p className="text-xs text-muted-foreground text-center py-3">
+                No groups yet — make one below.
               </p>
             )}
+          </div>
+          <div className="flex items-center gap-2 border-t pt-3">
+            <Input
+              className="h-8 text-sm"
+              placeholder="New group name…"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newGroupName.trim()) {
+                  e.preventDefault();
+                  createGroupMutation.mutate(newGroupName);
+                }
+              }}
+              data-testid="input-new-group"
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={() => newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
+              disabled={!newGroupName.trim() || createGroupMutation.isPending}
+              data-testid="button-create-group"
+            >
+              {createGroupMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Plus className="h-3.5 w-3.5" />}
+            </Button>
           </div>
           <DialogFooter>
             <Button onClick={() => setGroupsDialogOpen(false)}>Done</Button>
