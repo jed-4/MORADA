@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PROPOSAL_PLACEHOLDER_TOKENS } from "./pdf/placeholders";
 import type { ProposalSection, Estimate, Project, Contact } from "@shared/schema";
 
@@ -593,5 +594,129 @@ export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Allowances ───────────────────────────────────────────────────────────
+ *
+ * The same column switches the estimate has, over the allowance table's own
+ * columns. Allowances are an estimate table in miniature — the reason to hide
+ * unit costs on one is the reason to hide them on the other — so the control
+ * should not be a different shape here.
+ */
+
+const ALLOWANCE_COLUMNS: Array<{ key: string; label: string; hint?: string }> = [
+  { key: 'allowanceType', label: 'Prime Cost / Provisional Sum chip' },
+  { key: 'quantity', label: 'Qty' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'unitCostExTax', label: 'Unit cost (ex GST)' },
+  { key: 'unitCostIncTax', label: 'Unit cost (inc GST)' },
+  { key: 'amountExTax', label: 'Amount (ex GST)' },
+  { key: 'amountIncTax', label: 'Amount (inc GST)' },
+  { key: 'notes', label: 'Notes', hint: 'Printed under the item, and only when there are any' },
+];
+
+const ALLOWANCE_DEFAULTS: Record<string, boolean> = {
+  allowanceType: true,
+  quantity: true,
+  unit: true,
+  unitCostExTax: true,
+  unitCostIncTax: true,
+  amountExTax: false,
+  amountIncTax: false,
+  notes: true,
+};
+
+export function AllowanceColumnsEditor({
+  content,
+  setContent,
+}: {
+  content: Record<string, any>;
+  setContent: (content: Record<string, any>) => void;
+}) {
+  const toggles: Record<string, boolean> = { ...ALLOWANCE_DEFAULTS, ...(content.columnToggles ?? {}) };
+
+  return (
+    <div className="space-y-2" data-testid="allowance-columns-editor">
+      <Label>Columns</Label>
+      <div className="space-y-1.5">
+        {ALLOWANCE_COLUMNS.map((col) => (
+          <div key={col.key} className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs">{col.label}</p>
+              {col.hint && <p className="text-xs text-muted-foreground">{col.hint}</p>}
+            </div>
+            <Switch
+              checked={toggles[col.key] !== false}
+              onCheckedChange={(v) =>
+                setContent({ ...content, columnToggles: { ...toggles, [col.key]: v } })
+              }
+              data-testid={`switch-allowance-${col.key}`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Terms & Conditions ───────────────────────────────────────────────── */
+
+export function TermsTemplatePicker({
+  onPick,
+  hasContent,
+}: {
+  onPick: (text: string) => void;
+  hasContent: boolean;
+}) {
+  const { data: companySettings } = useQuery<{
+    termsTemplates?: Array<{ id: string; name: string; content: string }>;
+  } | null>({ queryKey: ['/api/company-settings'] });
+
+  const templates = companySettings?.termsTemplates ?? [];
+  const [pending, setPending] = useState<{ id: string; name: string; content: string } | null>(null);
+
+  if (templates.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Save your standard terms under Settings → Terms Templates and you can load them here.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <Select
+        value=""
+        onValueChange={(id) => {
+          const tpl = templates.find((t) => t.id === id);
+          if (!tpl) return;
+          // Replacing wording a builder has already edited is not something to
+          // do quietly, so it asks — but only when there is something to lose.
+          if (hasContent) setPending(tpl);
+          else onPick(tpl.content);
+        }}
+      >
+        <SelectTrigger className="h-7 text-xs" data-testid="select-terms-template">
+          <SelectValue placeholder="Load your saved terms…" />
+        </SelectTrigger>
+        <SelectContent>
+          {templates.map((t) => (
+            <SelectItem key={t.id} value={t.id} className="text-xs">
+              {t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(o) => { if (!o) setPending(null); }}
+        title={`Replace these terms with "${pending?.name ?? ''}"?`}
+        description="What is written here now is overwritten. Your saved template is not changed."
+        confirmLabel="Replace"
+        destructive
+        onConfirm={() => { if (pending) onPick(pending.content); setPending(null); }}
+      />
+    </>
   );
 }

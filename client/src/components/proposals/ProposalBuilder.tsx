@@ -27,7 +27,7 @@ import { format as formatDate } from 'date-fns';
 import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem, InsertProposal } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
-import { EstimateEditor } from './SectionEditor';
+import { AllowanceColumnsEditor, EstimateEditor, TermsTemplatePicker } from './SectionEditor';
 import { ImportedPdfEditor } from './ImportedPdfEditor';
 import { CoverTemplatePicker } from './CoverTemplatePicker';
 import { RichTextEditor } from '@/components/RichTextEditor';
@@ -455,6 +455,15 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "terms_conditions" && (
               <div className="space-y-2">
                 <Label>Terms &amp; Conditions</Label>
+                {/* The company already keeps its T&C somewhere — Settings →
+                    Terms Templates. Without this the only way to get them into
+                    a proposal was to find them and paste them, which is how
+                    two proposals end up quoting different terms. Loading one
+                    copies it in, so a proposal can still deviate. */}
+                <TermsTemplatePicker
+                  onPick={(text) => setLocalContent({ ...localContent, termsText: text })}
+                  hasContent={!!(localContent.termsText || "").replace(/<[^>]*>/g, "").trim()}
+                />
                 <RichTextEditor
                   content={localContent.termsText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, termsText: html })}
@@ -487,6 +496,10 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {section.sectionType === "imported_pdf" && (
               <ImportedPdfEditor content={localContent} setContent={setLocalContent} />
+            )}
+
+            {section.sectionType === "allowances" && (
+              <AllowanceColumnsEditor content={localContent} setContent={setLocalContent} />
             )}
 
             {section.sectionType === "payment_schedule" && (

@@ -15,6 +15,9 @@ const styles = StyleSheet.create({
   logo: {
     width: 200,
     height: 80,
+    // 2.5:1 is the widest box in the kit, so this is where an unconstrained
+    // image was distorted most.
+    objectFit: 'contain' as const,
   },
   titleContainer: {
     alignItems: 'center',
