@@ -43,6 +43,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import { AddSectionDialog } from "@/components/proposals/AddSectionDialog";
+import {
+  PROPOSAL_CAPABILITIES,
+  type ProposalDocumentSource,
+} from "@/components/proposals/proposalDocumentSource";
 import { buildDefaultSections } from "@/components/proposals/defaultSections";
 
 interface ProposalDetailParams {
@@ -50,30 +55,11 @@ interface ProposalDetailParams {
   projectId?: string;
 }
 
-const SECTION_TYPES = [
-  { value: 'cover_page', label: 'Cover Page' },
-  { value: 'cover_letter', label: 'Cover Letter' },
-  { value: 'scope', label: 'Scope of Work' },
-  { value: 'estimate', label: 'Estimate' },
-  { value: 'summary', label: 'Summary' },
-  { value: 'allowances', label: 'Allowances' },
-  { value: 'inclusions_exclusions', label: 'Inclusions & Exclusions' },
-  { value: 'payment_schedule', label: 'Payment Schedule' },
-  { value: 'closing', label: 'Closing' },
-  { value: 'attachments', label: 'Attachments' },
-  { value: 'terms_conditions', label: 'Terms & Conditions' },
-  { value: 'signature', label: 'Signature' },
-  { value: 'imported_pdf', label: 'Imported PDF page' },
-  { value: 'custom', label: 'Custom Section' },
-];
-
 export default function ProposalDetail() {
   const params = useParams<ProposalDetailParams>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isAddingSectionOpen, setIsAddingSectionOpen] = useState(false);
-  const [newSectionType, setNewSectionType] = useState('custom');
-  const [newSectionName, setNewSectionName] = useState('');
   
   const isNewProposal = !params.id;
   
@@ -104,6 +90,7 @@ export default function ProposalDetail() {
     primaryColor?: string;
     proposalPrimaryColor?: string;
     brandColor?: string;
+    brandSecondaryColor?: string;
     documentStyle?: string;
     termsAndConditions?: string | null;
     termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor?: string[] }>;
@@ -246,8 +233,6 @@ export default function ProposalDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
       setIsAddingSectionOpen(false);
-      setNewSectionName('');
-      setNewSectionType('custom');
       toast({
         title: "Success",
         description: "Section added successfully.",
@@ -363,39 +348,6 @@ export default function ProposalDetail() {
     setIsAddingSectionOpen(true);
   };
 
-  const handleCreateSection = () => {
-    if (!newSectionName.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a section name.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    let content: Record<string, unknown> | undefined;
-    if (newSectionType === 'closing') {
-      const companyName = companySettings?.companyName || '[Company Name]';
-      content = {
-        closingText: `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`,
-      };
-    } else if (newSectionType === 'terms_conditions') {
-      const tpls = companySettings?.termsTemplates ?? [];
-      const tpl = tpls.find(
-        (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
-      );
-      const text = tpl?.content || companySettings?.termsAndConditions || '';
-      if (text) content = { termsText: text };
-    }
-
-    addSectionMutation.mutate({
-      name: newSectionName,
-      sectionType: newSectionType,
-      description: '',
-      ...(content ? { content } : {}),
-    });
-  };
-
   const handleSave = () => {
     const data = form.getValues();
     updateProposalMutation.mutate(data);
@@ -426,6 +378,47 @@ export default function ProposalDetail() {
   const handleProposalFieldUpdate = (updates: Partial<InsertProposal>) => {
     saveFieldsMutation.mutate(updates);
   };
+
+  /**
+   * This page's document source: a real proposal, in rows.
+   *
+   * The template page builds the same shape over a single
+   * proposal_templates row, and both hand it to the same builder — which is
+   * what keeps the two pages identical as either is iterated. See
+   * components/proposals/proposalDocumentSource.ts.
+   */
+  const source: ProposalDocumentSource | null = proposal
+    ? {
+        kind: "proposal",
+        proposal,
+        sections: localSections,
+        updateSection: handleSectionUpdate,
+        addSection: (section) =>
+          addSectionMutation.mutate({
+            name: section.name || "New Section",
+            sectionType: section.sectionType || "custom",
+            description: section.description ?? "",
+            ...(section.content ? { content: section.content } : {}),
+          } as never),
+        /* Sequential, not Promise.all: the create route derives nothing from
+           order, but a partial failure halfway through a parallel batch
+           leaves a scrambled document with no way to tell which landed. */
+        addSections: async (specs) => {
+          for (const spec of specs) {
+            await apiRequest(`/api/proposals/${params.id}/sections`, "POST", {
+              ...spec,
+              proposalId: params.id,
+              description: spec.description ?? "",
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
+        },
+        reorderSections: handleSectionsReorder,
+        updateProposal: handleProposalFieldUpdate,
+        can: PROPOSAL_CAPABILITIES,
+        isSaving: saveFieldsMutation.isPending || updateSectionMutation.isPending,
+      }
+    : null;
 
   if (proposalLoading || sectionsLoading) {
     return (
@@ -561,6 +554,7 @@ export default function ProposalDetail() {
                 into the title-row toolbar slot. */}
             <div className="flex-1 min-h-0">
               <ProposalBuilder
+                source={source!}
                 proposal={proposal!}
                 sections={localSections}
                 project={project}
@@ -569,22 +563,24 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                /* One colour, one chain. `brandColor` used to be passed
-                   alongside this and won inside ProposalDocument
-                   (`brandColor ?? primaryColor`) — and company_settings
-                   .brand_color DEFAULTS to #3B82F6, so it was never null and
-                   the four-level fallback below was dead. Every proposal
-                   printed the same blue no matter what the Layout panel's
-                   colour picker said. It is folded into the chain now, and
-                   nothing overrides it afterwards. */
+                /* One colour, one chain, and NO defaulted column in it.
+                   This has been wrong twice. First `brandColor` was passed
+                   alongside and won inside ProposalDocument; then
+                   `proposalPrimaryColor` was put ahead of it — and BOTH
+                   columns defaulted to #3B82F6, so whichever came first was
+                   never null and every proposal printed that blue whatever
+                   Settings said. brand_color is the one the Settings page
+                   writes, so it is the only company source, and 0078 removed
+                   the default that made proposal_primary_color look chosen.
+                   Adding a column with a default to this chain reintroduces
+                   the bug. */
                 primaryColor={
                   (proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor
-                  || companySettings?.proposalPrimaryColor
-                  || companySettings?.primaryColor
                   || companySettings?.brandColor
                   || project?.color
                   || undefined
                 }
+                companySecondaryColor={companySettings?.brandSecondaryColor || undefined}
                 documentStyle={(companySettings?.documentStyle as 'style1' | 'style2' | undefined) ?? 'style1'}
                 toolbarSlot={toolbarSlot}
                 menuSlot={menuSlot}
@@ -599,59 +595,17 @@ export default function ProposalDetail() {
         )}
       </div>
 
-      {/* Add Section Dialog */}
-      <Dialog open={isAddingSectionOpen} onOpenChange={setIsAddingSectionOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Section</DialogTitle>
-            <DialogDescription>
-              Choose the type of section you want to add to your proposal.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Section Type</label>
-              <Select value={newSectionType} onValueChange={setNewSectionType}>
-                <SelectTrigger data-testid="select-section-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SECTION_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Section Name</label>
-              <Input
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                placeholder="Enter section name..."
-                data-testid="input-section-name"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsAddingSectionOpen(false)}
-                data-testid="button-cancel-section"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateSection}
-                disabled={addSectionMutation.isPending}
-                data-testid="button-create-section"
-              >
-                {addSectionMutation.isPending ? 'Adding...' : 'Add Section'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* The same dialog the template page uses — see AddSectionDialog. */}
+      <AddSectionDialog
+        open={isAddingSectionOpen}
+        onOpenChange={setIsAddingSectionOpen}
+        company={companySettings}
+        onAdd={(section) => {
+          addSectionMutation.mutate(section as never);
+          setIsAddingSectionOpen(false);
+        }}
+        isAdding={addSectionMutation.isPending}
+      />
     </div>
   );
 }

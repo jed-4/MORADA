@@ -1168,9 +1168,21 @@ export const companySettings = pgTable("company_settings", {
   
   // Company brand colour
   brandColor: text("brand_color").default("#3B82F6"), // Company brand colour used for business-level events and throughout the app
+  /**
+   * The accent, beside the brand colour. Used on proposal covers — the rule
+   * under the masthead, the tint behind the client card.
+   *
+   * NULLABLE WITH NO DEFAULT on purpose. proposal_primary_color had a default
+   * of #3B82F6 and nothing could tell "chose blue" from "never chose", so a
+   * column nobody had ever edited beat the Brand Colour in the resolution
+   * chain and every proposal in the product printed the same blue. Unset has
+   * to stay distinguishable from chosen. See migration 0078.
+   */
+  brandSecondaryColor: text("brand_secondary_color"),
   
   // Proposal branding
-  proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals
+  /** @deprecated Superseded by brandColor — nothing reads this. See 0078. */
+  proposalPrimaryColor: text("proposal_primary_color"),
   proposalShowLogo: boolean("proposal_show_logo").default(true), // Whether the company logo is shown on proposal PDFs by default
   proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color
   proposalFontFamily: text("proposal_font_family").default("Inter"), // Font family for proposals
@@ -6348,6 +6360,53 @@ export const purchaseOrderTemplates = pgTable("purchase_order_templates", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * A saved proposal document: its sections and its layout, with no project,
+ * client or estimate attached.
+ *
+ * `sections` is deliberately the same shape as a row in proposal_sections
+ * minus the identifiers, so applying a template is an insert rather than a
+ * translation — and so a new section field appears in templates the moment it
+ * appears in proposals, without touching this table.
+ */
+export const proposalTemplates = pgTable("proposal_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(),
+  description: text("description"),
+
+  sections: jsonb("sections").$type<Array<{
+    sectionType: string;
+    name: string;
+    order: number;
+    content?: Record<string, unknown> | null;
+    description?: string | null;
+    descriptionHtml?: string | null;
+    isEnabled?: boolean;
+    showPricing?: boolean;
+    showSubtotal?: boolean;
+  }>>().notNull().default([]),
+
+  /** Stored exactly as proposals.layoutSettings, so the Layout panel is shared. */
+  layoutSettings: jsonb("layout_settings").$type<Record<string, any>>().notNull().default({}),
+
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyNameIdx: index("proposal_templates_company_idx").on(table.companyId, table.name),
+}));
+
+export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProposalTemplate = z.infer<typeof insertProposalTemplateSchema>;
+export type ProposalTemplate = typeof proposalTemplates.$inferSelect;
 
 export const insertPurchaseOrderTemplateSchema = createInsertSchema(purchaseOrderTemplates).omit({
   id: true,

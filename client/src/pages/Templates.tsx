@@ -106,7 +106,7 @@ const templateTypes = [
     icon: File,
     url: "/proposal-templates",
     color: "text-teal",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "selections",

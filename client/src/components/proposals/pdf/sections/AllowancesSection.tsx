@@ -1,5 +1,7 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
-import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+import { PDF_COLORS, brandRamp } from "@/components/pdf/shared/pdfTokens";
+import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
 import type {
   Proposal,
   ProposalSection,
@@ -22,7 +24,24 @@ interface AllowanceRow {
   notes?: string | null;
   /** "Prime Cost" / "Provisional Sum" when the row came from the estimate. */
   kind?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitExCents?: number | null;
+  unitIncCents?: number | null;
 }
+
+/** Which columns this section prints. Mirrors the estimate's toggles. */
+const DEFAULT_ALLOWANCE_COLUMNS = {
+  allowanceType: true,
+  quantity: true,
+  unit: true,
+  unitCostExTax: true,
+  unitCostIncTax: true,
+  amountExTax: false,
+  amountIncTax: false,
+  notes: true,
+};
+type AllowanceColumns = typeof DEFAULT_ALLOWANCE_COLUMNS;
 
 interface AllowancesSectionProps {
   proposal: Proposal;
@@ -71,6 +90,11 @@ export function AllowancesSection({
       name: it.name,
       amountCents: typeof it.totalPrice === 'number' ? it.totalPrice : null,
       notes: it.description ?? null,
+      quantity: typeof it.quantity === 'number' ? it.quantity : null,
+      unit: it.unitType ?? null,
+      // proposal_items stores the client price; GST is the document's rate.
+      unitIncCents: typeof it.unitPrice === 'number' ? it.unitPrice : null,
+      unitExCents: null,
     }));
   const legacyRows = Array.isArray(content.allowances)
     ? (content.allowances as AllowanceRow[])
@@ -102,12 +126,24 @@ export function AllowancesSection({
         if (kind !== 'Prime Cost' && kind !== 'Provisional Sum') return false;
         return lineCountsTowardProposalTotal(it, hidden);
       })
-      .map((it) => ({
-        name: it.name || 'Untitled',
-        amountCents: Math.round(clientLineAmounts(it, opts).incTax * 100),
-        notes: it.description ?? null,
-        kind: String((it as { allowance?: string }).allowance),
-      }));
+      .map((it) => {
+        const amounts = clientLineAmounts(it, opts);
+        const qty = Number((it as { quantity?: number }).quantity) || 0;
+        return {
+          name: it.name || 'Untitled',
+          amountCents: Math.round(amounts.incTax * 100),
+          notes: it.description ?? null,
+          kind: String((it as { allowance?: string }).allowance),
+          quantity: qty || null,
+          unit: (it as { unit?: string | null }).unit ?? null,
+          /* Unit cost is derived from the line total, not read off the item:
+             the item's own unit price is pre-margin, so printing it beside a
+             marked-up amount would quote the client two different rates for
+             the same thing. */
+          unitExCents: qty ? Math.round((amounts.exTax * 100) / qty) : null,
+          unitIncCents: qty ? Math.round((amounts.incTax * 100) / qty) : null,
+        };
+      });
   })();
 
   // Rows typed into the section win: they are a deliberate override of what
@@ -121,6 +157,15 @@ export function AllowancesSection({
   );
 
   const headerBorderColor = isS2 ? tintOnWhite(resolvedColor, '60') : resolvedColor;
+  const ramp = brandRamp(resolvedColor);
+
+  /* Jed's layout: the item and its type on the left, the numbers on the
+     right, and the note on its own line underneath rather than fighting the
+     amount for width. */
+  const cols: AllowanceColumns = {
+    ...DEFAULT_ALLOWANCE_COLUMNS,
+    ...((content.columnToggles as Partial<AllowanceColumns> | undefined) ?? {}),
+  };
 
   const styles = StyleSheet.create({
     headerRow: {
@@ -132,13 +177,13 @@ export function AllowancesSection({
       paddingHorizontal: isS2 ? 6 : 0,
       paddingTop: isS2 ? 4 : 0,
     },
-    row: { flexDirection: 'row', paddingVertical: 3, borderBottom: '1px solid #F3F4F6' },
-    th: { fontWeight: 'bold', fontSize: 11 },
-    name: { flex: 2, paddingRight: 8 },
-    // paddingLeft on notes: the right-aligned amount used to butt straight up
-    // against it, printing the header as "AmountNotes".
-    amount: { flex: 1, textAlign: 'right', paddingRight: 8 },
-    notes: { flex: 2, paddingLeft: 8 },
+    row: { paddingVertical: 4, borderBottom: '1px solid #F3F4F6' },
+    cells: { flexDirection: 'row', alignItems: 'flex-start' },
+    th: { fontWeight: 'bold', fontSize: 9 },
+    name: { flex: 1, paddingRight: 8 },
+    num: { width: 46, textAlign: 'right', paddingLeft: 6 },
+    unit: { width: 38, textAlign: 'left', paddingLeft: 6 },
+    money: { width: 62, textAlign: 'right', paddingLeft: 6 },
     totalRow: {
       flexDirection: 'row',
       paddingVertical: 6,
@@ -147,7 +192,20 @@ export function AllowancesSection({
       backgroundColor: isS2 ? resolvedColor + '14' : 'transparent',
       paddingHorizontal: isS2 ? 6 : 0,
     },
-    kind: { fontSize: 8, color: resolvedColor, marginTop: 1 },
+    /* The chip sits beside the name, not under it: "Prime Cost" is what KIND
+       of allowance this is, and reads as a label on the item. */
+    chip: {
+      fontSize: 7,
+      fontFamily: PDF_FONT_FAMILY,
+      fontWeight: 700,
+      color: ramp.onWhite,
+      backgroundColor: ramp.wash,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      borderRadius: 2,
+      marginLeft: 6,
+    },
+    notes: { fontSize: 8, color: PDF_COLORS.inkMuted, marginTop: 2, paddingRight: 8 },
     note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: PDF_COLORS.inkMuted },
   });
 
@@ -164,26 +222,65 @@ export function AllowancesSection({
             <View minPresenceAhead={90} style={{ marginTop: 8 }}>
               <View style={styles.headerRow}>
                 <Text style={[styles.th, styles.name]}>Item</Text>
-                <Text style={[styles.th, styles.amount]}>Amount</Text>
-                <Text style={[styles.th, styles.notes]}>Notes</Text>
+                {cols.quantity && <Text style={[styles.th, styles.num]}>Qty</Text>}
+                {cols.unit && <Text style={[styles.th, styles.unit]}>Unit</Text>}
+                {cols.unitCostExTax && <Text style={[styles.th, styles.money]}>Unit (ex)</Text>}
+                {cols.unitCostIncTax && <Text style={[styles.th, styles.money]}>Unit (inc)</Text>}
+                {cols.amountExTax && <Text style={[styles.th, styles.money]}>Amount (ex)</Text>}
+                {cols.amountIncTax && <Text style={[styles.th, styles.money]}>Amount (inc)</Text>}
               </View>
               {rows.map((r, i) => (
                 <View key={i} wrap={false} style={styles.row}>
-                  <View style={styles.name}>
-                    <Text style={sharedSectionStyle.text}>{r.name}</Text>
-                    {r.kind ? <Text style={styles.kind}>{r.kind}</Text> : null}
+                  <View style={styles.cells}>
+                    <View style={[styles.name, { flexDirection: 'row', alignItems: 'center' }]}>
+                      <Text style={sharedSectionStyle.text}>{r.name}</Text>
+                      {cols.allowanceType && r.kind ? <Text style={styles.chip}>{r.kind}</Text> : null}
+                    </View>
+                    {cols.quantity && (
+                      <Text style={[sharedSectionStyle.text, styles.num]}>
+                        {typeof r.quantity === 'number' ? r.quantity : ''}
+                      </Text>
+                    )}
+                    {cols.unit && (
+                      <Text style={[sharedSectionStyle.text, styles.unit]}>{r.unit || ''}</Text>
+                    )}
+                    {cols.unitCostExTax && (
+                      <Text style={[sharedSectionStyle.text, styles.money]}>
+                        {typeof r.unitExCents === 'number' ? formatCurrency(r.unitExCents) : ''}
+                      </Text>
+                    )}
+                    {cols.unitCostIncTax && (
+                      <Text style={[sharedSectionStyle.text, styles.money]}>
+                        {typeof r.unitIncCents === 'number' ? formatCurrency(r.unitIncCents) : ''}
+                      </Text>
+                    )}
+                    {cols.amountExTax && (
+                      <Text style={[sharedSectionStyle.text, styles.money]}>
+                        {typeof r.unitExCents === 'number' && typeof r.quantity === 'number'
+                          ? formatCurrency(r.unitExCents * r.quantity)
+                          : ''}
+                      </Text>
+                    )}
+                    {cols.amountIncTax && (
+                      <Text style={[sharedSectionStyle.text, styles.money]}>
+                        {typeof r.amountCents === 'number' ? formatCurrency(r.amountCents) : ''}
+                      </Text>
+                    )}
                   </View>
-                  <Text style={[sharedSectionStyle.text, styles.amount]}>
-                    {typeof r.amountCents === 'number' ? formatCurrency(r.amountCents) : '—'}
-                  </Text>
-                  <Text style={[sharedSectionStyle.text, styles.notes]}>{r.notes || '—'}</Text>
+                  {/* Notes on their own line, and ONLY when there are notes.
+                      An em dash in an empty cell reads as "nothing here on
+                      purpose"; there is nothing to say, so nothing is said.
+                      Stripped, because the field is written by a rich-text
+                      editor and an emptied one leaves "<p></p>" behind. */}
+                  {cols.notes && pdfHasText(r.notes) ? (
+                    <Text style={styles.notes}>{pdfPlainText(r.notes)}</Text>
+                  ) : null}
                 </View>
               ))}
               {total > 0 && (
                 <View wrap={false} style={styles.totalRow}>
-                  <Text style={[styles.th, styles.name]}>Total Allowances</Text>
-                  <Text style={[styles.th, styles.amount]}>{formatCurrency(total)}</Text>
-                  <Text style={[styles.th, styles.notes]}> </Text>
+                  <Text style={[styles.th, styles.name]}>Total allowances (inc GST)</Text>
+                  <Text style={[styles.th, styles.money, { width: 'auto' }]}>{formatCurrency(total)}</Text>
                 </View>
               )}
               <Text wrap={false} minPresenceAhead={20} style={styles.note}>

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
@@ -16,6 +17,11 @@ import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
+import {
+  isLocalObjectStorage,
+  LocalObjectFile,
+  localUploadName,
+} from "./replit_integrations/object_storage/localObjectStorage";
 import { renderClientEmail } from "./services/clientEmailShell";
 import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
@@ -161,6 +167,7 @@ import {
   insertReminderSchema,
   insertReminderNotificationSchema,
   insertRfqTemplateSchema,
+  insertProposalTemplateSchema,
   insertRfiTemplateSchema,
   insertTemplateCategorySchema,
   insertDashboardViewSchema,
@@ -11296,6 +11303,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to generate upload URL" });
     }
   });
+
+  /**
+   * The local stand-in for a signed PUT.
+   *
+   * Only mounted when this process stores objects on disk — see
+   * isLocalObjectStorage, which refuses in production. It exists so the flows
+   * that upload straight to a signed URL (Uppy, and the legacy direct path in
+   * useUpload) can be exercised on a laptop; the Replit GCS sidecar they
+   * normally talk to has no local equivalent.
+   */
+  if (isLocalObjectStorage()) {
+    app.put(
+      "/api/uploads/local/:objectId",
+      requireAuth,
+      requireTeamMember,
+      express.raw({ type: "*/*", limit: "50mb" }),
+      async (req: any, res) => {
+        try {
+          const objectId = String(req.params.objectId);
+          if (!/^[0-9a-f-]{36}$/i.test(objectId)) {
+            return res.status(400).json({ error: "Bad object id" });
+          }
+          const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "");
+          if (body.length === 0) return res.status(400).json({ error: "Empty upload" });
+          await new LocalObjectFile(localUploadName(objectId)).save(body, {
+            contentType: String(req.headers["content-type"] || "application/octet-stream"),
+            metadata: { companyId: req.user.companyId },
+          });
+          res.status(200).end();
+        } catch (error: any) {
+          console.error("Local upload failed:", error);
+          res.status(500).json({ error: "Local upload failed", details: error.message });
+        }
+      },
+    );
+  }
 
   // Server-side file upload — browser sends the raw file; server writes to GCS.
   // This avoids the CORS issues of direct-to-GCS signed-URL uploads.
@@ -37187,6 +37230,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // RFI Templates routes
+  /*
+   * Proposal templates.
+   *
+   * A template is a saved proposal document — its sections and its layout —
+   * with no project, client or estimate. The same shape the builder already
+   * edits, so the template page can run the real builder rather than a second
+   * implementation that drifts (which is what happened to estimate templates).
+   */
+  app.get("/api/proposal-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      res.json(await storage.getProposalTemplates(user.companyId));
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch proposal templates", details: error.message });
+    }
+  });
+
+  app.get("/api/proposal-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const template = await storage.getProposalTemplate(req.params.id, user.companyId);
+      if (!template) return res.status(404).json({ error: "Proposal template not found" });
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch proposal template", details: error.message });
+    }
+  });
+
+  app.post("/api/proposal-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      // companyId and createdById come from the session, never the body: the
+      // body decides what the template says, not whose it is.
+      const parsed = insertProposalTemplateSchema
+        .omit({ companyId: true, createdById: true })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const template = await storage.createProposalTemplate({
+        ...parsed.data,
+        companyId: user.companyId,
+        createdById: user.id,
+      });
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create proposal template", details: error.message });
+    }
+  });
+
+  app.patch("/api/proposal-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const parsed = insertProposalTemplateSchema
+        .omit({ companyId: true, createdById: true })
+        .partial()
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const updated = await storage.updateProposalTemplate(req.params.id, parsed.data, user.companyId);
+      if (!updated) return res.status(404).json({ error: "Proposal template not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update proposal template", details: error.message });
+    }
+  });
+
+  app.delete("/api/proposal-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const ok = await storage.deleteProposalTemplate(req.params.id, user.companyId);
+      if (!ok) return res.status(404).json({ error: "Proposal template not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete proposal template", details: error.message });
+    }
+  });
+
   app.get("/api/rfi-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;

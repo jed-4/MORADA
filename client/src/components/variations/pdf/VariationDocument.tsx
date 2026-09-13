@@ -38,6 +38,7 @@ import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   type VariationDocumentColumns,
 } from "@shared/variationDocumentColumns";
+import { pdfPlainText } from "@/components/pdf/shared/pdfText";
 
 /**
  * The variation, as a PDF — built on the portal's composition.
@@ -404,7 +405,7 @@ export function VariationDocument({
                           ) : null}
                           {columns.description && line.description ? (
                             <Text style={{ fontSize: PDF_TYPE.caption + 0.5, color: PDF_COLORS.inkMuted }}>
-                              {line.description}
+                              {pdfPlainText(line.description)}
                             </Text>
                           ) : null}
                           {!(columns.name && line.name) && !(columns.description && line.description) ? (

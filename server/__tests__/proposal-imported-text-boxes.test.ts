@@ -14,7 +14,8 @@ import { readFileSync } from "node:fs";
 import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { mergeImportedPages } from "../../client/src/components/proposals/pdf/mergeImportedPages";
-import { visualPage, wrapText, layoutBox, createFontBook } from "../../client/src/components/proposals/pdf/stampTextBoxes";
+import { visualPage, wrapText, layoutRichBox, createFontBook } from "../../client/src/components/proposals/pdf/stampTextBoxes";
+import { parseStampHtml, stampPlainText } from "../../client/src/components/proposals/pdf/stampRichText";
 import { normaliseTextBoxes, newTextBox, type ImportedTextBox } from "../../client/src/components/proposals/pdf/importedTextBoxes";
 
 const A4: [number, number] = [595.28, 841.89];
@@ -23,6 +24,10 @@ const SLOT: [number, number] = [10, 10];
 const STANDARD_FONTS = "./node_modules/pdfjs-dist/standard_fonts/";
 
 let failed = 0;
+async function checkAsync(label: string, run: () => Promise<unknown>, expected: unknown) {
+  check(label, await run(), expected);
+}
+
 function check(label: string, actual: unknown, expected: unknown) {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
   if (!ok) failed++;
@@ -137,11 +142,96 @@ async function run() {
   /* ── alignment, in the visual frame ─────────────────────────────────── */
 
   const page = visualPage(500, 700, 0);
-  const right = layoutBox(box({ text: "Hi", x: 0.1, width: 0.5, align: "right", fontSize: 20 }), helvetica, page);
-  const width = helvetica.widthOfTextAtSize("Hi", 20);
-  near("right-aligned text ends at the box edge", right[0].u + width, (0.1 + 0.5) * 500);
-  const centred = layoutBox(box({ text: "Hi", x: 0.1, width: 0.5, align: "center", fontSize: 20 }), helvetica, page);
-  near("centred text is centred in the box", centred[0].u + width / 2, (0.1 + 0.25) * 500);
+  const book = createFontBook(await PDFDocument.create(), fetchFont);
+  // weight 600 on a standard family means Helvetica-BOLD, so the assertion has
+  // to measure the bold face — the regular one is 1.1pt narrower at 20pt and
+  // the "off by a hair" would look like a layout bug rather than a bad test.
+  const helveticaBold = await metricsDoc.embedFont(StandardFonts.HelveticaBold);
+  const widthOf = (t: string, size: number) => helveticaBold.widthOfTextAtSize(t, size);
+
+  const right = await layoutRichBox(
+    box({ text: "Hi", x: 0.1, width: 0.5, align: "right", fontSize: 20, font: "helvetica" }), page, book, (t) => t);
+  near("right-aligned text ends at the box edge", right[0].u + widthOf("Hi", 20), (0.1 + 0.5) * 500);
+
+  const centred = await layoutRichBox(
+    box({ text: "Hi", x: 0.1, width: 0.5, align: "center", fontSize: 20, font: "helvetica" }), page, book, (t) => t);
+  near("centred text is centred in the box", centred[0].u + widthOf("Hi", 20) / 2, (0.1 + 0.25) * 500);
+
+  /* ── rich text ──────────────────────────────────────────────────────── */
+
+  check("plain text still parses as one unstyled run", parseStampHtml("Hello"), [[{ text: "Hello" }]]);
+
+  check("a plain box's newlines survive as separate lines", parseStampHtml("A\nB").length, 2);
+
+  check("bold and italic are read off the markup", parseStampHtml("<p>a<strong>b</strong><em>c</em></p>"),
+    [[{ text: "a" }, { text: "b", bold: true }, { text: "c", italic: true }]]);
+
+  check("a run carries its own font and size", parseStampHtml(
+    '<p><span style="font-family: Times, serif; font-size: 18pt">Big</span></p>'),
+    [[{ text: "Big", font: "times", size: 18 }]]);
+
+  check("px sizes are converted to points, not taken literally", parseStampHtml(
+    '<p><span style="font-size: 16px">x</span></p>')[0][0].size, 12);
+
+  check("nesting keeps both marks", parseStampHtml("<p><strong><em>x</em></strong></p>"),
+    [[{ text: "x", bold: true, italic: true }]]);
+
+  check("the editor's trailing empty paragraph is not a blank line", parseStampHtml("<p>a</p><p></p>").length, 1);
+
+  check("plain text of rich content reads back in order", stampPlainText(
+    '<p>Prepared for <strong>MILLER</strong></p><p>Gerroa</p>'), "Prepared for MILLER\nGerroa");
+
+  await checkAsync("mixed sizes on ONE line share a baseline", async () => {
+    const placed = await layoutRichBox(
+      box({ html: '<p><span style="font-size: 9pt">Prepared for </span><span style="font-size: 18pt">MILLER</span></p>',
+            text: "", x: 0, width: 1, fontSize: 9, font: "helvetica" }),
+      page, book, (t) => t);
+    return placed.length === 2 && placed[0].v === placed[1].v;
+  }, true);
+
+  await checkAsync("a bigger run pushes the NEXT line further down", async () => {
+    const small = await layoutRichBox(
+      box({ html: "<p>a</p><p>b</p>", text: "", x: 0, width: 1, fontSize: 9, font: "helvetica" }), page, book, (t) => t);
+    const big = await layoutRichBox(
+      box({ html: '<p><span style="font-size: 24pt">a</span></p><p>b</p>', text: "", x: 0, width: 1, fontSize: 9, font: "helvetica" }),
+      page, book, (t) => t);
+    return big[1].v > small[1].v;
+  }, true);
+
+  await checkAsync("a line wraps when its runs together exceed the width", async () => {
+    /* Sized so the small run alone FITS and the pair does not — if wrapping
+       measured everything at the box's own 8pt it would never break. */
+    const placed = await layoutRichBox(
+      box({ html: '<p><span style="font-size: 8pt">tiny tiny tiny </span><span style="font-size: 40pt">ENORMOUS</span></p>',
+            text: "", x: 0, width: 0.4, fontSize: 8, font: "helvetica" }),
+      page, book, (t) => t);
+    const rows = new Set(placed.map((p) => p.v));
+    return rows.size > 1;
+  }, true);
+
+  await checkAsync("and does NOT wrap when they fit", async () => {
+    const placed = await layoutRichBox(
+      box({ html: '<p><span style="font-size: 8pt">tiny </span><span style="font-size: 10pt">bit</span></p>',
+            text: "", x: 0, width: 0.9, fontSize: 8, font: "helvetica" }),
+      page, book, (t) => t);
+    return new Set(placed.map((p) => p.v)).size;
+  }, 1);
+
+  await checkAsync("words in one style are drawn as ONE run, not one per word", async () => {
+    /* Wrapping measures word by word; drawing that way would emit a text
+       operator per word and a reader would copy the line in fragments. */
+    const placed = await layoutRichBox(
+      box({ html: "<p>four separate little words</p>", text: "", x: 0, width: 1, fontSize: 9, font: "helvetica" }),
+      page, book, (t) => t);
+    return placed.length;
+  }, 1);
+
+  await checkAsync("tokens resolve inside a run, not in the markup", async () => {
+    const placed = await layoutRichBox(
+      box({ html: "<p><strong>{{project.name}}</strong></p>", text: "", x: 0, width: 1, fontSize: 11, font: "helvetica" }),
+      page, book, (t) => t.replace("{{project.name}}", "Gerroa Reno"));
+    return placed.map((p) => p.text).join(" ");
+  }, "Gerroa Reno");
 
   /* ── end to end, through a real merge ───────────────────────────────── */
 
@@ -255,10 +345,10 @@ async function run() {
   /* The font book hands back the same object for the same face, so a cover
      with twenty boxes in one weight embeds that weight once. */
   const bookDoc = await PDFDocument.create();
-  const book = createFontBook(bookDoc, fetchFont);
-  const [a, b] = await Promise.all([book.get("inter", 400, false), book.get("inter", 400, false)]);
+  const cacheBook = createFontBook(bookDoc, fetchFont);
+  const [a, b] = await Promise.all([cacheBook.get("inter", 400, false), cacheBook.get("inter", 400, false)]);
   check("a face is embedded once, not per box", a === b, true);
-  const c = await book.get("inter", 700, false);
+  const c = await cacheBook.get("inter", 700, false);
   check("a different weight is a different face", a === c, false);
 
   console.log(failed === 0 ? "\nall passed" : `\n${failed} failed`);

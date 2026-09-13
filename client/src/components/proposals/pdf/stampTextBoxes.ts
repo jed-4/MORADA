@@ -1,5 +1,6 @@
 import { degrees, rgb, StandardFonts, type PDFDocument, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { ImportedTextBox, StampFontKey, StampWeight } from './importedTextBoxes';
+import { parseStampHtml, runWeight, type StampRun } from './stampRichText';
 
 /**
  * Draws a builder's text boxes onto an imported page.
@@ -201,35 +202,169 @@ function hexToRgb(hex: string) {
 }
 
 /**
- * Where each line's baseline sits, in the visual frame.
+ * A run, measured and placed.
  *
- * The half-leading rule is CSS's: a line box is `lineHeight * fontSize` tall
- * and the glyphs are centred in it. Matching it here is what makes the boxes
- * the builder drags land where the editor showed them — the editor is plain
- * CSS, so any other rule would drift, and the drift would grow with the line
- * height they chose.
+ * Each carries its own font because a line can mix them: "Prepared for :" in
+ * 9pt regular and the client's name in 18pt bold belong to one block of
+ * information, and splitting them across boxes means re-aligning two things by
+ * eye every time the wording changes.
  */
-export function layoutBox(
-  box: ImportedTextBox,
-  font: PDFFont,
-  page: VisualPage,
-): Array<{ text: string; u: number; v: number }> {
-  const boxWidth = box.width * page.width;
-  const lines = wrapText(box.text, font, box.fontSize, boxWidth);
-  const lineBox = box.fontSize * box.lineHeight;
-  const ascent = font.heightAtSize(box.fontSize, { descender: false });
-  const contentHeight = font.heightAtSize(box.fontSize);
-  const firstBaseline = (lineBox - contentHeight) / 2 + ascent;
+export interface PlacedRun {
+  text: string;
+  /** Left edge, in the visual frame. */
+  u: number;
+  /** Baseline, in the visual frame. */
+  v: number;
+  font: PDFFont;
+  size: number;
+  underline?: boolean;
+  /** Advance width, so the caller can draw an underline without re-measuring. */
+  width: number;
+}
 
+/**
+ * Lays a box out, run by run.
+ *
+ * Wrapping happens ACROSS runs, not within them: a line that starts in 9pt and
+ * continues in 18pt has to break where the combined width runs out, so the
+ * measurement is per-word against that word's own font rather than per-line
+ * against one.
+ *
+ * The baseline is the line's tallest ascent, not the box's. Mixed sizes on one
+ * line otherwise sit on different baselines and the big text appears to float.
+ *
+ * The half-leading rule is CSS's: a line box is `lineHeight * size` tall and
+ * the glyphs are centred in it. Matching it is what makes the boxes the builder
+ * drags land where the editor showed them — the editor is CSS, so any other
+ * rule would drift, and the drift would grow with the line height they chose.
+ */
+export async function layoutRichBox(
+  box: ImportedTextBox,
+  page: VisualPage,
+  book: FontBook,
+  resolveText: (raw: string) => string,
+): Promise<PlacedRun[]> {
+  const boxWidth = box.width * page.width;
   const left = box.x * page.width;
   const top = box.y * page.height;
 
-  return lines.map((text, i) => {
-    const width = font.widthOfTextAtSize(text, box.fontSize);
-    const offset =
-      box.align === 'center' ? (boxWidth - width) / 2 : box.align === 'right' ? boxWidth - width : 0;
-    return { text, u: left + offset, v: top + firstBaseline + i * lineBox };
+  const source = box.html && box.html.trim() ? box.html : box.text;
+  const lines = parseStampHtml(source);
+
+  /* Fonts are resolved up front: layout needs metrics before it can decide
+     where anything goes, and awaiting inside the measuring loop would serialise
+     a font load per word. */
+  const fontFor = new Map<string, PDFFont>();
+  for (const line of lines) {
+    for (const run of line) {
+      const key = `${run.font ?? box.font}-${runWeight(run, box.weight)}-${run.italic ?? box.italic}`;
+      if (!fontFor.has(key)) {
+        fontFor.set(key, await book.get(run.font ?? box.font, runWeight(run, box.weight), run.italic ?? box.italic));
+      }
+    }
+  }
+  const metricsOf = (run: StampRun) => ({
+    font: fontFor.get(`${run.font ?? box.font}-${runWeight(run, box.weight)}-${run.italic ?? box.italic}`)!,
+    size: run.size ?? box.fontSize,
   });
+
+  interface Piece { text: string; run: StampRun; font: PDFFont; size: number; width: number }
+
+  const placed: PlacedRun[] = [];
+  let v = top;
+
+  for (const line of lines) {
+    // An authored blank line still takes its height.
+    if (line.length === 0) {
+      v += box.fontSize * box.lineHeight;
+      continue;
+    }
+
+    // Split every run into words, keeping each word with its own metrics.
+    const pieces: Piece[] = [];
+    for (const run of line) {
+      const { font, size } = metricsOf(run);
+      const text = resolveText(run.text);
+      // Split on spaces but KEEP them: a space between two runs is real, and
+      // dropping it joins "Prepared for :" to the name that follows.
+      for (const word of text.split(/(\s+)/)) {
+        if (!word) continue;
+        pieces.push({ text: word, run, font, size, width: font.widthOfTextAtSize(word, size) });
+      }
+    }
+
+    // Wrap into visual rows.
+    const rows: Piece[][] = [];
+    let row: Piece[] = [];
+    let used = 0;
+    for (const piece of pieces) {
+      const isSpace = /^\s+$/.test(piece.text);
+      if (!isSpace && used + piece.width > boxWidth && row.length > 0) {
+        // Trailing spaces do not belong at the end of a wrapped row.
+        while (row.length > 0 && /^\s+$/.test(row[row.length - 1].text)) row.pop();
+        rows.push(row);
+        row = [];
+        used = 0;
+      }
+      if (isSpace && row.length === 0) continue;
+      row.push(piece);
+      used += piece.width;
+    }
+    if (row.length > 0) rows.push(row);
+
+    for (const r of rows) {
+      const maxSize = Math.max(...r.map((p) => p.size));
+      const tallest = r.reduce((best, p) =>
+        p.font.heightAtSize(p.size, { descender: false }) > best.font.heightAtSize(best.size, { descender: false }) ? p : best);
+      const ascent = tallest.font.heightAtSize(tallest.size, { descender: false });
+      const contentHeight = tallest.font.heightAtSize(tallest.size);
+      const lineBox = maxSize * box.lineHeight;
+      const baseline = v + (lineBox - contentHeight) / 2 + ascent;
+
+      const rowWidth = r.reduce((sum, p) => sum + p.width, 0);
+      let u = left + (box.align === 'center' ? (boxWidth - rowWidth) / 2
+        : box.align === 'right' ? boxWidth - rowWidth : 0);
+
+      /* Adjacent words in the same style become ONE drawn run.
+         Wrapping has to measure word by word, but drawing that way would emit
+         a text operator per word: a fatter content stream, and a reader that
+         selects and copies the line as disconnected fragments. Only a genuine
+         style change should start a new run. */
+      for (const piece of r) {
+        const last = placed[placed.length - 1];
+        const continues =
+          last !== undefined &&
+          last.v === baseline &&
+          last.font === piece.font &&
+          last.size === piece.size &&
+          !!last.underline === !!piece.run.underline &&
+          Math.abs(last.u + last.width - u) < 0.01;
+
+        if (continues) {
+          last.text += piece.text;
+          last.width += piece.width;
+        } else if (piece.text.trim()) {
+          placed.push({
+            text: piece.text, u, v: baseline, font: piece.font,
+            size: piece.size, underline: piece.run.underline, width: piece.width,
+          });
+        }
+        u += piece.width;
+      }
+      // A row that ended on a space should not carry it into the underline.
+      const tail = placed[placed.length - 1];
+      if (tail && tail.v === baseline) {
+        const trimmed = tail.text.replace(/\s+$/, '');
+        if (trimmed !== tail.text) {
+          tail.width -= tail.font.widthOfTextAtSize(tail.text.slice(trimmed.length), tail.size);
+          tail.text = trimmed;
+        }
+      }
+      v += lineBox;
+    }
+  }
+
+  return placed;
 }
 
 /* ── Drawing ────────────────────────────────────────────────────────────── */
@@ -244,6 +379,7 @@ export async function stampTextBoxes(
   page: PDFPage,
   boxes: ImportedTextBox[],
   book: FontBook,
+  resolveText: (raw: string) => string = (t) => t,
 ): Promise<StampResult> {
   const { width, height } = page.getSize();
   const view = visualPage(width, height, page.getRotation().angle);
@@ -251,14 +387,26 @@ export async function stampTextBoxes(
   const result: StampResult = { drawn: 0, failures: [] };
 
   for (const box of boxes) {
-    if (!box.text.trim()) continue;
     try {
-      const font = await book.get(box.font, box.weight, box.italic);
+      const placed = await layoutRichBox(box, view, book, resolveText);
+      if (placed.length === 0) continue;
       const color = hexToRgb(box.color);
-      for (const line of layoutBox(box, font, view)) {
-        if (!line.text) continue;
-        const { x, y } = view.toUserSpace(line.u, line.v);
-        page.drawText(line.text, { x, y, size: box.fontSize, font, color, rotate: angle });
+      for (const run of placed) {
+        const { x, y } = view.toUserSpace(run.u, run.v);
+        page.drawText(run.text, { x, y, size: run.size, font: run.font, color, rotate: angle });
+        if (run.underline) {
+          /* pdf-lib has no underline, so it is drawn. One tenth of the size,
+             a tenth below the baseline — the proportions a typeface would use,
+             so it tracks a mixed-size line instead of sitting at one depth. */
+          const start = view.toUserSpace(run.u, run.v + run.size * 0.1);
+          const end = view.toUserSpace(run.u + run.width, run.v + run.size * 0.1);
+          page.drawLine({
+            start: { x: start.x, y: start.y },
+            end: { x: end.x, y: end.y },
+            thickness: Math.max(0.4, run.size * 0.06),
+            color,
+          });
+        }
       }
       result.drawn += 1;
     } catch (err) {

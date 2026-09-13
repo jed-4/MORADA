@@ -81,11 +81,13 @@ async function stampCopiedPages(
   const boxes = item.textBoxes ?? [];
   if (boxes.length === 0) return;
   for (let i = 0; i < pages.length; i++) {
-    const onThisPage = boxes
-      .filter((box) => box.page === i)
-      .map((box) => ({ ...box, text: substitute(box.text) }));
+    const onThisPage = boxes.filter((box) => box.page === i);
     if (onThisPage.length === 0) continue;
-    const { failures: boxFailures } = await stampTextBoxes(pages[i], onThisPage, fonts);
+    /* Substitution happens per RUN, inside the stamper, not on the raw string
+       here: a box's content is HTML now, and replacing tokens in markup would
+       work only until someone bolded half of one. By then the run's text is
+       plain, decoded and free of tags. */
+    const { failures: boxFailures } = await stampTextBoxes(pages[i], onThisPage, fonts, substitute);
     if (boxFailures.length > 0) {
       failures.push(
         `${item.fileName || "imported PDF"} (${boxFailures.length} text ${

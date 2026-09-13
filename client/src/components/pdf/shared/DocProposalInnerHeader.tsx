@@ -91,20 +91,27 @@ export function DocProposalInnerHeader({
         ...(isS2 ? { borderLeftWidth: 3, borderLeftColor: brandColor } : {}),
       }}
     >
-      {variant === "full" && (
+      {/* objectFit: "contain" is not optional.
+          Without it @react-pdf STRETCHES the image to the box, and a logo that
+          is anything other than 10:7 arrives at the client squashed — Jed's is
+          close to square, so the running header crushed it on every page. The
+          box bounds the header's height; the logo keeps its shape inside it.
+
+          And the tile is only drawn when there is a logo. It used to render
+          regardless, so a company that has not uploaded one got an empty grey
+          rectangle beside their name — the same thing PdfHeroBand was fixed
+          for, one file over. */}
+      {variant === "full" && logoUrl && (
         <View
           style={{
-            width: 40,
+            width: 44,
             height: 28,
-            borderRadius: 3,
-            backgroundColor: isS2 ? "rgba(255,255,255,0.35)" : PDF_COLORS.border,
             overflow: "hidden",
             marginRight: 10,
+            justifyContent: "center",
           }}
         >
-          {logoUrl ? (
-            <Image src={logoUrl} style={{ width: 40, height: 28 }} />
-          ) : null}
+          <Image src={logoUrl} style={{ width: 44, height: 28, objectFit: "contain" }} />
         </View>
       )}
 

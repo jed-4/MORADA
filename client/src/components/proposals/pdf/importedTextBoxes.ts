@@ -43,8 +43,20 @@ export interface ImportedTextBox {
   y: number;
   /** Wrapping width, as a fraction of the visual page width. */
   width: number;
-  /** May contain {{tokens}}; substituted at render time. */
+  /**
+   * Plain text — what the box said before rich text, and the fallback when
+   * `html` is absent. Kept in step with `html` so nothing that reads a box
+   * has to parse markup just to know whether it is empty.
+   */
   text: string;
+  /**
+   * The box's content as HTML, when it has been edited richly.
+   *
+   * Takes precedence over `text`. Optional so every box authored before this
+   * existed keeps rendering exactly as it did — see parseStampHtml, which
+   * treats a plain string as a single unstyled run.
+   */
+  html?: string;
   /** Points, in the imported page's own coordinate space. */
   fontSize: number;
   font: StampFontKey;
@@ -121,6 +133,7 @@ export function normaliseTextBoxes(raw: unknown): ImportedTextBox[] {
       y: clamp(Number(b.y), 0, 0.98),
       width: clamp(Number(b.width), 0.02, 1),
       text,
+      ...(typeof b.html === 'string' && b.html.trim() ? { html: b.html } : {}),
       fontSize: clamp(Number(b.fontSize), 4, 200) || DEFAULT_TEXT_BOX.fontSize,
       font: oneOf<StampFontKey>(b.font, ['inter', 'helvetica', 'times', 'courier'], 'inter'),
       weight: oneOf<StampWeight>(Number(b.weight) as StampWeight, [400, 600, 700], 400),

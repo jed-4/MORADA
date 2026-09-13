@@ -13,6 +13,7 @@ import { PdfLineTable, type PdfTableColumn, type PdfTableGroup } from "@/compone
 import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
 import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -460,8 +461,8 @@ export function EstimateSection({
           <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
         ) : null}
       </View>
-      {toggles.description && item.description ? (
-        <Text style={styles.itemDescription}>{item.description}</Text>
+      {toggles.description && pdfHasText(item.description) ? (
+        <Text style={styles.itemDescription}>{pdfPlainText(item.description)}</Text>
       ) : null}
     </View>
   );
@@ -509,7 +510,7 @@ export function EstimateSection({
             proposals that already use it are unchanged; new text is better put
             in the Description above, which every section shares. */}
         {typeof content.estimateDescription === "string" && content.estimateDescription && (
-          <Text style={styles.description}>{content.estimateDescription}</Text>
+          <Text style={styles.description}>{pdfPlainText(String(content.estimateDescription))}</Text>
         )}
 
         {/* One table per top-level group rather than a single continuous

@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ColorPickerPopover } from "@/components/ui/ColorPickerPopover";
 import { PROPOSAL_PLACEHOLDER_TOKENS } from "@/components/proposals/pdf/placeholders";
+import { MergeFieldEditor } from "@/components/proposals/MergeFieldEditor";
+import { parseStampHtml, stampPlainText } from "@/components/proposals/pdf/stampRichText";
 import {
   newTextBox,
   STAMP_FONT_CSS,
@@ -154,19 +156,13 @@ export function ImportedPdfTextBoxEditor({
     setSelectedId(null);
   };
 
+  /* The field picker inserts at the editor's cursor, so a second field lands
+     beside the first rather than at the start. The editor hands us the
+     function; the picker is rendered here because it belongs with the box's
+     other properties, not inside the toolbar. */
+  const insertRef = useRef<((token: string) => void) | null>(null);
   const insertToken = (token: string) => {
-    if (!selected) return;
-    const el = textRef.current;
-    const at = el ? el.selectionStart : selected.text.length;
-    const next = selected.text.slice(0, at) + token + selected.text.slice(el ? el.selectionEnd : at);
-    update(selected.id, { text: next });
-    // Put the caret after what was just inserted, so a second field lands
-    // beside the first rather than back at the start.
-    requestAnimationFrame(() => {
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(at + token.length, at + token.length);
-    });
+    insertRef.current?.(token);
   };
 
   /* Dragging is fine for placing something roughly; a cover page usually wants
@@ -288,10 +284,6 @@ export function ImportedPdfTextBoxEditor({
                               left: `${box.x * 100}%`,
                               top: `${box.y * 100}%`,
                               width: `${box.width * 100}%`,
-                              fontFamily: STAMP_FONT_CSS[box.font],
-                              fontSize: box.fontSize * scale,
-                              fontWeight: box.weight,
-                              fontStyle: box.italic ? "italic" : "normal",
                               lineHeight: box.lineHeight,
                               color: box.color,
                               textAlign: box.align,
@@ -302,7 +294,12 @@ export function ImportedPdfTextBoxEditor({
                             }}
                             data-testid={`text-box-${box.id}`}
                           >
-                            {box.text || "Empty"}
+                            {/* Rendered from the SAME parse the stamper uses,
+                                not from the HTML directly. The overlay's only
+                                job is to promise that what you drag is what
+                                prints, and two renderers reading the markup
+                                their own way is how that promise breaks. */}
+                            {renderRuns(box, scale)}
                             {isSelected && (
                               <span
                                 onPointerDown={(e) => onPointerDown(e, box, "resize")}
@@ -334,13 +331,19 @@ export function ImportedPdfTextBoxEditor({
               <>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Text</Label>
-                  <Textarea
-                    ref={textRef}
-                    rows={3}
-                    value={selected.text}
-                    onChange={(e) => update(selected.id, { text: e.target.value })}
-                    className="text-xs"
-                    data-testid="input-text-box-text"
+                  <MergeFieldEditor
+                    key={selected.id}
+                    html={selected.html ?? escapeToHtml(selected.text)}
+                    boxFont={selected.font}
+                    boxSize={selected.fontSize}
+                    registerInsert={(fn) => { insertRef.current = fn; }}
+                    onChange={(html) =>
+                      /* Both are stored: `html` is what prints, `text` is the
+                         plain mirror everything else reads to decide whether
+                         the box is empty. Letting them drift means a box that
+                         looks blank still reserves space on the page. */
+                      update(selected.id, { html, text: stampPlainText(html) })
+                    }
                   />
                   <Select value="" onValueChange={insertToken}>
                     <SelectTrigger className="h-7 text-xs" data-testid="select-text-box-field">
@@ -466,6 +469,51 @@ export function ImportedPdfTextBoxEditor({
 
 /** Tallest the page may render, leaving the dialog's chrome its own room. */
 const MAX_PAGE_HEIGHT = 520;
+
+/**
+ * The box's runs, for the overlay.
+ *
+ * Sizes are multiplied by the page's render scale so the on-screen text is the
+ * same proportion of the page that it will be in the PDF. A run with no size
+ * of its own inherits the box's, exactly as layoutRichBox resolves it.
+ */
+function renderRuns(box: ImportedTextBox, scale: number) {
+  const lines = parseStampHtml(box.html && box.html.trim() ? box.html : box.text);
+  if (lines.length === 0) return <span className="opacity-50">Empty</span>;
+  return lines.map((line, i) => (
+    <div key={i} style={{ minHeight: box.fontSize * box.lineHeight * scale }}>
+      {line.map((run, j) => (
+        <span
+          key={j}
+          style={{
+            fontFamily: STAMP_FONT_CSS[run.font ?? box.font],
+            fontSize: (run.size ?? box.fontSize) * scale,
+            fontWeight: run.bold ? 700 : box.weight,
+            fontStyle: (run.italic ?? box.italic) ? "italic" : "normal",
+            textDecoration: run.underline ? "underline" : "none",
+          }}
+        >
+          {run.text}
+        </span>
+      ))}
+    </div>
+  ));
+}
+
+/**
+ * A pre-rich-text box, as HTML.
+ *
+ * Boxes authored before this existed hold plain text with real newlines. Handed
+ * to the editor raw, the newlines would collapse and a three-line address would
+ * come back as one. Escaped so a stray "<" in an address is text, not markup.
+ */
+function escapeToHtml(text: string): string {
+  if (!text) return '';
+  return text
+    .split(/\r?\n/)
+    .map((line) => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+    .join('');
+}
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));

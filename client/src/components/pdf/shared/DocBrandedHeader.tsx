@@ -52,6 +52,10 @@ export function DocBrandedHeader({
     logoImg: {
       width: 72,
       height: 44,
+      // Bound the box, keep the shape. Without objectFit @react-pdf stretches
+      // to fill, and every logo that is not 18:11 reaches the client distorted
+      // — on invoices and purchase orders as well as proposals.
+      objectFit: "contain" as const,
     },
     companyName: {
       fontSize: isS2 ? 15 : 13,

@@ -38,3 +38,7 @@ expo-mobile/.env.local
 # accident, so every test run left the tree dirty and the files kept drifting
 # in and out of commits.
 uploads/
+
+# Object storage on a dev machine (server/replit_integrations/object_storage/localObjectStorage.ts).
+# Real uploads in development land here; safe to delete at any time.
+.local-object-storage/
