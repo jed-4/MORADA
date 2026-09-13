@@ -5,6 +5,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
 import { useProposalTemplateSource } from "@/components/proposals/useProposalTemplateSource";
+import { AddSectionDialog } from "@/components/proposals/AddSectionDialog";
 import type { ProposalTemplate } from "@shared/schema";
 
 /**
@@ -26,6 +27,7 @@ export default function ProposalTemplateDetail() {
   const [, setLocation] = useLocation();
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
+  const [addingSection, setAddingSection] = useState(false);
 
   const { data: template, isLoading } = useQuery<ProposalTemplate>({
     queryKey: ["/api/proposal-templates", params.templateId],
@@ -35,6 +37,8 @@ export default function ProposalTemplateDetail() {
   const { data: companySettings } = useQuery<{
     logoUrl?: string;
     companyName?: string;
+    termsAndConditions?: string | null;
+    termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor?: string[] }>;
     brandColor?: string;
     brandSecondaryColor?: string;
     documentStyle?: string;
@@ -116,7 +120,11 @@ export default function ProposalTemplateDetail() {
             sections={source.sections}
             onSectionsReorder={source.reorderSections}
             onSectionUpdate={source.updateSection}
-            onAddSection={() => source.addSection({ name: "New Section", sectionType: "custom" })}
+            /* The same dialog the proposal page uses. A template that could
+               only hold "custom" sections could not carry a cover page, an
+               estimate or an imported PDF intro — which is most of what a
+               builder wants a template FOR. */
+            onAddSection={() => setAddingSection(true)}
             companyLogo={companySettings?.logoUrl}
             companyName={companySettings?.companyName}
             /* The same colour chain the proposal page resolves, minus the
@@ -133,6 +141,16 @@ export default function ProposalTemplateDetail() {
           />
         </div>
       </div>
+      <AddSectionDialog
+        open={addingSection}
+        onOpenChange={setAddingSection}
+        company={companySettings}
+        noun="template"
+        onAdd={(section) => {
+          source.addSection(section);
+          setAddingSection(false);
+        }}
+      />
     </div>
   );
 }

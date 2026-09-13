@@ -43,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import { AddSectionDialog } from "@/components/proposals/AddSectionDialog";
 import {
   PROPOSAL_CAPABILITIES,
   type ProposalDocumentSource,
@@ -54,30 +55,11 @@ interface ProposalDetailParams {
   projectId?: string;
 }
 
-const SECTION_TYPES = [
-  { value: 'cover_page', label: 'Cover Page' },
-  { value: 'cover_letter', label: 'Cover Letter' },
-  { value: 'scope', label: 'Scope of Work' },
-  { value: 'estimate', label: 'Estimate' },
-  { value: 'summary', label: 'Summary' },
-  { value: 'allowances', label: 'Allowances' },
-  { value: 'inclusions_exclusions', label: 'Inclusions & Exclusions' },
-  { value: 'payment_schedule', label: 'Payment Schedule' },
-  { value: 'closing', label: 'Closing' },
-  { value: 'attachments', label: 'Attachments' },
-  { value: 'terms_conditions', label: 'Terms & Conditions' },
-  { value: 'signature', label: 'Signature' },
-  { value: 'imported_pdf', label: 'Imported PDF page' },
-  { value: 'custom', label: 'Custom Section' },
-];
-
 export default function ProposalDetail() {
   const params = useParams<ProposalDetailParams>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isAddingSectionOpen, setIsAddingSectionOpen] = useState(false);
-  const [newSectionType, setNewSectionType] = useState('custom');
-  const [newSectionName, setNewSectionName] = useState('');
   
   const isNewProposal = !params.id;
   
@@ -251,8 +233,6 @@ export default function ProposalDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
       setIsAddingSectionOpen(false);
-      setNewSectionName('');
-      setNewSectionType('custom');
       toast({
         title: "Success",
         description: "Section added successfully.",
@@ -366,39 +346,6 @@ export default function ProposalDetail() {
 
   const handleAddSection = () => {
     setIsAddingSectionOpen(true);
-  };
-
-  const handleCreateSection = () => {
-    if (!newSectionName.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a section name.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    let content: Record<string, unknown> | undefined;
-    if (newSectionType === 'closing') {
-      const companyName = companySettings?.companyName || '[Company Name]';
-      content = {
-        closingText: `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`,
-      };
-    } else if (newSectionType === 'terms_conditions') {
-      const tpls = companySettings?.termsTemplates ?? [];
-      const tpl = tpls.find(
-        (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
-      );
-      const text = tpl?.content || companySettings?.termsAndConditions || '';
-      if (text) content = { termsText: text };
-    }
-
-    addSectionMutation.mutate({
-      name: newSectionName,
-      sectionType: newSectionType,
-      description: '',
-      ...(content ? { content } : {}),
-    });
   };
 
   const handleSave = () => {
@@ -648,59 +595,17 @@ export default function ProposalDetail() {
         )}
       </div>
 
-      {/* Add Section Dialog */}
-      <Dialog open={isAddingSectionOpen} onOpenChange={setIsAddingSectionOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Section</DialogTitle>
-            <DialogDescription>
-              Choose the type of section you want to add to your proposal.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Section Type</label>
-              <Select value={newSectionType} onValueChange={setNewSectionType}>
-                <SelectTrigger data-testid="select-section-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SECTION_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Section Name</label>
-              <Input
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                placeholder="Enter section name..."
-                data-testid="input-section-name"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsAddingSectionOpen(false)}
-                data-testid="button-cancel-section"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateSection}
-                disabled={addSectionMutation.isPending}
-                data-testid="button-create-section"
-              >
-                {addSectionMutation.isPending ? 'Adding...' : 'Add Section'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* The same dialog the template page uses — see AddSectionDialog. */}
+      <AddSectionDialog
+        open={isAddingSectionOpen}
+        onOpenChange={setIsAddingSectionOpen}
+        company={companySettings}
+        onAdd={(section) => {
+          addSectionMutation.mutate(section as never);
+          setIsAddingSectionOpen(false);
+        }}
+        isAdding={addSectionMutation.isPending}
+      />
     </div>
   );
 }
