@@ -2,6 +2,11 @@ import { Storage, File } from "@google-cloud/storage";
 import { Response } from "express";
 import { randomUUID } from "crypto";
 import {
+  isLocalObjectStorage,
+  LocalObjectFile,
+  localUploadName,
+} from "./localObjectStorage";
+import {
   ObjectAclPolicy,
   ObjectPermission,
   canAccessObject,
@@ -39,6 +44,12 @@ export class ObjectNotFoundError extends Error {
 }
 
 // The object storage service is used to interact with the object storage service.
+/**
+ * Either backend's file handle. The two share the members this codebase uses —
+ * see localObjectStorage — so nothing downstream has to know which it holds.
+ */
+export type StoredFile = File | LocalObjectFile;
+
 export class ObjectStorageService {
   constructor() {}
 
@@ -65,6 +76,10 @@ export class ObjectStorageService {
   // Gets the private object directory.
   getPrivateObjectDir(): string {
     const dir = process.env.PRIVATE_OBJECT_DIR || "";
+    // On disk there is no bucket to name; the layout below the root is the
+    // same, so callers that build "<dir>/uploads/<id>" still get what they
+    // expect.
+    if (!dir && isLocalObjectStorage()) return "/local";
     if (!dir) {
       throw new Error(
         "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
@@ -75,7 +90,7 @@ export class ObjectStorageService {
   }
 
   // Search for a public object from the search paths.
-  async searchPublicObject(filePath: string): Promise<File | null> {
+  async searchPublicObject(filePath: string): Promise<StoredFile | null> {
     for (const searchPath of this.getPublicObjectSearchPaths()) {
       const fullPath = `${searchPath}/${filePath}`;
 
@@ -95,7 +110,7 @@ export class ObjectStorageService {
   }
 
   // Downloads an object to the response.
-  async downloadObject(file: File, res: Response, cacheTtlSec: number = 3600) {
+  async downloadObject(file: StoredFile, res: Response, cacheTtlSec: number = 3600) {
     try {
       // Get file metadata
       const [metadata] = await file.getMetadata();
@@ -132,6 +147,13 @@ export class ObjectStorageService {
 
   // Gets the upload URL for an object entity.
   async getObjectEntityUploadURL(): Promise<string> {
+    if (isLocalObjectStorage()) {
+      /* There is nothing to sign on a local disk. The URL is a real endpoint
+         that accepts the same PUT the signed GCS URL would, so Uppy and the
+         legacy direct-upload flow work unchanged — the id in the path is the
+         object name, exactly as it would be in the bucket. */
+      return `/api/uploads/local/${randomUUID()}`;
+    }
     const privateObjectDir = this.getPrivateObjectDir();
     if (!privateObjectDir) {
       throw new Error(
@@ -161,6 +183,16 @@ export class ObjectStorageService {
     contentType: string,
     companyId: string,
   ): Promise<string> {
+    if (isLocalObjectStorage()) {
+      const objectId = randomUUID();
+      await new LocalObjectFile(localUploadName(objectId)).save(buffer, {
+        contentType: contentType || "application/octet-stream",
+        metadata: { companyId },
+      });
+      // The SAME app-level path the GCS branch returns, so what is stored in
+      // the database does not depend on which machine wrote it.
+      return `/objects/company/${companyId}/uploads/${objectId}`;
+    }
     const privateObjectDir = this.getPrivateObjectDir();
     const objectId = randomUUID();
     const fullPath = `${privateObjectDir}/uploads/${objectId}`;
@@ -177,7 +209,7 @@ export class ObjectStorageService {
   }
 
   // Gets the object entity file from the object path.
-  async getObjectEntityFile(objectPath: string): Promise<File> {
+  async getObjectEntityFile(objectPath: string): Promise<StoredFile> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();
     }
@@ -188,6 +220,19 @@ export class ObjectStorageService {
     }
 
     const entityId = parts.slice(1).join("/");
+
+    if (isLocalObjectStorage()) {
+      /* Stored paths carry a company segment — /objects/company/<id>/uploads/<x>
+         — which the GCS branch strips before hitting the bucket, because the
+         bucket is flat. Same here, or a file saved as "uploads/<x>" would be
+         looked for under a company directory that was never written. */
+      const flat = entityId.replace(/^company\/[^/]+\//, "");
+      const local = new LocalObjectFile(flat);
+      const [exists] = await local.exists();
+      if (!exists) throw new ObjectNotFoundError();
+      return local;
+    }
+
     let entityDir = this.getPrivateObjectDir();
     if (!entityDir.endsWith("/")) {
       entityDir = `${entityDir}/`;
@@ -206,6 +251,13 @@ export class ObjectStorageService {
   normalizeObjectEntityPath(
     rawPath: string,
   ): string {
+    /* The local upload endpoint is where the signed GCS URL would be, so it
+       normalises the same way: back to the object's own path. Without this the
+       caller builds "/objects/company/<id>/api/uploads/local/<uuid>" and then
+       looks for a file by that name. */
+    const local = rawPath.match(/^\/api\/uploads\/local\/([0-9a-f-]+)$/i);
+    if (local) return `/objects/uploads/${local[1]}`;
+
     if (!rawPath.startsWith("https://storage.googleapis.com/")) {
       return rawPath;
     }
@@ -250,7 +302,7 @@ export class ObjectStorageService {
     requestedPermission,
   }: {
     userId?: string;
-    objectFile: File;
+    objectFile: StoredFile;
     requestedPermission?: ObjectPermission;
   }): Promise<boolean> {
     return canAccessObject({

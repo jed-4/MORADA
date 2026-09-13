@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
@@ -16,6 +17,11 @@ import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
+import {
+  isLocalObjectStorage,
+  LocalObjectFile,
+  localUploadName,
+} from "./replit_integrations/object_storage/localObjectStorage";
 import { renderClientEmail } from "./services/clientEmailShell";
 import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
@@ -11297,6 +11303,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to generate upload URL" });
     }
   });
+
+  /**
+   * The local stand-in for a signed PUT.
+   *
+   * Only mounted when this process stores objects on disk — see
+   * isLocalObjectStorage, which refuses in production. It exists so the flows
+   * that upload straight to a signed URL (Uppy, and the legacy direct path in
+   * useUpload) can be exercised on a laptop; the Replit GCS sidecar they
+   * normally talk to has no local equivalent.
+   */
+  if (isLocalObjectStorage()) {
+    app.put(
+      "/api/uploads/local/:objectId",
+      requireAuth,
+      requireTeamMember,
+      express.raw({ type: "*/*", limit: "50mb" }),
+      async (req: any, res) => {
+        try {
+          const objectId = String(req.params.objectId);
+          if (!/^[0-9a-f-]{36}$/i.test(objectId)) {
+            return res.status(400).json({ error: "Bad object id" });
+          }
+          const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "");
+          if (body.length === 0) return res.status(400).json({ error: "Empty upload" });
+          await new LocalObjectFile(localUploadName(objectId)).save(body, {
+            contentType: String(req.headers["content-type"] || "application/octet-stream"),
+            metadata: { companyId: req.user.companyId },
+          });
+          res.status(200).end();
+        } catch (error: any) {
+          console.error("Local upload failed:", error);
+          res.status(500).json({ error: "Local upload failed", details: error.message });
+        }
+      },
+    );
+  }
 
   // Server-side file upload — browser sends the raw file; server writes to GCS.
   // This avoids the CORS issues of direct-to-GCS signed-URL uploads.

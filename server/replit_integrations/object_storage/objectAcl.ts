@@ -102,9 +102,25 @@ function createObjectAccessGroup(
   }
 }
 
+/**
+ * The members of a GCS File that the ACL layer touches.
+ *
+ * Structural, not the GCS class, so the on-disk backend used in development
+ * satisfies it too — see localObjectStorage. Nothing here cares where the
+ * bytes are, only that the object can be probed and its metadata read back.
+ */
+export interface AclCapableFile {
+  name: string;
+  exists(): Promise<[boolean]>;
+  /* GCS resolves a two-element tuple and the local backend a one-element one,
+     so the rest is left open rather than pinned to either vendor's shape. */
+  getMetadata(): Promise<[{ metadata?: { [key: string]: unknown } | null }, ...unknown[]]>;
+  setMetadata(update: { metadata?: Record<string, string> }): Promise<unknown>;
+}
+
 // Sets the ACL policy to the object metadata.
 export async function setObjectAclPolicy(
-  objectFile: File,
+  objectFile: AclCapableFile,
   aclPolicy: ObjectAclPolicy,
 ): Promise<void> {
   const [exists] = await objectFile.exists();
@@ -121,7 +137,7 @@ export async function setObjectAclPolicy(
 
 // Gets the ACL policy from the object metadata.
 export async function getObjectAclPolicy(
-  objectFile: File,
+  objectFile: AclCapableFile,
 ): Promise<ObjectAclPolicy | null> {
   const [metadata] = await objectFile.getMetadata();
   const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
@@ -138,7 +154,7 @@ export async function canAccessObject({
   requestedPermission,
 }: {
   userId?: string;
-  objectFile: File;
+  objectFile: AclCapableFile;
   requestedPermission: ObjectPermission;
 }): Promise<boolean> {
   // When this function is called, the acl policy is required.
