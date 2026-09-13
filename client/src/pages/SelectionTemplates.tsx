@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -166,35 +167,9 @@ export default function SelectionTemplates() {
     enabled: !!applyDialogTemplate || bulkApplyOpen,
   });
 
-  const { data: categoryFieldCategory } = useQuery<any>({
-    queryKey: ["/api/field-categories/by-key/selection.category"],
-  });
-
-  const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!categoryFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!categoryFieldCategory?.id,
-  });
-
-  const { data: roomFieldCategory } = useQuery<any>({
-    queryKey: ["/api/field-categories/by-key/selection.room"],
-  });
-
-  const { data: roomOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", roomFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!roomFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${roomFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!roomFieldCategory?.id,
-  });
+  // The two field-category queries that used to live here are gone:
+  // CreatableFieldSelect fetches by key itself, and the mapping they fed
+  // read `opt.value` / `opt.label`, neither of which field_options has.
 
   const {
     createMutation,
@@ -713,36 +688,27 @@ export default function SelectionTemplates() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
-                  <SelectTrigger id="category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoryOptions.map(opt => (
-                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Same fix as the detail page: field_options has `key` and
+                    `name`, so `opt.value` / `opt.label` rendered a blank row per
+                    option. CreatableFieldSelect reads `name` and adds
+                    type-to-add. */}
+                <CreatableFieldSelect
+                  categoryKey="selection.category"
+                  value={formData.category || ""}
+                  onValueChange={(v) => setFormData({ ...formData, category: v })}
+                  placeholder="Select category"
+                  data-testid="select-category"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="room">Room / Location</Label>
-                <Select
-                  value={formData.room || "_none"}
-                  onValueChange={(v) => setFormData({ ...formData, room: v === "_none" ? "" : v })}
-                >
-                  <SelectTrigger id="room">
-                    <SelectValue placeholder="Select room" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {roomOptions.map(opt => (
-                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CreatableFieldSelect
+                  categoryKey="selection.room"
+                  value={formData.room || ""}
+                  onValueChange={(v) => setFormData({ ...formData, room: v })}
+                  placeholder="Select location"
+                  data-testid="select-room"
+                />
               </div>
             </div>
             <div className="space-y-2">

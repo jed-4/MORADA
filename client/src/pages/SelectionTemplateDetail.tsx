@@ -58,6 +58,8 @@ import { format } from "date-fns";
 import { formatCents } from "@shared/money";
 import type { SelectionTemplate, SelectionTemplateGroup, FieldCategory } from "@shared/schema";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
+import { OptionDialog, type OptionDialogValues } from "@/components/selections/OptionDialog";
+import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
 import { cn } from "@/lib/utils";
 
 interface SelectionOption {
@@ -86,67 +88,6 @@ interface SelectionOption {
   specifications?: Record<string, any>;
 }
 
-const SPEC_PICKER_GROUPS = [
-  {
-    label: "Dimensions",
-    fields: [
-      { key: "diameter", label: "Diameter (mm)", type: "number" },
-      { key: "weight", label: "Weight (kg)", type: "number" },
-    ],
-  },
-  {
-    label: "Appearance",
-    fields: [
-      { key: "colour", label: "Colour", type: "text" },
-      { key: "colourCode", label: "Colour code", type: "text" },
-    ],
-  },
-  {
-    label: "Technical — Tapware",
-    fields: [
-      { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
-      { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
-      { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
-      { key: "mountingType", label: "Mounting type", type: "text" },
-      { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
-    ],
-  },
-  {
-    label: "Technical — Tiles & Flooring",
-    fields: [
-      { key: "thickness", label: "Thickness (mm)", type: "number" },
-      { key: "slipRatingP", label: "Slip rating — Wet (P0–P5)", type: "text" },
-      { key: "slipRatingR", label: "Slip rating — Oil (R9–R13)", type: "text" },
-    ],
-  },
-  {
-    label: "Technical — Lighting",
-    fields: [
-      { key: "wattage", label: "Wattage (W)", type: "number" },
-      { key: "lumens", label: "Lumens (lm)", type: "number" },
-      { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
-      { key: "ipRating", label: "IP rating", type: "text" },
-      { key: "dimmable", label: "Dimmable", type: "boolean" },
-    ],
-  },
-  {
-    label: "Technical — Appliances",
-    fields: [
-      { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
-    ],
-  },
-  {
-    label: "Compliance",
-    fields: [
-      { key: "warranty", label: "Warranty (years)", type: "number" },
-      { key: "leadTime", label: "Lead time (weeks)", type: "number" },
-      { key: "fireRating", label: "Fire rating", type: "text" },
-    ],
-  },
-];
-
-const FINISH_OPTIONS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
-const MATERIAL_OPTIONS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
 
 function formatSpecsOneLiner(specs: Record<string, any> | undefined): string {
   if (!specs) return "";
@@ -184,8 +125,6 @@ export default function SelectionTemplateDetail() {
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [gstInclusive, setGstInclusive] = useState(false);
-  const [specsOpen, setSpecsOpen] = useState(false);
-  const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
   const [productLibraryOpen, setProductLibraryOpen] = useState(false);
   const [pickerTag, setPickerTag] = useState<string>("all");
@@ -223,40 +162,9 @@ export default function SelectionTemplateDetail() {
   });
   const [hasMetaChanges, setHasMetaChanges] = useState(false);
 
-  const { data: categoryFieldCategory } = useQuery<FieldCategory>({
-    queryKey: ["/api/field-categories/by-key/selection.category"],
-    queryFn: async () => {
-      const res = await fetch("/api/field-categories/by-key/selection.category", { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
-  const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!categoryFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!categoryFieldCategory?.id,
-  });
-
-  const { data: roomFieldCategory } = useQuery<any>({
-    queryKey: ["/api/field-categories/by-key/selection.room"],
-  });
-
-  const { data: roomOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", roomFieldCategory?.id, "options"],
-    queryFn: async () => {
-      if (!roomFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${roomFieldCategory.id}/options`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!roomFieldCategory?.id,
-  });
+  // The two field-category queries that used to live here are gone:
+  // CreatableFieldSelect fetches by key itself, and the mapping they fed read
+  // `opt.value` / `opt.label`, neither of which field_options has.
 
   const { data: template, isLoading } = useQuery<SelectionTemplate>({
     queryKey: ["/api/selection-templates", params.templateId],
@@ -270,6 +178,34 @@ export default function SelectionTemplateDetail() {
 
   const { data: groups = [] } = useQuery<SelectionTemplateGroup[]>({
     queryKey: ["/api/selection-template-groups"],
+  });
+
+  /**
+   * Create a group from here.
+   *
+   * The dialog used to say "Create groups from the templates list page" over an
+   * empty list, which is a dead end at the exact moment you have decided you
+   * want one. Same endpoint the list page's Manage Groups dialog posts to.
+   */
+  const [newGroupName, setNewGroupName] = useState("");
+  const createGroupMutation = useMutation({
+    mutationFn: async (name: string) =>
+      await apiRequest("/api/selection-template-groups", "POST", { name: name.trim() }),
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-template-groups"] });
+      setNewGroupName("");
+      // Tick the group you just made — making one and not being in it is never
+      // what you meant.
+      if (created?.id) {
+        setLocalMeta((prev) => ({ ...prev, groupIds: [...prev.groupIds, created.id] }));
+        setHasMetaChanges(true);
+      }
+    },
+    onError: (e: any) => toast({
+      title: "Couldn't create group",
+      description: e?.message?.replace(/^\d+:\s*/, "") ?? "Please try again.",
+      variant: "destructive",
+    }),
   });
 
   const { data: products = [] } = useQuery<any[]>({
@@ -447,8 +383,6 @@ export default function SelectionTemplateDetail() {
   const handleAddOption = () => {
     setEditingOption(null);
     setGstInclusive(false);
-    setSpecsOpen(false);
-    setSpecPickerOpen(false);
     setOptionForm({
       productId: undefined,
       name: "",
@@ -470,8 +404,6 @@ export default function SelectionTemplateDetail() {
   const handleSelectFromLibrary = (product: any) => {
     setEditingOption(null);
     setGstInclusive(product.gstInclusive || false);
-    setSpecsOpen(!!(product.specifications && Object.keys(product.specifications).length > 0));
-    setSpecPickerOpen(false);
     // product_images stores `filePath`; there is no `url`. Reading `.url` meant
     // the image never came across — and the `|| img` fallback put the whole
     // image OBJECT into a string array, which /apply later calls .split("/") on.
@@ -506,8 +438,6 @@ export default function SelectionTemplateDetail() {
   const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
     setGstInclusive(option.gstInclusive || false);
-    setSpecsOpen(!!(option.specifications && Object.keys(option.specifications).length > 0));
-    setSpecPickerOpen(false);
     const imageUrls = option.imageUrls && option.imageUrls.length > 0
       ? option.imageUrls
       : option.imageUrl ? [option.imageUrl] : [];
@@ -530,36 +460,38 @@ export default function SelectionTemplateDetail() {
     setOptionDialogOpen(true);
   };
 
-  const handleSaveOption = () => {
-    if (!optionForm.name?.trim()) {
-      toast({ title: "Missing name", description: "Please enter an option name.", variant: "destructive" });
-      return;
-    }
-
+  const handleSaveOption = (
+    values: OptionDialogValues,
+    specifications: Record<string, any> | null,
+  ) => {
+    // The name check that used to live here is the dialog's zod schema now —
+    // which is also why a template option can no longer be saved blank.
     const builtOption = (base: Partial<SelectionOption>) => ({
       ...base,
       // Present when the option came from the library. On an edit `base` already
       // carries it, but a NEW option is built from {} — which is exactly how the
       // link used to be lost.
       productId: optionForm.productId ?? (base as any).productId,
-      name: optionForm.name!.trim(),
-      description: optionForm.description?.trim(),
-      sku: optionForm.sku?.trim(),
-      brand: optionForm.brand?.trim(),
-      category: optionForm.category?.trim(),
-      unitCost: optionForm.unitCost ? Math.round(optionForm.unitCost * 100) : undefined,
-      gstInclusive,
-      quantity: optionForm.quantity || 1,
-      unitType: optionForm.unitType || "ea",
-      url: optionForm.url?.trim(),
+      name: values.name.trim(),
+      description: values.description?.trim() || undefined,
+      sku: values.sku?.trim() || undefined,
+      brand: values.brand?.trim() || undefined,
+      category: values.category?.trim() || undefined,
+      // Already cents — the dialog works in the same unit templateData stores.
+      unitCost: values.unitCost ?? undefined,
+      gstInclusive: values.gstInclusive ?? false,
+      quantity: values.quantity || 1,
+      unitType: values.unitType || "ea",
+      url: values.url?.trim() || undefined,
+      // Images are this page's, not the dialog's.
       imageUrls: (optionForm.imageUrls || []).filter(Boolean),
       imageUrl: undefined,
-      visibleToClient: optionForm.visibleToClient ?? true,
-      isSelectedByClient: optionForm.isSelectedByClient || false,
-      markupPercent: optionForm.markupPercent,
-      specifications: optionForm.specifications && Object.keys(optionForm.specifications).length > 0
-        ? optionForm.specifications
-        : undefined,
+      visibleToClient: values.visibleToClient ?? true,
+      // Not a dialog field: "set as default" is a menu action on the card.
+      isSelectedByClient: (base as any).isSelectedByClient || false,
+      markupPercent: values.markupPercent ?? undefined,
+      totalCost: values.totalCost ?? undefined,
+      specifications: specifications ?? undefined,
     });
 
     let updatedOptions: SelectionOption[];
@@ -660,6 +592,88 @@ export default function SelectionTemplateDetail() {
       </div>
     );
   }
+
+  /**
+   * What the dialog starts from.
+   *
+   * The one conversion at this boundary is money: `optionForm.unitCost` is
+   * DOLLARS on this page (the old dialog divided by 100 on load and multiplied
+   * on save), while the dialog — like selection_options and like templateData
+   * itself — is CENTS.
+   */
+  const optionDialogValues: Partial<OptionDialogValues> = {
+    name: optionForm.name ?? "",
+    brand: optionForm.brand ?? "",
+    sku: optionForm.sku ?? "",
+    description: optionForm.description ?? "",
+    category: optionForm.category ?? "",
+    url: optionForm.url ?? "",
+    quantity: optionForm.quantity ?? 1,
+    unitType: optionForm.unitType ?? "ea",
+    unitCost: optionForm.unitCost != null ? Math.round(optionForm.unitCost * 100) : undefined,
+    markupPercent: optionForm.markupPercent,
+    gstInclusive,
+    visibleToClient: optionForm.visibleToClient ?? true,
+  };
+
+  /**
+   * The dialog's right-hand column. It stays here because a template image is a
+   * data-URL upload whose returned URL is stored as a string inside
+   * templateData — nothing like the project page's multipart write into
+   * option_attachments.
+   */
+  const optionMediaPane = (
+    <>
+        {/* Images */}
+        <div className="space-y-2">
+          <Label>Images</Label>
+          <div className="flex flex-wrap gap-2">
+            {(optionForm.imageUrls || []).map((url, idx) => (
+              <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted flex-shrink-0">
+                <img
+                  src={url}
+                  alt={`Image ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  onClick={() => {
+                    const urls = [...(optionForm.imageUrls || [])];
+                    urls.splice(idx, 1);
+                    setOptionForm({ ...optionForm, imageUrls: urls });
+                  }}
+                >
+                  <X className="h-4 w-4 text-white" />
+                </button>
+                {idx === 0 && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5">
+                    Hero
+                  </div>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              className="w-16 h-16 rounded-md border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-1 hover-elevate cursor-pointer flex-shrink-0 text-muted-foreground"
+              onClick={() => imageUploadRef.current?.click()}
+              disabled={isUploadingImage}
+            >
+              {isUploadingImage ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <Camera className="h-4 w-4" />
+                  <span className="text-[9px]">Add</span>
+                </>
+              )}
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">First image is used as the hero on the card.</p>
+        </div>
+    </>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -815,20 +829,19 @@ export default function SelectionTemplateDetail() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Category</Label>
-                    <Select
-                      value={localMeta.categoryName || "_none"}
-                      onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
-                    >
-                      <SelectTrigger className="h-9 text-sm" data-testid="select-category">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {categoryOptions.map(opt => (
-                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* CreatableFieldSelect, the same control the project page
+                        uses. The hand-rolled Select here read `opt.value` and
+                        `opt.label`; field_options has neither — the columns are
+                        `key` and `name` — so every real option rendered as a
+                        blank row with an undefined value. */}
+                    <CreatableFieldSelect
+                      categoryKey="selection.category"
+                      value={localMeta.categoryName || ""}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v }); setHasMetaChanges(true); }}
+                      placeholder="Select category"
+                      triggerClassName="h-9 text-sm"
+                      data-testid="select-category"
+                    />
                   </div>
                 </div>
 
@@ -847,20 +860,14 @@ export default function SelectionTemplateDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Room / Location</Label>
-                    <Select
-                      value={localMeta.room || "_none"}
-                      onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
-                    >
-                      <SelectTrigger className="h-9 text-sm" data-testid="select-room">
-                        <SelectValue placeholder="Select room" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {roomOptions.map(opt => (
-                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CreatableFieldSelect
+                      categoryKey="selection.room"
+                      value={localMeta.room || ""}
+                      onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v }); setHasMetaChanges(true); }}
+                      placeholder="Select location"
+                      triggerClassName="h-9 text-sm"
+                      data-testid="select-room"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Deadline</Label>
@@ -949,7 +956,16 @@ export default function SelectionTemplateDetail() {
                       </label>
                     ))}
                     {groups.length === 0 && (
-                      <span className="text-xs text-muted-foreground italic">No groups created yet</span>
+                      // Was a flat "No groups created yet", which told you the
+                      // state and not what to do about it.
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => setGroupsDialogOpen(true)}
+                        data-testid="button-create-first-group"
+                      >
+                        No groups yet — create one
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1097,10 +1113,36 @@ export default function SelectionTemplateDetail() {
               </label>
             ))}
             {groups.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No groups created yet. Create groups from the templates list page.
+              <p className="text-xs text-muted-foreground text-center py-3">
+                No groups yet — make one below.
               </p>
             )}
+          </div>
+          <div className="flex items-center gap-2 border-t pt-3">
+            <Input
+              className="h-8 text-sm"
+              placeholder="New group name…"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newGroupName.trim()) {
+                  e.preventDefault();
+                  createGroupMutation.mutate(newGroupName);
+                }
+              }}
+              data-testid="input-new-group"
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={() => newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
+              disabled={!newGroupName.trim() || createGroupMutation.isPending}
+              data-testid="button-create-group"
+            >
+              {createGroupMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Plus className="h-3.5 w-3.5" />}
+            </Button>
           </div>
           <DialogFooter>
             <Button onClick={() => setGroupsDialogOpen(false)}>Done</Button>
@@ -1108,403 +1150,25 @@ export default function SelectionTemplateDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Option Dialog */}
-      <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingOption ? "Edit Option" : "Add Option"}</DialogTitle>
-            <DialogDescription>
-              {editingOption ? "Update this selection option." : "Add a new option for this selection."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Option Name *</Label>
-                <Input
-                  value={optionForm.name || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, name: e.target.value })}
-                  placeholder="e.g., Marble Benchtop"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Brand</Label>
-                <Input
-                  value={optionForm.brand || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, brand: e.target.value })}
-                  placeholder="e.g., Caesarstone"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={optionForm.description || ""}
-                onChange={(e) => setOptionForm({ ...optionForm, description: e.target.value })}
-                rows={2}
-                placeholder="Describe this option..."
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>SKU / Product Code</Label>
-                <Input
-                  value={optionForm.sku || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, sku: e.target.value })}
-                  placeholder="e.g., CS-MARBLE-01"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Input
-                  value={optionForm.category || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, category: e.target.value })}
-                  placeholder="e.g., Benchtops"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>URL / Link</Label>
-                <Input
-                  value={optionForm.url || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, url: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label>Unit Cost ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={optionForm.unitCost || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, unitCost: parseFloat(e.target.value) || undefined })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={optionForm.quantity || 1}
-                  onChange={(e) => setOptionForm({ ...optionForm, quantity: parseInt(e.target.value) || 1 })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Unit Type</Label>
-                <Select
-                  value={optionForm.unitType || "ea"}
-                  onValueChange={(value) => setOptionForm({ ...optionForm, unitType: value })}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ea">Each</SelectItem>
-                    <SelectItem value="m2">m²</SelectItem>
-                    <SelectItem value="lm">Linear Meter</SelectItem>
-                    <SelectItem value="set">Set</SelectItem>
-                    <SelectItem value="pack">Pack</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Markup (%)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={optionForm.markupPercent || ""}
-                  onChange={(e) => setOptionForm({ ...optionForm, markupPercent: parseFloat(e.target.value) || undefined })}
-                />
-              </div>
-            </div>
-
-            {/* Images */}
-            <div className="space-y-2">
-              <Label>Images</Label>
-              <div className="flex flex-wrap gap-2">
-                {(optionForm.imageUrls || []).map((url, idx) => (
-                  <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted flex-shrink-0">
-                    <img
-                      src={url}
-                      alt={`Image ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                    />
-                    <button
-                      type="button"
-                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                      onClick={() => {
-                        const urls = [...(optionForm.imageUrls || [])];
-                        urls.splice(idx, 1);
-                        setOptionForm({ ...optionForm, imageUrls: urls });
-                      }}
-                    >
-                      <X className="h-4 w-4 text-white" />
-                    </button>
-                    {idx === 0 && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5">
-                        Hero
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="w-16 h-16 rounded-md border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-1 hover-elevate cursor-pointer flex-shrink-0 text-muted-foreground"
-                  onClick={() => imageUploadRef.current?.click()}
-                  disabled={isUploadingImage}
-                >
-                  {isUploadingImage ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Camera className="h-4 w-4" />
-                      <span className="text-[9px]">Add</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-[10px] text-muted-foreground">First image is used as the hero on the card.</p>
-            </div>
-
-            <div className="flex items-center gap-6 pt-2">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={gstInclusive}
-                  onCheckedChange={setGstInclusive}
-                />
-                <Label className="text-sm">Price includes GST</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={optionForm.visibleToClient ?? true}
-                  onCheckedChange={(checked) => setOptionForm({ ...optionForm, visibleToClient: checked })}
-                />
-                <Label className="text-sm flex items-center gap-1">
-                  {optionForm.visibleToClient ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                  Visible to client
-                </Label>
-              </div>
-            </div>
-
-            {/* Specifications collapsible */}
-            <div className="border rounded-md overflow-hidden">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                onClick={() => setSpecsOpen(!specsOpen)}
-              >
-                <span className="flex items-center gap-2">
-                  {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  Product Specifications
-                  {optionForm.specifications && Object.keys(optionForm.specifications).filter(k => k !== "custom").some(k => optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "") && (
-                    <Badge variant="secondary" className="h-4 text-[10px]">
-                      {Object.keys(optionForm.specifications).filter(k => k !== "custom" && optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "").length} set
-                    </Badge>
-                  )}
-                </span>
-              </button>
-              {specsOpen && (
-                <div className="p-3 space-y-3 border-t">
-                  <div className="grid grid-cols-3 gap-2">
-                    {["width", "height", "depth"].map((key) => (
-                      <div key={key} className="space-y-1">
-                        <Label className="text-xs capitalize">
-                          {key === "depth" ? "Depth (mm)" : key === "width" ? "Width (mm)" : "Height (mm)"}
-                        </Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          
-                          value={optionForm.specifications?.[key] ?? ""}
-                          onChange={(e) => setOptionForm({
-                            ...optionForm,
-                            specifications: { ...optionForm.specifications, [key]: e.target.value ? parseFloat(e.target.value) : undefined },
-                          })}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Finish</Label>
-                      <Select
-                        value={optionForm.specifications?.finish ?? ""}
-                        onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, finish: v || undefined } })}
-                      >
-                        <SelectTrigger ><SelectValue placeholder="Select finish..." /></SelectTrigger>
-                        <SelectContent>
-                          {FINISH_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Material</Label>
-                      <Select
-                        value={optionForm.specifications?.material ?? ""}
-                        onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, material: v || undefined } })}
-                      >
-                        <SelectTrigger ><SelectValue placeholder="Select material..." /></SelectTrigger>
-                        <SelectContent>
-                          {MATERIAL_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {SPEC_PICKER_GROUPS.flatMap(g => g.fields).map(field => {
-                    const val = optionForm.specifications?.[field.key];
-                    if (val === undefined || val === "") return null;
-                    return (
-                      <div key={field.key} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">{field.label}</Label>
-                          <button
-                            type="button"
-                            className="text-[10px] text-muted-foreground hover:text-destructive"
-                            onClick={() => {
-                              const s = { ...optionForm.specifications };
-                              delete s[field.key];
-                              setOptionForm({ ...optionForm, specifications: s });
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        {field.type === "boolean" ? (
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={!!val}
-                              onCheckedChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: v } })}
-                            />
-                            <Label className="text-xs">{val ? "Yes" : "No"}</Label>
-                          </div>
-                        ) : (
-                          <Input
-                            type={field.type}
-                            
-                            value={val}
-                            onChange={(e) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "number" ? parseFloat(e.target.value) || undefined : e.target.value } })}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {(optionForm.specifications?.custom || []).map((c: { label: string; value: string }, idx: number) => (
-                    <div key={idx} className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Label</Label>
-                        <Input
-                          
-                          value={c.label}
-                          onChange={(e) => {
-                            const custom = [...(optionForm.specifications?.custom || [])];
-                            custom[idx] = { ...custom[idx], label: e.target.value };
-                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Value</Label>
-                          <button
-                            type="button"
-                            className="text-[10px] text-muted-foreground hover:text-destructive"
-                            onClick={() => {
-                              const custom = (optionForm.specifications?.custom || []).filter((_: any, i: number) => i !== idx);
-                              setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        <Input
-                          
-                          value={c.value}
-                          onChange={(e) => {
-                            const custom = [...(optionForm.specifications?.custom || [])];
-                            custom[idx] = { ...custom[idx], value: e.target.value };
-                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                      onClick={() => setSpecPickerOpen(!specPickerOpen)}
-                    >
-                      <Plus className="h-3 w-3" />
-                      Add detail
-                    </button>
-                    {specPickerOpen && (
-                      <div className="mt-2 border rounded-md p-2 space-y-2 bg-muted/20">
-                        {SPEC_PICKER_GROUPS.map(group => (
-                          <div key={group.label}>
-                            <p className="text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">{group.label}</p>
-                            <div className="flex flex-wrap gap-1">
-                              {group.fields.map(field => {
-                                const alreadySet = optionForm.specifications?.[field.key] !== undefined;
-                                return (
-                                  <button
-                                    key={field.key}
-                                    type="button"
-                                    disabled={alreadySet}
-                                    className="text-[10px] px-1.5 py-0.5 border rounded hover-elevate disabled:opacity-40 disabled:cursor-not-allowed"
-                                    onClick={() => {
-                                      setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "boolean" ? false : field.type === "number" ? 0 : "" } });
-                                      setSpecPickerOpen(false);
-                                    }}
-                                  >
-                                    {field.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          className="text-[10px] text-primary hover:underline"
-                          onClick={() => {
-                            const custom = [...(optionForm.specifications?.custom || []), { label: "", value: "" }];
-                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                            setSpecPickerOpen(false);
-                          }}
-                        >
-                          + Custom field
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setOptionDialogOpen(false); setEditingOption(null); }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveOption}
-              disabled={updateMutation.isPending}
-              data-testid="button-save-option"
-            >
-              {updateMutation.isPending ? "Saving..." : editingOption ? "Update Option" : "Add Option"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Add/Edit Option Dialog — the shared one. This page supplies the
+          persistence (rewrite templateData, PATCH the template) and the media
+          column; the form, its validation and the pricing arithmetic live in
+          the component. */}
+      <OptionDialog
+        open={optionDialogOpen}
+        onOpenChange={(o) => { setOptionDialogOpen(o); if (!o) setEditingOption(null); }}
+        mode={editingOption ? "edit" : "create"}
+        nounSingular="Option"
+        isSaving={updateMutation.isPending}
+        // A template has no selection_options.notes, and buildOption in
+        // shared/applyTemplate.ts does not carry notes across, so the field
+        // would take text that vanishes the moment the template is applied.
+        showNotes={false}
+        initialValues={optionDialogValues}
+        initialSpecifications={optionForm.specifications ?? null}
+        onSubmit={handleSaveOption}
+        mediaPane={optionMediaPane}
+      />
 
       {/* Product Library Dialog */}
       <Dialog open={productLibraryOpen} onOpenChange={setProductLibraryOpen}>

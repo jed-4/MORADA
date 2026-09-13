@@ -29,6 +29,7 @@ import {
 } from "@/components/selections/selectionHelpers";
 import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
+import { OptionDialog, type OptionDialogValues } from "@/components/selections/OptionDialog";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -256,16 +257,15 @@ export default function SelectionDetail() {
   const { currentProject } = useProject();
   const { exportPdf, isExporting: isExportingPdf } = useSelectionPdfExport();
   const [isAddingOption, setIsAddingOption] = useState(false);
+  // Seeds a CREATE. Only the URL importer uses it: it opens a fresh dialog
+  // already filled in from the scraped page. Editing seeds from the option
+  // itself, and a plain Add seeds from the dialog's own defaults.
+  const [prefillValues, setPrefillValues] = useState<Partial<OptionDialogValues> | null>(null);
+  const [prefillSpecifications, setPrefillSpecifications] = useState<Record<string, any> | null>(null);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [localNotes, setLocalNotes] = useState<string>("");
   const [notesInitialized, setNotesInitialized] = useState(false);
-  const [optionSpecifications, setOptionSpecifications] = useState<Record<string, any>>({});
-  const [specsOpen, setSpecsOpen] = useState(false);
-  const [notesOpen, setNotesOpen] = useState(false);
-  const [descOpen, setDescOpen] = useState(false);
-  const [specPickerOpen, setSpecPickerOpen] = useState(false);
-  const [detailSpecImageUrlInput, setDetailSpecImageUrlInput] = useState("");
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
   // Allowance linking: a selection can point at a PC/PS estimate line so its
@@ -677,16 +677,12 @@ export default function SelectionDetail() {
     },
   });
 
-  const [gstInclusive, setGstInclusive] = useState<boolean>(false);
   const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
   const pendingImageInputRef = useRef<HTMLInputElement>(null);
   const [pendingDocs, setPendingDocs] = useState<Array<{ file: File }>>([]);
   const pendingDocInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [unitCostDisplayStr, setUnitCostDisplayStr] = useState<string>("");
-  const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
-  const [markupDisplayStr, setMarkupDisplayStr] = useState<string>("");
 
   // Capture ergonomics: product-library picker + paste-a-URL import
   const [productLibraryOpen, setProductLibraryOpen] = useState(false);
@@ -725,20 +721,19 @@ export default function SelectionDetail() {
     onSuccess: (scraped: any) => {
       setUrlImportOpen(false);
       setImportUrl("");
-      // Open a fresh add form pre-filled with everything we could extract
-      handleAddOption();
-      if (scraped?.name) optionForm.setValue("name", scraped.name);
-      if (scraped?.brand) optionForm.setValue("brand", scraped.brand);
-      if (scraped?.sku) optionForm.setValue("sku", scraped.sku);
-      if (scraped?.description) { optionForm.setValue("description", scraped.description); setDescOpen(true); }
-      if (scraped?.url) optionForm.setValue("url", scraped.url);
-      if (scraped?.priceCents) {
-        // AU retail pages list inc-GST prices
-        optionForm.setValue("unitCost", scraped.priceCents);
-        optionForm.setValue("gstInclusive", true);
-        setGstInclusive(true);
-        setUnitCostDisplayStr((scraped.priceCents / 100).toFixed(2));
-      }
+      // Open a fresh add form pre-filled with everything we could extract.
+      // AU retail pages list inc-GST prices, hence gstInclusive.
+      setPrefillValues({
+        name: scraped?.name ?? "",
+        brand: scraped?.brand ?? "",
+        sku: scraped?.sku ?? "",
+        description: scraped?.description ?? "",
+        url: scraped?.url ?? "",
+        ...(scraped?.priceCents ? { unitCost: scraped.priceCents, gstInclusive: true } : {}),
+      });
+      setPrefillSpecifications(null);
+      setIsAddingOption(true);
+      setEditingOption(null);
       setPendingRemoteImages(Array.isArray(scraped?.images) ? scraped.images : []);
       toast({
         title: "Product imported",
@@ -751,75 +746,19 @@ export default function SelectionDetail() {
     },
   });
 
-  const optionForm = useForm<InsertSelectionOption>({
-    resolver: zodResolver(insertSelectionOptionSchema),
-    defaultValues: {
-      selectionId: id || "",
-      name: "",
-      description: "",
-      notes: "",
-      sku: "",
-      brand: "",
-      category: "",
-      subcategory: "",
-      unitCost: undefined,
-      unitTax: undefined,
-      gstInclusive: false,
-      markupPercent: undefined,
-      totalCost: undefined,
-      quantity: 1,
-      unitType: "ea",
-      url: "",
-      visibleToClient: true,
-      isSelectedByClient: false,
-      sortOrder: 0,
-    },
-  });
-
-  const watchedUnitCost = optionForm.watch("unitCost");
-  const watchedQuantity = optionForm.watch("quantity");
-  const watchedMarkupPercent = optionForm.watch("markupPercent");
-
-  useEffect(() => {
-    if (!watchedUnitCost) return;
-    const total = Math.round(watchedUnitCost * (watchedQuantity || 1) * (1 + (watchedMarkupPercent || 0) / 100));
-    optionForm.setValue("totalCost", total, { shouldDirty: true });
-    setTotalCostDisplayStr((total / 100).toFixed(2));
-  }, [watchedUnitCost, watchedQuantity, watchedMarkupPercent]);
-
   const handleDialogChange = (open: boolean) => {
     if (!open) {
       setIsAddingOption(false);
       setEditingOption(null);
-      setGstInclusive(false);
-      setUnitCostDisplayStr("");
-      setTotalCostDisplayStr("");
-      setMarkupDisplayStr("");
+      setPrefillValues(null);
+      setPrefillSpecifications(null);
+      // Staged media is this page's, not the dialog's — the dialog has no way
+      // to know an object URL still needs revoking.
       setPendingDocs([]);
       setPendingRemoteImages([]);
       setPendingImages((prev) => {
         prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
         return [];
-      });
-      optionForm.reset({
-        selectionId: id || "",
-        name: "",
-        description: "",
-        sku: "",
-        brand: "",
-        category: "",
-        subcategory: "",
-        unitCost: undefined,
-        unitTax: undefined,
-        gstInclusive: false,
-        markupPercent: undefined,
-        totalCost: undefined,
-        quantity: 1,
-        unitType: "ea",
-        url: "",
-        visibleToClient: true,
-        isSelectedByClient: false,
-        sortOrder: 0,
       });
     }
   };
@@ -892,13 +831,11 @@ export default function SelectionDetail() {
     }, 600);
   };
 
-  const onOptionSubmit = async (data: InsertSelectionOption) => {
-    const dataWithSpecs = {
-      ...data,
-      specifications: optionSpecifications && Object.keys(optionSpecifications).length > 0
-        ? optionSpecifications
-        : null,
-    };
+  const onOptionSubmit = async (
+    values: OptionDialogValues,
+    specifications: Record<string, any> | null,
+  ) => {
+    const dataWithSpecs = { ...values, specifications } as unknown as InsertSelectionOption;
     if (editingOption) {
       updateOptionMutation.mutate({ optionId: editingOption.id, data: dataWithSpecs as InsertSelectionOption });
     } else {
@@ -963,37 +900,10 @@ export default function SelectionDetail() {
   };
 
   const handleEditOption = (option: SelectionOption) => {
+    // The dialog seeds its own form from initialValues now, so opening it is
+    // the whole job. This used to reset the form and six pieces of display
+    // state that were never page state — they belonged to the dialog.
     setEditingOption(option);
-    setOptionSpecifications((option as any).specifications || {});
-    setSpecsOpen(!!(((option as any).specifications) && Object.keys((option as any).specifications).length > 0));
-    setNotesOpen(!!((option as any).notes));
-    setDescOpen(!!option.description);
-    setGstInclusive(option.gstInclusive || false);
-    setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
-    setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
-    setMarkupDisplayStr(option.markupPercent != null ? option.markupPercent.toString() : "");
-    
-    optionForm.reset({
-      selectionId: option.selectionId,
-      name: option.name,
-      description: option.description || "",
-      notes: (option as any).notes || "",
-      sku: option.sku || "",
-      brand: option.brand || "",
-      category: option.category || "",
-      subcategory: option.subcategory || "",
-      unitCost: option.unitCost || undefined,
-      unitTax: option.unitTax || undefined,
-      gstInclusive: option.gstInclusive || false,
-      markupPercent: option.markupPercent || undefined,
-      totalCost: option.totalCost || undefined,
-      quantity: option.quantity,
-      unitType: option.unitType,
-      url: option.url || "",
-      visibleToClient: option.visibleToClient,
-      isSelectedByClient: option.isSelectedByClient,
-      sortOrder: option.sortOrder,
-    });
   };
 
   const handleViewOption = (option: SelectionOption) => handleEditOption(option);
@@ -1005,77 +915,10 @@ export default function SelectionDetail() {
   };
 
   const handleAddOption = () => {
+    setPrefillValues(null);
+    setPrefillSpecifications(null);
     setIsAddingOption(true);
     setEditingOption(null);
-    setOptionSpecifications({});
-    setSpecsOpen(false);
-    setNotesOpen(false);
-    setDescOpen(false);
-    setGstInclusive(false);
-    setUnitCostDisplayStr("");
-    setTotalCostDisplayStr("");
-    setMarkupDisplayStr("");
-    optionForm.reset({
-      selectionId: id || "",
-      name: "",
-      description: "",
-      notes: "",
-      sku: "",
-      brand: "",
-      category: "",
-      subcategory: "",
-      unitCost: undefined,
-      unitTax: undefined,
-      gstInclusive: false,
-      markupPercent: undefined,
-      totalCost: undefined,
-      quantity: 1,
-      unitType: "ea",
-      url: "",
-      visibleToClient: true,
-      isSelectedByClient: false,
-      sortOrder: 0,
-    });
-  };
-
-  const calculateGst = (unitCost: number | undefined, inclusive: boolean): number => {
-    if (!unitCost || unitCost <= 0) return 0;
-    const gstRate = 0.1;
-    
-    if (inclusive) {
-      return Math.round((unitCost * gstRate) / (1 + gstRate));
-    } else {
-      return Math.round(unitCost * gstRate);
-    }
-  };
-
-  const handleGstChange = (inclusive: boolean) => {
-    setGstInclusive(inclusive);
-    optionForm.setValue("gstInclusive", inclusive);
-    const currentUnitCost = optionForm.getValues("unitCost");
-    if (currentUnitCost) {
-      const newTax = calculateGst(currentUnitCost, inclusive);
-      optionForm.setValue("unitTax", newTax);
-    }
-  };
-
-  const recalculateTotalCost = (unitCostCents?: number, qty?: number, markupPct?: number) => {
-    const cost = unitCostCents ?? optionForm.getValues("unitCost") ?? 0;
-    const quantity = qty ?? optionForm.getValues("quantity") ?? 1;
-    const markup = markupPct ?? optionForm.getValues("markupPercent") ?? 0;
-    if (!cost) return;
-    const total = Math.round(cost * quantity * (1 + markup / 100));
-    optionForm.setValue("totalCost", total);
-    setTotalCostDisplayStr((total / 100).toFixed(2));
-  };
-
-  const handleUnitCostChange = (value: number | undefined) => {
-    if (value && gstInclusive) {
-      const newTax = calculateGst(value, gstInclusive);
-      optionForm.setValue("unitTax", newTax);
-    } else if (!gstInclusive) {
-      optionForm.setValue("unitTax", value ? calculateGst(value, false) : undefined);
-    }
   };
 
   // Once a decision exists, the chosen/approved option leads — the rest are
@@ -1224,6 +1067,237 @@ export default function SelectionDetail() {
   const linkedAllowanceName = selection.estimateItemId
     ? (projectAllowances.find((a: any) => a.id === selection.estimateItemId)?.name ?? "Linked allowance")
     : null;
+
+  /**
+   * The dialog's right-hand column. It stays on this page because how an image
+   * is stored is the one thing the two hosts genuinely do not share: here an
+   * image is a multipart upload into option_attachments, and on a CREATE it has
+   * to be staged until the option has an id to hang off.
+   */
+  const optionMediaPane = (
+    <>
+              {/* Images (drop zone: drag files from Finder/browser or paste) */}
+              <div
+                className="space-y-2"
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+                  if (files.length > 0) {
+                    e.preventDefault();
+                    stageOrUploadImageFiles(files);
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Images</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={uploadingImage}
+                    onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
+                  >
+                    {uploadingImage ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <Upload className="w-3 h-3 mr-1" />
+                    )}
+                    Add image
+                  </Button>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleImageUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <input
+                    ref={pendingImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setPendingImages((prev) => [
+                          ...prev,
+                          { file, previewUrl: URL.createObjectURL(file) },
+                        ]);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                {editingOption ? (() => {
+                  const imageAtts = (editingOptionAttachments || []).filter(a => a.fileType === "image");
+                  return imageAtts.length > 0 ? (
+                    <SortableImageGrid
+                      attachments={imageAtts}
+                      selectionId={id ?? ""}
+                      onReorder={(newOrder) => {
+                        newOrder.forEach((att, idx) => {
+                          apiRequest(`/api/selection-option-attachments/${att.id}`, "PATCH", { sortOrder: idx });
+                        });
+                        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+                      }}
+                      onDelete={(attId) => deleteAttachmentMutation.mutate(attId)}
+                    />
+                  ) : (
+                    <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
+                      <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                      No images yet
+                    </div>
+                  );
+                })() : (pendingImages.length > 0 || pendingRemoteImages.length > 0) ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {pendingRemoteImages.map((src, idx) => (
+                      <div key={`remote-${idx}`} className="relative aspect-square rounded-md overflow-hidden border border-border">
+                        <img src={src} alt="Imported product image" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPendingRemoteImages((prev) => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {pendingImages.map((p, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-md overflow-hidden border border-border">
+                        <img src={p.previewUrl} alt={p.file.name} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            URL.revokeObjectURL(p.previewUrl);
+                            setPendingImages((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
+                    <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                    No images yet — add, paste, or drag them here; they'll be uploaded when you save
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Documents & Attachments */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Documents & Specs</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={uploadingDoc}
+                    onClick={() => editingOption ? docInputRef.current?.click() : pendingDocInputRef.current?.click()}
+                  >
+                    {uploadingDoc ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <Upload className="w-3 h-3 mr-1" />
+                    )}
+                    Add file
+                  </Button>
+                  <input
+                    ref={docInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleDocUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <input
+                    ref={pendingDocInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setPendingDocs((prev) => [...prev, { file }]);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                {editingOption ? (() => {
+                  const docAtts = (editingOptionAttachments || []).filter(a => a.fileType !== "image");
+                  return docAtts.length > 0 ? (
+                    <div className="space-y-1">
+                      {docAtts.map((att) => (
+                        <div key={att.id} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <a
+                            href={att.filePath}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 text-sm truncate hover:underline text-primary"
+                          >
+                            {att.fileName}
+                          </a>
+                          {att.fileSize && (
+                            <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(att.fileSize)}</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteAttachmentMutation.mutate(att.id)}
+                            className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
+                      <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                      No files attached
+                    </div>
+                  );
+                })() : pendingDocs.length > 0 ? (
+                  <div className="space-y-1">
+                    {pendingDocs.map((p, idx) => (
+                      <div key={idx} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
+                        <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        <span className="flex-1 text-sm truncate">{p.file.name}</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(p.file.size)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDocs((prev) => prev.filter((_, i) => i !== idx))}
+                          className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
+                    <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                    No files attached — they'll be uploaded when you save
+                  </div>
+                )}
+              </div>
+    </>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -2234,841 +2308,41 @@ export default function SelectionDetail() {
         </div>
       </div>
 
-      {/* Add/Edit Option Dialog */}
-      <Dialog 
-        open={isAddingOption || !!editingOption} 
+      {/* Add/Edit Option Dialog — the shared one. This page supplies the
+          persistence (rows + multipart uploads into option_attachments) and the
+          media column; everything else, including the form and its validation,
+          lives in the component. */}
+      <OptionDialog
+        open={isAddingOption || !!editingOption}
         onOpenChange={handleDialogChange}
-      >
-        <DialogContent
-          className="sm:max-w-[960px] max-h-[95vh] flex flex-col"
-          onPaste={(e) => {
-            const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
-            if (files.length > 0) {
-              e.preventDefault();
-              stageOrUploadImageFiles(files);
-            }
-          }}
-        >
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>
-              {editingOption ? "Edit Product" : "Add Product"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingOption 
-                ? "Update the product details below."
-                : "Add a new product for clients to choose from."
-              }
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto">
-            <Form {...optionForm}>
-              <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="pr-2">
-                <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-x-6">
-                {/* Fields pane — identity and price above the fold */}
-                <div className="space-y-4 min-w-0">
-
-                {/* Row 1: Name (full width) */}
-                <FormField
-                  control={optionForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Option Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-9"
-                          placeholder="e.g., Subway Tile White"
-                          {...field}
-                          data-testid="input-option-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Row 2: Brand | SKU */}
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={optionForm.control}
-                    name="brand"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Brand</FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-9"
-                            placeholder="e.g., Concept Tile"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-option-brand"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={optionForm.control}
-                    name="sku"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>SKU</FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-9"
-                            placeholder="Product code"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-option-sku"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Key details — the facts trades and clients scan for (stored in
-                    specifications; colour/finish/dims promoted per site-team request) */}
-                <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Key details</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Colour</Label>
-                      <Input placeholder="e.g. Matte White"
-                        value={optionSpecifications.colour ?? ""}
-                        onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, colour: e.target.value || undefined }))}
-                        data-testid="input-key-colour" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Finish</Label>
-                      <Input placeholder="e.g. Brushed Nickel"
-                        value={optionSpecifications.finish ?? ""}
-                        onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, finish: e.target.value || undefined }))}
-                        data-testid="input-key-finish" />
-                    </div>
-                    {([
-                      ["length", "Length (mm)"],
-                      ["width", "Width (mm)"],
-                      ["height", "Height (mm)"],
-                      ["depth", "Depth (mm)"],
-                    ] as const).map(([key, label]) => (
-                      <div key={key} className="space-y-1">
-                        <Label className="text-xs">{label}</Label>
-                        <Input type="number" min="0" 
-                          value={optionSpecifications[key] ?? ""}
-                          onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, [key]: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                          data-testid={`input-key-${key}`} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Pricing section: Qty | Unit Type | Unit Cost */}
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={optionForm.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Qty</FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-9"
-                            type="number"
-                            min="1"
-                            {...field}
-                            onChange={(e) => {
-                              field.onChange(parseInt(e.target.value) || 1);
-                            }}
-                            data-testid="input-option-quantity"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={optionForm.control}
-                    name="unitType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Unit Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || "ea"}>
-                          <FormControl>
-                            <SelectTrigger className="h-9" data-testid="select-option-unit-type">
-                              <SelectValue placeholder="Select unit" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="ea">ea</SelectItem>
-                            <SelectItem value="m2">m²</SelectItem>
-                            <SelectItem value="lm">lm</SelectItem>
-                            <SelectItem value="m3">m³</SelectItem>
-                            <SelectItem value="hr">hr</SelectItem>
-                            <SelectItem value="day">day</SelectItem>
-                            <SelectItem value="wk">wk</SelectItem>
-                            <SelectItem value="lot">lot</SelectItem>
-                            <SelectItem value="allow">allow</SelectItem>
-                            <SelectItem value="t">t</SelectItem>
-                            <SelectItem value="kg">kg</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={optionForm.control}
-                    name="unitCost"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-primary font-semibold">Unit Cost</FormLabel>
-                        <FormControl>
-                          <div className="flex rounded-md border border-primary/40 bg-primary/5 overflow-hidden focus-within:ring-1 focus-within:ring-primary/50">
-                            <span className="flex items-center px-3 text-muted-foreground text-sm font-medium border-r border-primary/20 bg-primary/5 select-none">$</span>
-                            <Input
-                              type="number"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              className="border-0 rounded-none bg-transparent text-right font-medium shadow-none focus-visible:ring-0 h-9"
-                              value={unitCostDisplayStr}
-                              onChange={(e) => {
-                                setUnitCostDisplayStr(e.target.value);
-                                const centValue = e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined;
-                                field.onChange(centValue);
-                                handleUnitCostChange(centValue);
-                              }}
-                              data-testid="input-option-unit-cost"
-                            />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* GST toggle + Markup + Total */}
-                <div className="space-y-4">
-                  {/* GST pill toggle */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground font-medium">GST treatment</span>
-                    <div className="flex rounded-md border border-border overflow-hidden text-xs">
-                      <button
-                        type="button"
-                        onClick={() => handleGstChange(false)}
-                        className={cn(
-                          "px-3 py-1.5 font-medium transition-colors",
-                          !gstInclusive ? "bg-foreground text-background" : "text-muted-foreground hover-elevate"
-                        )}
-                        data-testid="button-gst-ex"
-                      >
-                        Ex. GST
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleGstChange(true)}
-                        className={cn(
-                          "px-3 py-1.5 font-medium transition-colors border-l border-border",
-                          gstInclusive ? "bg-foreground text-background" : "text-muted-foreground hover-elevate"
-                        )}
-                        data-testid="button-gst-inc"
-                      >
-                        Inc. GST
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Markup % */}
-                  <FormField
-                    control={optionForm.control}
-                    name="markupPercent"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Markup %</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              min="0"
-                              className="pr-8 h-9"
-                              value={markupDisplayStr}
-                              onChange={(e) => {
-                                setMarkupDisplayStr(e.target.value);
-                                field.onChange(e.target.value !== "" ? parseInt(e.target.value) : undefined);
-                              }}
-                              data-testid="input-option-markup"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Total display card */}
-                  <FormField
-                    control={optionForm.control}
-                    name="totalCost"
-                    render={({ field }) => {
-                      const totalCents = watchedUnitCost
-                        ? Math.round(watchedUnitCost * (watchedQuantity || 1) * (1 + (watchedMarkupPercent || 0) / 100))
-                        : null;
-                      const totalIncGst = totalCents !== null
-                        ? (gstInclusive ? totalCents : Math.round(totalCents * 1.1))
-                        : null;
-                      const totalExGst = totalCents !== null
-                        ? (gstInclusive ? Math.round(totalCents / 1.1) : totalCents)
-                        : null;
-                      return (
-                        <FormItem>
-                          <input type="hidden" {...field} value={field.value ?? ""} />
-                          <div
-                            className="rounded-md bg-muted/50 border border-border px-4 py-3 space-y-1"
-                            data-testid="display-option-total-cost"
-                          >
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground uppercase tracking-wide">Total ex. GST</span>
-                              <span className="text-sm text-muted-foreground tabular-nums">
-                                {totalExGst !== null ? `$${(totalExGst / 100).toFixed(2)}` : "—"}
-                              </span>
-                            </div>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total inc. GST</span>
-                              <span className="text-lg font-semibold tabular-nums">
-                                {totalIncGst !== null ? `$${(totalIncGst / 100).toFixed(2)}` : "—"}
-                              </span>
-                            </div>
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      );
-                    }}
-                  />
-                </div>
-
-                <Separator />
-
-                {/* URL */}
-                <FormField
-                  control={optionForm.control}
-                  name="url"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Product URL</FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-9"
-                          type="url"
-                          placeholder="https://..."
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-option-url"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Visible to Client */}
-                <FormField
-                  control={optionForm.control}
-                  name="visibleToClient"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-md border p-3">
-                      <div>
-                        <FormLabel className="text-sm font-medium">Visible to client</FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">Show this option in the client portal</p>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={!!field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="switch-option-visible"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                {/* Description — collapsible; the why, below the facts */}
-                <FormField
-                  control={optionForm.control}
-                  name="description"
-                  render={({ field }) => (
-                    <div className="border rounded-md overflow-hidden">
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                        onClick={() => setDescOpen((o) => !o)}
-                      >
-                        <span className="flex items-center gap-2">
-                          {descOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          Description
-                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary" />}
-                        </span>
-                      </button>
-                      {descOpen && (
-                        <div className="p-3 border-t">
-                          <FormControl>
-                            <Textarea
-                              placeholder="Describe this option..."
-                              rows={3}
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-option-description"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                />
-
-                {/* Specifications */}
-                {(() => {
-                  const FINISH_OPTS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
-                  const MATERIAL_OPTS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
-                  const EXTRA_FIELDS = [
-                    { key: "diameter", label: "Diameter (mm)", type: "number" },
-                    { key: "weight", label: "Weight (kg)", type: "number" },
-                    { key: "colour", label: "Colour", type: "text" },
-                    { key: "colourCode", label: "Colour code", type: "text" },
-                    { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
-                    { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
-                    { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
-                    { key: "mountingType", label: "Mounting type", type: "text" },
-                    { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
-                    { key: "thickness", label: "Thickness (mm)", type: "number" },
-                    { key: "slipRatingP", label: "Slip rating — Wet", type: "text" },
-                    { key: "slipRatingR", label: "Slip rating — Oil", type: "text" },
-                    { key: "wattage", label: "Wattage (W)", type: "number" },
-                    { key: "lumens", label: "Lumens (lm)", type: "number" },
-                    { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
-                    { key: "ipRating", label: "IP rating", type: "text" },
-                    { key: "dimmable", label: "Dimmable", type: "boolean" },
-                    { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
-                    { key: "warranty", label: "Warranty (years)", type: "number" },
-                    { key: "leadTime", label: "Lead time (weeks)", type: "number" },
-                    { key: "fireRating", label: "Fire rating", type: "text" },
-                  ];
-                  const setSpec = (key: string, value: any) => setOptionSpecifications(s => ({ ...s, [key]: value }));
-                  const removeSpec = (key: string) => setOptionSpecifications(s => { const n = { ...s }; delete n[key]; return n; });
-                  const activeCount = Object.keys(optionSpecifications).filter(k => k !== 'custom' && optionSpecifications[k] !== undefined && optionSpecifications[k] !== "").length;
-                  return (
-                    <div className="border rounded-md overflow-hidden">
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                        onClick={() => setSpecsOpen(o => !o)}
-                      >
-                        <span className="flex items-center gap-2">
-                          {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          Product Specifications
-                          {activeCount > 0 && (
-                            <Badge variant="secondary" className="h-4 text-[10px]">{activeCount} set</Badge>
-                          )}
-                        </span>
-                      </button>
-                      {specsOpen && (
-                        <div className="p-3 space-y-3 border-t">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Material</Label>
-                            <Select value={optionSpecifications.material ?? ""} onValueChange={v => setSpec("material", v || undefined)}>
-                              <SelectTrigger ><SelectValue placeholder="Select..." /></SelectTrigger>
-                              <SelectContent>{MATERIAL_OPTS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          {EXTRA_FIELDS.filter(f => {
-                            const v = optionSpecifications[f.key];
-                            return v !== undefined && v !== "" && v !== null;
-                          }).map(f => (
-                            <div key={f.key} className="flex items-center gap-2">
-                              <Label className="text-xs w-40 shrink-0">{f.label}</Label>
-                              {f.type === "boolean" ? (
-                                <Switch checked={!!optionSpecifications[f.key]} onCheckedChange={checked => setSpec(f.key, checked)} />
-                              ) : (
-                                <div className="flex-1 flex items-center gap-1">
-                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="flex-1"
-                                    value={optionSpecifications[f.key] ?? ""}
-                                    onChange={e => setSpec(f.key, f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined)} />
-                                  <button type="button" className="p-1 text-muted-foreground hover:text-foreground" onClick={() => removeSpec(f.key)}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          {((optionSpecifications.custom || []) as { label: string; value: string }[]).map((c, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <Input className="w-28 shrink-0" placeholder="Label" value={c.label}
-                                onChange={e => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom[idx] = { ...custom[idx], label: e.target.value };
-                                  setSpec("custom", custom);
-                                }} />
-                              <Input className="flex-1" placeholder="Value" value={c.value}
-                                onChange={e => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom[idx] = { ...custom[idx], value: e.target.value };
-                                  setSpec("custom", custom);
-                                }} />
-                              <button type="button" className="p-1 text-muted-foreground hover:text-foreground shrink-0"
-                                onClick={() => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom.splice(idx, 1);
-                                  setSpec("custom", custom);
-                                }}>
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="relative">
-                            <button type="button"
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-md px-2 py-1"
-                              onClick={() => setSpecPickerOpen(o => !o)}>
-                              <Plus className="h-3 w-3" />
-                              Add detail
-                            </button>
-                            {specPickerOpen && (
-                              <div className="absolute bottom-full mb-1 left-0 z-50 bg-popover border rounded-md shadow-md p-2 min-w-52 max-h-64 overflow-y-auto">
-                                {EXTRA_FIELDS.filter(f => {
-                                  const v = optionSpecifications[f.key];
-                                  return v === undefined || v === "" || v === null;
-                                }).map(f => (
-                                  <button key={f.key} type="button"
-                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent"
-                                    onClick={() => {
-                                      setSpec(f.key, f.type === "boolean" ? false : f.type === "number" ? undefined : "");
-                                      setSpecPickerOpen(false);
-                                    }}>
-                                    {f.label}
-                                  </button>
-                                ))}
-                                <div className="border-t pt-1 mt-1">
-                                  <button type="button"
-                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent text-muted-foreground"
-                                    onClick={() => {
-                                      const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[]), { label: "", value: "" }];
-                                      setSpec("custom", custom);
-                                      setSpecPickerOpen(false);
-                                    }}>
-                                    + Custom field
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Notes to trades — collapsible */}
-                <FormField
-                  control={optionForm.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <div className="border rounded-md overflow-hidden">
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                        onClick={() => setNotesOpen(o => !o)}
-                      >
-                        <span className="flex items-center gap-2">
-                          {notesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          Notes to trades
-                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />}
-                        </span>
-                      </button>
-                      {notesOpen && (
-                        <div className="p-3 space-y-2 border-t">
-                          <FormControl>
-                            <Textarea
-                              placeholder="Instructions, warnings, or notes for your trades team…"
-                              rows={3}
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-option-notes"
-                            />
-                          </FormControl>
-                          {field.value && (
-                            <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
-                              Visible to your internal team only — not the client.
-                            </p>
-                          )}
-                          <FormMessage />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                />
-
-                </div>
-
-                {/* Media pane — images and documents */}
-                <div className="space-y-4 mt-6 md:mt-0">
-                {/* Images (drop zone: drag files from Finder/browser or paste) */}
-                <div
-                  className="space-y-2"
-                  onDragOver={(e) => {
-                    if (e.dataTransfer.types.includes("Files")) e.preventDefault();
-                  }}
-                  onDrop={(e) => {
-                    const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
-                    if (files.length > 0) {
-                      e.preventDefault();
-                      stageOrUploadImageFiles(files);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Images</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={uploadingImage}
-                      onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
-                    >
-                      {uploadingImage ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      ) : (
-                        <Upload className="w-3 h-3 mr-1" />
-                      )}
-                      Add image
-                    </Button>
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImageUpload(file);
-                        e.target.value = "";
-                      }}
-                    />
-                    <input
-                      ref={pendingImageInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setPendingImages((prev) => [
-                            ...prev,
-                            { file, previewUrl: URL.createObjectURL(file) },
-                          ]);
-                        }
-                        e.target.value = "";
-                      }}
-                    />
-                  </div>
-
-                  {editingOption ? (() => {
-                    const imageAtts = (editingOptionAttachments || []).filter(a => a.fileType === "image");
-                    return imageAtts.length > 0 ? (
-                      <SortableImageGrid
-                        attachments={imageAtts}
-                        selectionId={id ?? ""}
-                        onReorder={(newOrder) => {
-                          newOrder.forEach((att, idx) => {
-                            apiRequest(`/api/selection-option-attachments/${att.id}`, "PATCH", { sortOrder: idx });
-                          });
-                          queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-                        }}
-                        onDelete={(attId) => deleteAttachmentMutation.mutate(attId)}
-                      />
-                    ) : (
-                      <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
-                        <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                        No images yet
-                      </div>
-                    );
-                  })() : (pendingImages.length > 0 || pendingRemoteImages.length > 0) ? (
-                    <div className="grid grid-cols-3 gap-2">
-                      {pendingRemoteImages.map((src, idx) => (
-                        <div key={`remote-${idx}`} className="relative aspect-square rounded-md overflow-hidden border border-border">
-                          <img src={src} alt="Imported product image" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setPendingRemoteImages((prev) => prev.filter((_, i) => i !== idx))}
-                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                      {pendingImages.map((p, idx) => (
-                        <div key={idx} className="relative aspect-square rounded-md overflow-hidden border border-border">
-                          <img src={p.previewUrl} alt={p.file.name} className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              URL.revokeObjectURL(p.previewUrl);
-                              setPendingImages((prev) => prev.filter((_, i) => i !== idx));
-                            }}
-                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
-                      <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                      No images yet — add, paste, or drag them here; they'll be uploaded when you save
-                    </div>
-                  )}
-                </div>
-
-                <Separator />
-
-                {/* Documents & Attachments */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Documents & Specs</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={uploadingDoc}
-                      onClick={() => editingOption ? docInputRef.current?.click() : pendingDocInputRef.current?.click()}
-                    >
-                      {uploadingDoc ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      ) : (
-                        <Upload className="w-3 h-3 mr-1" />
-                      )}
-                      Add file
-                    </Button>
-                    <input
-                      ref={docInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleDocUpload(file);
-                        e.target.value = "";
-                      }}
-                    />
-                    <input
-                      ref={pendingDocInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setPendingDocs((prev) => [...prev, { file }]);
-                        e.target.value = "";
-                      }}
-                    />
-                  </div>
-
-                  {editingOption ? (() => {
-                    const docAtts = (editingOptionAttachments || []).filter(a => a.fileType !== "image");
-                    return docAtts.length > 0 ? (
-                      <div className="space-y-1">
-                        {docAtts.map((att) => (
-                          <div key={att.id} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
-                            <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                            <a
-                              href={att.filePath}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex-1 text-sm truncate hover:underline text-primary"
-                            >
-                              {att.fileName}
-                            </a>
-                            {att.fileSize && (
-                              <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(att.fileSize)}</span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => deleteAttachmentMutation.mutate(att.id)}
-                              className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
-                        <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                        No files attached
-                      </div>
-                    );
-                  })() : pendingDocs.length > 0 ? (
-                    <div className="space-y-1">
-                      {pendingDocs.map((p, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
-                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                          <span className="flex-1 text-sm truncate">{p.file.name}</span>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(p.file.size)}</span>
-                          <button
-                            type="button"
-                            onClick={() => setPendingDocs((prev) => prev.filter((_, i) => i !== idx))}
-                            className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
-                      <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                      No files attached — they'll be uploaded when you save
-                    </div>
-                  )}
-                </div>
-                </div>
-                </div>
-
-                <div className="sticky bottom-0 bg-background flex items-center justify-end space-x-3 py-3 mt-6 border-t">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => handleDialogChange(false)}
-                    data-testid="button-cancel-option"
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    type="submit"
-                    disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
-                    data-testid="button-save-option"
-                  >
-                    {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    )}
-                    {editingOption ? "Update Product" : "Add Product"}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </div>
-        </DialogContent>
-      </Dialog>
+        mode={editingOption ? "edit" : "create"}
+        nounSingular="Product"
+        isSaving={createOptionMutation.isPending || updateOptionMutation.isPending}
+        initialValues={editingOption ? {
+          name: editingOption.name,
+          brand: editingOption.brand,
+          sku: editingOption.sku,
+          description: editingOption.description,
+          notes: editingOption.notes,
+          category: editingOption.category,
+          subcategory: editingOption.subcategory,
+          url: editingOption.url,
+          quantity: editingOption.quantity,
+          unitType: editingOption.unitType,
+          unitCost: editingOption.unitCost,
+          unitTax: editingOption.unitTax,
+          totalCost: editingOption.totalCost,
+          markupPercent: editingOption.markupPercent,
+          gstInclusive: editingOption.gstInclusive,
+          visibleToClient: editingOption.visibleToClient,
+        } : prefillValues}
+        initialSpecifications={editingOption
+          ? (editingOption.specifications as Record<string, any> | null)
+          : prefillSpecifications}
+        onPaste={(files) => stageOrUploadImageFiles(files)}
+        onSubmit={onOptionSubmit}
+        mediaPane={optionMediaPane}
+      />
 
       {/* Product Library Picker */}
       <Dialog open={productLibraryOpen} onOpenChange={setProductLibraryOpen}>
