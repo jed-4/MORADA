@@ -149,6 +149,8 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
     try {
       await saveFocalPoint("option_attachments", att.id, x, y);
       queryClient.invalidateQueries({ queryKey: ["/api/selections", selectionId] });
+      // The list renders this attachment as the row thumbnail.
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
       toast({ title: "Focal point saved" });
       setFocalOpen(false);
     } catch {
@@ -365,13 +367,21 @@ export default function SelectionDetail() {
     return () => subscription.unsubscribe();
   }, [selectionForm.watch]);
 
+  // Every write on this page has to refresh two caches: this selection, and the
+  // project Selections list, which is keyed on /api/selections/with-options.
+  // staleTime is Infinity, so a list left out of the invalidation goes on
+  // serving the row exactly as it looked before the edit until a full reload.
+  const invalidateSelection = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+  };
+
   const updateSelectionMutation = useMutation({
     mutationFn: async (data: Partial<InsertSelection>) => {
       return await apiRequest(`/api/selections/${id}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", effectiveProjectId] });
+      invalidateSelection();
       setHasUnsavedChanges(false);
       toast({
         title: "Selection updated",
@@ -451,7 +461,7 @@ export default function SelectionDetail() {
         message: sendMessage.trim() || undefined,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      invalidateSelection();
       setSendDialogOpen(false);
       setSendMessage("");
       toast({ title: "Sent to client", description: `Portal link emailed to ${sendTo.trim()}.` });
@@ -476,7 +486,7 @@ export default function SelectionDetail() {
       return await apiRequest(`/api/selections/${id}/options`, "POST", option);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      invalidateSelection();
       setIsAddingOption(false);
       toast({
         title: "Option added",
@@ -497,7 +507,7 @@ export default function SelectionDetail() {
       return await apiRequest(`/api/selection-options/${optionId}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      invalidateSelection();
       setEditingOption(null);
       toast({
         title: "Option updated",
@@ -519,7 +529,7 @@ export default function SelectionDetail() {
       await apiRequest(`/api/selection-options/${optionId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      invalidateSelection();
       toast({
         title: "Option deleted",
         description: "The selection option has been deleted successfully.",
@@ -539,8 +549,7 @@ export default function SelectionDetail() {
       return await apiRequest(`/api/selection-options/${optionId}/approve`, "PATCH");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      invalidateSelection();
       toast({ title: "Option approved", description: "The option has been approved and locked." });
     },
     onError: (err: any) => {
@@ -553,8 +562,7 @@ export default function SelectionDetail() {
       return await apiRequest(`/api/selection-options/${optionId}/unapprove`, "PATCH");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      invalidateSelection();
       toast({ title: "Approval removed", description: "The option has been unlocked." });
     },
     onError: (err: any) => {
@@ -623,7 +631,7 @@ export default function SelectionDetail() {
           fileSize: file.size,
         });
         refetchAttachments();
-        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+        invalidateSelection();
       } catch {
         toast({ title: "Upload failed", variant: "destructive" });
       } finally {
@@ -653,7 +661,7 @@ export default function SelectionDetail() {
           fileSize: file.size,
         });
         refetchAttachments();
-        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+        invalidateSelection();
       } catch {
         toast({ title: "Upload failed", variant: "destructive" });
       } finally {
@@ -668,8 +676,7 @@ export default function SelectionDetail() {
       return await apiRequest(`/api/selections/${id}/mark-received`, "PATCH");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      invalidateSelection();
       toast({ title: "Marked as received", description: "This selection has been marked as received." });
     },
     onError: (err: any) => {
@@ -701,8 +708,7 @@ export default function SelectionDetail() {
     mutationFn: async (productId: number) =>
       await apiRequest(`/api/selections/${id}/options/from-product`, "POST", { productId }),
     onSuccess: (newOption: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      invalidateSelection();
       setProductLibraryOpen(false);
       toast({
         title: "Added from library",
@@ -826,7 +832,7 @@ export default function SelectionDetail() {
     if (noteSaveRef.current) clearTimeout(noteSaveRef.current);
     noteSaveRef.current = setTimeout(() => {
       apiRequest(`/api/selections/${id}`, "PATCH", { notes: value }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+        invalidateSelection();
       });
     }, 600);
   };
@@ -850,7 +856,7 @@ export default function SelectionDetail() {
             for (const { file } of pendingImages) {
               await uploadImageToOption(newOption.id, file);
             }
-            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+            invalidateSelection();
           } finally {
             setUploadingImage(false);
           }
@@ -869,7 +875,7 @@ export default function SelectionDetail() {
                 description: `${result.failed.length} image${result.failed.length === 1 ? "" : "s"} failed to download.`,
               });
             }
-            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+            invalidateSelection();
           } catch {
             toast({ title: "Image import failed", description: "The product was saved without its images.", variant: "destructive" });
           } finally {
@@ -882,7 +888,7 @@ export default function SelectionDetail() {
             for (const { file } of pendingDocs) {
               await uploadDocumentToOption(newOption.id, file);
             }
-            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+            invalidateSelection();
           } finally {
             setUploadingDoc(false);
           }
