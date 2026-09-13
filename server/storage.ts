@@ -1316,6 +1316,12 @@ export interface IStorage {
   deleteRfqTemplate(id: string, companyId: string): Promise<boolean>;
 
   // RFI Templates CRUD
+  // Proposal templates — a saved proposal document, company-scoped.
+  getProposalTemplates(companyId: string): Promise<schema.ProposalTemplate[]>;
+  getProposalTemplate(id: string, companyId: string): Promise<schema.ProposalTemplate | undefined>;
+  createProposalTemplate(template: schema.InsertProposalTemplate & { companyId: string }): Promise<schema.ProposalTemplate>;
+  updateProposalTemplate(id: string, template: Partial<schema.InsertProposalTemplate>, companyId: string): Promise<schema.ProposalTemplate | undefined>;
+  deleteProposalTemplate(id: string, companyId: string): Promise<boolean>;
   getRfiTemplates(companyId: string, category?: string): Promise<RfiTemplate[]>;
   getRfiTemplate(id: string, companyId: string): Promise<RfiTemplate | undefined>;
   createRfiTemplate(template: InsertRfiTemplate & { companyId: string }): Promise<RfiTemplate>;
@@ -23224,6 +23230,91 @@ export class DbStorage implements IStorage {
   }
 
   // RFI Templates CRUD
+  /*
+   * Proposal templates.
+   *
+   * Every method takes companyId and every query filters on it — a template
+   * carries a company's whole proposal document, so a leak here would hand a
+   * builder someone else's scope, terms and payment structure.
+   */
+  async getProposalTemplates(companyId: string): Promise<schema.ProposalTemplate[]> {
+    try {
+      return await db.select()
+        .from(schema.proposalTemplates)
+        .where(and(
+          eq(schema.proposalTemplates.companyId, companyId),
+          eq(schema.proposalTemplates.isActive, true),
+        ))
+        .orderBy(schema.proposalTemplates.name);
+    } catch (error) {
+      console.error("Database error in getProposalTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getProposalTemplate(id: string, companyId: string): Promise<schema.ProposalTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.proposalTemplates)
+        .where(and(
+          eq(schema.proposalTemplates.id, id),
+          eq(schema.proposalTemplates.companyId, companyId),
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getProposalTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createProposalTemplate(
+    template: schema.InsertProposalTemplate & { companyId: string },
+  ): Promise<schema.ProposalTemplate> {
+    try {
+      const result = await db.insert(schema.proposalTemplates).values(template).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createProposalTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateProposalTemplate(
+    id: string,
+    template: Partial<schema.InsertProposalTemplate>,
+    companyId: string,
+  ): Promise<schema.ProposalTemplate | undefined> {
+    try {
+      const result = await db.update(schema.proposalTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.proposalTemplates.id, id),
+          eq(schema.proposalTemplates.companyId, companyId),
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateProposalTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteProposalTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.proposalTemplates)
+        .where(and(
+          eq(schema.proposalTemplates.id, id),
+          eq(schema.proposalTemplates.companyId, companyId),
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteProposalTemplate:", error);
+      throw error;
+    }
+  }
+
   async getRfiTemplates(companyId: string, category?: string): Promise<RfiTemplate[]> {
     try {
       const conditions = [

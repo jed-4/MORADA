@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils';
 import { revisionLabel } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
+import type { ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
 import { buildProposalPlaceholderContext } from '@/components/proposals/pdf/proposalContext';
@@ -116,9 +117,11 @@ interface SortableSectionItemProps {
   printsNothing?: boolean;
   /** The company-wide masthead setting, which still picks the default cover. */
   documentStyle?: 'style1' | 'style2';
+  /** False in a template, which has no proposal to hang milestones from. */
+  canMilestones?: boolean;
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing, documentStyle }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client, hasPaymentSchedule, canJoinPrevious, previousSectionName, joinsPrevious, printsNothing, documentStyle, canMilestones = true }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -486,7 +489,20 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             )}
 
             {section.sectionType === "payment_schedule" && (
-              <PaymentScheduleEditor proposalId={section.proposalId} />
+              canMilestones ? (
+                <PaymentScheduleEditor proposalId={section.proposalId} />
+              ) : (
+                /* Milestones are rows against a real proposal and a real
+                   contract price, neither of which a template has. The
+                   SECTION still belongs in the template — where it sits in
+                   the document is part of the structure being designed — so
+                   the section stays and only its figures are deferred. */
+                <p className="text-xs text-muted-foreground">
+                  The schedule itself is set on each proposal, where there is a
+                  contract price to divide. This section reserves its place in
+                  the document.
+                </p>
+              )
             )}
 
             {section.sectionType === "cover_page" && (
@@ -596,6 +612,16 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 }
 
 interface ProposalBuilderProps {
+  /**
+   * Where this document lives, and what it can do.
+   *
+   * The builder edits a document — sections and a layout. A real proposal
+   * keeps that in proposal_sections; a template keeps it in one
+   * proposal_templates row. Everything in between is identical and has to
+   * stay identical, so there is one builder and the storage is a parameter.
+   * See proposalDocumentSource.ts.
+   */
+  source: ProposalDocumentSource;
   proposal: Proposal;
   sections: ProposalSection[];
   project?: Project;
@@ -627,6 +653,20 @@ interface ProposalBuilderProps {
    */
   onEstimateRevisionPick?: (estimateId: string) => void;
 }
+
+/*
+ * Stable empties for the queries that only a real proposal runs.
+ *
+ * `const { data: x = [] } = useQuery(...)` mints a NEW array on every render
+ * whenever `data` is undefined — which is exactly what a disabled query
+ * returns. Those arrays are dependencies of the PDF effect, so on a template
+ * the effect re-ran every render, and since each run cancels the previous one
+ * the preview never finished: "Generating PDF…" forever. It never showed up
+ * on a proposal because there the queries resolve and react-query hands back
+ * the same cached array each time.
+ */
+const NO_MILESTONES: ProposalPaymentMilestone[] = [];
+const NO_PROPOSAL_ITEMS: ProposalItem[] = [];
 
 // --- Proposal Template (full proposal) ---
 type ProposalTemplate = {
@@ -664,13 +704,12 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
   const [showSave, setShowSave] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
-  const { data: companySettings } = useQuery<{
-    proposalTemplates?: ProposalTemplate[];
-  } | null>({
-    queryKey: ['/api/company-settings'],
+  /* Templates are rows now, not a jsonb array on company_settings — see
+     migration 0077. The array is still populated on older records and is
+     deliberately left alone; nothing reads it any more. */
+  const { data: templates = [] } = useQuery<ProposalTemplate[]>({
+    queryKey: ['/api/proposal-templates'],
   });
-
-  const templates = companySettings?.proposalTemplates ?? [];
 
   const applyMutation = useMutation({
     mutationFn: async (templateId: string) => {
@@ -753,8 +792,7 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
 
   const saveMutation = useMutation({
     mutationFn: async (name: string) => {
-      const newTpl: ProposalTemplate = {
-        id: `ptpl-${Date.now()}`,
+      const newTpl = {
         name,
         sections: sections
           .slice()
@@ -770,11 +808,14 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
           })),
         layoutSettings: (proposal.layoutSettings as Record<string, unknown>) || undefined,
       };
-      const next = [...templates, newTpl];
-      return await apiRequest('/api/company-settings', 'PATCH', { proposalTemplates: next });
+      return await apiRequest('/api/proposal-templates', 'POST', {
+        name: newTpl.name,
+        sections: newTpl.sections,
+        layoutSettings: newTpl.layoutSettings ?? {},
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/proposal-templates'] });
       toast({ title: 'Template saved' });
       setTemplateName('');
       setShowSave(false);
@@ -916,6 +957,7 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
 }
 
 export function ProposalBuilder({
+  source,
   proposal,
   sections,
   project,
@@ -941,6 +983,24 @@ export function ProposalBuilder({
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  /*
+   * What this document can do.
+   *
+   * A template is not an unsent proposal — it has no project, client or
+   * estimate, so sending, revising and scheduling payments against it are not
+   * features that are missing, they are features that do not apply. Hidden
+   * rather than disabled: a greyed-out Send on a template invites the reader
+   * to work out why, and there is no answer that helps them.
+   *
+   * It also gates the three queries below. `proposal.id` is truthy for a
+   * template — it is the template's own id — so enabling on that alone fired
+   * /api/proposals/<template-id>/milestones, which 404s, retries, and hands
+   * back a new array identity each time. That restarted the PDF effect on
+   * every retry, and since each run cancels the last, the preview sat on
+   * "Generating PDF…" forever.
+   */
+  const can = source.can;
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
@@ -1044,9 +1104,9 @@ export function ProposalBuilder({
   }, [sectionEstimateIdsKey]);
 
   // Fetch payment milestones for PDF rendering
-  const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
+  const { data: milestones = NO_MILESTONES } = useQuery<ProposalPaymentMilestone[]>({
     queryKey: ['/api/proposals', proposal.id, 'milestones'],
-    enabled: !!proposal.id,
+    enabled: can.milestones && !!proposal.id,
   });
 
   // Fetch the project's client contact so cover-page placeholders + PDF can
@@ -1059,14 +1119,14 @@ export function ProposalBuilder({
   // Fetch latest accepted/rejected acceptance for embedding signature into PDF
   const { data: latestAcceptance = null } = useQuery<ProposalAcceptance | null>({
     queryKey: ['/api/proposals', proposal.id, 'latest-acceptance'],
-    enabled: !!proposal.id,
+    enabled: can.send && !!proposal.id,
   });
 
   // Fetch proposal line items so the AllowancesSection can render real
   // section-linked items rather than a stale legacy content blob.
-  const { data: proposalItems = [] } = useQuery<ProposalItem[]>({
+  const { data: proposalItems = NO_PROPOSAL_ITEMS } = useQuery<ProposalItem[]>({
     queryKey: ['/api/proposals', proposal.id, 'items'],
-    enabled: !!proposal.id,
+    enabled: can.linkEstimate && !!proposal.id,
   });
 
   // Fetch company settings for the {{builder.phone}} placeholder context.
@@ -1246,23 +1306,17 @@ export function ProposalBuilder({
   }
 
 
-  // Rebuilds the standard structure on a proposal that has no sections.
+  /**
+   * Rebuilds the standard structure on a document that has no sections.
+   *
+   * Goes through the source: this is the primary way anyone starts a
+   * document, so it has to work on a template as well as a proposal, and the
+   * two write it differently — see addSections in proposalDocumentSource.
+   */
   const addStandardSections = useMutation({
     mutationFn: async () => {
       const specs = buildDefaultSections(companySettings);
-      // Sequential, not Promise.all: the create route derives nothing from
-      // order, but a partial failure halfway through a parallel batch leaves a
-      // scrambled document with no way to tell which ones landed.
-      for (const spec of specs) {
-        await apiRequest(`/api/proposals/${proposal.id}/sections`, 'POST', {
-          ...spec,
-          proposalId: proposal.id,
-          description: '',
-        });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id, 'sections'] });
+      await source.addSections(specs.map((spec) => ({ ...spec, description: '' })));
     },
     onError: () => {
       toast({ title: 'Could not add the standard sections', variant: 'destructive' });
@@ -1271,7 +1325,7 @@ export function ProposalBuilder({
 
   // Picking the estimate revision is a proposal-level setting, so it renders
   // inside the Details card rather than as a stray select in the header.
-  const estimateSelector = project?.id ? (
+  const estimateSelector = can.linkEstimate && project?.id ? (
     <EstimateRevisionSelector
       projectId={project.id}
       currentEstimateId={proposal.estimateId || null}
@@ -1329,6 +1383,12 @@ export function ProposalBuilder({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
+          {/* Revisions, the share link and follow-ups are all things you do to
+              a document that has been, or is about to be, sent to somebody.
+              A template has no client, so the whole group is dropped rather
+              than shown greyed out. */}
+          {can.revisions && (
+          <>
           <DropdownMenuLabel>Revision</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => newRevisionMutation.mutate()}
@@ -1369,6 +1429,8 @@ export function ProposalBuilder({
             Revision history
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          </>
+          )}
           <DropdownMenuLabel>Preview</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => setShowPreview((v) => !v)}
@@ -1425,7 +1487,7 @@ export function ProposalBuilder({
           rather than a menu item. Once sent, the menu's revision flow takes
           over — re-sending the same proposal number would leave the client
           holding two different documents with one identity. */}
-      {isDraft && (
+      {can.send && isDraft && (
         <Button
           size="sm"
           onClick={() => setIsSendOpen(true)}
@@ -1645,7 +1707,7 @@ export function ProposalBuilder({
                   <Plus className="w-3 h-3" />
                   Add
                 </button>
-                <ProposalTemplateBar proposal={proposal} sections={sections} />
+                {can.send && <ProposalTemplateBar proposal={proposal} sections={sections} />}
               </>
             )}
           </div>
@@ -1657,7 +1719,7 @@ export function ProposalBuilder({
             value="sections"
             className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden"
           >
-            {onProposalUpdate && (
+            {can.details && onProposalUpdate && (
               <ProposalDetailsCard
                 proposal={proposal}
                 projects={projects}
@@ -1698,6 +1760,7 @@ export function ProposalBuilder({
                         project={project}
                         client={client}
                         documentStyle={documentStyle}
+                        canMilestones={can.milestones}
                         hasPaymentSchedule={sections.some(
                           (s) => s.sectionType === 'payment_schedule' && s.isEnabled !== false,
                         )}
@@ -1772,7 +1835,12 @@ export function ProposalBuilder({
           </TabsContent>
 
           <TabsContent value="layout" className="flex-1 min-h-0 mt-2 overflow-auto">
-            <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
+            <LayoutPanel
+              proposal={proposal}
+              sections={sections}
+              onSectionUpdate={onSectionUpdate}
+              onSaveLayout={(layoutSettings) => source.updateProposal({ layoutSettings } as never)}
+            />
           </TabsContent>
         </Tabs>
       </div>
@@ -1786,6 +1854,8 @@ interface LayoutPanelProps {
   proposal: Proposal;
   sections: ProposalSection[];
   onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
+  /** Persists layoutSettings wherever this document lives. */
+  onSaveLayout: (layoutSettings: Record<string, unknown>) => void;
 }
 
 type PricingMode = 'lump_sum' | 'section_totals' | 'itemised';
@@ -1867,7 +1937,7 @@ const ESTIMATE_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'amountIncTax', label: 'Total' },
 ];
 
-function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) {
+function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: LayoutPanelProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const roleName = (user as { roleName?: string; role?: string } | null)?.roleName
@@ -1916,22 +1986,22 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyShowLogo, companyLogoUrl]);
 
-  const saveLayoutMutation = useMutation({
-    mutationFn: async (layoutSettings: LayoutSettings) => {
-      // Merge, don't replace. layoutSettings is a shared jsonb bag: the
-      // milestone seeder stores `milestonesSeeded` in it, so writing a fresh
-      // object here cleared that flag and the payment schedule re-seeded
-      // itself the next time the proposal loaded.
+  /**
+   * Layout settings go through the document's source, not straight to
+   * /api/proposals — a template stores the identical object on its own row.
+   *
+   * Merge, don't replace. layoutSettings is a shared jsonb bag: the milestone
+   * seeder stores `milestonesSeeded` in it, so writing a fresh object here
+   * cleared that flag and the payment schedule re-seeded itself the next time
+   * the proposal loaded.
+   */
+  const saveLayoutMutation = {
+    isPending: false,
+    mutate: (layoutSettings: LayoutSettings) => {
       const existing = (proposal.layoutSettings as Record<string, unknown> | null) ?? {};
-      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
-        layoutSettings: { ...existing, ...layoutSettings },
-      });
+      onSaveLayout({ ...existing, ...layoutSettings });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
-      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
-    },
-  });
+  };
 
   const saveCompanyColorMutation = useMutation({
     mutationFn: async (proposalPrimaryColor: string) => {

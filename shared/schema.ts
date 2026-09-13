@@ -6349,6 +6349,53 @@ export const purchaseOrderTemplates = pgTable("purchase_order_templates", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/**
+ * A saved proposal document: its sections and its layout, with no project,
+ * client or estimate attached.
+ *
+ * `sections` is deliberately the same shape as a row in proposal_sections
+ * minus the identifiers, so applying a template is an insert rather than a
+ * translation — and so a new section field appears in templates the moment it
+ * appears in proposals, without touching this table.
+ */
+export const proposalTemplates = pgTable("proposal_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(),
+  description: text("description"),
+
+  sections: jsonb("sections").$type<Array<{
+    sectionType: string;
+    name: string;
+    order: number;
+    content?: Record<string, unknown> | null;
+    description?: string | null;
+    descriptionHtml?: string | null;
+    isEnabled?: boolean;
+    showPricing?: boolean;
+    showSubtotal?: boolean;
+  }>>().notNull().default([]),
+
+  /** Stored exactly as proposals.layoutSettings, so the Layout panel is shared. */
+  layoutSettings: jsonb("layout_settings").$type<Record<string, any>>().notNull().default({}),
+
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyNameIdx: index("proposal_templates_company_idx").on(table.companyId, table.name),
+}));
+
+export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProposalTemplate = z.infer<typeof insertProposalTemplateSchema>;
+export type ProposalTemplate = typeof proposalTemplates.$inferSelect;
+
 export const insertPurchaseOrderTemplateSchema = createInsertSchema(purchaseOrderTemplates).omit({
   id: true,
   createdAt: true,

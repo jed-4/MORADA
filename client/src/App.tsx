@@ -123,6 +123,8 @@ const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
 const RFIDetail = lazy(() => import("@/pages/RFIDetail"));
 const ProjectScope = lazy(() => import("@/pages/ProjectScope"));
+const ProposalTemplates = lazy(() => import("@/pages/ProposalTemplates"));
+const ProposalTemplateDetail = lazy(() => import("@/pages/ProposalTemplateDetail"));
 const ProjectTeam = lazy(() => import("@/pages/ProjectTeam"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
 const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail"));
@@ -328,6 +330,8 @@ function Router() {
       <Route path="/scope-templates/:templateId" component={ScopeTemplateDetail} />
       <Route path="/schedule-templates" component={ScheduleTemplates} />
       <Route path="/schedule-templates/:templateId" component={ScheduleTemplateDetail} />
+      <Route path="/proposal-templates" component={ProposalTemplates} />
+      <Route path="/proposal-templates/:templateId" component={ProposalTemplateDetail} />
       <Route path="/estimate-templates" component={EstimateTemplates} />
       <Route path="/estimate-templates/:templateId" component={EstimateTemplateDetail} />
       <Route path="/selection-templates" component={SelectionTemplates} />

@@ -43,6 +43,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import {
+  PROPOSAL_CAPABILITIES,
+  type ProposalDocumentSource,
+} from "@/components/proposals/proposalDocumentSource";
 import { buildDefaultSections } from "@/components/proposals/defaultSections";
 
 interface ProposalDetailParams {
@@ -427,6 +431,47 @@ export default function ProposalDetail() {
     saveFieldsMutation.mutate(updates);
   };
 
+  /**
+   * This page's document source: a real proposal, in rows.
+   *
+   * The template page builds the same shape over a single
+   * proposal_templates row, and both hand it to the same builder — which is
+   * what keeps the two pages identical as either is iterated. See
+   * components/proposals/proposalDocumentSource.ts.
+   */
+  const source: ProposalDocumentSource | null = proposal
+    ? {
+        kind: "proposal",
+        proposal,
+        sections: localSections,
+        updateSection: handleSectionUpdate,
+        addSection: (section) =>
+          addSectionMutation.mutate({
+            name: section.name || "New Section",
+            sectionType: section.sectionType || "custom",
+            description: section.description ?? "",
+            ...(section.content ? { content: section.content } : {}),
+          } as never),
+        /* Sequential, not Promise.all: the create route derives nothing from
+           order, but a partial failure halfway through a parallel batch
+           leaves a scrambled document with no way to tell which landed. */
+        addSections: async (specs) => {
+          for (const spec of specs) {
+            await apiRequest(`/api/proposals/${params.id}/sections`, "POST", {
+              ...spec,
+              proposalId: params.id,
+              description: spec.description ?? "",
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
+        },
+        reorderSections: handleSectionsReorder,
+        updateProposal: handleProposalFieldUpdate,
+        can: PROPOSAL_CAPABILITIES,
+        isSaving: saveFieldsMutation.isPending || updateSectionMutation.isPending,
+      }
+    : null;
+
   if (proposalLoading || sectionsLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -561,6 +606,7 @@ export default function ProposalDetail() {
                 into the title-row toolbar slot. */}
             <div className="flex-1 min-h-0">
               <ProposalBuilder
+                source={source!}
                 proposal={proposal!}
                 sections={localSections}
                 project={project}
