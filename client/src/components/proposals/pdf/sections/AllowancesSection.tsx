@@ -54,6 +54,8 @@ interface AllowancesSectionProps {
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
   showFooter?: boolean;
+  /** Stand-in figures are in play — say so on the page. */
+  sampleData?: boolean;
   /** The linked estimate, so PC/PS lines can be listed without re-entry. */
   estimateData?: {
     estimate: Estimate;
@@ -76,6 +78,7 @@ export function AllowancesSection({
   brandColor,
   documentStyle = 'style1',
   showFooter,
+  sampleData = false,
   estimateData,
 }: AllowancesSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
@@ -215,6 +218,23 @@ export function AllowancesSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Allowances'}
           </Text>
+          {/* Same warning the estimate page carries: a template preview can be
+              downloaded, and invented figures with nothing marking them as
+              invented are the kind of thing that reaches a client by accident. */}
+          {sampleData && (
+            <Text
+              style={{
+                fontSize: 8,
+                fontFamily: PDF_FONT_FAMILY,
+                fontWeight: 700,
+                color: PDF_COLORS.inkMuted,
+                letterSpacing: 0.6,
+                marginBottom: 8,
+              }}
+            >
+              SAMPLE FIGURES — EACH PROPOSAL SHOWS ITS OWN ALLOWANCES
+            </Text>
+          )}
           <SectionIntro section={section} />
           {html ? <RichTextBlocks html={html} /> : null}
 

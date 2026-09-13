@@ -1265,6 +1265,10 @@ export function ProposalBuilder({
             primaryColor={primaryColor}
             brandColor={brandColor}
             companySecondaryColor={companySecondaryColor}
+            /* A template has no estimate, so its money sections would all be
+               blank — the sections a builder most needs to see while laying one
+               out. Stand-ins only here; see ProposalDocument's sampleData. */
+            sampleData={!source.can.linkEstimate}
             documentStyle={documentStyle}
             estimatesData={estimatesDataMap}
             milestones={milestones}
@@ -1351,7 +1355,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, brandColor, companySecondaryColor, documentStyle, showPreview, milestones, latestAcceptance, proposalItems]);
+  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, brandColor, companySecondaryColor, can.linkEstimate, documentStyle, showPreview, milestones, latestAcceptance, proposalItems]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;

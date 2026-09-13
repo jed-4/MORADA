@@ -17,6 +17,8 @@ import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
 
 interface EstimateSectionProps {
   section: ProposalSection;
+  /** True when the figures are stand-ins for a template. Says so on the page. */
+  sampleData?: boolean;
   estimateData?: {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -45,6 +47,7 @@ interface EstimateSectionProps {
 
 export function EstimateSection({
   section,
+  sampleData,
   estimateData,
   companyLogo,
   companyName,
@@ -502,6 +505,25 @@ export function EstimateSection({
         >
           {section.name || "Estimate"}
         </Text>
+
+        {/* Said on the page, not just in the editor's chrome: a template
+            preview can be downloaded, and a page of plausible figures with
+            nothing marking them as invented is the kind of thing that reaches
+            a client by accident. */}
+        {sampleData && (
+          <Text
+            style={{
+              fontSize: 8,
+              fontFamily: PDF_FONT_FAMILY,
+              fontWeight: 700,
+              color: PDF_COLORS.inkMuted,
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            SAMPLE FIGURES — EACH PROPOSAL SHOWS ITS OWN ESTIMATE
+          </Text>
+        )}
 
         {/* The section's own Description, same as every other section type. */}
         <SectionIntro section={section} />
