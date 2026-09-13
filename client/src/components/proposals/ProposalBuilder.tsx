@@ -722,7 +722,7 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   /* Templates are rows now, not a jsonb array on company_settings — see
-     migration 0077. The array is still populated on older records and is
+     migration 0079. The array is still populated on older records and is
      deliberately left alone; nothing reads it any more. */
   const { data: templates = [] } = useQuery<ProposalTemplate[]>({
     queryKey: ['/api/proposal-templates'],
@@ -2024,7 +2024,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
      actually find. It used to read proposal_primary_color, which is editable
      nowhere in Settings and defaulted to #3B82F6 — so this panel showed blue
      as "the company default" to companies whose brand colour was nothing of
-     the sort, and the document printed blue to match. See migration 0078. */
+     the sort, and the document printed blue to match. See migration 0080. */
   const companyColor = companySettings?.brandColor || PDF_COLORS.brandFallback;
   const companyAccent = companySettings?.brandSecondaryColor || '';
   const companyShowLogo = companySettings?.proposalShowLogo;

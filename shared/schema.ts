@@ -1176,7 +1176,7 @@ export const companySettings = pgTable("company_settings", {
    * of #3B82F6 and nothing could tell "chose blue" from "never chose", so a
    * column nobody had ever edited beat the Brand Colour in the resolution
    * chain and every proposal in the product printed the same blue. Unset has
-   * to stay distinguishable from chosen. See migration 0078.
+   * to stay distinguishable from chosen. See migration 0080.
    */
   brandSecondaryColor: text("brand_secondary_color"),
   
