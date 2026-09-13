@@ -242,7 +242,7 @@ function BoardCard({ task, onToggle, onClick }: BoardCardProps) {
   );
 }
 
-export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId, onSetHeaderActions }: WidgetProps) {
+export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId, onSetHeaderActions, onSetTitleAction }: WidgetProps) {
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
   const { user } = useAuth();
@@ -539,6 +539,17 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
       return next;
     });
   };
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    if (!currentProject?.id) return onSetTitleAction?.(null);
+    const id = currentProject.id;
+    onSetTitleAction?.({
+      label: "All tasks",
+      onClick: () => setLocation(`/projects/${id}/tasks`),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
 
   // Header row: [+ add] [filter] … [⋮ configure menu] (menu is rendered by the card)
   useEffect(() => {
