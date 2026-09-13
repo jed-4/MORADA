@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils';
 import { revisionLabel } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
-import type { ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
+import { documentToTemplatePayload, type ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
 import { buildProposalPlaceholderContext } from '@/components/proposals/pdf/proposalContext';
@@ -702,6 +702,7 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState('');
   const [showSave, setShowSave] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   /* Templates are rows now, not a jsonb array on company_settings — see
@@ -790,28 +791,28 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
     },
   });
 
+  const documentAsTemplate = () =>
+    documentToTemplatePayload(sections, proposal.layoutSettings as Record<string, unknown> | null);
+
+  const updateMutation = useMutation({
+    mutationFn: async (templateId: string) =>
+      apiRequest(`/api/proposal-templates/${templateId}`, 'PATCH', documentAsTemplate()),
+    onSuccess: (_res, templateId) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposal-templates'] });
+      const name = templates.find((t) => t.id === templateId)?.name ?? 'the template';
+      toast({ title: 'Template updated', description: `"${name}" now matches this proposal.` });
+      setShowUpdate(false);
+    },
+    onError: () => {
+      toast({ title: 'Could not update the template', variant: 'destructive' });
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (name: string) => {
-      const newTpl = {
-        name,
-        sections: sections
-          .slice()
-          .sort((a, b) => a.order - b.order)
-          .map((s, i) => ({
-            sectionType: s.sectionType,
-            name: s.name,
-            order: i,
-            content: s.content ?? {},
-            description: s.description ?? null,
-            descriptionHtml: (s as { descriptionHtml?: string | null }).descriptionHtml ?? null,
-            isEnabled: s.isEnabled !== false,
-          })),
-        layoutSettings: (proposal.layoutSettings as Record<string, unknown>) || undefined,
-      };
       return await apiRequest('/api/proposal-templates', 'POST', {
-        name: newTpl.name,
-        sections: newTpl.sections,
-        layoutSettings: newTpl.layoutSettings ?? {},
+        name,
+        ...documentAsTemplate(),
       });
     },
     onSuccess: () => {
@@ -939,6 +940,49 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
                 {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                 Save
               </Button>
+            </div>
+          )}
+
+          {/* Refining the wording on a live proposal and wanting it to become
+              the house standard is the common case. Without this you get
+              "Standard Reno", "Standard Reno v2" and "Standard Reno FINAL". */}
+          <DropdownMenuItem
+            disabled={sections.length === 0 || templates.length === 0}
+            onSelect={(e) => { e.preventDefault(); setShowUpdate(true); }}
+            data-testid="button-toggle-update-proposal-template"
+          >
+            <ArrowRight className="w-4 h-4 mr-2" />
+            Update a template
+          </DropdownMenuItem>
+          {showUpdate && (
+            <div className="p-1.5 pt-1">
+              <Select
+                value=""
+                disabled={updateMutation.isPending}
+                onValueChange={(id) => {
+                  const tpl = templates.find((t) => t.id === id);
+                  if (!tpl) return;
+                  setConfirmAction({
+                    title: `Replace "${tpl.name}"?`,
+                    description:
+                      'Its sections, wording and layout are replaced with this proposal\'s. Proposals already built from it are not affected.',
+                    confirmLabel: 'Replace',
+                    destructive: true,
+                    run: () => updateMutation.mutate(id),
+                  });
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-update-proposal-template">
+                  <SelectValue placeholder={updateMutation.isPending ? 'Updating…' : 'Which template?'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs">
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </DropdownMenuContent>
@@ -1643,21 +1687,24 @@ export function ProposalBuilder({
       <div className="flex flex-1 min-h-0 gap-4">
       {/* PDF Preview Panel - 60% */}
       <div className="flex-1 flex flex-col">
+        {/* One message at a time.
+            These used to be two independent conditions, so the first load
+            showed "Generating PDF…" as an overlay ON TOP of "Loading
+            preview…", and once the blob arrived the overlay sat over
+            PDFPreview's own "Loading PDF…". Three spinners for one wait.
+            There are only two real states: there is no document yet, or there
+            is one and a newer one is on its way. */}
         {showPreview ? (
           <div className="flex-1 border rounded-lg overflow-hidden bg-muted relative">
-            {isGenerating ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span className="text-sm text-muted-foreground">Generating PDF...</span>
-                </div>
-              </div>
-            ) : null}
             {pdfBlob ? (
-              <PDFPreview pdfBlob={pdfBlob} />
+              <PDFPreview pdfBlob={pdfBlob} busy={isGenerating} />
             ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <p>Loading preview...</p>
+              <div
+                className="flex items-center justify-center h-full gap-2 text-muted-foreground"
+                data-testid="indicator-pdf-generating"
+              >
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Generating preview…</span>
               </div>
             )}
           </div>

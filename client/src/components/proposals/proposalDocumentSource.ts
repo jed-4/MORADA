@@ -135,6 +135,45 @@ export function rowsToTemplateSections(rows: ProposalSection[]): ProposalTemplat
 }
 
 /**
+ * The live document, as template payload.
+ *
+ * `estimateId` is stripped. It is the one thing in a section's content that
+ * points AT something rather than describing it — a specific estimate on a
+ * specific project — so carrying it into a template means the next proposal
+ * built from that template silently prices somebody else's job.
+ *
+ * Everything else is kept verbatim: the section names, every rich-text body,
+ * the column settings, the cover template and its image, and any {{tokens}}
+ * the builder typed. Placeholders especially — a template full of
+ * `{{project.name}}` is the entire point, and stripping or resolving them
+ * here would turn a reusable document into a snapshot of one job.
+ */
+export function documentToTemplatePayload(
+  sections: ProposalSection[],
+  layoutSettings: Record<string, unknown> | null | undefined,
+): Pick<ProposalTemplate, 'sections'> & { layoutSettings: Record<string, unknown> } {
+  return {
+    sections: [...sections]
+      .sort((a, b) => a.order - b.order)
+      .map((s, i) => {
+        const { estimateId: _linkedEstimate, ...content } = (s.content ?? {}) as Record<string, unknown>;
+        return {
+          sectionType: s.sectionType || 'custom',
+          name: s.name ?? '',
+          order: i,
+          content,
+          description: s.description ?? null,
+          descriptionHtml: (s as { descriptionHtml?: string | null }).descriptionHtml ?? null,
+          isEnabled: s.isEnabled !== false,
+          showPricing: s.showPricing !== false,
+          showSubtotal: s.showSubtotal !== false,
+        };
+      }),
+    layoutSettings: (layoutSettings ?? {}) as Record<string, unknown>,
+  };
+}
+
+/**
  * A Proposal-shaped stand-in, so the builder and the PDF renderer work on a
  * template unchanged.
  *
