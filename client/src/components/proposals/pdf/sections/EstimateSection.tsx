@@ -14,6 +14,7 @@ import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
 import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -70,6 +71,7 @@ export function EstimateSection({
   const isS2 = documentStyle === "style2";
 
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const visibleColumns: string[] | undefined = Array.isArray(content.visibleColumns)
     ? (content.visibleColumns as string[])
     : undefined;
@@ -526,7 +528,7 @@ export function EstimateSection({
         )}
 
         {/* The section's own Description, same as every other section type. */}
-        <SectionIntro section={section} />
+        <SectionIntro section={section} textStyle={textStyle} />
 
         {/* The estimate editor's separate description field. Kept rendering so
             proposals that already use it are unchanged; new text is better put

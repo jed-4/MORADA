@@ -2,6 +2,7 @@ import { Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
 import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface AttachmentRow {
   name?: string;
@@ -35,6 +36,7 @@ export function AttachmentsSection({
 }: AttachmentsSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const introHtml = (content.attachmentsText as string) || (content.introText as string) || '';
   const rawList = (content.attachments as AttachmentRow[] | undefined) || [];
   const rows = Array.isArray(rawList) ? rawList.filter(Boolean) : [];
@@ -56,9 +58,9 @@ export function AttachmentsSection({
   return (
       <View style={{ paddingHorizontal: 40 }}>
         <View style={sharedSectionStyle.section}>
-          <Text minPresenceAhead={60} style={sharedSectionStyle.sectionTitle}>{section.name || 'Attachments'}</Text>
-          <SectionIntro section={section} />
-          {introHtml ? <RichTextBlocks html={introHtml} /> : null}
+          <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>{section.name || 'Attachments'}</Text>
+          <SectionIntro section={section} textStyle={textStyle} />
+          {introHtml ? <RichTextBlocks html={introHtml} textStyle={textStyle} /> : null}
 
           {rows.length === 0 ? (
             <Text style={sharedSectionStyle.muted}>No attachments included.</Text>

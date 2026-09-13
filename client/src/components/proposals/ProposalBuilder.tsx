@@ -27,7 +27,7 @@ import { format as formatDate } from 'date-fns';
 import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem, InsertProposal } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
-import { AllowanceColumnsEditor, EstimateEditor, TermsTemplatePicker } from './SectionEditor';
+import { AllowanceColumnsEditor, EstimateEditor, TermsTemplatePicker, TextStyleEditor } from './SectionEditor';
 import { ImportedPdfEditor } from './ImportedPdfEditor';
 import { CoverTemplatePicker } from './CoverTemplatePicker';
 import { RichTextEditor } from '@/components/RichTextEditor';
@@ -312,6 +312,10 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                 placeholder="Enter section name"
               />
             </div>
+
+            {/* Section-wide, so it sits above the fields it governs rather than
+                inside one of them. */}
+            <TextStyleEditor content={localContent} setContent={setLocalContent} />
 
             {!proseBodyKey && (
               <div className="space-y-2">

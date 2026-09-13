@@ -4,6 +4,7 @@ import type { Proposal, ProposalSection, ProposalPaymentMilestone } from '@share
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface PaymentScheduleSectionProps {
   proposal: Proposal;
@@ -45,6 +46,7 @@ export function PaymentScheduleSection({
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const html = (content.scheduleText as string) || '';
 
   const headerBorderColor = isS2 ? tintOnWhite(resolvedColor, '60') : resolvedColor;
@@ -141,8 +143,8 @@ export function PaymentScheduleSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Payment Schedule'}
           </Text>
-          <SectionIntro section={section} />
-          {html ? <RichTextBlocks html={html} /> : null}
+          <SectionIntro section={section} textStyle={textStyle} />
+          {html ? <RichTextBlocks html={html} textStyle={textStyle} /> : null}
 
           {/* The contract price, then how it is paid. This used to be a page of
               its own headed "Summary" — three lines of figures and a page

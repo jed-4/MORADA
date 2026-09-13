@@ -2,6 +2,7 @@ import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface InclusionsExclusionsSectionProps {
   proposal: Proposal;
@@ -29,6 +30,7 @@ export function InclusionsExclusionsSection({
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const inclusionsHtml = (content.inclusionsText as string) || '';
   const exclusionsHtml = (content.exclusionsText as string) || '';
 
@@ -51,13 +53,13 @@ export function InclusionsExclusionsSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Inclusions & Exclusions'}
           </Text>
-          <SectionIntro section={section} />
+          <SectionIntro section={section} textStyle={textStyle} />
 
           <View style={styles.columns}>
             <View style={styles.column}>
               <Text style={styles.columnTitle}>Inclusions</Text>
               {inclusionsHtml ? (
-                <RichTextBlocks html={inclusionsHtml} />
+                <RichTextBlocks html={inclusionsHtml} textStyle={textStyle} />
               ) : (
                 <Text style={sharedSectionStyle.muted}>No inclusions specified.</Text>
               )}
@@ -66,7 +68,7 @@ export function InclusionsExclusionsSection({
             <View style={styles.column}>
               <Text style={styles.columnTitle}>Exclusions</Text>
               {exclusionsHtml ? (
-                <RichTextBlocks html={exclusionsHtml} />
+                <RichTextBlocks html={exclusionsHtml} textStyle={textStyle} />
               ) : (
                 <Text style={sharedSectionStyle.muted}>No exclusions specified.</Text>
               )}

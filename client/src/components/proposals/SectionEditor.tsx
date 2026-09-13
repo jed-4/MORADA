@@ -11,6 +11,13 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PROPOSAL_PLACEHOLDER_TOKENS } from "./pdf/placeholders";
 import type { ProposalSection, Estimate, Project, Contact } from "@shared/schema";
+import {
+  resolveSectionTextStyle,
+  TEXT_ALIGN_OPTIONS,
+  TEXT_SIZE_OPTIONS,
+  TEXT_FONT_OPTIONS,
+  type SectionTextStyle,
+} from "./pdf/sectionTextStyle";
 
 // Convert HTML -> plain text for the legacy description column. Mirrors the
 // approach used by SortableSectionItem in ProposalBuilder.
@@ -656,6 +663,76 @@ export function AllowanceColumnsEditor({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ── Text style ───────────────────────────────────────────────────────── */
+
+/**
+ * Alignment, size and typeface for one section's prose.
+ *
+ * Every section drew its text at a size and alignment chosen in the component
+ * and unreachable from the app — the closing section was 14pt centred, which is
+ * how it ended up centred in templates nobody could straighten. This writes
+ * `content.textStyle`, which is ordinary section content, so it saves with the
+ * section and travels into and out of a template with no migration.
+ *
+ * Headings, bullets and the intro text all scale off the body size, so one
+ * control moves the whole section coherently instead of leaving a 16pt heading
+ * above 20pt paragraphs.
+ */
+export function TextStyleEditor({
+  content,
+  setContent,
+}: {
+  content: Record<string, any>;
+  setContent: (content: Record<string, any>) => void;
+}) {
+  const style = resolveSectionTextStyle(content);
+  const set = (patch: Partial<SectionTextStyle>) =>
+    setContent({ ...content, textStyle: { ...style, ...patch } });
+
+  return (
+    <div className="space-y-2" data-testid="text-style-editor">
+      <Label>Text style</Label>
+      <div className="grid grid-cols-3 gap-2">
+        <Select value={style.align} onValueChange={(v) => set({ align: v as SectionTextStyle["align"] })}>
+          <SelectTrigger className="h-8 text-xs" data-testid="select-text-align">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TEXT_ALIGN_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={String(style.fontSize)} onValueChange={(v) => set({ fontSize: Number(v) })}>
+          <SelectTrigger className="h-8 text-xs" data-testid="select-text-size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TEXT_SIZE_OPTIONS.map((n) => (
+              <SelectItem key={n} value={String(n)} className="text-xs">{n}pt</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={style.fontFamily} onValueChange={(v) => set({ fontFamily: v })}>
+          <SelectTrigger className="h-8 text-xs" data-testid="select-text-font">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TEXT_FONT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Applies to this section&apos;s intro and body text. Headings and bullets scale with the size.
+      </p>
     </div>
   );
 }

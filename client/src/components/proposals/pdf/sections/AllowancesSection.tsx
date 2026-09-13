@@ -17,6 +17,7 @@ import {
   collectHiddenGroupIds,
   lineCountsTowardProposalTotal,
 } from '@shared/proposalTotals';
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface AllowanceRow {
   name: string;
@@ -84,6 +85,7 @@ export function AllowancesSection({
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const html = (content.allowancesText as string) || '';
 
   const itemRows = proposalItems
@@ -235,8 +237,8 @@ export function AllowancesSection({
               SAMPLE FIGURES — EACH PROPOSAL SHOWS ITS OWN ALLOWANCES
             </Text>
           )}
-          <SectionIntro section={section} />
-          {html ? <RichTextBlocks html={html} /> : null}
+          <SectionIntro section={section} textStyle={textStyle} />
+          {html ? <RichTextBlocks html={html} textStyle={textStyle} /> : null}
 
           {rows.length > 0 ? (
             <View minPresenceAhead={90} style={{ marginTop: 8 }}>
