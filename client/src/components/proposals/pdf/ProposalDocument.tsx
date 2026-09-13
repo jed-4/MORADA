@@ -43,6 +43,8 @@ interface ProposalDocumentProps {
   companyPhone?: string;
   primaryColor?: string;
   brandColor?: string;
+  /** The company's accent, when this proposal has not overridden it. */
+  companySecondaryColor?: string;
   documentStyle?: 'style1' | 'style2';
   estimatesData?: Record<string, {
     estimate: Estimate;
@@ -66,6 +68,7 @@ export function ProposalDocument({
   // invoice and the purchase order carried.
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
+  companySecondaryColor,
   documentStyle = 'style1',
   estimatesData = {},
   milestones = [],
@@ -98,7 +101,7 @@ export function ProposalDocument({
      than in its own column: the primary already lives there, and a second
      source of truth for "what colour is this proposal" is how the two ended
      up disagreeing in the first place. */
-  const secondaryColor = layout?.secondaryColor;
+  const secondaryColor = layout?.secondaryColor || companySecondaryColor;
   const showGst = layout?.showGst ?? true;
   const showLogo = layout?.showLogo ?? true;
   // The Layout panel has always written showFooter and nothing has ever read

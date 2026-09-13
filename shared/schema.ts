@@ -1168,9 +1168,21 @@ export const companySettings = pgTable("company_settings", {
   
   // Company brand colour
   brandColor: text("brand_color").default("#3B82F6"), // Company brand colour used for business-level events and throughout the app
+  /**
+   * The accent, beside the brand colour. Used on proposal covers — the rule
+   * under the masthead, the tint behind the client card.
+   *
+   * NULLABLE WITH NO DEFAULT on purpose. proposal_primary_color had a default
+   * of #3B82F6 and nothing could tell "chose blue" from "never chose", so a
+   * column nobody had ever edited beat the Brand Colour in the resolution
+   * chain and every proposal in the product printed the same blue. Unset has
+   * to stay distinguishable from chosen. See migration 0078.
+   */
+  brandSecondaryColor: text("brand_secondary_color"),
   
   // Proposal branding
-  proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals
+  /** @deprecated Superseded by brandColor — nothing reads this. See 0078. */
+  proposalPrimaryColor: text("proposal_primary_color"),
   proposalShowLogo: boolean("proposal_show_logo").default(true), // Whether the company logo is shown on proposal PDFs by default
   proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color
   proposalFontFamily: text("proposal_font_family").default("Inter"), // Font family for proposals

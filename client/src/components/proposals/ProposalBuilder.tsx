@@ -42,6 +42,7 @@ import { revisionLabel } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { documentToTemplatePayload, type ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
+import { PDF_COLORS } from '@/components/pdf/shared/pdfTokens';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
 import { buildProposalPlaceholderContext } from '@/components/proposals/pdf/proposalContext';
@@ -632,6 +633,8 @@ interface ProposalBuilderProps {
   companyName?: string;
   primaryColor?: string;
   brandColor?: string;
+  /** The company's accent, when this proposal has not overridden it. */
+  companySecondaryColor?: string;
   documentStyle?: 'style1' | 'style2';
   /**
    * Optional DOM element to portal the proposal toolbar into (e.g. the page
@@ -1012,6 +1015,7 @@ export function ProposalBuilder({
   companyName,
   primaryColor,
   brandColor,
+  companySecondaryColor,
   documentStyle,
   toolbarSlot,
   menuSlot,
@@ -1247,6 +1251,7 @@ export function ProposalBuilder({
             companyPhone={companyPhone}
             primaryColor={primaryColor}
             brandColor={brandColor}
+            companySecondaryColor={companySecondaryColor}
             documentStyle={documentStyle}
             estimatesData={estimatesDataMap}
             milestones={milestones}
@@ -1333,7 +1338,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, brandColor, documentStyle, showPreview, milestones, latestAcceptance, proposalItems]);
+  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, brandColor, companySecondaryColor, documentStyle, showPreview, milestones, latestAcceptance, proposalItems]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -1994,19 +1999,24 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
   const settings = (proposal.layoutSettings as LayoutSettings) || {};
 
   const { data: companySettings } = useQuery<{
-    proposalPrimaryColor?: string;
+    brandColor?: string;
+    brandSecondaryColor?: string;
     proposalShowLogo?: boolean;
     logoUrl?: string;
   } | null>({
     queryKey: ['/api/company-settings'],
   });
 
-  const companyColor = companySettings?.proposalPrimaryColor || '#3B82F6';
+  /* The company colour is Settings → Brand Colour, the field a builder can
+     actually find. It used to read proposal_primary_color, which is editable
+     nowhere in Settings and defaulted to #3B82F6 — so this panel showed blue
+     as "the company default" to companies whose brand colour was nothing of
+     the sort, and the document printed blue to match. See migration 0078. */
+  const companyColor = companySettings?.brandColor || PDF_COLORS.brandFallback;
+  const companyAccent = companySettings?.brandSecondaryColor || '';
   const companyShowLogo = companySettings?.proposalShowLogo;
   const companyLogoUrl = companySettings?.logoUrl || '';
 
-  const [editCompanyDefaults, setEditCompanyDefaults] = useState(false);
-  const canEdit = canEditCompanyDefaults && editCompanyDefaults;
 
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
   const [secondaryColor, setSecondaryColor] = useState<string>(settings.secondaryColor || '');
@@ -2049,20 +2059,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
       onSaveLayout({ ...existing, ...layoutSettings });
     },
   };
-
-  const saveCompanyColorMutation = useMutation({
-    mutationFn: async (proposalPrimaryColor: string) => {
-      return await apiRequest('/api/company-settings', 'PATCH', { proposalPrimaryColor });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
-      toast({ title: 'Company default saved' });
-    },
-    onError: (e: unknown) => {
-      const msg = e instanceof Error ? e.message : 'You may not have permission to edit company defaults';
-      toast({ title: 'Could not save default', description: msg, variant: 'destructive' });
-    },
-  });
 
   const saveCompanyShowLogoMutation = useMutation({
     mutationFn: async (proposalShowLogo: boolean) => {
@@ -2193,54 +2189,48 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
 
       <div className="space-y-2">
         <Label htmlFor="layout-primary-color">
-          Primary colour <span className="text-xs text-muted-foreground">(company default)</span>
+          Primary colour <span className="text-xs text-muted-foreground">(this proposal)</span>
         </Label>
+        <p className="text-xs text-muted-foreground">
+          Starts from your company Brand Colour in Settings. Changing it here affects this
+          proposal only.
+        </p>
         <div className="flex items-center gap-2">
           <Input
             id="layout-primary-color"
             type="color"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!canEditCompanyDefaults}
             data-testid="input-layout-primary-color"
             className="w-16 h-9 p-1"
           />
           <Input
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!canEditCompanyDefaults}
             className="flex-1"
             data-testid="input-layout-primary-color-text"
           />
         </div>
-        <div className="flex items-center justify-between gap-2 text-xs">
-          {canEditCompanyDefaults ? (
+        {/* "Save as company default" used to live here, writing
+            proposal_primary_color — a column Settings does not expose, so the
+            company colour could be set in two places that disagreed, and the
+            one nobody could find won. There is one company colour now, and it
+            is in Settings. */}
+        {primaryColor.toLowerCase() !== companyColor.toLowerCase() && (
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-muted-foreground">
+              Overrides your company Brand Colour
+            </span>
             <button
               type="button"
               className="text-primary underline-offset-2 hover:underline"
-              onClick={() => setEditCompanyDefaults((v) => !v)}
-              data-testid="button-toggle-edit-company-defaults"
+              onClick={() => setPrimaryColor(companyColor)}
+              data-testid="button-reset-to-company-colour"
             >
-              {editCompanyDefaults ? 'Lock company defaults' : 'Edit company defaults'}
+              Reset
             </button>
-          ) : (
-            <span className="text-muted-foreground" data-testid="text-company-defaults-readonly">
-              Read-only — admin permission required to edit company defaults
-            </span>
-          )}
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => saveCompanyColorMutation.mutate(primaryColor)}
-              disabled={saveCompanyColorMutation.isPending}
-              data-testid="button-save-company-color"
-            >
-              {saveCompanyColorMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-              Save as company default
-            </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -2249,13 +2239,14 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
         </Label>
         <p className="text-xs text-muted-foreground">
           Used on the cover — the rule under the masthead, the tint behind the client card.
-          Leave it empty to use the primary colour throughout.
+          Empty uses your company Accent Colour from Settings, or the primary colour when
+          that is unset too.
         </p>
         <div className="flex items-center gap-2">
           <Input
             id="layout-secondary-color"
             type="color"
-            value={secondaryColor || primaryColor}
+            value={secondaryColor || companyAccent || primaryColor}
             onChange={(e) => setSecondaryColor(e.target.value)}
             data-testid="input-layout-secondary-color"
             className="w-16 h-9 p-1"
@@ -2389,7 +2380,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate, onSaveLayout }: Layo
             data-testid="switch-layout-logo"
           />
         </div>
-        {canEdit && (
+        {canEditCompanyDefaults && (
           <div className="flex justify-end">
             <Button
               size="sm"

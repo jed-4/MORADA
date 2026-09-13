@@ -108,6 +108,7 @@ export default function ProposalDetail() {
     primaryColor?: string;
     proposalPrimaryColor?: string;
     brandColor?: string;
+    brandSecondaryColor?: string;
     documentStyle?: string;
     termsAndConditions?: string | null;
     termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor?: string[] }>;
@@ -615,22 +616,24 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                /* One colour, one chain. `brandColor` used to be passed
-                   alongside this and won inside ProposalDocument
-                   (`brandColor ?? primaryColor`) — and company_settings
-                   .brand_color DEFAULTS to #3B82F6, so it was never null and
-                   the four-level fallback below was dead. Every proposal
-                   printed the same blue no matter what the Layout panel's
-                   colour picker said. It is folded into the chain now, and
-                   nothing overrides it afterwards. */
+                /* One colour, one chain, and NO defaulted column in it.
+                   This has been wrong twice. First `brandColor` was passed
+                   alongside and won inside ProposalDocument; then
+                   `proposalPrimaryColor` was put ahead of it — and BOTH
+                   columns defaulted to #3B82F6, so whichever came first was
+                   never null and every proposal printed that blue whatever
+                   Settings said. brand_color is the one the Settings page
+                   writes, so it is the only company source, and 0078 removed
+                   the default that made proposal_primary_color look chosen.
+                   Adding a column with a default to this chain reintroduces
+                   the bug. */
                 primaryColor={
                   (proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor
-                  || companySettings?.proposalPrimaryColor
-                  || companySettings?.primaryColor
                   || companySettings?.brandColor
                   || project?.color
                   || undefined
                 }
+                companySecondaryColor={companySettings?.brandSecondaryColor || undefined}
                 documentStyle={(companySettings?.documentStyle as 'style1' | 'style2' | undefined) ?? 'style1'}
                 toolbarSlot={toolbarSlot}
                 menuSlot={menuSlot}

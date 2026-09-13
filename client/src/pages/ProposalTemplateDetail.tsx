@@ -35,9 +35,8 @@ export default function ProposalTemplateDetail() {
   const { data: companySettings } = useQuery<{
     logoUrl?: string;
     companyName?: string;
-    proposalPrimaryColor?: string;
-    primaryColor?: string;
     brandColor?: string;
+    brandSecondaryColor?: string;
     documentStyle?: string;
   } | null>({
     queryKey: ["/api/company-settings"],
@@ -124,11 +123,10 @@ export default function ProposalTemplateDetail() {
                per-proposal override a template does not have. */
             primaryColor={
               (source.proposal.layoutSettings as { primaryColor?: string } | null)?.primaryColor
-              || companySettings?.proposalPrimaryColor
-              || companySettings?.primaryColor
               || companySettings?.brandColor
               || undefined
             }
+            companySecondaryColor={companySettings?.brandSecondaryColor || undefined}
             documentStyle={(companySettings?.documentStyle as "style1" | "style2" | undefined) ?? "style1"}
             toolbarSlot={toolbarSlot}
             menuSlot={menuSlot}

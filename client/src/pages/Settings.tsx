@@ -234,6 +234,7 @@ const companyInfoSchema = z.object({
   timesheetAutoRound: z.boolean().default(false),
   timesheetDefaultBreak: z.coerce.number().min(0).max(4).default(0),
   brandColor: z.string().optional(),
+  brandSecondaryColor: z.string().optional(),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -339,6 +340,7 @@ export default function Settings() {
       timesheetAutoRound: false,
       timesheetDefaultBreak: 0,
       brandColor: "#A890D4",
+      brandSecondaryColor: "",
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -387,6 +389,7 @@ export default function Settings() {
         timesheetAutoRound: companySettings.timesheetAutoRound ?? false,
         timesheetDefaultBreak: companySettings.timesheetDefaultBreak ? parseFloat(companySettings.timesheetDefaultBreak as string) : 0,
         brandColor: companySettings.brandColor || "#A890D4",
+        brandSecondaryColor: companySettings.brandSecondaryColor || "",
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -1719,6 +1722,64 @@ export default function Settings() {
                             placeholder="#A890D4"
                             data-testid="brand-color-hex-input"
                           />
+                        </div>
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* The accent, beside the brand rather than in its own card:
+                  they are read together and chosen together. Empty means
+                  "use the brand colour", which is why it has no default —
+                  a default here is what made every proposal print the same
+                  blue regardless of this page. */}
+              <FormField
+                control={companyForm.control}
+                name="brandSecondaryColor"
+                render={({ field }) => (
+                  <FormItem className="mt-5">
+                    <FormLabel>Accent Colour</FormLabel>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      A second colour for proposal covers — the rule under the masthead, the tint
+                      behind the client card. Leave it empty to use the brand colour throughout.
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-md border border-border flex-shrink-0"
+                        style={{ backgroundColor: field.value || companyForm.watch("brandColor") || "#A890D4" }}
+                      />
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            value={field.value || companyForm.watch("brandColor") || "#A890D4"}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            disabled={!isEditing}
+                            className="w-9 h-9 p-0.5 cursor-pointer"
+                            data-testid="brand-secondary-color-picker"
+                          />
+                          <Input
+                            type="text"
+                            value={field.value || ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            disabled={!isEditing}
+                            className="w-28 font-mono text-sm"
+                            placeholder="None"
+                            data-testid="brand-secondary-color-hex-input"
+                          />
+                          {field.value && isEditing && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => field.onChange("")}
+                              data-testid="button-clear-brand-secondary-color"
+                            >
+                              Clear
+                            </Button>
+                          )}
                         </div>
                       </FormControl>
                     </div>
