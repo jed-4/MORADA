@@ -166,6 +166,29 @@ export function stampPlainText(html: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * How tall one line is, in points.
+ *
+ * THE single rule, because two of them is what this function exists to stop.
+ * The stamper sized each line by its largest run while the editor's overlay
+ * sized every line by the BOX — so a 12pt run inside a 24pt box was drawn a
+ * line apart on the page and two lines apart on screen. You position against
+ * one rhythm and get the other, which is precisely the promise the overlay is
+ * there to keep.
+ *
+ * Largest run, not the box: a line with one big word has to clear that word,
+ * and a line of small text should not inherit space it does not need.
+ */
+export function stampLineHeight(
+  line: StampLine,
+  boxFontSize: number,
+  lineHeight: number,
+): number {
+  const sizes = line.map((run) => run.size ?? boxFontSize);
+  const maxSize = sizes.length > 0 ? Math.max(...sizes) : boxFontSize;
+  return maxSize * lineHeight;
+}
+
 /** The weight a run prints at, given the box's own weight. */
 export function runWeight(run: StampRun, boxWeight: StampWeight): StampWeight {
   return run.bold ? 700 : boxWeight;

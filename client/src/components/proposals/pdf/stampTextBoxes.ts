@@ -1,6 +1,6 @@
 import { degrees, rgb, StandardFonts, type PDFDocument, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { ImportedTextBox, StampFontKey, StampWeight } from './importedTextBoxes';
-import { parseStampHtml, runWeight, type StampRun } from './stampRichText';
+import { parseStampHtml, runWeight, stampLineHeight, type StampRun } from './stampRichText';
 
 /**
  * Draws a builder's text boxes onto an imported page.
@@ -276,7 +276,7 @@ export async function layoutRichBox(
   for (const line of lines) {
     // An authored blank line still takes its height.
     if (line.length === 0) {
-      v += box.fontSize * box.lineHeight;
+      v += stampLineHeight(line, box.fontSize, box.lineHeight);
       continue;
     }
 
@@ -313,12 +313,11 @@ export async function layoutRichBox(
     if (row.length > 0) rows.push(row);
 
     for (const r of rows) {
-      const maxSize = Math.max(...r.map((p) => p.size));
       const tallest = r.reduce((best, p) =>
         p.font.heightAtSize(p.size, { descender: false }) > best.font.heightAtSize(best.size, { descender: false }) ? p : best);
       const ascent = tallest.font.heightAtSize(tallest.size, { descender: false });
       const contentHeight = tallest.font.heightAtSize(tallest.size);
-      const lineBox = maxSize * box.lineHeight;
+      const lineBox = stampLineHeight(r.map((p) => p.run), box.fontSize, box.lineHeight);
       const baseline = v + (lineBox - contentHeight) / 2 + ascent;
 
       const rowWidth = r.reduce((sum, p) => sum + p.width, 0);
