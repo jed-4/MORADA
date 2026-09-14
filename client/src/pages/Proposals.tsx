@@ -4,6 +4,7 @@ import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,6 +22,7 @@ import {
   ChevronRight,
   Filter,
   MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import {
   Tooltip,
@@ -88,6 +90,30 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
       setLocation('/proposals/new');
     }
   };
+
+  /** The family the Delete dialog is asking about, or null when it is shut. */
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name: string;
+    revisions: number;
+    acceptedAt: Date | string | null;
+  } | null>(null);
+
+  const deleteProposalMutation = useMutation({
+    mutationFn: async (proposalId: string) =>
+      apiRequest(`/api/proposals/${proposalId}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+      toast({ title: "Proposal deleted", description: "It and its revisions are gone." });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Could not delete that proposal",
+        description: "Nothing was removed. Try again, or archive it instead.",
+      });
+    },
+  });
 
   const toggleArchiveMutation = useMutation({
     mutationFn: async ({ proposalId, isArchived }: { proposalId: string; isArchived: boolean }) => {
@@ -172,7 +198,11 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
     const term = searchTerm.trim().toLowerCase();
 
     let matched = families.filter(({ current, members }) => {
-      const matchesTab = isProjectContext || onTab(current, activeTab);
+      /* The tab decides, on a project page too.
+         It used to be bypassed in project context, so archiving a proposal
+         there moved it to a tab that was not rendered and left it sitting in
+         the same list — the one thing archiving is for, undone. */
+      const matchesTab = onTab(current, activeTab);
       // Search spans the whole family: an old revision's name or notes should
       // still surface the job, rather than appearing to have vanished.
       const matchesSearch = !term || members.some((m) =>
@@ -525,6 +555,22 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
                       <><Archive className="w-4 h-4" />Archive</>
                     )}
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const family = historyByProposalId.get(proposal.id);
+                      setPendingDelete({
+                        id: proposal.id,
+                        name: proposal.name || "this proposal",
+                        revisions: (family?.length ?? 0) + 1,
+                        acceptedAt: proposal.status === "accepted" ? (proposal.updatedAt ?? null) : null,
+                      });
+                    }}
+                    className="gap-2 text-destructive focus:text-destructive"
+                    data-testid={`menu-item-delete-${proposal.id}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -683,8 +729,7 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
           </Popover>
 
           {/* Active / Completed / Archived as segmented chips, in the bar */}
-          {!isProjectContext && (
-            <div className="flex items-center gap-0.5" data-testid="tabs-proposals">
+          <div className="flex items-center gap-0.5" data-testid="tabs-proposals">
               {([
                 { key: "active", label: "Active" },
                 { key: "completed", label: "Completed" },
@@ -703,8 +748,7 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
                   {t.label}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
 
           <div className="flex-1" />
 
@@ -785,6 +829,38 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
           />
         )}
       </div>
+
+      {/* Says exactly what goes. A proposal with revisions is one document, and
+          the server deletes the family, so the count belongs in the question —
+          "delete Rev C" reading as "delete all three" is not something to find
+          out afterwards. */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        title={`Delete "${pendingDelete?.name ?? ""}"?`}
+        destructive
+        confirmLabel="Delete"
+        description={
+          <span className="space-y-2 block">
+            <span className="block">
+              {pendingDelete && pendingDelete.revisions > 1
+                ? `All ${pendingDelete.revisions} revisions go, with their sections, allowances, payment milestones and any record of the client viewing or signing them.`
+                : "Its sections, allowances, payment milestones and any record of the client viewing or signing it go with it."}
+              {" "}This cannot be undone.
+            </span>
+            {pendingDelete?.acceptedAt && (
+              <span className="block font-medium text-foreground">
+                This proposal was accepted by the client. Deleting it destroys the signed
+                record — archiving keeps it and takes it out of the list.
+              </span>
+            )}
+          </span>
+        }
+        onConfirm={() => {
+          if (pendingDelete) deleteProposalMutation.mutate(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
     </div>
   );
 }
