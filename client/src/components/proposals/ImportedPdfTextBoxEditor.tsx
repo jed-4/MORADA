@@ -349,6 +349,34 @@ export function ImportedPdfTextBoxEditor({
           </div>
 
           <div className="space-y-3">
+            {/* The page's boxes, listed.
+                They used to be reachable only by clicking them on the page, so
+                a PDF that failed to render — a moved object, a dead path, a
+                slow network — left you told there were six merge fields with no
+                way to reach any of them. The list does not depend on the page
+                drawing, and it also makes the six-per-page ceiling something
+                you can see rather than only bump into. */}
+            {onThisPage.length > 0 && (
+              <div className="rounded-md border divide-y" data-testid="text-box-list">
+                {onThisPage.map((box, i) => (
+                  <button
+                    key={box.id}
+                    type="button"
+                    onClick={() => setSelectedId(box.id)}
+                    className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover-elevate ${
+                      box.id === selectedId ? "bg-primary/10 text-foreground" : "text-muted-foreground"
+                    }`}
+                    data-testid={`button-select-text-box-${i}`}
+                  >
+                    <Type className="w-3 h-3 flex-shrink-0 opacity-60" />
+                    <span className="truncate">
+                      {stampPlainText(box.html ?? box.text).trim() || "Empty box"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {!selected ? (
               <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
                 <Type className="w-4 h-4 mx-auto mb-2 opacity-60" />
