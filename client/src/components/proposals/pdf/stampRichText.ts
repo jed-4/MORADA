@@ -82,6 +82,9 @@ interface Style {
 /** Tags that end a line. A box is small; these are the only ones that matter. */
 const LINE_BREAK = /^(p|div|li|h[1-6]|br)$/i;
 
+/** What a list item is prefixed with. Bullets are drawn, not implied. */
+const BULLET = '\u2022  ';
+
 /**
  * HTML to lines of runs.
  *
@@ -100,6 +103,15 @@ export function parseStampHtml(html: string | null | undefined): StampLine[] {
   let current: StampLine = [];
   const stack: Style[] = [{}];
   const top = () => stack[stack.length - 1];
+
+  /* Open lists, innermost last.
+     A PDF has no list element — the stamper draws runs of text and nothing
+     else — so a bullet has to become literal characters at the head of the
+     line. Without this an <li> ended its line and contributed nothing else,
+     which is why a bulleted box looked right in the editor (a contenteditable
+     with real CSS markers) and lost every bullet on the page. Ordered lists
+     carry a counter for the same reason. */
+  const lists: Array<{ ordered: boolean; index: number }> = [];
 
   const pushText = (raw: string) => {
     const text = decode(raw);
@@ -128,12 +140,20 @@ export function parseStampHtml(html: string | null | undefined): StampLine[] {
       continue;
     }
     if (closing) {
-      if (stack.length > 1) stack.pop();
+      if (name === 'ul' || name === 'ol') lists.pop();
+      else if (stack.length > 1) stack.pop();
       if (LINE_BREAK.test(name)) endLine();
       continue;
     }
     // Self-closing or void: nothing to push.
     if (full.endsWith('/>')) continue;
+
+    if (name === 'ul' || name === 'ol') {
+      // A list tag carries no style of its own, so it stays off the style
+      // stack — only its own close pops it, above.
+      lists.push({ ordered: name === 'ol', index: 0 });
+      continue;
+    }
 
     const style: Style = { ...top() };
     if (name === 'strong' || name === 'b') style.bold = true;
@@ -149,6 +169,20 @@ export function parseStampHtml(html: string | null | undefined): StampLine[] {
       if (/font-style\s*:\s*italic/i.test(styleAttr)) style.italic = true;
     }
     stack.push(style);
+
+    // The marker belongs to the line, and the line has just started, so it is
+    // emitted here rather than at the <li>'s close.
+    if (name === 'li') {
+      const list = lists[lists.length - 1];
+      if (list) {
+        list.index += 1;
+        current.push({ text: list.ordered ? `${list.index}.  ` : BULLET, ...style });
+      } else {
+        // An <li> with no list around it — pasted markup usually. Still reads
+        // as a list item to whoever typed it.
+        current.push({ text: BULLET, ...style });
+      }
+    }
   }
   if (current.length > 0) lines.push(current);
 

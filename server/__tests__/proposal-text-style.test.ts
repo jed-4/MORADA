@@ -41,6 +41,10 @@ interface Item {
 }
 
 async function renderItems(sections: any[], extraProps: any = {}): Promise<Item[]> {
+  // `proposal` is merged from the defaults below, so it must not be spread back
+  // in raw afterwards — doing that replaced the merged object with the two-key
+  // override and quietly emptied every other field.
+  const { proposal: proposalOverride, ...rest } = extraProps;
   const proposal = {
     id: "p1",
     proposalNumber: "PROP-2026-0001",
@@ -53,15 +57,14 @@ async function renderItems(sections: any[], extraProps: any = {}): Promise<Item[
     showPricing: true,
     layoutSettings: {},
     estimateId: null,
-    ...(extraProps.proposal ?? {}),
+    ...(proposalOverride ?? {}),
   };
   const buf = await renderToBuffer(
     createElement(ProposalDocument as any, {
       proposal,
       sections,
       companyName: "Lighthouse",
-      ...extraProps,
-      proposalOverrides: undefined,
+      ...rest,
     }),
   );
   const doc = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise;
@@ -234,6 +237,65 @@ await check("real estimate data always beats the stand-ins", async () => {
   const text = items.map((i) => i.str).join(" ");
   assert.ok(text.includes("REAL_LINE_ITEM"), "the real estimate should be what prints");
   assert.ok(!text.includes(SAMPLE_ESTIMATE_ID), "no sample id should leak into the document");
+});
+
+/* ── The cover letter's price summary ───────────────────────────────────── */
+
+const coverLetter = (summaryPlacement?: string) => [
+  {
+    id: "sec-letter",
+    proposalId: "p1",
+    sectionType: "cover_letter",
+    name: "Cover Letter",
+    order: 0,
+    isEnabled: true,
+    content: { letterText: "<p>Dear client</p>", ...(summaryPlacement ? { summaryPlacement } : {}) },
+    description: null,
+    descriptionHtml: null,
+    showPricing: true,
+    showSubtotal: true,
+  },
+];
+
+await check("the price summary is off unless asked for", async () => {
+  const text = (await renderItems(coverLetter())).map((i) => i.str).join(" ");
+  assert.ok(text.includes("Dear client"), "the letter itself should still print");
+  assert.ok(!text.includes("Valid until"), "no summary block without the setting");
+});
+
+await check("the price summary prints the document's own total, not the row's", async () => {
+  /* proposal.totalAmount says 110,000c and the estimate says 220,000c. The
+     estimate is what every other section prints, so it is what the cover letter
+     must print — a letter quoting a different number from the payment schedule
+     is the whole failure to avoid. The estimate section has to be present for
+     that to be true: resolveProposalTotals reads the estimate through it, and
+     falls back to the stored columns when there is none. */
+  const items = await renderItems([...coverLetter("top"), ...estimateSections.slice(0, 1)], {
+    proposal: { estimateId: "real-1", expiryDate: "2026-10-06" },
+    estimatesData: {
+      "real-1": {
+        estimate: { id: "real-1", projectMarkupPercent: 0, taxRate: 10 },
+        groups: [],
+        items: [{
+          id: "i1", estimateId: "real-1", groupId: null, description: "Line",
+          quantity: 1, unit: "item", unitCostExTax: 2000, taxAmount: 200,
+          priceIncTax: 2200, order: 0,
+        }],
+      },
+    },
+  });
+  const text = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
+  assert.ok(text.includes("Valid until"), `no summary block — got: ${text.slice(0, 300)}`);
+  assert.ok(text.includes("$2,200.00"), `the estimate's total should print — got: ${text.slice(0, 300)}`);
+  assert.ok(!text.includes("$1,100.00"), "the stale proposal row total must not print");
+});
+
+await check("an uncosted proposal prints no price rather than $0.00", async () => {
+  const text = (await renderItems(coverLetter("top"), {
+    proposal: { subtotal: 0, gstAmount: 0, totalAmount: 0, proposalNumber: "PROP-2026-0001" },
+  })).map((i) => i.str).join(" ");
+  assert.ok(text.includes("PROP-2026-0001"), "the other facts should still print");
+  assert.ok(!text.includes("$0.00"), "a zero price must not be stated as a price");
 });
 
 console.log(`\n${passed} proposal text-style checks passed`);

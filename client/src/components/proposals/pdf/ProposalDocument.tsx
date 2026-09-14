@@ -208,8 +208,14 @@ export function ProposalDocument({
                 showFooter={footerFor(section)}
                 proposal={proposal}
                 section={section}
+                project={project}
                 {...sharedSectionProps}
                 primaryColor={primaryColor}
+                showGst={showGst}
+                /* The same totals every other section prints, so the price on a
+                   cover letter can never disagree with the one on the payment
+                   schedule. See proposalContext. */
+                totals={totals}
               />
             );
           case 'summary':
