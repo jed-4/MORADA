@@ -885,6 +885,13 @@ export const projects = pgTable("projects", {
   endDate: text("end_date"), // ISO date string (legacy)
   proposedStartDate: text("proposed_start_date"), // ISO date string
   proposedEndDate: text("proposed_end_date"), // ISO date string
+  // The date the build actually reached practical completion, ISO date string.
+  // Distinct from endDate, which is what the programme currently predicts and
+  // keeps predicting after the job is done. NULL means "not complete yet" —
+  // a different state from any date, and the common one.
+  // Open-job exposure stops here, and the statutory warranty and defects
+  // liability periods both start here.
+  practicalCompletionDate: text("practical_completion_date"),
   
   budget: integer("budget"), // Internal budget in cents (legacy)
   isActive: boolean("is_active").notNull().default(true),

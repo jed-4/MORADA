@@ -55,6 +55,7 @@ interface SystemProject {
   endDate?: string | null;
   proposedStartDate?: string | null;
   proposedEndDate?: string | null;
+  practicalCompletionDate?: string | null;
 }
 
 interface ConstructionLimit {
@@ -134,6 +135,24 @@ function addDays(d: Date, n: number): Date {
   const out = new Date(d);
   out.setDate(out.getDate() + n);
   return out;
+}
+
+/** Whole days from `a` to `b`, inclusive of both ends. */
+function daySpan(a: string, b: string): number {
+  return Math.round((parseKey(b).getTime() - parseKey(a).getTime()) / 86_400_000) + 1;
+}
+
+function shiftKey(iso: string, days: number): string {
+  return toKey(addDays(parseKey(iso), days));
+}
+
+/**
+ * Weeks a start/end pair spans, rounded. A range pulled from a project rarely
+ * lands on a whole number of weeks, so this is for display and for resizing —
+ * the dates stay the stored truth, and duration is never persisted.
+ */
+function weeksBetween(start: string, end: string): number {
+  return Math.max(1, Math.round(daySpan(start, end) / 7));
 }
 
 const fmtMoney = (v: number) =>
@@ -379,7 +398,11 @@ function prefillFromProject(p: SystemProject, metrics?: ContractMetrics): Partia
         ?? p.contractedTotalIncGstCents ?? p.contractCost ?? p.contractPrice
     : p.contractPrice ?? p.contractCost ?? p.contractedTotalIncGstCents;
   const start = contracted ? p.startDate ?? p.proposedStartDate : p.proposedStartDate ?? p.startDate;
-  const end = contracted ? p.endDate ?? p.proposedEndDate : p.proposedEndDate ?? p.endDate;
+  // Practical completion wins over every programmed end date, on either basis.
+  // Exposure stops when the job is actually finished; endDate is what the
+  // programme predicts, and it goes on predicting after the job is done.
+  const end = p.practicalCompletionDate
+    ?? (contracted ? p.endDate ?? p.proposedEndDate : p.proposedEndDate ?? p.endDate);
   return {
     name: p.name,
     basis: contracted ? "actual" : "predicted",
@@ -484,6 +507,38 @@ function RowDialog({
     if (!p) return;
     setAutoAmount(true);
     setForm((f) => ({ ...f, ...prefillFromProject(p, metrics) }));
+  };
+
+  const durationWeeks =
+    form.startDate && form.endDate && form.endDate >= form.startDate
+      ? weeksBetween(form.startDate, form.endDate)
+      : null;
+
+  /**
+   * Moving the start slides the whole job: the end shifts by the same number of
+   * DAYS, so the exact span survives even when it is not a round number of
+   * weeks — which is usually the case for a range pulled off a project.
+   */
+  const onStartChange = (v: string) => {
+    setForm((f) => {
+      if (!v) return { ...f, startDate: "" };
+      if (!f.startDate || !f.endDate || f.endDate < f.startDate) {
+        return { ...f, startDate: v };
+      }
+      const delta = Math.round(
+        (parseKey(v).getTime() - parseKey(f.startDate).getTime()) / 86_400_000,
+      );
+      return { ...f, startDate: v, endDate: shiftKey(f.endDate, delta) };
+    });
+  };
+
+  /** Resizing from the start, so the end moves and the start stays put. */
+  const onDurationChange = (v: string) => {
+    const weeks = parseInt(v, 10);
+    setForm((f) => {
+      if (!f.startDate || !Number.isFinite(weeks) || weeks < 1) return f;
+      return { ...f, endDate: shiftKey(f.startDate, weeks * 7 - 1) };
+    });
   };
 
   const amount = num(form.maxValue);
@@ -596,7 +651,7 @@ function RowDialog({
             <Label className="text-xs">Starts</Label>
             <Input
               type="date" className="h-8 text-xs" value={form.startDate}
-              onChange={(e) => set("startDate")(e.target.value)}
+              onChange={(e) => onStartChange(e.target.value)}
             />
           </div>
 
@@ -610,6 +665,23 @@ function RowDialog({
               <p className="text-label text-status-danger">Ends before it starts.</p>
             )}
           </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Duration (weeks)</Label>
+            <Input
+              type="number" min={1} className="h-8 text-xs"
+              value={durationWeeks === null ? "" : String(durationWeeks)}
+              onChange={(e) => onDurationChange(e.target.value)}
+              placeholder={form.startDate ? "e.g. 32" : "set a start date first"}
+              disabled={!form.startDate}
+            />
+          </div>
+
+          <p className="col-span-2 text-label text-muted-foreground">
+            Duration is not stored — it is the span of the two dates. Set it once
+            and the end follows, then move the start to try a job earlier or
+            later and the whole job slides with it.
+          </p>
 
           <p className="col-span-2 text-label text-muted-foreground">
             Without both dates the job holds a row but occupies no weeks, so it
@@ -669,8 +741,12 @@ export default function HBCFTracker() {
     queryKey: ["/api/hbcf-projects/contract-values"],
   });
 
+  const projectById = useMemo(
+    () => new Map(systemProjects.map((p) => [p.id, p])),
+    [systemProjects],
+  );
+
   const driftByRow = useMemo(() => {
-    const projectById = new Map(systemProjects.map((p) => [p.id, p]));
     const metricsById = new Map(
       (contractValues as (ContractMetrics & { projectId: string })[]).map((m) => [m.projectId, m]),
     );
@@ -681,7 +757,7 @@ export default function HBCFTracker() {
       if (d) out.set(r.id, d);
     }
     return out;
-  }, [rows, systemProjects, contractValues]);
+  }, [rows, projectById, contractValues]);
 
   const limit = settings.hwiExposureLimit ? parseFloat(settings.hwiExposureLimit) : null;
   const countLimit = settings.hwiJobCountLimit ?? null;
@@ -804,11 +880,17 @@ export default function HBCFTracker() {
           const predicted = r.basis !== "actual";
           const overType = overTypeIds.has(r.id);
           const drift = driftByRow.get(r.id);
+          // A linked row wears its project's colour, so a job is the same
+          // colour here as on the schedule and the project board. Resolved on
+          // read rather than copied at link time: recolour a project and this
+          // follows, and colour carries no compliance meaning worth freezing.
+          // Unlinked pipeline rows keep the colour they were given.
+          const colour = (r.projectId && projectById.get(r.projectId)?.color) || r.color || "#A890D4";
           return (
             <div className="flex items-start gap-1.5 min-w-0 group/row">
               <div
                 className="w-2 self-stretch min-h-[30px] rounded-sm flex-shrink-0"
-                style={{ background: r.color ?? "#A890D4", opacity: predicted ? 0.45 : 1 }}
+                style={{ background: colour, opacity: predicted ? 0.45 : 1 }}
               />
               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                 <div className="flex items-center gap-1 min-w-0">
@@ -898,17 +980,28 @@ export default function HBCFTracker() {
       const value = peakHere?.total ?? 0;
       const tone = toneFor(value, limit);
       const isNow = p.weeks.some((w) => w.key === thisMonday);
+      // An inset shadow rather than a border: the columns have fixed widths, and
+      // 2px of border would push every cell out of alignment with its header.
+      // Written as an inline style, not a Tailwind arbitrary value — the
+      // multi-value `shadow-[inset_...,inset_...]` form silently produced no
+      // rule at all, so the band had a tint but no edges.
+      const NOW_EDGES = "inset 2px 0 0 0 hsl(var(--primary)), inset -2px 0 0 0 hsl(var(--primary))";
+      const nowCellStyle = isNow
+        ? { background: "hsl(var(--primary) / 0.10)", boxShadow: NOW_EDGES }
+        : undefined;
 
       cols.push({
         id: p.id,
         enableSorting: false,
+        // Deliberately uncoloured. The exposure tone lives on the total row at
+        // the bottom; painting it here too said the same thing twice and left
+        // nowhere for the current week to stand out.
         header: () => (
           <div
             className={cn(
-              "flex flex-col items-center leading-none gap-0.5 w-full py-0.5 rounded-sm",
-              isNow && "ring-1 ring-inset ring-primary/50",
+              "flex flex-col items-center leading-none gap-0.5 w-full py-1 -my-0.5",
+              isNow ? "bg-primary text-primary-foreground font-bold rounded-t-sm" : "",
             )}
-            style={{ background: TONE_STYLE[tone].bg, color: tone === "none" ? undefined : TONE_STYLE[tone].text }}
           >
             <span className="text-label uppercase">{p.label}</span>
             <span className="text-label font-semibold">{p.subLabel}</span>
@@ -919,22 +1012,27 @@ export default function HBCFTracker() {
           if (r.__isTotal) {
             return (
               <div
-                className={cn(
-                  "w-full h-full flex items-center justify-center text-label font-bold tabular-nums",
-                  isNow && "ring-1 ring-inset ring-primary/40",
-                )}
-                style={{ background: TONE_STYLE[tone].bg, color: TONE_STYLE[tone].text }}
+                className="w-full h-full flex items-center justify-center text-label font-bold tabular-nums"
+                style={{
+                  background: TONE_STYLE[tone].bg,
+                  color: TONE_STYLE[tone].text,
+                  // Closes the band at the bottom of the grid.
+                  ...(isNow
+                    ? { boxShadow: `${NOW_EDGES}, inset 0 -2px 0 0 hsl(var(--primary))` }
+                    : {}),
+                }}
               >
                 {value > 0 ? fmtShort(value) : <span className="text-muted-foreground/20">—</span>}
               </div>
             );
           }
           const on = p.weeks.some((w) => rowCoversWeek(r, w));
-          if (!on) return <div className={cn("w-full h-full", isNow && "bg-primary/5")} />;
-          const colour = r.color ?? "#A890D4";
+          if (!on) return <div className="w-full h-full" style={nowCellStyle} />;
+          const colour =
+            (r.projectId && projectById.get(r.projectId)?.color) || r.color || "#A890D4";
           const predicted = r.basis !== "actual";
           return (
-            <div className={cn("w-full h-full flex items-center px-px", isNow && "bg-primary/5")}>
+            <div className="w-full h-full flex items-center px-px" style={nowCellStyle}>
               <div
                 className="w-full h-3.5 rounded-sm"
                 style={
@@ -956,18 +1054,33 @@ export default function HBCFTracker() {
     }
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periods, periodPeak, limit, countLimit, thisMonday, zoom, overTypeIds, driftByRow]);
+  }, [periods, periodPeak, limit, countLimit, thisMonday, zoom, overTypeIds, driftByRow, projectById]);
+
+  // Chronological, because the grid is a timeline: reading top to bottom should
+  // walk forward through the programme. Rows with no start sink to the bottom —
+  // they occupy no weeks, so there is nowhere on the timeline to put them.
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        if (!a.startDate && !b.startDate) return a.name.localeCompare(b.name);
+        if (!a.startDate) return 1;
+        if (!b.startDate) return -1;
+        if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }),
+    [rows],
+  );
 
   const tableData = useMemo<TableRow[]>(
     () => [
-      ...(rows as TableRow[]),
+      ...(sortedRows as TableRow[]),
       {
         id: "__total__", companyId: "", name: "Open job exposure", maxValue: "0",
         jobType: null, startDate: null, endDate: null, basis: "actual",
         color: null, sortOrder: 9999, __isTotal: true,
       },
     ],
-    [rows],
+    [sortedRows],
   );
 
   if (isLoading) {
