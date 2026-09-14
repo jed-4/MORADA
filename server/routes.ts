@@ -60,6 +60,7 @@ import {
   insertUserViewPreferencesSchema,
   insertCompanySettingsSchema,
   insertHbcfCertificateSchema,
+  insertHbcfProjectSchema,
   insertSystemConfigurationSchema,
   insertFieldCategorySchema,
   insertFieldOptionSchema,
@@ -26709,37 +26710,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/hbcf-projects", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const row = await storage.createHbcfProject({ ...req.body, companyId: user.companyId });
+      // .omit({ companyId }) at the parse: the tenant comes from the session
+      // below, never from the body.
+      const parsed = insertHbcfProjectSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid HBCF project", details: parsed.error.flatten() });
+      }
+      const row = await storage.createHbcfProject({ ...parsed.data, companyId: user.companyId });
       res.status(201).json(row);
     } catch (error) {
+      console.error("Failed to create HBCF project:", error);
       res.status(500).json({ error: "Failed to create HBCF project" });
     }
   });
 
+  // Ownership is enforced in the query, not by fetching the company's rows and
+  // filtering here: an id from another tenant updates nothing and 404s.
   app.patch("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
     try {
-      // Ownership: HBCF rows carry companyId directly.
-      const companyRows = await storage.getHbcfProjects((req.user as any)?.companyId);
-      if (!companyRows.some((r: any) => r.id === req.params.id)) {
-        return res.status(404).json({ error: "HBCF project not found" });
+      const user = req.user as any;
+      const { companyId: _c, id: _id, createdAt: _ca, updatedAt: _ua, ...rest } = req.body ?? {};
+      const parsed = insertHbcfProjectSchema.partial().safeParse(rest);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid HBCF project", details: parsed.error.flatten() });
       }
-      const updated = await storage.updateHbcfProject(req.params.id, req.body);
+      const updated = await storage.updateHbcfProject(req.params.id, user.companyId, parsed.data);
+      if (!updated) return res.status(404).json({ error: "HBCF project not found" });
       res.json(updated);
     } catch (error) {
+      console.error("Failed to update HBCF project:", error);
       res.status(500).json({ error: "Failed to update HBCF project" });
     }
   });
 
   app.delete("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
     try {
-      // Ownership: HBCF rows carry companyId directly.
-      const companyRows = await storage.getHbcfProjects((req.user as any)?.companyId);
-      if (!companyRows.some((r: any) => r.id === req.params.id)) {
-        return res.status(404).json({ error: "HBCF project not found" });
-      }
-      await storage.deleteHbcfProject(req.params.id);
+      const user = req.user as any;
+      const ok = await storage.deleteHbcfProject(req.params.id, user.companyId);
+      if (!ok) return res.status(404).json({ error: "HBCF project not found" });
       res.status(204).send();
     } catch (error) {
+      console.error("Failed to delete HBCF project:", error);
       res.status(500).json({ error: "Failed to delete HBCF project" });
     }
   });

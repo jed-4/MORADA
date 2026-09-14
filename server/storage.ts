@@ -447,11 +447,12 @@ export interface IStorage {
   createEnoteAttachment(data: any): Promise<any>;
   deleteEnoteAttachment(id: string): Promise<boolean>;
 
-  // HBCF Project Tracker
-  getHbcfProjects(companyId: string): Promise<any[]>;
-  createHbcfProject(data: any): Promise<any>;
-  updateHbcfProject(id: string, data: Partial<any>): Promise<any>;
-  deleteHbcfProject(id: string): Promise<boolean>;
+  // HBCF Project Tracker. companyId is part of the WHERE on update and delete,
+  // so an id from another tenant matches no row.
+  getHbcfProjects(companyId: string): Promise<schema.HbcfProject[]>;
+  createHbcfProject(data: schema.InsertHbcfProject): Promise<schema.HbcfProject>;
+  updateHbcfProject(id: string, companyId: string, data: Partial<schema.InsertHbcfProject>): Promise<schema.HbcfProject | undefined>;
+  deleteHbcfProject(id: string, companyId: string): Promise<boolean>;
 
   // Home warranty insurance certificates. Every method takes companyId and
   // scopes on it in the query — the compiler is what stops a caller reaching
@@ -11783,7 +11784,7 @@ export class DbStorage implements IStorage {
 
   // ── HBCF Project Tracker ────────────────────────────────────────────────────
 
-  async getHbcfProjects(companyId: string): Promise<any[]> {
+  async getHbcfProjects(companyId: string): Promise<schema.HbcfProject[]> {
     try {
       return await db
         .select()
@@ -11796,7 +11797,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createHbcfProject(data: any): Promise<any> {
+  async createHbcfProject(data: schema.InsertHbcfProject): Promise<schema.HbcfProject> {
     try {
       const [row] = await db.insert(schema.hbcfProjects).values(data).returning();
       return row;
@@ -11806,12 +11807,19 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateHbcfProject(id: string, data: Partial<any>): Promise<any> {
+  async updateHbcfProject(
+    id: string,
+    companyId: string,
+    data: Partial<schema.InsertHbcfProject>,
+  ): Promise<schema.HbcfProject | undefined> {
     try {
       const [updated] = await db
         .update(schema.hbcfProjects)
-        .set(data)
-        .where(eq(schema.hbcfProjects.id, id))
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.hbcfProjects.id, id),
+          eq(schema.hbcfProjects.companyId, companyId),
+        ))
         .returning();
       return updated;
     } catch (error) {
@@ -11820,10 +11828,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteHbcfProject(id: string): Promise<boolean> {
+  async deleteHbcfProject(id: string, companyId: string): Promise<boolean> {
     try {
-      await db.delete(schema.hbcfProjects).where(eq(schema.hbcfProjects.id, id));
-      return true;
+      const deleted = await db
+        .delete(schema.hbcfProjects)
+        .where(and(
+          eq(schema.hbcfProjects.id, id),
+          eq(schema.hbcfProjects.companyId, companyId),
+        ))
+        .returning({ id: schema.hbcfProjects.id });
+      return deleted.length > 0;
     } catch (error) {
       console.error("Database error in deleteHbcfProject:", error);
       return false;

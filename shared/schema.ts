@@ -1212,6 +1212,14 @@ export const companySettings = pgTable("company_settings", {
   // ── Builder Compliance & Metrics ───────────────────────────────────────────
   // Home Warranty Insurance / Domestic Building Insurance (DBI)
   hwiExposureLimit: numeric("hwi_exposure_limit", { precision: 15, scale: 2 }), // Max $ exposure allowed by insurer
+  // Eligibility is capped two ways — a dollar total across open jobs, and a
+  // count of them. The count rarely binds but it is a real term of the approval.
+  hwiJobCountLimit: integer("hwi_job_count_limit"),
+  // Per-job maximums by job type: [{ code, label, limit }], limit in dollars.
+  // jsonb rather than fixed columns: H01..H05 is icare's NSW taxonomy and other
+  // states differ. Null means "not entered" — distinct from a $0 entry, which
+  // means the builder holds no approval for that category at all.
+  hwiConstructionLimits: jsonb("hwi_construction_limits").$type<HbcfConstructionLimit[]>(),
   hwiInsurer: text("hwi_insurer"),
   hwiPolicyNumber: text("hwi_policy_number"),
   hwiExpiryDate: text("hwi_expiry_date"), // ISO date string
@@ -7445,18 +7453,45 @@ export type LabourEstimateCategory = typeof labourEstimateCategories.$inferSelec
 export const hbcfProjects = pgTable("hbcf_projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  // Optional link to a system project
+  // Optional link to a system project. Null for pipeline work that has not been
+  // set up as a project yet — the whole point of forward planning.
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   name: text("name").notNull(),
+  // The job's HBCF commitment in DOLLARS (numeric — Drizzle returns a string).
+  // Named max_value by the original toggle grid; it is the amount this job
+  // contributes to open-job exposure, not a cap.
   maxValue: numeric("max_value", { precision: 15, scale: 2 }).notNull().default("0"),
-  // statuses: { "2026-01-05": true } where true = ACTIVE on that date
+  // H01..H05 under icare (NSW). Selects which of company_settings'
+  // hwiConstructionLimits entries caps this one job.
+  jobType: text("job_type"),
+  // The window this job is open for, ISO "YYYY-MM-DD". The weeks a row occupies
+  // are derived from these — see basis for how firm they are.
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  // "predicted" — expected work, priced off the live estimate
+  // "actual"    — contracted, priced off the frozen contract sum
+  basis: text("basis").notNull().default("predicted"),
+  // SUPERSEDED by startDate/endDate: a map of { "2026-01-05": true } marking the
+  // Mondays a job was hand-toggled ACTIVE. Migration 0082 converted these into a
+  // date range and nothing reads it now. Kept one release as the only copy of
+  // that data, since the conversion flattens gaps; droppable once the timeline
+  // has been checked against reality.
   statuses: jsonb("statuses").$type<Record<string, boolean>>().default({}),
   color: text("color"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/** One row of company_settings.hwiConstructionLimits. `limit` is dollars. */
+export type HbcfConstructionLimit = { code: string; label: string; limit: string };
 export type HbcfProject = typeof hbcfProjects.$inferSelect;
-export const insertHbcfProjectSchema = createInsertSchema(hbcfProjects).omit({ id: true, createdAt: true });
+export const insertHbcfProjectSchema = createInsertSchema(hbcfProjects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertHbcfProject = z.infer<typeof insertHbcfProjectSchema>;
 
 // ── Home Warranty Insurance certificates (per job) ──────────────────────────
 // Deliberately insurer-agnostic: no scheme thresholds or warranty periods are

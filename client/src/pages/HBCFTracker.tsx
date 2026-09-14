@@ -1,28 +1,28 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
-  DataTableColumnPicker,
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
-  Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X, Columns3
-} from "lucide-react";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
+import {
+  Plus, Trash2, Pencil, ShieldCheck, Info, SlidersHorizontal, AlertTriangle,
+} from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,8 +31,12 @@ interface HbcfRow {
   companyId: string;
   projectId?: string | null;
   name: string;
+  /** Dollars as a numeric string — this job's contribution to open-job exposure. */
   maxValue: string;
-  statuses: Record<string, boolean>;
+  jobType: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  basis: string; // "predicted" | "actual"
   color: string | null;
   sortOrder: number;
 }
@@ -41,133 +45,509 @@ interface SystemProject {
   id: string;
   name: string;
   color?: string | null;
-  contractCost?: number | null;
   constructionNumber?: string | null;
-  jobNumber?: string | null;
   currentSystemPhase?: string | null;
+  contractCost?: number | null;
+  contractPrice?: number | null;
+  contractedTotalIncGstCents?: number | null;
+  contractedAt?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  proposedStartDate?: string | null;
+  proposedEndDate?: string | null;
+}
+
+interface ConstructionLimit {
+  code: string;
+  label: string;
+  limit: string;
 }
 
 interface CompanySettings {
   hwiExposureLimit?: string | null;
+  hwiJobCountLimit?: number | null;
+  hwiConstructionLimits?: ConstructionLimit[] | null;
 }
 
 type TableRow = HbcfRow & { __isTotal?: boolean };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const ROW_COLORS = [
   "#A890D4", "#60a5fa", "#34d399", "#fbbf24", "#f87171",
   "#a78bfa", "#38bdf8", "#4ade80", "#fb923c", "#e879f9",
 ];
 
-function fmt(val: number) {
-  if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(3).replace(/\.?0+$/, "")}M`;
-  if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}k`;
-  return `$${val.toFixed(0)}`;
-}
+/**
+ * icare's NSW job types, offered as the starting point when a company has not
+ * entered its own. Stored per company, so a VIC or QLD builder can replace them
+ * wholesale — nothing downstream assumes these codes exist.
+ */
+const DEFAULT_CONSTRUCTION_LIMITS: ConstructionLimit[] = [
+  { code: "H01", label: "New Dwelling Construction", limit: "" },
+  { code: "H02", label: "Building Work to an Existing Residential Apartment Building", limit: "" },
+  { code: "H03", label: "New Residential Apartment Building Construction", limit: "" },
+  { code: "H04", label: "Building Work to an Existing Dwelling", limit: "" },
+  { code: "H05", label: "Swimming Pools", limit: "" },
+];
 
-function fmtFull(val: number) {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(val);
-}
+/** Jed's thresholds: green below 90%, amber 90–99%, red at 100% and over. */
+const AMBER_AT = 0.9;
+const RED_AT = 1;
 
-function getWeeksForYear(year: number): Date[] {
-  const dates: Date[] = [];
-  const d = new Date(year, 0, 1);
-  while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
-  while (d.getFullYear() === year) {
-    dates.push(new Date(d));
-    d.setDate(d.getDate() + 7);
-  }
-  return dates;
-}
+const LEFT_COL_W = 244;
+const CELL_W = 54;
 
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Local-date key, NOT `toISOString().slice(0,10)`. In any timezone east of UTC
+ * a local midnight serialises as the previous day, which silently shifted every
+ * week key in the old grid by one.
+ */
 function toKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function currentMondayKey(): string {
-  const now = new Date();
-  const d = new Date(now);
-  d.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+function parseKey(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-// ─── Inline value editors ─────────────────────────────────────────────────────
+function mondayOf(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
+  return out;
+}
 
-function InlineName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+function addDays(d: Date, n: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + n);
+  return out;
+}
 
-  if (editing) return (
-    <div className="flex items-center gap-1 w-full">
-      <Input
-        autoFocus value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === "Enter") { onSave(draft); setEditing(false); }
-          if (e.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-        className="h-5 text-xs px-1 w-full"
-      />
-      <button onClick={() => { onSave(draft); setEditing(false); }}><Check className="w-3 h-3 text-status-success" /></button>
-      <button onClick={() => { setDraft(value); setEditing(false); }}><X className="w-3 h-3 text-muted-foreground" /></button>
-    </div>
+const fmtMoney = (v: number) =>
+  new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(v);
+
+function fmtShort(v: number) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  if (v >= 1_000) return `$${Math.round(v / 1_000)}k`;
+  return `$${Math.round(v)}`;
+}
+
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return "";
+  return parseKey(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" });
+}
+
+const num = (v: string | null | undefined) => (v ? parseFloat(v) || 0 : 0);
+
+// ─── Week series ─────────────────────────────────────────────────────────────
+
+interface Week { key: string; start: Date; end: Date }
+interface Period { id: string; label: string; subLabel: string; weeks: Week[] }
+
+/** Rolling window: `back` weeks before this Monday, then `months` forward. */
+function buildWeeks(backWeeks: number, forwardMonths: number): Week[] {
+  const first = addDays(mondayOf(new Date()), -7 * backWeeks);
+  const last = new Date(first);
+  last.setMonth(last.getMonth() + forwardMonths);
+  const out: Week[] = [];
+  for (let d = new Date(first); d <= last; d = addDays(d, 7)) {
+    out.push({ key: toKey(d), start: new Date(d), end: addDays(d, 6) });
+  }
+  return out;
+}
+
+function groupIntoPeriods(weeks: Week[], zoom: "week" | "month"): Period[] {
+  if (zoom === "week") {
+    return weeks.map((w) => ({
+      id: `w-${w.key}`,
+      label: w.start.toLocaleDateString("en-AU", { month: "short" }),
+      subLabel: `${w.start.getDate()}`,
+      weeks: [w],
+    }));
+  }
+  const byMonth = new Map<string, Week[]>();
+  for (const w of weeks) {
+    // A week is filed under the month its Monday falls in, so no week is
+    // double-counted across a month boundary.
+    const id = `m-${w.start.getFullYear()}-${w.start.getMonth()}`;
+    const list = byMonth.get(id);
+    if (list) list.push(w); else byMonth.set(id, [w]);
+  }
+  return Array.from(byMonth.entries()).map(([id, ws]) => ({
+    id,
+    label: ws[0].start.toLocaleDateString("en-AU", { month: "short" }),
+    subLabel: `${ws[0].start.getFullYear()}`.slice(2),
+    weeks: ws,
+  }));
+}
+
+/** A job occupies a week when its range touches that week at all. */
+function rowCoversWeek(row: HbcfRow, w: Week): boolean {
+  if (!row.startDate || !row.endDate) return false;
+  return row.startDate <= toKey(w.end) && row.endDate >= toKey(w.start);
+}
+
+function toneFor(value: number, limit: number | null): "none" | "ok" | "warn" | "over" {
+  if (value <= 0) return "none";
+  if (!limit) return "none";
+  const pct = value / limit;
+  if (pct >= RED_AT) return "over";
+  if (pct >= AMBER_AT) return "warn";
+  return "ok";
+}
+
+const TONE_STYLE: Record<string, { bg: string; text: string }> = {
+  none: { bg: "transparent", text: "var(--muted-foreground)" },
+  ok: { bg: "rgba(34,197,94,0.10)", text: "rgb(21,128,45)" },
+  warn: { bg: "rgba(249,115,22,0.16)", text: "rgb(154,52,18)" },
+  over: { bg: "rgba(239,68,68,0.18)", text: "rgb(185,28,28)" },
+};
+
+// ─── Limits editor ───────────────────────────────────────────────────────────
+
+function LimitsPopover({
+  settings,
+  onSave,
+}: {
+  settings: CompanySettings;
+  onSave: (patch: Partial<CompanySettings>) => void;
+}) {
+  const [exposure, setExposure] = useState(settings.hwiExposureLimit ?? "");
+  const [jobCount, setJobCount] = useState(
+    settings.hwiJobCountLimit == null ? "" : String(settings.hwiJobCountLimit),
   );
+  const [limits, setLimits] = useState<ConstructionLimit[]>(
+    settings.hwiConstructionLimits?.length
+      ? settings.hwiConstructionLimits
+      : DEFAULT_CONSTRUCTION_LIMITS,
+  );
+
+  const setLimitAt = (i: number, v: string) =>
+    setLimits((ls) => ls.map((l, idx) => (idx === i ? { ...l, limit: v } : l)));
 
   return (
-    <button
-      onClick={() => { setDraft(value); setEditing(true); }}
-      className="flex items-center gap-0.5 group/ne text-xs font-semibold text-left w-full min-w-0"
-    >
-      <span className="truncate">{value}</span>
-      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/ne:opacity-40 flex-shrink-0" />
-    </button>
+    <PopoverContent className="w-[420px] p-3 max-h-[70vh] overflow-auto" align="end">
+      <div className="space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold">Eligibility limits</h4>
+          <p className="text-label text-muted-foreground mt-0.5">
+            From your insurer's eligibility letter.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Open job limit ($)</Label>
+            <Input
+              type="number" className="h-8 text-xs"
+              value={exposure} onChange={(e) => setExposure(e.target.value)}
+              placeholder="2250000"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Open job limit (count)</Label>
+            <Input
+              type="number" className="h-8 text-xs"
+              value={jobCount} onChange={(e) => setJobCount(e.target.value)}
+              placeholder="112"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Construction limits — the most any one job may be</Label>
+          {limits.map((l, i) => (
+            <div key={l.code} className="flex items-center gap-2">
+              <span className="text-data font-semibold w-9 flex-shrink-0">{l.code}</span>
+              <span className="text-label text-muted-foreground flex-1 truncate" title={l.label}>
+                {l.label}
+              </span>
+              <Input
+                type="number" className="h-7 text-xs w-28 flex-shrink-0"
+                value={l.limit} onChange={(e) => setLimitAt(i, e.target.value)}
+                placeholder="—"
+              />
+            </div>
+          ))}
+          <p className="text-label text-muted-foreground">
+            $0 is a real answer — it means no approval to build that category.
+            Leave blank for one you do not hold a limit against.
+          </p>
+        </div>
+
+        <Button
+          size="sm" className="w-full h-7 text-xs"
+          onClick={() =>
+            onSave({
+              hwiExposureLimit: exposure.trim() === "" ? null : exposure.trim(),
+              hwiJobCountLimit: jobCount.trim() === "" ? null : parseInt(jobCount, 10),
+              hwiConstructionLimits: limits,
+            })
+          }
+        >
+          Save limits
+        </Button>
+      </div>
+    </PopoverContent>
   );
 }
 
-function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(value));
+// ─── Add / edit row ──────────────────────────────────────────────────────────
 
-  if (editing) return (
-    <div className="flex items-center gap-0.5 w-full">
-      <span className="text-data text-muted-foreground">$</span>
-      <Input
-        autoFocus type="number" value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={() => { onSave(parseFloat(draft) || 0); setEditing(false); }}
-        onKeyDown={e => {
-          if (e.key === "Enter") { onSave(parseFloat(draft) || 0); setEditing(false); }
-          if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
-        }}
-        className="h-5 text-data px-1 w-full"
-      />
-    </div>
-  );
+const EMPTY = {
+  projectId: "__none__",
+  name: "",
+  jobType: "__none__",
+  maxValue: "",
+  basis: "predicted",
+  startDate: "",
+  endDate: "",
+};
+type FormState = typeof EMPTY;
+
+/**
+ * What the app already knows about a project, in HBCF terms. `contractedAt` is
+ * the app's own "this is real now" predicate, so it decides the basis, and the
+ * basis in turn decides which pair of figures to read: the frozen contract sum
+ * and real dates, or the live estimate and proposed dates.
+ */
+function prefillFromProject(p: SystemProject): Partial<FormState> {
+  const contracted = !!p.contractedAt;
+  const cents = contracted
+    ? p.contractedTotalIncGstCents ?? p.contractCost ?? p.contractPrice
+    : p.contractPrice ?? p.contractCost ?? p.contractedTotalIncGstCents;
+  const start = contracted ? p.startDate ?? p.proposedStartDate : p.proposedStartDate ?? p.startDate;
+  const end = contracted ? p.endDate ?? p.proposedEndDate : p.proposedEndDate ?? p.endDate;
+  return {
+    name: p.name,
+    basis: contracted ? "actual" : "predicted",
+    maxValue: cents != null ? (cents / 100).toFixed(2) : "",
+    startDate: start ?? "",
+    endDate: end ?? "",
+  };
+}
+
+function RowDialog({
+  open, onOpenChange, initial, projects, limits, onSubmit, isPending,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  initial: HbcfRow | null;
+  projects: SystemProject[];
+  limits: ConstructionLimit[];
+  onSubmit: (payload: Record<string, unknown>) => void;
+  isPending: boolean;
+}) {
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+
+  const seedKey = open ? initial?.id ?? "__new__" : null;
+  if (seedKey !== seededFor) {
+    setSeededFor(seedKey);
+    setForm(
+      initial
+        ? {
+            projectId: initial.projectId ?? "__none__",
+            name: initial.name,
+            jobType: initial.jobType ?? "__none__",
+            maxValue: initial.maxValue ?? "",
+            basis: initial.basis ?? "predicted",
+            startDate: initial.startDate ?? "",
+            endDate: initial.endDate ?? "",
+          }
+        : EMPTY,
+    );
+  }
+
+  const set = (k: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Picking a project overwrites the figures on purpose — that is what the
+  // picker is for — but only when the field is empty or this is a new row, so
+  // re-opening an edited row and changing the link never silently discards a
+  // number that was corrected by hand.
+  const onPickProject = (id: string) => {
+    if (id === "__none__") { setForm((f) => ({ ...f, projectId: id })); return; }
+    const p = projects.find((x) => x.id === id);
+    if (!p) { setForm((f) => ({ ...f, projectId: id })); return; }
+    const pre = prefillFromProject(p);
+    setForm((f) => ({
+      ...f,
+      projectId: id,
+      name: f.name.trim() === "" ? pre.name ?? "" : f.name,
+      basis: initial ? f.basis : pre.basis ?? f.basis,
+      maxValue: f.maxValue.trim() === "" ? pre.maxValue ?? "" : f.maxValue,
+      startDate: f.startDate === "" ? pre.startDate ?? "" : f.startDate,
+      endDate: f.endDate === "" ? pre.endDate ?? "" : f.endDate,
+    }));
+  };
+
+  const repull = () => {
+    const p = projects.find((x) => x.id === form.projectId);
+    if (p) setForm((f) => ({ ...f, ...prefillFromProject(p) }));
+  };
+
+  const amount = num(form.maxValue);
+  const typeLimit = limits.find((l) => l.code === form.jobType);
+  const typeLimitValue = typeLimit && typeLimit.limit !== "" ? num(typeLimit.limit) : null;
+  const overType = typeLimitValue !== null && amount > typeLimitValue;
+  const datesBackwards =
+    form.startDate !== "" && form.endDate !== "" && form.endDate < form.startDate;
+
+  const canSave = form.name.trim() !== "" && !datesBackwards;
 
   return (
-    <button
-      onClick={() => { setDraft(String(value)); setEditing(true); }}
-      className="flex items-center gap-0.5 group/ia text-data text-muted-foreground hover:text-foreground w-full"
-    >
-      <span className="tabular-nums">{value > 0 ? fmt(value) : "Set amount…"}</span>
-      <Pencil className="w-2 h-2 opacity-0 group-hover/ia:opacity-40 flex-shrink-0" />
-    </button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{initial ? "Edit job" : "Add job to tracker"}</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Project</Label>
+              {form.projectId !== "__none__" && (
+                <button
+                  onClick={repull}
+                  className="text-label text-primary hover:underline"
+                  title="Overwrite the fields below with the project's current figures"
+                >
+                  Re-pull from project
+                </button>
+              )}
+            </div>
+            <Select value={form.projectId} onValueChange={onPickProject}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Link a project (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No linked project — pipeline job</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.constructionNumber ? `${p.constructionNumber} — ` : ""}{p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="col-span-2 space-y-1">
+            <Label className="text-xs">Job name *</Label>
+            <Input
+              className="h-8 text-xs" value={form.name}
+              onChange={(e) => set("name")(e.target.value)}
+              placeholder="e.g. 14 Rosedale Ave"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Job type</Label>
+            <Select value={form.jobType} onValueChange={set("jobType")}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Not set</SelectItem>
+                {limits.map((l) => (
+                  <SelectItem key={l.code} value={l.code}>
+                    {l.code} — {l.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Basis</Label>
+            <Select value={form.basis} onValueChange={set("basis")}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="predicted">Predicted</SelectItem>
+                <SelectItem value="actual">Actual (contracted)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="col-span-2 space-y-1">
+            <Label className="text-xs">HBCF commitment ($)</Label>
+            <Input
+              type="number" className="h-8 text-xs" value={form.maxValue}
+              onChange={(e) => set("maxValue")(e.target.value)}
+            />
+            {overType && (
+              <p className="text-label text-status-danger flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                Over the {form.jobType} construction limit of {fmtMoney(typeLimitValue!)}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Starts</Label>
+            <Input
+              type="date" className="h-8 text-xs" value={form.startDate}
+              onChange={(e) => set("startDate")(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Ends</Label>
+            <Input
+              type="date" className="h-8 text-xs" value={form.endDate}
+              onChange={(e) => set("endDate")(e.target.value)}
+            />
+            {datesBackwards && (
+              <p className="text-label text-status-danger">Ends before it starts.</p>
+            )}
+          </div>
+
+          <p className="col-span-2 text-label text-muted-foreground">
+            Without both dates the job holds a row but occupies no weeks, so it
+            adds nothing to the exposure line.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            size="sm" disabled={!canSave || isPending}
+            onClick={() =>
+              onSubmit({
+                projectId: form.projectId === "__none__" ? null : form.projectId,
+                name: form.name.trim(),
+                jobType: form.jobType === "__none__" ? null : form.jobType,
+                maxValue: form.maxValue.trim() === "" ? "0" : form.maxValue.trim(),
+                basis: form.basis,
+                startDate: form.startDate === "" ? null : form.startDate,
+                endDate: form.endDate === "" ? null : form.endDate,
+              })
+            }
+          >
+            {initial ? "Save" : "Add job"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-const LEFT_COL_W = 176;
-const CELL_W = 56;
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function HBCFTracker() {
   const { toast } = useToast();
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [selectedProjectId, setSelectedProjectId] = useState("__none__");
-  const [newAmount, setNewAmount] = useState("");
-  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
+  const [zoom, setZoom] = useState<"week" | "month">("week");
+  const [horizon, setHorizon] = useState(18);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<HbcfRow | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<HbcfRow | null>(null);
 
   const { data: settings = {} as CompanySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
@@ -175,7 +555,6 @@ export default function HBCFTracker() {
 
   const { data: rows = [], isLoading } = useQuery<HbcfRow[]>({
     queryKey: ["/api/hbcf-projects"],
-    queryFn: () => fetch("/api/hbcf-projects", { credentials: "include" }).then(r => r.json()),
   });
 
   const { data: systemProjects = [] } = useQuery<SystemProject[]>({
@@ -183,425 +562,428 @@ export default function HBCFTracker() {
   });
 
   const limit = settings.hwiExposureLimit ? parseFloat(settings.hwiExposureLimit) : null;
-  const weeks = useMemo(() => getWeeksForYear(year), [year]);
-  const nowKey = currentMondayKey();
+  const countLimit = settings.hwiJobCountLimit ?? null;
+  const constructionLimits = settings.hwiConstructionLimits?.length
+    ? settings.hwiConstructionLimits
+    : DEFAULT_CONSTRUCTION_LIMITS;
 
-  // Toggle a cell
-  const toggleMutation = useMutation({
-    mutationFn: ({ row, dateKey, active }: { row: HbcfRow; dateKey: string; active: boolean }) => {
-      const ns = { ...row.statuses };
-      if (active) ns[dateKey] = true; else delete ns[dateKey];
-      return apiRequest(`/api/hbcf-projects/${row.id}`, "PATCH", { statuses: ns });
+  const weeks = useMemo(() => buildWeeks(4, horizon), [horizon]);
+  const periods = useMemo(() => groupIntoPeriods(weeks, zoom), [weeks, zoom]);
+  const thisMonday = toKey(mondayOf(new Date()));
+
+  const settingsMutation = useMutation({
+    mutationFn: (patch: Partial<CompanySettings>) =>
+      apiRequest("/api/company-settings", "PATCH", patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Limits saved" });
     },
-    onMutate: async ({ row, dateKey, active }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old =>
-        old?.map(r => {
-          if (r.id !== row.id) return r;
-          const ns = { ...r.statuses };
-          if (active) ns[dateKey] = true; else delete ns[dateKey];
-          return { ...r, statuses: ns };
-        }) ?? []
-      );
-      return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/hbcf-projects"], ctx?.prev);
-      toast({ title: "Toggle failed", variant: "destructive" });
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
+    onError: () => toast({ title: "Could not save limits", variant: "destructive" }),
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiRequest("/api/hbcf-projects", "POST", { ...payload, sortOrder: rows.length }),
+    onSuccess: () => { invalidate(); setDialogOpen(false); },
+    onError: () => toast({ title: "Could not add job", variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<HbcfRow> }) =>
-      apiRequest(`/api/hbcf-projects/${id}`, "PATCH", data),
-    onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old =>
-        old?.map(r => r.id === id ? { ...r, ...data } : r) ?? []
-      );
-      return { prev };
-    },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/hbcf-projects"], ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (data: Partial<HbcfRow>) => apiRequest("/api/hbcf-projects", "POST", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] });
-      setSelectedProjectId("__none__");
-      setNewAmount("");
-    },
-    onError: () => toast({ title: "Failed to add project", variant: "destructive" }),
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) =>
+      apiRequest(`/api/hbcf-projects/${id}`, "PATCH", payload),
+    onSuccess: () => { invalidate(); setDialogOpen(false); },
+    onError: () => toast({ title: "Could not save job", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/hbcf-projects/${id}`, "DELETE"),
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old => old?.filter(r => r.id !== id) ?? []);
-      return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/hbcf-projects"], ctx?.prev);
-      toast({ title: "Delete failed", variant: "destructive" });
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
+    onSuccess: invalidate,
+    onError: () => toast({ title: "Could not remove job", variant: "destructive" }),
   });
 
-  // Projects in tracker (by their linked projectId)
-  const trackedProjectIds = new Set(rows.map(r => r.projectId).filter(Boolean));
-
-  // Available system projects to add
-  const availableProjects = systemProjects.filter(
-    p => !trackedProjectIds.has(p.id) &&
-      (p.currentSystemPhase === "construction" || p.currentSystemPhase === "pre_construction" || p.currentSystemPhase === "post_construction" || !p.currentSystemPhase)
-  );
-
-  const selectedSysProject = selectedProjectId !== "__none__"
-    ? systemProjects.find(p => p.id === selectedProjectId)
-    : null;
-
-  const handleAdd = () => {
-    if (!selectedSysProject) return;
-    const val = parseFloat(newAmount.replace(/[^0-9.]/g, ""));
-    const maxValue = !isNaN(val) && val > 0
-      ? val
-      : selectedSysProject.contractCost
-        ? selectedSysProject.contractCost / 100
-        : 0;
-    const color = selectedSysProject.color ?? ROW_COLORS[rows.length % ROW_COLORS.length];
-    createMutation.mutate({
-      projectId: selectedSysProject.id,
-      name: selectedSysProject.name,
-      maxValue: String(maxValue),
-      color,
-      sortOrder: rows.length,
-    });
-  };
-
-  // Column totals
-  const colTotal = (dateKey: string) =>
-    rows.reduce((sum, r) => sum + (r.statuses[dateKey] ? parseFloat(r.maxValue) || 0 : 0), 0);
-
-  function totalStyle(total: number): { bg: string; text: string } {
-    if (total === 0) return { bg: "transparent", text: "var(--muted-foreground)" };
-    if (!limit) return { bg: "transparent", text: "inherit" };
-    const pct = total / limit;
-    if (pct > 1) return { bg: "rgba(239,68,68,0.15)", text: "rgb(185,28,28)" };
-    if (pct >= 0.8) return { bg: "rgba(249,115,22,0.12)", text: "rgb(154,52,18)" };
-    return { bg: "rgba(34,197,94,0.08)", text: "rgb(21,128,45)" };
-  }
-
-  // Peak exposure
-  const peakTotal = useMemo(() => {
-    let peak = 0;
-    weeks.forEach(w => { const t = colTotal(toKey(w)); if (t > peak) peak = t; });
-    return peak;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // ── The weekly exposure series, computed once ────────────────────────────
+  // Everything else — column colour, the peak, this week's usage, the tooltip —
+  // reads off this, so a month column can never disagree with the weeks inside it.
+  const weekly = useMemo(() => {
+    const map = new Map<string, { total: number; jobs: HbcfRow[] }>();
+    for (const w of weeks) {
+      const jobs = rows.filter((r) => rowCoversWeek(r, w));
+      map.set(w.key, { total: jobs.reduce((s, r) => s + num(r.maxValue), 0), jobs });
+    }
+    return map;
   }, [rows, weeks]);
 
-  // ── DataTable column defs ───────────────────────────────────────────────
-  const tableColumns = useMemo<ColumnDef<TableRow, unknown>[]>(() => {
+  /** A period shows its WORST week: a month that breaches for one week breaches. */
+  const periodPeak = useMemo(() => {
+    const map = new Map<string, { total: number; week: Week; jobs: HbcfRow[] }>();
+    for (const p of periods) {
+      let best: { total: number; week: Week; jobs: HbcfRow[] } | null = null;
+      for (const w of p.weeks) {
+        const v = weekly.get(w.key);
+        if (!v) continue;
+        if (!best || v.total > best.total) best = { total: v.total, week: w, jobs: v.jobs };
+      }
+      if (best) map.set(p.id, best);
+    }
+    return map;
+  }, [periods, weekly]);
+
+  const peak = useMemo(() => {
+    let top = 0;
+    weekly.forEach((v) => { if (v.total > top) top = v.total; });
+    return top;
+  }, [weekly]);
+
+  const current = weekly.get(thisMonday) ?? { total: 0, jobs: [] as HbcfRow[] };
+
+  /** Rows priced above the construction limit for their own job type. */
+  const overTypeIds = useMemo(() => {
+    const byCode = new Map(constructionLimits.map((l) => [l.code, l]));
+    const out = new Set<string>();
+    for (const r of rows) {
+      if (!r.jobType) continue;
+      const l = byCode.get(r.jobType);
+      if (!l || l.limit === "") continue;
+      if (num(r.maxValue) > num(l.limit)) out.add(r.id);
+    }
+    return out;
+  }, [rows, constructionLimits]);
+
+  const openAdd = () => { setEditing(null); setDialogOpen(true); };
+  const openEdit = (r: HbcfRow) => { setEditing(r); setDialogOpen(true); };
+
+  // ── Columns ──────────────────────────────────────────────────────────────
+  const columns = useMemo<ColumnDef<TableRow, unknown>[]>(() => {
     const cols: (ColumnDef<TableRow, unknown> & { meta?: DataTableColumnMeta })[] = [
       {
-        id: "project",
-        header: "Project / HBCF Amount",
+        id: "job",
+        header: "Job",
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
           if (r.__isTotal) {
             return (
-              <span className="text-data font-bold uppercase tracking-wide text-muted-foreground">
-                HBCF Exposure
-              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-data font-bold uppercase tracking-wide">Open job exposure</span>
+                <span className="text-label text-muted-foreground font-normal normal-case">
+                  {limit ? `Limit ${fmtMoney(limit)}` : "No limit set"}
+                </span>
+              </div>
             );
           }
-          const maxVal = parseFloat(r.maxValue) || 0;
+          const amount = num(r.maxValue);
+          const predicted = r.basis !== "actual";
+          const overType = overTypeIds.has(r.id);
           return (
             <div className="flex items-start gap-1.5 min-w-0 group/row">
               <div
-                className="w-2 h-full min-h-[28px] rounded-sm flex-shrink-0 mt-0.5"
-                style={{ background: r.color ?? "#A890D4" }}
+                className="w-2 self-stretch min-h-[30px] rounded-sm flex-shrink-0"
+                style={{ background: r.color ?? "#A890D4", opacity: predicted ? 0.45 : 1 }}
               />
               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                <InlineName
-                  value={r.name}
-                  onSave={v => updateMutation.mutate({ id: r.id, data: { name: v } })}
-                />
-                <InlineAmount
-                  value={maxVal}
-                  onSave={v => updateMutation.mutate({ id: r.id, data: { maxValue: String(v) } })}
-                />
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-xs font-semibold truncate">{r.name}</span>
+                  {r.jobType && (
+                    <span className="text-label font-semibold text-muted-foreground flex-shrink-0">
+                      {r.jobType}
+                    </span>
+                  )}
+                  {predicted && (
+                    <span className="text-label text-muted-foreground flex-shrink-0">· forecast</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 text-label">
+                  <span className={cn("tabular-nums font-semibold", overType && "text-status-danger")}>
+                    {fmtShort(amount)}
+                  </span>
+                  {overType && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertTriangle className="w-3 h-3 text-status-danger flex-shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Over the {r.jobType} construction limit for a single job
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <span className="text-muted-foreground truncate">
+                    {r.startDate && r.endDate
+                      ? `${fmtDate(r.startDate)} – ${fmtDate(r.endDate)}`
+                      : "no dates"}
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmAction({
-                    title: `Remove "${r.name}" from tracker?`,
-                    description: "This removes the project and its weekly statuses from the tracker.",
-                    confirmLabel: "Remove",
-                    destructive: true,
-                    run: () => deleteMutation.mutate(r.id),
-                  });
-                }}
-                className="text-muted-foreground/20 hover:text-destructive transition-colors flex-shrink-0 opacity-0 group-hover/row:opacity-100 mt-0.5"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover/row:opacity-100">
+                <button onClick={(e) => { e.stopPropagation(); openEdit(r); }} title="Edit">
+                  <Pencil className="w-3 h-3 text-muted-foreground/60 hover:text-foreground" />
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r); }} title="Remove">
+                  <Trash2 className="w-3 h-3 text-muted-foreground/30 hover:text-destructive" />
+                </button>
+              </div>
             </div>
           );
         },
         size: LEFT_COL_W,
-        meta: { defaultWidth: LEFT_COL_W, headerLabel: "Project / HBCF Amount", pinned: true },
+        meta: { defaultWidth: LEFT_COL_W, headerLabel: "Job", pinned: true },
       },
     ];
 
-    weeks.forEach((w) => {
-      const key = toKey(w);
-      const isNow = key === nowKey;
-      const dayLabel = w.toLocaleDateString("en-AU", { day: "numeric" });
-      const monthLabel = w.toLocaleDateString("en-AU", { month: "short" });
+    for (const p of periods) {
+      const peakHere = periodPeak.get(p.id);
+      const value = peakHere?.total ?? 0;
+      const tone = toneFor(value, limit);
+      const isNow = p.weeks.some((w) => w.key === thisMonday);
+
       cols.push({
-        id: `w-${key}`,
-        header: () => (
-          <div className={cn("flex flex-col items-center leading-none gap-0.5", isNow && "text-[#7c5cbf]")}>
-            <span className="text-label uppercase">{monthLabel}</span>
-            <span className="text-label">{dayLabel}</span>
-            {isNow && <span className="w-1 h-1 rounded-full bg-primary" />}
-          </div>
-        ),
+        id: p.id,
         enableSorting: false,
+        header: () => (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={cn(
+                  "flex flex-col items-center leading-none gap-0.5 w-full py-0.5 rounded-sm cursor-default",
+                  isNow && "ring-1 ring-inset ring-primary/50",
+                )}
+                style={{ background: TONE_STYLE[tone].bg, color: tone === "none" ? undefined : TONE_STYLE[tone].text }}
+              >
+                <span className="text-label uppercase">{p.label}</span>
+                <span className="text-label font-semibold">{p.subLabel}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <div className="space-y-1">
+                <div className="font-semibold">
+                  {zoom === "week"
+                    ? `Week of ${p.weeks[0].start.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}`
+                    : `${p.weeks[0].start.toLocaleDateString("en-AU", { month: "long", year: "numeric" })} — peak week${
+                        peakHere ? ` of ${peakHere.week.start.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}` : ""
+                      }`}
+                </div>
+                <div className="tabular-nums">
+                  {fmtMoney(value)}
+                  {limit ? ` of ${fmtMoney(limit)} — ${Math.round((value / limit) * 100)}%` : ""}
+                </div>
+                <div className="text-muted-foreground">
+                  {(peakHere?.jobs.length ?? 0)} job{(peakHere?.jobs.length ?? 0) === 1 ? "" : "s"} open
+                  {countLimit ? ` of ${countLimit}` : ""}
+                </div>
+                {peakHere && peakHere.jobs.length > 0 && (
+                  <ul className="pt-0.5 space-y-0.5">
+                    {peakHere.jobs.map((j) => (
+                      <li key={j.id} className="flex justify-between gap-3 tabular-nums">
+                        <span className="truncate">
+                          {j.name}{j.basis !== "actual" ? " (forecast)" : ""}
+                        </span>
+                        <span>{fmtShort(num(j.maxValue))}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        ),
         cell: ({ row }) => {
           const r = row.original;
           if (r.__isTotal) {
-            const total = colTotal(key);
-            const { bg, text } = totalStyle(total);
             return (
               <div
                 className={cn(
                   "w-full h-full flex items-center justify-center text-label font-bold tabular-nums",
                   isNow && "ring-1 ring-inset ring-primary/40",
                 )}
-                style={{ background: bg, color: text }}
+                style={{ background: TONE_STYLE[tone].bg, color: TONE_STYLE[tone].text }}
               >
-                {total > 0 ? fmt(total) : <span className="text-muted-foreground/20">—</span>}
+                {value > 0 ? fmtShort(value) : <span className="text-muted-foreground/20">—</span>}
               </div>
             );
           }
-          const isActive = !!r.statuses[key];
+          const on = p.weeks.some((w) => rowCoversWeek(r, w));
+          if (!on) return <div className={cn("w-full h-full", isNow && "bg-primary/5")} />;
+          const colour = r.color ?? "#A890D4";
+          const predicted = r.basis !== "actual";
           return (
-            <div className={cn("w-full", isNow && "bg-primary/5")}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleMutation.mutate({ row: r, dateKey: key, active: !isActive });
-                }}
-                title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
-                className={cn(
-                  "w-full rounded-sm text-label font-bold py-0.5 leading-4 transition-all",
-                  isActive
-                    ? "text-white"
-                    : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50",
-                )}
-                style={isActive ? { background: r.color ?? "#A890D4" } : undefined}
-              >
-                {isActive ? "ON" : "·"}
-              </button>
+            <div className={cn("w-full h-full flex items-center px-px", isNow && "bg-primary/5")}>
+              <div
+                className="w-full h-3.5 rounded-sm"
+                style={
+                  predicted
+                    ? {
+                        // Hatched, so a forecast never reads as committed work.
+                        backgroundImage: `repeating-linear-gradient(45deg, ${colour} 0 3px, transparent 3px 6px)`,
+                        opacity: 0.75,
+                      }
+                    : { background: colour }
+                }
+              />
             </div>
           );
         },
         size: CELL_W,
-        meta: { defaultWidth: CELL_W, align: "center", headerLabel: `${monthLabel} ${dayLabel}` },
+        meta: { defaultWidth: CELL_W, align: "center", headerLabel: `${p.label} ${p.subLabel}` },
       });
-    });
-
+    }
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weeks, nowKey, rows, limit]);
+  }, [periods, periodPeak, limit, countLimit, thisMonday, zoom, overTypeIds]);
 
-  // Picker columns — week columns only (pinned project column excluded).
-  const pickerColumns = useMemo(
-    () =>
-      weeks.map((w) => {
-        const key = toKey(w);
-        const dayLabel = w.toLocaleDateString("en-AU", { day: "numeric" });
-        const monthLabel = w.toLocaleDateString("en-AU", { month: "short" });
-        return { id: `w-${key}`, label: `${monthLabel} ${dayLabel}` };
-      }),
-    [weeks],
+  const tableData = useMemo<TableRow[]>(
+    () => [
+      ...(rows as TableRow[]),
+      {
+        id: "__total__", companyId: "", name: "Open job exposure", maxValue: "0",
+        jobType: null, startDate: null, endDate: null, basis: "actual",
+        color: null, sortOrder: 9999, __isTotal: true,
+      },
+    ],
+    [rows],
   );
 
-  // Append synthetic totals row at the end.
-  const tableData = useMemo<TableRow[]>(() => {
-    const totalRow: TableRow = {
-      id: "__total__",
-      companyId: "",
-      name: "HBCF Exposure",
-      maxValue: "0",
-      statuses: {},
-      color: null,
-      sortOrder: 9999,
-      __isTotal: true,
-    };
-    return [...(rows as TableRow[]), totalRow];
-  }, [rows]);
-
   if (isLoading) {
-    return <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading HBCF tracker…</div>;
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        Loading HBCF tracker…
+      </div>
+    );
   }
+
+  const peakTone = toneFor(peak, limit);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ── Summary bar ── */}
-      <div className="flex-shrink-0 px-4 py-2.5 border-b border-border/50 flex flex-wrap items-center gap-4">
+      {/* ── Summary ── */}
+      <div className="flex-shrink-0 px-4 py-2.5 border-b border-border/50 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">HBCF / DBI Limits Tracker</span>
+          <span className="text-sm font-semibold">Open Job Limits</span>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {limit ? (
-            <>
-              <div className="text-xs flex items-center gap-1.5">
-                <span className="text-muted-foreground">Limit:</span>
-                <span className="font-semibold tabular-nums">{fmtFull(limit)}</span>
-              </div>
-              <div className="text-xs flex items-center gap-1.5">
-                <span className="text-muted-foreground">Peak {year}:</span>
-                <span className={`font-semibold tabular-nums ${
-                  peakTotal > limit ? "text-status-danger" :
-                  peakTotal / limit >= 0.8 ? "text-status-warning" :
-                  peakTotal > 0 ? "text-status-success" : "text-muted-foreground"
-                }`}>{fmtFull(peakTotal)}</span>
-              </div>
-              <div className="w-28 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-amber" : "bg-primary"}`}
-                  style={{ width: `${Math.min((peakTotal / limit) * 100, 100)}%` }}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5" />
-              Set your HWI exposure limit in the Compliance tab to enable colour coding
+        {limit ? (
+          <div className="flex items-center gap-4 flex-wrap text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Limit:</span>
+              <span className="font-semibold tabular-nums">{fmtMoney(limit)}</span>
+              {countLimit ? <span className="text-muted-foreground">· {countLimit} jobs</span> : null}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">This week:</span>
+              <span className="font-semibold tabular-nums">{fmtMoney(current.total)}</span>
+              <span className="text-muted-foreground">
+                · {current.jobs.length} job{current.jobs.length === 1 ? "" : "s"}
+              </span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Peak in view:</span>
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  peakTone === "over" && "text-status-danger",
+                  peakTone === "warn" && "text-status-warning",
+                  peakTone === "ok" && "text-status-success",
+                )}
+              >
+                {fmtMoney(peak)}
+              </span>
+              <span className="text-muted-foreground">
+                ({Math.round((peak / limit) * 100)}%)
+              </span>
+            </span>
+            <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full",
+                  peakTone === "over" ? "bg-destructive" : peakTone === "warn" ? "bg-amber" : "bg-primary",
+                )}
+                style={{ width: `${Math.min((peak / limit) * 100, 100)}%` }}
+              />
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5" />
+            Set your open job limit to colour the timeline
+          </div>
+        )}
 
-        {/* Year nav */}
-        <div className="flex items-center gap-1 ml-auto">
-          <Button size="icon" variant="ghost" onClick={() => setYear(y => y - 1)}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <span className="text-sm font-semibold w-12 text-center tabular-nums">{year}</span>
-          <Button size="icon" variant="ghost" onClick={() => setYear(y => y + 1)}>
-            <ChevronRight className="w-4 h-4" />
-          </Button>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <Select value={zoom} onValueChange={(v) => setZoom(v as "week" | "month")}>
+            <SelectTrigger className="h-7 text-xs w-[86px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">Weekly</SelectItem>
+              <SelectItem value="month">Monthly</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={String(horizon)} onValueChange={(v) => setHorizon(parseInt(v, 10))}>
+            <SelectTrigger className="h-7 text-xs w-[104px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="6">6 months</SelectItem>
+              <SelectItem value="12">12 months</SelectItem>
+              <SelectItem value="18">18 months</SelectItem>
+              <SelectItem value="24">24 months</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Popover>
             <PopoverTrigger asChild>
-              <Button size="icon" variant="ghost" data-testid="button-column-picker">
-                <Columns3 className="w-4 h-4" />
+              <Button size="icon" variant="ghost" className="h-7 w-7" title="Limits">
+                <SlidersHorizontal className="w-4 h-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-56 p-1 max-h-80 overflow-auto" align="end">
-              <DataTableColumnPicker storageKey="hbcf-tracker" columns={pickerColumns} />
-            </PopoverContent>
+            <LimitsPopover settings={settings} onSave={(p) => settingsMutation.mutate(p)} />
           </Popover>
+
+          <Button size="sm" className="h-7 text-xs gap-1" onClick={openAdd}>
+            <Plus className="w-3 h-3" />
+            Add job
+          </Button>
         </div>
       </div>
 
-      {/* ── Spreadsheet grid ── */}
+      {/* ── Timeline ── */}
       <div className="flex-1 min-h-0">
         <DataTable
-          key={year}
           data={tableData}
-          columns={tableColumns}
-          storageKey="hbcf-tracker"
-          legacyConfigKey="hbcf-tracker-column-config-v1"
+          columns={columns}
+          storageKey="hbcf-timeline"
           rowKey={(r) => r.id}
-          rowClassName={(r) => r.__isTotal ? "border-t border-border bg-muted/40 font-bold" : ""}
-          emptyState="No projects yet — add one below"
-          rowHeight={32}
+          rowClassName={(r) => (r.__isTotal ? "border-t border-border bg-muted/40 font-bold" : "")}
+          emptyState="No jobs yet — add one to start planning"
+          rowHeight={34}
         />
       </div>
 
-      {/* ── Add project bar ── */}
-      <div className="flex-shrink-0 border-t border-border/50 px-4 py-2 flex flex-wrap items-center gap-2">
-        <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-
-        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-          <SelectTrigger className="h-7 text-xs w-56">
-            <SelectValue placeholder="Select a project to add…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">Select a project…</SelectItem>
-            {availableProjects.map(p => (
-              <SelectItem key={p.id} value={p.id}>
-                <div className="flex items-center gap-2">
-                  {p.color && (
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
-                  )}
-                  <span>{p.constructionNumber ? `${p.constructionNumber} — ` : ""}{p.name}</span>
-                </div>
-              </SelectItem>
-            ))}
-            {availableProjects.length === 0 && (
-              <SelectItem value="__empty__" disabled>No more projects to add</SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-
-        {selectedSysProject && (
-          <>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">HBCF amount $</span>
-              <Input
-                type="number"
-                value={newAmount}
-                onChange={e => setNewAmount(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
-                placeholder={
-                  selectedSysProject.contractCost
-                    ? `${Math.round(selectedSysProject.contractCost / 100).toLocaleString()} (contract)`
-                    : "e.g. 480000"
-                }
-                className="h-7 text-xs w-44"
-              />
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1 flex-shrink-0"
-              onClick={handleAdd}
-              disabled={createMutation.isPending}
-            >
-              <Plus className="w-3 h-3" />
-              Add to Tracker
-            </Button>
-          </>
-        )}
-
-        {rows.length === 0 && !selectedSysProject && (
-          <span className="text-xs text-muted-foreground">
-            Pick a project from the list to track its HBCF exposure
-          </span>
-        )}
-      </div>
+      <RowDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        initial={editing}
+        projects={systemProjects}
+        limits={constructionLimits}
+        isPending={createMutation.isPending || updateMutation.isPending}
+        onSubmit={(payload) => {
+          if (editing) updateMutation.mutate({ id: editing.id, payload });
+          else createMutation.mutate({
+            ...payload,
+            color: ROW_COLORS[rows.length % ROW_COLORS.length],
+          });
+        }}
+      />
 
       <ConfirmDialog
-        open={!!confirmAction}
-        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
-        title={confirmAction?.title ?? ""}
-        description={confirmAction?.description}
-        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
-        destructive={confirmAction?.destructive}
-        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+        open={!!confirmDelete}
+        onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}
+        title={`Remove "${confirmDelete?.name ?? ""}" from the tracker?`}
+        description="This only removes it from the HBCF plan. The project itself is untouched."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (confirmDelete) deleteMutation.mutate(confirmDelete.id);
+          setConfirmDelete(null);
+        }}
       />
     </div>
   );
