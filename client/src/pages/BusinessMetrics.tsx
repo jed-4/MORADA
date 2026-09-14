@@ -13,6 +13,7 @@ import {
   DollarSign, Pencil, Check, X, Info, TableProperties, FileText
 } from "lucide-react";
 import HBCFTracker from "./HBCFTracker";
+import HBCFCertificates from "./HBCFCertificates";
 import ProjectInfoTab from "./business-metrics/ProjectInfoTab";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -59,12 +60,13 @@ interface Project {
   isBusiness?: boolean;
 }
 
-type TabId = "overview" | "compliance" | "hbcf" | "financial" | "pipeline" | "projectInfo";
+type TabId = "overview" | "compliance" | "hbcf" | "hbcfCerts" | "financial" | "pipeline" | "projectInfo";
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "compliance", label: "Compliance", icon: ShieldCheck },
   { id: "hbcf", label: "HBCF Limits", icon: TableProperties },
+  { id: "hbcfCerts", label: "Warranty Insurance", icon: ShieldCheck },
   { id: "financial", label: "Financial", icon: TrendingUp },
   { id: "pipeline", label: "Pipeline", icon: Briefcase },
   { id: "projectInfo", label: "Project Info", icon: FileText },
@@ -691,6 +693,7 @@ export default function BusinessMetrics() {
       case "overview": return <OverviewTab projects={projects} />;
       case "compliance": return <ComplianceTab settings={settings} onSave={handleSave} projects={projects} />;
       case "hbcf": return null; // rendered outside scroll wrapper
+      case "hbcfCerts": return null; // rendered outside scroll wrapper (table owns its scroll)
       case "financial": return <FinancialTab settings={settings} onSave={handleSave} projects={projects} />;
       case "pipeline": return <PipelineTab projects={projects} />;
       case "projectInfo": return null; // rendered outside scroll wrapper (table owns its scroll)
@@ -725,6 +728,10 @@ export default function BusinessMetrics() {
       {activeTab === "hbcf" ? (
         <div className="flex-1 min-h-0 overflow-hidden">
           <HBCFTracker />
+        </div>
+      ) : activeTab === "hbcfCerts" ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <HBCFCertificates />
         </div>
       ) : activeTab === "projectInfo" ? (
         <div className="flex-1 min-h-0 overflow-hidden">

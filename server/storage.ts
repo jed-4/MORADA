@@ -453,6 +453,14 @@ export interface IStorage {
   updateHbcfProject(id: string, data: Partial<any>): Promise<any>;
   deleteHbcfProject(id: string): Promise<boolean>;
 
+  // Home warranty insurance certificates. Every method takes companyId and
+  // scopes on it in the query — the compiler is what stops a caller reaching
+  // another tenant's certificate by id.
+  getHbcfCertificates(companyId: string): Promise<schema.HbcfCertificate[]>;
+  createHbcfCertificate(data: schema.InsertHbcfCertificate): Promise<schema.HbcfCertificate>;
+  updateHbcfCertificate(id: string, companyId: string, data: Partial<schema.InsertHbcfCertificate>): Promise<schema.HbcfCertificate | undefined>;
+  deleteHbcfCertificate(id: string, companyId: string): Promise<boolean>;
+
   // Labour Estimates
   getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined>;
   getLabourEstimateById(id: string): Promise<any | undefined>;
@@ -11818,6 +11826,71 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteHbcfProject:", error);
+      return false;
+    }
+  }
+
+  // ── Home warranty insurance certificates ────────────────────────────────────
+  // companyId is part of the WHERE on every path, including update and delete,
+  // so an id from another tenant matches no row rather than being caught by a
+  // separate ownership check the caller has to remember to write.
+
+  async getHbcfCertificates(companyId: string): Promise<schema.HbcfCertificate[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.hbcfCertificates)
+        .where(eq(schema.hbcfCertificates.companyId, companyId))
+        .orderBy(schema.hbcfCertificates.sortOrder, schema.hbcfCertificates.createdAt);
+    } catch (error) {
+      console.error("Database error in getHbcfCertificates:", error);
+      return [];
+    }
+  }
+
+  async createHbcfCertificate(data: schema.InsertHbcfCertificate): Promise<schema.HbcfCertificate> {
+    try {
+      const [row] = await db.insert(schema.hbcfCertificates).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createHbcfCertificate:", error);
+      throw error;
+    }
+  }
+
+  async updateHbcfCertificate(
+    id: string,
+    companyId: string,
+    data: Partial<schema.InsertHbcfCertificate>,
+  ): Promise<schema.HbcfCertificate | undefined> {
+    try {
+      const [updated] = await db
+        .update(schema.hbcfCertificates)
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(
+          eq(schema.hbcfCertificates.id, id),
+          eq(schema.hbcfCertificates.companyId, companyId),
+        ))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateHbcfCertificate:", error);
+      throw error;
+    }
+  }
+
+  async deleteHbcfCertificate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const deleted = await db
+        .delete(schema.hbcfCertificates)
+        .where(and(
+          eq(schema.hbcfCertificates.id, id),
+          eq(schema.hbcfCertificates.companyId, companyId),
+        ))
+        .returning({ id: schema.hbcfCertificates.id });
+      return deleted.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteHbcfCertificate:", error);
       return false;
     }
   }

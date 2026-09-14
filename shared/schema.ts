@@ -7458,6 +7458,53 @@ export const hbcfProjects = pgTable("hbcf_projects", {
 export type HbcfProject = typeof hbcfProjects.$inferSelect;
 export const insertHbcfProjectSchema = createInsertSchema(hbcfProjects).omit({ id: true, createdAt: true });
 
+// ── Home Warranty Insurance certificates (per job) ──────────────────────────
+// Deliberately insurer-agnostic: no scheme thresholds or warranty periods are
+// hard-coded, so the same row works for HBCF (NSW), DBI/VMIA (VIC), QBCC (QLD)
+// or any private cover. `hbcfProjects` above tracks aggregate eligibility
+// exposure week by week; this tracks the actual certificate for one job.
+export const hbcfCertificates = pgTable("hbcf_certificates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Optional link to a system project. Nullable so jobs that predate the app
+  // (or never got a project record) can still be registered.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  // Label used when there is no linked project; also the editable display name.
+  jobName: text("job_name").notNull().default(""),
+  siteAddress: text("site_address"),
+  insurer: text("insurer"),
+  policyNumber: text("policy_number"),
+  certificateNumber: text("certificate_number"),
+  // not_required | not_applied | applied | issued | cancelled
+  status: text("status").notNull().default("not_applied"),
+  // Dollars, matching hbcf_projects. Drizzle returns numeric as STRINGS.
+  contractValue: numeric("contract_value", { precision: 15, scale: 2 }),
+  premium: numeric("premium", { precision: 15, scale: 2 }),
+  // ISO date strings ("YYYY-MM-DD"), matching the compliance fields on
+  // company_settings rather than the timestamp columns used elsewhere.
+  dateApplied: text("date_applied"),
+  dateIssued: text("date_issued"),
+  coverStart: text("cover_start"),
+  // Entered by hand — the warranty period differs by scheme and by year, so
+  // deriving these from coverStart would bake in rules that go stale.
+  structuralExpiry: text("structural_expiry"),
+  nonStructuralExpiry: text("non_structural_expiry"),
+  certificateUrl: text("certificate_url"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("hbcf_certificates_company_idx").on(table.companyId),
+}));
+export type HbcfCertificate = typeof hbcfCertificates.$inferSelect;
+export const insertHbcfCertificateSchema = createInsertSchema(hbcfCertificates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertHbcfCertificate = z.infer<typeof insertHbcfCertificateSchema>;
+
 export const labourEstimateTasks = pgTable("labour_estimate_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   categoryId: varchar("category_id").notNull().references(() => labourEstimateCategories.id, { onDelete: "cascade" }),

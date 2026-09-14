@@ -59,6 +59,7 @@ import {
   insertUserColumnPreferencesSchema,
   insertUserViewPreferencesSchema,
   insertCompanySettingsSchema,
+  insertHbcfCertificateSchema,
   insertSystemConfigurationSchema,
   insertFieldCategorySchema,
   insertFieldOptionSchema,
@@ -26740,6 +26741,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete HBCF project" });
+    }
+  });
+
+  // ── Home warranty insurance certificates ────────────────────────────────────
+  // companyId is never taken from the body: it is stamped from the session on
+  // create, and it is part of the WHERE on update and delete, so an id from
+  // another tenant 404s rather than relying on a separate ownership lookup.
+
+  app.get("/api/hbcf-certificates", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rows = await storage.getHbcfCertificates(user.companyId);
+      res.json(rows);
+    } catch (error) {
+      console.error("Failed to fetch HBCF certificates:", error);
+      res.status(500).json({ error: "Failed to fetch certificates" });
+    }
+  });
+
+  app.post("/api/hbcf-certificates", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // .omit({ companyId }) at the parse, not just on the stored shape: the
+      // tenant comes from the session below, and stripping it here is what
+      // scripts/check-route-tenancy.mjs looks for.
+      const parsed = insertHbcfCertificateSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid certificate", details: parsed.error.flatten() });
+      }
+      const row = await storage.createHbcfCertificate({ ...parsed.data, companyId: user.companyId });
+      res.status(201).json(row);
+    } catch (error) {
+      console.error("Failed to create HBCF certificate:", error);
+      res.status(500).json({ error: "Failed to create certificate" });
+    }
+  });
+
+  app.patch("/api/hbcf-certificates/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // companyId is dropped before the parse, so a body naming another tenant
+      // cannot move the row; id and the timestamps go for the same reason.
+      const { companyId: _ignored, id: _id, createdAt: _c, updatedAt: _u, ...rest } = req.body ?? {};
+      const parsed = insertHbcfCertificateSchema.partial().safeParse(rest);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid certificate", details: parsed.error.flatten() });
+      }
+      const updated = await storage.updateHbcfCertificate(req.params.id, user.companyId, parsed.data);
+      if (!updated) return res.status(404).json({ error: "Certificate not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update HBCF certificate:", error);
+      res.status(500).json({ error: "Failed to update certificate" });
+    }
+  });
+
+  app.delete("/api/hbcf-certificates/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ok = await storage.deleteHbcfCertificate(req.params.id, user.companyId);
+      if (!ok) return res.status(404).json({ error: "Certificate not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete HBCF certificate:", error);
+      res.status(500).json({ error: "Failed to delete certificate" });
     }
   });
 
