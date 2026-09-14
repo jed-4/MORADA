@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Loader2, Eye, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatViewedTooltip, revisionLabel } from "@/components/proposals/proposalDisplay";
@@ -121,6 +122,11 @@ export default function ProposalDetail() {
     totalAmount: 0,
     showPricing: true,
   }), [params.projectId, nextProposalNumber?.proposalNumber]);
+
+  // On the create step there is no proposal yet, so the project comes from the
+  // route and the number from the sequence endpoint.
+  const newProposalProject = projects.find((p) => p.id === params.projectId);
+  const newProposalNumber = nextProposalNumber?.proposalNumber;
 
   // Form for proposal details
   const form = useForm<InsertProposal>({
@@ -525,14 +531,75 @@ export default function ProposalDetail() {
       {/* Body closes the card */}
       <div className="flex-1 min-h-0 overflow-hidden border-x border-b border-border rounded-b-lg bg-card p-3">
         {isNewProposal ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md">
-              <h3 className="text-lg font-semibold mb-2">Create Your Proposal</h3>
-              <p className="text-muted-foreground mb-6">
-                Fill in the proposal name and select a project above, then click Save & Continue to access the PDF builder.
-              </p>
-              <Button 
-                onClick={handleSave} 
+          /* The fields this step needs, on this step.
+             They used to live in a header panel above, and the design pass that
+             replaced that header with a breadcrumb took them with it — leaving
+             copy that pointed "above" at nothing and a Save button gated on a
+             name there was no way to type. Creating a proposal from the UI was
+             impossible. They belong here anyway: this screen asks for exactly
+             two things, and everything else about a proposal is edited in the
+             builder's Details card once it exists. */
+          <div className="flex items-start justify-center h-full overflow-auto pt-12">
+            <form
+              className="w-full max-w-sm space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSave();
+              }}
+            >
+              <div>
+                <h3 className="text-lg font-semibold">Create Your Proposal</h3>
+                <p className="text-sm text-muted-foreground">
+                  Name it and you are in. Everything else — client, validity, the estimate it
+                  quotes — is set in the builder.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="new-proposal-name">Proposal name</Label>
+                <Input
+                  id="new-proposal-name"
+                  autoFocus
+                  value={form.watch("name") ?? ""}
+                  onChange={(e) => form.setValue("name", e.target.value)}
+                  placeholder="e.g. Ground floor renovation"
+                  data-testid="input-new-proposal-name"
+                />
+              </div>
+
+              {/* In project context the project is already decided by the route,
+                  so it is stated rather than asked. */}
+              {isProjectContext ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-new-proposal-project">
+                  For {newProposalProject?.name ?? "this project"}
+                  {newProposalNumber ? ` · ${newProposalNumber}` : ""}
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-proposal-project">Project</Label>
+                  <Select
+                    value={form.watch("projectId") || undefined}
+                    onValueChange={(v) => form.setValue("projectId", v)}
+                  >
+                    <SelectTrigger id="new-proposal-project" data-testid="select-new-proposal-project">
+                      <SelectValue placeholder="Select a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {newProposalNumber && (
+                    <p className="text-xs text-muted-foreground">{newProposalNumber}</p>
+                  )}
+                </div>
+              )}
+
+              <Button
+                type="submit"
                 disabled={!form.watch('name') || !form.watch('projectId') || updateProposalMutation.isPending}
                 data-testid="button-save-first"
               >
@@ -545,7 +612,7 @@ export default function ProposalDetail() {
                   'Save & Continue'
                 )}
               </Button>
-            </div>
+            </form>
           </div>
         ) : (
           <div className="flex flex-col h-full gap-3 min-h-0">
