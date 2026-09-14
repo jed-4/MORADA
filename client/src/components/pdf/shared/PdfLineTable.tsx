@@ -1,7 +1,7 @@
 import { View, Text } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
 import { registerPdfFonts, PDF_FONT_FAMILY } from "./registerPdfFonts";
-import { PDF_COLORS, PDF_RADIUS, PDF_TYPE, PDF_WEIGHT, brandRamp } from "./pdfTokens";
+import { PDF_COLORS, PDF_LEADING, PDF_RADIUS, PDF_TYPE, PDF_WEIGHT, brandRamp } from "./pdfTokens";
 import { PdfPanel } from "./PdfPrimitives";
 
 /**
@@ -48,6 +48,14 @@ export interface PdfTableGroup<T> {
    * something the reader cannot add up by eye.
    */
   showTotal?: boolean;
+  /**
+   * The group's own words, printed under its heading.
+   *
+   * Estimate groups have carried a description since the column existed and
+   * no document has ever printed one — the builder typed a paragraph
+   * explaining a stage of the work and the client never saw it.
+   */
+  description?: string;
 }
 
 export interface PdfTrailingRow {
@@ -86,6 +94,14 @@ interface PdfLineTableProps<T> {
    * already occupies the right edge.
    */
   headerRight?: string | null;
+  /**
+   * Prose under the brand header row — the heading's own words.
+   *
+   * Needed because a caller that gives a group its OWN table (the estimate
+   * does: one table per top-level group, name in `textHeader`) has no group
+   * label left for `PdfTableGroup.description` to sit beneath.
+   */
+  headerNote?: string | null;
 }
 
 /** A4 (595pt) less both 40pt margins, less the panel's own 20pt of padding. */
@@ -105,6 +121,7 @@ export function PdfLineTable<T>({
   rowKey,
   repeatHeader = true,
   headerRight,
+  headerNote,
 }: PdfLineTableProps<T>) {
   const brand = brandRamp(brandColor);
   const showText = !!textHeader || !!renderText;
@@ -200,7 +217,7 @@ export function PdfLineTable<T>({
               style={{
                 fontFamily: PDF_FONT_FAMILY,
                 fontWeight: nested ? PDF_WEIGHT.medium : PDF_WEIGHT.semibold,
-                fontSize: PDF_TYPE.tableHeader,
+                fontSize: PDF_TYPE.tableGroup,
                 letterSpacing: nested ? 0 : 0.4,
                 textTransform: nested ? "none" : "uppercase",
                 color: nested ? PDF_COLORS.ink : PDF_COLORS.inkMuted,
@@ -213,7 +230,7 @@ export function PdfLineTable<T>({
                 style={{
                   fontFamily: PDF_FONT_FAMILY,
                   fontWeight: nested ? PDF_WEIGHT.medium : PDF_WEIGHT.semibold,
-                  fontSize: PDF_TYPE.tableHeader,
+                  fontSize: PDF_TYPE.tableGroup,
                   color: nested ? PDF_COLORS.ink : PDF_COLORS.inkMuted,
                 }}
               >
@@ -222,6 +239,32 @@ export function PdfLineTable<T>({
             )}
           </View>
         )}
+
+        {/* Below the heading rather than beside it: the heading row carries the
+            group's total on its right, and prose competing with a figure for
+            the same line is how a paragraph ends up two words wide. Sits on
+            the heading's own fill so it reads as part of it. */}
+        {grouped && group.label && group.description ? (
+          <View
+            style={{
+              paddingLeft: indent,
+              paddingRight: 10,
+              paddingBottom: 5,
+              backgroundColor: nested ? PDF_COLORS.surface : PDF_COLORS.surfaceMuted,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: PDF_FONT_FAMILY,
+                fontSize: PDF_TYPE.bodySmall,
+                lineHeight: PDF_LEADING.body,
+                color: PDF_COLORS.inkMuted,
+              }}
+            >
+              {group.description}
+            </Text>
+          </View>
+        ) : null}
 
         {group.rows.map((row, idx) => {
           const shaded = stripe++ % 2 === 1;
@@ -263,7 +306,10 @@ export function PdfLineTable<T>({
   };
 
   return (
-    <PdfPanel>
+    /* A softer corner than the default card.
+       PdfPanel's `lg` is drawn for a standalone card; on a full-width table it
+       curls the brand header's ends in far enough to read as a pill. */
+    <PdfPanel style={{ borderRadius: PDF_RADIUS.md }}>
       {/* Header — brand fill, readable ink derived from it, so a pale brand
           colour does not produce white-on-cream.
 
@@ -324,6 +370,31 @@ export function PdfLineTable<T>({
         ) : null}
       </View>
       )}
+
+      {/* On its own band below the header rather than inside it: the header row
+          is a row of column labels and a total, and prose does not belong on
+          the same line as either. */}
+      {showHeaderRow && headerNote ? (
+        <View
+          style={{
+            paddingHorizontal: 10,
+            paddingTop: 6,
+            paddingBottom: 6,
+            backgroundColor: PDF_COLORS.surfaceMuted,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: PDF_FONT_FAMILY,
+              fontSize: PDF_TYPE.bodySmall,
+              lineHeight: PDF_LEADING.body,
+              color: PDF_COLORS.inkMuted,
+            }}
+          >
+            {headerNote}
+          </Text>
+        </View>
+      ) : null}
 
       {groups.map((group) => renderGroup(group, 0))}
 

@@ -88,6 +88,7 @@ export function EstimateSection({
     showColumnHeader: true,
     showAllowanceType: true,
     descriptionUnderName: true,
+    groupDescriptions: true,
   };
   const baseToggles: Record<string, boolean> = visibleColumns
     ? {
@@ -104,6 +105,7 @@ export function EstimateSection({
         showColumnHeader: fallbackToggles.showColumnHeader !== false,
         showAllowanceType: fallbackToggles.showAllowanceType !== false,
         descriptionUnderName: fallbackToggles.descriptionUnderName !== false,
+        groupDescriptions: fallbackToggles.groupDescriptions !== false,
       }
     : fallbackToggles;
 
@@ -123,6 +125,8 @@ export function EstimateSection({
         showColumnHeader: false,
         showAllowanceType: false,
         descriptionUnderName: false,
+        // Lump sum prints a price and nothing that itemises it.
+        groupDescriptions: false,
       };
     }
     const next = { ...baseToggles };
@@ -449,10 +453,20 @@ export function EstimateSection({
     // kit enforced it — is suppressed in favour of the header row. A group of
     // one line has a "total" identical to the line above it.
     const earnsTotal = rows.length > 1 || children.length > 0;
+    /* The group's own words. `estimate_groups.description` has existed as long
+       as the table and no document has ever printed one, so a builder could
+       write a paragraph explaining a stage of the work and the client would
+       never see it. Stripped of markup the same way line descriptions are —
+       the field is written by a rich-text editor. */
+    const groupText = (group as { description?: string | null }).description;
     return {
       key: group.id,
       label: group.name,
       total: toggles.showSubtotals && earnsTotal ? groupTotal(group.id) : undefined,
+      description:
+        toggles.groupDescriptions !== false && pdfHasText(groupText)
+          ? pdfPlainText(groupText)
+          : undefined,
       rows,
       children,
     };
@@ -550,8 +564,11 @@ export function EstimateSection({
               // The group's own band is suppressed: its name and total are the
               // header row now. "Item" above a block already headed KITCHEN
               // was labelling the obvious.
-              groups={[{ ...group, label: undefined, total: undefined }]}
+              groups={[{ ...group, label: undefined, total: undefined, description: undefined }]}
               textHeader={group.label}
+              // The group's own words. It has no label row of its own here —
+              // its name IS the table header — so the note hangs off that.
+              headerNote={group.description}
               // Only where the right edge is free. With an amount column on,
               // the figures own that edge and the group total stays with the
               // trailing row instead.

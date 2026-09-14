@@ -83,6 +83,13 @@ export const PDF_TYPE = {
 
   tableHeader: 8,
   tableCell: 8.5,
+  /**
+   * A group heading, which must never be smaller than the rows under it.
+   * It used to borrow `tableHeader` — sized for a column label, where small
+   * and tracked is right — and came out BELOW `tableCell`, so every line item
+   * read larger than the group that contained it.
+   */
+  tableGroup: 9.5,
 
   totalLabel: 10,
   totalFigure: 14,

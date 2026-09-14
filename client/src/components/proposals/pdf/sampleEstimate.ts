@@ -25,6 +25,7 @@ import type { Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
  *     right only because every row has money in it
  *   - a long description, so wrapping and the description-under-name setting
  *     can actually be judged
+ *   - a group description, which is a field no document printed until now
  *   - round-ish numbers that still produce awkward GST, so column alignment is
  *     tested rather than flattered
  */
@@ -33,12 +34,19 @@ const ESTIMATE_ID = 'sample-estimate';
 
 export const SAMPLE_ESTIMATE_ID = ESTIMATE_ID;
 
-const group = (id: string, name: string, order: number, parentGroupId: string | null = null) => ({
+const group = (
+  id: string,
+  name: string,
+  order: number,
+  parentGroupId: string | null = null,
+  description: string | null = null,
+) => ({
   id,
   estimateId: ESTIMATE_ID,
   name,
   parentGroupId,
   order,
+  description,
   proposalVisible: true,
 } as unknown as EstimateGroup);
 
@@ -70,7 +78,7 @@ const item = (
 
 export const SAMPLE_GROUPS: EstimateGroup[] = [
   group('sample-g1', 'Preliminaries & Site', 0),
-  group('sample-g2', 'Bathroom', 1),
+  group('sample-g2', 'Bathroom', 1, null, 'Full strip-out and refit of the main bathroom, including waterproofing certification and a tiled shower niche.'),
   group('sample-g2a', 'Bathroom · Fit-off', 2, 'sample-g2'),
 ];
 

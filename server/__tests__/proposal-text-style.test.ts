@@ -199,6 +199,17 @@ await check("sampleData fills the estimate and allowance pages, and says so", as
   );
 });
 
+await check("a group's description prints under its heading", async () => {
+  const items = await renderItems(estimateSections, { sampleData: true });
+  const text = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
+  // estimate_groups.description has existed as long as the table and no
+  // document ever printed one.
+  assert.ok(
+    text.includes("waterproofing certification"),
+    `the group description is missing — got: ${text.slice(0, 400)}`,
+  );
+});
+
 await check("the $0 'not included' allowance still prints a row", async () => {
   const items = await renderItems(estimateSections, { sampleData: true });
   const text = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
