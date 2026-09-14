@@ -22,6 +22,20 @@ import { resolveSectionTextStyle } from "../sectionTextStyle";
 interface AllowanceRow {
   name: string;
   amountCents?: number | null;
+  /**
+   * The line's DESCRIPTION, printed under the item and labelled "Description"
+   * in the builder.
+   *
+   * The field keeps the name `notes` on purpose: legacy hand-typed rows are
+   * stored as jsonb with a `notes` key, and the column toggle saved in existing
+   * sections and templates is `columnToggles.notes`. Renaming either would
+   * silently drop text and toggles that are already out there.
+   *
+   * `estimate_items.notes` is a DIFFERENT field — the note-icon popover in the
+   * estimate grid — and is deliberately not printed in any client-facing
+   * document. Do not wire it in here without asking first; it reads like a
+   * scratchpad.
+   */
   notes?: string | null;
   /** "Prime Cost" / "Provisional Sum" when the row came from the estimate. */
   kind?: string | null;
@@ -289,7 +303,7 @@ export function AllowancesSection({
                       </Text>
                     )}
                   </View>
-                  {/* Notes on their own line, and ONLY when there are notes.
+                  {/* The description on its own line, and ONLY when there is one.
                       An em dash in an empty cell reads as "nothing here on
                       purpose"; there is nothing to say, so nothing is said.
                       Stripped, because the field is written by a rich-text

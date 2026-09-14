@@ -620,7 +620,14 @@ const ALLOWANCE_COLUMNS: Array<{ key: string; label: string; hint?: string }> = 
   { key: 'unitCostIncTax', label: 'Unit cost (inc GST)' },
   { key: 'amountExTax', label: 'Amount (ex GST)' },
   { key: 'amountIncTax', label: 'Amount (inc GST)' },
-  { key: 'notes', label: 'Notes', hint: 'Printed under the item, and only when there are any' },
+  /* The toggle KEY stays `notes` — it is already stored in saved sections and
+     templates, and renaming it would silently orphan every toggle a user has
+     set. Only the label changes, to say what the row actually prints. */
+  {
+    key: 'notes',
+    label: 'Description',
+    hint: "The estimate line's description. Printed under the item, and only when there is one",
+  },
 ];
 
 const ALLOWANCE_DEFAULTS: Record<string, boolean> = {
