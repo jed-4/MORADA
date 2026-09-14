@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
@@ -311,16 +311,29 @@ const EMPTY = {
 };
 type FormState = typeof EMPTY;
 
+/** GET /api/projects/:id/contract-metrics */
+interface ContractMetrics {
+  originalContractPriceIncGstCents: number;
+  approvedVariationsIncGstCents: number;
+  revisedContractPriceIncGstCents: number;
+}
+
 /**
  * What the app already knows about a project, in HBCF terms. `contractedAt` is
  * the app's own "this is real now" predicate, so it decides the basis, and the
- * basis in turn decides which pair of figures to read: the frozen contract sum
- * and real dates, or the live estimate and proposed dates.
+ * basis in turn decides which figures to read: the contract and real dates, or
+ * the live estimate and proposed dates.
+ *
+ * The contracted amount is the REVISED contract price — the frozen sum plus
+ * approved variations — not `contractedTotalIncGstCents`, which is the original
+ * and never moves. Cover follows the contract, so a job varied up carries more
+ * exposure, and taking the frozen figure would quietly understate it.
  */
-function prefillFromProject(p: SystemProject): Partial<FormState> {
+function prefillFromProject(p: SystemProject, metrics?: ContractMetrics): Partial<FormState> {
   const contracted = !!p.contractedAt;
   const cents = contracted
-    ? p.contractedTotalIncGstCents ?? p.contractCost ?? p.contractPrice
+    ? metrics?.revisedContractPriceIncGstCents
+        ?? p.contractedTotalIncGstCents ?? p.contractCost ?? p.contractPrice
     : p.contractPrice ?? p.contractCost ?? p.contractedTotalIncGstCents;
   const start = contracted ? p.startDate ?? p.proposedStartDate : p.proposedStartDate ?? p.startDate;
   const end = contracted ? p.endDate ?? p.proposedEndDate : p.proposedEndDate ?? p.endDate;
@@ -347,9 +360,32 @@ function RowDialog({
   const [form, setForm] = useState<FormState>(EMPTY);
   const [seededFor, setSeededFor] = useState<string | null>(null);
 
+  // True while the amount is whatever we filled in, false once it is typed over.
+  // The contracted figure needs a second fetch to be right, and this is what
+  // decides whether that answer may replace what is on screen.
+  const [autoAmount, setAutoAmount] = useState(false);
+
+  // One fetch, only while a project is actually selected in an open dialog.
+  const { data: metrics } = useQuery<ContractMetrics>({
+    queryKey: [`/api/projects/${form.projectId}/contract-metrics`],
+    enabled: open && form.projectId !== "__none__",
+  });
+
+  const selected = projects.find((x) => x.id === form.projectId);
+
+  // The metrics arrive a beat after the project is picked, so the amount lands
+  // on the frozen contract sum first and is corrected to the revised one here.
+  // Only ever overwrites a figure we put there.
+  useEffect(() => {
+    if (!open || !autoAmount || !metrics || !selected?.contractedAt) return;
+    const revised = (metrics.revisedContractPriceIncGstCents / 100).toFixed(2);
+    setForm((f) => (f.maxValue === revised ? f : { ...f, maxValue: revised }));
+  }, [open, autoAmount, metrics, selected?.contractedAt]);
+
   const seedKey = open ? initial?.id ?? "__new__" : null;
   if (seedKey !== seededFor) {
     setSeededFor(seedKey);
+    setAutoAmount(false);
     setForm(
       initial
         ? {
@@ -375,6 +411,9 @@ function RowDialog({
     if (id === "__none__") { setForm((f) => ({ ...f, projectId: id })); return; }
     const p = projects.find((x) => x.id === id);
     if (!p) { setForm((f) => ({ ...f, projectId: id })); return; }
+    setAutoAmount((prev) => prev || form.maxValue.trim() === "");
+    // metrics belong to the PREVIOUS selection at this point, so the first pick
+    // uses the project's own fields and the figure firms up when they arrive.
     const pre = prefillFromProject(p);
     setForm((f) => ({
       ...f,
@@ -388,8 +427,10 @@ function RowDialog({
   };
 
   const repull = () => {
-    const p = projects.find((x) => x.id === form.projectId);
-    if (p) setForm((f) => ({ ...f, ...prefillFromProject(p) }));
+    const p = selected;
+    if (!p) return;
+    setAutoAmount(true);
+    setForm((f) => ({ ...f, ...prefillFromProject(p, metrics) }));
   };
 
   const amount = num(form.maxValue);
@@ -480,8 +521,16 @@ function RowDialog({
             <Label className="text-xs">HBCF commitment ($)</Label>
             <Input
               type="number" className="h-8 text-xs" value={form.maxValue}
-              onChange={(e) => set("maxValue")(e.target.value)}
+              onChange={(e) => { setAutoAmount(false); set("maxValue")(e.target.value); }}
             />
+            {selected?.contractedAt && metrics && (
+              <p className="text-label text-muted-foreground">
+                Contract {fmtMoney(metrics.originalContractPriceIncGstCents / 100)}
+                {metrics.approvedVariationsIncGstCents !== 0 && (
+                  <> + approved variations {fmtMoney(metrics.approvedVariationsIncGstCents / 100)}</>
+                )} inc GST
+              </p>
+            )}
             {overType && (
               <p className="text-label text-status-danger flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
@@ -630,9 +679,10 @@ export default function HBCFTracker() {
     return map;
   }, [periods, weekly]);
 
+  /** The worst week in view, and when it falls — the headline for planning. */
   const peak = useMemo(() => {
-    let top = 0;
-    weekly.forEach((v) => { if (v.total > top) top = v.total; });
+    let top = { total: 0, key: "" };
+    weekly.forEach((v, key) => { if (v.total > top.total) top = { total: v.total, key }; });
     return top;
   }, [weekly]);
 
@@ -741,51 +791,16 @@ export default function HBCFTracker() {
         id: p.id,
         enableSorting: false,
         header: () => (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  "flex flex-col items-center leading-none gap-0.5 w-full py-0.5 rounded-sm cursor-default",
-                  isNow && "ring-1 ring-inset ring-primary/50",
-                )}
-                style={{ background: TONE_STYLE[tone].bg, color: tone === "none" ? undefined : TONE_STYLE[tone].text }}
-              >
-                <span className="text-label uppercase">{p.label}</span>
-                <span className="text-label font-semibold">{p.subLabel}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              <div className="space-y-1">
-                <div className="font-semibold">
-                  {zoom === "week"
-                    ? `Week of ${p.weeks[0].start.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}`
-                    : `${p.weeks[0].start.toLocaleDateString("en-AU", { month: "long", year: "numeric" })} — peak week${
-                        peakHere ? ` of ${peakHere.week.start.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}` : ""
-                      }`}
-                </div>
-                <div className="tabular-nums">
-                  {fmtMoney(value)}
-                  {limit ? ` of ${fmtMoney(limit)} — ${Math.round((value / limit) * 100)}%` : ""}
-                </div>
-                <div className="text-muted-foreground">
-                  {(peakHere?.jobs.length ?? 0)} job{(peakHere?.jobs.length ?? 0) === 1 ? "" : "s"} open
-                  {countLimit ? ` of ${countLimit}` : ""}
-                </div>
-                {peakHere && peakHere.jobs.length > 0 && (
-                  <ul className="pt-0.5 space-y-0.5">
-                    {peakHere.jobs.map((j) => (
-                      <li key={j.id} className="flex justify-between gap-3 tabular-nums">
-                        <span className="truncate">
-                          {j.name}{j.basis !== "actual" ? " (forecast)" : ""}
-                        </span>
-                        <span>{fmtShort(num(j.maxValue))}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </TooltipContent>
-          </Tooltip>
+          <div
+            className={cn(
+              "flex flex-col items-center leading-none gap-0.5 w-full py-0.5 rounded-sm",
+              isNow && "ring-1 ring-inset ring-primary/50",
+            )}
+            style={{ background: TONE_STYLE[tone].bg, color: tone === "none" ? undefined : TONE_STYLE[tone].text }}
+          >
+            <span className="text-label uppercase">{p.label}</span>
+            <span className="text-label font-semibold">{p.subLabel}</span>
+          </div>
         ),
         cell: ({ row }) => {
           const r = row.original;
@@ -851,7 +866,7 @@ export default function HBCFTracker() {
     );
   }
 
-  const peakTone = toneFor(peak, limit);
+  const peakTone = toneFor(peak.total, limit);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -862,22 +877,24 @@ export default function HBCFTracker() {
           <span className="text-sm font-semibold">Open Job Limits</span>
         </div>
 
+        {/*
+          Two facts, because two are what the screen is for: where exposure is
+          now, and the worst it gets in view. The limit itself is not repeated
+          here — it is a setting, it sits on the total row, and every column is
+          already coloured against it.
+        */}
         {limit ? (
-          <div className="flex items-center gap-4 flex-wrap text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Limit:</span>
-              <span className="font-semibold tabular-nums">{fmtMoney(limit)}</span>
-              {countLimit ? <span className="text-muted-foreground">· {countLimit} jobs</span> : null}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">This week:</span>
+          <div className="flex items-center gap-5 flex-wrap text-xs">
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-muted-foreground">Now</span>
               <span className="font-semibold tabular-nums">{fmtMoney(current.total)}</span>
               <span className="text-muted-foreground">
-                · {current.jobs.length} job{current.jobs.length === 1 ? "" : "s"}
+                · {current.jobs.length}{countLimit ? ` of ${countLimit}` : ""} job
+                {current.jobs.length === 1 && !countLimit ? "" : "s"}
               </span>
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Peak in view:</span>
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-muted-foreground">Peak</span>
               <span
                 className={cn(
                   "font-semibold tabular-nums",
@@ -886,21 +903,13 @@ export default function HBCFTracker() {
                   peakTone === "ok" && "text-status-success",
                 )}
               >
-                {fmtMoney(peak)}
+                {fmtMoney(peak.total)}
               </span>
-              <span className="text-muted-foreground">
-                ({Math.round((peak / limit) * 100)}%)
+              <span className="tabular-nums text-muted-foreground">
+                · {Math.round((peak.total / limit) * 100)}%
+                {peak.key ? ` · wk ${fmtDate(peak.key)}` : ""}
               </span>
             </span>
-            <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn(
-                  "h-full rounded-full",
-                  peakTone === "over" ? "bg-destructive" : peakTone === "warn" ? "bg-amber" : "bg-primary",
-                )}
-                style={{ width: `${Math.min((peak / limit) * 100, 100)}%` }}
-              />
-            </div>
           </div>
         ) : (
           <div className="text-xs text-muted-foreground flex items-center gap-1.5">
