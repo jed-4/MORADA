@@ -15,7 +15,7 @@ import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { mergeImportedPages } from "../../client/src/components/proposals/pdf/mergeImportedPages";
 import { visualPage, wrapText, layoutRichBox, createFontBook } from "../../client/src/components/proposals/pdf/stampTextBoxes";
-import { parseStampHtml, stampPlainText } from "../../client/src/components/proposals/pdf/stampRichText";
+import { parseStampHtml, stampLineHeight, stampPlainText } from "../../client/src/components/proposals/pdf/stampRichText";
 import { normaliseTextBoxes, newTextBox, type ImportedTextBox } from "../../client/src/components/proposals/pdf/importedTextBoxes";
 
 const A4: [number, number] = [595.28, 841.89];
@@ -232,6 +232,32 @@ async function run() {
       page, book, (t) => t.replace("{{project.name}}", "Gerroa Reno"));
     return placed.map((p) => p.text).join(" ");
   }, "Gerroa Reno");
+
+  /* ── line height: the editor and the PDF must agree ────────────────── */
+
+  check("a line's height comes from its LARGEST run, not the box",
+    stampLineHeight([{ text: "a", size: 12 }, { text: "b", size: 18 }], 24, 1.25), 18 * 1.25);
+
+  check("a run with no size of its own falls back to the box",
+    stampLineHeight([{ text: "a" }], 10, 1.25), 10 * 1.25);
+
+  check("small runs in a big box take the SMALL height",
+    /* The reported bug: 12pt runs in a 24pt box were drawn one line apart and
+       shown two lines apart, so a box positioned in the editor printed
+       somewhere else. */
+    stampLineHeight([{ text: "a", size: 12 }], 24, 1.25), 12 * 1.25);
+
+  check("an authored blank line still takes the box's height",
+    stampLineHeight([], 11, 1.25), 11 * 1.25);
+
+  await checkAsync("the stamper's baselines step by exactly that height", async () => {
+    const b = box({
+      html: '<p><span style="font-size: 12pt;">one</span></p><p><span style="font-size: 12pt;">two</span></p>',
+      text: "", x: 0, width: 1, fontSize: 24, lineHeight: 1.25, font: "helvetica",
+    });
+    const placed = await layoutRichBox(b, visualPage(500, 700, 0), book, (t) => t);
+    return Math.round((placed[1].v - placed[0].v) * 100) / 100;
+  }, 12 * 1.25);
 
   /* ── end to end, through a real merge ───────────────────────────────── */
 

@@ -18,7 +18,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ColorPickerPopover } from "@/components/ui/ColorPickerPopover";
 import { PROPOSAL_PLACEHOLDER_TOKENS } from "@/components/proposals/pdf/placeholders";
 import { MergeFieldEditor } from "@/components/proposals/MergeFieldEditor";
-import { parseStampHtml, stampPlainText } from "@/components/proposals/pdf/stampRichText";
+import { parseStampHtml, stampLineHeight, stampPlainText } from "@/components/proposals/pdf/stampRichText";
 import {
   newTextBox,
   STAMP_FONT_CSS,
@@ -481,7 +481,16 @@ function renderRuns(box: ImportedTextBox, scale: number) {
   const lines = parseStampHtml(box.html && box.html.trim() ? box.html : box.text);
   if (lines.length === 0) return <span className="opacity-50">Empty</span>;
   return lines.map((line, i) => (
-    <div key={i} style={{ minHeight: box.fontSize * box.lineHeight * scale }}>
+    <div
+      key={i}
+      style={{
+        /* The SAME rule the stamper uses, scaled to the rendered page — see
+           stampLineHeight. Sizing these by the box rather than by the line's
+           own runs is what made the editor and the PDF disagree. */
+        height: stampLineHeight(line, box.fontSize, box.lineHeight) * scale,
+        lineHeight: `${stampLineHeight(line, box.fontSize, box.lineHeight) * scale}px`,
+      }}
+    >
       {line.map((run, j) => (
         <span
           key={j}
