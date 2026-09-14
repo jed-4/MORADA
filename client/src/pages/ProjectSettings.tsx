@@ -87,6 +87,7 @@ export default function ProjectSettings() {
     clientBudget: currentProject?.clientBudget || null,
     proposedStartDate: currentProject?.proposedStartDate || null,
     proposedEndDate: currentProject?.proposedEndDate || null,
+    practicalCompletionDate: currentProject?.practicalCompletionDate || null,
     selectedEstimateId: currentProject?.selectedEstimateId || null,
     color: currentProject?.color || "#A890D4",
     icon: currentProject?.icon || "Building2",
@@ -264,6 +265,7 @@ export default function ProjectSettings() {
         clientBudget: currentProject.clientBudget || null,
         proposedStartDate: currentProject.proposedStartDate || null,
         proposedEndDate: currentProject.proposedEndDate || null,
+        practicalCompletionDate: currentProject.practicalCompletionDate || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
@@ -339,6 +341,7 @@ export default function ProjectSettings() {
         clientBudget: currentProject.clientBudget || null,
         proposedStartDate: currentProject.proposedStartDate || null,
         proposedEndDate: currentProject.proposedEndDate || null,
+        practicalCompletionDate: currentProject.practicalCompletionDate || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
@@ -765,6 +768,36 @@ export default function ProjectSettings() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/*
+            Practical completion is the date the rest of the business hangs off —
+            HBCF open-job exposure stops there, and the warranty and defects
+            liability periods start there — so it is set here rather than being
+            inferred from the programme, which keeps predicting an end after the
+            job is finished.
+          */}
+          <div className="space-y-2">
+            <Label htmlFor="practical-completion">Practical Completion</Label>
+            {isEditing ? (
+              <Input
+                id="practical-completion"
+                type="date"
+                value={formData.practicalCompletionDate || ""}
+                onChange={(e) => setFormData({ ...formData, practicalCompletionDate: e.target.value || null })}
+                data-testid="input-practical-completion"
+              />
+            ) : (
+              <div className="p-2 bg-muted rounded-md" data-testid="text-practical-completion">
+                {currentProject.practicalCompletionDate
+                  ? new Date(currentProject.practicalCompletionDate).toLocaleDateString()
+                  : "Not reached"}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Leave empty until the job is actually complete. Ends the job's HBCF
+              open-job exposure and starts the warranty period.
+            </p>
           </div>
 
           <div className="space-y-2">

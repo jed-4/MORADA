@@ -1,0 +1,22 @@
+-- When a job is actually finished.
+--
+-- Nothing in the schema recorded this. `projects` carries proposed_start_date /
+-- proposed_end_date (what was planned) and start_date / end_date (the programme),
+-- but no date saying the build reached practical completion. Every surface that
+-- needs "is this job still running" has been using the programmed end as a
+-- proxy, which is the date the schedule currently predicts — it moves when the
+-- programme moves, and it keeps predicting after the job is done.
+--
+-- PC is the date the rest of the business hangs off: HBCF open-job exposure
+-- stops there, the statutory warranty periods start there, the defects
+-- liability period starts there, and the final claim falls due around it.
+--
+-- text ISO 'YYYY-MM-DD', matching start_date / end_date on this table rather
+-- than the timestamp columns — it is a calendar date, and giving it a time and
+-- a zone would invite exactly the off-by-one this codebase already hit when
+-- week keys were built through toISOString().
+--
+-- NULLABLE with no default, and that is the whole point: null means "not
+-- complete yet", which is a different and much more common state than any date
+-- could stand in for.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS practical_completion_date text;
