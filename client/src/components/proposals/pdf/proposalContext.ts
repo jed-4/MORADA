@@ -47,7 +47,12 @@ export function resolveProposalTotals(
     if (section.sectionType !== 'estimate') continue;
     const content = (section.content as Record<string, unknown> | null) ?? {};
     const estimateId = resolveEstimateId(proposal, content);
-    const data = estimateId ? estimatesData[estimateId] : undefined;
+    /* A template's estimate section has no id to resolve, but estimatesData
+       may hold exactly one stand-in — take it, or the payment schedule and the
+       summary print zeroes beside a table full of figures. */
+    const data = estimateId
+      ? estimatesData[estimateId]
+      : Object.values(estimatesData)[0];
     if (!data) continue;
     return computeProposalTotals(data.items, {
       projectMarkupPercent: data.estimate?.projectMarkupPercent,

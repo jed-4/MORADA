@@ -14,9 +14,12 @@ import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
 import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface EstimateSectionProps {
   section: ProposalSection;
+  /** True when the figures are stand-ins for a template. Says so on the page. */
+  sampleData?: boolean;
   estimateData?: {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -45,6 +48,7 @@ interface EstimateSectionProps {
 
 export function EstimateSection({
   section,
+  sampleData,
   estimateData,
   companyLogo,
   companyName,
@@ -67,6 +71,7 @@ export function EstimateSection({
   const isS2 = documentStyle === "style2";
 
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const visibleColumns: string[] | undefined = Array.isArray(content.visibleColumns)
     ? (content.visibleColumns as string[])
     : undefined;
@@ -503,8 +508,27 @@ export function EstimateSection({
           {section.name || "Estimate"}
         </Text>
 
+        {/* Said on the page, not just in the editor's chrome: a template
+            preview can be downloaded, and a page of plausible figures with
+            nothing marking them as invented is the kind of thing that reaches
+            a client by accident. */}
+        {sampleData && (
+          <Text
+            style={{
+              fontSize: 8,
+              fontFamily: PDF_FONT_FAMILY,
+              fontWeight: 700,
+              color: PDF_COLORS.inkMuted,
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            SAMPLE FIGURES — EACH PROPOSAL SHOWS ITS OWN ESTIMATE
+          </Text>
+        )}
+
         {/* The section's own Description, same as every other section type. */}
-        <SectionIntro section={section} />
+        <SectionIntro section={section} textStyle={textStyle} />
 
         {/* The estimate editor's separate description field. Kept rendering so
             proposals that already use it are unchanged; new text is better put

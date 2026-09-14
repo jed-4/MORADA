@@ -3,6 +3,7 @@ import { PDF_COLORS, PDF_RADIUS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection, ProposalAcceptance } from '@shared/schema';
 import { sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface SignatureSectionProps {
   proposal: Proposal;
@@ -85,6 +86,8 @@ export function SignatureSection({
     },
   });
 
+  const textStyle = resolveSectionTextStyle(section.content as Record<string, unknown> | null);
+
   const isAccepted = acceptance && acceptance.status === 'accepted';
   const sigData = acceptance?.signature || '';
   const isImage = !!sigData && sigData.startsWith('data:image');
@@ -95,7 +98,7 @@ export function SignatureSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Signature'}
           </Text>
-          <SectionIntro section={section} />
+          <SectionIntro section={section} textStyle={textStyle} />
 
           {/* Boxed. A pair of ruled lines floating on the page reads as an
               afterthought; the thing the client is actually asked to do

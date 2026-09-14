@@ -3,6 +3,7 @@ import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface SummarySectionProps {
   proposal: Proposal;
@@ -74,6 +75,7 @@ export function SummarySection({
   const isS2 = documentStyle === 'style2';
 
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const html = (content.summaryText as string) || '';
 
   if (!summaryHasContent(section, showTotals)) return null;
@@ -126,8 +128,8 @@ export function SummarySection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Summary'}
           </Text>
-          <SectionIntro section={section} />
-          {html ? <RichTextBlocks html={html} /> : null}
+          <SectionIntro section={section} textStyle={textStyle} />
+          {html ? <RichTextBlocks html={html} textStyle={textStyle} /> : null}
 
           {showTotals && (
           <View wrap={false} style={styles.totalsWrap}>

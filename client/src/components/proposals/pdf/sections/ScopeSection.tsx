@@ -2,6 +2,7 @@ import { Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { PDF_COLORS } from "@/components/pdf/shared/pdfTokens";
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface ScopeSectionProps {
   proposal: Proposal;
@@ -28,6 +29,7 @@ export function ScopeSection({
 }: ScopeSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const isCoverLetter = section.sectionType === 'cover_letter';
   const html =
     (content.scopeText as string) ||
@@ -43,9 +45,9 @@ export function ScopeSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || defaultTitle}
           </Text>
-          <SectionIntro section={section} />
+          <SectionIntro section={section} textStyle={textStyle} />
           {html ? (
-            <RichTextBlocks html={html} />
+            <RichTextBlocks html={html} textStyle={textStyle} />
           ) : (
             <Text style={sharedSectionStyle.muted}>{emptyMessage}</Text>
           )}

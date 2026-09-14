@@ -17,10 +17,25 @@ import {
   collectHiddenGroupIds,
   lineCountsTowardProposalTotal,
 } from '@shared/proposalTotals';
+import { resolveSectionTextStyle } from "../sectionTextStyle";
 
 interface AllowanceRow {
   name: string;
   amountCents?: number | null;
+  /**
+   * The line's DESCRIPTION, printed under the item and labelled "Description"
+   * in the builder.
+   *
+   * The field keeps the name `notes` on purpose: legacy hand-typed rows are
+   * stored as jsonb with a `notes` key, and the column toggle saved in existing
+   * sections and templates is `columnToggles.notes`. Renaming either would
+   * silently drop text and toggles that are already out there.
+   *
+   * `estimate_items.notes` is a DIFFERENT field — the note-icon popover in the
+   * estimate grid — and is deliberately not printed in any client-facing
+   * document. Do not wire it in here without asking first; it reads like a
+   * scratchpad.
+   */
   notes?: string | null;
   /** "Prime Cost" / "Provisional Sum" when the row came from the estimate. */
   kind?: string | null;
@@ -54,6 +69,8 @@ interface AllowancesSectionProps {
   brandColor?: string;
   documentStyle?: 'style1' | 'style2';
   showFooter?: boolean;
+  /** Stand-in figures are in play — say so on the page. */
+  sampleData?: boolean;
   /** The linked estimate, so PC/PS lines can be listed without re-entry. */
   estimateData?: {
     estimate: Estimate;
@@ -76,11 +93,13 @@ export function AllowancesSection({
   brandColor,
   documentStyle = 'style1',
   showFooter,
+  sampleData = false,
   estimateData,
 }: AllowancesSectionProps) {
   const resolvedColor = brandColor ?? primaryColor;
   const isS2 = documentStyle === 'style2';
   const content = (section.content as Record<string, unknown>) || {};
+  const textStyle = resolveSectionTextStyle(content);
   const html = (content.allowancesText as string) || '';
 
   const itemRows = proposalItems
@@ -215,8 +234,25 @@ export function AllowancesSection({
           <Text minPresenceAhead={60} style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
             {section.name || 'Allowances'}
           </Text>
-          <SectionIntro section={section} />
-          {html ? <RichTextBlocks html={html} /> : null}
+          {/* Same warning the estimate page carries: a template preview can be
+              downloaded, and invented figures with nothing marking them as
+              invented are the kind of thing that reaches a client by accident. */}
+          {sampleData && (
+            <Text
+              style={{
+                fontSize: 8,
+                fontFamily: PDF_FONT_FAMILY,
+                fontWeight: 700,
+                color: PDF_COLORS.inkMuted,
+                letterSpacing: 0.6,
+                marginBottom: 8,
+              }}
+            >
+              SAMPLE FIGURES — EACH PROPOSAL SHOWS ITS OWN ALLOWANCES
+            </Text>
+          )}
+          <SectionIntro section={section} textStyle={textStyle} />
+          {html ? <RichTextBlocks html={html} textStyle={textStyle} /> : null}
 
           {rows.length > 0 ? (
             <View minPresenceAhead={90} style={{ marginTop: 8 }}>
@@ -267,7 +303,7 @@ export function AllowancesSection({
                       </Text>
                     )}
                   </View>
-                  {/* Notes on their own line, and ONLY when there are notes.
+                  {/* The description on its own line, and ONLY when there is one.
                       An em dash in an empty cell reads as "nothing here on
                       purpose"; there is nothing to say, so nothing is said.
                       Stripped, because the field is written by a rich-text

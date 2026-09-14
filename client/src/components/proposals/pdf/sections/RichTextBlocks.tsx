@@ -1,6 +1,11 @@
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import { PDF_COLORS, PDF_LEADING } from "@/components/pdf/shared/pdfTokens";
 import { registerPdfFonts, PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
+import {
+  DEFAULT_SECTION_TEXT_STYLE,
+  scaleFont,
+  type SectionTextStyle,
+} from "../sectionTextStyle";
 
 // Registering here covers every proposal section: all eleven of them render
 // their prose through this module, so none can fall back to Helvetica.
@@ -92,13 +97,29 @@ export function htmlToBlocks(html: string): RenderBlock[] {
   return blocks;
 }
 
-const blockStyles = StyleSheet.create({
-  p: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginBottom: 6 },
-  h1: { fontSize: 18, fontWeight: 'bold', marginTop: 8, marginBottom: 6, color: PDF_COLORS.ink },
-  h2: { fontSize: 15, fontWeight: 'bold', marginTop: 8, marginBottom: 4, color: PDF_COLORS.ink },
-  h3: { fontSize: 13, fontWeight: 'bold', marginTop: 6, marginBottom: 4, color: PDF_COLORS.ink },
-  li: { fontSize: 11, lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginLeft: 12 },
-});
+/**
+ * The block styles, resized and realigned for one section's text style.
+ *
+ * The numbers below are the sizes this module has always used; they are now
+ * the values at the default 11pt body, and every one of them scales with it so
+ * a heading never ends up smaller than the paragraph under it.
+ *
+ * Built per call rather than via StyleSheet.create at module scope, because
+ * the style now varies per section. These are plain objects — @react-pdf
+ * accepts them exactly as it does registered ones.
+ */
+function buildBlockStyles(ts: SectionTextStyle) {
+  const common = { fontFamily: ts.fontFamily, textAlign: ts.align } as const;
+  return {
+    p: { ...common, fontSize: scaleFont(11, ts), lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginBottom: 6 },
+    h1: { ...common, fontSize: scaleFont(18, ts), fontWeight: 'bold' as const, marginTop: 8, marginBottom: 6, color: PDF_COLORS.ink },
+    h2: { ...common, fontSize: scaleFont(15, ts), fontWeight: 'bold' as const, marginTop: 8, marginBottom: 4, color: PDF_COLORS.ink },
+    h3: { ...common, fontSize: scaleFont(13, ts), fontWeight: 'bold' as const, marginTop: 6, marginBottom: 4, color: PDF_COLORS.ink },
+    // A bullet reads as a list because the marker lines up, so list items keep
+    // their leading edge no matter how the rest of the section is aligned.
+    li: { ...common, textAlign: ts.align === 'justify' ? ('left' as const) : ts.align, fontSize: scaleFont(11, ts), lineHeight: PDF_LEADING.body, color: PDF_COLORS.inkMuted, marginLeft: 12 },
+  };
+}
 
 function renderSegs(segs: InlineSeg[] | undefined, fallback: string) {
   const list = segs && segs.length > 0 ? segs : [{ text: fallback }];
@@ -117,11 +138,14 @@ function renderSegs(segs: InlineSeg[] | undefined, fallback: string) {
 
 interface RichTextBlocksProps {
   html: string;
+  /** The owning section's alignment / size / family. Defaults to 11pt Inter, left. */
+  textStyle?: SectionTextStyle;
 }
 
-export function RichTextBlocks({ html }: RichTextBlocksProps) {
+export function RichTextBlocks({ html, textStyle = DEFAULT_SECTION_TEXT_STYLE }: RichTextBlocksProps) {
   const blocks = htmlToBlocks(html);
   if (blocks.length === 0) return null;
+  const blockStyles = buildBlockStyles(textStyle);
   let olIdx = 0;
   return (
     <View>
@@ -228,16 +252,27 @@ export const sharedSectionStyle = StyleSheet.create({
  */
 export function SectionIntro({
   section,
+  textStyle = DEFAULT_SECTION_TEXT_STYLE,
 }: {
   section: { description?: string | null; descriptionHtml?: string | null };
+  textStyle?: SectionTextStyle;
 }) {
   const html = section.descriptionHtml;
   if (html && htmlToBlocks(html).length > 0) {
-    return <RichTextBlocks html={html} />;
+    return <RichTextBlocks html={html} textStyle={textStyle} />;
   }
   const plain = section.description;
   if (plain && plain.trim()) {
-    return <Text style={sharedSectionStyle.intro}>{plain}</Text>;
+    return (
+      <Text
+        style={[
+          sharedSectionStyle.intro,
+          { fontSize: scaleFont(11, textStyle), fontFamily: textStyle.fontFamily, textAlign: textStyle.align },
+        ]}
+      >
+        {plain}
+      </Text>
+    );
   }
   return null;
 }

@@ -14,6 +14,7 @@ import type {
   ProposalItem,
 } from '@shared/schema';
 import { substituteSectionContent } from './placeholders';
+import { sampleEstimateData, SAMPLE_ESTIMATE_ID } from './sampleEstimate';
 import {
   buildProposalPlaceholderContext,
   resolveEstimateId as resolveEstimateIdFor,
@@ -45,6 +46,16 @@ interface ProposalDocumentProps {
   brandColor?: string;
   /** The company's accent, when this proposal has not overridden it. */
   companySecondaryColor?: string;
+  /**
+   * Fill the money sections with stand-in figures.
+   *
+   * For the TEMPLATE page only. A template has no estimate, so the estimate
+   * table, allowances, summary and payment schedule all render empty — the
+   * four sections a builder most needs to see while laying a template out. A
+   * real proposal never gets this: numbers appearing from nowhere in a
+   * client's document are far worse than a blank section.
+   */
+  sampleData?: boolean;
   documentStyle?: 'style1' | 'style2';
   estimatesData?: Record<string, {
     estimate: Estimate;
@@ -69,8 +80,9 @@ export function ProposalDocument({
   primaryColor = PDF_COLORS.brandFallback,
   brandColor,
   companySecondaryColor,
+  sampleData = false,
   documentStyle = 'style1',
-  estimatesData = {},
+  estimatesData: estimatesDataProp = {},
   milestones = [],
   acceptance = null,
   proposalItems = [],
@@ -114,8 +126,21 @@ export function ProposalDocument({
   };
   const effectiveLogo = showLogo ? companyLogo : undefined;
 
+  /* Stand-ins only when there is nothing real AND the caller asked — see the
+     sampleData prop. Real data always wins, so a template that somehow has an
+     estimate shows that instead. */
+  const estimatesData =
+    sampleData && Object.keys(estimatesDataProp).length === 0
+      ? sampleEstimateData(proposal.estimateId)
+      : estimatesDataProp;
+
   const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined) =>
     resolveEstimateIdFor(proposal, sectionContent);
+
+  /* The document-level estimate, for sections that have no per-section
+     selector of their own (allowances). A template has no estimateId at all,
+     so without the sample key its allowance page is permanently empty. */
+  const documentEstimateId = proposal.estimateId ?? (sampleData ? SAMPLE_ESTIMATE_ID : null);
 
   /*
    * The document's own price, and the context every {{token}} resolves
@@ -206,7 +231,8 @@ export function ProposalDocument({
               <AllowancesSection
                 key={section.id}
                 showFooter={footerFor(section)}
-                estimateData={proposal.estimateId ? estimatesData[proposal.estimateId] : undefined}
+                estimateData={documentEstimateId ? estimatesData[documentEstimateId] : undefined}
+                sampleData={sampleData}
                 proposal={proposal}
                 section={section}
                 proposalItems={proposalItems}
@@ -287,7 +313,7 @@ export function ProposalDocument({
             );
           case 'estimate': {
             const content = (section.content as Record<string, unknown>) || {};
-            const estimateId = resolveEstimateId(content);
+            const estimateId = resolveEstimateId(content) ?? (sampleData ? SAMPLE_ESTIMATE_ID : undefined);
             const estimateData = estimateId ? estimatesData[estimateId] : undefined;
             if (!estimateData) return null;
             return (
@@ -297,6 +323,7 @@ export function ProposalDocument({
                 showFooter={footerFor(section)}
                 section={section}
                 estimateData={estimateData}
+                sampleData={sampleData}
                 companyLogo={effectiveLogo}
                 companyName={resolvedCompanyName}
                 companyPhone={companyPhone}
