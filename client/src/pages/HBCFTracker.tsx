@@ -21,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import {
-  Plus, Trash2, Pencil, ShieldCheck, Info, SlidersHorizontal, AlertTriangle,
+  Plus, Trash2, Pencil, ShieldCheck, Info, SlidersHorizontal, AlertTriangle, RefreshCw,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -94,6 +94,13 @@ const DEFAULT_CONSTRUCTION_LIMITS: ConstructionLimit[] = [
 /** Jed's thresholds: green below 90%, amber 90–99%, red at 100% and over. */
 const AMBER_AT = 0.9;
 const RED_AT = 1;
+
+/** What a linked project now says, against what the row stored. */
+interface Drift {
+  amount?: { from: number; to: number };
+  startDate?: { from: string; to: string };
+  endDate?: { from: string; to: string };
+}
 
 const LEFT_COL_W = 244;
 const CELL_W = 54;
@@ -191,6 +198,42 @@ function groupIntoPeriods(weeks: Week[], zoom: "week" | "month"): Period[] {
 function rowCoversWeek(row: HbcfRow, w: Week): boolean {
   if (!row.startDate || !row.endDate) return false;
   return row.startDate <= toKey(w.end) && row.endDate >= toKey(w.start);
+}
+
+/**
+ * Compare a row against its project, using prefillFromProject — the same
+ * resolution the add/edit dialog fills from. Written this way on purpose: a
+ * separate "what does the project say" implementation could disagree with the
+ * dialog, and then the badge would point at a change that re-pulling does not
+ * make.
+ *
+ * Amounts are compared in whole cents. maxValue is a numeric string and the
+ * project figure arrives in cents, so a float equality test here would flag
+ * rows that are identical.
+ */
+function driftOf(
+  row: HbcfRow,
+  project: SystemProject | undefined,
+  metrics: ContractMetrics | undefined,
+): Drift | null {
+  if (!project) return null;
+  const now = prefillFromProject(project, metrics);
+  const out: Drift = {};
+
+  // An empty figure on the project side is "not costed yet", not "worth zero" —
+  // it must never propose wiping a number someone entered.
+  if (now.maxValue) {
+    const from = Math.round(num(row.maxValue) * 100);
+    const to = Math.round(num(now.maxValue) * 100);
+    if (from !== to) out.amount = { from: from / 100, to: to / 100 };
+  }
+  if (now.startDate && now.startDate !== (row.startDate ?? "")) {
+    out.startDate = { from: row.startDate ?? "", to: now.startDate };
+  }
+  if (now.endDate && now.endDate !== (row.endDate ?? "")) {
+    out.endDate = { from: row.endDate ?? "", to: now.endDate };
+  }
+  return out.amount || out.startDate || out.endDate ? out : null;
 }
 
 function toneFor(value: number, limit: number | null): "none" | "ok" | "warn" | "over" {
@@ -347,11 +390,13 @@ function prefillFromProject(p: SystemProject, metrics?: ContractMetrics): Partia
 }
 
 function RowDialog({
-  open, onOpenChange, initial, projects, limits, onSubmit, isPending,
+  open, onOpenChange, initial, repullOnOpen, projects, limits, onSubmit, isPending,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   initial: HbcfRow | null;
+  /** Opened from a drift badge: seed from the PROJECT, not the stored row. */
+  repullOnOpen?: boolean;
   projects: SystemProject[];
   limits: ConstructionLimit[];
   onSubmit: (payload: Record<string, unknown>) => void;
@@ -385,19 +430,27 @@ function RowDialog({
   const seedKey = open ? initial?.id ?? "__new__" : null;
   if (seedKey !== seededFor) {
     setSeededFor(seedKey);
-    setAutoAmount(false);
+    // autoAmount true only for a drift re-pull, so the metrics correction below
+    // is allowed to land on a figure that was just taken from the project.
+    setAutoAmount(!!(initial && repullOnOpen));
+    const seeded: FormState = initial
+      ? {
+          projectId: initial.projectId ?? "__none__",
+          name: initial.name,
+          jobType: initial.jobType ?? "__none__",
+          maxValue: initial.maxValue ?? "",
+          basis: initial.basis ?? "predicted",
+          startDate: initial.startDate ?? "",
+          endDate: initial.endDate ?? "",
+        }
+      : EMPTY;
+    const project = initial?.projectId
+      ? projects.find((x) => x.id === initial.projectId)
+      : undefined;
     setForm(
-      initial
-        ? {
-            projectId: initial.projectId ?? "__none__",
-            name: initial.name,
-            jobType: initial.jobType ?? "__none__",
-            maxValue: initial.maxValue ?? "",
-            basis: initial.basis ?? "predicted",
-            startDate: initial.startDate ?? "",
-            endDate: initial.endDate ?? "",
-          }
-        : EMPTY,
+      initial && repullOnOpen && project
+        ? { ...seeded, ...prefillFromProject(project) }
+        : seeded,
     );
   }
 
@@ -610,6 +663,26 @@ export default function HBCFTracker() {
     queryKey: ["/api/projects"],
   });
 
+  // Secondary and non-blocking: the grid renders on the rows alone, and drift
+  // badges appear when this lands. One request for every linked job.
+  const { data: contractValues = [] } = useQuery<ContractMetrics[] & { projectId: string }[]>({
+    queryKey: ["/api/hbcf-projects/contract-values"],
+  });
+
+  const driftByRow = useMemo(() => {
+    const projectById = new Map(systemProjects.map((p) => [p.id, p]));
+    const metricsById = new Map(
+      (contractValues as (ContractMetrics & { projectId: string })[]).map((m) => [m.projectId, m]),
+    );
+    const out = new Map<string, Drift>();
+    for (const r of rows) {
+      if (!r.projectId) continue;
+      const d = driftOf(r, projectById.get(r.projectId), metricsById.get(r.projectId));
+      if (d) out.set(r.id, d);
+    }
+    return out;
+  }, [rows, systemProjects, contractValues]);
+
   const limit = settings.hwiExposureLimit ? parseFloat(settings.hwiExposureLimit) : null;
   const countLimit = settings.hwiJobCountLimit ?? null;
   const constructionLimits = settings.hwiConstructionLimits?.length
@@ -701,8 +774,12 @@ export default function HBCFTracker() {
     return out;
   }, [rows, constructionLimits]);
 
-  const openAdd = () => { setEditing(null); setDialogOpen(true); };
-  const openEdit = (r: HbcfRow) => { setEditing(r); setDialogOpen(true); };
+  const [repullOnOpen, setRepullOnOpen] = useState(false);
+  const openAdd = () => { setEditing(null); setRepullOnOpen(false); setDialogOpen(true); };
+  const openEdit = (r: HbcfRow) => { setEditing(r); setRepullOnOpen(false); setDialogOpen(true); };
+  // The drift badge opens the editor already re-pulled, so the new figures are
+  // seen and saved deliberately rather than written by clicking an icon.
+  const openDrifted = (r: HbcfRow) => { setEditing(r); setRepullOnOpen(true); setDialogOpen(true); };
 
   // ── Columns ──────────────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<TableRow, unknown>[]>(() => {
@@ -726,6 +803,7 @@ export default function HBCFTracker() {
           const amount = num(r.maxValue);
           const predicted = r.basis !== "actual";
           const overType = overTypeIds.has(r.id);
+          const drift = driftByRow.get(r.id);
           return (
             <div className="flex items-start gap-1.5 min-w-0 group/row">
               <div
@@ -763,6 +841,40 @@ export default function HBCFTracker() {
                       ? `${fmtDate(r.startDate)} – ${fmtDate(r.endDate)}`
                       : "no dates"}
                   </span>
+                  {drift && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openDrifted(r); }}
+                          className="flex items-center gap-0.5 text-status-warning flex-shrink-0 hover:underline"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span className="font-semibold">out of date</span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <div className="space-y-1">
+                          <div className="font-semibold">The project has moved since this row was filled in</div>
+                          {drift.amount && (
+                            <div className="tabular-nums">
+                              Amount {fmtMoney(drift.amount.from)} → {fmtMoney(drift.amount.to)}
+                            </div>
+                          )}
+                          {drift.startDate && (
+                            <div className="tabular-nums">
+                              Starts {drift.startDate.from ? fmtDate(drift.startDate.from) : "—"} → {fmtDate(drift.startDate.to)}
+                            </div>
+                          )}
+                          {drift.endDate && (
+                            <div className="tabular-nums">
+                              Ends {drift.endDate.from ? fmtDate(drift.endDate.from) : "—"} → {fmtDate(drift.endDate.to)}
+                            </div>
+                          )}
+                          <div className="text-muted-foreground pt-0.5">Click to review and update</div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover/row:opacity-100">
@@ -844,7 +956,7 @@ export default function HBCFTracker() {
     }
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periods, periodPeak, limit, countLimit, thisMonday, zoom, overTypeIds]);
+  }, [periods, periodPeak, limit, countLimit, thisMonday, zoom, overTypeIds, driftByRow]);
 
   const tableData = useMemo<TableRow[]>(
     () => [
@@ -970,6 +1082,7 @@ export default function HBCFTracker() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         initial={editing}
+        repullOnOpen={repullOnOpen}
         projects={systemProjects}
         limits={constructionLimits}
         isPending={createMutation.isPending || updateMutation.isPending}

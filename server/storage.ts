@@ -123,6 +123,7 @@ import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
+import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
@@ -453,6 +454,11 @@ export interface IStorage {
   createHbcfProject(data: schema.InsertHbcfProject): Promise<schema.HbcfProject>;
   updateHbcfProject(id: string, companyId: string, data: Partial<schema.InsertHbcfProject>): Promise<schema.HbcfProject | undefined>;
   deleteHbcfProject(id: string, companyId: string): Promise<boolean>;
+
+  // Revised contract price (frozen sum + approved variations) for every project
+  // an HBCF row points at. Batched deliberately: the per-project route costs
+  // four queries each, and this screen asks about every linked job at once.
+  getHbcfContractValues(companyId: string): Promise<schema.HbcfContractValue[]>;
 
   // Home warranty insurance certificates. Every method takes companyId and
   // scopes on it in the query — the compiler is what stops a caller reaching
@@ -11841,6 +11847,80 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteHbcfProject:", error);
       return false;
+    }
+  }
+
+  /**
+   * Two queries, whatever the row count.
+   *
+   * Only projects with a frozen contract sum are returned. Without one the
+   * original price would have to be recomputed from estimate items — a fourth
+   * and fifth query per project — and the caller already has the same fallback
+   * chain the add/edit dialog uses. Silence here means "no better answer than
+   * you already have", not "no drift".
+   */
+  async getHbcfContractValues(companyId: string): Promise<schema.HbcfContractValue[]> {
+    try {
+      // Scoped in the query on BOTH sides: the projects are this company's, and
+      // so are the hbcf rows naming them.
+      const linked = db
+        .select({ id: schema.hbcfProjects.projectId })
+        .from(schema.hbcfProjects)
+        .where(and(
+          eq(schema.hbcfProjects.companyId, companyId),
+          isNotNull(schema.hbcfProjects.projectId),
+        ));
+
+      const projects = await db
+        .select({
+          id: schema.projects.id,
+          contractedAt: schema.projects.contractedAt,
+          exGstCents: schema.projects.contractedTotalExGstCents,
+          incGstCents: schema.projects.contractedTotalIncGstCents,
+        })
+        .from(schema.projects)
+        .where(and(
+          eq(schema.projects.companyId, companyId),
+          inArray(schema.projects.id, linked),
+        ));
+
+      const frozen = projects.filter(
+        (p) => p.contractedAt && p.exGstCents != null && p.incGstCents != null,
+      );
+      if (frozen.length === 0) return [];
+
+      const ids = frozen.map((p) => p.id);
+      const vars = await db
+        .select({
+          projectId: schema.variations.projectId,
+          status: schema.variations.status,
+          totalAmount: schema.variations.totalAmount,
+        })
+        .from(schema.variations)
+        .where(inArray(schema.variations.projectId, ids));
+
+      const approvedByProject = new Map<string, number>();
+      for (const v of vars) {
+        if (!isApprovedVariationStatus(v.status)) continue;
+        approvedByProject.set(
+          v.projectId,
+          (approvedByProject.get(v.projectId) ?? 0) + (Number(v.totalAmount) || 0),
+        );
+      }
+
+      return frozen.map((p) => {
+        const original = Number(p.incGstCents);
+        const variations = approvedByProject.get(p.id) ?? 0;
+        return {
+          projectId: p.id,
+          originalContractPriceIncGstCents: original,
+          approvedVariationsIncGstCents: variations,
+          revisedContractPriceIncGstCents: original + variations,
+        };
+      });
+    } catch (error) {
+      console.error("Database error in getHbcfContractValues:", error);
+      return [];
     }
   }
 

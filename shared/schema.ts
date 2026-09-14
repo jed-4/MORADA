@@ -7483,6 +7483,18 @@ export const hbcfProjects = pgTable("hbcf_projects", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/**
+ * GET /api/hbcf-projects/contract-values — what each linked project's contract
+ * is worth NOW, so a tracker row can be compared against it. Only projects with
+ * a frozen contract sum appear.
+ */
+export type HbcfContractValue = {
+  projectId: string;
+  originalContractPriceIncGstCents: number;
+  approvedVariationsIncGstCents: number;
+  revisedContractPriceIncGstCents: number;
+};
+
 /** One row of company_settings.hwiConstructionLimits. `limit` is dollars. */
 export type HbcfConstructionLimit = { code: string; label: string; limit: string };
 export type HbcfProject = typeof hbcfProjects.$inferSelect;

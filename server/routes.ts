@@ -26707,6 +26707,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Registered before the /:id handlers. They are PATCH and DELETE so a GET
+  // could not be shadowed today, but "contract-values" would read as an id the
+  // moment someone adds GET /api/hbcf-projects/:id.
+  app.get("/api/hbcf-projects/contract-values", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const values = await storage.getHbcfContractValues(user.companyId);
+      res.json(values);
+    } catch (error) {
+      console.error("Failed to fetch HBCF contract values:", error);
+      res.status(500).json({ error: "Failed to fetch contract values" });
+    }
+  });
+
   app.post("/api/hbcf-projects", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
