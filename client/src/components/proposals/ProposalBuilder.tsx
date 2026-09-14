@@ -405,6 +405,29 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               </div>
             )}
 
+            {(section.sectionType === "cover_letter" || section.sectionType === "scope") && (
+              <div className="space-y-1.5">
+                <Label>Price summary</Label>
+                <p className="text-xs text-muted-foreground">
+                  A small block with the proposal number, project, validity and total.
+                  The price otherwise appears once, on the Payment Schedule.
+                </p>
+                <Select
+                  value={(localContent.summaryPlacement as string) || "none"}
+                  onValueChange={(v) => setLocalContent({ ...localContent, summaryPlacement: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid={`select-summary-placement-${section.id}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="text-xs">Don&apos;t show it</SelectItem>
+                    <SelectItem value="top" className="text-xs">Above the text</SelectItem>
+                    <SelectItem value="bottom" className="text-xs">Below the text</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {section.sectionType === "scope" && (
               <div className="space-y-2">
                 <Label>Scope of Work</Label>

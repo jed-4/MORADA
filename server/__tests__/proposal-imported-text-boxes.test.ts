@@ -178,6 +178,33 @@ async function run() {
 
   check("the editor's trailing empty paragraph is not a blank line", parseStampHtml("<p>a</p><p></p>").length, 1);
 
+  /* A PDF has no list element, so a bullet has to become characters. Without
+     that an <li> ended its line and added nothing, and a bulleted box read
+     correctly in the editor — a contenteditable with real CSS markers — and
+     lost every bullet on the page. */
+  check("a bulleted list is drawn with its bullets",
+    parseStampHtml("<ul><li>one</li><li>two</li></ul>").map((l) => l.map((r) => r.text).join("")),
+    ["\u2022  one", "\u2022  two"]);
+
+  check("an ordered list numbers itself",
+    parseStampHtml("<ol><li>one</li><li>two</li><li>three</li></ol>").map((l) => l.map((r) => r.text).join("")),
+    ["1.  one", "2.  two", "3.  three"]);
+
+  check("a second list starts counting again",
+    parseStampHtml("<ol><li>a</li></ol><p>x</p><ol><li>b</li></ol>").map((l) => l.map((r) => r.text).join("")),
+    ["1.  a", "x", "1.  b"]);
+
+  // The marker carries the <li>'s style, not the first run's — bolding the
+  // words inside an item does not bold its bullet, which is what a reader
+  // expects and what the editor shows.
+  check("bolding the words in an item leaves its bullet unbolded",
+    parseStampHtml("<ul><li><strong>a</strong></li></ul>")[0][0].bold,
+    undefined);
+
+  check("a list does not disturb the style stack around it",
+    parseStampHtml("<p><strong>a</strong></p><ul><li>b</li></ul><p>c</p>").map((l) => l.map((r) => ({ t: r.text, b: !!r.bold }))),
+    [[{ t: "a", b: true }], [{ t: "\u2022  ", b: false }, { t: "b", b: false }], [{ t: "c", b: false }]]);
+
   check("plain text of rich content reads back in order", stampPlainText(
     '<p>Prepared for <strong>MILLER</strong></p><p>Gerroa</p>'), "Prepared for MILLER\nGerroa");
 
@@ -285,6 +312,31 @@ async function run() {
   // ascender — the same rule the editor's CSS line box uses.
   near("it lands at the fraction down it was dragged to", stamped?.y ?? -1, 0.3 * IMPORT[1], 30);
   check("the design underneath survives", found.items.some((i) => i.text.includes("DESIGN 1")), true);
+
+  /* Bullets, all the way to the drawn page.
+     The parse tests above prove the marker runs exist; this proves they reach
+     the paper. A PDF has no list element, so if the stamper ever stops drawing
+     them there is nothing else in the pipeline to notice. */
+  (globalThis as any).fetch = okFetch;
+  out = await mergeImportedPages(
+    await baseDoc(["slot"]),
+    [
+      {
+        objectPath: "/objects/cover",
+        pageCount: 1,
+        textBoxes: [box({
+          text: "Sitework\nFooting",
+          html: "<ul><li>Sitework</li><li>Footing</li></ul>",
+          x: 0.1, y: 0.1, width: 0.8, fontSize: 12, font: "helvetica",
+        })],
+      },
+    ],
+    { fetchFont },
+  );
+  found = await visualText(out.bytes, 1);
+  const bulleted = found.items.map((i) => i.text).join(" ");
+  check("a bulleted box prints its bullets", /\u2022\s+Sitework/.test(bulleted), true);
+  check("both items keep their bullets", (bulleted.match(/\u2022/g) ?? []).length, 2);
 
   /* A rotated import: the SAME fractions must produce the same visual place,
      because that is the only promise the editor can make. */

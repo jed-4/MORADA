@@ -25487,7 +25487,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
-      const deleted = await storage.deleteProposal(req.params.id);
+      /* The whole family, not one row. Revisions are one document — see
+         deleteProposalFamily for why deleting a single member either strands
+         the others or fails outright. */
+      const deleted = await storage.deleteProposalFamily(
+        req.params.id,
+        (ownedProposal as any).companyId,
+      );
       if (!deleted) {
         return res.status(404).json({ error: "Proposal not found" });
       }

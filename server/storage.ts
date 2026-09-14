@@ -1112,7 +1112,7 @@ export interface IStorage {
   createProposal(proposal: InsertProposal): Promise<Proposal>;
   createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
   updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined>;
-  deleteProposal(id: string): Promise<boolean>;
+  deleteProposalFamily(id: string, companyId: string): Promise<boolean>;
 
   // Proposal Sections CRUD
   getProposalSections(proposalId: string): Promise<ProposalSection[]>;
@@ -20184,13 +20184,52 @@ export class DbStorage implements IStorage {
       .where(eq(schema.proposalReminderLog.id, id));
   }
 
-  async deleteProposal(id: string): Promise<boolean> {
+  /**
+   * Delete a proposal and every other revision of it.
+   *
+   * Revisions are one document, not several: Rev B carries
+   * `parentProposalId` pointing at Rev A, and the list already groups them as
+   * one row. Deleting a single member would either strand the rest under a
+   * missing parent or — if the member IS the parent — fail outright, because
+   * that self-reference has no ON DELETE clause and Postgres defaults to NO
+   * ACTION. Under the old single-row delete that made Rev A of a revised
+   * proposal undeletable: the foreign-key violation was caught here, reported
+   * as `false`, and rendered by the route as "Proposal not found" — nothing
+   * deleted, and the real reason invisible. Deleting the CHILD was worse,
+   * because it succeeded and left the family half gone.
+   *
+   * Everything hanging off each proposal — sections, items, milestones,
+   * acceptances, reminder log — is ON DELETE CASCADE, so those go with it.
+   *
+   * Scoped by company as well as by family. The caller has already checked
+   * ownership of the id it was handed, but the family is resolved from data,
+   * and a query that widens from one checked row to a set must re-state the
+   * boundary rather than inherit it.
+   */
+  async deleteProposalFamily(id: string, companyId: string): Promise<boolean> {
     try {
+      const [target] = await db.select({
+        id: schema.proposals.id,
+        parentProposalId: schema.proposals.parentProposalId,
+      })
+        .from(schema.proposals)
+        .where(and(eq(schema.proposals.id, id), eq(schema.proposals.companyId, companyId)));
+      if (!target) return false;
+
+      const rootId = target.parentProposalId ?? target.id;
+
+      // Children first: they are what points at the root.
       await db.delete(schema.proposals)
-        .where(eq(schema.proposals.id, id));
-      return true;
+        .where(and(
+          eq(schema.proposals.parentProposalId, rootId),
+          eq(schema.proposals.companyId, companyId),
+        ));
+      const rows = await db.delete(schema.proposals)
+        .where(and(eq(schema.proposals.id, rootId), eq(schema.proposals.companyId, companyId)))
+        .returning({ id: schema.proposals.id });
+      return rows.length > 0;
     } catch (error) {
-      console.error("Database error in deleteProposal:", error);
+      console.error("Database error in deleteProposalFamily:", error);
       return false;
     }
   }

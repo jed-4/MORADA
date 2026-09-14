@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Page } from "react-pdf";
 import { Loader2, Plus, Trash2, Type } from "lucide-react";
 import { PdfDocument } from "@/components/PdfDocument";
@@ -159,6 +160,29 @@ export function ImportedPdfTextBoxEditor({
    * seventh box that then has to be found and deleted.
    */
   const atPageLimit = onThisPage.length >= MAX_BOXES_PER_PAGE;
+
+  /* The brand colours, as one-click swatches beside the full picker.
+     A merge field almost always wants one of two colours — the company's, or
+     something that reads on the artwork behind it — and finding a brand hex in
+     a palette grid every time is work the app already knows the answer to.
+     Read from Settings → Brand Colour, the field a builder can actually find;
+     see the note in ProposalBuilder about the column that defaulted to blue. */
+  const { data: companySettings } = useQuery<{
+    brandColor?: string;
+    brandSecondaryColor?: string;
+  } | null>({ queryKey: ["/api/company-settings"] });
+
+  const quickColors: Array<{ hex: string; label: string }> = [
+    ...(companySettings?.brandColor
+      ? [{ hex: companySettings.brandColor, label: "Company primary" }]
+      : []),
+    ...(companySettings?.brandSecondaryColor
+      ? [{ hex: companySettings.brandSecondaryColor, label: "Company secondary" }]
+      : []),
+    // Artwork is as often dark as light, and neither is in the brand palette.
+    { hex: "#FFFFFF", label: "White" },
+    { hex: "#000000", label: "Black" },
+  ];
 
   const addBox = () => {
     if (atPageLimit) return;
@@ -378,11 +402,23 @@ export function ImportedPdfTextBoxEditor({
             )}
 
             {!selected ? (
-              <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
-                <Type className="w-4 h-4 mx-auto mb-2 opacity-60" />
-                {onThisPage.length === 0
-                  ? "No text on this page yet. Add one to start."
-                  : "Select a box to change its text and style."}
+              /* Says what to do, not just what is missing.
+                 A box is edited by selecting it, and nothing on screen said so
+                 — you had to guess that the thing on the page was clickable. */
+              <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground space-y-2">
+                <Type className="w-4 h-4 mx-auto opacity-60" />
+                {onThisPage.length === 0 ? (
+                  <ol className="space-y-1 list-decimal pl-4 text-left">
+                    <li><span className="font-medium text-foreground">Add text</span> drops a box on the page.</li>
+                    <li>Drag it over the gap in your design, or nudge it with the arrow keys.</li>
+                    <li>Click it — here or on the page — to write in it and set its font, size and colour.</li>
+                    <li>Use <span className="font-medium text-foreground">Insert a field</span> for anything that changes per proposal, like the client&apos;s name.</li>
+                  </ol>
+                ) : (
+                  <p className="text-center">
+                    Click a box — in the list above or on the page — to write in it and set its style.
+                  </p>
+                )}
               </div>
             ) : (
               <>
@@ -468,6 +504,26 @@ export function ImportedPdfTextBoxEditor({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Colour</Label>
+                    <div className="flex items-center gap-1">
+                      {quickColors.map((c) => (
+                        <button
+                          key={c.hex}
+                          type="button"
+                          title={`${c.label} — ${c.hex.toUpperCase()}`}
+                          aria-label={c.label}
+                          onClick={() => update(selected.id, { color: c.hex })}
+                          className={`h-5 w-5 rounded-full border hover-elevate active-elevate-2 ${
+                            (selected.color || "").toUpperCase() === c.hex.toUpperCase()
+                              ? "ring-2 ring-primary ring-offset-1 border-transparent"
+                              // A white swatch on a light panel needs a
+                              // border you can actually see.
+                              : "border-black/25"
+                          }`}
+                          style={{ backgroundColor: c.hex }}
+                          data-testid={`button-quick-color-${c.hex.replace("#", "")}`}
+                        />
+                      ))}
+                    </div>
                     <ColorPickerPopover
                       value={selected.color}
                       onChange={(hex) => update(selected.id, { color: hex })}
