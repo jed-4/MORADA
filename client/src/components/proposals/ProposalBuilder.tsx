@@ -215,6 +215,17 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   // surfaced for merging instead of quietly becoming uneditable.
   const proseBodyKey = PROSE_BODY_KEY[section.sectionType || ""];
   const [bodyEpoch, setBodyEpoch] = useState(0);
+
+  /**
+   * An imported PDF is not a page Morada draws — it IS the uploaded design, and
+   * ProposalDocument renders nothing of its own for it (see the reserved-slot
+   * branch there). So the two controls that style and add Morada's own prose
+   * have nothing to act on, and offering them meant you could type an intro,
+   * be told the section saved, and never find the words anywhere in the
+   * document. Text goes onto these pages one way: a merge field, stamped on
+   * top of the design.
+   */
+  const drawsOwnPage = section.sectionType !== "imported_pdf";
   const strandedIntro =
     !!proseBodyKey &&
     (hasRichText(localDescriptionHtml) || !!localDescriptionText?.trim());
@@ -315,9 +326,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {/* Section-wide, so it sits above the fields it governs rather than
                 inside one of them. */}
-            <TextStyleEditor content={localContent} setContent={setLocalContent} />
+            {drawsOwnPage && (
+              <TextStyleEditor content={localContent} setContent={setLocalContent} />
+            )}
 
-            {!proseBodyKey && (
+            {!proseBodyKey && drawsOwnPage && (
               <div className="space-y-2">
                 {/* Named for where it lands. It used to be "Description", which
                     said nothing about what it does — and on the Estimate section
@@ -337,6 +350,16 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                   data-testid={`richtext-section-description-${section.id}`}
                 />
               </div>
+            )}
+
+            {/* Said here rather than left to be discovered: the field a section
+                normally offers is missing on purpose, and the thing that
+                replaces it is a button further down. */}
+            {!drawsOwnPage && (
+              <p className="text-xs text-muted-foreground">
+                This section is the uploaded design itself. Text goes on these pages with
+                <span className="font-medium text-foreground"> Add merge fields</span> below.
+              </p>
             )}
 
             {strandedIntro && (
