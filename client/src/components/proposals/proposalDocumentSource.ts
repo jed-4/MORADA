@@ -1,4 +1,5 @@
 import type { InsertProposal, Proposal, ProposalSection, ProposalTemplate } from '@shared/schema';
+import { withoutTemplateStamp } from './templateProvenance';
 
 /**
  * Where a proposal document lives, so the builder does not have to know.
@@ -169,7 +170,12 @@ export function documentToTemplatePayload(
           showSubtotal: s.showSubtotal !== false,
         };
       }),
-    layoutSettings: (layoutSettings ?? {}) as Record<string, unknown>,
+    /* The layout, minus the note of which template built this proposal.
+       Provenance belongs to a document, not to the pattern it was cut from —
+       carrying it into a template would have the new template claim to be a
+       snapshot of an older one, and every proposal made from it would think it
+       had already moved on. */
+    layoutSettings: withoutTemplateStamp(layoutSettings),
   };
 }
 

@@ -42,6 +42,12 @@ import { revisionLabel } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { documentToTemplatePayload, type ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
+import {
+  readTemplateStamp,
+  sectionsWithLocalEdits,
+  templateHasMovedOn,
+  withTemplateStamp,
+} from '@/components/proposals/templateProvenance';
 import { PDF_COLORS } from '@/components/pdf/shared/pdfTokens';
 import { buildDefaultSections, type CompanySettingsForSections } from '@/components/proposals/defaultSections';
 import { mergeImportedPages, importedSectionsInOrder } from '@/components/proposals/pdf/mergeImportedPages';
@@ -725,6 +731,8 @@ type ProposalTemplate = {
     isEnabled?: boolean;
   }>;
   layoutSettings?: Record<string, any>;
+  /** Needed to tell whether the template has moved on since it was applied. */
+  updatedAt?: string | Date | null;
 };
 
 interface ProposalTemplateBarProps {
@@ -814,12 +822,18 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
         );
       }
 
-      // Apply layout settings
-      if (tpl.layoutSettings) {
-        await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
-          layoutSettings: tpl.layoutSettings,
-        });
-      }
+      /* Layout settings, plus a note of where this document came from.
+         Always PATCHed, even when the template carries no layout of its own:
+         the stamp is the whole point, and skipping the write because
+         `tpl.layoutSettings` happened to be empty would leave the proposal
+         unable to tell you the template had moved on. */
+      await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
+        layoutSettings: withTemplateStamp(
+          (tpl.layoutSettings as Record<string, unknown> | null) ??
+            (proposal.layoutSettings as Record<string, unknown> | null),
+          { id: tpl.id, name: tpl.name, at: new Date().toISOString() },
+        ),
+      });
       return tpl;
     },
     onSuccess: (tpl) => {
@@ -870,20 +884,54 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
   });
 
   if (mode === 'picker') {
-    const run = (label: string, go: () => void) => {
+    /* What this proposal was built from, and whether that has since changed.
+       Both come off the proposal itself — see templateProvenance. */
+    const stamp = readTemplateStamp(proposal);
+    const sourceTemplate = stamp ? templates.find((t) => t.id === stamp.id) : undefined;
+    const movedOn = templateHasMovedOn(stamp, sourceTemplate);
+
+    /**
+     * Say what will be lost, not just how much.
+     *
+     * The old confirm said "this will replace all 10 section(s)", which is true
+     * and useless: it counts the sections rather than naming the work. Anything
+     * that still matches the template is replaced by an identical copy and
+     * costs nothing; what matters is the handful you have since typed into.
+     */
+    const run = (label: string, go: () => void, againstTemplate?: ProposalTemplate) => {
       if (sections.length === 0) { go(); return; }
+      const edited = againstTemplate ? sectionsWithLocalEdits(sections, againstTemplate) : [];
+      const listed = edited.slice(0, 6).join(', ');
+      const more = edited.length > 6 ? ` and ${edited.length - 6} more` : '';
       setConfirmAction({
         title: `Apply "${label}"?`,
-        description: `This will replace all ${sections.length} current section(s).`,
+        description: againstTemplate
+          ? edited.length > 0
+            ? `All ${sections.length} sections are replaced with the template's. You have edited ${edited.length} of them since — ${listed}${more} — and those changes go.`
+            : `All ${sections.length} sections are replaced with the template's. Nothing here differs from it, so nothing is lost.`
+          : `This will replace all ${sections.length} current section(s).`,
         confirmLabel: 'Apply',
+        destructive: edited.length > 0,
         run: go,
       });
     };
     return (
       <>
+        {/* Said where the decision is made. A proposal is a SNAPSHOT of the
+            template — deliberately, so a sent document cannot change under the
+            client — but nothing ever said so, and a template finished after
+            the proposal was built simply never arrived. */}
+        {movedOn && (
+          <p className="text-xs text-amber-foreground" data-testid="text-template-moved-on">
+            "{stamp?.name}" has changed since this proposal was created. Pick it again below to
+            bring those changes in.
+          </p>
+        )}
         <Select
-          // Deliberately uncontrolled: nothing on the proposal records which
-          // template built it, so this is a chooser, not a stored value.
+          // Deliberately uncontrolled: this is a chooser, not a stored value.
+          // The proposal does record which template built it (the stamp above),
+          // but showing that here would read as "currently set to", and picking
+          // the same entry again is a re-apply, not a no-op.
           value=""
           disabled={applyMutation.isPending || !!applyingStandard}
           onValueChange={(id) => {
@@ -892,7 +940,7 @@ function ProposalTemplateBar({ proposal, sections, mode = 'menu', onApplyStandar
               return;
             }
             const tpl = templates.find((t) => t.id === id);
-            if (tpl) run(tpl.name, () => applyMutation.mutate(id));
+            if (tpl) run(tpl.name, () => applyMutation.mutate(id), tpl);
           }}
         >
           <SelectTrigger className="h-7 text-xs" data-testid="select-apply-proposal-template">
