@@ -28,6 +28,9 @@ import {
   type StampWeight,
 } from "@/components/proposals/pdf/importedTextBoxes";
 
+/** Per page. See addBox for why per page and why six. */
+const MAX_BOXES_PER_PAGE = 6;
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -145,7 +148,20 @@ export function ImportedPdfTextBoxEditor({
     drag.current = null;
   };
 
+  /**
+   * A ceiling per page, not per document, because a box belongs to a page and
+   * that is the surface you can actually judge as full. Six is enough for what
+   * these pages are for — a name, an address, a date, a reference, a contact,
+   * and one spare — and a three-page intro still gets eighteen.
+   *
+   * The limit is here to keep a cover legible, so it is enforced where you feel
+   * it: the button goes quiet and says why, rather than letting you add a
+   * seventh box that then has to be found and deleted.
+   */
+  const atPageLimit = onThisPage.length >= MAX_BOXES_PER_PAGE;
+
   const addBox = () => {
+    if (atPageLimit) return;
     const box = newTextBox(pageIndex);
     onChange([...boxes, box]);
     setSelectedId(box.id);
@@ -201,9 +217,22 @@ export function ImportedPdfTextBoxEditor({
         <div className="grid gap-4 md:grid-cols-[1fr_260px]">
           <div className="space-y-2 min-w-0">
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addBox} data-testid="button-add-text-box">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={addBox}
+                disabled={atPageLimit}
+                title={atPageLimit ? `${MAX_BOXES_PER_PAGE} text boxes per page is the limit` : undefined}
+                data-testid="button-add-text-box"
+              >
                 <Plus className="w-3 h-3 mr-1" /> Add text
               </Button>
+              {atPageLimit && (
+                <span className="text-xs text-muted-foreground" data-testid="text-box-limit">
+                  {MAX_BOXES_PER_PAGE} per page — delete one to add another
+                </span>
+              )}
               {pageCount > 1 && (
                 <div className="flex items-center gap-1 ml-auto">
                   <Button
