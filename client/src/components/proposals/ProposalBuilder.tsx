@@ -215,6 +215,19 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   // surfaced for merging instead of quietly becoming uneditable.
   const proseBodyKey = PROSE_BODY_KEY[section.sectionType || ""];
   const [bodyEpoch, setBodyEpoch] = useState(0);
+
+  /**
+   * An imported PDF is not a page Morada draws — it IS the uploaded design, and
+   * ProposalDocument renders nothing of its own for it (see the reserved-slot
+   * branch there). So the two controls that style and add Morada's own prose
+   * have nothing to act on, and offering them meant you could type an intro,
+   * be told the section saved, and never find the words anywhere in the
+   * document. Text goes onto these pages one way: a merge field, stamped on
+   * top of the design.
+   */
+  const drawsOwnPage = section.sectionType !== "imported_pdf";
+  const strandedOnImport =
+    !drawsOwnPage && (hasRichText(localDescriptionHtml) || !!localDescriptionText?.trim());
   const strandedIntro =
     !!proseBodyKey &&
     (hasRichText(localDescriptionHtml) || !!localDescriptionText?.trim());
@@ -315,9 +328,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {/* Section-wide, so it sits above the fields it governs rather than
                 inside one of them. */}
-            <TextStyleEditor content={localContent} setContent={setLocalContent} />
+            {drawsOwnPage && (
+              <TextStyleEditor content={localContent} setContent={setLocalContent} />
+            )}
 
-            {!proseBodyKey && (
+            {!proseBodyKey && drawsOwnPage && (
               <div className="space-y-2">
                 {/* Named for where it lands. It used to be "Description", which
                     said nothing about what it does — and on the Estimate section
@@ -336,6 +351,48 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                   placeholders={PROPOSAL_PLACEHOLDERS}
                   data-testid={`richtext-section-description-${section.id}`}
                 />
+              </div>
+            )}
+
+            {/* Said here rather than left to be discovered: the two fields a
+                section normally offers are missing on purpose, and the thing
+                that replaces them is a button further down. */}
+            {!drawsOwnPage && (
+              <p className="text-xs text-muted-foreground">
+                This section is the uploaded design itself, so it has no intro text of its
+                own. To put words on these pages — a client name, a date, an address —
+                use <span className="font-medium text-foreground">Add merge fields</span> below
+                and drop a box where the design leaves a gap.
+              </p>
+            )}
+
+            {/* Text typed in before the field was withdrawn. It was never
+                printed, and deleting it silently would be the same mistake in
+                the other direction, so it is handed back instead. */}
+            {strandedOnImport && (
+              <div className="rounded-md border border-amber/40 bg-amber-light p-2.5 space-y-2">
+                <p className="text-xs text-foreground">
+                  This section has intro text that is <span className="font-medium">not printed</span> —
+                  an imported PDF has no place to put it. Copy anything you need into a merge
+                  field, then clear it.
+                </p>
+                <div className="rounded border bg-card px-2 py-1.5 text-xs text-muted-foreground max-h-24 overflow-auto">
+                  {localDescriptionText?.trim() ||
+                    localDescriptionHtml.replace(/<[^>]*>/g, " ").trim()}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setLocalDescriptionHtml("");
+                    setLocalDescriptionText("");
+                  }}
+                  data-testid={`button-clear-stranded-intro-${section.id}`}
+                >
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Clear it
+                </Button>
               </div>
             )}
 
