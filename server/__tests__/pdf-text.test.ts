@@ -32,10 +32,26 @@ check("real content survives, without its tags", () => {
   assert.strictEqual(pdfHasText("<p>Supply and install</p>"), true);
 });
 
-check("paragraphs are separated, not concatenated", () => {
+check("paragraphs keep their line breaks, and are never concatenated", () => {
   // "OneTwo" would be a new defect introduced by the fix for the old one.
-  assert.strictEqual(pdfPlainText("<p>One</p><p>Two</p>"), "One Two");
-  assert.strictEqual(pdfPlainText("First<br>Second"), "First Second");
+  assert.strictEqual(pdfPlainText("<p>One</p><p>Two</p>"), "One\nTwo");
+  assert.strictEqual(pdfPlainText("First<br>Second"), "First\nSecond");
+});
+
+check("an ampersand does not flatten a plain-text description", () => {
+  /* The reported case. Jed's "Windows & External Doors" group note is plain
+     text with one task per line. The "&" sent it down the markup branch, which
+     collapsed every newline, and the client got a run-on paragraph — while a
+     neighbouring note without an ampersand kept its lines. */
+  const note = "Replacement of most windows\nRemove existing windows\nAngle fix internally & externally";
+  assert.strictEqual(pdfPlainText(note), note);
+  assert.strictEqual(pdfPlainText("A\nB"), pdfPlainText("A &amp; B".replace("&amp; ", "\n")));
+});
+
+check("spacing inside a line collapses; blank lines collapse to one", () => {
+  assert.strictEqual(pdfPlainText("Supply   and\tinstall"), "Supply and install");
+  assert.strictEqual(pdfPlainText("<p>A</p><p></p><p></p><p>B</p>"), "A\n\nB");
+  assert.strictEqual(pdfPlainText("A\r\nB"), "A\nB");
 });
 
 check("entities are decoded, so no &amp; reaches the client", () => {
@@ -57,7 +73,7 @@ check("a stray angle bracket in prose is not treated as markup", () => {
 });
 
 check("list items read as separate phrases", () => {
-  assert.strictEqual(pdfPlainText("<ul><li>Tiles</li><li>Grout</li></ul>"), "Tiles Grout");
+  assert.strictEqual(pdfPlainText("<ul><li>Tiles</li><li>Grout</li></ul>"), "Tiles\nGrout");
 });
 
 console.log(`\n${passed} pdf-text checks passed`);
