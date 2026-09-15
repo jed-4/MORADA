@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { startOfWeek, endOfWeek, format, subWeeks } from "date-fns";
 import type { WidgetProps } from "@/types/widgets";
-import type { User, Timesheet, Task } from "@shared/schema";
+import type { Timesheet, Task } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -13,8 +13,18 @@ import { WidgetError } from "@/components/ui/WidgetError";
 
 const TARGET_HOURS_PER_WEEK = 40;
 
+type AssignableUser = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+  userCategory: string;
+};
+
 export default function BusinessUtilizationWidget({}: WidgetProps) {
-  const usersQ = useQuery<User[]>({ queryKey: ["/api/users"] });
+  // /api/users is admin-only (non-admins got the error state). The assignable
+  // list is every active user in the company, for any signed-in team member.
+  const usersQ = useQuery<AssignableUser[]>({ queryKey: ["/api/users/assignable"] });
   const { data: timesheets = [] } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
 
@@ -25,10 +35,11 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
   if (users.length === 0) return <WidgetEmpty title="No team members yet" />;
 
   const now = new Date();
-  const weekStart = startOfWeek(now);
-  const weekEnd = endOfWeek(now);
-  
-  const activeUsers = users.filter(u => u.status !== "inactive");
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+  // Client and supplier portal logins are users too; they have no capacity.
+  const activeUsers = users.filter(u => u.userCategory === "team");
 
   const getUserUtilization = (userId: string) => {
     const userTimesheets = timesheets.filter(t => 
@@ -38,11 +49,11 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
       t.status === "approved"
     );
     
-    const hoursLogged = userTimesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    const hoursLogged = userTimesheets.reduce((sum, t) => sum + (Number(t.duration) || 0), 0);
     const utilizationPercent = (hoursLogged / TARGET_HOURS_PER_WEEK) * 100;
-    
-    const userTasks = tasks.filter(t => 
-      t.assigneeId === userId && t.status !== "done"
+
+    const userTasks = tasks.filter(t =>
+      (t.assigneeIds?.includes(userId) || t.assigneeId === userId) && t.status !== "done"
     );
     
     return {
@@ -113,7 +124,7 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
             return (
               <div key={user.id} className="flex items-center gap-2 p-2 rounded-md border">
                 <Avatar className="h-7 w-7">
-                  <AvatarImage src={user.profilePicture || undefined} />
+                  <AvatarImage src={user.profileImageUrl || undefined} />
                   <AvatarFallback className="text-data">
                     {getInitials(user.firstName, user.lastName)}
                   </AvatarFallback>

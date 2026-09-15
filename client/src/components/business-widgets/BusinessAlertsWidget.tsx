@@ -49,13 +49,14 @@ export default function BusinessAlertsWidget({}: WidgetProps) {
     t.priority === "high"
   );
 
-  const pendingBillsCount = bills.filter(b => b.status === "pending").length;
+  // "pending" is not a bill status, so this count was always 0.
+  const pendingBillsCount = bills.filter(b => b.status === "awaiting_approval").length;
 
   const upcomingReminders = reminders.filter(r =>
-    !r.completed &&
-    r.reminderDate &&
-    isAfter(new Date(r.reminderDate), now) &&
-    isBefore(new Date(r.reminderDate), upcomingThreshold)
+    r.status === "active" &&
+    r.dueAt &&
+    isAfter(new Date(r.dueAt), now) &&
+    isBefore(new Date(r.dueAt), upcomingThreshold)
   );
 
   const alerts = [
@@ -84,7 +85,7 @@ export default function BusinessAlertsWidget({}: WidgetProps) {
       color: "text-blue-500",
       bgColor: "bg-status-info-bg",
       title: reminder.title,
-      description: formatDistanceToNow(new Date(reminder.reminderDate!), { addSuffix: true }),
+      description: formatDistanceToNow(new Date(reminder.dueAt!), { addSuffix: true }),
     })),
   ].slice(0, 10);
 

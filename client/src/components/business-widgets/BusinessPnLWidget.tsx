@@ -232,22 +232,24 @@ export default function BusinessPnLWidget({ widget }: WidgetProps) {
   }
   if (!data) return <WidgetEmpty title="No P&L data" />;
 
-  const multi = gst === "inc" ? GST_MULTIPLIER : 1;
-  const revenue = data.revenue * multi;
+  // GST collected is owed to the ATO, not earned, so profit and margins are
+  // always ex GST. The toggle only grosses up the Revenue line for display —
+  // it used to gross up revenue alone and let that flow into both profit rows,
+  // inflating them by 10% of revenue.
+  const revenue = gst === "inc" ? data.revenue * GST_MULTIPLIER : data.revenue;
   const cogs = data.cogs;
-  const grossProfit = revenue - cogs;
+  const grossProfit = data.revenue - cogs;
   const overheads = data.overheads;
   const netProfit = grossProfit - overheads;
-  const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : null;
-  const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : null;
+  const grossMargin = data.revenue > 0 ? (grossProfit / data.revenue) * 100 : null;
+  const netMargin = data.revenue > 0 ? (netProfit / data.revenue) * 100 : null;
 
-  // Footer: show raw Xero figures only when GST mode shifts the display
   const showFooter = gst === "inc";
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-pnl">
       <div className="text-[10px] text-bp-muted mb-2">
-        {data.from} → {data.to} · {gst === "inc" ? "inc GST" : "ex GST"}
+        {data.from} → {data.to} · {gst === "inc" ? "revenue inc GST · profit ex GST" : "ex GST"}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -290,8 +292,7 @@ export default function BusinessPnLWidget({ widget }: WidgetProps) {
 
       {showFooter && (
         <div className="mt-2 pt-2 border-t border-bp-border text-[10px] text-bp-muted">
-          Xero (raw): Revenue {fmtCurrency(data.revenue)} · Net{" "}
-          {fmtCurrency(data.revenue - data.cogs - data.overheads)}
+          Revenue ex GST {fmtCurrency(data.revenue)}. Profit and margins exclude GST.
         </div>
       )}
     </div>

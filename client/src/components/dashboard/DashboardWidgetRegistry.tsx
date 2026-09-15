@@ -663,6 +663,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "md",
     configurable: false,
     accent: "amber",
+    financialGated: true,
+    requiredPermission: { key: "dashboard.financial", action: "view" },
     defaultColumns: 4,
     defaultRowSpan: 2,
   },
