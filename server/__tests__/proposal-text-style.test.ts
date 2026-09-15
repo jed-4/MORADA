@@ -309,4 +309,37 @@ await check("an uncosted proposal prints no price rather than $0.00", async () =
   assert.ok(!text.includes("$0.00"), "a zero price must not be stated as a price");
 });
 
+/* ── Estimate group descriptions ────────────────────────────────────────── */
+
+await check("a group's description prints under it, one line per line", async () => {
+  /* Jed's real group note: plain text, one task per line, with an ampersand in
+     it. The ampersand used to send it down pdfPlainText's markup branch, which
+     collapsed every line break into one run-on paragraph. */
+  const items = await renderItems(estimateSections.slice(0, 1), {
+    proposal: { estimateId: "e-groups" },
+    estimatesData: {
+      "e-groups": {
+        estimate: { id: "e-groups", projectMarkupPercent: 0, taxRate: 10 },
+        groups: [{
+          id: "g1", estimateId: "e-groups", name: "Windows & External Doors", parentGroupId: null,
+          order: 0, proposalVisible: true,
+          description: "FIRSTLINE remove existing windows\nSECONDLINE angle fix internally & externally",
+        }],
+        items: [{
+          id: "i1", estimateId: "e-groups", groupId: "g1", name: "Windows Supply", description: null,
+          quantity: 1, unit: "item", unitCostExTax: 1000, markupPercent: 0, wastagePercent: 0,
+          proposalVisible: true, shownAs: "price", allowance: "None", order: 0,
+        }],
+      },
+    },
+  });
+  const first = items.find((i) => i.str.includes("FIRSTLINE"));
+  const second = items.find((i) => i.str.includes("SECONDLINE"));
+  assert.ok(first && second, "both lines of the group description should print");
+  assert.ok(
+    Math.abs(first!.transform[5] - second!.transform[5]) > 4,
+    `the two lines should sit on different baselines, got y=${first!.transform[5]} and y=${second!.transform[5]}`,
+  );
+});
+
 console.log(`\n${passed} proposal text-style checks passed`);
