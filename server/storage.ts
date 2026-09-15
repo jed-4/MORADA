@@ -28566,8 +28566,17 @@ export class DbStorage implements IStorage {
           eq(schema.businessDashboardViews.isDefault, true)
         ));
       
+      // Self-heal a default view that was taken off "everyone" before the
+      // PATCH route refused it: with no creator, nobody could see it.
+      if (existing && existing.visibility !== "everyone") {
+        const [healed] = await db.update(schema.businessDashboardViews)
+          .set({ visibility: "everyone", allowedRoleIds: null, allowedUserIds: null, updatedAt: new Date() })
+          .where(eq(schema.businessDashboardViews.id, existing.id))
+          .returning();
+        return healed;
+      }
       if (existing) return existing;
-      
+
       // Create default view with standard widgets
       const defaultWidgets = [
         { id: "1", type: "businessKPIs", title: "Business KPIs", size: "xl", dimensions: { columns: 8 } },

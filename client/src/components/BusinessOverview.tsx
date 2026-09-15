@@ -46,6 +46,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -192,20 +202,23 @@ function BusinessKpisMenuItems({
   );
 }
 
-function SortableWidget({ 
-  widget, 
-  onUpdate, 
-  onRemove, 
-  isConfiguring, 
+function SortableWidget({
+  widget,
+  onUpdate,
+  onRemove,
+  isConfiguring,
   onConfigure,
-  themeStyle
-}: { 
-  widget: Widget; 
+  themeStyle,
+  readOnly,
+}: {
+  widget: Widget;
   onUpdate: (widget: Widget) => void;
   onRemove: (id: string) => void;
   isConfiguring: boolean;
   onConfigure: (id: string | null) => void;
   themeStyle?: { className: string; style?: React.CSSProperties };
+  /** The viewer can't save this view's layout, so hide arrange controls. */
+  readOnly: boolean;
 }) {
   const [isResizing, setIsResizing] = useState(false);
   const hasFinancialAccess = useFinancialPermission();
@@ -223,7 +236,7 @@ function SortableWidget({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: widget.id, disabled: isResizing });
+  } = useSortable({ id: widget.id, disabled: isResizing || readOnly });
 
   const definition = businessDashboard.getDefinition(widget.type);
   if (!definition) return null;
@@ -280,16 +293,16 @@ function SortableWidget({
         variant="business"
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
-        onRemove={() => onRemove(widget.id)}
+        onRemove={readOnly ? undefined : () => onRemove(widget.id)}
         onConfigure={
-          widget.type === "businessKPIs"
+          readOnly || widget.type === "businessKPIs"
             ? undefined
             : definition.configurable
             ? () => onConfigure(widget.id)
             : undefined
         }
-        dragHandleProps={{ ...attributes, ...listeners }}
-        onResizeEnd={handleResizeEnd}
+        dragHandleProps={readOnly ? undefined : { ...attributes, ...listeners }}
+        onResizeEnd={readOnly ? undefined : handleResizeEnd}
         // Same per-field fallback as the personal dashboard: the default
         // layouts and any saved one carry columns but no height, so without
         // this the registry's defaultRowSpan only ever applied to widgets
@@ -314,7 +327,12 @@ function SortableWidget({
           ) : widget.type === "businessPnL" ? (
             <BusinessPnLHeaderExtra widget={widget} onUpdate={onUpdate} />
           ) : widget.type === "businessRevenue" ? (
-            <BusinessRevenuePeriodTabs widget={widget} onUpdate={onUpdate} />
+            // The tabs emit a partial ({ config }) with no id, which matched no
+            // widget in handleWidgetUpdate — so the range never changed.
+            <BusinessRevenuePeriodTabs
+              widget={widget}
+              onUpdate={(updates) => onUpdate({ ...widget, ...updates })}
+            />
           ) : widget.type === "businessCashFlow" && hasFinancialAccess ? (
             <BusinessCashFlowViewToggle
               widget={widget}
@@ -323,7 +341,7 @@ function SortableWidget({
           ) : undefined
         }
         extraMenuItems={
-          widget.type === "businessKPIs" ? (
+          readOnly ? undefined : widget.type === "businessKPIs" ? (
             <BusinessKpisMenuItems
               widget={widget}
               onUpdate={onUpdate}
@@ -373,6 +391,10 @@ export default function BusinessOverview() {
   const [editVisibility, setEditVisibility] = useState<"everyone" | "roles" | "users" | "private">("everyone");
   const [editAllowedRoleIds, setEditAllowedRoleIds] = useState<string[]>([]);
   const [editAllowedUserIds, setEditAllowedUserIds] = useState<string[]>([]);
+  const [viewPendingDelete, setViewPendingDelete] = useState<BusinessDashboardView | null>(null);
+  // Mirror the server's rules in routes.ts (PATCH/DELETE business-dashboard-views).
+  const isCompanyAdminEdit = usePermission("admin.company", "edit");
+  const isCompanyAdminDelete = usePermission("admin.company", "delete");
 
   const { data: company } = useQuery<Company>({
     queryKey: [`/api/companies/${user?.companyId}`],
@@ -475,11 +497,13 @@ export default function BusinessOverview() {
   });
 
   const handleWidgetUpdate = (updatedWidget: Widget) => {
-    const newWidgets = widgets.map(w => 
+    const newWidgets = widgets.map(w =>
       w.id === updatedWidget.id ? updatedWidget : w
     );
     setWidgets(newWidgets);
-    updateCurrentView(newWidgets);
+    // A viewer who can't save this view can still flip a period tab for
+    // themselves; it just isn't persisted (the server would 403 it).
+    if (layoutEditable) updateCurrentView(newWidgets);
   };
 
   const handleWidgetRemove = (widgetId: string) => {
@@ -616,14 +640,25 @@ export default function BusinessOverview() {
     );
   };
 
+  /** Rename / change who can see it. */
   const canEditView = (view: BusinessDashboardView) => {
     if (!user) return false;
-    if (view.createdById === user.id) return true;
-    // Admins can edit any view
-    return true; // The server will validate permissions
+    return view.createdById === user.id || isCompanyAdminEdit;
+  };
+
+  /** Arrange widgets. Anyone may arrange the company's default view. */
+  const canEditLayout = (view: BusinessDashboardView | undefined) => {
+    if (!view) return false;
+    return canEditView(view) || (view.isDefault && view.visibility === "everyone");
+  };
+
+  const canDeleteView = (view: BusinessDashboardView) => {
+    if (!user || view.isDefault) return false;
+    return view.createdById === user.id || isCompanyAdminDelete;
   };
 
   const activeView = savedViews.find(v => v.id === activeViewId);
+  const layoutEditable = canEditLayout(activeView);
   const availableWidgets = getAvailableWidgets("business");
   const addedWidgetTypes = new Set(
     widgets
@@ -717,7 +752,7 @@ export default function BusinessOverview() {
                     <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
                   )}
                 </button>
-                {isActive && (canEditView(view) || !view.isDefault) ? (
+                {isActive && (canEditView(view) || canDeleteView(view)) ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -740,10 +775,10 @@ export default function BusinessOverview() {
                           <span>Rename</span>
                         </DropdownMenuItem>
                       )}
-                      {!view.isDefault && (
+                      {canDeleteView(view) && (
                         <DropdownMenuItem
                           className="text-xs flex items-center gap-2 text-destructive focus:text-destructive"
-                          onClick={() => deleteView(view.id)}
+                          onClick={() => setViewPendingDelete(view)}
                           data-testid={`delete-view-${view.id}`}
                         >
                           <Trash2 className="w-3 h-3" />
@@ -791,15 +826,19 @@ export default function BusinessOverview() {
             <TooltipContent side="bottom">Customize dashboard</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem
-              className="text-xs flex items-center gap-2"
-              onClick={() => setIsAddingWidget(true)}
-              data-testid="menu-add-widget"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Widget</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
+            {layoutEditable && (
+              <>
+                <DropdownMenuItem
+                  className="text-xs flex items-center gap-2"
+                  onClick={() => setIsAddingWidget(true)}
+                  data-testid="menu-add-widget"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Widget</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem
               className="text-xs flex items-center gap-2"
               onClick={() => setIsThemeSettingsOpen(true)}
@@ -850,6 +889,7 @@ export default function BusinessOverview() {
                     isConfiguring={configuringWidget === widget.id}
                     onConfigure={setConfiguringWidget}
                     themeStyle={getWidgetStyle()}
+                    readOnly={!layoutEditable}
                   />
                 ))}
                 {widgets.length === 0 && (
@@ -862,15 +902,17 @@ export default function BusinessOverview() {
                         <h3 className="text-sm font-semibold">This view is empty</h3>
                         <p className="text-xs text-muted-foreground">Add widgets to build your business overview.</p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setIsAddingWidget(true)}
-                        data-testid="button-add-first-widget"
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1.5" />
-                        Add widget
-                      </Button>
+                      {layoutEditable && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIsAddingWidget(true)}
+                          data-testid="button-add-first-widget"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1.5" />
+                          Add widget
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -940,6 +982,30 @@ export default function BusinessOverview() {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={!!viewPendingDelete} onOpenChange={(open) => !open && setViewPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{viewPendingDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the view and its layout for everyone who can see it. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="cancel-delete-view">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (viewPendingDelete) deleteView(viewPendingDelete.id);
+                setViewPendingDelete(null);
+              }}
+              data-testid="confirm-delete-view"
+            >
+              Delete view
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <DashboardThemeSettings
         open={isThemeSettingsOpen}
         onOpenChange={setIsThemeSettingsOpen}
@@ -964,6 +1030,11 @@ export default function BusinessOverview() {
               />
             </div>
 
+            {editingView?.isDefault ? (
+              <p className="text-xs text-muted-foreground">
+                This is the company's default view, so everyone can always see it.
+              </p>
+            ) : (
             <div className="space-y-3">
               <Label>Who can view this?</Label>
               <RadioGroup 
@@ -1016,8 +1087,9 @@ export default function BusinessOverview() {
                 </div>
               </RadioGroup>
             </div>
+            )}
 
-            {editVisibility === "roles" && (
+            {!editingView?.isDefault && editVisibility === "roles" && (
               <div className="space-y-2">
                 <Label>Select Roles</Label>
                 <ScrollArea className="h-32 border rounded-md p-2">
@@ -1045,7 +1117,7 @@ export default function BusinessOverview() {
               </div>
             )}
 
-            {editVisibility === "users" && (
+            {!editingView?.isDefault && editVisibility === "users" && (
               <div className="space-y-2">
                 <Label>Select Users</Label>
                 <ScrollArea className="h-32 border rounded-md p-2">

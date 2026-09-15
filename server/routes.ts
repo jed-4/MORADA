@@ -12944,7 +12944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/variations-approved", requireAuth, async (req, res) => {
+  app.get("/api/kpis/variations-approved", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -13867,7 +13867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/business/variations-pending", requireAuth, async (req, res) => {
+  app.get("/api/business/variations-pending", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -13939,6 +13939,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Business Dashboard Views Routes (with access control)
+  const BUSINESS_VIEW_VISIBILITIES = ["everyone", "roles", "users", "private"];
+
   app.get("/api/business-dashboard-views", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -13988,13 +13990,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const viewData = {
-        ...req.body,
+      const { name, widgets, visibility, allowedRoleIds, allowedUserIds, displayOrder } = req.body ?? {};
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "View name is required" });
+      }
+      if (visibility !== undefined && !BUSINESS_VIEW_VISIBILITIES.includes(visibility)) {
+        return res.status(400).json({ error: "Invalid visibility" });
+      }
+
+      // Whitelisted, not spread: a spread let the client set isDefault and
+      // mint a second default view that the delete route then refuses.
+      const view = await storage.createBusinessDashboardView({
+        name: name.trim(),
+        widgets: Array.isArray(widgets) ? widgets : [],
+        visibility: visibility ?? "everyone",
+        allowedRoleIds: visibility === "roles" && Array.isArray(allowedRoleIds) ? allowedRoleIds : null,
+        allowedUserIds: visibility === "users" && Array.isArray(allowedUserIds) ? allowedUserIds : null,
+        displayOrder: Number.isInteger(displayOrder) ? displayOrder : 0,
+        isDefault: false,
         companyId,
         createdById: user.id,
-      };
-      
-      const view = await storage.createBusinessDashboardView(viewData);
+      });
       res.json(view);
     } catch (error) {
       console.error("Error creating dashboard view:", error);
@@ -14026,13 +14042,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You don't have permission to edit this view" });
       }
       
-      // Validate that only allowed fields are updated
-      const allowedFields = ['name', 'widgets', 'visibility', 'allowedRoleIds', 'allowedUserIds', 'displayOrder'];
+      // The default view is the company's shared layout, so any team member
+      // may arrange its widgets — but only that. Renaming or re-scoping it is
+      // for admins, and nobody may take it off "everyone": the default view
+      // has no creator, so a private default was invisible to every user and
+      // ensureDefaultBusinessDashboardView never recreated it.
+      const allowedFields = isCreator || isAdmin
+        ? ['name', 'widgets', 'visibility', 'allowedRoleIds', 'allowedUserIds', 'displayOrder']
+        : ['widgets'];
       const updates: Record<string, any> = {};
       for (const key of allowedFields) {
         if (req.body[key] !== undefined) {
           updates[key] = req.body[key];
         }
+      }
+      const blocked = Object.keys(req.body ?? {}).filter(
+        (key) => req.body[key] !== undefined && !allowedFields.includes(key),
+      );
+      if (blocked.length > 0) {
+        return res.status(403).json({ error: `You don't have permission to change ${blocked.join(", ")} on this view` });
+      }
+      if (updates.visibility !== undefined) {
+        if (!BUSINESS_VIEW_VISIBILITIES.includes(updates.visibility)) {
+          return res.status(400).json({ error: "Invalid visibility" });
+        }
+        if (existingView.isDefault && updates.visibility !== "everyone") {
+          return res.status(400).json({ error: "The default view must stay visible to everyone" });
+        }
+      }
+      if (existingView.isDefault) {
+        delete updates.allowedRoleIds;
+        delete updates.allowedUserIds;
       }
       
       const view = await storage.updateBusinessDashboardView(req.params.id, companyId, updates);
