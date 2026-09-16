@@ -1,11 +1,10 @@
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
-import { round2 } from "@shared/pricing";
+import { computeEstimateSummary, round2 } from "@shared/pricing";
 import {
   clientLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
-  lineCountsTowardProposalTotal,
 } from "@shared/proposalTotals";
 import { SectionIntro } from "./RichTextBlocks";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
@@ -170,17 +169,24 @@ export function EstimateSection({
 
   const { estimate, groups, items: allItems } = estimateData;
 
-  // Honour the estimate grid's two client-facing switches. Both were written by
-  // the grid and read by nothing, so a line the user hid with the eye toggle
-  // printed anyway, with its price. Filtering here rather than at each call
-  // site means the grouping, every subtotal and the grand total all agree —
-  // and they agree with computeProposalTotals on the server, which drives the
-  // figure the payment schedule is a percentage of. If the two ever diverge
-  // the client gets a column that does not add up to its own total.
-  // Sections hidden from the proposal, resolved once — nested groups inherit
-  // their parent's hiding.
+  /* Two different sets, and keeping them apart is the whole rule.
+
+     ROWS honour the eye toggle: a line the builder hid, or a line inside a
+     hidden group, does not print.
+
+     MONEY does not. The estimate is the source of truth for every figure, and
+     visibility "has nothing to do with the money" (Jed). Hidden lines stay in
+     their group's subtotal and in the grand total. This section used to drop
+     them, which priced 11 Coolum at $27,550.02 against a $41,030.03 estimate
+     and printed Preliminaries at $0.00. */
   const hiddenGroupIds = collectHiddenGroupIds(groups);
   const items = allItems.filter((it) => lineAppearsOnProposal(it, hiddenGroupIds));
+
+  // Every line by group, hidden or not — the basis for subtotals.
+  const allItemsByGroup: Record<string, EstimateItem[]> = {};
+  for (const item of allItems) {
+    if (item.groupId) (allItemsByGroup[item.groupId] ||= []).push(item);
+  }
 
   const itemsByGroup: Record<string, EstimateItem[]> = {};
   const ungroupedItems: EstimateItem[] = [];
@@ -215,15 +221,22 @@ export function EstimateSection({
     subgroupsByParent[k].sort((a, b) => a.order - b.order);
   }
 
-  // A group's items PLUS all of its descendant subgroups' items — so a container
-  // group's subtotal includes the money nested inside it (the flat version
-  // summed direct children only and printed $0 for pure container groups).
-  const collectGroupItems = (groupId: string, seen = new Set<string>()): EstimateItem[] => {
+  // The full tree, hidden subgroups included — for money only.
+  const allSubgroupsByParent: Record<string, EstimateGroup[]> = {};
+  for (const g of groups) {
+    if (g.parentGroupId) (allSubgroupsByParent[g.parentGroupId] ||= []).push(g);
+  }
+
+  /* A group's money: every line under it, at any depth, whether or not it or
+     its sub-group prints. A container group sums what is nested inside it (the
+     flat version summed direct children only and printed $0 for pure
+     containers), and a hidden sub-group's cost stays in its parent. */
+  const collectGroupMoneyItems = (groupId: string, seen = new Set<string>()): EstimateItem[] => {
     if (seen.has(groupId)) return []; // guard against legacy corrupt parent cycles
     seen.add(groupId);
-    const own = itemsByGroup[groupId] || [];
-    const kids = subgroupsByParent[groupId] || [];
-    return kids.reduce((acc, k) => acc.concat(collectGroupItems(k.id, seen)), [...own]);
+    const own = allItemsByGroup[groupId] || [];
+    const kids = allSubgroupsByParent[groupId] || [];
+    return kids.reduce((acc, k) => acc.concat(collectGroupMoneyItems(k.id, seen)), [...own]);
   };
 
   const formatCurrency = (amount: number) =>
@@ -265,14 +278,10 @@ export function EstimateSection({
   const amountOpts = { projectMarkupPercent: estimate?.projectMarkupPercent, taxRate: taxRatePct };
   const preMarginIncTax = (item: EstimateItem): number =>
     clientLineAmounts(item, { projectMarkupPercent: 0, taxRate: taxRatePct }).incTax;
-  // A line marked "excluded" is named on the proposal as NOT part of this
-  // price, so it contributes nothing — matching lineCountsTowardProposalTotal
-  // on the server. "included" and "empty" only change the printed cell; the
-  // client is still paying for those lines.
-  const lineIncTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).incTax : 0;
-  const lineExTaxClient = (item: EstimateItem) =>
-    lineCountsTowardProposalTotal(item, hiddenGroupIds) ? clientLineAmounts(item, amountOpts).exTax : 0;
+  // What a line is worth to the client. "Shown As" changes only the printed
+  // cell (see amountCell) — the money is the estimate's, whatever it says.
+  const lineIncTaxClient = (item: EstimateItem) => clientLineAmounts(item, amountOpts).incTax;
+  const lineExTaxClient = (item: EstimateItem) => clientLineAmounts(item, amountOpts).exTax;
 
   /**
    * What goes in an amount cell. "Included" and "Excluded" say in words what a
@@ -294,8 +303,17 @@ export function EstimateSection({
     return { incTax, exTax };
   };
 
-  const grandTotalIncTax = round2(items.reduce((sum, item) => sum + lineIncTaxClient(item), 0));
-  const grandTotalExTax = round2(items.reduce((sum, item) => sum + lineExTaxClient(item), 0));
+  /* The grand total is the estimate's own figure, from the same function over
+     the same lines as the header of the estimate page — not a re-sum of rounded
+     per-line amounts, which drifts by a cent or two and would put two different
+     prices on the same job. */
+  const estimateSummary = computeEstimateSummary(allItems, {
+    projectMarkupPercent: estimate?.projectMarkupPercent,
+    taxRate: taxRatePct,
+    estimateId: estimate?.id,
+  });
+  const grandTotalIncTax = estimateSummary.total;
+  const grandTotalExTax = estimateSummary.totalExTax;
 
   const styles = StyleSheet.create({
     description: {
@@ -440,7 +458,7 @@ export function EstimateSection({
     rows.filter((i) => toggles.showZeroLines || preMarginIncTax(i) !== 0);
 
   const groupTotal = (groupId: string): string => {
-    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(groupId));
+    const { incTax, exTax } = calculateGroupSubtotals(collectGroupMoneyItems(groupId));
     if (subtotalBasis === "ex") return money(exTax);
     if (subtotalBasis === "both") return `${money(exTax)} ex · ${money(incTax)} inc`;
     return money(incTax);
@@ -449,10 +467,25 @@ export function EstimateSection({
   const toTableGroup = (group: EstimateGroup): PdfTableGroup<EstimateItem> => {
     const rows = hideLineItems ? [] : visibleItems(itemsByGroup[group.id] || []);
     const children = (subgroupsByParent[group.id] || []).map(toTableGroup);
-    // The kit's rule, applied here because the group's own band — where the
-    // kit enforced it — is suppressed in favour of the header row. A group of
-    // one line has a "total" identical to the line above it.
-    const earnsTotal = rows.length > 1 || children.length > 0;
+    /* When a group prints its total.
+
+       The old rule — more than one line, or sub-groups — assumed a single line
+       already shows its own amount, so a total would repeat it. That is only
+       true when an Amount column is on. With the amount columns off (Jed's
+       layout) or in Section Totals mode (which prints no lines at all), a
+       one-line or zero-line group then showed its price NOWHERE: Structural
+       Steel, Brickwork, Insulation, Plastering and Painting on 11 Coolum, and
+       every group in Section Totals.
+
+       So: without an amount column, any group with money under it shows its
+       total. With one, the total shows when it adds something — several rows,
+       sub-groups, or cost in lines the client cannot see. */
+    const moneyItems = collectGroupMoneyItems(group.id);
+    const linesPrintAmounts = toggles.amountExTax || toggles.amountIncTax;
+    const hasHiddenMoney = moneyItems.some((i) => !lineAppearsOnProposal(i, hiddenGroupIds));
+    const earnsTotal = linesPrintAmounts
+      ? rows.length > 1 || children.length > 0 || hasHiddenMoney
+      : moneyItems.length > 0;
     /* The group's own words. `estimate_groups.description` has existed as long
        as the table and no document has ever printed one, so a builder could
        write a paragraph explaining a stage of the work and the client would
@@ -573,6 +606,15 @@ export function EstimateSection({
               // the figures own that edge and the group total stays with the
               // trailing row instead.
               headerRight={columns.length === 0 ? group.total : undefined}
+              /* With columns on, the header's right edge belongs to them, so the
+                 total goes below the rows. It used to go nowhere: the comment
+                 above promised a trailing row that was never passed, so any
+                 layout with a Qty or Unit column printed no group totals. */
+              trailingRows={
+                columns.length > 0 && group.total
+                  ? [{ label: `${group.label} total`, value: group.total, emphasis: true }]
+                  : undefined
+              }
               renderText={renderRowText}
               brandColor={resolvedColor}
               rowKey={(item) => item.id}

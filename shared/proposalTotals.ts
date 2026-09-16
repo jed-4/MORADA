@@ -16,10 +16,22 @@
  *     is applied once globally at the subtotal. Summing it directly quotes the
  *     client the cost base rather than the contract price.
  *
- *  2. Estimate lines carry two client-facing switches that the proposal has
- *     always ignored — `proposalVisible` (the eye toggle in the estimate grid)
- *     and `shownAs`. A line the user hid must not appear in the document and
- *     must not be inside the number at the bottom of it.
+ *  2. THE ESTIMATE IS THE SOURCE OF TRUTH FOR MONEY. The proposal never changes
+ *     a figure. Estimate lines carry two client-facing switches —
+ *     `proposalVisible` (the eye toggle, on lines and groups) and `shownAs` —
+ *     and both decide only what the client SEES: which rows print, and what
+ *     goes in a row's amount cell. Neither removes money.
+ *
+ *     This used to be the opposite: a hidden line was dropped from the total.
+ *     On 11 Coolum that priced the proposal at $27,550.02 against an estimate
+ *     of $41,030.03 — 71 of 90 lines hidden, $13,480.01 under-quoted, and
+ *     Preliminaries printed $0.00 because every dollar of it sat in hidden
+ *     lines. Jed's rule: "the visible thing is only for line items to be
+ *     visible to the client or not. It has nothing to do with the money."
+ *
+ *     So the proposal total is `computeEstimateSummary` over EVERY line — the
+ *     same function, over the same lines, that produces the figure at the top
+ *     of the estimate page. They are equal by construction, not by coincidence.
  *
  * Estimate money is in DOLLARS (estimate_items price fields are
  * doublePrecision); proposals store CENTS. The conversion happens here, once.
@@ -90,31 +102,14 @@ export interface ProposalTotals {
   gstCents: Cents;
   /** subtotal + GST, in cents. This is the figure milestones are a percentage of. */
   totalCents: Cents;
-  /** Lines that actually reached the client's document. */
+  /** Lines printed on the client's document. Display only — never a money filter. */
   includedItemCount: number;
-  /** Lines withheld by proposalVisible or shownAs — surfaced so the UI can say so. */
+  /**
+   * Lines not printed, because they or their group are hidden. Their money is
+   * STILL in the totals above; this only says how much detail the client is
+   * not being shown.
+   */
   excludedItemCount: number;
-}
-
-/**
- * True when a line contributes money to the client's contract price.
- *
- * `shownAs: "excluded"` means the line is named on the proposal as NOT part of
- * this price, so it contributes nothing. "included" is the opposite case — the
- * line is covered by the price but shown without a figure, so it still counts.
- * "empty" only blanks the printed cell; the money stands.
- *
- * Exported because the PDF must make the same call: if the rendered lines and
- * the total at the bottom disagree, the document is wrong in a way a client
- * will notice.
- */
-export function lineCountsTowardProposalTotal(
-  item: ProposalTotalsItemInput,
-  hiddenGroupIds?: Set<string>,
-): boolean {
-  if (!lineAppearsOnProposal(item, hiddenGroupIds)) return false;
-  if ((item.shownAs ?? "price") === "excluded") return false;
-  return true;
 }
 
 /**
@@ -123,6 +118,11 @@ export function lineCountsTowardProposalTotal(
  * A line is withheld either by its own eye toggle or by sitting inside a hidden
  * group. Pass the set from `collectHiddenGroupIds` to honour the group level;
  * omit it and only the per-line flag applies.
+ *
+ * This decides ROWS, never money. There used to be a companion,
+ * `lineCountsTowardProposalTotal`, that used this same test to drop lines from
+ * the price; it was deleted rather than repurposed so nothing can go on calling
+ * a function whose name promises a money filter. See rule 2 above.
  */
 export function lineAppearsOnProposal(
   item: ProposalTotalsItemInput,
@@ -139,25 +139,26 @@ export function computeProposalTotals(
     projectMarkupPercent: number | null | undefined;
     taxRate: number | null | undefined;
     estimateId?: string;
-    /** Group tree, so a hidden section drops out of the price with its lines. */
+    /** Group tree — used only to COUNT what the client sees, never to price. */
     groups?: ProposalGroupInput[];
   },
 ): ProposalTotals {
-  const hiddenGroupIds = options.groups ? collectHiddenGroupIds(options.groups) : undefined;
-  const counted = items.filter((it) => lineCountsTowardProposalTotal(it, hiddenGroupIds));
-
-  const summary = computeEstimateSummary(counted, {
+  // Every line. Deliberately no filter: this must be the estimate's own figure.
+  const summary = computeEstimateSummary(items, {
     projectMarkupPercent: options.projectMarkupPercent,
     taxRate: options.taxRate,
     estimateId: options.estimateId,
   });
 
+  const hiddenGroupIds = options.groups ? collectHiddenGroupIds(options.groups) : undefined;
+  const shown = items.filter((it) => lineAppearsOnProposal(it, hiddenGroupIds)).length;
+
   return {
     subtotalCents: dollarsToCents(summary.totalExTax),
     gstCents: dollarsToCents(summary.taxAmount),
     totalCents: dollarsToCents(summary.total),
-    includedItemCount: counted.length,
-    excludedItemCount: items.length - counted.length,
+    includedItemCount: shown,
+    excludedItemCount: items.length - shown,
   };
 }
 

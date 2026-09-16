@@ -12,12 +12,14 @@
  *   2. Dollars become cents at exactly one boundary. estimate_items price
  *      fields are doublePrecision DOLLARS; proposals.total_amount is an
  *      integer of CENTS.
- *   3. proposalVisible: false takes a line out of the total, not just out of
- *      the printed table. A line the user hid must not be inside the number
- *      at the bottom of the page.
- *   4. shownAs "excluded" contributes nothing, while "included" and "empty"
- *      still contribute — they change how the line is PRINTED, not whether
- *      the client is paying for it.
+ *   3. THE ESTIMATE IS THE SOURCE OF TRUTH FOR MONEY. proposalVisible (the eye
+ *      toggle, on lines and groups) and shownAs decide what the client SEES,
+ *      never the price. These tests used to assert the opposite — that hiding
+ *      a line removed its money — and that is what priced 11 Coolum at
+ *      $27,550.02 against a $41,030.03 estimate. Jed: the visible thing "has
+ *      nothing to do with the money".
+ *   4. The proposal total equals computeEstimateSummary over the same lines,
+ *      whatever is hidden or however it is shown.
  *   5. Fixed-price allowance lines (unitCost 0) keep their typed value rather
  *      than recomputing to zero.
  *   6. The milestone case end to end: a percentage of the total is real money.
@@ -25,11 +27,11 @@
 import assert from "node:assert";
 import {
   computeProposalTotals,
-  lineCountsTowardProposalTotal,
   lineAppearsOnProposal,
   collectHiddenGroupIds,
   EMPTY_PROPOSAL_TOTALS,
 } from "@shared/proposalTotals";
+import { computeEstimateSummary } from "@shared/pricing";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -79,23 +81,24 @@ check("a fractional margin does not truncate", () => {
   assert.strictEqual(t.totalCents, 123_750);
 });
 
-check("proposalVisible: false removes the line from the total", () => {
+check("proposalVisible: false hides the row and KEEPS the money", () => {
   const t = computeProposalTotals(
     [pricedLine, { ...pricedLine, proposalVisible: false }],
     { projectMarkupPercent: 0, taxRate: 10 },
   );
-  assert.strictEqual(t.totalCents, 110_000, "the hidden line was billed to the client anyway");
-  assert.strictEqual(t.includedItemCount, 1);
-  assert.strictEqual(t.excludedItemCount, 1);
+  assert.strictEqual(t.totalCents, 220_000, "hiding a line took its cost out of the price");
+  assert.strictEqual(t.includedItemCount, 1, "only one row prints");
+  assert.strictEqual(t.excludedItemCount, 1, "one row is withheld from view");
 });
 
-check('shownAs "excluded" contributes nothing', () => {
+check('shownAs "excluded" changes the printed cell, not the price', () => {
+  // The estimate's own total counts this line, so the proposal must too.
   const t = computeProposalTotals(
     [pricedLine, { ...pricedLine, shownAs: "excluded" }],
     { projectMarkupPercent: 0, taxRate: 10 },
   );
-  assert.strictEqual(t.totalCents, 110_000);
-  assert.strictEqual(t.excludedItemCount, 1);
+  assert.strictEqual(t.totalCents, 220_000);
+  assert.strictEqual(t.excludedItemCount, 0, "the line is still shown, labelled Excluded");
 });
 
 check('shownAs "included" and "empty" still contribute — they only change the printed cell', () => {
@@ -107,10 +110,38 @@ check('shownAs "included" and "empty" still contribute — they only change the 
   assert.strictEqual(t.excludedItemCount, 0);
 });
 
-check("an unset shownAs behaves as a priced line", () => {
-  assert.strictEqual(lineCountsTowardProposalTotal({ shownAs: null }), true);
-  assert.strictEqual(lineCountsTowardProposalTotal({ proposalVisible: null }), true);
-  assert.strictEqual(lineCountsTowardProposalTotal({}), true);
+check("an unset visibility means the row prints", () => {
+  assert.strictEqual(lineAppearsOnProposal({ shownAs: null }), true);
+  assert.strictEqual(lineAppearsOnProposal({ proposalVisible: null }), true);
+  assert.strictEqual(lineAppearsOnProposal({}), true);
+});
+
+check("the proposal total IS the estimate total, whatever is hidden or shown", () => {
+  /* The rule itself, over the 11 Coolum shape: most lines hidden, a hidden
+     group, every Shown As value, a fixed-price allowance, a zero-quantity
+     line, a margin and fractional costs. Compared against
+     computeEstimateSummary — the function behind the estimate page header —
+     rather than a hand-computed number, so the two cannot drift. */
+  const groups = [
+    { id: "prelims", parentGroupId: null, proposalVisible: true },
+    { id: "hidden", parentGroupId: null, proposalVisible: false },
+    { id: "hidden-child", parentGroupId: "hidden", proposalVisible: true },
+  ];
+  const items = [
+    { unitCostExTax: 3450, quantity: 1, markupPercent: 0, groupId: "prelims", proposalVisible: false },
+    { unitCostExTax: 0, quantity: 1, markupPercent: 0, groupId: "prelims", shownAs: "empty" },
+    { unitCostExTax: 7140, quantity: 1, markupPercent: 0, groupId: "hidden-child" },
+    { unitCostExTax: 80, quantity: 16, markupPercent: 12.5, groupId: "hidden", shownAs: "included" },
+    { unitCostExTax: 0, quantity: 1, priceIncTax: 1500, taxAmount: 136.36, shownAs: "excluded" },
+    { unitCostExTax: 454.55, quantity: 1, markupPercent: 0, wastagePercent: 5 },
+    { unitCostExTax: 99.99, quantity: 0, markupPercent: 0 },
+  ];
+  const opts = { projectMarkupPercent: 25, taxRate: 10 };
+  const summary = computeEstimateSummary(items, opts);
+  const t = computeProposalTotals(items, { ...opts, groups });
+  assert.strictEqual(t.totalCents, Math.round(summary.total * 100), "total differs from the estimate");
+  assert.strictEqual(t.subtotalCents, Math.round(summary.totalExTax * 100), "ex-GST differs from the estimate");
+  assert.strictEqual(t.gstCents, Math.round(summary.taxAmount * 100), "GST differs from the estimate");
 });
 
 check("a fixed-price allowance line keeps its typed value", () => {
@@ -159,8 +190,7 @@ check("a full milestone schedule sums back to the contract total", () => {
 //
 // Hiding a whole section is the group-level counterpart of the per-line eye
 // toggle. Groups NEST, so the risk is a half-applied rule: a hidden parent
-// whose subgroup still prints, or lines dropped from the page but left in the
-// total. Either way the client gets a column that does not add up.
+// whose subgroup still prints. Money is never affected — see rule 3.
 
 const GROUPS = [
   { id: "kitchen", parentGroupId: null, proposalVisible: true },
@@ -177,7 +207,7 @@ check("hiding a group hides its descendants, however deep", () => {
   assert.ok(!hidden.has("kitchen-joinery"));
 });
 
-check("a line inside a hidden group leaves both the page and the price", () => {
+check("a line inside a hidden group leaves the page but stays in the price", () => {
   const items = [
     { ...pricedLine, groupId: "kitchen" },
     { ...pricedLine, groupId: "bathroom" },
@@ -190,7 +220,7 @@ check("a line inside a hidden group leaves both the page and the price", () => {
   assert.strictEqual(lineAppearsOnProposal(items[2], hidden), false, "line in a nested hidden group still printed");
 
   const t = computeProposalTotals(items, { projectMarkupPercent: 0, taxRate: 10, groups: GROUPS });
-  assert.strictEqual(t.totalCents, 110_000, "hidden sections were still billed to the client");
+  assert.strictEqual(t.totalCents, 330_000, "hiding a section took its cost out of the price");
   assert.strictEqual(t.includedItemCount, 1);
   assert.strictEqual(t.excludedItemCount, 2);
 });
@@ -213,7 +243,6 @@ check("the per-line toggle still wins inside a visible group", () => {
   const hidden = collectHiddenGroupIds(GROUPS);
   const item = { ...pricedLine, groupId: "kitchen", proposalVisible: false };
   assert.strictEqual(lineAppearsOnProposal(item, hidden), false);
-  assert.strictEqual(lineCountsTowardProposalTotal(item, hidden), false);
 });
 
 check("a cycle in the group tree terminates instead of hanging", () => {
