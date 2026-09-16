@@ -340,6 +340,13 @@ export function TemplateEstimateGrid({
     gridRef.current?.focus();
   }, []);
 
+  // The template grid has no type-to-open path yet, so every editor here opens
+  // on a value the user means to replace.
+  const handleEditorFocus = useCallback(
+    (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => e.target.select(),
+    [],
+  );
+
   const handleCellKeyDown = useCallback(
     (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
       if (e.key === "Enter") { e.preventDefault(); handleCellSave(item, field); }
@@ -450,7 +457,7 @@ export function TemplateEstimateGrid({
 
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
-    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown,
+    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus,
     handlePriceListSelect: () => {},
     estimate: { isLocked: false, taxRate: TAX_RATE, projectMarkupPercent: null },
     columns,
