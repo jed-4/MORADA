@@ -188,6 +188,43 @@ export const EMPTY_PROPOSAL_TOTALS: ProposalTotals = {
  *    distributing it proportionally across lines is exact: the parts still sum
  *    to the whole.
  */
+/**
+ * What the Allowances page prints for a Prime Cost / Provisional Sum line: the
+ * allowance itself, as entered in the estimate — qty x unit cost inc GST, or
+ * the typed amount of a fixed-price allowance. Jed's rule: the client sees the
+ * allowance, not the allowance with the line markup and the builder's margin
+ * on top. The margin is still in the contract price; this is a label, not a sum
+ * that feeds any total.
+ */
+export function allowanceLineAmounts(
+  item: EstimateItemSummaryInput,
+  options: { taxRate?: number | null },
+): { exTax: number; incTax: number; unitExTax: number | null; unitIncTax: number | null } {
+  const taxRate = Number(options.taxRate ?? 10);
+  const gross = 1 + taxRate / 100;
+
+  if (isFixedPriceLine(item.unitCostExTax)) {
+    const inc = round2(Number(item.priceIncTax ?? 0));
+    return { incTax: inc, exTax: round2(inc / gross), unitExTax: null, unitIncTax: null };
+  }
+
+  // Builder cost only: no line markup, no project margin.
+  const line = computeEstimateItemPrice({
+    unitCostExTax: item.unitCostExTax ?? 0,
+    quantity: item.quantity ?? 0,
+    markupPercent: 0,
+    projectMarkupPercent: 0,
+    taxRate,
+    wastagePercent: (item as { wastagePercent?: number | null }).wastagePercent ?? undefined,
+  });
+  return {
+    exTax: line.builderCost,
+    incTax: line.builderCostIncTax,
+    unitExTax: round2(Number(item.unitCostExTax) || 0),
+    unitIncTax: line.unitCostIncTax,
+  };
+}
+
 export function clientLineAmounts(
   item: EstimateItemSummaryInput,
   options: { projectMarkupPercent?: number | null; taxRate?: number | null },

@@ -150,7 +150,7 @@ await check("the payment schedule is a percentage of the estimate total", async 
     `payment schedule should be based on $12,911.25 — got: ${t.slice(-400)}`);
 });
 
-await check("the allowances total is the estimate's, including hidden allowance lines", async () => {
+await check("allowances print the estimate's allowance amounts (no margin), hidden allowance lines included in the total", async () => {
   const hiddenAllowance = { ...ITEMS[3], id: "pc-hidden", allowance: "Prime Cost", unitCostExTax: 1000 }; // 1,375.00, hidden
   const items = [...ITEMS, hiddenAllowance];
   const proposal = { id: "p1", proposalNumber: "P", name: "T", projectId: "x", estimateId: "e1",
@@ -164,8 +164,10 @@ await check("the allowances total is the estimate's, including hidden allowance 
   const doc = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise;
   let t = ""; for (let i = 1; i <= doc.numPages; i++) t += " " + (await (await doc.getPage(i)).getTextContent()).items.map((x: any) => x.str).join(" ");
   t = t.replace(/\s+/g, " ").replace(/(\d) \.(\d)/g, "$1.$2");
-  // Visible PS 3,437.50 + hidden PC 1,375.00 = 4,812.50.
-  assert.ok(t.includes("$4,812.50"), `allowance total should include the hidden PC line — got: ${t.slice(0, 400)}`);
+  // Allowances print as entered, without the 25% margin: visible PS 2,500 inc
+  // GST 2,750.00 + hidden PC 1,000 → 1,100.00 = 3,850.00.
+  assert.ok(t.includes("$3,850.00"), `allowance total should include the hidden PC line — got: ${t.slice(0, 400)}`);
+  assert.ok(t.includes("$2,750.00") && !t.includes("$3,437.50"), `the PS line prints its allowance, not the marked-up price — got: ${t.slice(0, 400)}`);
   assert.ok(!t.includes("Steel labour"), "the hidden allowance row itself does not print");
 });
 
