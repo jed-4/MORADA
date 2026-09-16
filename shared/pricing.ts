@@ -60,6 +60,33 @@ export interface EstimateItemPriceInput {
    * Defaults to 0. Fixed-price (unitCost 0) lines ignore it.
    */
   wastagePercent?: number | null | undefined;
+  /**
+   * The inc-GST unit price exactly as the user typed it (estimate_items
+   * .unit_cost_inc_tax, migration 0085). When set it is AUTHORITATIVE for the
+   * line — see typedUnitCostIncTax.
+   */
+  unitCostIncTax?: number | null | undefined;
+}
+
+/**
+ * The typed inc-GST unit price, or null when the line was priced ex-GST.
+ *
+ * Why a line needs one at all: unit costs are stored ex-GST to the cent, and
+ * displayed inc-GST as round2(ex × 1.1). No cent value of ex lands on $60.00 —
+ * 54.54 gives 59.99 and 54.55 gives 60.01 — and the same is true of exactly one
+ * inc-GST price in eleven. So typing $60 inc-GST stored 54.55 and showed $60.01
+ * in the grid, the totals and the proposal. Remembering the typed price is the
+ * only way to give it back.
+ *
+ * The rule when it is set is the one shared/money.ts's gstSplit already uses,
+ * and the one fixed-price allowance lines below already follow: the inc-GST
+ * amount is authoritative, ex-GST is derived from it, and GST = inc − ex, so
+ * the parts always sum to the figure that was typed.
+ */
+export function typedUnitCostIncTax(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
 export interface EstimateItemPrice {
@@ -102,6 +129,28 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
   // therefore IGNORED for the line amount; it is kept on the input only for
   // call-site compatibility.
   const effectiveMarkupPercent = Number(itemMarkup ?? 0);
+
+  // Typed inc-GST price: the line total is built from what was typed and only
+  // then split, so $60 inc-GST stays $60.00. Every line WITHOUT one takes the
+  // ex-GST path below, which is unchanged.
+  const typedInc = typedUnitCostIncTax(input.unitCostIncTax);
+  if (typedInc !== null) {
+    const gross = 1 + taxRate / 100;
+    const lineIncTax = round2(typedInc * effectiveQty * (1 + effectiveMarkupPercent / 100));
+    const lineExTax = round2(lineIncTax / gross);
+    const builderCostIncTax = round2(typedInc * effectiveQty);
+    const builderCost = round2(builderCostIncTax / gross);
+    return {
+      builderCost,
+      effectiveMarkupPercent,
+      lineMarkupAmount: round2(lineExTax - builderCost),
+      lineExTax,
+      taxAmount: round2(lineIncTax - lineExTax),
+      lineIncTax,
+      unitCostIncTax: round2(typedInc),
+      builderCostIncTax,
+    };
+  }
 
   const builderCost = round2(unitCost * effectiveQty);
   const lineMarkupAmount = round2(builderCost * (effectiveMarkupPercent / 100));
@@ -158,6 +207,8 @@ export interface StoredPriceResolveInput {
    * (unitCost === 0) lines — this is what must NOT be wiped to 0.
    */
   existingPriceIncTax?: number | null;
+  /** The typed inc-GST unit price, when the line has one. See typedUnitCostIncTax. */
+  unitCostIncTax?: number | null;
 }
 
 /**
@@ -183,7 +234,7 @@ export function resolveEstimateStoredPrice(
 ): { priceIncTax: number; taxAmount: number } {
   const taxRate = Number(input.taxRate ?? 10);
 
-  if (!isFixedPriceLine(input.unitCostExTax)) {
+  if (typedUnitCostIncTax(input.unitCostIncTax) !== null || !isFixedPriceLine(input.unitCostExTax)) {
     const { taxAmount, lineIncTax } = computeEstimateItemPrice({
       unitCostExTax: input.unitCostExTax ?? 0,
       quantity: input.quantity ?? 0,
@@ -191,6 +242,7 @@ export function resolveEstimateStoredPrice(
       projectMarkupPercent: input.projectMarkupPercent,
       taxRate,
       wastagePercent: input.wastagePercent,
+      unitCostIncTax: input.unitCostIncTax,
     });
     return { priceIncTax: lineIncTax, taxAmount };
   }
@@ -219,6 +271,8 @@ export interface EstimateItemSummaryInput {
   priceIncTax?: number | null;
   /** Used only as a fallback for fixed-price (unitCost=0) lines. */
   taxAmount?: number | null;
+  /** The typed inc-GST unit price, when the line has one. See typedUnitCostIncTax. */
+  unitCostIncTax?: number | null;
 }
 
 export interface EstimateSummary {
@@ -312,6 +366,12 @@ export function computeEstimateSummary(
   // Independent running sum of every line's OWN inc-tax total (the number shown
   // per row on screen). Used purely for the total-integrity invariant below.
   let sumLineIncTax = 0;
+  // Split by basis for the grand total — see below. Ex-GST lines (and flat
+  // allowances) sum their ex amounts as always; typed inc-GST lines sum the
+  // inc-GST amount that was typed.
+  let exBasisExTax = 0;
+  let incBasisIncTax = 0;
+  let anyTypedInc = false;
 
   for (const item of items) {
     const unitCost = Number(item.unitCostExTax ?? 0);
@@ -325,9 +385,11 @@ export function computeEstimateSummary(
       projectMarkupPercent: 0,
       taxRate,
       wastagePercent: item.wastagePercent ?? 0,
+      unitCostIncTax: item.unitCostIncTax,
     });
+    const typedInc = typedUnitCostIncTax(item.unitCostIncTax) !== null;
 
-    if (!isFixedPriceLine(unitCost)) {
+    if (typedInc || !isFixedPriceLine(unitCost)) {
       // Priced line: include positive AND negative-quantity rows
       // (e.g. deduction lines) so their markup nets correctly against the
       // matching positive lines. A zero-quantity priced line contributes $0
@@ -336,6 +398,12 @@ export function computeEstimateSummary(
       builderCostTotal += computed.builderCost;
       lineItemMarkupTotal += computed.lineMarkupAmount;
       sumLineIncTax += computed.lineIncTax;
+      if (typedInc) {
+        anyTypedInc = true;
+        incBasisIncTax += computed.lineIncTax;
+      } else {
+        exBasisExTax += computed.builderCost + computed.lineMarkupAmount;
+      }
     } else {
       // Fixed-price line (PC sum / provisional allowance): no per-unit cost.
       // Use the cached priceIncTax - taxAmount as the line's ex-tax amount.
@@ -344,6 +412,7 @@ export function computeEstimateSummary(
       const cachedExTax = cachedIncTax - Number(item.taxAmount ?? 0);
       builderCostTotal += cachedExTax;
       sumLineIncTax += cachedIncTax;
+      exBasisExTax += cachedExTax;
     }
   }
 
@@ -352,8 +421,24 @@ export function computeEstimateSummary(
   const subtotalExTax = round2(builderCostTotal + lineItemMarkupAmount);
   const globalMarkupAmount = round2(subtotalExTax * (projectMarkupPercent / 100));
   const totalExTax = round2(subtotalExTax + globalMarkupAmount);
-  const taxAmount = round2(totalExTax * (taxRate / 100));
-  const total = round2(totalExTax + taxAmount);
+
+  let taxAmount: number;
+  let total: number;
+  if (!anyTypedInc) {
+    // Every estimate with no typed inc-GST line — which is every estimate that
+    // existed before migration 0085 — is totalled EXACTLY as it always was. Not
+    // one existing total, frozen contract price or invoice claim moves.
+    taxAmount = round2(totalExTax * (taxRate / 100));
+    total = round2(totalExTax + taxAmount);
+  } else {
+    // With a typed inc-GST line, grossing the ex-GST subtotal back up would
+    // re-introduce the cent it was typed to avoid (54.55 × 1.1 = 60.01). So its
+    // inc-GST amount goes into the total as typed, the builder's margin applied
+    // to it, and GST is whatever makes the parts sum — the gstSplit rule.
+    const margin = 1 + projectMarkupPercent / 100;
+    total = round2(exBasisExTax * margin * (1 + taxRate / 100) + incBasisIncTax * margin);
+    taxAmount = round2(total - totalExTax);
+  }
 
   // Total-integrity invariant. Reconstruct the grand total from the sum of the
   // per-line inc-tax totals shown on screen, plus the builder's-margin
