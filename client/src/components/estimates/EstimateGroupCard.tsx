@@ -28,33 +28,27 @@ import { useQuery } from "@tanstack/react-query";
 import { useSortable } from '@dnd-kit/sortable';
 import { StatusBadge } from "@/components/StatusBadge";
 import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
+import { activeStatusOptions, effectiveStatusKey, nextStatusKey, resolveStatusChip } from "@/lib/statusChip";
 
 /** Any key configured under Field Settings > Estimate Section Statuses. */
 type GroupStatus = string;
 
 /**
- * Used only until the field settings query resolves, or on a company that has
- * no estimate item statuses configured at all.
- */
-const FALLBACK_STATUS_OPTIONS: Pick<FieldOption, "key" | "name" | "color">[] = [
-  { key: "not_started", name: "Not Started", color: null },
-  { key: "in_progress", name: "In Progress", color: null },
-  { key: "complete", name: "Complete", color: null },
-];
-
-/**
  * A section and the lines inside it are the same kind of thing at different
  * scales, so they share one list of statuses — the estimate_item.status
  * options from Field Settings. Configure them once and both follow.
+ *
+ * There is deliberately no group-only fallback list. The one that used to live
+ * here (not_started / in_progress / complete) is where groups got a status the
+ * lines beneath them could never have, under a label no one had configured.
  */
-function useGroupStatusOptions() {
+function useGroupStatusOptions(): FieldOption[] {
   const { data } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/estimate_item.status"],
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
-  const configured = (data?.options || []).filter((o) => o.isActive);
-  return configured.length > 0 ? configured : FALLBACK_STATUS_OPTIONS;
+  return data?.options ?? [];
 }
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
@@ -218,11 +212,12 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   // Right-click opens the full list; left click just cycles.
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const statusOptions = useGroupStatusOptions();
-  const currentStatus = ((group as any).status as GroupStatus) || statusOptions[0]?.key || "not_started";
-  const currentStatusOption = statusOptions.find((o) => o.key === currentStatus);
-  // A status removed from Field Settings after the fact still has to render.
-  const statusLabel = currentStatusOption?.name
-    ?? currentStatus.replace(/[_-]+/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+  // Same resolver as the line chips beneath (lib/statusChip.ts). The column
+  // default "not_started" was never a configured option, so it resolves to the
+  // Field Settings default — the status a new line starts on too.
+  const currentStatus: GroupStatus = effectiveStatusKey((group as any).status, statusOptions);
+  const statusChip = resolveStatusChip(currentStatus, statusOptions);
+  const activeStatuses = activeStatusOptions(statusOptions);
 
   return (
     <div
@@ -370,7 +365,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           // line-item status cells below it.
           if (column.id === 'status') {
             return (
-              <div key={column.id} className={columnCellClass(column.id)} role="gridcell">
+              <div key={column.id} className={`${columnCellClass(column.id)} justify-center`} role="gridcell">
                 {onUpdateStatus && !isLocked ? (
                   <DropdownMenu open={statusMenuOpen} onOpenChange={setStatusMenuOpen}>
                     <DropdownMenuTrigger asChild>
@@ -385,9 +380,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                         onPointerDown={(e) => e.preventDefault()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const i = statusOptions.findIndex(o => o.key === currentStatus);
-                          const next = statusOptions[(i + 1) % statusOptions.length];
-                          if (next) onUpdateStatus(group.id, next.key);
+                          const next = nextStatusKey(currentStatus, statusOptions);
+                          if (next) onUpdateStatus(group.id, next);
                         }}
                         onDoubleClick={(e) => e.stopPropagation()}
                         onContextMenu={(e) => {
@@ -396,11 +390,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                           setStatusMenuOpen(true);
                         }}
                       >
-                        <StatusBadge status={currentStatus} label={statusLabel} />
+                        <StatusBadge status={statusChip.key} label={statusChip.label} paint={statusChip.paint} tone={statusChip.tone} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-                      {statusOptions.map((option) => (
+                      {activeStatuses.map((option) => (
                         <DropdownMenuItem
                           key={option.key}
                           onClick={(e) => {
@@ -411,14 +405,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                           className={currentStatus === option.key ? "font-medium" : ""}
                           data-testid={`menu-item-status-${option.key}-${group.id}`}
                         >
-                          <StatusBadge status={option.key} label={option.name} />
+                          {(() => {
+                            const c = resolveStatusChip(option.key, statusOptions);
+                            return <StatusBadge status={c.key} label={c.label} paint={c.paint} tone={c.tone} />;
+                          })()}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : (
                   <span className="flex-shrink-0" data-testid={`badge-group-status-${group.id}`}>
-                    <StatusBadge status={currentStatus} label={statusLabel} />
+                    <StatusBadge status={statusChip.key} label={statusChip.label} paint={statusChip.paint} tone={statusChip.tone} />
                   </span>
                 )}
               </div>

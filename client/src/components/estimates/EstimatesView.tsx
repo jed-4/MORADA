@@ -59,16 +59,21 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { type Estimate, type EstimateSummary, type Project, type FieldCategoryWithOptions, type FieldOption } from "@shared/schema";
 import { StatusBadge } from "@/components/StatusBadge";
+import { resolveStatusChip } from "@/lib/statusChip";
 import { getRevLabel } from "@/lib/estimateRevisions";
 
 /** Single status-badge renderer shared by the list view and the kanban cards. */
 function renderEstimateStatusBadge(estimate: Estimate, statuses: FieldOption[]) {
   const statusOption = statuses.find((s) => s.key === estimate.status);
   if (statusOption) {
-    // Label from Field Settings, colour from the app's status palette — the
-    // configured hex renders as a bright wash that doesn't match the chips
-    // used everywhere else.
-    return <StatusBadge status={statusOption.key} label={statusOption.name} />;
+    // Label AND colour from Field Settings, through the shared resolver. This
+    // used to pass no colour at all, so StatusBadge guessed a tone from the
+    // key's wording — "working" happens to be in its amber bucket and most
+    // other keys fell to grey, which is why the board read as grey chips with
+    // the odd yellow one. The raw-hex contrast problem that made the palette
+    // look like the safer choice is what deriveChipPaint solves.
+    const chip = resolveStatusChip(statusOption.key, statuses);
+    return <StatusBadge status={chip.key} label={chip.label} paint={chip.paint} tone={chip.tone} />;
   }
   // Fallback to isLocked for backward compatibility
   if (estimate.isLocked) {
@@ -968,15 +973,21 @@ function KanbanColumn({ status, estimates, projects, cardWidth, isHighlighted, r
         {/* The status name IS the header, as a chip in its own colour — the
             same pill the rest of the app uses for a status. */}
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
-          {/* Tone, not the raw Field Settings hex. The hex path paints the
-              label in the configured accent colour, which reads bright and
-              low-contrast at this size; the tone palette is the one Client
-              Invoices and the line-item chips already use. */}
-          <StatusBadge
-            status={status.key}
-            label={status.name}
-            data-testid={`kanban-column-status-${status.key}`}
-          />
+          {/* The configured Field Settings colour, made legible by the shared
+              resolver rather than painted raw — the same chip the column's
+              cards and the estimate grid now draw. */}
+          {(() => {
+            const chip = resolveStatusChip(status.key, [status]);
+            return (
+              <StatusBadge
+                status={chip.key}
+                label={chip.label}
+                paint={chip.paint}
+                tone={chip.tone}
+                data-testid={`kanban-column-status-${status.key}`}
+              />
+            );
+          })()}
         </div>
 
         <div
