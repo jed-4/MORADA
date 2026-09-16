@@ -79,8 +79,15 @@ export function htmlToBlocks(html: string): RenderBlock[] {
   for (const seg of segments) {
     let typ: RenderBlock['type'] = 'p';
     let body = seg;
-    const m = body.match(/__OPEN_(p|div|h1|h2|h3|h4|h5|h6|li|ul|ol)__/);
-    if (m) {
+    // Every opening marker in the segment, in order — not just the first. The
+    // split is on CLOSING tags, so a list's first item shares its segment with
+    // the list itself: "__OPEN_ul____OPEN_li__First". Reading only the first
+    // marker saw "ul" and never reached "li", so the first item of every list
+    // printed as a plain paragraph with no bullet, and a numbered list started
+    // counting at its second item.
+    const marker = /__OPEN_(p|div|h1|h2|h3|h4|h5|h6|li|ul|ol)__/g;
+    let m: RegExpExecArray | null;
+    while ((m = marker.exec(body)) !== null) {
       const tag = m[1];
       if (tag === 'ol') inOl = true;
       else if (tag === 'ul') inOl = false;

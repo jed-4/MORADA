@@ -512,6 +512,8 @@ export default function EstimateDetail() {
   
   // Group action handlers
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  /** The group whose description is open in the rich-text editor, and the draft. */
+  const [editingGroupDescription, setEditingGroupDescription] = useState<{ groupId: string; value: string } | null>(null);
   const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
   const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
 
@@ -1192,7 +1194,7 @@ export default function EstimateDetail() {
 
   // Mutation for updating individual group properties (including parentGroupId)
   const updateGroupMutation = useMutation({
-    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string; proposalVisible?: boolean } }) => {
+    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string; proposalVisible?: boolean; description?: string | null } }) => {
       return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
     },
     onMutate: async ({ groupId, updates }) => {
@@ -3532,6 +3534,26 @@ export default function EstimateDetail() {
     },
   });
 
+  const saveGroupDescription = () => {
+    if (!editingGroupDescription) return;
+    const { groupId, value } = editingGroupDescription;
+    const group = groups.find(g => g.id === groupId);
+    // Optimistic, so the dialog can close straight away.
+    if (group && (group.description ?? "") !== value) {
+      updateGroupMutation.mutate({ groupId, updates: { description: value } });
+    }
+    setEditingGroupDescription(null);
+  };
+  const groupDescriptionDialogDismiss = useCommitOnDismiss({
+    isDirty: () => {
+      if (!editingGroupDescription) return false;
+      const group = groups.find(g => g.id === editingGroupDescription.groupId);
+      return !!group && (group.description ?? "") !== editingGroupDescription.value;
+    },
+    commit: saveGroupDescription,
+    discard: () => setEditingGroupDescription(null),
+  });
+
   const descriptionDialogDismiss = useCommitOnDismiss({
     isDirty: () => {
       if (editingCell?.field !== 'description') return false;
@@ -5610,6 +5632,10 @@ export default function EstimateDetail() {
                                     setIsDeleteGroupDialogOpen(true);
                                   }}
                                   onEditGroup={handleEditGroup}
+                                  onEditGroupDescription={(groupId) => {
+                                    const group = groups.find(g => g.id === groupId);
+                                    setEditingGroupDescription({ groupId, value: group?.description ?? "" });
+                                  }}
                                   onDuplicateGroup={handleDuplicateGroup}
                                   onCopyGroup={handleCopyGroup}
                                   onAddSubgroup={handleAddSubgroup}
@@ -6857,7 +6883,14 @@ export default function EstimateDetail() {
                   <FormItem>
                     <FormLabel>Description (Optional)</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Additional details about this group..." {...field} value={field.value || ""} data-testid="input-group-description" />
+                      {/* Rich text, matching the in-grid editor — both write the
+                          group's description, and the proposal prints it. */}
+                      <RichTextEditor
+                        content={field.value || ""}
+                        onChange={field.onChange}
+                        placeholder="Describe this stage of the work — this appears on the proposal..."
+                        data-testid="input-group-description"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -6917,6 +6950,46 @@ export default function EstimateDetail() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Group Description Editor Dialog — the text the proposal prints under
+          the group, so it is edited as rich text like line descriptions. */}
+      <Dialog
+        open={!!editingGroupDescription}
+        onOpenChange={groupDescriptionDialogDismiss.onOpenChange}
+      >
+        <DialogContent className="max-w-2xl rounded-xl" {...groupDescriptionDialogDismiss.contentProps}>
+          <DialogHeader>
+            <DialogTitle>
+              {(() => {
+                const group = groups.find(g => g.id === editingGroupDescription?.groupId);
+                return group ? `${group.name} — Description` : "Group Description";
+              })()}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <RichTextEditor
+              content={editingGroupDescription?.value ?? ""}
+              onChange={(html) =>
+                setEditingGroupDescription(prev => (prev ? { ...prev, value: html } : prev))
+              }
+              placeholder="Describe this stage of the work — this appears on the proposal..."
+              data-testid="richtext-edit-group-description"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingGroupDescription(null)}
+              data-testid="button-cancel-group-description"
+            >
+              Cancel
+            </Button>
+            <Button onClick={saveGroupDescription} data-testid="button-save-group-description">
+              Save
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

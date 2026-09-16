@@ -29,6 +29,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { StatusBadge } from "@/components/StatusBadge";
 import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 import { activeStatusOptions, effectiveStatusKey, nextStatusKey, resolveStatusChip } from "@/lib/statusChip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 /** Any key configured under Field Settings > Estimate Section Statuses. */
 type GroupStatus = string;
@@ -72,6 +73,8 @@ interface EstimateGroupCardProps {
   renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string, visibleCols?: ColumnConfig[], rowIndex?: number) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
   onEditGroup: (groupId: string) => void;
+  /** Open the group's description in the rich-text editor. */
+  onEditGroupDescription?: (groupId: string) => void;
   onDuplicateGroup: (groupId: string) => void;
   onCopyGroup: (groupId: string) => void;
   onAddSubgroup: (parentGroupId: string) => void;
@@ -112,6 +115,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   renderItemRow,
   onDeleteGroup,
   onEditGroup,
+  onEditGroupDescription,
   onDuplicateGroup,
   onCopyGroup,
   onAddSubgroup,
@@ -297,17 +301,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     )}
                   </Button>
                   <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
-                  {group.description && (
-                    // The name keeps its full width; the description takes what
-                    // is left. Previously both truncated equally, so a real
-                    // description squeezed the group name down to a few letters.
-                    <span
-                      className="text-xs text-muted-foreground truncate min-w-0"
-                      title={group.description}
-                    >
-                      {group.description}
-                    </span>
-                  )}
                   {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
                     const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
                     return code ? (
@@ -359,6 +352,43 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 ) : (
                   <Eye className={`w-4 h-4 ${groupVisible ? "" : "opacity-30"}`} />
                 )}
+              </div>
+            );
+          }
+
+          // The group's description lives in the Description column, drawn the
+          // same way as the line descriptions directly beneath it: a one-line
+          // preview, the full formatted text on hover, and a click to edit in the
+          // rich-text editor (#19). It used to sit truncated inside the name cell,
+          // leaving this column empty on every group row. It is the text the
+          // proposal prints under the group, so it is rich text like the lines.
+          if (column.id === 'description') {
+            const canEdit = !isLocked && !!onEditGroupDescription;
+            return (
+              <div key={column.id} className={columnCellClass(column.id)} role="gridcell" data-testid={`group-description-${group.id}`}>
+                <HoverCard openDelay={200}>
+                  <HoverCardTrigger asChild>
+                    <div
+                      className={`truncate w-full min-w-0 text-xs text-muted-foreground font-normal ${canEdit ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (canEdit) onEditGroupDescription!(group.id);
+                      }}
+                      // A click opens the editor; don't let the second click of a
+                      // double-click reach the row and open something else too.
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      dangerouslySetInnerHTML={{ __html: group.description || '' }}
+                    />
+                  </HoverCardTrigger>
+                  {group.description && (
+                    <HoverCardContent className="w-96" align="start">
+                      <div
+                        className="prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: group.description }}
+                      />
+                    </HoverCardContent>
+                  )}
+                </HoverCard>
               </div>
             );
           }
@@ -601,6 +631,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 renderItemRow={renderItemRow}
                 onDeleteGroup={onDeleteGroup}
                 onEditGroup={onEditGroup}
+                onEditGroupDescription={onEditGroupDescription}
                 onDuplicateGroup={onDuplicateGroup}
                 onCopyGroup={onCopyGroup}
                 onAddSubgroup={onAddSubgroup}
