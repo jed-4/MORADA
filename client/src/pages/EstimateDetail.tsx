@@ -3158,7 +3158,10 @@ export default function EstimateDetail() {
       attachmentUrl: "",
       requestForQuote: false,
       isSelection: false,
-      proposalVisible: true,
+      // A new line starts OFF the proposal: you choose what the client sees,
+      // rather than hunting down everything that shouldn't be there. The inline
+      // Add Line and the add-sub-item menu use the same default.
+      proposalVisible: false,
       shownAs: "price",
       order: 0,
       trackLabourHours: false,
@@ -3806,7 +3809,7 @@ export default function EstimateDetail() {
         attachmentUrl: "",
         requestForQuote: false,
         isSelection: false,
-        proposalVisible: true,
+        proposalVisible: false,
         trackLabourHours: false,
       });
     }
@@ -4067,7 +4070,7 @@ export default function EstimateDetail() {
       allowance: 'None',
       allowanceStatus: 'pending',
       wastagePercent: 0,
-      proposalVisible: true,
+      proposalVisible: false,
       requestForQuote: false,
       isSelection: false,
       trackLabourHours: false,

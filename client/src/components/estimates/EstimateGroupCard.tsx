@@ -199,8 +199,10 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
     'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
   ]);
+  // Kept in step with estimateGridRow, so a column reads the same on the group
+  // row as on the lines under it. Unit Cost Inc Tax is editable, so not here.
   const DERIVED_COLUMNS = new Set([
-    'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+    'builderCost', 'builderCostIncTax',
     'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
   ]);
   const columnCellClass = (columnId: string) =>
