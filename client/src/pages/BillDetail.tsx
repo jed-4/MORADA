@@ -133,7 +133,7 @@ const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
   projectId: z.string().min(1, "Project is required"),
   supplierId: z.string().min(1, "Supplier is required"),
-  billType: z.enum(["bill", "credit"]).default("bill"),
+  billType: z.enum(["bill", "credit", "receipt"]).default("bill"),
   status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]).default("draft"),
   billDate: z.string().min(1, "Bill date is required"),
   dueDate: z.string().optional(),
@@ -651,7 +651,7 @@ export default function BillDetail() {
         // string; coerce to "" so the page still renders (unsaved bills
         // already use "" as their default).
         supplierId: bill.supplierId || "",
-        billType: bill.billType as "bill" | "credit",
+        billType: bill.billType as "bill" | "credit" | "receipt",
         status: bill.status as "draft" | "needs_review" | "awaiting_approval" | "awaiting_payment" | "paid",
         billDate: bill.billDate ? format(new Date(bill.billDate), "yyyy-MM-dd") : "",
         dueDate: bill.dueDate ? format(new Date(bill.dueDate), "yyyy-MM-dd") : "",
@@ -2771,7 +2771,23 @@ export default function BillDetail() {
                             On a bill being created there is nothing to check,
                             so the picker stays live there. */}
                         <Select
-                          onValueChange={field.onChange}
+                          // Radix mirrors the value through a hidden native
+                          // <select> for form autofill, and dispatches a change
+                          // event whenever it moves. While the dropdown has
+                          // never been opened that native select has no <option>
+                          // registered for the incoming value, so the browser
+                          // lands on "" and Radix reports "" straight back —
+                          // wiping the field moments after hydration set it.
+                          // It only bites when the stored type differs from the
+                          // form default, which is why it went unnoticed until
+                          // the first vendor credit: the value went blank, the
+                          // header read "Edit Bill", and saving failed zod with
+                          // "Expected 'bill' | 'credit', received ''". No item
+                          // may have an empty value (Radix throws on one), so an
+                          // empty emission is never a real choice — drop it.
+                          onValueChange={(value) => {
+                            if (value) field.onChange(value);
+                          }}
                           value={field.value}
                           disabled={isEditMode}
                         >
@@ -2783,6 +2799,9 @@ export default function BillDetail() {
                           <SelectContent>
                             <SelectItem value="bill">Bill</SelectItem>
                             <SelectItem value="credit">Vendor Credit</SelectItem>
+                            {field.value === "receipt" && (
+                              <SelectItem value="receipt">Receipt</SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />
