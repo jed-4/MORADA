@@ -738,7 +738,16 @@ export default function EstimateTemplates() {
           costCodeId: costCodeMatch.id,
           costCodeTitle: costCodeMatch.display,
           unit: row.unit ? String(row.unit).trim() : undefined,
-          quantity: row.quantity ? parseFloat(String(row.quantity)) || 1 : undefined,
+          // Keep the quantity the sheet had. `row.quantity ? … : undefined`
+          // treated a 0 as missing, and `|| 1` turned anything unparseable into
+          // 1 — so zero-quantity placeholder lines were stored with no quantity
+          // at all, then applied as 1. A 0 stays 0; only a blank or non-numeric
+          // cell is left unset.
+          quantity: (() => {
+            if (row.quantity == null || String(row.quantity).trim() === "") return undefined;
+            const n = parseFloat(String(row.quantity));
+            return Number.isFinite(n) ? n : undefined;
+          })(),
           unitPrice: row.unitPrice ? (() => {
             let price = parseFloat(String(row.unitPrice)) || 0;
             if (unitPriceIncludesGst) {

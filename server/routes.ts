@@ -7047,6 +7047,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimates/:id/items/import", async (req, res) => {
     try {
       const { items } = req.body;
+      // Optional. Applying a template sends its group rows so a group created
+      // here gets the template's description and default cost code; a
+      // spreadsheet import sends none and groups are built from line names as
+      // before. Only used when CREATING a group — an estimate's existing group
+      // of the same name is never overwritten.
+      const groupDetails: Array<{ name?: unknown; description?: unknown; defaultCostCode?: unknown }> =
+        Array.isArray(req.body.groups) ? req.body.groups : [];
       const estimateId = req.params.id;
       
       if (!Array.isArray(items) || items.length === 0) {
@@ -7057,8 +7064,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimate = await getOwnedEstimate(req, res, estimateId);
       if (!estimate) return;
 
-      // Get company cost codes to validate against
-      const companyCostCodes = await storage.getCostCodes();
+      // Get company cost codes to validate against. getCostCodes filters on the
+      // company id it is given, and this used to pass none — so the list was
+      // always empty, no line's cost code ever matched, and every line brought
+      // in by a spreadsheet import or a template apply landed with no cost code.
+      // getOwnedEstimate has already confirmed the estimate is this company's.
+      const companyCostCodes = await storage.getCostCodes((req.user as any).companyId);
       const costCodeMap = new Map<string, string>(); // code -> code (for validation)
       
       // Build map of cost codes by code (case-insensitive)
@@ -7101,13 +7112,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxExistingOrder = existingGroups.reduce((max, g) => Math.max(max, g.order ?? 0), -1);
       let nextOrder = maxExistingOrder + 1;
 
+      // Group details by name. A default cost code is only kept if it is one of
+      // this company's codes — the id arrives from the client.
+      const companyCostCodeIds = new Set(companyCostCodes.map((cc) => cc.id));
+      const detailsByName = new Map<string, { description?: string; defaultCostCode?: string }>();
+      for (const g of groupDetails) {
+        if (typeof g?.name !== "string" || !g.name.trim()) continue;
+        detailsByName.set(g.name.toLowerCase().trim(), {
+          description: typeof g.description === "string" && g.description.trim() ? g.description : undefined,
+          defaultCostCode:
+            typeof g.defaultCostCode === "string" && companyCostCodeIds.has(g.defaultCostCode)
+              ? g.defaultCostCode
+              : undefined,
+        });
+      }
+
       for (const groupName of orderedGroupNames) {
         const normalizedName = groupName.toLowerCase().trim();
         if (!groupMap.has(normalizedName)) {
+          const details = detailsByName.get(normalizedName);
           const newGroup = await storage.createEstimateGroup({
             estimateId,
             name: groupName,
-            description: undefined,
+            description: details?.description,
+            defaultCostCode: details?.defaultCostCode,
             order: nextOrder,
             isCollapsed: false,
             parentGroupId: undefined,
