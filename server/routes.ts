@@ -36681,6 +36681,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Template group order ───────────────────────────────────────────────────
+  // The company-wide order of groups in the Details and Labour template
+  // libraries, as a list of group names (migration 0084).
+
+  app.get("/api/template-group-order", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = (req.user as any)?.companyId;
+    if (!companyId) return res.json({ groupNames: [] });
+    try {
+      const [row] = await db
+        .select()
+        .from(schema.templateGroupOrders)
+        .where(eq(schema.templateGroupOrders.companyId, companyId))
+        .limit(1);
+      res.json({ groupNames: Array.isArray(row?.groupNames) ? row.groupNames : [] });
+    } catch (error) {
+      // Before migration 0084 is applied the table doesn't exist. An empty order
+      // is exactly the old behaviour — alphabetical — so the page keeps working
+      // rather than failing over a list order.
+      console.error("[template-group-order] read failed, falling back to alphabetical:", error);
+      res.json({ groupNames: [] });
+    }
+  });
+
+  app.put("/api/template-group-order", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = (req.user as any)?.companyId;
+    if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+    const parsed = z
+      .object({ groupNames: z.array(z.string().max(200)).max(1000) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+    }
+    // Duplicates would make the order ambiguous; keep each name's first place.
+    const groupNames = Array.from(new Set(parsed.data.groupNames));
+    try {
+      await db
+        .insert(schema.templateGroupOrders)
+        .values({ companyId, groupNames, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: schema.templateGroupOrders.companyId,
+          set: { groupNames, updatedAt: new Date() },
+        });
+      res.json({ groupNames });
+    } catch (error) {
+      console.error("[template-group-order] save failed:", error);
+      res.status(500).json({ error: "Failed to save group order" });
+    }
+  });
+
   app.post("/api/estimate-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;

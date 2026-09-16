@@ -63,6 +63,36 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { moveGroup, orderGroups } from "@shared/templateGroupOrder";
+
+/**
+ * A draggable row in a Details or Labour groups panel. The whole row is the
+ * handle; the sensor's 6px activation distance keeps a plain click selecting
+ * the group rather than starting a drag.
+ */
+function SortableGroupRow({ id, children }: { id: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : 1,
+        position: "relative",
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      {...attributes}
+      {...listeners}
+      data-testid={`sortable-group-${id}`}
+    >
+      {children}
+    </div>
+  );
+}
 
 interface TemplateItem {
   groupName?: string;
@@ -318,17 +348,41 @@ export default function EstimateTemplates() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] }),
   });
 
-  // Derived: all distinct groups (from E-Notes + Labour) in sorted order
+  // ── Group order (company-wide, migration 0084) ─────────────────────────────
+  // Both groups panels used to sort alphabetically. The order is now whatever the
+  // user drags it into, saved once for the whole company. See templateGroupOrder.
+  const { data: groupOrderData } = useQuery<{ groupNames: string[] }>({
+    queryKey: ["/api/template-group-order"],
+    enabled: activeTab === 'labour' || activeTab === 'enotes',
+  });
+  const savedGroupOrder = groupOrderData?.groupNames;
+
+  const saveGroupOrderMutation = useMutation({
+    mutationFn: (groupNames: string[]) => apiRequest("/api/template-group-order", "PUT", { groupNames }),
+    onMutate: async (groupNames) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/template-group-order"] });
+      const prev = queryClient.getQueryData<{ groupNames: string[] }>(["/api/template-group-order"]);
+      queryClient.setQueryData(["/api/template-group-order"], { groupNames });
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      queryClient.setQueryData(["/api/template-group-order"], ctx?.prev);
+      toast({ title: "Couldn't save the group order", variant: "destructive" });
+    },
+  });
+
+  const groupDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  // Derived: all distinct groups (from E-Notes + Labour), in the company order
   const { allGroups, labourOnlyGroups } = useMemo(() => {
     const enoteGroupNames = new Set(enoteTemplates.map((t: any) => t.groupName));
-    const labourCats = [...new Set(allLabourTemplates.map(t => t.categoryName))].sort();
-    const enoteGroupsSorted = [...new Set(enoteTemplates.map((t: any) => t.groupName))].sort();
-    // Groups that exist in E-Notes (primary list)
-    const merged = [...enoteGroupsSorted];
-    // Add labour-only groups (not in E-Notes)
-    labourCats.forEach(cat => { if (!enoteGroupNames.has(cat)) merged.push(cat); });
-    return { allGroups: merged, labourOnlyGroups: new Set(labourCats.filter(c => !enoteGroupNames.has(c))) };
-  }, [enoteTemplates, allLabourTemplates]);
+    const labourCats = Array.from(new Set(allLabourTemplates.map(t => t.categoryName)));
+    const names = Array.from(new Set([...Array.from(enoteGroupNames), ...labourCats])).filter(Boolean) as string[];
+    return {
+      allGroups: orderGroups(names, savedGroupOrder),
+      labourOnlyGroups: new Set(labourCats.filter(c => !enoteGroupNames.has(c))),
+    };
+  }, [enoteTemplates, allLabourTemplates, savedGroupOrder]);
 
   // Group required status (from E-Notes — first row in group)
   const groupRequiredStatus = useMemo(() => {
@@ -365,8 +419,8 @@ export default function EstimateTemplates() {
     : (enoteTemplates as any[]).filter((t: any) => !t.templateSetId);
 
   const detailsGroups = useMemo(
-    () => Array.from(new Set(detailsRows.map((t: any) => t.groupName))).sort() as string[],
-    [detailsRows],
+    () => orderGroups(Array.from(new Set(detailsRows.map((t: any) => t.groupName))).filter(Boolean) as string[], savedGroupOrder),
+    [detailsRows, savedGroupOrder],
   );
 
   const detailsGroupRequired = useMemo(() => {
@@ -405,9 +459,23 @@ export default function EstimateTemplates() {
     : (allLabourTemplates as any[]).filter((t: any) => !t.templateSetId);
 
   const labourGroups = useMemo(
-    () => Array.from(new Set(labourRows.map((t: any) => t.categoryName))).filter(Boolean).sort() as string[],
-    [labourRows],
+    () => orderGroups(Array.from(new Set(labourRows.map((t: any) => t.categoryName))).filter(Boolean) as string[], savedGroupOrder),
+    [labourRows, savedGroupOrder],
   );
+
+  /**
+   * A drag in either panel reorders the COMPANY list. The panel only shows the
+   * open template's groups, so the move is made against every group name known
+   * here, which keeps groups this template doesn't have in their places.
+   */
+  const handleGroupDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const everyName = orderGroups(
+      Array.from(new Set([...allGroups, ...detailsGroups, ...labourGroups])),
+      savedGroupOrder,
+    );
+    saveGroupOrderMutation.mutate(moveGroup(everyName, String(active.id), String(over.id)));
+  };
 
   // A group with no real task in it is a placeholder row carrying only the
   // category name — the same trick the Details side uses to hold an empty group.
@@ -1257,6 +1325,9 @@ export default function EstimateTemplates() {
                   </p>
                 </div>
               )}
+              {/* Drag to reorder — the order is shared by the whole company. */}
+              <DndContext sensors={groupDragSensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
+              <SortableContext items={labourGroups} strategy={verticalListSortingStrategy}>
               {labourGroups.map(group => {
                 const isSelected = selectedGroup === group;
                 // Counts this template's tasks, not every template's. The
@@ -1265,16 +1336,21 @@ export default function EstimateTemplates() {
                 // nothing now labour has its own.
                 const labourCount = labourRows.filter((t: any) => t.categoryName === group && t.description).length;
                 return (
-                  <button key={group} onClick={() => setSelectedGroup(group)}
+                  <SortableGroupRow key={group} id={group}>
+                  <button onClick={() => setSelectedGroup(group)}
                     data-testid={`labour-group-${group}`}
-                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    title="Drag to reorder"
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate cursor-grab active:cursor-grabbing ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     <span className="text-xs font-medium truncate w-full">{group}</span>
                     <span className="text-data text-muted-foreground">
                       {labourCount} task{labourCount !== 1 ? 's' : ''}
                     </span>
                   </button>
+                  </SortableGroupRow>
                 );
               })}
+              </SortableContext>
+              </DndContext>
             </div>
             {/* Add new group */}
             <div className="border-t border-border/50 p-2 flex-shrink-0 flex gap-1">
@@ -1534,14 +1610,20 @@ export default function EstimateTemplates() {
                   </p>
                 </div>
               )}
+              {/* Drag to reorder — the order is shared by the whole company. */}
+              <DndContext sensors={groupDragSensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
+              <SortableContext items={detailsGroups} strategy={verticalListSortingStrategy}>
               {detailsGroups.map(group => {
                 const isSelected = selectedGroup === group;
                 const enoteCount = detailsRows.filter((t: any) => t.groupName === group && t.categoryName).length;
                 const isRequired = detailsGroupRequired.get(group);
                 const hasEnotes = !labourOnlyGroups.has(group);
                 return (
-                  <button key={group} onClick={() => setSelectedGroup(group)}
-                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                  <SortableGroupRow key={group} id={group}>
+                  <button onClick={() => setSelectedGroup(group)}
+                    data-testid={`details-group-${group}`}
+                    title="Drag to reorder"
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate cursor-grab active:cursor-grabbing ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     <div className="flex items-center justify-between gap-1 w-full">
                       <span className="text-xs font-medium truncate">{group}</span>
                       {hasEnotes && (
@@ -1563,8 +1645,11 @@ export default function EstimateTemplates() {
                     </div>
                     {enoteCount > 0 && <span className="text-data text-muted-foreground">{enoteCount} categor{enoteCount !== 1 ? 'ies' : 'y'}</span>}
                   </button>
+                  </SortableGroupRow>
                 );
               })}
+              </SortableContext>
+              </DndContext>
             </div>
             {/* Add new group */}
             <div className="border-t border-border/50 p-2 flex-shrink-0 flex gap-1">
