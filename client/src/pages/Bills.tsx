@@ -843,7 +843,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       setConvertTarget(null);
       toast({
-        title: "Converted to a vendor credit",
+        title: "Converted to a credit note",
         description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
       });
     },
@@ -1388,7 +1388,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           <DialogTitle>Convert {convertTarget?.number} to a credit note?</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          The bill becomes a vendor credit in place — same attachment, line items and history — and
+          The bill becomes a credit note in place — same attachment, line items and history — and
           its amount starts reducing what you owe this supplier instead of adding to it. Vendor
           it syncs to Xero as a supplier credit note.
         </p>

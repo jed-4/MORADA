@@ -125,6 +125,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { UnitSelect } from "@/components/UnitSelect";
 import { BulkActionBar } from "@/components/BulkActionBar";
+import { cn } from "@/lib/utils";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillPayment, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
@@ -1836,7 +1837,7 @@ export default function BillDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
       toast({
-        title: "Converted to a vendor credit",
+        title: "Converted to a credit note",
         description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
       });
     },
@@ -2529,8 +2530,8 @@ export default function BillDetail() {
             <div className="w-[3px] h-5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--amber))" }} aria-hidden="true" />
             <h1 className="text-lg font-semibold" data-testid="text-page-title">
               {isEditMode
-                ? (form.watch("billType") === "credit" ? "Edit Vendor Credit" : "Edit Bill")
-                : (form.watch("billType") === "credit" ? "Create Vendor Credit" : "Create Bill")}
+                ? (form.watch("billType") === "credit" ? "Edit Credit Note" : "Edit Bill")
+                : (form.watch("billType") === "credit" ? "Create Credit Note" : "Create Bill")}
             </h1>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
@@ -2792,13 +2793,24 @@ export default function BillDetail() {
                           disabled={isEditMode}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
+                            <SelectTrigger
+                              className={cn(
+                                "h-9 border border-border bg-muted/30 text-sm font-normal",
+                                // disabled:opacity-100 because the picker is
+                                // locked on an existing bill — the state where
+                                // this most needs to be read, and where the
+                                // base disabled:opacity-50 washed it out.
+                                field.value === "credit" &&
+                                  "border-status-danger/50 bg-status-danger-bg text-status-danger font-semibold disabled:opacity-100",
+                              )}
+                              data-testid="select-bill-type"
+                            >
                               <SelectValue placeholder="Select type..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="bill">Bill</SelectItem>
-                            <SelectItem value="credit">Vendor Credit</SelectItem>
+                            <SelectItem value="credit">Credit Note</SelectItem>
                             {field.value === "receipt" && (
                               <SelectItem value="receipt">Receipt</SelectItem>
                             )}
@@ -4479,7 +4491,7 @@ export default function BillDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Convert {bill?.billNumber || "this bill"} to a credit note?</AlertDialogTitle>
             <AlertDialogDescription>
-              It becomes a vendor credit in place — same attachment, line items and history — and its
+              It becomes a credit note in place — same attachment, line items and history — and its
               amount starts reducing what you owe this supplier instead of adding to it. Vendor
               it syncs to Xero as a supplier credit note.
             </AlertDialogDescription>
