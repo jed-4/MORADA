@@ -11,6 +11,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { resolveStatusChip } from "@/lib/statusChip";
+import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -290,6 +293,9 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     }, 500);
   };
 
+  // Read before the early return below — hooks must run on every render.
+  const { statusOptions } = useTaskStatusOptions();
+
   // If no event and no taskId, nothing to show
   if (!event && !taskId) return null;
 
@@ -307,6 +313,15 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const displayStartTime = event?.startTime;
   const displayEndTime = event?.endTime;
   const displayStatus = taskDetails?.status || event?.status;
+  // `status` is a Field Settings option KEY, not a label — a status added in
+  // Settings gets a generated key like "new_option_1759127717846", and printing
+  // it raw is what put that in the badge. Resolve to the configured name and
+  // colour, the same as every task list does. A calendar event that isn't a
+  // task has its own vocabulary, so it falls through to the humanised key.
+  const statusChip = resolveStatusChip(
+    displayStatus,
+    isTask ? (statusOptions as any) : null,
+  );
   const displayLocation = event?.location;
   const bookingStart = displayStartTime || "09:00";
 
@@ -384,13 +399,13 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
                 </Badge>
               )}
               {displayStatus && (
-                <Badge 
-                  variant={isTaskCompleted ? "default" : "secondary"}
+                <StatusBadge
+                  status={statusChip.key}
+                  label={statusChip.label}
+                  paint={statusChip.paint}
+                  tone={statusChip.tone}
                   data-testid="status-badge"
-                >
-                  {isTaskCompleted && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                  {displayStatus}
-                </Badge>
+                />
               )}
             </div>
           </div>
