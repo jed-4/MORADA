@@ -19991,7 +19991,8 @@ export class DbStorage implements IStorage {
    * again, which is why percentage-based payment milestones printed $0.00 on
    * the client's document. Money runs through computeProposalTotals — i.e.
    * computeEstimateSummary — rather than a sum of the pre-margin priceIncTax
-   * cache, and it drops lines the user hid from the proposal.
+   * cache, over EVERY line: the estimate is the source of truth for money, and
+   * hiding a line from the proposal hides the row, never its cost.
    *
    * Returns the recomputed totals, or null when nothing was linked to compute
    * from (the proposal keeps whatever it had rather than being zeroed).
@@ -20009,9 +20010,8 @@ export class DbStorage implements IStorage {
     if (!estimate) return null;
     const [items, groups] = await Promise.all([
       this.getEstimateItems(estimateId),
-      // Groups are needed for the price, not just the layout: a section hidden
-      // from the proposal takes its lines out of the total as well as off the
-      // page, and nested groups inherit that.
+      // Groups only feed the shown/hidden line counts. They never change the
+      // price — a hidden section's cost stays in the total.
       this.getEstimateGroups(estimateId),
     ]);
 

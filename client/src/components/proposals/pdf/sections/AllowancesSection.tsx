@@ -15,7 +15,7 @@ import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import {
   clientLineAmounts,
   collectHiddenGroupIds,
-  lineCountsTowardProposalTotal,
+  lineAppearsOnProposal,
 } from '@shared/proposalTotals';
 import { resolveSectionTextStyle } from "../sectionTextStyle";
 
@@ -129,22 +129,32 @@ export function AllowancesSection({
    *
    * Prices go through clientLineAmounts, the same helper the estimate table
    * uses, so an allowance cannot be quoted here at one figure and there at
-   * another. Lines hidden from the proposal, or marked as excluded, are left
-   * out for the same reason they are left out of the price.
+   * another.
+   *
+   * Rows and money follow the proposal-wide rule: a line hidden from the
+   * proposal does not print here, but its money is still the estimate's —
+   * see estimateAllowanceTotalCents below.
    */
+  const allowanceOpts = {
+    projectMarkupPercent: estimateData?.estimate?.projectMarkupPercent,
+    taxRate: estimateData?.estimate?.taxRate,
+  };
+  const isAllowanceLine = (it: { allowance?: string | null }) => {
+    const kind = String(it.allowance ?? 'None');
+    return kind === 'Prime Cost' || kind === 'Provisional Sum';
+  };
+  const estimateAllowanceTotalCents = estimateData
+    ? estimateData.items
+        .filter((it) => isAllowanceLine(it as { allowance?: string }))
+        .reduce((sum, it) => sum + Math.round(clientLineAmounts(it, allowanceOpts).incTax * 100), 0)
+    : 0;
+
   const estimateRows: AllowanceRow[] = (() => {
     if (!estimateData) return [];
     const hidden = collectHiddenGroupIds(estimateData.groups);
-    const opts = {
-      projectMarkupPercent: estimateData.estimate?.projectMarkupPercent,
-      taxRate: estimateData.estimate?.taxRate,
-    };
+    const opts = allowanceOpts;
     return estimateData.items
-      .filter((it) => {
-        const kind = String((it as { allowance?: string }).allowance ?? 'None');
-        if (kind !== 'Prime Cost' && kind !== 'Provisional Sum') return false;
-        return lineCountsTowardProposalTotal(it, hidden);
-      })
+      .filter((it) => isAllowanceLine(it as { allowance?: string }) && lineAppearsOnProposal(it, hidden))
       .map((it) => {
         const amounts = clientLineAmounts(it, opts);
         const qty = Number((it as { quantity?: number }).quantity) || 0;
@@ -170,7 +180,11 @@ export function AllowancesSection({
   const rows: AllowanceRow[] =
     itemRows.length > 0 ? itemRows : estimateRows.length > 0 ? estimateRows : legacyRows;
 
-  const total = rows.reduce(
+  /* When the rows come from the estimate, the total is the estimate's — every
+     Prime Cost and Provisional Sum line, including any the client is not shown.
+     Rows typed into the section are their own document and still sum. */
+  const usingEstimateRows = itemRows.length === 0 && estimateRows.length > 0;
+  const total = usingEstimateRows ? estimateAllowanceTotalCents : rows.reduce(
     (sum, r) => sum + (typeof r.amountCents === 'number' ? r.amountCents : 0),
     0,
   );
