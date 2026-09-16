@@ -28,6 +28,13 @@ import {
   type EstimateGridCtx,
   type ColumnConfig,
 } from "@/components/estimates/estimateGridRow";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RichTextEditor } from "@/components/RichTextEditor";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
 // ─── The template's own row shape ────────────────────────────────────────────
 // Mirrors the TemplateItem in EstimateTemplateDetail. `isGroup` rows have been
@@ -53,6 +60,14 @@ export interface TemplateItem {
   parentGroupName?: string;
   /** Group rows only. Kept off line rows so the apply path is unaffected. */
   isCollapsed?: boolean;
+  /**
+   * Whether the line appears on the proposal, and how. Pre-set here so they
+   * don't have to be redone on every estimate the template is applied to (#18).
+   * Missing on lines written before this existed: those read as visible, which
+   * is what applying them has always produced.
+   */
+  proposalVisible?: boolean;
+  shownAs?: string;
 }
 
 const TAX_RATE = 10;
@@ -78,12 +93,11 @@ function toEstimateItem(t: TemplateItem): EstimateItem {
     wastagePercent: t.wastagePercent ?? 0,
     type: t.type || "Material",
     groupId: t.groupName || UNGROUPED,
-    // A template has no per-line workflow state, no proposal and no sub-items.
-    // These columns are off by default; the fields exist so the shared cells
-    // render something rather than crashing if someone turns one on.
+    // A template has no per-line workflow state and no sub-items. It does carry
+    // proposal visibility and Shown As, so they round-trip through the template.
     status: "",
-    shownAs: "price",
-    proposalVisible: true,
+    shownAs: t.shownAs || "price",
+    proposalVisible: t.proposalVisible ?? true,
     notes: "",
     parentItemId: null,
     isSelection: false,
@@ -105,16 +119,30 @@ function toTemplatePatch(
   if ("allowance" in data) patch.allowance = data.allowance;
   if ("wastagePercent" in data) patch.wastagePercent = Number(data.wastagePercent) || 0;
   if ("markupPercent" in data) patch.markup = Number(data.markupPercent) || 0;
+  // The shared markup cell saves under the COLUMN name, "markup", not the field
+  // name. Nothing here read it, so the patch came back empty and every markup
+  // edit in a template was silently discarded — the cell snapped back to its old
+  // value. Most visible as a markup that couldn't be taken to 0% (HIA Contract
+  // stuck at 8%), but a change to any other value was lost the same way.
+  if ("markup" in data) patch.markup = Number(data.markup) || 0;
   if ("unitCostExTax" in data) patch.unitPrice = Math.round((Number(data.unitCostExTax) || 0) * 100);
   if ("costCode" in data) {
     const cc = costCodes.find((c) => c.id === data.costCode);
     patch.costCodeId = data.costCode || undefined;
     patch.costCodeTitle = cc ? `${cc.code} - ${cc.title}` : undefined;
   }
-  // status / shownAs / proposalVisible / notes are estimate-only. A template
-  // has nowhere to put them, so they are dropped rather than half-persisted.
+  // Template lines are JSON, so these persist with no migration. They were
+  // dropped here on the belief that a template had nowhere to put them.
+  if ("proposalVisible" in data) patch.proposalVisible = !!data.proposalVisible;
+  if ("shownAs" in data) patch.shownAs = data.shownAs;
+  // status / notes remain estimate-only: a template has no workflow.
   return patch;
 }
+
+/** Where a cell's editor reads its starting value, when that isn't the column id. */
+const CELL_FIELD_SOURCE: Record<string, string> = {
+  markup: "markupPercent",
+};
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
 // The estimate page's 16 defaults minus the columns a template has no data for.
@@ -124,6 +152,8 @@ const TEMPLATE_DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "description", label: "Description", visible: true, widthPx: 180 },
   { id: "costCode", label: "Cost Code", visible: true, widthPx: 120 },
   { id: "type", label: "Type", visible: true, widthPx: 100 },
+  { id: "proposalVisible", label: "Proposal", visible: true, widthPx: 72 },
+  { id: "shownAs", label: "Shown As", visible: true, widthPx: 84 },
   { id: "allowance", label: "Allowance", visible: true, widthPx: 84 },
   { id: "quantity", label: "Qty", visible: true, widthPx: 64 },
   { id: "wastage", label: "Waste", visible: true, widthPx: 60 },
@@ -232,6 +262,10 @@ export function TemplateEstimateGrid({
       name: name === UNGROUPED ? "General" : name,
       description: byName.get(name)?.description || null,
       isCollapsed: byName.get(name)?.isCollapsed ?? false,
+      // A group row's costCodeId is the group's DEFAULT: new lines added to the
+      // group start on it, and applying the template gives the estimate's group
+      // the same default. EstimateGroupCard shows it as a badge by the name.
+      defaultCostCode: byName.get(name)?.costCodeId || null,
     }) as unknown as EstimateGroup);
   }, [groupRows, lineItems]);
 
@@ -318,7 +352,9 @@ export function TemplateEstimateGrid({
   const noopMutation = useMemo(() => ({ mutate: () => {}, isPending: false }), []);
 
   const handleCellEdit = useCallback((item: EstimateItem, field: string) => {
-    const raw = (item as any)[field];
+    // A cell's column name and the field it holds differ for markup; reading
+    // item.markup found nothing, so the editor opened blank.
+    const raw = (item as any)[CELL_FIELD_SOURCE[field] ?? field];
     setEditingCell({ itemId: item.id, field });
     setActiveCell({ itemId: item.id, field });
     setEditingValue(raw == null ? "" : String(raw));
@@ -386,17 +422,113 @@ export function TemplateEstimateGrid({
     [items, onSave],
   );
 
+  /**
+   * Edit a group's name, description and default cost code (the template's
+   * "Edit Group" used to be a no-op).
+   *
+   * Upserts the group row the way setGroupCollapsed does. Lines link to their
+   * group by NAME, so a rename re-points every line in the group too — otherwise
+   * they would silently fall out of it into a new name-only group.
+   */
+  const updateGroup = useCallback(
+    (groupName: string, next: { name: string; description: string; costCodeId?: string }) => {
+      const newName = next.name.trim() || groupName;
+      const cc = costCodes.find((c) => c.id === next.costCodeId);
+      const groupFields = {
+        name: newName,
+        description: next.description || undefined,
+        costCodeId: next.costCodeId || undefined,
+        costCodeTitle: cc ? `${cc.code} - ${cc.title}` : undefined,
+      };
+      const renamed = newName !== groupName;
+      let found = false;
+      const updated = items.map((i) => {
+        if (i.isGroup && (i.name || UNGROUPED) === groupName) {
+          found = true;
+          return { ...i, ...groupFields };
+        }
+        if (renamed && !i.isGroup && (i.groupName || UNGROUPED) === groupName) {
+          return { ...i, groupName: newName === UNGROUPED ? undefined : newName };
+        }
+        return i;
+      });
+      onSave(
+        found
+          ? updated
+          : [...updated, { id: crypto.randomUUID(), isGroup: true, sortOrder: items.length, ...groupFields } as TemplateItem],
+      );
+    },
+    [items, onSave, costCodes],
+  );
+
+  // ── Edit Group dialog ──────────────────────────────────────────────────────
+  // `groupName` is the name the group had when opened, which is its identity.
+  const [editingGroup, setEditingGroup] = useState<
+    { groupName: string; name: string; description: string; costCodeId: string } | null
+  >(null);
+
+  const openGroupEditor = useCallback(
+    (groupName: string) => {
+      const row = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
+      setEditingGroup({
+        groupName,
+        name: groupName === UNGROUPED ? "General" : groupName,
+        description: row?.description ?? "",
+        costCodeId: row?.costCodeId ?? "",
+      });
+    },
+    [items],
+  );
+
+  const groupEditorIsDirty = () => {
+    if (!editingGroup) return false;
+    const row = items.find((i) => i.isGroup && (i.name || UNGROUPED) === editingGroup.groupName);
+    const originalName = editingGroup.groupName === UNGROUPED ? "General" : editingGroup.groupName;
+    return (
+      editingGroup.name !== originalName ||
+      editingGroup.description !== (row?.description ?? "") ||
+      editingGroup.costCodeId !== (row?.costCodeId ?? "")
+    );
+  };
+
+  const saveGroupEditor = () => {
+    if (!editingGroup) return;
+    if (groupEditorIsDirty()) {
+      const { groupName, name, description, costCodeId } = editingGroup;
+      // "General" is the display name of the ungrouped bucket, not a real name.
+      const keepUngrouped = groupName === UNGROUPED && name.trim() === "General";
+      updateGroup(groupName, {
+        name: keepUngrouped ? UNGROUPED : name,
+        description,
+        costCodeId: costCodeId || undefined,
+      });
+    }
+    setEditingGroup(null);
+  };
+
+  const groupEditorDismiss = useCommitOnDismiss({
+    isDirty: groupEditorIsDirty,
+    commit: saveGroupEditor,
+    discard: () => setEditingGroup(null),
+  });
+
   const addItemToGroup = useCallback(
     (groupName: string) => {
+      // New lines start on the group's default cost code, as on an estimate.
+      const groupRow = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
       onSave([
         ...items,
         {
           id: crypto.randomUUID(),
           name: "",
           groupName: groupName === UNGROUPED ? undefined : groupName,
+          costCodeId: groupRow?.costCodeId,
+          costCodeTitle: groupRow?.costCodeTitle,
           quantity: 1,
           unitPrice: 0,
           markup: 0,
+          proposalVisible: false,
+          shownAs: "price",
           wastagePercent: 0,
           allowance: "None",
           type: "Material",
@@ -504,9 +636,17 @@ export function TemplateEstimateGrid({
   return (
     <div className="flex-1 min-h-0 overflow-auto" ref={gridRef} tabIndex={-1}>
       <div style={{ width: tableWidth, minWidth: "100%" }}>
-        {/* Column headings — the group cards draw their own rows beneath */}
+        {/* Column headings — the group cards draw their own rows beneath.
+            Laid out exactly as the live estimate's header, which sits over the
+            same EstimateGroupCard:
+            - OPAQUE. bg-muted/50 was a half-transparent fill on a sticky header,
+              so rows showed through it as they scrolled up underneath.
+            - pl-px, and no padding around the cards below. The cards were
+              wrapped in p-1.5 on top of their own 1px border, so every body
+              column sat 7px right of its heading; the live estimate offsets the
+              header by just the border. */}
         <div
-          className="grid items-center h-7 bg-muted/50 border-b border-border sticky top-0 z-30 text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
+          className="grid items-center h-7 bg-card border-b border-border sticky top-0 z-30 pl-px text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           <div />
@@ -542,7 +682,7 @@ export function TemplateEstimateGrid({
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={lineItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-            <div className="p-1.5 space-y-1.5">
+            <div>
               {groups.map((group, idx) => (
                 <EstimateGroupCard
                   key={group.id}
@@ -556,7 +696,8 @@ export function TemplateEstimateGrid({
                   handleToggleGroupCollapse={(id, current) => setGroupCollapsed(id, !current)}
                   renderItemRow={renderItemRow}
                   onDeleteGroup={deleteGroup}
-                  onEditGroup={() => {}}
+                  onEditGroup={openGroupEditor}
+                  onEditGroupDescription={openGroupEditor}
                   onDuplicateGroup={() => {}}
                   onCopyGroup={() => {}}
                   onAddSubgroup={() => {}}
@@ -584,6 +725,58 @@ export function TemplateEstimateGrid({
           </SortableContext>
         </DndContext>
       </div>
+
+      {/* Edit Group — clicking away keeps the edit, as on the estimate. */}
+      <Dialog open={!!editingGroup} onOpenChange={groupEditorDismiss.onOpenChange}>
+        <DialogContent className="max-w-lg rounded-xl" {...groupEditorDismiss.contentProps}>
+          <DialogHeader>
+            <DialogTitle>Edit Group</DialogTitle>
+          </DialogHeader>
+          {editingGroup && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="tpl-group-name">Name</Label>
+                <Input
+                  id="tpl-group-name"
+                  value={editingGroup.name}
+                  onChange={(e) => setEditingGroup((g) => (g ? { ...g, name: e.target.value } : g))}
+                  data-testid="input-template-group-name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Default cost code</Label>
+                <CostCodeSelect
+                  value={editingGroup.costCodeId || "none"}
+                  onValueChange={(v) =>
+                    setEditingGroup((g) => (g ? { ...g, costCodeId: v === "none" ? "" : v } : g))
+                  }
+                  data-testid="select-template-group-cost-code"
+                />
+                <p className="text-xs text-muted-foreground">
+                  New lines in this group start on it, and the estimate's group gets it when the template is applied.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <RichTextEditor
+                  content={editingGroup.description}
+                  onChange={(html) => setEditingGroup((g) => (g ? { ...g, description: html } : g))}
+                  placeholder="Describe this stage of the work — this appears on the proposal..."
+                  data-testid="richtext-template-group-description"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingGroup(null)} data-testid="button-cancel-template-group">
+              Cancel
+            </Button>
+            <Button onClick={saveGroupEditor} data-testid="button-save-template-group">
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
