@@ -3531,8 +3531,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Preprocess: drop empty-string date/time/assignee fields to avoid validation errors.
       // startTime/endTime keep an explicit null — that is how a task is un-timeboxed and
       // sent back to the unscheduled tray. Dropping null made clearing them impossible.
+      // dueDate is the same: an explicit null is "remove the due date", and has to
+      // reach the update. Only "" — a date input the browser reports as empty — is
+      // normalised, because z.coerce.date() would read it as an Invalid Date.
       const body = { ...req.body };
-      if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
+      if (body.dueDate === "") body.dueDate = null;
       if (body.startTime === "") delete body.startTime;
       if (body.endTime === "") delete body.endTime;
       if (body.assigneeId === "" || body.assigneeId === null) delete body.assigneeId;

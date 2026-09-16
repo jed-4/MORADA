@@ -617,7 +617,10 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   assigneeName: z.string().optional(), // Legacy cached name
   assigneeIds: z.array(z.string()).optional(), // Multiple assignee user IDs
   assigneeNames: z.array(z.string()).optional(), // Cached names for performance
-  dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  // Nullable for the same reason startTime/endTime are: the column is nullable
+  // and a due date has to be removable. Note the `.nullable()` has to wrap the
+  // coercion — z.coerce.date() alone turns null into new Date(null), the epoch.
+  dueDate: z.coerce.date().optional().nullable(), // Coerce strings to dates for JSON compatibility
   // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
   // columns are nullable in the DB; without null here the value cannot be cleared.
   startTime: z.string().nullable().optional(), // HH:MM format
