@@ -4644,6 +4644,7 @@ export class MemStorage implements IStorage {
     // allowance line's typed priceIncTax instead of recomputing it to $0.
     const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: insertItem.unitCostExTax,
+      unitCostIncTax: (insertItem as any).unitCostIncTax,
       quantity: insertItem.quantity,
       markupPercent: insertItem.markupPercent,
       projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -4712,6 +4713,7 @@ export class MemStorage implements IStorage {
     const preparedItems = insertItems.map(insertItem => {
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: insertItem.unitCostExTax,
+        unitCostIncTax: (insertItem as any).unitCostIncTax,
         quantity: insertItem.quantity,
         markupPercent: insertItem.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -4790,6 +4792,7 @@ export class MemStorage implements IStorage {
     // wiping it to $0 on a non-price patch (e.g. allowance/status toggle).
     const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: updatedItem.unitCostExTax,
+      unitCostIncTax: (updatedItem as any).unitCostIncTax,
       quantity: updatedItem.quantity,
       markupPercent: updatedItem.markupPercent,
       projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -4864,6 +4867,7 @@ export class MemStorage implements IStorage {
       // Match the DB implementation's shape (cents, recomputed price, ex/inc splits).
       const resolved = resolveEstimateStoredPrice({
         unitCostExTax: item.unitCostExTax,
+        unitCostIncTax: (item as any).unitCostIncTax,
         quantity: item.quantity,
         markupPercent: item.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -5063,6 +5067,7 @@ export class MemStorage implements IStorage {
     for (const item of items) {
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: item.unitCostExTax,
+        unitCostIncTax: (item as any).unitCostIncTax,
         quantity: item.quantity,
         markupPercent: item.markupPercent,
         projectMarkupPercent: targetEstimate.projectMarkupPercent,
@@ -5141,6 +5146,7 @@ export class MemStorage implements IStorage {
 
     const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: item.unitCostExTax,
+      unitCostIncTax: (item as any).unitCostIncTax,
       quantity: item.quantity,
       markupPercent: item.markupPercent,
       projectMarkupPercent: targetEstimate.projectMarkupPercent,
@@ -10987,6 +10993,7 @@ export class DbStorage implements IStorage {
       
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: insertItem.unitCostExTax,
+        unitCostIncTax: (insertItem as any).unitCostIncTax,
         quantity: insertItem.quantity,
         markupPercent: insertItem.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -11042,6 +11049,7 @@ export class DbStorage implements IStorage {
       const preparedItems = insertItems.map(insertItem => {
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: insertItem.unitCostExTax,
+          unitCostIncTax: (insertItem as any).unitCostIncTax,
           quantity: insertItem.quantity,
           markupPercent: insertItem.markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -11252,6 +11260,7 @@ export class DbStorage implements IStorage {
           // qty × unitCost × markup; fixed-price lines keep their typed amount.
           const resolved = resolveEstimateStoredPrice({
             unitCostExTax: item.unitCostExTax,
+            unitCostIncTax: (item as any).unitCostIncTax,
             quantity: item.quantity,
             markupPercent: item.markupPercent,
             projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -11539,6 +11548,7 @@ export class DbStorage implements IStorage {
         // rate so cloned items don't carry stale cached cache values.
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: item.unitCostExTax,
+          unitCostIncTax: (item as any).unitCostIncTax,
           quantity: item.quantity,
           markupPercent: item.markupPercent,
           projectMarkupPercent: targetEstimate.projectMarkupPercent,
@@ -12786,6 +12796,7 @@ export class DbStorage implements IStorage {
       // rate so cloned items don't carry stale cached values.
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: item[0].unitCostExTax,
+        unitCostIncTax: (item[0] as any).unitCostIncTax,
         quantity: item[0].quantity,
         markupPercent: item[0].markupPercent,
         projectMarkupPercent: targetEstimate.projectMarkupPercent,

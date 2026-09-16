@@ -26,6 +26,7 @@ import {
   computeEstimateItemPrice,
   computeEstimateSummary,
   resolveEstimateStoredPrice,
+  resolveUnitCostBasis,
   typedUnitCostIncTax,
 } from "@shared/pricing";
 
@@ -131,6 +132,48 @@ check("no typed price — null, undefined or 0 — is the ex-GST path", () => {
     const without = computeEstimateItemPrice({ unitCostExTax: 54.55, quantity: 1, markupPercent: 0, projectMarkupPercent: 0, taxRate: TAX });
     assert.deepStrictEqual(withField, without);
   }
+});
+
+// ── Which price a write leaves authoritative ─────────────────────────────────
+
+check("saving a typed inc-GST price remembers it and derives ex-GST", () => {
+  const b = resolveUnitCostBasis({ unitCostIncTax: 60 }, { unitCostExTax: 10, unitCostIncTax: null }, TAX);
+  assert.strictEqual(b.unitCostIncTax, 60);
+  assert.ok(Math.abs(b.unitCostExTax - 60 / 1.1) < 1e-9);
+});
+
+check("saving an ex-GST cost clears a remembered inc-GST price", () => {
+  assert.deepStrictEqual(
+    resolveUnitCostBasis({ unitCostExTax: 50 }, { unitCostExTax: 54.5454, unitCostIncTax: 60 }, TAX),
+    { unitCostExTax: 50, unitCostIncTax: null },
+  );
+});
+
+check("a write that touches neither price keeps the typed one (qty, markup, name…)", () => {
+  assert.deepStrictEqual(
+    resolveUnitCostBasis({}, { unitCostExTax: 54.5454, unitCostIncTax: 60 }, TAX),
+    { unitCostExTax: 54.5454, unitCostIncTax: 60 },
+  );
+});
+
+check("the edit dialog re-sending both prices keeps the typed one", () => {
+  // The dialog submits the whole form, so a rename sends the unchanged prices.
+  const b = resolveUnitCostBasis({ unitCostIncTax: 60, unitCostExTax: 60 / 1.1 }, { unitCostExTax: 60 / 1.1, unitCostIncTax: 60 }, TAX);
+  assert.strictEqual(b.unitCostIncTax, 60);
+});
+
+check("the dialog on an ex-priced line (inc null + ex) stays ex-priced", () => {
+  assert.deepStrictEqual(
+    resolveUnitCostBasis({ unitCostIncTax: null, unitCostExTax: 42.5 }, { unitCostExTax: 40, unitCostIncTax: null }, TAX),
+    { unitCostExTax: 42.5, unitCostIncTax: null },
+  );
+});
+
+check("typing an inc-GST price of 0 zeroes the line and clears the typed price", () => {
+  assert.deepStrictEqual(
+    resolveUnitCostBasis({ unitCostIncTax: 0 }, { unitCostExTax: 54.5454, unitCostIncTax: 60 }, TAX),
+    { unitCostExTax: 0, unitCostIncTax: null },
+  );
 });
 
 const GOLDEN: Array<{ name: string; items: any[]; m: number; expected: any }> = [

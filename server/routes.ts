@@ -233,7 +233,7 @@ import {
   fuzzyMatchTimesheetUser,
   readTimesheetBreakFromRow,
 } from "@shared/import";
-import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
+import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
 import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import {
@@ -7001,12 +7001,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimate = await getOwnedEstimate(req, res, estimateId);
       if (!estimate) return;
 
-      const unitCostExTax = req.body.unitCostExTax || 0;
+      // A new line may be priced inc-GST (typed price remembered) or ex-GST.
+      const priceBasis = resolveUnitCostBasis(req.body, null, estimate.taxRate);
+      const unitCostExTax = priceBasis.unitCostExTax;
       const quantity = req.body.quantity ?? 0;
       const markupPercent = req.body.markupPercent ?? null;
 
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax,
+        unitCostIncTax: priceBasis.unitCostIncTax,
         quantity,
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
@@ -7019,6 +7022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         estimateId,
         unitCostExTax,
+        unitCostIncTax: priceBasis.unitCostIncTax,
         quantity,
         markupPercent,
         taxAmount,
@@ -7541,12 +7545,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Re-price using the merged values so the cached tax/inc-tax stay
         // in sync whenever quantity / unitCost / markup is in the patch.
-        const unitCostExTax = next.unitCostExTax !== undefined ? Number(next.unitCostExTax) : Number(item.unitCostExTax);
+        const priceBasis = resolveUnitCostBasis(next, item as any, estimate?.taxRate);
+        if (next.unitCostExTax !== undefined) next.unitCostIncTax = priceBasis.unitCostIncTax;
+        const unitCostExTax = priceBasis.unitCostExTax;
         const quantity = next.quantity !== undefined ? Number(next.quantity) : Number(item.quantity);
         const markupPercent = next.markupPercent !== undefined ? next.markupPercent : item.markupPercent;
         const wastagePercent = next.wastagePercent !== undefined ? next.wastagePercent : (item as any).wastagePercent;
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax,
+          unitCostIncTax: priceBasis.unitCostIncTax,
           quantity,
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -7615,6 +7622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: item.unitCostExTax,
+          unitCostIncTax: (item as any).unitCostIncTax,
           quantity: item.quantity,
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
@@ -7731,9 +7739,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const unitCostExTax = updateData.unitCostExTax !== undefined
-        ? updateData.unitCostExTax
-        : existingItem.unitCostExTax;
+      // Which price wins: a typed inc-GST price, or the ex-GST cost. Resolved
+      // here, the one place every client path writes through (inline cell, edit
+      // dialog, mobile) — see resolveUnitCostBasis.
+      const priceBasis = resolveUnitCostBasis(updateData, existingItem as any, estimate.taxRate);
+      if (updateData.unitCostExTax !== undefined || updateData.unitCostIncTax !== undefined) {
+        updateData.unitCostExTax = priceBasis.unitCostExTax;
+        updateData.unitCostIncTax = priceBasis.unitCostIncTax;
+      }
+      const unitCostExTax = priceBasis.unitCostExTax;
 
       // Editing the unit cost takes the line OFF the catalogue — the number is the
       // estimator's now, so the provenance marker must stop claiming otherwise.
@@ -7744,7 +7758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // that IS the link being made (picking an item writes cost + link together).
       // Everything else about a line — name, qty, wastage, markup — keeps the link.
       const isRelinking = updateData.priceListItemId !== undefined;
-      const costChanged = updateData.unitCostExTax !== undefined
+      const costChanged = (updateData.unitCostExTax !== undefined || updateData.unitCostIncTax !== undefined)
         && Math.abs(Number(unitCostExTax) - Number(existingItem.unitCostExTax)) > 0.0001;
       if (!isRelinking && costChanged && existingItem.priceListItemId) {
         updateData.priceListItemId = null;
@@ -7766,6 +7780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // drift the price or wipe a flat allowance to $0.
       const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax,
+        unitCostIncTax: priceBasis.unitCostIncTax,
         quantity,
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
@@ -14991,6 +15006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // (stale for priced lines; only fixed-price lines trust the typed value).
       const { priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: estimateItem.unitCostExTax,
+        unitCostIncTax: (estimateItem as any).unitCostIncTax,
         quantity: estimateItem.quantity,
         markupPercent: estimateItem.markupPercent,
         projectMarkupPercent: (estimate as any).projectMarkupPercent,

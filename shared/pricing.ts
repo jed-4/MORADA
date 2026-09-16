@@ -89,6 +89,42 @@ export function typedUnitCostIncTax(value: number | null | undefined): number | 
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
+/**
+ * Which unit price a write leaves authoritative, and the ex-GST cost to store.
+ *
+ * - The write sets a typed inc-GST price: it is remembered, and the ex-GST cost
+ *   is derived from it at full precision for everything that reads ex directly.
+ * - The write sets an ex-GST cost only: that cost is authoritative again, so any
+ *   remembered inc-GST price is cleared — it no longer describes the line.
+ * - The write touches neither (quantity, markup, name, status…): both are kept.
+ *
+ * Every price-writing route goes through this, so the inline grid, the edit
+ * dialog, bulk edits and imports can't disagree about which price wins.
+ */
+export function resolveUnitCostBasis(
+  patch: { unitCostExTax?: unknown; unitCostIncTax?: unknown },
+  existing: { unitCostExTax?: number | null; unitCostIncTax?: number | null } | null | undefined,
+  taxRate: number | null | undefined,
+): { unitCostExTax: number; unitCostIncTax: number | null } {
+  const gross = 1 + Number(taxRate ?? 10) / 100;
+  if (patch.unitCostIncTax !== undefined) {
+    const typed = typedUnitCostIncTax(patch.unitCostIncTax as number | null);
+    if (typed !== null) return { unitCostExTax: typed / gross, unitCostIncTax: typed };
+    // Explicitly cleared (null) or typed as 0.
+    const ex = patch.unitCostExTax !== undefined
+      ? Number(patch.unitCostExTax) || 0
+      : Number(patch.unitCostIncTax) === 0 ? 0 : Number(existing?.unitCostExTax ?? 0);
+    return { unitCostExTax: ex, unitCostIncTax: null };
+  }
+  if (patch.unitCostExTax !== undefined) {
+    return { unitCostExTax: Number(patch.unitCostExTax) || 0, unitCostIncTax: null };
+  }
+  return {
+    unitCostExTax: Number(existing?.unitCostExTax ?? 0),
+    unitCostIncTax: typedUnitCostIncTax(existing?.unitCostIncTax),
+  };
+}
+
 export interface EstimateItemPrice {
   /** qty * unitCostExTax, rounded to 2dp. The builder's raw cost. */
   builderCost: number;

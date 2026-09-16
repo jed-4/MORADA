@@ -2856,24 +2856,21 @@ export default function EstimateDetail() {
         return;
       }
     } else if (field === 'unitCostIncTax') {
-      // User entered inc-tax value, back-calculate to ex-tax
+      // Save the inc-GST price exactly as typed. This used to back-calculate
+      // ex-GST and round it to the cent, and no cent value of ex reproduces one
+      // inc price in eleven — typing $60 stored 54.55 and showed $60.01
+      // everywhere (#11). The server remembers the typed price, derives ex-GST
+      // from it, and prices the line from what was typed.
       const incTaxValue = parseFloat(editingValue);
-      const taxRate = estimate?.taxRate ?? 10;
-      
-      // Back-calculate: unitCostExTax = unitCostIncTax / (1 + taxRate/100), rounded to 2dp
-      // (matches shared/pricing.ts 2dp policy — see computeEstimateItemPrice)
-      const calculatedExTax = Math.round(incTaxValue / (1 + taxRate / 100) * 100) / 100;
-      
-      // Check if the calculated ex-tax value is different from current
+
       const currentIncTax = calculatePricingValues(item).unitCostIncTax;
       if (Math.abs(incTaxValue - currentIncTax) < 0.0005) {
         setEditingCell(null);
         return;
       }
-      
-      // Save the back-calculated ex-tax value (rounded to 2dp)
-      valueToSave = calculatedExTax;
-      fieldToUpdate = 'unitCostExTax'; // Update the ex-tax field instead
+
+      valueToSave = incTaxValue;
+      fieldToUpdate = 'unitCostIncTax';
     } else if (field === 'markupPercent' || field === 'markup') {
       // Save markup as number (supports decimals like 12.5%)
       const markup = parseFloat(editingValue);
@@ -3714,6 +3711,8 @@ export default function EstimateDetail() {
 
     const priced = computeEstimateItemPrice({
       unitCostExTax: item.unitCostExTax,
+      // A typed inc-GST price is authoritative — this is what the grid shows.
+      unitCostIncTax: (item as any).unitCostIncTax,
       quantity: item.quantity,
       markupPercent: item.markupPercent,
       projectMarkupPercent: estimate?.projectMarkupPercent, // ignored; kept for compat
@@ -3871,6 +3870,7 @@ export default function EstimateDetail() {
           quantity: item.quantity,
           unitType: item.unitType || 'Unit',
           unitCostExTax: item.unitCostExTax,
+          unitCostIncTax: (item as any).unitCostIncTax ?? null,
           markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
@@ -5997,7 +5997,15 @@ export default function EstimateDetail() {
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
                             <FormattedNumberInput
                               value={field.value ?? 0}
-                              onChange={field.onChange}
+                              onChange={(v) => {
+                                // An ex-GST cost typed here is authoritative, so a remembered
+                                // inc-GST price no longer describes the line. Only on a real change:
+                                // this input can report its own value back without an edit.
+                                if (Math.abs((Number(v) || 0) - (Number(field.value) || 0)) > 0.0001) {
+                                  form.setValue("unitCostIncTax" as any, null, { shouldDirty: true });
+                                }
+                                field.onChange(v);
+                              }}
                               isMonetary
                               placeholder="0.00"
                               className="pl-6"
@@ -6028,14 +6036,24 @@ export default function EstimateDetail() {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm z-10">$</span>
                       <FormattedNumberInput
                         value={(() => {
+                          // The typed inc-GST price when there is one; otherwise ex × (1 + GST).
+                          const typed = form.watch("unitCostIncTax" as any) as number | null | undefined;
+                          if (typed != null && typed !== 0) return typed;
                           const unitCost = form.watch("unitCostExTax") || 0;
                           const taxRate = estimate?.taxRate ?? 10;
                           return Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
                         })()}
                         onChange={(incTax) => {
+                          // Remember the price as typed. Converting it to ex-GST and rounding to
+                          // the cent — what this did — can't represent one inc price in eleven,
+                          // so $60 became $60.01 (#11). The server derives ex-GST from it.
                           const taxRate = estimate?.taxRate ?? 10;
-                          const exTax = Math.round(incTax / (1 + taxRate / 100) * 100) / 100;
-                          form.setValue("unitCostExTax", exTax);
+                          const typed = Number(incTax) || 0;
+                          const current = (form.getValues("unitCostIncTax" as any) as number | null | undefined)
+                            ?? Math.round((Number(form.getValues("unitCostExTax")) || 0) * (1 + taxRate / 100) * 100) / 100;
+                          if (Math.abs(typed - current) < 0.005) return;
+                          form.setValue("unitCostIncTax" as any, typed || null, { shouldDirty: true });
+                          form.setValue("unitCostExTax", typed / (1 + taxRate / 100), { shouldDirty: true });
                         }}
                         isMonetary
                         placeholder="0.00"
@@ -6241,7 +6259,7 @@ export default function EstimateDetail() {
                 const unitCost = form.watch("unitCostExTax") || 0;
                 const markup = form.watch("markupPercent") || 0;
                 const taxRate = estimate?.taxRate ?? 10;
-                const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
+                const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, unitCostIncTax: form.watch("unitCostIncTax" as any) as any, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
                 const round2 = (n: number) => Math.round(n * 100) / 100;
                 const fmt = (n: number) => n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
                 return (
@@ -6572,7 +6590,15 @@ export default function EstimateDetail() {
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
                                 <FormattedNumberInput
                                   value={field.value ?? 0}
-                                  onChange={field.onChange}
+                                  onChange={(v) => {
+                                    // An ex-GST cost typed here is authoritative, so a remembered
+                                    // inc-GST price no longer describes the line. Only on a real change:
+                                    // this input can report its own value back without an edit.
+                                    if (Math.abs((Number(v) || 0) - (Number(field.value) || 0)) > 0.0001) {
+                                      editForm.setValue("unitCostIncTax" as any, null, { shouldDirty: true });
+                                    }
+                                    field.onChange(v);
+                                  }}
                                   isMonetary
                                   placeholder="0.00"
                                   className="pl-6"
@@ -6591,7 +6617,11 @@ export default function EstimateDetail() {
                           ${(() => {
                             const unitCost = editForm.watch("unitCostExTax") || 0;
                             const taxRate = estimate?.taxRate ?? 10;
-                            const tax = Math.round(unitCost * taxRate / 100 * 100) / 100;
+                            // With a typed inc-GST price, GST is inc − ex so the two add up.
+                            const typed = editForm.watch("unitCostIncTax" as any) as number | null | undefined;
+                            const tax = typed
+                              ? Math.round((typed - Math.round(typed / (1 + taxRate / 100) * 100) / 100) * 100) / 100
+                              : Math.round(unitCost * taxRate / 100 * 100) / 100;
                             return tax.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                           })()}
                         </div>
@@ -6603,14 +6633,24 @@ export default function EstimateDetail() {
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm z-10">$</span>
                           <FormattedNumberInput
                             value={(() => {
+                              // The typed inc-GST price when there is one; otherwise ex × (1 + GST).
+                              const typed = editForm.watch("unitCostIncTax" as any) as number | null | undefined;
+                              if (typed != null && typed !== 0) return typed;
                               const unitCost = editForm.watch("unitCostExTax") || 0;
                               const taxRate = estimate?.taxRate ?? 10;
                               return Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
                             })()}
                             onChange={(incTax) => {
+                              // Remember the price as typed. Converting it to ex-GST and rounding to
+                              // the cent — what this did — can't represent one inc price in eleven,
+                              // so $60 became $60.01 (#11). The server derives ex-GST from it.
                               const taxRate = estimate?.taxRate ?? 10;
-                              const exTax = Math.round(incTax / (1 + taxRate / 100) * 100) / 100;
-                              editForm.setValue("unitCostExTax", exTax);
+                              const typed = Number(incTax) || 0;
+                              const current = (editForm.getValues("unitCostIncTax" as any) as number | null | undefined)
+                                ?? Math.round((Number(editForm.getValues("unitCostExTax")) || 0) * (1 + taxRate / 100) * 100) / 100;
+                              if (Math.abs(typed - current) < 0.005) return;
+                              editForm.setValue("unitCostIncTax" as any, typed || null, { shouldDirty: true });
+                              editForm.setValue("unitCostExTax", typed / (1 + taxRate / 100), { shouldDirty: true });
                             }}
                             isMonetary
                             placeholder="0.00"
@@ -6818,7 +6858,7 @@ export default function EstimateDetail() {
                     const markupRaw = editForm.watch("markupPercent");
                     const markup = markupRaw != null ? markupRaw : (editingItem?.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
                     const taxRate = estimate?.taxRate ?? 10;
-                    const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
+                    const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, unitCostIncTax: editForm.watch("unitCostIncTax" as any) as any, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
                     const round2 = (n: number) => Math.round(n * 100) / 100;
                     const fmt = (n: number) => n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
                     return (
