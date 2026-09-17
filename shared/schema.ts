@@ -4321,6 +4321,16 @@ export const insertEstimateTemplateSchema = createInsertSchema(estimateTemplates
 export type InsertEstimateTemplate = z.infer<typeof insertEstimateTemplateSchema>;
 export type EstimateTemplate = typeof estimateTemplates.$inferSelect;
 
+// The company-wide order of groups in the Details and Labour template libraries
+// (migration 0084). Group NAMES in order — a group has no id of its own, it is
+// its name on the template rows. See shared/templateGroupOrder.ts.
+export const templateGroupOrders = pgTable("template_group_orders", {
+  companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
+  groupNames: jsonb("group_names").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type TemplateGroupOrder = typeof templateGroupOrders.$inferSelect;
+
 // Selection Template Groups (user-defined groups for organizing templates e.g. Bathroom, Kitchen)
 export const selectionTemplateGroups = pgTable("selection_template_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -779,16 +779,38 @@ export default function EstimateDetail() {
           group: item.groupName || item.parentGroupName || "",
           description: item.description || "",
           unitType: item.unit || "ea",
-          quantity: item.quantity ?? 1,
+          // The quantity the template shows, not 1. A template line with no
+          // quantity displays as 0 in the template grid, and applying used to
+          // turn it into 1 — so a template of placeholder lines arrived with
+          // every line at 1 (#8). An estimate line can't hold a blank quantity
+          // (the column is NOT NULL), so blank lands as the 0 you saw.
+          quantity: item.quantity ?? 0,
           unitCostExTax: (item.unitPrice ?? 0) / 100, // template stores in cents
           markupPercent: item.markup ?? 0,
           allowance: item.allowance || "None",
           wastagePercent: item.wastagePercent ?? 0,
           type: item.type || "Material",
           costCode: item.costCodeTitle || "",
+          // Carried from the template (#18). A line written before templates
+          // stored these applies as it always did: visible, shown as a price.
+          proposalVisible: item.proposalVisible ?? true,
+          shownAs: item.shownAs || "price",
         }));
       if (lineItems.length === 0) throw new Error("This template has no line items to import.");
-      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/import`, "POST", { items: lineItems });
+      // The template's group rows carry what a line can't: the group's
+      // description and its default cost code. The import route only ever built
+      // groups from the names on lines, so neither reached the estimate.
+      const groupDetails = templateData
+        .filter((g: any) => g.isGroup && g.name)
+        .map((g: any) => ({
+          name: g.name,
+          description: g.description || null,
+          defaultCostCode: g.costCodeId || null,
+        }));
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/import`, "POST", {
+        items: lineItems,
+        groups: groupDetails,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
@@ -7055,7 +7077,16 @@ export default function EstimateDetail() {
       )}
 
       {/* Load from Template Dialog */}
-      <Dialog open={isTemplatePickerOpen} onOpenChange={(open) => { if (!open) { setIsTemplatePickerOpen(false); setTemplateSearch(""); } }}>
+      <Dialog
+        open={isTemplatePickerOpen}
+        onOpenChange={(open) => {
+          // Not while a template is going in: closing would hide the only sign
+          // that anything is happening, and the lines would appear later from
+          // nowhere.
+          if (!open && applyTemplateMutation.isPending) return;
+          if (!open) { setIsTemplatePickerOpen(false); setTemplateSearch(""); }
+        }}
+      >
         <DialogContent className="rounded-xl max-w-lg">
           <DialogHeader>
             <DialogTitle>Load from Template</DialogTitle>
@@ -7084,12 +7115,21 @@ export default function EstimateDetail() {
                 .map(template => {
                   const itemCount = ((template.templateData as any[]) || []).filter((i: any) => !i.isGroup).length;
                   const groupCount = ((template.templateData as any[]) || []).filter((i: any) => i.isGroup).length;
+                  // Applying is a long round trip for a big template, and the
+                  // picker used to show nothing while it ran — the screen looked
+                  // frozen (#17). The template being applied says so; the rest
+                  // dim, and every button stays disabled so it can't double-apply.
+                  const isApplyingThis = applyTemplateMutation.isPending && applyTemplateMutation.variables === template.id;
                   return (
                     <button
                       key={template.id}
-                      className="w-full text-left px-3 py-2.5 rounded-md hover-elevate border border-transparent hover:border-border transition-colors"
+                      className={`w-full text-left px-3 py-2.5 rounded-md hover-elevate border border-transparent hover:border-border transition-colors ${
+                        applyTemplateMutation.isPending && !isApplyingThis ? "opacity-50" : ""
+                      } ${isApplyingThis ? "border-border bg-muted/40" : ""}`}
                       onClick={() => applyTemplateMutation.mutate(template.id)}
                       disabled={applyTemplateMutation.isPending}
+                      aria-busy={isApplyingThis}
+                      data-testid={`button-apply-template-${template.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
@@ -7104,9 +7144,16 @@ export default function EstimateDetail() {
                               {template.category}
                             </span>
                           )}
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {groupCount > 0 && `${groupCount}g `}{itemCount} items
-                          </span>
+                          {isApplyingThis ? (
+                            <span className="flex items-center gap-1.5 text-xs font-medium whitespace-nowrap" data-testid="text-applying-template">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Applying {itemCount} items…
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {groupCount > 0 && `${groupCount}g `}{itemCount} items
+                            </span>
+                          )}
                         </div>
                       </div>
                     </button>

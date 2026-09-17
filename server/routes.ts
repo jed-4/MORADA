@@ -7047,6 +7047,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimates/:id/items/import", async (req, res) => {
     try {
       const { items } = req.body;
+      // Optional. Applying a template sends its group rows so a group created
+      // here gets the template's description and default cost code; a
+      // spreadsheet import sends none and groups are built from line names as
+      // before. Only used when CREATING a group — an estimate's existing group
+      // of the same name is never overwritten.
+      const groupDetails: Array<{ name?: unknown; description?: unknown; defaultCostCode?: unknown }> =
+        Array.isArray(req.body.groups) ? req.body.groups : [];
       const estimateId = req.params.id;
       
       if (!Array.isArray(items) || items.length === 0) {
@@ -7057,8 +7064,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimate = await getOwnedEstimate(req, res, estimateId);
       if (!estimate) return;
 
-      // Get company cost codes to validate against
-      const companyCostCodes = await storage.getCostCodes();
+      // Get company cost codes to validate against. getCostCodes filters on the
+      // company id it is given, and this used to pass none — so the list was
+      // always empty, no line's cost code ever matched, and every line brought
+      // in by a spreadsheet import or a template apply landed with no cost code.
+      // getOwnedEstimate has already confirmed the estimate is this company's.
+      const companyCostCodes = await storage.getCostCodes((req.user as any).companyId);
       const costCodeMap = new Map<string, string>(); // code -> code (for validation)
       
       // Build map of cost codes by code (case-insensitive)
@@ -7101,13 +7112,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxExistingOrder = existingGroups.reduce((max, g) => Math.max(max, g.order ?? 0), -1);
       let nextOrder = maxExistingOrder + 1;
 
+      // Group details by name. A default cost code is only kept if it is one of
+      // this company's codes — the id arrives from the client.
+      const companyCostCodeIds = new Set(companyCostCodes.map((cc) => cc.id));
+      const detailsByName = new Map<string, { description?: string; defaultCostCode?: string }>();
+      for (const g of groupDetails) {
+        if (typeof g?.name !== "string" || !g.name.trim()) continue;
+        detailsByName.set(g.name.toLowerCase().trim(), {
+          description: typeof g.description === "string" && g.description.trim() ? g.description : undefined,
+          defaultCostCode:
+            typeof g.defaultCostCode === "string" && companyCostCodeIds.has(g.defaultCostCode)
+              ? g.defaultCostCode
+              : undefined,
+        });
+      }
+
       for (const groupName of orderedGroupNames) {
         const normalizedName = groupName.toLowerCase().trim();
         if (!groupMap.has(normalizedName)) {
+          const details = detailsByName.get(normalizedName);
           const newGroup = await storage.createEstimateGroup({
             estimateId,
             name: groupName,
-            description: undefined,
+            description: details?.description,
+            defaultCostCode: details?.defaultCostCode,
             order: nextOrder,
             isCollapsed: false,
             parentGroupId: undefined,
@@ -36650,6 +36678,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to fetch estimate template",
         details: error.message 
       });
+    }
+  });
+
+  // ── Template group order ───────────────────────────────────────────────────
+  // The company-wide order of groups in the Details and Labour template
+  // libraries, as a list of group names (migration 0084).
+
+  app.get("/api/template-group-order", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = (req.user as any)?.companyId;
+    if (!companyId) return res.json({ groupNames: [] });
+    try {
+      const [row] = await db
+        .select()
+        .from(schema.templateGroupOrders)
+        .where(eq(schema.templateGroupOrders.companyId, companyId))
+        .limit(1);
+      res.json({ groupNames: Array.isArray(row?.groupNames) ? row.groupNames : [] });
+    } catch (error) {
+      // Before migration 0084 is applied the table doesn't exist. An empty order
+      // is exactly the old behaviour — alphabetical — so the page keeps working
+      // rather than failing over a list order.
+      console.error("[template-group-order] read failed, falling back to alphabetical:", error);
+      res.json({ groupNames: [] });
+    }
+  });
+
+  app.put("/api/template-group-order", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = (req.user as any)?.companyId;
+    if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+    const parsed = z
+      .object({ groupNames: z.array(z.string().max(200)).max(1000) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+    }
+    // Duplicates would make the order ambiguous; keep each name's first place.
+    const groupNames = Array.from(new Set(parsed.data.groupNames));
+    try {
+      await db
+        .insert(schema.templateGroupOrders)
+        .values({ companyId, groupNames, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: schema.templateGroupOrders.companyId,
+          set: { groupNames, updatedAt: new Date() },
+        });
+      res.json({ groupNames });
+    } catch (error) {
+      console.error("[template-group-order] save failed:", error);
+      res.status(500).json({ error: "Failed to save group order" });
     }
   });
 

@@ -125,6 +125,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
+import { orderGroups } from "@shared/templateGroupOrder";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { deriveRfqStatus } from "@shared/rfqStatus";
@@ -12386,9 +12387,15 @@ export class DbStorage implements IStorage {
         grouped.set(r.categoryName, list);
       }
 
+      // Categories are created in the company's dragged order (migration 0084).
+      // The rows were read ordered by categoryName, so with no saved order this
+      // is the alphabetical order it has always been.
+      const categoryOrder = orderGroups(Array.from(grouped.keys()), await this.getTemplateGroupOrder(companyId));
+
       let createdCats = 0;
       const tasks: any[] = [];
-      for (const [name, list] of Array.from(grouped.entries())) {
+      for (const name of categoryOrder) {
+        const list = grouped.get(name)!;
         let cat = byName.get(name);
         if (!cat) {
           // Merging into a job that already has this category appends to it
@@ -12625,12 +12632,43 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * The company's saved template group order (migration 0084), or [] when none
+   * is saved. Also [] if the table isn't there yet: applying a template must not
+   * fail over a list order, and an empty order is the behaviour from before.
+   */
+  async getTemplateGroupOrder(companyId: string): Promise<string[]> {
+    try {
+      const [row] = await db.select().from(schema.templateGroupOrders)
+        .where(eq(schema.templateGroupOrders.companyId, companyId))
+        .limit(1);
+      return Array.isArray(row?.groupNames) ? row.groupNames : [];
+    } catch (error) {
+      console.error("[template-group-order] read failed, using the default order:", error);
+      return [];
+    }
+  }
+
   async applyEnoteTemplateSetToEstimate(templateSetId: string, estimateId: string, companyId: string, replaceExisting: boolean): Promise<any[]> {
     try {
-      const templateRows = await db.select().from(schema.enoteTemplates)
+      const orderedRows = await db.select().from(schema.enoteTemplates)
         .where(eq(schema.enoteTemplates.templateSetId, templateSetId))
         .orderBy(schema.enoteTemplates.sortOrder);
-      if (templateRows.length === 0) return [];
+      if (orderedRows.length === 0) return [];
+      // Groups land on the job in the company's dragged order (migration 0084).
+      // With no saved order the rows keep the order they had, as before.
+      const savedGroupOrder = await this.getTemplateGroupOrder(companyId);
+      const templateRows = savedGroupOrder.length === 0 ? orderedRows : (() => {
+        const rank = new Map(
+          orderGroups(Array.from(new Set(orderedRows.map((r: any) => r.groupName))), savedGroupOrder)
+            .map((name, i) => [name, i] as const),
+        );
+        // Stable: rows inside a group keep their sortOrder.
+        return orderedRows
+          .map((r: any, i: number) => ({ r, i }))
+          .sort((a, b) => (rank.get(a.r.groupName)! - rank.get(b.r.groupName)!) || a.i - b.i)
+          .map(({ r }) => r);
+      })();
       if (replaceExisting) {
         await db.delete(schema.estimateEnotes).where(eq(schema.estimateEnotes.estimateId, estimateId));
       }
