@@ -1,6 +1,18 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import type { User } from "@shared/schema";
+import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
+import {
+  clientAllowanceEstimateIds,
+  isInvoiceClientVisible,
+  isVariationClientVisible,
+  projectClientAllowance,
+  projectClientInvoice,
+  projectClientInvoiceItem,
+  projectClientInvoicePayments,
+  projectClientVariation,
+  projectClientVariationItems,
+} from "../clientProjections";
 
 /**
  * Client-session gate.
@@ -40,6 +52,20 @@ type PermissionAction =
 
 type ProjectResolver = (req: Request) => Promise<string | null>;
 
+/** Returned by a shaper to answer 404 instead of the route's body. */
+export const HIDE_FROM_CLIENT = Symbol("hideFromClient");
+
+/**
+ * Rewrites a successful JSON body into what the client may see. Runs AFTER the
+ * route handler, so the route stays client-agnostic and this file remains the
+ * one place that decides what a client session receives.
+ */
+type ResponseShaper = (
+  body: any,
+  req: Request,
+  user: User,
+) => Promise<any | typeof HIDE_FROM_CLIENT>;
+
 interface AllowRule {
   methods: string[];
   pattern: RegExp;
@@ -47,6 +73,10 @@ interface AllowRule {
   permission?: [string, PermissionAction];
   /** Resolves the project this request targets; omit for non-project routes. */
   project?: ProjectResolver;
+  /** Extra resource-level check (e.g. channel membership). false → 403. */
+  check?: (req: Request, user: User) => Promise<boolean>;
+  /** Projects the response body for a client. Omitted = sent as-is. */
+  shape?: ResponseShaper;
 }
 
 // Paths are matched WITHOUT the /api prefix — this middleware is mounted with
@@ -122,6 +152,139 @@ const projectViaSiteDiaryEntry: ProjectResolver = async (req) => {
   const entry = await storage.getSiteDiaryEntry(m[1]);
   return (entry as any)?.projectId ?? null;
 };
+
+// ── Resource checks ─────────────────────────────────────────────────────────
+
+/**
+ * /channels/:id/... — the client must be a MEMBER of the channel. The routes
+ * only check the channel is in the caller's company, so without this a client
+ * holding any channel id could post into an internal team channel.
+ */
+const isChannelMember = async (req: Request, user: User): Promise<boolean> => {
+  const m = req.path.match(/^\/channels\/([^/]+)/);
+  if (!m || !user.companyId) return false;
+  const channel = await storage.getChannel(m[1], user.companyId);
+  if (!channel) return false;
+  const members = await storage.getChannelMembers(m[1]);
+  return members.some((member) => member.userId === user.id);
+};
+
+// ── Response shapers ────────────────────────────────────────────────────────
+
+const variationIdFromPath = (req: Request) => req.path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
+const invoiceIdFromPath = (req: Request) => req.path.match(/^\/client-invoices\/([^/]+)/)?.[1] ?? null;
+
+const shapeVariationList: ResponseShaper = async (body) =>
+  Array.isArray(body)
+    ? body
+        .filter(isVariationClientVisible)
+        .map((v: any) => ({ ...projectClientVariation(v), projectId: v.projectId }))
+    : HIDE_FROM_CLIENT;
+
+const shapeVariation: ResponseShaper = async (body) =>
+  isVariationClientVisible(body)
+    ? { ...projectClientVariation(body), projectId: body.projectId }
+    : HIDE_FROM_CLIENT;
+
+const shapeVariationItems: ResponseShaper = async (body, req, user) => {
+  const id = variationIdFromPath(req);
+  const variation = id ? await storage.getVariation(id) : undefined;
+  if (!isVariationClientVisible(variation) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
+  const settings = user.companyId
+    ? await storage.getCompanySettings(user.companyId).catch(() => undefined)
+    : undefined;
+  // Same column resolution as the emailed portal: a column the builder turned
+  // off on this document never leaves the server.
+  const columns = resolveVariationDocumentColumns(
+    (variation as any).pdfColumns,
+    (settings as any)?.variationPdfColumns,
+  );
+  const costCodeLabels: Record<string, string> = {};
+  if (columns.costCode && user.companyId) {
+    const codes = await storage.getCostCodes(user.companyId).catch(() => []);
+    for (const c of codes as any[]) costCodeLabels[c.id] = `${c.code} - ${c.title}`;
+  }
+  return projectClientVariationItems(body, columns, costCodeLabels);
+};
+
+const shapeInvoiceList: ResponseShaper = async (body) =>
+  Array.isArray(body) ? body.filter(isInvoiceClientVisible).map(projectClientInvoice) : HIDE_FROM_CLIENT;
+
+const shapeInvoice: ResponseShaper = async (body) =>
+  isInvoiceClientVisible(body) ? projectClientInvoice(body) : HIDE_FROM_CLIENT;
+
+const shapeInvoiceChild: ResponseShaper = async (body, req) => {
+  const id = invoiceIdFromPath(req);
+  const invoice = id ? await storage.getClientInvoice(id) : undefined;
+  if (!isInvoiceClientVisible(invoice) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
+  return req.path.endsWith("/payments")
+    ? projectClientInvoicePayments(body)
+    : body.map(projectClientInvoiceItem);
+};
+
+const shapeAllowances: ResponseShaper = async (body, req) => {
+  const projectId = req.path.match(/^\/projects\/([^/]+)/)?.[1];
+  if (!projectId || !Array.isArray(body)) return HIDE_FROM_CLIENT;
+  const [project, estimates] = await Promise.all([
+    storage.getProject(projectId),
+    storage.getEstimates(projectId),
+  ]);
+  const visibleEstimates = clientAllowanceEstimateIds(project as any, estimates as any);
+  return body
+    .filter((row: any) => visibleEstimates.has(row?.item?.estimateId))
+    .map(projectClientAllowance);
+};
+
+/**
+ * Review detail: drop the bearer portal token, internal ids and the audit
+ * trail's IP/user-agent. Comments are already filtered to non-internal by the
+ * route's query.
+ */
+const shapeReview: ResponseShaper = async (body) => {
+  if (!body || typeof body !== "object") return body;
+  const { portalToken, reviewerContactId, createdById, approvals, ...rest } = body;
+  return {
+    ...rest,
+    approvals: Array.isArray(approvals)
+      ? approvals.map(({ decidedIp, decidedUserAgent, ...a }: any) => a)
+      : approvals,
+  };
+};
+
+/**
+ * Attach a shaper to res.json for this request. Error responses pass through
+ * untouched; a shaper failure answers 500 rather than falling back to the
+ * unshaped body.
+ */
+function installShaper(req: Request, res: Response, user: User, shape: ResponseShaper) {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (res.statusCode >= 400) return originalJson(body);
+    shape(body, req, user)
+      .then((shaped) => {
+        if (shaped === HIDE_FROM_CLIENT) {
+          res.status(404);
+          return originalJson({ error: "Not found" });
+        }
+        return originalJson(shaped);
+      })
+      .catch((error) => {
+        console.error("[clientAccess] response shaping failed:", error);
+        res.status(500);
+        originalJson({ error: "Failed to load" });
+      });
+    return res;
+  }) as Response["json"];
+}
+
+/**
+ * The client user resolved by the gate, or null for any non-client session.
+ * Routes should prefer this to req.user.userCategory, which the development
+ * auth injection does not populate.
+ */
+export function getClientUser(req: Request): User | null {
+  return ((req as any).__clientUser as User | undefined) ?? null;
+}
 
 const ALLOW_RULES: AllowRule[] = [
   // --- App shell essentials (no project, no permission) ---
@@ -201,17 +364,14 @@ const ALLOW_RULES: AllowRule[] = [
     permission: ["projects.selections", "approve"],
     project: projectViaSelectionOption,
   },
+  // The allowance list only. The /detail route is deliberately NOT here: it
+  // is the builder's cost ledger (bills, suppliers, staff cost rates, markup).
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+\/allowances$/,
     permission: ["projects.selections", "view"],
     project: projectParam,
-  },
-  {
-    methods: ["GET"],
-    pattern: /^\/projects\/[^/]+\/allowances\/[^/]+\/detail$/,
-    permission: ["projects.selections", "view"],
-    project: projectParam,
+    shape: shapeAllowances,
   },
 
   // --- Client Reviews ---
@@ -229,6 +389,7 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/reviews\/[^/]+$/,
     permission: ["projects.reviews", "view"],
     project: projectViaReviewItem,
+    shape: shapeReview,
   },
   {
     methods: ["POST"],
@@ -249,18 +410,21 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/variations$/,
     permission: ["projects.variations", "view"],
     project: projectFromQuery,
+    shape: shapeVariationList,
   },
   {
     methods: ["GET"],
     pattern: /^\/variations\/[^/]+$/,
     permission: ["projects.variations", "view"],
     project: projectViaVariation,
+    shape: shapeVariation,
   },
   {
     methods: ["GET"],
     pattern: /^\/variations\/[^/]+\/items$/,
     permission: ["projects.variations", "view"],
     project: projectViaVariation,
+    shape: shapeVariationItems,
   },
 
   // --- Progress claims (client invoices) ---
@@ -269,18 +433,21 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/client-invoices$/,
     permission: ["projects.invoices", "view"],
     project: projectFromQuery,
+    shape: shapeInvoiceList,
   },
   {
     methods: ["GET"],
     pattern: /^\/client-invoices\/[^/]+$/,
     permission: ["projects.invoices", "view"],
     project: projectViaClientInvoice,
+    shape: shapeInvoice,
   },
   {
     methods: ["GET"],
     pattern: /^\/client-invoices\/[^/]+\/(items|payments)$/,
     permission: ["projects.invoices", "view"],
     project: projectViaClientInvoice,
+    shape: shapeInvoiceChild,
   },
 
   // --- Site diary ---
@@ -313,16 +480,19 @@ const ALLOW_RULES: AllowRule[] = [
     methods: ["GET"],
     pattern: /^\/channels\/[^/]+\/(messages|members)$/,
     permission: ["projects.messages", "view"],
+    check: isChannelMember,
   },
   {
     methods: ["POST"],
     pattern: /^\/channels\/[^/]+\/messages$/,
     permission: ["projects.messages", "send"],
+    check: isChannelMember,
   },
   {
     methods: ["POST"],
     pattern: /^\/channels\/[^/]+\/read$/,
     permission: ["projects.messages", "view"],
+    check: isChannelMember,
   },
 ];
 
@@ -377,6 +547,7 @@ export async function clientAccessGate(
     next();
     return;
   }
+  (req as any).__clientUser = user;
 
   const path = req.path;
 
@@ -430,6 +601,13 @@ export async function clientAccessGate(
         return;
       }
     }
+
+    if (rule.check && !(await rule.check(req, user))) {
+      deny(res, "resource check failed", { method, path, userId: user.id });
+      return;
+    }
+
+    if (rule.shape) installShaper(req, res, user, rule.shape);
 
     next();
   } catch (error) {
