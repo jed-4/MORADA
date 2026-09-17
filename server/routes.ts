@@ -226,6 +226,7 @@ import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectB
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { projectClientVariation, projectClientVariationItems } from "./clientProjections";
+import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -14379,7 +14380,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      await storage.setRolePermissions(req.params.roleId, validationResult.data);
+      // Client roles hold only the client portal keys and every other role
+      // holds none of them (shared/clientPortalPermissions.ts). Enforced here,
+      // not just by which panel the page renders, and applied by dropping —
+      // setRolePermissions replaces the whole set, so saving a client role also
+      // clears the legacy projects.* rows it carried before the portal keys.
+      const catalogue = await storage.getPermissions();
+      const keyById = new Map(catalogue.map((p: any) => [p.id, p.key as string]));
+      const isClientRole = (targetRole as any).userCategory === "client";
+      const scoped = validationResult.data.filter((p) => {
+        const key = keyById.get(p.permissionId);
+        return !!key && isPortalPermissionKey(key) === isClientRole;
+      });
+
+      await storage.setRolePermissions(req.params.roleId, scoped);
       res.json({ message: "Role permissions updated successfully" });
     } catch (error) {
       res.status(500).json({ error: "Failed to update role permissions" });

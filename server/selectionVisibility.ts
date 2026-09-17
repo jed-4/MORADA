@@ -32,11 +32,17 @@ import { exGstFromInc, incGstFromEx } from "@shared/money";
 
 export const SELECTIONS_PENDING_KEY = "projects.selections.pending";
 export const SELECTIONS_PRICING_KEY = "projects.selections.pricing";
+export const CLIENT_SELECTIONS_PRICING_KEY = "portal.selections.pricing";
 
 export interface SelectionViewer {
   /** Client-portal user — sees pending (that's the point) but never raw costs. */
   isClient: boolean;
   canSeePending: boolean;
+  /**
+   * Team: see costs, markups and allowances.
+   * Client: may be shown the client PRICE (portal.selections.pricing) — still
+   * only on selections set to show price, and never the cost base.
+   */
   canSeePricing: boolean;
 }
 
@@ -66,9 +72,17 @@ async function computeSelectionViewer(req: any): Promise<SelectionViewer> {
 
   if (user.userCategory === "client") {
     // A client must see unapproved selections — choosing is the whole point —
-    // but never the builder's cost base. Per-selection `clientCanSeePrice`
-    // decides whether they get a price at all; see redactForClient().
-    return { isClient: true, canSeePending: true, canSeePricing: false };
+    // but never the builder's cost base. Whether they get a PRICE needs both
+    // their role (portal.selections.pricing) and the selection's own
+    // `clientCanSeePrice`; see redactForClient().
+    try {
+      const { storage } = await import("./storage");
+      const pricing = await storage.checkUserPermission(user.id, CLIENT_SELECTIONS_PRICING_KEY, "view");
+      return { isClient: true, canSeePending: true, canSeePricing: pricing };
+    } catch (error) {
+      console.error("[selectionVisibility] failed to resolve client pricing:", error);
+      return { isClient: true, canSeePending: true, canSeePricing: false };
+    }
   }
 
   if (!user.roleId) return SPEC_ONLY;
@@ -176,9 +190,12 @@ function clientPriceCents(option: any): number | null {
   return incGstFromEx(totalEx);
 }
 
-function redactForClient(selection: any): any {
-  const showPrice = selection?.clientCanSeePrice === true;
-  const options = Array.isArray(selection?.options) ? selection.options : null;
+/** Options the builder has hidden from the client never reach them. */
+const clientVisibleOptions = (options: any[]) => options.filter((o) => o?.visibleToClient !== false);
+
+function redactForClient(selection: any, rolePricing: boolean): any {
+  const showPrice = rolePricing && selection?.clientCanSeePrice === true;
+  const options = Array.isArray(selection?.options) ? clientVisibleOptions(selection.options) : null;
   const out: any = { ...selection };
 
   delete out.portalToken;
@@ -215,7 +232,7 @@ export function applySelectionVisibilityToOne<T extends Record<string, any>>(
 ): any {
   if (!selection) return selection;
 
-  if (viewer.isClient) return redactForClient(selection);
+  if (viewer.isClient) return redactForClient(selection, viewer.canSeePricing);
   if (viewer.canSeePending && viewer.canSeePricing) return selection;
 
   let out: any = { ...selection };
@@ -266,8 +283,8 @@ export function applyOptionVisibility(
   if (!Array.isArray(options)) return options;
 
   if (viewer.isClient) {
-    const showPrice = parentSelection?.clientCanSeePrice === true;
-    return options.map((option) => {
+    const showPrice = viewer.canSeePricing && parentSelection?.clientCanSeePrice === true;
+    return clientVisibleOptions(options).map((option) => {
       const price = showPrice ? clientPriceCents(option) : null;
       const stripped = stripOptionMoney(option);
       if (price !== null) stripped.totalCost = price;

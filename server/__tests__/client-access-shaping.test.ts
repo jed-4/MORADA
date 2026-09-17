@@ -21,6 +21,12 @@ import {
   projectClientVariationItems,
 } from "../clientProjections";
 import { DEFAULT_VARIATION_DOCUMENT_COLUMNS } from "@shared/variationDocumentColumns";
+import {
+  CLIENT_PORTAL_PERMISSIONS,
+  CLIENT_PORTAL_SECTIONS,
+  DEFAULT_CLIENT_PORTAL_GRANTS,
+  translateLegacyClientGrants,
+} from "@shared/clientPortalPermissions";
 
 let passed = 0;
 async function check(name: string, fn: () => void | Promise<void>) {
@@ -132,11 +138,56 @@ async function projections() {
     }
   });
 
-  await check("allowance estimates: selected estimate wins, else contract only", () => {
-    const estimates = [{ id: "draft", status: "draft" }, { id: "k", status: "contract" }];
+  await check("allowance estimates: selected, else contract, else approved — never draft", () => {
+    const estimates = [{ id: "draft", status: "draft" }, { id: "ok", status: "approved" }, { id: "k", status: "contract" }];
     assert.deepStrictEqual([...clientAllowanceEstimateIds({ selectedEstimateId: "draft" }, estimates)], ["draft"]);
     assert.deepStrictEqual([...clientAllowanceEstimateIds({ selectedEstimateId: null }, estimates)], ["k"]);
-    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }])], []);
+    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }, { id: "ok", status: "approved" }])], ["ok"]);
+    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }, { id: "a", status: "archived" }])], []);
+  });
+}
+
+async function portalPermissions() {
+  console.log("client portal permissions");
+
+  await check("legacy client grants translate without widening", () => {
+    const out = translateLegacyClientGrants({
+      "projects.view": ["view"],
+      "projects.schedule": ["view"],
+      "projects.selections": ["view", "approve"],
+      "projects.variations": ["view"],
+      "projects.invoices": ["view"],
+      "projects.site_diary": ["view"],
+      "projects.messages": ["view", "add", "send"],
+      "projects.reviews": ["view", "add", "approve"],
+    });
+    assert.deepStrictEqual(out["portal.schedule"], ["view"]);
+    assert.ok(!("portal.schedule.all_items" in out), "every-item schedule must be opt-in");
+    assert.deepStrictEqual(out["portal.selections"].sort(), ["add", "edit", "view"]);
+    assert.ok(!out["portal.selections"].includes("approve" as any), "selection approve carried over");
+    assert.deepStrictEqual(out["portal.allowances"], ["view"]);
+    assert.ok(!("portal.allowances.costs" in out), "allowance costs must be opt-in");
+    assert.ok(!("portal.selections.pricing" in out), "selection prices must be opt-in");
+    assert.deepStrictEqual(out["portal.variations"].sort(), ["approve", "view"]);
+    assert.deepStrictEqual(out["portal.messages"].sort(), ["send", "view"]);
+    assert.deepStrictEqual(out["portal.reviews"].sort(), ["add", "approve", "view"]);
+  });
+
+  await check("a client who could not see a section gets nothing for it", () => {
+    const out = translateLegacyClientGrants({ "projects.reviews": ["add"], "projects.messages": ["send"] });
+    assert.deepStrictEqual(out, {});
+  });
+
+  await check("every panel toggle and default names a real catalogue action", () => {
+    const actions = new Map(CLIENT_PORTAL_PERMISSIONS.map((p) => [p.key, p.actions as string[]]));
+    for (const section of CLIENT_PORTAL_SECTIONS) {
+      for (const t of [section.view, ...section.extras]) {
+        assert.ok(actions.get(t.key)?.includes(t.action), `${section.id}: ${t.key}:${t.action} not in catalogue`);
+      }
+    }
+    for (const [key, granted] of Object.entries(DEFAULT_CLIENT_PORTAL_GRANTS)) {
+      for (const a of granted) assert.ok(actions.get(key)?.includes(a), `default ${key}:${a} not in catalogue`);
+    }
   });
 }
 
@@ -151,7 +202,8 @@ async function gate() {
   const team = { id: "u-team", userCategory: "team", companyId: "c1" };
   const s: any = storage;
   const stub = (name: string, fn: any) => { s[name] = fn; };
-  stub("checkUserPermission", async () => true);
+  let denied = new Set<string>();
+  stub("checkUserPermission", async (_u: string, key: string, action: string) => !denied.has(`${key}:${action}`));
   stub("getUserProjectAccess", async () => [{ projectId: "p1" }]);
   stub("getVariation", async (id: string) => {
     if (id === "v-draft") return { ...variationRow, id, status: "draft" };
@@ -184,7 +236,13 @@ async function gate() {
         status(code: number) { this.statusCode = code; return this; },
         json(body: any) { resolve({ status: this.statusCode, body }); return this; },
       };
-      clientAccessGate(req, res, () => res.json(routeBody));
+      clientAccessGate(req, res, () => {
+        // Express restores the mount prefix before the route handler runs, so
+        // a shaper that reads req.path sees "/api/..." — reproduce that.
+        req.path = `/api${path}`;
+        req.url = `/api${url}`;
+        res.json(routeBody);
+      });
     });
 
   await check("team session is untouched", async () => {
@@ -262,6 +320,37 @@ async function gate() {
     assert.strictEqual(ok.status, 200);
   });
 
+  await check("schedule: phases only unless the role shows every item", async () => {
+    stub("getScheduleById", async () => ({ projectId: "p1" }));
+    const items = [
+      { id: "phase", parentItemId: null },
+      { id: "task", parentItemId: "phase" },
+    ];
+    denied = new Set(["portal.schedule.all_items:view"]);
+    const phases = await run(client, "GET", "/projects/p1/schedule-items", items);
+    assert.deepStrictEqual(phases.body.map((i: any) => i.id), ["phase"]);
+    const viaSchedule = await run(client, "GET", "/schedules/s1/items", items);
+    assert.deepStrictEqual(viaSchedule.body.map((i: any) => i.id), ["phase"]);
+    denied = new Set();
+    const all = await run(client, "GET", "/projects/p1/schedule-items", items);
+    assert.deepStrictEqual(all.body.map((i: any) => i.id), ["phase", "task"]);
+  });
+
+  await check("gate reads portal keys, not the team's projects.* keys", async () => {
+    denied = new Set(["portal.variations:view"]);
+    const r = await run(client, "GET", "/variations?projectId=p1", []);
+    assert.strictEqual(r.status, 403);
+    denied = new Set(["portal.allowances:view"]);
+    const a = await run(client, "GET", "/projects/p1/allowances", []);
+    assert.strictEqual(a.status, 403);
+    denied = new Set();
+  });
+
+  await check("a client cannot approve a selection option (the builder confirms)", async () => {
+    const r = await run(client, "PATCH", "/selection-options/o1/approve", {});
+    assert.strictEqual(r.status, 403);
+  });
+
   await check("client review detail loses token, ids and signer IP", async () => {
     stub("getReviewItem", async () => ({ projectId: "p1" }));
     const r = await run(client, "GET", "/reviews/r1", {
@@ -276,6 +365,7 @@ async function gate() {
 
 (async () => {
   await projections();
+  await portalPermissions();
   await gate();
   console.log(`\n${passed} passed`);
   process.exit(0);

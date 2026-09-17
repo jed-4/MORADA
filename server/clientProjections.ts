@@ -202,16 +202,22 @@ export function projectClientInvoicePayments(payments: any[]) {
 // ── Allowances ──────────────────────────────────────────────────────────────
 
 /**
- * Which estimate's allowances the client sees: the project's selected estimate,
- * else any estimate at "contract" status. Draft/superseded estimate versions
- * are never shown — they are the builder's working copies.
+ * Which estimate's allowances the client sees: the project's selected estimate;
+ * else any estimate at "contract" status; else any "approved" one. An approved
+ * (often locked) estimate that was never flipped to contract is still the
+ * agreed job — the dev Irwin project is exactly that. Draft and archived
+ * versions are never shown — they are the builder's working copies.
  */
 export function clientAllowanceEstimateIds(
   project: { selectedEstimateId?: string | null } | null | undefined,
   estimates: Array<{ id: string; status?: string | null }>,
 ): Set<string> {
   if (project?.selectedEstimateId) return new Set([project.selectedEstimateId]);
-  return new Set(estimates.filter((e) => e.status === "contract").map((e) => e.id));
+  for (const status of ["contract", "approved"]) {
+    const ids = estimates.filter((e) => e.status === status).map((e) => e.id);
+    if (ids.length > 0) return new Set(ids);
+  }
+  return new Set();
 }
 
 /**

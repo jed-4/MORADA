@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import type { User } from "@shared/schema";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
+import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import {
   clientAllowanceEstimateIds,
   isInvoiceClientVisible,
@@ -27,9 +28,10 @@ import {
  *      else 403s. Most project sub-resource routes have no permission check of
  *      their own, so this allow-list — not the routes — is what contains a
  *      client.
- *   2. Permission. Each rule names a permission key + action, checked against
- *      the role's persisted permissions, so a tick in Roles & Permissions is
- *      the single source of truth for what a client can see.
+ *   2. Permission. Each rule names a client portal key (portal.*, see
+ *      shared/clientPortalPermissions.ts) + action, checked against the
+ *      role's persisted permissions, so a tick in Roles & Permissions is the
+ *      single source of truth for what a client can see.
  *   3. Project scope. Project-scoped rules resolve the target project and
  *      reject anything outside the client's userProjectAccess grants. Without
  *      this a client could read any project in the builder's company, since
@@ -64,6 +66,13 @@ type ResponseShaper = (
   body: any,
   req: Request,
   user: User,
+  /**
+   * The gate-relative path ("/variations/:id/items"), captured when the gate
+   * ran. Shapers run inside the route's res.json, and by then Express has
+   * restored req.url to the full "/api/..." path — so req.path must NOT be
+   * read inside a shaper.
+   */
+  path: string,
 ) => Promise<any | typeof HIDE_FROM_CLIENT>;
 
 interface AllowRule {
@@ -171,8 +180,8 @@ const isChannelMember = async (req: Request, user: User): Promise<boolean> => {
 
 // ── Response shapers ────────────────────────────────────────────────────────
 
-const variationIdFromPath = (req: Request) => req.path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
-const invoiceIdFromPath = (req: Request) => req.path.match(/^\/client-invoices\/([^/]+)/)?.[1] ?? null;
+const variationIdFromPath = (path: string) => path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
+const invoiceIdFromPath = (path: string) => path.match(/^\/client-invoices\/([^/]+)/)?.[1] ?? null;
 
 const shapeVariationList: ResponseShaper = async (body) =>
   Array.isArray(body)
@@ -186,8 +195,8 @@ const shapeVariation: ResponseShaper = async (body) =>
     ? { ...projectClientVariation(body), projectId: body.projectId }
     : HIDE_FROM_CLIENT;
 
-const shapeVariationItems: ResponseShaper = async (body, req, user) => {
-  const id = variationIdFromPath(req);
+const shapeVariationItems: ResponseShaper = async (body, _req, user, path) => {
+  const id = variationIdFromPath(path);
   const variation = id ? await storage.getVariation(id) : undefined;
   if (!isVariationClientVisible(variation) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
   const settings = user.companyId
@@ -213,17 +222,17 @@ const shapeInvoiceList: ResponseShaper = async (body) =>
 const shapeInvoice: ResponseShaper = async (body) =>
   isInvoiceClientVisible(body) ? projectClientInvoice(body) : HIDE_FROM_CLIENT;
 
-const shapeInvoiceChild: ResponseShaper = async (body, req) => {
-  const id = invoiceIdFromPath(req);
+const shapeInvoiceChild: ResponseShaper = async (body, _req, _user, path) => {
+  const id = invoiceIdFromPath(path);
   const invoice = id ? await storage.getClientInvoice(id) : undefined;
   if (!isInvoiceClientVisible(invoice) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
-  return req.path.endsWith("/payments")
+  return path.endsWith("/payments")
     ? projectClientInvoicePayments(body)
     : body.map(projectClientInvoiceItem);
 };
 
-const shapeAllowances: ResponseShaper = async (body, req) => {
-  const projectId = req.path.match(/^\/projects\/([^/]+)/)?.[1];
+const shapeAllowances: ResponseShaper = async (body, _req, _user, path) => {
+  const projectId = path.match(/^\/projects\/([^/]+)/)?.[1];
   if (!projectId || !Array.isArray(body)) return HIDE_FROM_CLIENT;
   const [project, estimates] = await Promise.all([
     storage.getProject(projectId),
@@ -233,6 +242,17 @@ const shapeAllowances: ResponseShaper = async (body, req) => {
   return body
     .filter((row: any) => visibleEstimates.has(row?.item?.estimateId))
     .map(projectClientAllowance);
+};
+
+/**
+ * Schedule items: without "every item", a client sees the top-level phases
+ * only (items with no parent). Rolled-up dates and progress already live on
+ * the parent rows, so nothing is lost from the phase view.
+ */
+const shapeScheduleItems: ResponseShaper = async (body, _req, user) => {
+  if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
+  const allItems = await storage.checkUserPermission(user.id, PORTAL_KEYS.scheduleAllItems, "view");
+  return allItems ? body : body.filter((item: any) => !item?.parentItemId);
 };
 
 /**
@@ -258,9 +278,10 @@ const shapeReview: ResponseShaper = async (body) => {
  */
 function installShaper(req: Request, res: Response, user: User, shape: ResponseShaper) {
   const originalJson = res.json.bind(res);
+  const path = req.path; // gate-relative; see ResponseShaper
   res.json = ((body: any) => {
     if (res.statusCode >= 400) return originalJson(body);
-    shape(body, req, user)
+    shape(body, req, user, path)
       .then((shaped) => {
         if (shaped === HIDE_FROM_CLIENT) {
           res.status(404);
@@ -298,11 +319,12 @@ const ALLOW_RULES: AllowRule[] = [
   { methods: ["GET"], pattern: /^\/users\/me$/ },
 
   // --- Projects (the list route scopes itself to userProjectAccess) ---
-  { methods: ["GET"], pattern: /^\/projects$/, permission: ["projects.view", "view"] },
+  // No permission key: being granted the project (userProjectAccess) is what
+  // lets a client see it; the sections inside are each gated below.
+  { methods: ["GET"], pattern: /^\/projects$/ },
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+$/,
-    permission: ["projects.view", "view"],
     project: projectParam,
   },
 
@@ -310,25 +332,27 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+\/schedules?$/,
-    permission: ["projects.schedule", "view"],
+    permission: [PORTAL_KEYS.schedule, "view"],
     project: projectParam,
   },
   {
     methods: ["GET"],
     pattern: /^\/schedules\/[^/]+\/items$/,
-    permission: ["projects.schedule", "view"],
+    permission: [PORTAL_KEYS.schedule, "view"],
     project: projectViaSchedule,
+    shape: shapeScheduleItems,
   },
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+\/schedule-items$/,
-    permission: ["projects.schedule", "view"],
+    permission: [PORTAL_KEYS.schedule, "view"],
     project: projectParam,
+    shape: shapeScheduleItems,
   },
   {
     methods: ["GET"],
     pattern: /^\/schedules\/[^/]+$/,
-    permission: ["projects.schedule", "view"],
+    permission: [PORTAL_KEYS.schedule, "view"],
     project: projectViaSchedule,
   },
 
@@ -336,40 +360,36 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/selections(\/with-options)?$/,
-    permission: ["projects.selections", "view"],
+    permission: [PORTAL_KEYS.selections, "view"],
     project: projectFromQuery,
   },
   {
     methods: ["GET"],
     pattern: /^\/selections\/[^/]+$/,
-    permission: ["projects.selections", "view"],
+    permission: [PORTAL_KEYS.selections, "view"],
     project: projectViaSelection,
   },
   {
     methods: ["GET"],
     pattern: /^\/selections\/[^/]+\/options$/,
-    permission: ["projects.selections", "view"],
+    permission: [PORTAL_KEYS.selections, "view"],
     project: projectViaSelection,
   },
   {
     methods: ["GET"],
     pattern: /^\/selection-options\/[^/]+\/attachments$/,
-    permission: ["projects.selections", "view"],
+    permission: [PORTAL_KEYS.selections, "view"],
     project: projectViaSelectionOption,
   },
-  // The client approving a selection runs the same route staff use.
-  {
-    methods: ["PATCH"],
-    pattern: /^\/selection-options\/[^/]+\/approve$/,
-    permission: ["projects.selections", "approve"],
-    project: projectViaSelectionOption,
-  },
+  // No client route to APPROVE a selection option: the client chooses and the
+  // builder confirms (Jed, 2026-09-17). Choosing/commenting arrive with the
+  // client selections screen.
   // The allowance list only. The /detail route is deliberately NOT here: it
   // is the builder's cost ledger (bills, suppliers, staff cost rates, markup).
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+\/allowances$/,
-    permission: ["projects.selections", "view"],
+    permission: [PORTAL_KEYS.allowances, "view"],
     project: projectParam,
     shape: shapeAllowances,
   },
@@ -381,26 +401,26 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/reviews$/,
-    permission: ["projects.reviews", "view"],
+    permission: [PORTAL_KEYS.reviews, "view"],
     project: projectFromQuery,
   },
   {
     methods: ["GET"],
     pattern: /^\/reviews\/[^/]+$/,
-    permission: ["projects.reviews", "view"],
+    permission: [PORTAL_KEYS.reviews, "view"],
     project: projectViaReviewItem,
     shape: shapeReview,
   },
   {
     methods: ["POST"],
     pattern: /^\/reviews\/[^/]+\/comments$/,
-    permission: ["projects.reviews", "add"],
+    permission: [PORTAL_KEYS.reviews, "add"],
     project: projectViaReviewItem,
   },
   {
     methods: ["POST"],
     pattern: /^\/reviews\/[^/]+\/decision$/,
-    permission: ["projects.reviews", "approve"],
+    permission: [PORTAL_KEYS.reviews, "approve"],
     project: projectViaReviewItem,
   },
 
@@ -408,21 +428,21 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/variations$/,
-    permission: ["projects.variations", "view"],
+    permission: [PORTAL_KEYS.variations, "view"],
     project: projectFromQuery,
     shape: shapeVariationList,
   },
   {
     methods: ["GET"],
     pattern: /^\/variations\/[^/]+$/,
-    permission: ["projects.variations", "view"],
+    permission: [PORTAL_KEYS.variations, "view"],
     project: projectViaVariation,
     shape: shapeVariation,
   },
   {
     methods: ["GET"],
     pattern: /^\/variations\/[^/]+\/items$/,
-    permission: ["projects.variations", "view"],
+    permission: [PORTAL_KEYS.variations, "view"],
     project: projectViaVariation,
     shape: shapeVariationItems,
   },
@@ -431,21 +451,21 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/client-invoices$/,
-    permission: ["projects.invoices", "view"],
+    permission: [PORTAL_KEYS.invoices, "view"],
     project: projectFromQuery,
     shape: shapeInvoiceList,
   },
   {
     methods: ["GET"],
     pattern: /^\/client-invoices\/[^/]+$/,
-    permission: ["projects.invoices", "view"],
+    permission: [PORTAL_KEYS.invoices, "view"],
     project: projectViaClientInvoice,
     shape: shapeInvoice,
   },
   {
     methods: ["GET"],
     pattern: /^\/client-invoices\/[^/]+\/(items|payments)$/,
-    permission: ["projects.invoices", "view"],
+    permission: [PORTAL_KEYS.invoices, "view"],
     project: projectViaClientInvoice,
     shape: shapeInvoiceChild,
   },
@@ -454,13 +474,13 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+\/site-diary-entries$/,
-    permission: ["projects.site_diary", "view"],
+    permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectParam,
   },
   {
     methods: ["GET"],
     pattern: /^\/site-diary-entries\/[^/]+$/,
-    permission: ["projects.site_diary", "view"],
+    permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectViaSiteDiaryEntry,
   },
 
@@ -468,30 +488,30 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/channels$/,
-    permission: ["projects.messages", "view"],
+    permission: [PORTAL_KEYS.messages, "view"],
     project: projectFromQuery,
   },
   {
     methods: ["GET"],
     pattern: /^\/channels\/unread\/counts$/,
-    permission: ["projects.messages", "view"],
+    permission: [PORTAL_KEYS.messages, "view"],
   },
   {
     methods: ["GET"],
     pattern: /^\/channels\/[^/]+\/(messages|members)$/,
-    permission: ["projects.messages", "view"],
+    permission: [PORTAL_KEYS.messages, "view"],
     check: isChannelMember,
   },
   {
     methods: ["POST"],
     pattern: /^\/channels\/[^/]+\/messages$/,
-    permission: ["projects.messages", "send"],
+    permission: [PORTAL_KEYS.messages, "send"],
     check: isChannelMember,
   },
   {
     methods: ["POST"],
     pattern: /^\/channels\/[^/]+\/read$/,
-    permission: ["projects.messages", "view"],
+    permission: [PORTAL_KEYS.messages, "view"],
     check: isChannelMember,
   },
 ];
