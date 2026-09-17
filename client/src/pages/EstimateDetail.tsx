@@ -1,7 +1,7 @@
 import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -434,6 +434,20 @@ export default function EstimateDetail() {
   // Inline editing state for table cells
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<any>("");
+  /**
+   * How the open editor was entered, which is what decides where the caret
+   * goes once it mounts.
+   *
+   * "replace" — opened by click, Enter or F2. The cell still holds its old
+   * value, so select all of it and let the first keystroke replace it, the way
+   * a spreadsheet does.
+   *
+   * "append" — opened by typing. That first keystroke has already been seeded
+   * into the value, so selecting it would let the NEXT keystroke eat it. This
+   * is what made tabbing across a row and typing swallow the first digit and
+   * leave the old number highlighted.
+   */
+  const editorEntryRef = useRef<"replace" | "append">("replace");
   // Tracks a newly-created inline item that should auto-open name edit
   const pendingAutoFocusItemId = React.useRef<string | null>(null);
   // Set to true by handleInlineAddItem so the mutation-level onSuccess knows
@@ -2667,6 +2681,8 @@ export default function EstimateDetail() {
 
   // Handlers for inline cell editing
   const handleCellEdit = (item: EstimateItem, field: string) => {
+    // Callers that seed a keystroke flip this straight after.
+    editorEntryRef.current = "replace";
     // Wherever you click is where the keyboard now is, so arrows carry on from
     // there. Set before the lock check: a locked estimate is still navigable.
     setActiveCell({ itemId: item.id, field });
@@ -2730,6 +2746,19 @@ export default function EstimateDetail() {
   const handleCellSave = (item: EstimateItem, field: string) => {
     if (!editingCell) return;
     
+    // A cell left blank is a cell nobody filled in — the normal case being a
+    // line just added, whose cells are all empty until you reach them. Close it
+    // quietly and keep the stored value: there is nothing to save, and nothing
+    // worth a destructive toast. Only fields that reject blank get this; a
+    // description or note is legitimately cleared to empty.
+    const rejectsBlank = field === 'quantity' || field === 'unitCostExTax'
+      || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup'
+      || field === 'name';
+    if (rejectsBlank && String(editingValue ?? "").trim() === "") {
+      setEditingCell(null);
+      return;
+    }
+
     // Validate based on field type
     if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup') {
       const numValue = parseFloat(editingValue);
@@ -4308,12 +4337,38 @@ export default function EstimateDetail() {
   }, [editingCell, activeCell]);
 
   /**
+   * Every cell editor focuses through here, so click-entry and type-entry end
+   * in the same predictable place instead of each input deciding for itself.
+   */
+  const handleEditorFocus = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    // Seeded by a keystroke: leave the caret where the browser put it, after
+    // the character we just wrote. Selecting here is what ate it.
+    if (editorEntryRef.current === "append") return;
+    e.target.select();
+  };
+
+  /**
    * Keys handled while a cell is selected but NOT being edited. Once an editor
    * is open it owns the keyboard and handleCellKeyDown takes over.
    */
   const handleGridKeyDown = (e: React.KeyboardEvent) => {
-    if (!activeCell || editingCell) return;
+    if (!activeCell) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (editingCell) {
+      // An editor is open but the browser has not moved focus into its input
+      // yet. On a grid this size the render that mounts it can outlast a fast
+      // typist's next keystroke, and those characters landed here and were
+      // dropped — the "first letter or two go missing" after clicking a cell.
+      // e.target is the grid container only while focus is still outside the
+      // editor; once the input has it, the event is the input's and merely
+      // bubbles through here, so this cannot double up.
+      if (e.target === e.currentTarget && e.key.length === 1) {
+        e.preventDefault();
+        setEditingValue((prev: any) => `${prev ?? ""}${e.key}`);
+      }
+      return;
+    }
 
     const arrows: Record<string, 'up' | 'down' | 'left' | 'right'> = {
       ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -4359,6 +4414,7 @@ export default function EstimateDetail() {
           e.preventDefault();
           handleCellEdit(item, activeCell.field);
           setEditingValue(e.key);
+          editorEntryRef.current = "append";
         }
       }
     }
@@ -4371,7 +4427,7 @@ export default function EstimateDetail() {
   // close over when they lived in this file.
   const gridCtx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
-    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handlePriceListSelect,
+    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect,
     estimate, columns, costCodes, costCategories, priceListItemMap, poLinkMap,
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
     calculatePricingValues, formatCurrency, getSubItems,

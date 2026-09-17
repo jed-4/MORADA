@@ -237,6 +237,8 @@ export interface EstimateGridCtx {
   handleCellSave: (item: EstimateItem, field: string) => void;
   handleCellCancel: () => void;
   handleCellKeyDown: (e: React.KeyboardEvent, item: EstimateItem, field: string) => void;
+  /** Shared caret placement for every cell editor — see EstimateDetail. */
+  handleEditorFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handlePriceListSelect: (item: EstimateItem, picked: any) => void;
 
   // data
@@ -280,7 +282,7 @@ export interface EstimateGridCtx {
 
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -781,7 +783,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
                 onBlur={() => handleCellSave(item, 'quantity')}
-                onFocus={(e) => e.target.select()}
+                onFocus={handleEditorFocus}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
@@ -913,7 +915,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
-                onFocus={(e) => e.target.select()}
+                onFocus={handleEditorFocus}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
@@ -951,7 +953,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
-                onFocus={(e) => e.target.select()}
+                onFocus={handleEditorFocus}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
@@ -1008,7 +1010,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'markup')}
                 onBlur={() => handleCellSave(item, 'markup')}
-                onFocus={(e) => e.target.select()}
+                onFocus={handleEditorFocus}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
