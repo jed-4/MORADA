@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { defaultStatusKey } from "@/lib/statusChip";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -3991,7 +3992,9 @@ export default function EstimateDetail() {
       type: 'Material',
       quantity: 0,
       unitType: 'Unit',
-      status: 'incomplete',
+      // The configured Field Settings default, not the column's "incomplete" —
+      // that was never a status, and rendered as a hardcoded "Todo" (#21).
+      status: defaultStatusKey(estimateItemStatusCategory?.options) ?? 'incomplete',
       unitCostExTax: 0,
       taxAmount: 0,
       priceIncTax: 0,

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
+import { effectiveStatusKey, nextStatusKey, resolveStatusChip } from "@/lib/statusChip";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import {
   DropdownMenu,
@@ -674,32 +675,16 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
           </div>
         );
       
-      case 'status':
-        // Use field settings options, fallback to hardcoded if not available
-        const activeStatusOptions = estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive) || [];
-        const statusOptionsKeys = activeStatusOptions.length > 0 
-          ? activeStatusOptions.map((opt: any) => opt.key)
-          : ['incomplete', 'not relevant', 'done'];
-        const currentStatus = item.status || statusOptionsKeys[0] || 'incomplete';
-        const statusIndex = statusOptionsKeys.indexOf(currentStatus);
-        const validStatusIndex = statusIndex >= 0 ? statusIndex : 0;
-
-        // Find the status option from field settings to get color and name
-        const statusOption = activeStatusOptions.find((opt: any) => opt.key === currentStatus);
-
-        // StatusBadge already turns a configured hex into the tint treatment,
-        // so it just gets the colour. Legacy statuses that predate field
-        // settings have no option to read, and keep their meaning via a tone.
-        const legacyStatusTone = (() => {
-          const lc = currentStatus?.toLowerCase?.() ?? '';
-          if (lc === 'done' || lc === 'complete') return 'success' as const;
-          if (lc === 'not relevant' || lc === 'not_relevant') return 'neutral' as const;
-          if (lc === 'in progress' || lc === 'in_progress') return 'info' as const;
-          return 'warning' as const; // incomplete / todo / pending
-        })();
-
-        const statusLabel = statusOption?.name || 
-          (currentStatus === 'done' ? 'Done' : currentStatus === 'not relevant' ? 'N/A' : 'Todo');
+      case 'status': {
+        // One resolver for line and group chips (lib/statusChip.ts), reading the
+        // estimate_item.status options from Field Settings. It used to force a
+        // hardcoded tone here — pending/incomplete/todo all → amber — and never
+        // read the configured colour, so every line rendered yellow regardless
+        // of what Field Settings said. The unset column default "incomplete"
+        // also fell through to a hardcoded "Todo" label that isn't a status.
+        const statusOptions = estimateItemStatusCategory?.options;
+        const currentStatus = effectiveStatusKey(item.status, statusOptions);
+        const statusChip = resolveStatusChip(currentStatus, statusOptions);
 
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
@@ -708,22 +693,22 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
               title={isLocked ? undefined : 'Click to change status'}
               testId={`button-toggle-status-${item.id}`}
               onClick={() => {
-                const nextStatusIndex = (validStatusIndex + 1) % statusOptionsKeys.length;
-                updateItemMutation.mutate({
-                  itemId: item.id,
-                  data: { status: statusOptionsKeys[nextStatusIndex] }
-                });
+                const next = nextStatusKey(currentStatus, statusOptions);
+                if (!next) return;
+                updateItemMutation.mutate({ itemId: item.id, data: { status: next } });
               }}
             >
               <StatusBadge
-                status={currentStatus}
-                label={statusLabel}
-                tone={legacyStatusTone}
+                status={statusChip.key}
+                label={statusChip.label}
+                paint={statusChip.paint}
+                tone={statusChip.tone}
               />
             </CellChip>
           </div>
         );
-      
+      }
+
       case 'allowance':
         const allowanceType = item.allowance || 'None';
         

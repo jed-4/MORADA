@@ -29,6 +29,7 @@ export interface FieldStatusOption {
   name?: string | null;
   color?: string | null;
   isActive?: boolean | null;
+  isDefault?: boolean | null;
 }
 
 export interface ChipPaint {
@@ -183,7 +184,54 @@ export function resolveStatusChip(
   const paint = deriveChipPaint(option?.color);
   if (paint) return { key, label, paint };
 
+  // deriveChipPaint deliberately returns null for a near-grey colour — it has no
+  // hue worth tinting. But a grey that was CONFIGURED is still a choice: the
+  // user picked grey. Without this the caller passes no tone, StatusBadge
+  // guesses one from the key's wording, and "pending" lands in its warning
+  // bucket — which is how a Pending configured #8A8680 kept rendering amber.
+  if (option?.color && parseHex(option.color)) return { key, label, tone: "neutral" };
+
   return { key, label, tone: fallbackTone };
+}
+
+/**
+ * The status a new row should start on: the option marked default in Field
+ * Settings, else the first active one. Null when nothing is configured.
+ */
+export function defaultStatusKey(
+  options: FieldStatusOption[] | null | undefined,
+): string | null {
+  const active = activeStatusOptions(options);
+  return (active.find((o) => o.isDefault) ?? active[0])?.key ?? null;
+}
+
+/**
+ * Column defaults written when nobody chose a status, left over from before
+ * statuses moved into Field Settings: `estimate_items.status` defaults to
+ * "incomplete" and `estimate_groups.status` to "not_started". Neither was ever a
+ * configurable option, so neither has a label or a colour — the grid used to
+ * render the first as a hardcoded "Todo" and the second as "Not Started".
+ *
+ * Only these unset markers are remapped. A real status the user picked that has
+ * since been removed from Field Settings is left alone and still renders under
+ * its own name: silently showing it as the default would misreport the row.
+ */
+const UNSET_STATUS_MARKERS = new Set(["incomplete", "not_started"]);
+
+/**
+ * The key a stored status should be treated as. Empty, or an unset marker,
+ * resolves to the configured default; anything else is returned untouched.
+ */
+export function effectiveStatusKey(
+  status: string | null | undefined,
+  options: FieldStatusOption[] | null | undefined,
+): string {
+  const fallback = defaultStatusKey(options);
+  if (!status) return fallback ?? "";
+  const active = activeStatusOptions(options);
+  if (active.some((o) => o.key === status)) return status;
+  if (fallback && UNSET_STATUS_MARKERS.has(status)) return fallback;
+  return status;
 }
 
 /**
