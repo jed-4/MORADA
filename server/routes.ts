@@ -225,6 +225,7 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
+import { projectClientVariation, projectClientVariationItems } from "./clientProjections";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -254,7 +255,7 @@ import { syncTemplateOptions } from "./services/templateOptionSync";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
-import { clientAccessGate } from "./middleware/clientAccess";
+import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
@@ -22031,34 +22032,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // portal link, so the payload is projected down to exactly what the portal
   // page renders. Builder-internal data (unit costs, markup, cost codes,
   // hidden lines, timesheet rates, company integration credentials) must
-  // never be added back to this response.
-  const projectPortalVariation = (variation: any) => ({
-    id: variation.id,
-    variationNumber: variation.variationNumber,
-    name: variation.name,
-    introductionText: variation.introductionText,
-    closingText: variation.closingText,
-    approvalDeadline: variation.approvalDeadline,
-    daysChanged: variation.daysChanged,
-    // The document-level markup is a charge on the client's own document, so it
-    // is theirs to see. Per-line markup is deliberately NOT exposed: it lives in
-    // variation_items.markupPercent and stays server-side.
-    globalMarkupPercent: variation.globalMarkupPercent,
-    globalMarkupAmount: variation.globalMarkupAmount,
-    subtotal: variation.subtotal,
-    gstAmount: variation.gstAmount,
-    totalAmount: variation.totalAmount,
-    status: variation.status,
-    rejectionReason: variation.rejectionReason,
-    termsAndConditions: variation.termsAndConditions,
-    attachments: variation.attachments,
-    clientSignedName: variation.clientSignedName,
-    clientSignedDate: variation.clientSignedDate,
-    builderSignedName: variation.builderSignedName,
-    builderSignedDate: variation.builderSignedDate,
-    portalSentAt: variation.portalSentAt,
-    createdAt: variation.createdAt,
-  });
+  // never be added back to this response. The projections live in
+  // server/clientProjections.ts, shared with the logged-in client session.
+  const projectPortalVariation = projectClientVariation;
 
   /**
    * Everything the client portal renders for one variation.
@@ -22112,39 +22088,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Lines the builder marked "hide from client" are dropped server-side;
       // remaining lines expose only client-price fields, minus any the column
       // config hides.
-      const publicItems = items
-        .filter((item: any) => item.showInPdf !== false)
-        .map((item: any) => ({
-          id: item.id,
-          ...(documentColumns.name ? { name: item.name } : {}),
-          ...(documentColumns.description ? { description: item.description } : {}),
-          ...(documentColumns.costCode
-            ? { costCode: item.costCode ? costCodeLabels[item.costCode] ?? item.costCode : null }
-            : {}),
-          ...(documentColumns.quantity ? { quantity: item.quantity } : {}),
-          ...(documentColumns.unit ? { unitType: item.unitType } : {}),
-          // The two that expose the builder's buy price and margin. These are
-          // the reason this stripping exists at all — off by default, and when
-          // off they must not appear in the payload at any price.
-          ...(documentColumns.unitCost ? { unitCostExTax: item.unitCostExTax } : {}),
-          ...(documentColumns.markupPercent || documentColumns.markupAmount
-            ? { markupPercent: item.markupPercent }
-            : {}),
-          ...(documentColumns.unitPrice ? { unitPrice: item.unitPrice } : {}),
-          // totalPrice always ships, even with both amount columns hidden: the
-          // group subtotals, the derived margin row and the Total are all
-          // computed from it, so withholding it would stop the document adding
-          // up. Turning the amount columns off is therefore presentational
-          // here, unlike cost and markup above. A builder who wants a line's
-          // money to genuinely not reach the client should clear that line's
-          // "PDF" checkbox instead, which collapses it into the single
-          // "Additional works (not itemised)" figure.
-          totalPrice: item.totalPrice,
-          taxable: item.taxable,
-          itemType: item.itemType,
-          type: item.type,
-          sortOrder: item.sortOrder,
-        }));
+      const publicItems = projectClientVariationItems(items, documentColumns, costCodeLabels);
 
       // Hidden lines are still real charges, so their value is returned as a
       // single "not itemised" figure. Without it the visible rows wouldn't sum
@@ -45636,7 +45580,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         content: content.trim(),
         createdByName: [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim()
           || req.user?.email || "Team",
-        isInternal: isInternal === true,
+        // Internal notes are a builder tool; a client session can never create
+        // one, whatever the request body says.
+        isInternal: isInternal === true && !getClientUser(req),
         ...author,
       } as any);
 

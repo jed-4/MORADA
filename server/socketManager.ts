@@ -72,6 +72,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
       
       socket.data.userId = user.id;
       socket.data.companyId = user.companyId;
+      socket.data.isClient = user.userCategory === "client";
       
       next();
     } catch (error) {
@@ -83,7 +84,12 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
   io.on("connection", async (socket: Socket) => {
     console.log(`User connected: ${socket.data.userId}`);
     
-    socket.join(`company:${socket.data.companyId}`);
+    // The company room carries every task payload and team presence company
+    // wide. A client is scoped to their own projects, so they never join it —
+    // they still get their own user room and the channels they are a member of.
+    if (!socket.data.isClient) {
+      socket.join(`company:${socket.data.companyId}`);
+    }
     socket.join(`user:${socket.data.userId}`);
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
     const cameOnline = addConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
