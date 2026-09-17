@@ -13,7 +13,7 @@ import type {
 import { RichTextBlocks, sharedSectionStyle, SectionIntro } from './RichTextBlocks';
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import {
-  clientLineAmounts,
+  allowanceLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
 } from '@shared/proposalTotals';
@@ -22,6 +22,7 @@ import { resolveSectionTextStyle } from "../sectionTextStyle";
 interface AllowanceRow {
   name: string;
   amountCents?: number | null;
+  amountExCents?: number | null;
   /**
    * The line's DESCRIPTION, printed under the item and labelled "Description"
    * in the builder.
@@ -127,18 +128,14 @@ export function AllowancesSection({
    * defined." two pages after the estimate table listed those very lines. The
    * estimate is the record of what was allowed for; this reflects it.
    *
-   * Prices go through clientLineAmounts, the same helper the estimate table
-   * uses, so an allowance cannot be quoted here at one figure and there at
-   * another.
+   * Prices are the allowance as entered in the estimate (allowanceLineAmounts)
+   * — without the line markup or the builder's margin, which stay in the
+   * contract price on the estimate page.
    *
-   * Rows and money follow the proposal-wide rule: a line hidden from the
-   * proposal does not print here, but its money is still the estimate's —
-   * see estimateAllowanceTotalCents below.
+   * A line hidden from the proposal does not print here, but it still counts
+   * toward the allowance total — see estimateAllowanceTotalCents below.
    */
-  const allowanceOpts = {
-    projectMarkupPercent: estimateData?.estimate?.projectMarkupPercent,
-    taxRate: estimateData?.estimate?.taxRate,
-  };
+  const allowanceOpts = { taxRate: estimateData?.estimate?.taxRate };
   const isAllowanceLine = (it: { allowance?: string | null }) => {
     const kind = String(it.allowance ?? 'None');
     return kind === 'Prime Cost' || kind === 'Provisional Sum';
@@ -146,7 +143,7 @@ export function AllowancesSection({
   const estimateAllowanceTotalCents = estimateData
     ? estimateData.items
         .filter((it) => isAllowanceLine(it as { allowance?: string }))
-        .reduce((sum, it) => sum + Math.round(clientLineAmounts(it, allowanceOpts).incTax * 100), 0)
+        .reduce((sum, it) => sum + Math.round(allowanceLineAmounts(it, allowanceOpts).incTax * 100), 0)
     : 0;
 
   const estimateRows: AllowanceRow[] = (() => {
@@ -156,21 +153,19 @@ export function AllowancesSection({
     return estimateData.items
       .filter((it) => isAllowanceLine(it as { allowance?: string }) && lineAppearsOnProposal(it, hidden))
       .map((it) => {
-        const amounts = clientLineAmounts(it, opts);
+        const amounts = allowanceLineAmounts(it, opts);
         const qty = Number((it as { quantity?: number }).quantity) || 0;
         return {
           name: it.name || 'Untitled',
           amountCents: Math.round(amounts.incTax * 100),
+          amountExCents: Math.round(amounts.exTax * 100),
           notes: it.description ?? null,
           kind: String((it as { allowance?: string }).allowance),
           quantity: qty || null,
           unit: (it as { unit?: string | null }).unit ?? null,
-          /* Unit cost is derived from the line total, not read off the item:
-             the item's own unit price is pre-margin, so printing it beside a
-             marked-up amount would quote the client two different rates for
-             the same thing. */
-          unitExCents: qty ? Math.round((amounts.exTax * 100) / qty) : null,
-          unitIncCents: qty ? Math.round((amounts.incTax * 100) / qty) : null,
+          // A fixed-price allowance has no unit cost; its amount is the figure.
+          unitExCents: amounts.unitExTax === null ? null : Math.round(amounts.unitExTax * 100),
+          unitIncCents: amounts.unitIncTax === null ? null : Math.round(amounts.unitIncTax * 100),
         };
       });
   })();
@@ -306,7 +301,9 @@ export function AllowancesSection({
                     )}
                     {cols.amountExTax && (
                       <Text style={[sharedSectionStyle.text, styles.money]}>
-                        {typeof r.unitExCents === 'number' && typeof r.quantity === 'number'
+                        {typeof r.amountExCents === 'number'
+                          ? formatCurrency(r.amountExCents)
+                          : typeof r.unitExCents === 'number' && typeof r.quantity === 'number'
                           ? formatCurrency(r.unitExCents * r.quantity)
                           : ''}
                       </Text>
