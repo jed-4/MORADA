@@ -6,14 +6,25 @@ import {
   collectHiddenGroupIds,
   lineAppearsOnProposal,
 } from "@shared/proposalTotals";
-import { SectionIntro } from "./RichTextBlocks";
+import { RichTextBlocks, SectionIntro } from "./RichTextBlocks";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import { PdfLineTable, type PdfTableColumn, type PdfTableGroup } from "@/components/pdf/shared/PdfLineTable";
 import { PdfTotalsCard } from "@/components/pdf/shared/PdfPrimitives";
 import { PDF_COLORS, PDF_TYPE, PDF_WEIGHT, PDF_SPACE, PDF_PAGE_MARGIN } from "@/components/pdf/shared/pdfTokens";
 import { PDF_FONT_FAMILY } from "@/components/pdf/shared/registerPdfFonts";
 import { pdfHasText, pdfPlainText } from "@/components/pdf/shared/pdfText";
-import { resolveSectionTextStyle } from "../sectionTextStyle";
+import { resolveSectionTextStyle, type SectionTextStyle } from "../sectionTextStyle";
+
+/**
+ * Group descriptions print at the table's note size — the same 8.5pt the
+ * header note always used — so rich text doesn't come out louder than the plain
+ * note it replaces. RichTextBlocks scales every block from this.
+ */
+const GROUP_NOTE_TEXT_STYLE: SectionTextStyle = {
+  align: "left",
+  fontSize: PDF_TYPE.bodySmall,
+  fontFamily: PDF_FONT_FAMILY,
+};
 
 interface EstimateSectionProps {
   section: ProposalSection;
@@ -489,8 +500,14 @@ export function EstimateSection({
     /* The group's own words. `estimate_groups.description` has existed as long
        as the table and no document has ever printed one, so a builder could
        write a paragraph explaining a stage of the work and the client would
-       never see it. Stripped of markup the same way line descriptions are —
-       the field is written by a rich-text editor. */
+       never see it.
+
+       It is written in a rich-text editor, and it used to go through
+       pdfPlainText, which strips every tag — so bold, italics and bullet lists
+       reached the client as flat lines. It renders through RichTextBlocks now,
+       the renderer the proposal's own section text uses, so it prints the way
+       it was written. Line descriptions still go through pdfPlainText: they
+       sit inside a narrow table cell, where block formatting has no room. */
     const groupText = (group as { description?: string | null }).description;
     return {
       key: group.id,
@@ -498,7 +515,7 @@ export function EstimateSection({
       total: toggles.showSubtotals && earnsTotal ? groupTotal(group.id) : undefined,
       description:
         toggles.groupDescriptions !== false && pdfHasText(groupText)
-          ? pdfPlainText(groupText)
+          ? <RichTextBlocks html={groupText!} textStyle={GROUP_NOTE_TEXT_STYLE} />
           : undefined,
       rows,
       children,

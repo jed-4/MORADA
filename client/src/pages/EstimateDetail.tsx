@@ -3,6 +3,26 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { defaultStatusKey } from "@/lib/statusChip";
+import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
+
+/**
+ * What the group dialog holds when it isn't editing anything.
+ *
+ * Every close resets to THIS, explicitly. `groupForm.reset()` with no argument
+ * restores react-hook-form's current defaults — and opening "Edit Group" calls
+ * reset(values), which replaces those defaults with the group being edited. So
+ * after editing Kitchen, "Add Group" and "Add Subgroup" opened pre-filled with
+ * "Kitchen". Harmless while clicking outside discarded; once it commits, typing
+ * only a description into Add Group and clicking away created a second Kitchen.
+ */
+const BLANK_GROUP_FORM = {
+  name: "",
+  description: "",
+  order: 0,
+  isCollapsed: false,
+  defaultCostCode: undefined,
+  defaultCostCategoryId: undefined,
+} as const;
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -492,6 +512,8 @@ export default function EstimateDetail() {
   
   // Group action handlers
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  /** The group whose description is open in the rich-text editor, and the draft. */
+  const [editingGroupDescription, setEditingGroupDescription] = useState<{ groupId: string; value: string } | null>(null);
   const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
   const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
 
@@ -1172,7 +1194,7 @@ export default function EstimateDetail() {
 
   // Mutation for updating individual group properties (including parentGroupId)
   const updateGroupMutation = useMutation({
-    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string; proposalVisible?: boolean } }) => {
+    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string; proposalVisible?: boolean; description?: string | null } }) => {
       return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
     },
     onMutate: async ({ groupId, updates }) => {
@@ -1254,7 +1276,7 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
       setIsAddGroupOpen(false);
       setEditingGroupId(null);
-      groupForm.reset();
+      groupForm.reset(BLANK_GROUP_FORM);
       toast({ title: "Group updated successfully." });
     },
     onError: (error: any) => {
@@ -2150,7 +2172,7 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       setIsAddGroupOpen(false);
-      groupForm.reset();
+      groupForm.reset(BLANK_GROUP_FORM);
       toast({
         title: "Success",
         description: "Estimate group added successfully.",
@@ -3138,7 +3160,10 @@ export default function EstimateDetail() {
       attachmentUrl: "",
       requestForQuote: false,
       isSelection: false,
-      proposalVisible: true,
+      // A new line starts OFF the proposal: you choose what the client sees,
+      // rather than hunting down everything that shouldn't be there. The inline
+      // Add Line and the add-sub-item menu use the same default.
+      proposalVisible: false,
       shownAs: "price",
       order: 0,
       trackLabourHours: false,
@@ -3199,12 +3224,7 @@ export default function EstimateDetail() {
 
   const groupForm = useForm<z.infer<typeof addGroupFormSchema>>({
     resolver: zodResolver(addGroupFormSchema),
-    defaultValues: {
-      name: "",
-      description: "",
-      order: 0,
-      isCollapsed: false,
-    },
+    defaultValues: BLANK_GROUP_FORM,
   });
 
   // Handlers for adding items
@@ -3476,8 +3496,79 @@ export default function EstimateDetail() {
     setIsAddGroupOpen(false);
     setParentGroupForNewSubgroup(null);
     setEditingGroupId(null);
-    groupForm.reset();
+    groupForm.reset(BLANK_GROUP_FORM);
   };
+
+  // ── Dismissing an edit dialog keeps the edit (#13) ─────────────────────────
+  // The group, item and description dialogs all wired Radix's onOpenChange(false)
+  // — which fires for a click outside and for the × as well as for Cancel — to
+  // their discard path, so clicking back onto the grid threw away what you had
+  // typed. See useCommitOnDismiss. formState.isDirty is read here, during render,
+  // because react-hook-form only computes the formState fields a render touched.
+  const groupFormDirty = groupForm.formState.isDirty;
+  const groupDialogDismiss = useCommitOnDismiss({
+    isDirty: () => groupFormDirty,
+    commit: () => groupForm.handleSubmit(handleSubmitGroup)(),
+    discard: handleCloseAddGroup,
+  });
+
+  const submitEditItem = (data: z.infer<typeof addItemFormSchema>) => {
+    if (!editingItemId) return;
+    updateItemMutation.mutate(
+      { itemId: editingItemId, data },
+      {
+        onSuccess: () => {
+          setIsEditDialogOpen(false);
+          setEditingItemId(null);
+        },
+      },
+    );
+  };
+  const editFormDirty = editForm.formState.isDirty;
+  const editItemDialogDismiss = useCommitOnDismiss({
+    isDirty: () => editFormDirty,
+    commit: () => editForm.handleSubmit(submitEditItem)(),
+    discard: () => {
+      setIsEditDialogOpen(false);
+      setEditingItemId(null);
+    },
+  });
+
+  const saveGroupDescription = () => {
+    if (!editingGroupDescription) return;
+    const { groupId, value } = editingGroupDescription;
+    const group = groups.find(g => g.id === groupId);
+    // Optimistic, so the dialog can close straight away.
+    if (group && (group.description ?? "") !== value) {
+      updateGroupMutation.mutate({ groupId, updates: { description: value } });
+    }
+    setEditingGroupDescription(null);
+  };
+  const groupDescriptionDialogDismiss = useCommitOnDismiss({
+    isDirty: () => {
+      if (!editingGroupDescription) return false;
+      const group = groups.find(g => g.id === editingGroupDescription.groupId);
+      return !!group && (group.description ?? "") !== editingGroupDescription.value;
+    },
+    commit: saveGroupDescription,
+    discard: () => setEditingGroupDescription(null),
+  });
+
+  const descriptionDialogDismiss = useCommitOnDismiss({
+    isDirty: () => {
+      if (editingCell?.field !== 'description') return false;
+      const item = items.find(i => i.id === editingCell.itemId);
+      return !!item && (editingValue ?? "") !== (item.description ?? "");
+    },
+    commit: () => {
+      const item = items.find(i => i.id === editingCell?.itemId);
+      if (item) handleCellSave(item, 'description');
+    },
+    discard: () => {
+      setEditingCell(null);
+      setEditingValue("");
+    },
+  });
 
   useEffect(() => {
     if (isAddGroupOpen && editingGroupId) {
@@ -3740,7 +3831,7 @@ export default function EstimateDetail() {
         attachmentUrl: "",
         requestForQuote: false,
         isSelection: false,
-        proposalVisible: true,
+        proposalVisible: false,
         trackLabourHours: false,
       });
     }
@@ -4001,7 +4092,7 @@ export default function EstimateDetail() {
       allowance: 'None',
       allowanceStatus: 'pending',
       wastagePercent: 0,
-      proposalVisible: true,
+      proposalVisible: false,
       requestForQuote: false,
       isSelection: false,
       trackLabourHours: false,
@@ -5541,6 +5632,10 @@ export default function EstimateDetail() {
                                     setIsDeleteGroupDialogOpen(true);
                                   }}
                                   onEditGroup={handleEditGroup}
+                                  onEditGroupDescription={(groupId) => {
+                                    const group = groups.find(g => g.id === groupId);
+                                    setEditingGroupDescription({ groupId, value: group?.description ?? "" });
+                                  }}
                                   onDuplicateGroup={handleDuplicateGroup}
                                   onCopyGroup={handleCopyGroup}
                                   onAddSubgroup={handleAddSubgroup}
@@ -6169,28 +6264,13 @@ export default function EstimateDetail() {
         if (!editingItem) return null;
         
         return (
-          <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
-            setIsEditDialogOpen(open);
-            if (!open) {
-              setEditingItemId(null);
-            }
-          }}>
-            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col rounded-xl p-0">
+          <Dialog open={isEditDialogOpen} onOpenChange={editItemDialogDismiss.onOpenChange}>
+            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col rounded-xl p-0" {...editItemDialogDismiss.contentProps}>
               <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
                 <DialogTitle>Edit Estimate Item</DialogTitle>
               </DialogHeader>
               <Form {...editForm}>
-                <form onSubmit={editForm.handleSubmit((data) => {
-                  updateItemMutation.mutate(
-                    { itemId: editingItem.id, data },
-                    {
-                      onSuccess: () => {
-                        setIsEditDialogOpen(false);
-                        setEditingItemId(null);
-                      }
-                    }
-                  );
-                })} className="flex flex-col flex-1 overflow-hidden">
+                <form onSubmit={editForm.handleSubmit(submitEditItem)} className="flex flex-col flex-1 overflow-hidden">
                   <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                   <FormField
                     control={editForm.control}
@@ -6766,8 +6846,8 @@ export default function EstimateDetail() {
       })()}
 
       {/* Add Group Dialog */}
-      <Dialog open={isAddGroupOpen} onOpenChange={(open) => { if (!open) handleCloseAddGroup(); }}>
-        <DialogContent className="max-w-md rounded-xl">
+      <Dialog open={isAddGroupOpen} onOpenChange={groupDialogDismiss.onOpenChange}>
+        <DialogContent className="max-w-md rounded-xl" {...groupDialogDismiss.contentProps}>
           <DialogHeader>
             <DialogTitle>{editingGroupId ? 'Edit Group' : parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
           </DialogHeader>
@@ -6803,7 +6883,14 @@ export default function EstimateDetail() {
                   <FormItem>
                     <FormLabel>Description (Optional)</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Additional details about this group..." {...field} value={field.value || ""} data-testid="input-group-description" />
+                      {/* Rich text, matching the in-grid editor — both write the
+                          group's description, and the proposal prints it. */}
+                      <RichTextEditor
+                        content={field.value || ""}
+                        onChange={field.onChange}
+                        placeholder="Describe this stage of the work — this appears on the proposal..."
+                        data-testid="input-group-description"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -6866,17 +6953,52 @@ export default function EstimateDetail() {
         </DialogContent>
       </Dialog>
 
+      {/* Group Description Editor Dialog — the text the proposal prints under
+          the group, so it is edited as rich text like line descriptions. */}
+      <Dialog
+        open={!!editingGroupDescription}
+        onOpenChange={groupDescriptionDialogDismiss.onOpenChange}
+      >
+        <DialogContent className="max-w-2xl rounded-xl" {...groupDescriptionDialogDismiss.contentProps}>
+          <DialogHeader>
+            <DialogTitle>
+              {(() => {
+                const group = groups.find(g => g.id === editingGroupDescription?.groupId);
+                return group ? `${group.name} — Description` : "Group Description";
+              })()}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <RichTextEditor
+              content={editingGroupDescription?.value ?? ""}
+              onChange={(html) =>
+                setEditingGroupDescription(prev => (prev ? { ...prev, value: html } : prev))
+              }
+              placeholder="Describe this stage of the work — this appears on the proposal..."
+              data-testid="richtext-edit-group-description"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingGroupDescription(null)}
+              data-testid="button-cancel-group-description"
+            >
+              Cancel
+            </Button>
+            <Button onClick={saveGroupDescription} data-testid="button-save-group-description">
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Description Editor Dialog */}
       <Dialog 
         open={editingCell?.field === 'description'} 
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingCell(null);
-            setEditingValue("");
-          }
-        }}
+        onOpenChange={descriptionDialogDismiss.onOpenChange}
       >
-        <DialogContent className="max-w-2xl rounded-xl">
+        <DialogContent className="max-w-2xl rounded-xl" {...descriptionDialogDismiss.contentProps}>
           <DialogHeader>
             <DialogTitle>Edit Description</DialogTitle>
           </DialogHeader>

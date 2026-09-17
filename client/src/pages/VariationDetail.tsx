@@ -193,9 +193,11 @@ const VARIATION_TYPE_COLORS: Record<string, string> = {
   Fee: "bg-status-info-bg text-status-info",
 };
 
-/** Columns whose value is derived from the others — the inc-GST unit cost and
- *  both amount columns. Nothing here is typed. */
-const VARIATION_DERIVED_COLUMNS = new Set(["unitCostIncTax", "amtExTax", "amtIncTax"]);
+/** Columns whose value is derived from the others — both amount columns.
+ *  Nothing here is typed. The inc-GST unit cost used to be listed too, but it
+ *  is an input: typing it back-calculates the ex-GST cost. Shaded, it read as
+ *  read-only (#7), and it now matches the other editable cost cells. */
+const VARIATION_DERIVED_COLUMNS = new Set(["amtExTax", "amtIncTax"]);
 
 const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
 

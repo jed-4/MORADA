@@ -315,8 +315,10 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
     // Computed from the entered figures — nothing here is typed. Muted so the
     // numbers you can actually change come forward. The line's final client
     // price stays at full weight: it's the answer the row exists to give.
+    // Unit Cost Inc Tax is NOT here: it is typed, and saving it back-calculates
+    // the ex-tax cost. Shading it made an editable cell read as computed (#7).
     const DERIVED_COLUMNS = new Set([
-      'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+      'builderCost', 'builderCostIncTax',
       'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
     ]);
     // Where entering stops and pricing begins. One hairline gives the eye a
@@ -638,6 +640,16 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         );
       
       case 'shownAs':
+        // How a line reads on the proposal only means anything if the line is ON
+        // the proposal. For a hidden line the chip was pure noise — and still
+        // clickable, changing a setting with no visible effect (#9).
+        if (item.proposalVisible === false) {
+          return (
+            <div className={cellBase} role="gridcell" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
+              <span className="text-muted-foreground/60" aria-label="Not shown on the proposal">—</span>
+            </div>
+          );
+        }
         const shownAsOptions = ['empty', 'price', 'included', 'excluded'];
         const currentShownAs = item.shownAs || 'price';
         const currentIndex = shownAsOptions.indexOf(currentShownAs);
@@ -1214,7 +1226,7 @@ export function renderEstimateItemWithSubItems(
                     attachmentUrl: '',
                     requestForQuote: false,
                     isSelection: false,
-                    proposalVisible: true,
+                    proposalVisible: false,
                     shownAs: 'price',
                     order: 0,
                   });

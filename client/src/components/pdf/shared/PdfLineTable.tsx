@@ -54,8 +54,12 @@ export interface PdfTableGroup<T> {
    * Estimate groups have carried a description since the column existed and
    * no document has ever printed one — the builder typed a paragraph
    * explaining a stage of the work and the client never saw it.
+   *
+   * A string prints as muted body text. Pass a node instead to keep formatting
+   * — the estimate passes rich text, so a description's bold and bullet lists
+   * reach the client rather than being flattened to plain lines. See NoteText.
    */
-  description?: string;
+  description?: ReactNode;
 }
 
 export interface PdfTrailingRow {
@@ -101,7 +105,30 @@ interface PdfLineTableProps<T> {
    * does: one table per top-level group, name in `textHeader`) has no group
    * label left for `PdfTableGroup.description` to sit beneath.
    */
-  headerNote?: string | null;
+  headerNote?: ReactNode;
+}
+
+/**
+ * A heading's prose — the table's headerNote or a group's description.
+ *
+ * Strings get the muted small body style every document already prints. A node
+ * is drawn as given: that is how rich text keeps its paragraphs, bold and bullets
+ * instead of being wrapped in a single <Text>, which would force it flat.
+ */
+function NoteText({ children }: { children: ReactNode }) {
+  if (typeof children !== "string") return <>{children}</>;
+  return (
+    <Text
+      style={{
+        fontFamily: PDF_FONT_FAMILY,
+        fontSize: PDF_TYPE.bodySmall,
+        lineHeight: PDF_LEADING.body,
+        color: PDF_COLORS.inkMuted,
+      }}
+    >
+      {children}
+    </Text>
+  );
 }
 
 /** A4 (595pt) less both 40pt margins, less the panel's own 20pt of padding. */
@@ -253,16 +280,7 @@ export function PdfLineTable<T>({
               backgroundColor: nested ? PDF_COLORS.surface : PDF_COLORS.surfaceMuted,
             }}
           >
-            <Text
-              style={{
-                fontFamily: PDF_FONT_FAMILY,
-                fontSize: PDF_TYPE.bodySmall,
-                lineHeight: PDF_LEADING.body,
-                color: PDF_COLORS.inkMuted,
-              }}
-            >
-              {group.description}
-            </Text>
+            <NoteText>{group.description}</NoteText>
           </View>
         ) : null}
 
@@ -383,16 +401,7 @@ export function PdfLineTable<T>({
             backgroundColor: PDF_COLORS.surfaceMuted,
           }}
         >
-          <Text
-            style={{
-              fontFamily: PDF_FONT_FAMILY,
-              fontSize: PDF_TYPE.bodySmall,
-              lineHeight: PDF_LEADING.body,
-              color: PDF_COLORS.inkMuted,
-            }}
-          >
-            {headerNote}
-          </Text>
+          <NoteText>{headerNote}</NoteText>
         </View>
       ) : null}
 
