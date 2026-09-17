@@ -19,7 +19,7 @@ interface DriveFile {
   size?: string | number | null;
 }
 
-export default function ProjectDocumentsWidget({ widget, onSetHeaderActions }: WidgetProps) {
+export default function ProjectDocumentsWidget({ widget, onSetHeaderActions, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
   const folderId = currentProject?.googleDriveFolderId;
@@ -39,6 +39,17 @@ export default function ProjectDocumentsWidget({ widget, onSetHeaderActions }: W
     },
     enabled: !!folderId,
   });
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    if (!currentProject?.id) return onSetTitleAction?.(null);
+    const id = currentProject.id;
+    onSetTitleAction?.({
+      label: "All files",
+      onClick: () => setLocation(`/projects/${id}/files`),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
 
   // Header row: hover link out to the Drive folder
   useEffect(() => {

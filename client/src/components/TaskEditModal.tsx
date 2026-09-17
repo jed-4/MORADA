@@ -698,6 +698,12 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       if ((payload.assigneeIds || []).length === 0) {
         payload.assigneeId = null;
       }
+      // Same for the due date, whether it was cleared with the × or emptied in
+      // the date input itself. Both leave "" here, and "" has to become null or
+      // the PATCH says nothing about dueDate and the old date survives.
+      if (!payload.dueDate) {
+        payload.dueDate = null;
+      }
       if (task) {
         return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
       } else {
@@ -1720,7 +1726,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                       variant="ghost"
                       size="icon"
                       className="shrink-0"
-                      onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
+                      onClick={() => form.setValue("dueDate", "", { shouldDirty: true, shouldTouch: true })}
                     >
                       <X className="h-3 w-3" />
                     </Button>

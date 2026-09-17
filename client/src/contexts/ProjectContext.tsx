@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Project } from "@shared/schema";
 
@@ -61,11 +61,20 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     setIsProjectLoading(false);
   }, [projects, currentProject?.id]);
 
-  // Save project to localStorage when it changes
+  // Save project to localStorage when it changes.
+  //
+  // `currentProject` starts as null and stays null until the projects query
+  // resolves, so this effect fires once on mount with nothing selected. Clearing
+  // storage there wiped the saved id before the restore effect above — or either
+  // sidebar — ever got to read it, and every reload fell through to
+  // activeProjects[0]. Only clear once a project has actually been held, which
+  // makes this a real deselect rather than the pre-hydration null.
+  const hasHeldProject = useRef(false);
   useEffect(() => {
     if (currentProject) {
+      hasHeldProject.current = true;
       localStorage.setItem("currentProjectId", currentProject.id);
-    } else {
+    } else if (hasHeldProject.current) {
       localStorage.removeItem("currentProjectId");
     }
   }, [currentProject]);

@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   startOfWeek,
   startOfDay,
@@ -83,9 +84,21 @@ export default function ProgrammeScheduleWidget({
   onUpdate,
   isConfiguring,
   onCloseConfig,
+  onSetTitleAction,
 }: WidgetProps) {
   const { currentProject } = useProject();
+  const [, setLocation] = useLocation();
   const projectId = currentProject?.id;
+
+  // The title itself is the way through to the full page.
+  useEffect(() => {
+    if (!projectId) return onSetTitleAction?.(null);
+    onSetTitleAction?.({
+      label: "Full schedule",
+      onClick: () => setLocation(`/projects/${projectId}/schedule`),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const config = {
     viewMode: (widget.config?.viewMode as ViewMode) ?? "week",
@@ -186,8 +199,15 @@ export default function ProgrammeScheduleWidget({
 
   const ganttDays =
     config.ganttZoom === "2w" ? 14 : config.ganttZoom === "6w" ? 42 : 28;
-  const ganttStart = startOfDay(new Date());
+  // Whole weeks from the start of THIS week, not a window that rolls off
+  // today. A fortnight should read as "this week and next" — Monday to Sunday
+  // on both — so the column headings line up with how a week on site is
+  // actually planned, and work already underway earlier in the week stays
+  // visible instead of falling off the left edge. Monday matches the week
+  // calendar above.
+  const ganttStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const ganttEnd = addDays(ganttStart, ganttDays - 1);
+  const todayIndex = differenceInDays(startOfDay(new Date()), ganttStart);
   const ganttWeeks = Array.from(
     { length: Math.ceil(ganttDays / 7) },
     (_, i) => addDays(ganttStart, i * 7),
@@ -468,7 +488,8 @@ export default function ProgrammeScheduleWidget({
             className={cn(
               "h-full border-r last:border-r-0 border-[hsl(var(--bp-border)/0.5)]",
               withTint && weekend && "bg-[hsl(var(--bp-muted)/0.05)]",
-              withTint && isToday(day) && "bg-[hsl(var(--bp-purple)/0.06)]",
+              isToday(day) &&
+                "border-l-2 border-l-[hsl(var(--bp-purple))] bg-[hsl(var(--bp-purple)/0.12)]",
             )}
             style={{ width: `${100 / ganttDays}%` }}
           />
@@ -659,6 +680,15 @@ export default function ProgrammeScheduleWidget({
                 {format(week, "d MMM")}
               </div>
             ))}
+            {todayIndex >= 0 && todayIndex < ganttDays && (
+              <span
+                className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-b-sm bg-[hsl(var(--bp-purple))] px-1 py-px text-[8px] font-semibold leading-none text-white"
+                style={{ left: `${((todayIndex + 0.5) / ganttDays) * 100}%` }}
+                data-testid="gantt-today-marker"
+              >
+                Today
+              </span>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {filteredItems.length === 0 ? (
