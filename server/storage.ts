@@ -135,6 +135,13 @@ import { timesheetTotalExGstCents } from "@shared/money";
 import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTotals";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import { defaultRevisionLabel } from "@shared/reviewCostImpact";
+import {
+  CLIENT_PORTAL_CATEGORY,
+  CLIENT_PORTAL_PERMISSIONS,
+  DEFAULT_CLIENT_PORTAL_GRANTS,
+  isPortalPermissionKey,
+  translateLegacyClientGrants,
+} from "@shared/clientPortalPermissions";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -1731,7 +1738,10 @@ function getDefaultActionsForRole(
 
   // --- ADMIN / OWNER ---
   if (n.includes('admin') || n.includes('owner') || n.includes('general manager')) {
-    for (const p of allPermissions) result[p.id] = p.actions as PermissionAction[];
+    for (const p of allPermissions) {
+      if (isPortalPermissionKey(p.key)) continue; // client-only keys
+      result[p.id] = p.actions as PermissionAction[];
+    }
     return result;
   }
 
@@ -1804,16 +1814,12 @@ function getDefaultActionsForRole(
   // the company's Google Drive (browsable by folder id), not project-scoped
   // storage, so it can't be safely confined to one project yet.
   if (n.includes('client')) {
-    grant('projects.view', ['view']);
-    grant('projects.schedule', ['view']);
-    grant('projects.invoices', ['view']);
-    grant('projects.selections', ['view']);
-    grant('projects.variations', ['view']);
-    grant('projects.site_diary', ['view']);
-    grant('projects.messages', ['view', 'add', 'send']);
+    // Client roles hold only portal.* keys (shared/clientPortalPermissions.ts).
     // Reviews are addressed TO the client, so 'approve' is the whole point of
-    // the section — without it they can read an item but never respond.
-    grant('projects.reviews', ['view', 'add', 'approve']);
+    // that section — without it they can read an item but never respond.
+    for (const [key, actions] of Object.entries(DEFAULT_CLIENT_PORTAL_GRANTS)) {
+      grant(key, actions as PermissionAction[]);
+    }
     return result;
   }
 
@@ -1999,6 +2005,10 @@ export class MemStorage implements IStorage {
       { key: "business.contacts", name: "Business Contacts", description: "Manage company-wide contact directory", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.purchase_orders", name: "Business Purchase Orders", description: "View company-wide purchase order summary", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
       { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
+
+      // Client portal category — held only by client roles. See
+      // shared/clientPortalPermissions.ts.
+      ...CLIENT_PORTAL_PERMISSIONS.map((p) => ({ ...p, category: CLIENT_PORTAL_CATEGORY, isBuiltIn: true })),
     ];
 
     // Create permissions
@@ -7202,6 +7212,10 @@ export class DbStorage implements IStorage {
       { key: "business.contacts", name: "Business Contacts", description: "Manage company-wide contact directory", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.purchase_orders", name: "Business Purchase Orders", description: "View company-wide purchase order summary", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
       { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
+
+      // Client portal category — held only by client roles. See
+      // shared/clientPortalPermissions.ts.
+      ...CLIENT_PORTAL_PERMISSIONS.map((p) => ({ ...p, category: CLIENT_PORTAL_CATEGORY, isBuiltIn: true })),
     ];
 
     const createdKeys = new Set<string>();
@@ -7225,6 +7239,66 @@ export class DbStorage implements IStorage {
     }
 
     await this.backfillSelectionVisibilityGrants(createdKeys);
+    await this.backfillClientPortalGrants(createdKeys);
+  }
+
+  /**
+   * One-time move of every client role onto the portal.* keys, run only on the
+   * boot that first creates them (same reasoning as the selections backfill:
+   * an admin who later unticks something is never silently re-granted).
+   *
+   * Each client role's existing projects.* grants are translated, so a client
+   * keeps seeing what they saw. The old rows are left in place — the gate and
+   * nav no longer read them, and the next save of the role from Roles &
+   * Permissions clears them (POST /api/user-roles/:id/permissions keeps only
+   * keys that match the role's category).
+   */
+  private async backfillClientPortalGrants(createdKeys: Set<string>): Promise<void> {
+    if (!Array.from(createdKeys).some(isPortalPermissionKey)) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const idByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
+      const keyById = new Map(allPermissions.map((p) => [p.id, p.key]));
+
+      const clientRoles = await db.select().from(schema.userRoles)
+        .where(eq(schema.userRoles.userCategory, "client"));
+      if (clientRoles.length === 0) return;
+
+      const existing = await db.select().from(schema.rolePermissions)
+        .where(inArray(schema.rolePermissions.roleId, clientRoles.map((r) => r.id)));
+
+      let granted = 0;
+      for (const role of clientRoles) {
+        const legacy: Record<string, string[]> = {};
+        const held = new Set<string>();
+        for (const rp of existing) {
+          if (rp.roleId !== role.id) continue;
+          const key = keyById.get(rp.permissionId);
+          if (!key) continue;
+          held.add(key);
+          legacy[key] = Array.isArray(rp.allowedActions) ? (rp.allowedActions as string[]) : [];
+        }
+
+        for (const [key, actions] of Object.entries(translateLegacyClientGrants(legacy))) {
+          const permissionId = idByKey.get(key);
+          if (!permissionId || held.has(key) || actions.length === 0) continue;
+          await db.insert(schema.rolePermissions).values({
+            id: `rp-${role.id}-${permissionId}`,
+            roleId: role.id,
+            permissionId,
+            allowedActions: actions as PermissionAction[],
+            viewScope: 'all',
+            viewableRoleIds: [],
+            createdAt: new Date(),
+          });
+          granted++;
+        }
+      }
+      console.log(`[client portal] seeded portal.* keys — ${granted} grant(s) translated onto ${clientRoles.length} client role(s)`);
+    } catch (error) {
+      console.error('[client portal] backfill failed:', error);
+    }
   }
 
   /**

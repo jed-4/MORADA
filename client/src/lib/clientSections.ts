@@ -6,40 +6,35 @@
  * a permission key, so ticking a permission in Roles & Permissions drives the
  * nav and the tabs together.
  *
- * Sections absent from this table have no permission key in the catalogue
- * (Overview, Activity, Scope, Checklists, Defects, Team, Take off, Minutes) and
- * are therefore never shown to a client — deny by default.
+ * Sections absent from this table have no client portal key and are therefore
+ * never shown to a client — deny by default.
  *
  * This is presentation only. The server's clientAccessGate is what actually
  * enforces access; hiding a tab here never stands in for that.
  */
+
+import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 
 export interface SectionPermission {
   /** Permission key(s) — a client needs `view` on any one of them. */
   keys: string[];
 }
 
-/** Project tab id (PROJECT_TAB_GROUPS in CustomizableProjectOverview) → permission. */
+/**
+ * Project tab id (PROJECT_TAB_GROUPS in CustomizableProjectOverview) → client
+ * portal permission. Only portal.* keys: a client role never holds the team's
+ * projects.* keys (shared/clientPortalPermissions.ts), so builder-only tabs
+ * (notes, tasks, RFIs, files, estimates, bills, budget…) simply have no entry.
+ */
 export const TAB_PERMISSIONS: Record<string, SectionPermission> = {
-  schedule: { keys: ["projects.schedule"] },
-  selections: { keys: ["projects.selections"] },
-  reviews: { keys: ["projects.reviews"] },
-  allowances: { keys: ["projects.selections"] },
-  variations: { keys: ["projects.variations"] },
-  "client-invoices": { keys: ["projects.invoices"] },
-  "site-diary": { keys: ["projects.site_diary"] },
-  messages: { keys: ["projects.messages"] },
-  notes: { keys: ["projects.notes"] },
-  tasks: { keys: ["tasks.project"] },
-  rfis: { keys: ["projects.rfi"] },
-  rfqs: { keys: ["financial.quotes"] },
-  files: { keys: ["files.manage"] },
-  estimates: { keys: ["financial.estimate"] },
-  proposals: { keys: ["financial.proposal"] },
-  bills: { keys: ["financial.bills"] },
-  budget: { keys: ["financial.budget_actuals", "financial.budget_labour"] },
-  "purchase-orders": { keys: ["financial.purchase_orders"] },
-  timesheets: { keys: ["projects.timesheet"] },
+  schedule: { keys: [PORTAL_KEYS.schedule] },
+  selections: { keys: [PORTAL_KEYS.selections] },
+  reviews: { keys: [PORTAL_KEYS.reviews] },
+  allowances: { keys: [PORTAL_KEYS.allowances] },
+  variations: { keys: [PORTAL_KEYS.variations] },
+  "client-invoices": { keys: [PORTAL_KEYS.invoices] },
+  "site-diary": { keys: [PORTAL_KEYS.siteDiary] },
+  messages: { keys: [PORTAL_KEYS.messages] },
 };
 
 /** Sidebar item title (projectFlatOrder in SidebarNav) → project tab id. */
@@ -82,9 +77,9 @@ export const CLIENT_LANDING_TAB_ORDER = [
   "selections",
   "variations",
   "client-invoices",
+  "allowances",
   "site-diary",
   "messages",
-  "files",
 ];
 
 type PermissionCheck = (key: string, action?: string) => boolean;

@@ -66,6 +66,8 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ClientPortalPermissions } from "@/components/roles/ClientPortalPermissions";
+import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 
 type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
 
@@ -185,7 +187,7 @@ export default function RolesPermissions() {
   });
 
   // Fetch role permissions for selected role
-  const { data: rolePermissions = EMPTY_ROLE_PERMISSIONS } = useQuery<RolePermission[]>({
+  const { data: rolePermissions = EMPTY_ROLE_PERMISSIONS, isLoading: rolePermissionsLoading } = useQuery<RolePermission[]>({
     queryKey: ["/api/user-roles", selectedRoleId, "permissions"],
     enabled: !!selectedRoleId,
   });
@@ -237,8 +239,13 @@ export default function RolesPermissions() {
     mutationFn: async () => {
       if (!selectedRoleId) return;
       
+      // A client role holds only portal.* keys and every other role none of
+      // them — the server enforces the same rule on save.
+      const isClientRole = selectedRole?.userCategory === "client";
+      const keyById = new Map(permissions.map((p) => [p.id, p.key]));
       const permissionsToSave = Object.entries(permissionMatrix[selectedRoleId] || {})
         .filter(([_, actions]) => actions.length > 0)
+        .filter(([permissionId]) => isPortalPermissionKey(keyById.get(permissionId)) === isClientRole)
         .map(([permissionId, allowedActions]) => ({
           permissionId,
           allowedActions,
@@ -351,6 +358,19 @@ export default function RolesPermissions() {
     setHasUnsavedChanges(true);
   };
 
+  // Replace every action on one permission (client portal panel)
+  const setPermissionActions = (permissionId: string, actions: string[]) => {
+    if (!selectedRoleId) return;
+    setPermissionMatrix((prev) => ({
+      ...prev,
+      [selectedRoleId]: {
+        ...(prev[selectedRoleId] || {}),
+        [permissionId]: actions as PermissionAction[],
+      },
+    }));
+    setHasUnsavedChanges(true);
+  };
+
   // Check if permission action is enabled
   const isPermissionEnabled = (permissionId: string, action: PermissionAction): boolean => {
     if (!selectedRoleId) return false;
@@ -369,6 +389,11 @@ export default function RolesPermissions() {
     const newIndex = localRoles.findIndex((role) => role.id === over.id);
 
     if (oldIndex === -1 || newIndex === -1) {
+      return;
+    }
+    // Roles are listed by category; dropping a team role among client roles
+    // would reorder without moving it, which reads as a bug.
+    if (localRoles[oldIndex].userCategory !== localRoles[newIndex].userCategory) {
       return;
     }
 
@@ -396,6 +421,14 @@ export default function RolesPermissions() {
   );
 
   const selectedRole = localRoles.find((r) => r.id === selectedRoleId);
+  const isClientRoleSelected = selectedRole?.userCategory === "client";
+
+  const ROLE_GROUPS = [
+    { category: "team", label: "Team roles" },
+    { category: "supplier", label: "Supplier roles" },
+    { category: "client", label: "Client roles" },
+  ] as const;
+  const clientPortalPermissions = permissions.filter((p) => isPortalPermissionKey(p.key));
 
   // Group permissions by category
   const groupedPermissions = permissions.reduce((acc, permission) => {
@@ -488,25 +521,35 @@ export default function RolesPermissions() {
         {/* Roles list */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-2">
-            <p className="text-xs text-muted-foreground px-3 py-2">Team roles</p>
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext
-                items={filteredRoles.map((role) => role.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {filteredRoles.map((role) => (
-                  <SortableRoleItem
-                    key={role.id}
-                    role={role}
-                    isSelected={selectedRoleId === role.id}
-                    onSelect={() => setSelectedRoleId(role.id)}
-                  />
-                ))}
-              </SortableContext>
+              {ROLE_GROUPS.map((group) => {
+                const groupRoles = filteredRoles.filter(
+                  (role) => (role.userCategory || "team") === group.category,
+                );
+                if (groupRoles.length === 0) return null;
+                return (
+                  <div key={group.category} className="mb-2" data-testid={`role-group-${group.category}`}>
+                    <p className="text-xs text-muted-foreground px-3 py-2">{group.label}</p>
+                    <SortableContext
+                      items={groupRoles.map((role) => role.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {groupRoles.map((role) => (
+                        <SortableRoleItem
+                          key={role.id}
+                          role={role}
+                          isSelected={selectedRoleId === role.id}
+                          onSelect={() => setSelectedRoleId(role.id)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </div>
+                );
+              })}
             </DndContext>
           </div>
         </div>
@@ -577,7 +620,22 @@ export default function RolesPermissions() {
               </div>
             </div>
 
-            {/* Permissions Matrix — tab per category */}
+            {isClientRoleSelected && rolePermissionsLoading ? (
+              // Switches rendered before the grants arrive all read "off", which
+              // looks like the role has no access at all.
+              <div className="flex-1 flex items-center justify-center" data-testid="role-permissions-loading">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : isClientRoleSelected ? (
+              <div className="flex-1 overflow-y-auto p-6">
+                <ClientPortalPermissions
+                  permissions={clientPortalPermissions}
+                  getActions={(permissionId) => permissionMatrix[selectedRoleId!]?.[permissionId] ?? []}
+                  setActions={setPermissionActions}
+                />
+              </div>
+            ) : (
+            /* Permissions Matrix — tab per category */
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
               <div className="px-6 pt-4 border-b">
                 <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0 justify-start">
@@ -735,6 +793,7 @@ export default function RolesPermissions() {
                 })}
               </div>
             </Tabs>
+            )}
           </>
         ) : (
           <div className="flex items-center justify-center h-full">

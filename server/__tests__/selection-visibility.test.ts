@@ -30,7 +30,9 @@ function check(name: string, fn: () => void) {
 const TRADE: SelectionViewer = { isClient: false, canSeePending: false, canSeePricing: false };
 const FOREMAN: SelectionViewer = { isClient: false, canSeePending: true, canSeePricing: false };
 const PM: SelectionViewer = { isClient: false, canSeePending: true, canSeePricing: true };
+// canSeePricing on a client = the role's portal.selections.pricing tick.
 const CLIENT: SelectionViewer = { isClient: true, canSeePending: true, canSeePricing: false };
+const CLIENT_WITH_PRICES: SelectionViewer = { isClient: true, canSeePending: true, canSeePricing: true };
 
 const approvedOption = () => ({
   id: "opt-approved",
@@ -180,13 +182,30 @@ check("client sees pending selections — choosing is the point", () => {
 
 check("clientCanSeePrice yields a marked-up inc-GST price, not the cost", () => {
   const sel = { ...approvedSelection(), clientCanSeePrice: true };
-  const out = applySelectionVisibilityToOne(sel, CLIENT);
+  const out = applySelectionVisibilityToOne(sel, CLIENT_WITH_PRICES);
   const opt = out.options.find((o: any) => o.id === "opt-approved");
   // 100000c ex × 2 × 1.10 markup = 220000 ex → 242000 inc GST
   assert.equal(opt.totalCost, 242_000);
   assert.equal(opt.unitCost, undefined);
   assert.equal(opt.markupPercent, undefined);
   assert.equal(out.allowance, 200_000, "allowance is shown when prices are shown");
+});
+
+check("a client role without the prices tick gets no price even when the selection allows it", () => {
+  const sel = { ...approvedSelection(), clientCanSeePrice: true };
+  const out = applySelectionVisibilityToOne(sel, CLIENT);
+  for (const opt of out.options) assert.equal(opt.totalCost, undefined, "price shown without the role tick");
+  assert.equal(out.allowance, undefined);
+});
+
+check("options hidden from the client never reach them", () => {
+  const sel = approvedSelection();
+  sel.options = sel.options.map((o: any, i: number) => (i === 0 ? { ...o, visibleToClient: false } : o));
+  const hiddenId = sel.options[0].id;
+  const out = applySelectionVisibilityToOne(sel, CLIENT_WITH_PRICES);
+  assert.ok(!out.options.some((o: any) => o.id === hiddenId), "hidden option leaked");
+  const optionsOnly = applyOptionVisibility(sel.options, sel, CLIENT);
+  assert.ok(!optionsOnly.some((o: any) => o.id === hiddenId), "hidden option leaked (options route)");
 });
 
 // ── The portal token is a shareable client link ───────────────────────────
