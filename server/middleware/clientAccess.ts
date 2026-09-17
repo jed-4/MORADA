@@ -66,6 +66,13 @@ type ResponseShaper = (
   body: any,
   req: Request,
   user: User,
+  /**
+   * The gate-relative path ("/variations/:id/items"), captured when the gate
+   * ran. Shapers run inside the route's res.json, and by then Express has
+   * restored req.url to the full "/api/..." path — so req.path must NOT be
+   * read inside a shaper.
+   */
+  path: string,
 ) => Promise<any | typeof HIDE_FROM_CLIENT>;
 
 interface AllowRule {
@@ -173,8 +180,8 @@ const isChannelMember = async (req: Request, user: User): Promise<boolean> => {
 
 // ── Response shapers ────────────────────────────────────────────────────────
 
-const variationIdFromPath = (req: Request) => req.path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
-const invoiceIdFromPath = (req: Request) => req.path.match(/^\/client-invoices\/([^/]+)/)?.[1] ?? null;
+const variationIdFromPath = (path: string) => path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
+const invoiceIdFromPath = (path: string) => path.match(/^\/client-invoices\/([^/]+)/)?.[1] ?? null;
 
 const shapeVariationList: ResponseShaper = async (body) =>
   Array.isArray(body)
@@ -188,8 +195,8 @@ const shapeVariation: ResponseShaper = async (body) =>
     ? { ...projectClientVariation(body), projectId: body.projectId }
     : HIDE_FROM_CLIENT;
 
-const shapeVariationItems: ResponseShaper = async (body, req, user) => {
-  const id = variationIdFromPath(req);
+const shapeVariationItems: ResponseShaper = async (body, _req, user, path) => {
+  const id = variationIdFromPath(path);
   const variation = id ? await storage.getVariation(id) : undefined;
   if (!isVariationClientVisible(variation) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
   const settings = user.companyId
@@ -215,17 +222,17 @@ const shapeInvoiceList: ResponseShaper = async (body) =>
 const shapeInvoice: ResponseShaper = async (body) =>
   isInvoiceClientVisible(body) ? projectClientInvoice(body) : HIDE_FROM_CLIENT;
 
-const shapeInvoiceChild: ResponseShaper = async (body, req) => {
-  const id = invoiceIdFromPath(req);
+const shapeInvoiceChild: ResponseShaper = async (body, _req, _user, path) => {
+  const id = invoiceIdFromPath(path);
   const invoice = id ? await storage.getClientInvoice(id) : undefined;
   if (!isInvoiceClientVisible(invoice) || !Array.isArray(body)) return HIDE_FROM_CLIENT;
-  return req.path.endsWith("/payments")
+  return path.endsWith("/payments")
     ? projectClientInvoicePayments(body)
     : body.map(projectClientInvoiceItem);
 };
 
-const shapeAllowances: ResponseShaper = async (body, req) => {
-  const projectId = req.path.match(/^\/projects\/([^/]+)/)?.[1];
+const shapeAllowances: ResponseShaper = async (body, _req, _user, path) => {
+  const projectId = path.match(/^\/projects\/([^/]+)/)?.[1];
   if (!projectId || !Array.isArray(body)) return HIDE_FROM_CLIENT;
   const [project, estimates] = await Promise.all([
     storage.getProject(projectId),
@@ -271,9 +278,10 @@ const shapeReview: ResponseShaper = async (body) => {
  */
 function installShaper(req: Request, res: Response, user: User, shape: ResponseShaper) {
   const originalJson = res.json.bind(res);
+  const path = req.path; // gate-relative; see ResponseShaper
   res.json = ((body: any) => {
     if (res.statusCode >= 400) return originalJson(body);
-    shape(body, req, user)
+    shape(body, req, user, path)
       .then((shaped) => {
         if (shaped === HIDE_FROM_CLIENT) {
           res.status(404);

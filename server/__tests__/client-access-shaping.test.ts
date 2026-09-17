@@ -138,11 +138,12 @@ async function projections() {
     }
   });
 
-  await check("allowance estimates: selected estimate wins, else contract only", () => {
-    const estimates = [{ id: "draft", status: "draft" }, { id: "k", status: "contract" }];
+  await check("allowance estimates: selected, else contract, else approved — never draft", () => {
+    const estimates = [{ id: "draft", status: "draft" }, { id: "ok", status: "approved" }, { id: "k", status: "contract" }];
     assert.deepStrictEqual([...clientAllowanceEstimateIds({ selectedEstimateId: "draft" }, estimates)], ["draft"]);
     assert.deepStrictEqual([...clientAllowanceEstimateIds({ selectedEstimateId: null }, estimates)], ["k"]);
-    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }])], []);
+    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }, { id: "ok", status: "approved" }])], ["ok"]);
+    assert.deepStrictEqual([...clientAllowanceEstimateIds(null, [{ id: "d", status: "draft" }, { id: "a", status: "archived" }])], []);
   });
 }
 
@@ -235,7 +236,13 @@ async function gate() {
         status(code: number) { this.statusCode = code; return this; },
         json(body: any) { resolve({ status: this.statusCode, body }); return this; },
       };
-      clientAccessGate(req, res, () => res.json(routeBody));
+      clientAccessGate(req, res, () => {
+        // Express restores the mount prefix before the route handler runs, so
+        // a shaper that reads req.path sees "/api/..." — reproduce that.
+        req.path = `/api${path}`;
+        req.url = `/api${url}`;
+        res.json(routeBody);
+      });
     });
 
   await check("team session is untouched", async () => {
