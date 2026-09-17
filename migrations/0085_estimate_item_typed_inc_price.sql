@@ -1,0 +1,24 @@
+-- The inc-GST unit price of an estimate line, exactly as it was typed.
+--
+-- Unit costs are stored ex-GST to the cent (unit_cost_ex_tax) and shown inc-GST
+-- as round2(ex × 1.1). No cent value of ex lands on $60.00 — 54.54 gives 59.99
+-- and 54.55 gives 60.01 — and the same is true of exactly one inc-GST price in
+-- eleven. So typing $60 inc-GST stored 54.55 and the grid, the estimate total and
+-- the client's proposal all showed $60.01.
+--
+-- When this column is set it is AUTHORITATIVE for the line: shared/pricing.ts
+-- builds the line from it and takes GST = inc − ex, the rule shared/money.ts's
+-- gstSplit already states. unit_cost_ex_tax is still written alongside it (the
+-- typed price ÷ 1.1) for everything that reads the ex cost directly — purchase
+-- orders, exports, copies into variations. Typing an ex-GST cost clears it again.
+--
+-- NULLABLE with no default, and that is the whole point: null means "priced
+-- ex-GST", which is every line that exists today. With it null, pricing takes
+-- exactly the path it always has, so no existing estimate total moves.
+--
+-- ⚠️ Apply BEFORE deploying. estimate_items is read throughout the estimate,
+-- proposal and invoice screens; code that selects this column will fail those
+-- reads until it exists.
+--
+-- Additive and idempotent: safe to run twice.
+ALTER TABLE estimate_items ADD COLUMN IF NOT EXISTS unit_cost_inc_tax DOUBLE PRECISION;

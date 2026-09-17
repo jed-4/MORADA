@@ -242,6 +242,7 @@ export function clientLineAmounts(
 
   const line = computeEstimateItemPrice({
     unitCostExTax: item.unitCostExTax ?? 0,
+    unitCostIncTax: (item as { unitCostIncTax?: number | null }).unitCostIncTax,
     quantity: item.quantity ?? 0,
     markupPercent: item.markupPercent,
     projectMarkupPercent: 0,

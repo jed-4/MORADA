@@ -46,6 +46,7 @@ async function main() {
       name: estimateItems.name,
       quantity: estimateItems.quantity,
       unitCostExTax: estimateItems.unitCostExTax,
+      unitCostIncTax: estimateItems.unitCostIncTax,
       markupPercent: estimateItems.markupPercent,
       storedTaxAmount: estimateItems.taxAmount,
       storedPriceIncTax: estimateItems.priceIncTax,
@@ -75,6 +76,7 @@ async function main() {
 
     const computed = computeEstimateItemPrice({
       unitCostExTax: unit,
+      unitCostIncTax: r.unitCostIncTax,
       quantity: qty,
       markupPercent: r.markupPercent,
       projectMarkupPercent: r.projectMarkupPercent,

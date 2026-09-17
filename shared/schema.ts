@@ -1022,6 +1022,10 @@ export const estimateItems = pgTable("estimate_items", {
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
+  // The inc-GST unit price exactly as typed (migration 0085). When set it is
+  // AUTHORITATIVE for the line and unitCostExTax is derived from it — see
+  // typedUnitCostIncTax in shared/pricing.ts. Null means the line is priced ex-GST.
+  unitCostIncTax: doublePrecision("unit_cost_inc_tax"),
   markupPercent: doublePrecision("markup_percent"), // Optional item-specific markup % (e.g. 10, 7.5). Falls back to project markup if null
   // Provenance: the catalogue item this line's unit cost was taken from.
   // INVARIANT: this is set only while unitCostExTax still equals the catalogue price.
