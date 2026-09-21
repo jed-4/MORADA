@@ -19,6 +19,7 @@ export interface ClientVariation {
   totalAmount: number;
   status: string;
   approvalDeadline?: string | null;
+  daysChanged?: number | null;
   portalSentAt?: string | null;
   clientSignedName?: string | null;
   clientSignedDate?: string | null;

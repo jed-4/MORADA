@@ -1,28 +1,49 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
-import { ArrowLeft, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Loader2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCents } from "@shared/money";
 import { cn } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useClientPortal } from "@/hooks/use-client-portal";
+import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { ClientError, ClientLoading, ClientPage, ClientStatus } from "@/components/client/ClientPage";
 import { selectionStatus, type ClientSelection, type ClientSelectionOption } from "./ClientSelections";
 
 /**
  * One selection and its options.
  *
- * Read-only for now: the client can see what they're choosing between, what
- * they picked and what the builder confirmed. Choosing and commenting in the
- * app need their own endpoints (the emailed selection link has them; a
- * session-authenticated pair is the next PR), so the page points at the link
- * rather than showing buttons that do nothing.
+ * The client sees what they're choosing between, picks one, and can talk to
+ * their builder about it. Choosing posts to /client-select, which runs the
+ * SAME handler as the emailed selection link: the lock, clientCanChange, the
+ * decision log, the builder notification and the auto-maintained
+ * over-allowance variation all behave identically.
+ *
+ * A pick is a pick, not an approval — the builder confirms it (Jed,
+ * 2026-09-17), which is why there is no approve control here.
  *
  * Prices appear only when the server sent them — that needs both the role's
  * "See prices" tick and this selection's own price setting.
  */
 
-function OptionCard({ option, showPrice }: { option: ClientSelectionOption; showPrice: boolean }) {
+function OptionCard({
+  option,
+  showPrice,
+  canChoose,
+  choosing,
+  onChoose,
+}: {
+  option: ClientSelectionOption;
+  showPrice: boolean;
+  canChoose: boolean;
+  choosing: boolean;
+  onChoose: () => void;
+}) {
   const approved = !!option.approvedAt;
   const picked = !!option.isSelectedByClient;
   return (
@@ -66,9 +87,30 @@ function OptionCard({ option, showPrice }: { option: ClientSelectionOption; show
             <span className="tabular-nums font-medium">{formatCents(option.totalCost)}</span>
           )}
         </div>
+
+        {canChoose && !approved && (
+          <Button
+            className="w-full"
+            variant={picked ? "outline" : "default"}
+            disabled={choosing || picked}
+            onClick={onChoose}
+            data-testid={`button-choose-${option.id}`}
+          >
+            {choosing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {picked ? "Chosen" : "Choose this"}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+interface SelectionComment {
+  id: string;
+  content: string;
+  createdByName?: string | null;
+  isClientComment?: boolean | null;
+  createdAt: string;
 }
 
 export default function ClientSelectionDetail() {
@@ -83,6 +125,52 @@ export default function ClientSelectionDetail() {
   const { data: fetchedOptions = [] } = useQuery<ClientSelectionOption[]>({
     queryKey: [`/api/selections/${id}/options`],
     enabled: !!id,
+  });
+
+  const { toast } = useToast();
+  const { hasPermission } = useClientPortal();
+  const canChoose = hasPermission(PORTAL_KEYS.selections, "edit");
+  const canComment = hasPermission(PORTAL_KEYS.selections, "add");
+  const [draft, setDraft] = useState("");
+
+  const { data: comments = [] } = useQuery<SelectionComment[]>({
+    queryKey: [`/api/selections/${id}/client-comments`],
+    enabled: !!id && canComment,
+  });
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/selections/${id}`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/selections/${id}/options`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/selections/with-options?projectId=${projectId}`] });
+  };
+
+  const choose = useMutation({
+    mutationFn: (optionId: string) =>
+      apiRequest(`/api/selections/${id}/options/${optionId}/client-select`, "PATCH", {}),
+    onSuccess: () => {
+      refresh();
+      toast({ title: "Choice sent", description: "Your builder has been notified." });
+    },
+    onError: (error: any) =>
+      toast({
+        title: "We couldn't save that",
+        description: error?.message || "Please try again, or contact your builder.",
+        variant: "destructive",
+      }),
+  });
+
+  const comment = useMutation({
+    mutationFn: (content: string) => apiRequest(`/api/selections/${id}/client-comments`, "POST", { content }),
+    onSuccess: () => {
+      setDraft("");
+      queryClient.invalidateQueries({ queryKey: [`/api/selections/${id}/client-comments`] });
+    },
+    onError: (error: any) =>
+      toast({
+        title: "We couldn't post that",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      }),
   });
 
   if (isLoading) {
@@ -134,7 +222,14 @@ export default function ClientSelectionDetail() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {options.map((option) => (
-          <OptionCard key={option.id} option={option} showPrice={showPrice} />
+          <OptionCard
+            key={option.id}
+            option={option}
+            showPrice={showPrice}
+            canChoose={canChoose && !confirmed && selection.clientCanChange !== false}
+            choosing={choose.isPending && choose.variables === option.id}
+            onChoose={() => choose.mutate(option.id)}
+          />
         ))}
       </div>
 
@@ -146,14 +241,55 @@ export default function ClientSelectionDetail() {
         </Card>
       )}
 
-      {!confirmed && options.length > 0 && (
+      {!confirmed && options.length > 0 && !canChoose && (
         <Card>
           <CardContent className="p-4 text-sm">
             <p className="font-medium">Making your choice</p>
             <p className="text-muted-foreground mt-1">
-              Use the selection link your builder emailed you to pick an option or leave a comment. Choosing
-              here in the portal is coming shortly.
+              Use the selection link your builder emailed you to pick an option.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {canComment && (
+        <Card data-testid="client-selection-comments">
+          <CardContent className="p-4 md:p-6 space-y-3">
+            <h2 className="font-medium flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Questions about this selection
+            </h2>
+
+            {comments.length > 0 && (
+              <div className="space-y-3">
+                {comments.map((c) => (
+                  <div key={c.id} className="text-sm">
+                    <div className="text-muted-foreground text-xs">
+                      {c.createdByName || (c.isClientComment ? "You" : "Your builder")}
+                      {c.createdAt ? ` · ${format(new Date(c.createdAt), "d MMM yyyy")}` : ""}
+                    </div>
+                    <p className="whitespace-pre-wrap">{c.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Ask your builder a question about this selection"
+              rows={3}
+              data-testid="input-selection-comment"
+            />
+            <Button
+              size="sm"
+              disabled={!draft.trim() || comment.isPending}
+              onClick={() => comment.mutate(draft.trim())}
+              data-testid="button-post-selection-comment"
+            >
+              {comment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Send
+            </Button>
           </CardContent>
         </Card>
       )}
