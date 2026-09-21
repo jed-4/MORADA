@@ -193,17 +193,24 @@ function clientPriceCents(option: any): number | null {
 /** Options the builder has hidden from the client never reach them. */
 const clientVisibleOptions = (options: any[]) => options.filter((o) => o?.visibleToClient !== false);
 
+/** Trades/builder notes live on both the selection and each option. */
+const stripNotes = <T extends Record<string, any>>(row: T): T => {
+  const copy = { ...row };
+  delete (copy as any).notes;
+  return copy;
+};
+
 function redactForClient(selection: any, rolePricing: boolean): any {
   const showPrice = rolePricing && selection?.clientCanSeePrice === true;
   const options = Array.isArray(selection?.options) ? clientVisibleOptions(selection.options) : null;
-  const out: any = { ...selection };
+  const out: any = stripNotes(selection);
 
   delete out.portalToken;
   if (!showPrice) delete out.allowance;
   if (options) {
     out.options = options.map((option: any) => {
       const price = showPrice ? clientPriceCents(option) : null;
-      const stripped = stripOptionMoney(option);
+      const stripped = stripNotes(stripOptionMoney(option));
       if (price !== null) stripped.totalCost = price;
       return stripped;
     });
@@ -286,7 +293,7 @@ export function applyOptionVisibility(
     const showPrice = viewer.canSeePricing && parentSelection?.clientCanSeePrice === true;
     return clientVisibleOptions(options).map((option) => {
       const price = showPrice ? clientPriceCents(option) : null;
-      const stripped = stripOptionMoney(option);
+      const stripped = stripNotes(stripOptionMoney(option));
       if (price !== null) stripped.totalCost = price;
       return stripped;
     });

@@ -26,6 +26,7 @@ import { hideCrispChat, identifyCrispUser, resetCrispSession } from "@/lib/crisp
 // TDZ crashes that occur when Vite's production bundler resolves circular
 // module initialization order across a single giant static-import chunk.
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+import { clientAware } from "@/components/client/clientAware";
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const Docs = lazy(() => import("@/pages/Docs"));
@@ -80,6 +81,15 @@ const Schedule = lazy(() => import("@/pages/Schedule"));
 const Timesheets = lazy(() => import("@/pages/Timesheets"));
 const Allowances = lazy(() => import("@/pages/Allowances"));
 const AllowanceDetail = lazy(() => import("@/pages/AllowanceDetail"));
+
+// A client on a builder detail address gets the project shell instead, which
+// renders the portal's read-only version of that record (the same way the
+// selections detail has always rendered inside the shell). The allowance cost
+// ledger has no client version at all — the server refuses that route — so a
+// client lands back on the allowance list.
+const VariationDetailRoute = clientAware(VariationDetail, Dashboard);
+const ClientInvoiceDetailRoute = clientAware(ClientInvoiceDetail, Dashboard);
+const AllowanceDetailRoute = clientAware(AllowanceDetail, Dashboard);
 const Defects = lazy(() => import("@/pages/Defects"));
 const Proposals = lazy(() => import("@/pages/Proposals"));
 const ProposalDetail = lazy(() => import("@/pages/ProposalDetail"));
@@ -242,14 +252,14 @@ function Router() {
       <Route path="/projects/:projectId/rfis/:id" component={RFIDetail} />
       <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
       <Route path="/projects/:projectId/proposals/:id" component={ProposalDetail} />
-      <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetail} />
+      <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetailRoute} />
       <Route path="/projects/:projectId/purchase-orders/new" component={PurchaseOrderDetail} />
       <Route path="/projects/:projectId/purchase-orders/:poId" component={PurchaseOrderDetail} />
-      <Route path="/projects/:projectId/variations/new" component={VariationDetail} />
-      <Route path="/projects/:projectId/variations/:variationId" component={VariationDetail} />
+      <Route path="/projects/:projectId/variations/new" component={VariationDetailRoute} />
+      <Route path="/projects/:projectId/variations/:variationId" component={VariationDetailRoute} />
       <Route path="/projects/:projectId/bills/:id" component={BillDetail} />
-      <Route path="/projects/:projectId/client-invoices/new" component={ClientInvoiceDetail} />
-      <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetail} />
+      <Route path="/projects/:projectId/client-invoices/new" component={ClientInvoiceDetailRoute} />
+      <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetailRoute} />
       <Route path="/projects/:projectId/checklists/:checklistId" component={ChecklistInstanceDetail} />
       
       {/* Tab routes - all render inline within Dashboard/CustomizableProjectOverview */}

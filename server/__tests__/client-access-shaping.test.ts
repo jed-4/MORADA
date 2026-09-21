@@ -351,6 +351,36 @@ async function gate() {
     assert.strictEqual(r.status, 403);
   });
 
+  await check("in-app signing and choosing are reachable, and follow the role's ticks", async () => {
+    stub("getSelection", async () => ({ id: "s1", projectId: "p1" }));
+
+    // Variation signing needs portal.variations:approve.
+    denied = new Set();
+    assert.strictEqual((await run(client, "POST", "/variations/v1/client-sign", { ok: true })).status, 200);
+    denied = new Set(["portal.variations:approve"]);
+    assert.strictEqual((await run(client, "POST", "/variations/v1/client-sign", { ok: true })).status, 403);
+
+    // Choosing an option needs :edit, commenting needs :add, reading the
+    // thread needs :view — a read-only client can do none of them.
+    denied = new Set();
+    assert.strictEqual((await run(client, "PATCH", "/selections/s1/options/o1/client-select", { ok: true })).status, 200);
+    assert.strictEqual((await run(client, "POST", "/selections/s1/client-comments", { ok: true })).status, 200);
+    assert.strictEqual((await run(client, "GET", "/selections/s1/client-comments", [])).status, 200);
+
+    denied = new Set(["portal.selections:edit"]);
+    assert.strictEqual((await run(client, "PATCH", "/selections/s1/options/o1/client-select", { ok: true })).status, 403);
+    denied = new Set(["portal.selections:add"]);
+    assert.strictEqual((await run(client, "POST", "/selections/s1/client-comments", { ok: true })).status, 403);
+    denied = new Set();
+  });
+
+  await check("a team session cannot use the client-only doors", async () => {
+    // The gate ignores non-client sessions, so these routes are reachable —
+    // the routes themselves refuse anyone who is not a client (getClientUser).
+    const r = await run(team, "POST", "/variations/v1/client-sign", { ok: true });
+    assert.strictEqual(r.status, 200, "gate should not block a team session; the route does");
+  });
+
   await check("client review detail loses token, ids and signer IP", async () => {
     stub("getReviewItem", async () => ({ projectId: "p1" }));
     const r = await run(client, "GET", "/reviews/r1", {

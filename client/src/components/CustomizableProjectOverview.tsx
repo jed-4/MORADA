@@ -43,6 +43,18 @@ const SiteDiaryEntries = lazy(() => import("@/pages/SiteDiaryEntries"));
 const ProjectTeam = lazy(() => import("@/pages/ProjectTeam"));
 const ProjectChecklists = lazy(() => import("@/pages/ProjectChecklists"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
+
+// Client portal sections. A client gets purpose-built read-only pages, not the
+// builder's working screens with the buttons hidden — see client/src/pages/client.
+const ClientSchedule = lazy(() => import("@/pages/client/ClientSchedule"));
+const ClientAllowances = lazy(() => import("@/pages/client/ClientAllowances"));
+const ClientSiteDiary = lazy(() => import("@/pages/client/ClientSiteDiary"));
+const ClientSelections = lazy(() => import("@/pages/client/ClientSelections"));
+const ClientSelectionDetail = lazy(() => import("@/pages/client/ClientSelectionDetail"));
+const ClientVariations = lazy(() => import("@/pages/client/ClientVariations"));
+const ClientInvoicesPage = lazy(() => import("@/pages/client/ClientInvoices"));
+const ClientVariationDetail = lazy(() => import("@/pages/client/ClientVariationDetail"));
+const ClientInvoiceDetailPage = lazy(() => import("@/pages/client/ClientInvoiceDetail"));
 import {
   Dialog,
   DialogContent,
@@ -945,6 +957,12 @@ export default function CustomizableProjectOverview() {
     }
   };
 
+  /** The id in /projects/<id>/<section>/<detailId>, if there is one. */
+  const detailIdFor = (section: string) => {
+    const tail = currentLocation.split(`/projects/${currentProject?.id}/${section}`)[1] || "";
+    return tail.split("/").filter(Boolean)[0];
+  };
+
   // Render content for non-overview tabs
   const renderTabContent = () => {
     // Clients only get the sections their role has view permission for. Gating
@@ -972,7 +990,7 @@ export default function CustomizableProjectOverview() {
       case "scope":
         return <ProjectScope />;
       case "schedule":
-        return <Schedule />;
+        return isClient ? <ClientSchedule /> : <Schedule />;
       case "tasks":
         return <Tasks embedded />;
       case "timesheets":
@@ -1008,6 +1026,7 @@ export default function CustomizableProjectOverview() {
         // keeps the project header + section tabs like every other section
         const selectionsPath = currentLocation.split(`/projects/${currentProject.id}/selections`)[1] || "";
         const detailId = selectionsPath.split("/").filter(Boolean)[0];
+        if (isClient) return detailId ? <ClientSelectionDetail /> : <ClientSelections />;
         return detailId ? <SelectionDetail /> : <Selections />;
       }
       case "rfqs":
@@ -1015,19 +1034,25 @@ export default function CustomizableProjectOverview() {
       case "rfis":
         return <RFIs embedded />;
       case "allowances":
-        return <Allowances />;
+        return isClient ? <ClientAllowances /> : <Allowances />;
       case "defects":
         return <Defects embedded />;
       case "purchase-orders":
         return <PurchaseOrders embedded />;
-      case "variations":
-        return <Variations embedded />;
+      case "variations": {
+        if (!isClient) return <Variations embedded />;
+        // /variations/<id> renders the client's read-only document inside the
+        // shell, so they keep the project header and section tabs.
+        return detailIdFor("variations") ? <ClientVariationDetail /> : <ClientVariations />;
+      }
       case "client-invoices":
-        return <ClientInvoices embedded />;
-      case "invoices":
-        return <ClientInvoices embedded />;
+      case "invoices": {
+        if (!isClient) return <ClientInvoices embedded />;
+        const invoicesTab = activeTab === "invoices" ? "invoices" : "client-invoices";
+        return detailIdFor(invoicesTab) ? <ClientInvoiceDetailPage /> : <ClientInvoicesPage />;
+      }
       case "site-diary":
-        return <SiteDiaryEntries embedded />;
+        return isClient ? <ClientSiteDiary /> : <SiteDiaryEntries embedded />;
       case "team":
         return <ProjectTeam />;
       case "checklists":

@@ -208,6 +208,16 @@ check("options hidden from the client never reach them", () => {
   assert.ok(!optionsOnly.some((o: any) => o.id === hiddenId), "hidden option leaked (options route)");
 });
 
+check("builder notes on a selection and its options never reach a client", () => {
+  const sel: any = { ...approvedSelection(), notes: "chase the tiler" };
+  sel.options = sel.options.map((o: any) => ({ ...o, notes: "order 2 weeks out" }));
+  const out = applySelectionVisibilityToOne(sel, CLIENT);
+  assert.equal(out.notes, undefined, "selection notes leaked");
+  for (const opt of out.options) assert.equal(opt.notes, undefined, "option notes leaked");
+  const optionsOnly = applyOptionVisibility(sel.options, sel, CLIENT);
+  for (const opt of optionsOnly) assert.equal(opt.notes, undefined, "option notes leaked (options route)");
+});
+
 // ── The portal token is a shareable client link ───────────────────────────
 check("portal token never reaches a trade, a foreman or a client", () => {
   const withToken = { ...approvedSelection(), portalToken: "abc123" };

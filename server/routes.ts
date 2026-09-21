@@ -225,7 +225,7 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
-import { projectClientVariation, projectClientVariationItems } from "./clientProjections";
+import { isVariationClientVisible, projectClientVariation, projectClientVariationItems } from "./clientProjections";
 import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
@@ -18608,28 +18608,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+  /**
+   * Record the client's choice of option — shared by the emailed selection
+   * link and a signed-in client in the portal. Everything downstream of the
+   * choice (the decision log, the builder notification, the auto-maintained
+   * over-allowance variation) lives here so both doors behave identically.
+   */
+  const applyClientOptionChoice = async (
+    sel: any,
+    optionId: string,
+    clientName: string,
+  ): Promise<{ status: number; body: any }> => {
     try {
-      const { token, optionId } = req.params;
       const { eq: eqFn, and: andFn } = await import("drizzle-orm");
-      const [sel] = await db.select().from(schema.selections as any)
-        .where(eqFn((schema.selections as any).portalToken, token))
-        .limit(1);
-      if (!sel) return res.status(404).json({ error: "Invalid link" });
-
       const allOptions = await storage.getSelectionOptions(sel.id);
       if (isSelectionLockedForClient(sel, allOptions)) {
-        return res.status(403).json({ error: "This selection has been finalised and can no longer be changed. Please contact your builder." });
+        return { status: 403, body: { error: "This selection has been finalised and can no longer be changed. Please contact your builder." } };
       }
 
       const option = allOptions.find(o => o.id === optionId);
       if (!option || option.visibleToClient === false) {
-        return res.status(403).json({ error: "Option not accessible" });
+        return { status: 403, body: { error: "Option not accessible" } };
       }
 
       const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
       if (prevClientSelection && (sel as any).clientCanChange === false) {
-        return res.status(403).json({ error: "Your choice has been submitted and can no longer be changed. Please contact your builder." });
+        return { status: 403, body: { error: "Your choice has been submitted and can no longer be changed. Please contact your builder." } };
       }
       const prevChosen = allOptions.find(o => o.isSelectedByClient);
       if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
@@ -18660,8 +18664,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Timestamped decision log + builder notification. Non-fatal — the
       // client's choice is already saved.
       try {
-        const clientName = typeof req.body?.clientName === "string" && req.body.clientName.trim()
-          ? req.body.clientName.trim().slice(0, 100) : "Client";
         const priceCents = selectionOptionClientPriceCents(option);
         const priceText = priceCents != null && (sel as any).clientCanSeePrice
           ? ` ($${(priceCents / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })} inc GST)` : "";
@@ -18744,62 +18746,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Non-fatal — variation auto-gen failure should not break selection
       }
 
-      res.json({ clientSelection: newClientSelection });
+      return { status: 200, body: { clientSelection: newClientSelection } };
+    } catch (error) {
+      console.error("Client selection choice failed:", error);
+      return { status: 500, body: { error: "Failed to save selection" } };
+    }
+  };
+
+  /** Comment from the client — shared by the emailed link and the portal. */
+  const addClientSelectionComment = async (
+    sel: any,
+    content: string,
+    clientName: string,
+  ): Promise<{ status: number; body: any }> => {
+    if (!content || typeof content !== "string" || !content.trim()) {
+      return { status: 400, body: { error: "Content is required" } };
+    }
+    if (content.length > 5000) {
+      return { status: 400, body: { error: "Comment is too long" } };
+    }
+
+    const comment = await storage.createSelectionComment({
+      selectionId: sel.id,
+      content: content.trim(),
+      attachmentUrls: [],
+      attachmentFileNames: [],
+      createdById: null,
+      createdByName: clientName,
+      isClientComment: true,
+    });
+
+    // Notify the builder of client comments (non-fatal)
+    try {
+      if ((sel as any).createdBy) {
+        const notification = await storage.createNotification({
+          userId: (sel as any).createdBy,
+          companyId: (await storage.getProject(sel.projectId))?.companyId!,
+          type: "selection_client_comment",
+          title: "Client commented on a selection",
+          message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(sel as any).name}`,
+          link: `/projects/${sel.projectId}/selections/${sel.id}`,
+          entityType: "selection",
+          entityId: sel.id,
+          isRead: false,
+          createdByUserId: null,
+        });
+        emitNotification((sel as any).createdBy, notification);
+      }
+    } catch (_notifErr) {
+      // Non-fatal
+    }
+
+    return { status: 201, body: comment };
+  };
+
+  /** The name a client's action is recorded under. */
+  const clientDisplayName = (user: any): string =>
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Client";
+
+  /**
+   * Second lock on the client-only write routes: the record's project must be
+   * in the client's own company. clientAccessGate already resolves the project
+   * and requires a userProjectAccess grant, which is narrower — this is
+   * belt-and-braces so these routes carry their own tenancy check rather than
+   * depending entirely on middleware ordering.
+   */
+  const clientOwnsProject = async (projectId: string, companyId: string | null | undefined): Promise<boolean> => {
+    if (!projectId || !companyId) return false;
+    const project = await storage.getProject(projectId);
+    return !!project && (project as any).companyId === companyId;
+  };
+
+  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+    try {
+      // Tenancy: token-authorised, so there is no session companyId. The token
+      // resolves to a single selection and the chosen option must belong to it
+      // (checked in applyClientOptionChoice).
+      const { eq: eqFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, req.params.token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const clientName = typeof req.body?.clientName === "string" && req.body.clientName.trim()
+        ? req.body.clientName.trim().slice(0, 100) : "Client";
+      const result = await applyClientOptionChoice(sel, req.params.optionId, clientName);
+      res.status(result.status).json(result.body);
     } catch (error) {
       console.error("Portal select error:", error);
       res.status(500).json({ error: "Failed to save selection" });
     }
   });
 
+  /**
+   * Signed-in client chooses an option. Same rules as the emailed link — the
+   * lock, clientCanChange, the decision log, the over-allowance variation.
+   * The gate has already checked portal.selections:edit and project access.
+   */
+  app.patch("/api/selections/:id/options/:optionId/client-select", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const sel = await storage.getSelection(req.params.id);
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      const result = await applyClientOptionChoice(sel, req.params.optionId, clientDisplayName(client));
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error("Client select error:", error);
+      res.status(500).json({ error: "Failed to save selection" });
+    }
+  });
+
+  /** The selection's comment thread, for a signed-in client. */
+  app.get("/api/selections/:id/client-comments", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const sel = await storage.getSelection(req.params.id);
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      res.json(await storage.getSelectionComments(sel.id));
+    } catch (error) {
+      console.error("Client selection comments error:", error);
+      res.status(500).json({ error: "Failed to load comments" });
+    }
+  });
+
+  /** Signed-in client posts a comment on a selection. */
+  app.post("/api/selections/:id/client-comments", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const sel = await storage.getSelection(req.params.id);
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      const result = await addClientSelectionComment(sel, req.body?.content, clientDisplayName(client));
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error("Client selection comment error:", error);
+      res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
   app.post("/api/portal/selections/:token/comments", async (req, res) => {
     try {
-      const { token } = req.params;
+      // Tenancy: token-authorised, no session companyId — as for the select
+      // route above, the token resolves to exactly one selection.
       const { content, clientName } = req.body;
-      if (!content || typeof content !== "string" || !content.trim()) {
-        return res.status(400).json({ error: "Content is required" });
-      }
-      if (content.length > 5000) {
-        return res.status(400).json({ error: "Comment is too long" });
-      }
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
-        .where(eqFn((schema.selections as any).portalToken, token))
+        .where(eqFn((schema.selections as any).portalToken, req.params.token))
         .limit(1);
       if (!sel) return res.status(404).json({ error: "Invalid link" });
 
-      const comment = await storage.createSelectionComment({
-        selectionId: sel.id,
-        content: content.trim(),
-        attachmentUrls: [],
-        attachmentFileNames: [],
-        createdById: null,
-        createdByName: (typeof clientName === "string" && clientName.trim() ? clientName.trim().slice(0, 100) : "Client"),
-        isClientComment: true,
-      });
-
-      // Notify the builder of client comments (non-fatal)
-      try {
-        if ((sel as any).createdBy) {
-          const notification = await storage.createNotification({
-            userId: (sel as any).createdBy,
-            companyId: (await storage.getProject(sel.projectId))?.companyId!,
-            type: "selection_client_comment",
-            title: "Client commented on a selection",
-            message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(sel as any).name}`,
-            link: `/projects/${sel.projectId}/selections/${sel.id}`,
-            entityType: "selection",
-            entityId: sel.id,
-            isRead: false,
-            createdByUserId: null,
-          });
-          emitNotification((sel as any).createdBy, notification);
-        }
-      } catch (_notifErr) {
-        // Non-fatal
-      }
-
-      res.status(201).json(comment);
+      const name = typeof clientName === "string" && clientName.trim()
+        ? clientName.trim().slice(0, 100) : "Client";
+      const result = await addClientSelectionComment(sel, content, name);
+      res.status(result.status).json(result.body);
     } catch (error) {
+      console.error("Portal comment error:", error);
       res.status(500).json({ error: "Failed to post comment" });
     }
   });
@@ -22279,58 +22388,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // signature fields and never sets status "approved" — a client approval
   // moves the variation to "pending" for the builder to finalise in-app
   // (which stamps approvedBy/approvedDate and runs budget/EOT side-effects).
-  app.post("/api/portal/variation/:token/sign", async (req, res) => {
-    try {
-      const { token } = req.params;
-      const { name, action, rejectionReason } = req.body as {
-        name: string;
-        action: "approve" | "reject";
-        rejectionReason?: string;
+  /**
+   * Record a CLIENT's signature on a variation — the one implementation behind
+   * both doors: the emailed portal link (token) and a signed-in client in the
+   * portal (session). Two copies of this would drift on exactly the parts that
+   * matter: the state guards, the approval side effects and the audit trail.
+   *
+   * Returns {status, body} rather than writing to res, so each route keeps its
+   * own response shape.
+   */
+  const applyClientVariationSignature = async (
+    variation: any,
+    input: { name: string; action: "approve" | "reject"; rejectionReason?: string; ip?: string | null; userAgent?: string | null },
+  ): Promise<{ status: number; body: any }> => {
+    const { name, action, rejectionReason } = input;
+    if (!name || !String(name).trim()) return { status: 400, body: { error: "Name is required" } };
+    if (action !== "approve" && action !== "reject") {
+      return { status: 400, body: { error: "Invalid action" } };
+    }
+
+    // State guard + idempotency: a variation that is already signed or
+    // finalised cannot be signed again.
+    if (variation.status === "approved" || variation.status === "rejected") {
+      return { status: 409, body: { error: "This variation has already been finalised." } };
+    }
+    if (variation.clientSignedName) {
+      return { status: 409, body: { error: "This variation has already been signed." } };
+    }
+    if (variation.approvalDeadline && new Date() > new Date(variation.approvalDeadline)) {
+      return {
+        status: 410,
+        body: { error: "The approval deadline for this variation has passed. Please contact your builder." },
       };
+    }
 
-      if (!name || !String(name).trim()) return res.status(400).json({ error: "Name is required" });
-      if (action !== "approve" && action !== "reject") {
-        return res.status(400).json({ error: "Invalid action" });
-      }
+    // Which document was signed. The client is looking at the latest send's
+    // snapshot, so the signature belongs to that row — not to the variation
+    // as it may later become.
+    const { variationSends } = await import("@shared/schema");
+    const [signedSend] = await db
+      .select()
+      .from(variationSends)
+      .where(eq(variationSends.variationId, variation.id))
+      .orderBy(desc(variationSends.sentAt))
+      .limit(1);
 
-      const { variations } = await import("@shared/schema");
-      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
-      if (!variation) return res.status(404).json({ error: "Portal link not found" });
-
-      // State guard + idempotency: a variation that is already signed or
-      // finalised cannot be signed again through the public link.
-      if (variation.status === "approved" || variation.status === "rejected") {
-        return res.status(409).json({ error: "This variation has already been finalised." });
-      }
-      if (variation.clientSignedName) {
-        return res.status(409).json({ error: "This variation has already been signed." });
-      }
-      if (variation.approvalDeadline && new Date() > new Date(variation.approvalDeadline)) {
-        return res.status(410).json({
-          error: "The approval deadline for this variation has passed. Please contact your builder for an updated link.",
-        });
-      }
-
-      // Which document was signed. The client is looking at the latest send's
-      // snapshot, so the signature belongs to that row — not to the variation
-      // as it may later become.
-      const { variationSends } = await import("@shared/schema");
-      const [signedSend] = await db
-        .select()
-        .from(variationSends)
-        .where(eq(variationSends.variationId, variation.id))
-        .orderBy(desc(variationSends.sentAt))
-        .limit(1);
-
-      // Audit trail: server timestamp + request origin (trust proxy is set,
-      // so req.ip reflects the real client IP behind the proxy).
-      const updates: Record<string, any> = {
-        clientSignedName: String(name).trim(),
-        clientSignedDate: new Date(),
-        clientSignedIp: req.ip ?? null,
-        clientSignedUserAgent: (req.headers["user-agent"] || "").toString().slice(0, 500) || null,
-        signedSendId: (signedSend as any)?.id ?? null,
-      };
+    // Audit trail: server timestamp + request origin (trust proxy is set,
+    // so the caller's ip reflects the real client IP behind the proxy).
+    const updates: Record<string, any> = {
+      clientSignedName: String(name).trim(),
+      clientSignedDate: new Date(),
+      clientSignedIp: input.ip ?? null,
+      clientSignedUserAgent: (input.userAgent || "").toString().slice(0, 500) || null,
+      signedSendId: (signedSend as any)?.id ?? null,
+    };
 
       if (action === "reject") {
         updates.status = "rejected";
@@ -22355,7 +22466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updates.approvedBy = null;
       }
 
-      const updated = await storage.updateVariation(variation.id, updates as any);
+    const updated = await storage.updateVariation(variation.id, updates as any);
 
       if (action === "approve" && updated) {
         // Fire the same side effect a builder-side approval fires. Not awaited
@@ -22393,9 +22504,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
-      res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
+    return {
+      status: 200,
+      body: { success: true, variation: updated ? projectPortalVariation(updated) : undefined },
+    };
+  };
+
+  // Public portal — client sign (approve or reject) by emailed link.
+  app.post("/api/portal/variation/:token/sign", async (req, res) => {
+    try {
+      // Tenancy: no session, so no companyId to scope by. The unguessable
+      // portal token IS the authorisation and resolves to exactly one
+      // variation, so this lookup cannot reach another tenant's row.
+      const { variations } = await import("@shared/schema");
+      const [variation] = await db
+        .select()
+        .from(variations)
+        .where(eq(variations.portalToken, req.params.token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      const { name, action, rejectionReason } = req.body as {
+        name: string;
+        action: "approve" | "reject";
+        rejectionReason?: string;
+      };
+      const result = await applyClientVariationSignature(variation, {
+        name,
+        action,
+        rejectionReason,
+        ip: req.ip ?? null,
+        userAgent: (req.headers["user-agent"] || "").toString(),
+      });
+      res.status(result.status).json(result.body);
     } catch (error) {
       console.error("Error signing variation:", error);
+      res.status(500).json({ error: "Failed to sign variation" });
+    }
+  });
+
+  /**
+   * Signed-in client signs a variation from inside the portal.
+   *
+   * Same signature, same guards, same side effects as the emailed link — only
+   * the credential differs. The clientAccess gate has already checked
+   * portal.variations:approve and that this client holds the project; the
+   * client check here is belt-and-braces so a builder session can never sign
+   * AS the client (they have their own approve path, which stamps them).
+   */
+  app.post("/api/variations/:id/client-sign", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+
+      const { action, rejectionReason } = req.body as {
+        action: "approve" | "reject";
+        rejectionReason?: string;
+      };
+      // The signature is the session's owner — never a name off the request.
+      const name = clientDisplayName(client);
+      const result = await applyClientVariationSignature(variation, {
+        name,
+        action,
+        rejectionReason,
+        ip: req.ip ?? null,
+        userAgent: (req.headers["user-agent"] || "").toString(),
+      });
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error("Error signing variation (portal session):", error);
       res.status(500).json({ error: "Failed to sign variation" });
     }
   });

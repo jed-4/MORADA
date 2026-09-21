@@ -5,6 +5,9 @@ import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumn
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import {
   clientAllowanceEstimateIds,
+  isSiteDiaryClientVisible,
+  projectClientScheduleItem,
+  projectClientSiteDiaryEntry,
   isInvoiceClientVisible,
   isVariationClientVisible,
   projectClientAllowance,
@@ -252,8 +255,18 @@ const shapeAllowances: ResponseShaper = async (body, _req, _user, path) => {
 const shapeScheduleItems: ResponseShaper = async (body, _req, user) => {
   if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
   const allItems = await storage.checkUserPermission(user.id, PORTAL_KEYS.scheduleAllItems, "view");
-  return allItems ? body : body.filter((item: any) => !item?.parentItemId);
+  const items = allItems ? body : body.filter((item: any) => !item?.parentItemId);
+  return items.map(projectClientScheduleItem);
 };
+
+/** Site diary: only entries ticked "share with client", trimmed. */
+const shapeSiteDiaryList: ResponseShaper = async (body) => {
+  if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
+  return body.filter(isSiteDiaryClientVisible).map(projectClientSiteDiaryEntry);
+};
+
+const shapeSiteDiaryEntry: ResponseShaper = async (body) =>
+  isSiteDiaryClientVisible(body) ? projectClientSiteDiaryEntry(body) : HIDE_FROM_CLIENT;
 
 /**
  * Review detail: drop the bearer portal token, internal ids and the audit
@@ -381,9 +394,26 @@ const ALLOW_RULES: AllowRule[] = [
     permission: [PORTAL_KEYS.selections, "view"],
     project: projectViaSelectionOption,
   },
-  // No client route to APPROVE a selection option: the client chooses and the
-  // builder confirms (Jed, 2026-09-17). Choosing/commenting arrive with the
-  // client selections screen.
+  // The client CHOOSES an option; the builder confirms it (Jed, 2026-09-17),
+  // so there is deliberately no client route to APPROVE one.
+  {
+    methods: ["PATCH"],
+    pattern: /^\/selections\/[^/]+\/options\/[^/]+\/client-select$/,
+    permission: [PORTAL_KEYS.selections, "edit"],
+    project: projectViaSelection,
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/selections\/[^/]+\/client-comments$/,
+    permission: [PORTAL_KEYS.selections, "view"],
+    project: projectViaSelection,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/selections\/[^/]+\/client-comments$/,
+    permission: [PORTAL_KEYS.selections, "add"],
+    project: projectViaSelection,
+  },
   // The allowance list only. The /detail route is deliberately NOT here: it
   // is the builder's cost ledger (bills, suppliers, staff cost rates, markup).
   {
@@ -446,6 +476,14 @@ const ALLOW_RULES: AllowRule[] = [
     project: projectViaVariation,
     shape: shapeVariationItems,
   },
+  // Signing in the portal. Same handler as the emailed link, so the role's
+  // "Sign to approve or reject" tick is what decides whether it is offered.
+  {
+    methods: ["POST"],
+    pattern: /^\/variations\/[^/]+\/client-sign$/,
+    permission: [PORTAL_KEYS.variations, "approve"],
+    project: projectViaVariation,
+  },
 
   // --- Progress claims (client invoices) ---
   {
@@ -476,12 +514,14 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/projects\/[^/]+\/site-diary-entries$/,
     permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectParam,
+    shape: shapeSiteDiaryList,
   },
   {
     methods: ["GET"],
     pattern: /^\/site-diary-entries\/[^/]+$/,
     permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectViaSiteDiaryEntry,
+    shape: shapeSiteDiaryEntry,
   },
 
   // --- Messages ---

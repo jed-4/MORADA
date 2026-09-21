@@ -252,3 +252,61 @@ export function projectClientAllowance(row: any) {
     finalised,
   };
 }
+
+// ── Schedule ────────────────────────────────────────────────────────────────
+
+/**
+ * A schedule item as the client sees it: what is happening and when. Who is
+ * doing it (assignedToName/teamName is usually a subcontractor), the builder's
+ * notes, cost codes and attachments stay server-side.
+ */
+export function projectClientScheduleItem(item: any) {
+  return {
+    id: item.id,
+    scheduleId: item.scheduleId,
+    name: item.name,
+    description: item.description,
+    type: item.type,
+    status: item.status,
+    startDate: item.startDate,
+    endDate: item.endDate,
+    duration: item.duration,
+    actualStartDate: item.actualStartDate,
+    actualEndDate: item.actualEndDate,
+    progressPercent: item.progressPercent,
+    parentItemId: item.parentItemId,
+    groupId: item.groupId,
+    groupName: item.groupName,
+    sortOrder: item.sortOrder,
+    order: item.order,
+  };
+}
+
+// ── Site diary ──────────────────────────────────────────────────────────────
+
+/**
+ * Only entries the builder ticked "share with client". The flag has existed on
+ * site_diary_entries all along but was a badge in the builder UI and nothing
+ * more — every entry, including internal ones, reached the client.
+ */
+export function isSiteDiaryClientVisible(entry: { shareWithClient?: boolean | null } | null | undefined): boolean {
+  return entry?.shareWithClient === true;
+}
+
+/** Drops the notify list and the author's user id; keeps the visible record. */
+export function projectClientSiteDiaryEntry(entry: any) {
+  return {
+    id: entry.id,
+    projectId: entry.projectId,
+    templateName: entry.templateName,
+    title: entry.title,
+    entryDateTime: entry.entryDateTime,
+    fieldValues: entry.fieldValues,
+    attachments: entry.attachments,
+    overallPhotos: entry.overallPhotos,
+    weather: entry.weather,
+    labels: entry.labels,
+    createdByName: entry.createdByName,
+    createdAt: entry.createdAt,
+  };
+}
