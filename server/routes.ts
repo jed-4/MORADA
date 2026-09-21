@@ -18804,8 +18804,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const clientDisplayName = (user: any): string =>
     [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Client";
 
+  /**
+   * Second lock on the client-only write routes: the record's project must be
+   * in the client's own company. clientAccessGate already resolves the project
+   * and requires a userProjectAccess grant, which is narrower — this is
+   * belt-and-braces so these routes carry their own tenancy check rather than
+   * depending entirely on middleware ordering.
+   */
+  const clientOwnsProject = async (projectId: string, companyId: string | null | undefined): Promise<boolean> => {
+    if (!projectId || !companyId) return false;
+    const project = await storage.getProject(projectId);
+    return !!project && (project as any).companyId === companyId;
+  };
+
   app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
     try {
+      // Tenancy: token-authorised, so there is no session companyId. The token
+      // resolves to a single selection and the chosen option must belong to it
+      // (checked in applyClientOptionChoice).
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, req.params.token))
@@ -18832,7 +18848,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = getClientUser(req);
       if (!client) return res.status(403).json({ error: "not_available_for_client" });
       const sel = await storage.getSelection(req.params.id);
-      if (!sel) return res.status(404).json({ error: "Selection not found" });
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
       const result = await applyClientOptionChoice(sel, req.params.optionId, clientDisplayName(client));
       res.status(result.status).json(result.body);
     } catch (error) {
@@ -18847,7 +18865,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = getClientUser(req);
       if (!client) return res.status(403).json({ error: "not_available_for_client" });
       const sel = await storage.getSelection(req.params.id);
-      if (!sel) return res.status(404).json({ error: "Selection not found" });
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
       res.json(await storage.getSelectionComments(sel.id));
     } catch (error) {
       console.error("Client selection comments error:", error);
@@ -18861,7 +18881,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = getClientUser(req);
       if (!client) return res.status(403).json({ error: "not_available_for_client" });
       const sel = await storage.getSelection(req.params.id);
-      if (!sel) return res.status(404).json({ error: "Selection not found" });
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
       const result = await addClientSelectionComment(sel, req.body?.content, clientDisplayName(client));
       res.status(result.status).json(result.body);
     } catch (error) {
@@ -18872,6 +18894,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/portal/selections/:token/comments", async (req, res) => {
     try {
+      // Tenancy: token-authorised, no session companyId — as for the select
+      // route above, the token resolves to exactly one selection.
       const { content, clientName } = req.body;
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
@@ -22489,6 +22513,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Public portal — client sign (approve or reject) by emailed link.
   app.post("/api/portal/variation/:token/sign", async (req, res) => {
     try {
+      // Tenancy: no session, so no companyId to scope by. The unguessable
+      // portal token IS the authorisation and resolves to exactly one
+      // variation, so this lookup cannot reach another tenant's row.
       const { variations } = await import("@shared/schema");
       const [variation] = await db
         .select()
@@ -22531,6 +22558,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const variation = await storage.getVariation(req.params.id);
       if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
         return res.status(404).json({ error: "Variation not found" });
       }
 
