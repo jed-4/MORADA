@@ -5,6 +5,9 @@ import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumn
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import {
   clientAllowanceEstimateIds,
+  isSiteDiaryClientVisible,
+  projectClientScheduleItem,
+  projectClientSiteDiaryEntry,
   isInvoiceClientVisible,
   isVariationClientVisible,
   projectClientAllowance,
@@ -252,8 +255,18 @@ const shapeAllowances: ResponseShaper = async (body, _req, _user, path) => {
 const shapeScheduleItems: ResponseShaper = async (body, _req, user) => {
   if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
   const allItems = await storage.checkUserPermission(user.id, PORTAL_KEYS.scheduleAllItems, "view");
-  return allItems ? body : body.filter((item: any) => !item?.parentItemId);
+  const items = allItems ? body : body.filter((item: any) => !item?.parentItemId);
+  return items.map(projectClientScheduleItem);
 };
+
+/** Site diary: only entries ticked "share with client", trimmed. */
+const shapeSiteDiaryList: ResponseShaper = async (body) => {
+  if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
+  return body.filter(isSiteDiaryClientVisible).map(projectClientSiteDiaryEntry);
+};
+
+const shapeSiteDiaryEntry: ResponseShaper = async (body) =>
+  isSiteDiaryClientVisible(body) ? projectClientSiteDiaryEntry(body) : HIDE_FROM_CLIENT;
 
 /**
  * Review detail: drop the bearer portal token, internal ids and the audit
@@ -476,12 +489,14 @@ const ALLOW_RULES: AllowRule[] = [
     pattern: /^\/projects\/[^/]+\/site-diary-entries$/,
     permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectParam,
+    shape: shapeSiteDiaryList,
   },
   {
     methods: ["GET"],
     pattern: /^\/site-diary-entries\/[^/]+$/,
     permission: [PORTAL_KEYS.siteDiary, "view"],
     project: projectViaSiteDiaryEntry,
+    shape: shapeSiteDiaryEntry,
   },
 
   // --- Messages ---
