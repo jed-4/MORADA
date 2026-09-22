@@ -111,9 +111,12 @@ function OptionCard({
               href={option.url}
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-primary inline-flex items-center gap-1 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm text-primary inline-flex items-center gap-1 hover:underline truncate"
+              title={option.url}
             >
-              View product <ExternalLink className="h-3.5 w-3.5" />
+              {option.url.replace(/^https?:\/\//i, "").replace(/\/.*$/, "")}
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
             </a>
           ) : (
             <span />

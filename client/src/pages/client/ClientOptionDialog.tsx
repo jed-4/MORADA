@@ -26,6 +26,17 @@ type Attachment = NonNullable<ClientSelectionOption["attachments"]>[number] & {
 
 const isImage = (a: Attachment) => a.fileType?.toLowerCase() === "image";
 
+/**
+ * Show the link itself rather than labelling it. A builder pastes whatever is
+ * useful — a supplier page, a showroom, a magazine article, a Pinterest board
+ * — so any wording we invent ("View on the supplier's site") is a guess that
+ * is sometimes wrong. The address says where it goes.
+ */
+const prettyUrl = (url: string) => {
+  const trimmed = url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return trimmed.length > 60 ? `${trimmed.slice(0, 57)}…` : trimmed;
+};
+
 export function ClientOptionDialog({
   option,
   open,
@@ -148,9 +159,10 @@ export function ClientOptionDialog({
                 href={option.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-sm text-primary inline-flex items-center gap-1 hover:underline"
+                className="text-sm text-primary inline-flex items-center gap-1 hover:underline break-all"
+                data-testid="link-option-url"
               >
-                View on the supplier's site <ExternalLink className="h-3.5 w-3.5" />
+                {prettyUrl(option.url)} <ExternalLink className="h-3.5 w-3.5 shrink-0" />
               </a>
             ) : (
               <span />
