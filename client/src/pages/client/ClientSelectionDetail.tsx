@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useClientPortal } from "@/hooks/use-client-portal";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { firstImage } from "@/components/selections/selectionHelpers";
+import { ClientOptionDialog } from "./ClientOptionDialog";
 import { ClientError, ClientLoading, ClientPage, ClientStatus } from "@/components/client/ClientPage";
 import { selectionStatus, type ClientSelection, type ClientSelectionOption } from "./ClientSelections";
 
@@ -38,26 +39,35 @@ function OptionCard({
   canChoose,
   choosing,
   onChoose,
+  onOpen,
 }: {
   option: ClientSelectionOption;
   showPrice: boolean;
   canChoose: boolean;
   choosing: boolean;
   onChoose: () => void;
+  onOpen: () => void;
 }) {
   const approved = !!option.approvedAt;
   const picked = !!option.isSelectedByClient;
   const image = firstImage(option as any);
+  const photoCount = (option.attachments ?? []).filter((a) => a.fileType?.toLowerCase() === "image").length;
   return (
     <Card
       className={cn(
-        "overflow-hidden",
+        "relative overflow-hidden cursor-pointer hover-elevate",
         approved && "border-[hsl(var(--sage))]",
         !approved && picked && "border-primary",
       )}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       data-testid={`client-option-${option.id}`}
     >
-      {/* The photo is the point of a selection — full-bleed, not a thumbnail. */}
+      {/* The photo is the point of a selection — full-bleed, not a thumbnail.
+          The card is a summary: tapping it opens everything the builder
+          attached (every photo, the specs, the documents, the link). */}
       {image?.filePath ? (
         <img
           src={image.filePath}
@@ -70,6 +80,11 @@ function OptionCard({
         <div className="w-full aspect-[4/3] bg-muted flex items-center justify-center">
           <ImageIcon className="h-6 w-6 text-muted-foreground/60" />
         </div>
+      )}
+      {photoCount > 1 && (
+        <span className="absolute top-2 right-2 rounded-full bg-black/55 text-white text-[10px] px-2 py-0.5">
+          {photoCount} photos
+        </span>
       )}
       <CardContent className="p-4 space-y-2">
         <div className="flex items-start justify-between gap-3">
@@ -113,7 +128,7 @@ function OptionCard({
             className="w-full"
             variant={picked ? "outline" : "default"}
             disabled={choosing || picked}
-            onClick={onChoose}
+            onClick={(e) => { e.stopPropagation(); onChoose(); }}
             data-testid={`button-choose-${option.id}`}
           >
             {choosing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -152,6 +167,7 @@ export default function ClientSelectionDetail() {
   const canChoose = hasPermission(PORTAL_KEYS.selections, "edit");
   const canComment = hasPermission(PORTAL_KEYS.selections, "add");
   const [draft, setDraft] = useState("");
+  const [openOptionId, setOpenOptionId] = useState<string | null>(null);
 
   const { data: comments = [] } = useQuery<SelectionComment[]>({
     queryKey: [`/api/selections/${id}/client-comments`],
@@ -249,6 +265,7 @@ export default function ClientSelectionDetail() {
             canChoose={canChoose && !confirmed && selection.clientCanChange !== false}
             choosing={choose.isPending && choose.variables === option.id}
             onChoose={() => choose.mutate(option.id)}
+            onOpen={() => setOpenOptionId(option.id)}
           />
         ))}
       </div>
@@ -271,6 +288,16 @@ export default function ClientSelectionDetail() {
           </CardContent>
         </Card>
       )}
+
+      <ClientOptionDialog
+        option={options.find((o) => o.id === openOptionId) ?? null}
+        open={!!openOptionId}
+        onOpenChange={(next) => setOpenOptionId(next ? openOptionId : null)}
+        showPrice={showPrice}
+        canChoose={canChoose && !confirmed && selection.clientCanChange !== false}
+        choosing={choose.isPending}
+        onChoose={() => openOptionId && choose.mutate(openOptionId)}
+      />
 
       {canComment && (
         <Card data-testid="client-selection-comments">

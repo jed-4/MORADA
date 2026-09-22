@@ -50,6 +50,21 @@ const photo = (seed: string, label: string) => {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
+/** A stand-in spec sheet, so the option dialog has a document to offer. */
+const specSheet = (name: string, lines: string[]) => {
+  const rows = lines
+    .map((line, i) => `<text x="60" y="${190 + i * 44}" font-family="Helvetica,Arial,sans-serif" font-size="22" fill="#2C2825">${line.replace(/[<>&]/g, "")}</text>`)
+    .join("");
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123">` +
+    `<rect width="794" height="1123" fill="#ffffff"/>` +
+    `<rect x="0" y="0" width="794" height="96" fill="#87749A"/>` +
+    `<text x="60" y="60" font-family="Helvetica,Arial,sans-serif" font-size="30" fill="#fff">Specification</text>` +
+    `<text x="60" y="146" font-family="Helvetica,Arial,sans-serif" font-size="26" fill="#2C2825">${name.replace(/[<>&]/g, "")}</text>` +
+    rows + `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 async function main() {
   // ── Which project ──────────────────────────────────────────────────────────
   const [{ n: projectCount }] = await sql`select count(*)::int n from projects` as any;
@@ -199,23 +214,44 @@ async function main() {
     {
       name: "Kitchen splashback", room: "Kitchen", category: "Tiles", deadline: "2026-10-10",
       options: [
-        { name: "Zellige White Gloss", brand: "Concept Tile", sku: "ZW-100", cost: 8900, desc: "Handmade zellige, 100x100, gloss white.", seed: "tilea" },
-        { name: "Terrazzo Bianco", brand: "Concept Tile", sku: "TZ-220", cost: 12400, desc: "Warm white terrazzo, 600x600.", seed: "tileb" },
-        { name: "Sandstone Subway", brand: "Concept Tile", sku: "SS-075", cost: 6400, desc: "Matte subway, 75x150, sand.", seed: "tilec" },
+        { name: "Zellige White Gloss", brand: "Concept Tile", sku: "ZW-100", cost: 8900, seed: "tilea", photos: 3,
+          desc: "Handmade Moroccan zellige with a gloss glaze. Every tile varies slightly in tone and edge — that variation is the look, not a fault.",
+          url: "https://example.com/zellige-white-gloss",
+          specs: { Size: "100 × 100mm", Finish: "Gloss", Material: "Handmade terracotta", Coverage: "1 box = 0.5m²", "Lead time": "3 weeks" } },
+        { name: "Terrazzo Bianco", brand: "Concept Tile", sku: "TZ-220", cost: 12400, seed: "tileb", photos: 2,
+          desc: "Large-format terrazzo with fine grey and warm white aggregate. Rectified edges for a tight grout line.",
+          url: "https://example.com/terrazzo-bianco",
+          specs: { Size: "600 × 600mm", Finish: "Honed", Material: "Cement terrazzo", "Slip rating": "P3", "Lead time": "In stock" } },
+        { name: "Sandstone Subway", brand: "Concept Tile", sku: "SS-075", cost: 6400, seed: "tilec", photos: 2,
+          desc: "Matte glazed subway in a soft sand tone. The most economical of the three and held locally.",
+          url: "https://example.com/sandstone-subway",
+          specs: { Size: "75 × 150mm", Finish: "Matte", Material: "Glazed ceramic", "Lead time": "In stock" } },
       ],
     },
     {
       name: "Ensuite tapware", room: "Ensuite", category: "Tapware", deadline: "2026-10-18",
       options: [
-        { name: "Kingsley Brushed Brass", brand: "Astra Walker", sku: "KB-12", cost: 79000, desc: "Wall mixer + spout, brushed brass.", seed: "tapa" },
-        { name: "Icon Chrome", brand: "Astra Walker", sku: "IC-04", cost: 52000, desc: "Wall mixer + spout, polished chrome.", seed: "tapb" },
+        { name: "Kingsley Brushed Brass", brand: "Astra Walker", sku: "KB-12", cost: 79000, seed: "tapa", photos: 3,
+          desc: "Wall mixer and spout in living brushed brass — the finish deepens with use rather than staying uniform.",
+          url: "https://example.com/kingsley-brushed-brass",
+          specs: { Finish: "Brushed brass (living)", Spout: "200mm", Warranty: "15 years", "Lead time": "6 weeks" } },
+        { name: "Icon Chrome", brand: "Astra Walker", sku: "IC-04", cost: 52000, seed: "tapb", photos: 2,
+          desc: "Wall mixer and spout in polished chrome. Hard-wearing and the easiest of the two to keep clean.",
+          url: "https://example.com/icon-chrome",
+          specs: { Finish: "Polished chrome", Spout: "180mm", Warranty: "15 years", "Lead time": "2 weeks" } },
       ],
     },
     {
       name: "Pendant lights over island", room: "Kitchen", category: "Lighting", deadline: "2026-11-01",
       options: [
-        { name: "Muuto Ambit 25", brand: "Muuto", sku: "AMB-25", cost: 43500, desc: "Powder-coated shade, 250mm.", seed: "lighta" },
-        { name: "Ferm Living Arum", brand: "Ferm Living", sku: "AR-18", cost: 38900, desc: "Brass-trimmed glass, 180mm.", seed: "lightb" },
+        { name: "Muuto Ambit 25", brand: "Muuto", sku: "AMB-25", cost: 43500, seed: "lighta", photos: 2,
+          desc: "Powder-coated aluminium shade, 250mm. Shown in dusty green; also available in black and white.",
+          url: "https://example.com/muuto-ambit",
+          specs: { Diameter: "250mm", Drop: "Adjustable to 3m", Globe: "E27 (not included)", "Lead time": "4 weeks" } },
+        { name: "Ferm Living Arum", brand: "Ferm Living", sku: "AR-18", cost: 38900, seed: "lightb", photos: 3,
+          desc: "Opal glass shade with a brass trim, 180mm. Warmer light than the Ambit and a smaller footprint.",
+          url: "https://example.com/ferm-arum",
+          specs: { Diameter: "180mm", Drop: "Adjustable to 2.5m", Globe: "E14 (included)", "Lead time": "In stock" } },
       ],
     },
   ];
@@ -226,12 +262,23 @@ async function main() {
       returning id` as any[];
     for (const [i, option] of spec.options.entries()) {
       const [created] = await sql`
-        insert into selection_options (selection_id, name, brand, sku, description, unit_cost, quantity, markup_percent, visible_to_client, sort_order)
-        values (${selection.id}, ${option.name}, ${option.brand}, ${option.sku}, ${option.desc}, ${option.cost}, ${1}, ${10}, true, ${i})
+        insert into selection_options (selection_id, name, brand, sku, description, url, specifications, unit_cost, quantity, markup_percent, visible_to_client, sort_order)
+        values (${selection.id}, ${option.name}, ${option.brand}, ${option.sku}, ${option.desc}, ${option.url},
+                ${JSON.stringify(option.specs)}::json, ${option.cost}, ${1}, ${10}, true, ${i})
         returning id` as any[];
+      // Several photos per option: the card shows one, the detail shows them all.
+      for (let p = 0; p < option.photos; p++) {
+        await sql`
+          insert into option_attachments (option_id, file_name, file_path, file_type, mime_type, sort_order)
+          values (${created.id}, ${`${option.seed}-${p + 1}.svg`},
+                  ${photo(`${option.seed}${p || ""}`, p === 0 ? option.name : `${option.name} ${p + 1}`)},
+                  ${"image"}, ${"image/svg+xml"}, ${p})`;
+      }
       await sql`
         insert into option_attachments (option_id, file_name, file_path, file_type, mime_type, sort_order)
-        values (${created.id}, ${option.seed + ".svg"}, ${photo(option.seed, option.name)}, ${"image"}, ${"image/svg+xml"}, ${0})`;
+        values (${created.id}, ${`${option.sku} specification.svg`},
+                ${specSheet(option.name, Object.entries(option.specs).map(([k, v]) => `${k}: ${v}`))},
+                ${"specification"}, ${"image/svg+xml"}, ${9})`;
     }
   }
 
