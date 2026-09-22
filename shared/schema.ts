@@ -8100,6 +8100,10 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   geometry: json("geometry").notNull().default([]),
   quantity: doublePrecision("quantity").notNull().default(0),
   unit: text("unit").notNull().default("m²"),
+  // Wall height in MILLIMETRES for a linear item measured as a run (wall
+  // linings, tiles): length x height = m². Null means no height, so the item
+  // stays in lm. See migration 0087.
+  heightMm: doublePrecision("height_mm"),
   multiplier: doublePrecision("multiplier").notNull().default(1),
   wastePercent: doublePrecision("waste_percent").notNull().default(0),
   fillPattern: text("fill_pattern").notNull().default("solid"),

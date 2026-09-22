@@ -11507,7 +11507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const updateTakeoffMeasurementSchema = insertTakeoffMeasurementSchema
       .pick({
         name: true, categoryId: true, color: true, geometry: true,
-        quantity: true, unit: true, multiplier: true, wastePercent: true,
+        quantity: true, unit: true, heightMm: true, multiplier: true, wastePercent: true,
         fillPattern: true, lineType: true, lineSize: true,
         isVisible: true, order: true,
       })

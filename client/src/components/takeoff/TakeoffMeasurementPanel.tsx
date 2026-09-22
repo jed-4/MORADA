@@ -42,11 +42,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { TakeoffMeasurement, TakeoffCategory, TakeoffPlan } from "@shared/schema";
 import TakeoffColorPicker from "./TakeoffColorPicker";
+import { normalizeEntries } from "./useTakeoffGeometry";
 
 interface Props {
   projectId: string;
   plan: TakeoffPlan;
+  /** Every item on the plan — one list, however many pages it is drawn across. */
   measurements: TakeoffMeasurement[];
+  /** The page on screen, so rows can say whether they are marked up here. */
+  currentPageId?: string | null;
+  /** Page id → page number, for the "pages 1, 3" note on a row. */
+  pageNumberById?: Map<string, number>;
   categories: TakeoffCategory[];
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
@@ -65,6 +71,8 @@ export default function TakeoffMeasurementPanel({
   projectId,
   plan,
   measurements,
+  currentPageId = null,
+  pageNumberById,
   categories,
   highlightedId,
   onHighlight,
@@ -240,7 +248,9 @@ export default function TakeoffMeasurementPanel({
     <div className="flex flex-col h-full bg-card border-l border-border">
       <div className="px-3 py-2 border-b border-border flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">This plan</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            This plan — all pages
+          </div>
           <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
         </div>
         <Button size="sm" variant="ghost" onClick={onAddClick} data-testid="button-add-measurement-header">
@@ -301,6 +311,8 @@ export default function TakeoffMeasurementPanel({
                   onEditClick={onEditClick}
                   onUpdateMeasurement={(id, data) => updateMeasurement.mutate({ id, data })}
                   onDeleteMeasurement={(id) => deleteMeasurement.mutate(id)}
+                  currentPageId={currentPageId}
+                  pageNumberById={pageNumberById}
                 />
               ))}
             </SortableContext>
@@ -361,6 +373,8 @@ function SortableGroup({
   onEditClick,
   onUpdateMeasurement,
   onDeleteMeasurement,
+  currentPageId,
+  pageNumberById,
 }: {
   group: { id: string; name: string; rows: TakeoffMeasurement[] };
   isCollapsed: boolean;
@@ -379,6 +393,8 @@ function SortableGroup({
   onEditClick?: (m: TakeoffMeasurement) => void;
   onUpdateMeasurement: (id: string, data: Partial<TakeoffMeasurement>) => void;
   onDeleteMeasurement: (id: string) => void;
+  currentPageId: string | null;
+  pageNumberById?: Map<string, number>;
 }) {
   const sortable = useSortable({ id: group.id, disabled: !draggable });
   const style = {
@@ -447,6 +463,8 @@ function SortableGroup({
                 onEdit={onEditClick ? () => onEditClick(m) : undefined}
                 active={m.id === activeDrawingId}
                 onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
+                currentPageId={currentPageId}
+                pageNumberById={pageNumberById}
               />
             ))}
           </SortableContext>
@@ -459,7 +477,7 @@ function SortableGroup({
 function SortableRow({
   m, editing, editName, setEditName, onStartEdit, onCommitName,
   highlighted, onHighlight, onColor, onToggleVisible, onDelete, onEdit,
-  active, onActivate,
+  active, onActivate, currentPageId, pageNumberById,
 }: {
   m: TakeoffMeasurement;
   editing: boolean;
@@ -475,9 +493,24 @@ function SortableRow({
   onEdit?: () => void;
   active: boolean;
   onActivate?: () => void;
+  currentPageId: string | null;
+  pageNumberById?: Map<string, number>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: m.id });
+  /* Where this item has been marked up. The quantity on the row is the sum of
+     all of them, so the row says which pages it came from — otherwise a total
+     that includes pages you cannot see reads like a bug. */
+  const entries = normalizeEntries(m.geometry, m.pageId);
+  const pageNumbers = Array.from(
+    new Set(
+      entries
+        .map((e) => (e.pageId ? pageNumberById?.get(e.pageId) : undefined))
+        .filter((n): n is number => typeof n === "number"),
+    ),
+  ).sort((a, b) => a - b);
+  const onThisPage = entries.some((e) => e.pageId === currentPageId);
+  const heightMm = (m as { heightMm?: number | null }).heightMm ?? null;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -485,8 +518,14 @@ function SortableRow({
   };
   const handleRowClick = (e: React.MouseEvent) => {
     if (!onActivate) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, [role='button'], [role='menuitem']")) return;
+    // Clicks on the row's own controls (colour, eye, menu, the rename input)
+    // are theirs, not "start drawing". The row must be excluded from that test
+    // by hand: useSortable puts role="button" on it, so closest() matched the
+    // ROW for every click and drawing could never be started from the list.
+    const hit = (e.target as HTMLElement).closest(
+      "button, input, [role='button'], [role='menuitem']",
+    );
+    if (hit && hit !== e.currentTarget) return;
     onActivate();
   };
   const canDraw = m.measurementType !== "manual";
@@ -537,8 +576,22 @@ function SortableRow({
             <span className="truncate">{m.name}</span>
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {m.measurementType}
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+          <span>{m.measurementType}</span>
+          {heightMm ? <span className="normal-case">· {heightMm / 1000} m high</span> : null}
+          {pageNumbers.length > 0 && (
+            <span
+              className={`normal-case ${onThisPage ? "text-foreground/70" : ""}`}
+              title={
+                pageNumbers.length > 1
+                  ? `Marked up on pages ${pageNumbers.join(", ")} — the quantity is all of them`
+                  : `Marked up on page ${pageNumbers[0]}`
+              }
+              data-testid={`row-pages-${m.id}`}
+            >
+              · {pageNumbers.length > 1 ? "pp" : "p"} {pageNumbers.join(", ")}
+            </span>
+          )}
         </div>
       </div>
       <div className="text-sm tabular-nums w-20 text-right">
