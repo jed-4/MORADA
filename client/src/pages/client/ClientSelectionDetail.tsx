@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
-import { ArrowLeft, Check, ExternalLink, Loader2, MessageSquare } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Image as ImageIcon, Loader2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useClientPortal } from "@/hooks/use-client-portal";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
+import { firstImage } from "@/components/selections/selectionHelpers";
 import { ClientError, ClientLoading, ClientPage, ClientStatus } from "@/components/client/ClientPage";
 import { selectionStatus, type ClientSelection, type ClientSelectionOption } from "./ClientSelections";
 
@@ -46,11 +47,30 @@ function OptionCard({
 }) {
   const approved = !!option.approvedAt;
   const picked = !!option.isSelectedByClient;
+  const image = firstImage(option as any);
   return (
     <Card
-      className={cn(approved && "border-[hsl(var(--sage))]", !approved && picked && "border-primary")}
+      className={cn(
+        "overflow-hidden",
+        approved && "border-[hsl(var(--sage))]",
+        !approved && picked && "border-primary",
+      )}
       data-testid={`client-option-${option.id}`}
     >
+      {/* The photo is the point of a selection — full-bleed, not a thumbnail. */}
+      {image?.filePath ? (
+        <img
+          src={image.filePath}
+          alt=""
+          loading="lazy"
+          className="w-full aspect-[4/3] object-cover"
+          style={{ objectPosition: `${image.thumbnailX ?? 50}% ${image.thumbnailY ?? 50}%` }}
+        />
+      ) : (
+        <div className="w-full aspect-[4/3] bg-muted flex items-center justify-center">
+          <ImageIcon className="h-6 w-6 text-muted-foreground/60" />
+        </div>
+      )}
       <CardContent className="p-4 space-y-2">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -220,7 +240,7 @@ export default function ClientSelectionDetail() {
         </p>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {options.map((option) => (
           <OptionCard
             key={option.id}

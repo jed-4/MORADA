@@ -22181,6 +22181,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       const project: any = projectRows[0];
       const company = project ? await storage.getCompany(project.companyId) : undefined;
+      // Who the document is addressed to (see the project block below).
+      const clientContact = project?.clientId && project?.companyId
+        ? await storage.getContact(project.clientId, project.companyId).catch(() => undefined)
+        : undefined;
       // No session here — the portal token is the only credential — so the
       // branding/terms shown to the client come from the company that owns the
       // variation's project, never from whichever settings row came back first.
@@ -22262,9 +22266,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               id: project.id,
               name: project.name,
               address: project.address,
-              clientName: project.clientName,
-              clientPhone: project.clientPhone,
-              clientEmail: project.clientEmail,
+              // The document's "TO" block. `projects` has no clientName /
+              // clientEmail / clientPhone columns — only clientId, pointing at
+              // the CRM contact — so reading them off the project row left the
+              // addressee blank on every variation the client was ever sent.
+              clientName: clientContact?.name ?? null,
+              clientPhone: clientContact?.phone ?? null,
+              clientEmail: clientContact?.email ?? null,
             }
           : undefined,
         company: company
@@ -22539,6 +22547,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
+    }
+  });
+
+  /**
+   * The variation document for a signed-in client — the SAME payload the
+   * emailed portal link serves (buildVariationPortalPayload), so the portal
+   * page and the email render one document rather than two lookalikes.
+   */
+  app.get("/api/variations/:id/client-view", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      res.json(await buildVariationPortalPayload(variation));
+    } catch (error) {
+      console.error("Error building client variation view:", error);
+      res.status(500).json({ error: "Failed to load variation" });
+    }
+  });
+
+  /** An attachment on the client's own variation, by index (never a raw path). */
+  app.get("/api/variations/:id/client-attachments/:index", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const attachments = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const attachment = attachments[Number(req.params.index)];
+      const objectPath: string | undefined = attachment?.url;
+      if (!attachment || typeof objectPath !== "string" || !objectPath.startsWith("/objects/")) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
+      if (attachment.name) {
+        res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      console.error("Error serving client attachment:", error);
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
+  /**
+   * The PDF the client was emailed, served back verbatim from the archive —
+   * never re-rendered, because the variation may have changed since and a
+   * lookalike is not the document they were sent (or signed).
+   */
+  app.get("/api/variations/:id/client-document", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const { variationSends } = await import("@shared/schema");
+      // The send the signature belongs to, else the most recent one.
+      const sends = await db
+        .select()
+        .from(variationSends)
+        .where(eq(variationSends.variationId, variation.id))
+        .orderBy(desc(variationSends.sentAt));
+      const signedSendId = (variation as any).signedSendId;
+      const send = sends.find((row: any) => row.id === signedSendId) ?? sends[0];
+      const stored = (send as any)?.sentPdfPath as string | null | undefined;
+      if (!stored) return res.status(404).json({ error: "No document was archived for this variation" });
+
+      const normalisedPath = stored.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await new ObjectStorageService().getObjectEntityFile(normalisedPath);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${String((variation as any).variationNumber || "variation").replace(/"/g, "")}.pdf"`,
+      );
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      console.error("Error serving client variation document:", error);
+      res.status(500).json({ error: "Failed to load document" });
     }
   });
 
