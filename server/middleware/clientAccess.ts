@@ -527,6 +527,14 @@ const ALLOW_RULES: AllowRule[] = [
     project: projectViaClientInvoice,
     shape: shapeInvoiceChild,
   },
+  // The claim as a document (letterhead, addressee, lines, payments). The
+  // route projects its own payload, so no shaper here.
+  {
+    methods: ["GET"],
+    pattern: /^\/client-invoices\/[^/]+\/client-view$/,
+    permission: [PORTAL_KEYS.invoices, "view"],
+    project: projectViaClientInvoice,
+  },
 
   // --- Site diary ---
   {

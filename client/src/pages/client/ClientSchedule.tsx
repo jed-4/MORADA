@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { format, isAfter, isBefore, startOfDay } from "date-fns";
-import { CalendarDays, Check, Flag, Loader2 } from "lucide-react";
+import { CalendarDays, Check, Flag, GanttChartSquare, List, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,6 +13,7 @@ import {
   ClientMarker,
 } from "@/components/client/ClientListPage";
 import { ClientStatus } from "@/components/client/ClientPage";
+import { ClientScheduleTimeline } from "./ClientScheduleTimeline";
 
 /**
  * The client's view of the programme.
@@ -71,6 +72,18 @@ const dateRange = (item: ScheduleItem) => {
 
 export default function ClientSchedule() {
   const { projectId } = useParams<{ projectId: string }>();
+  // Remembered per browser, like the builder's own view toggles.
+  const [view, setView] = useState<"list" | "timeline">(() => {
+    try {
+      return localStorage.getItem("client-schedule-view") === "timeline" ? "timeline" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const chooseView = (next: "list" | "timeline") => {
+    setView(next);
+    try { localStorage.setItem("client-schedule-view", next); } catch { /* private window */ }
+  };
 
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<Schedule[]>({
     queryKey: [`/api/projects/${projectId}/schedules`],
@@ -113,6 +126,28 @@ export default function ClientSchedule() {
         ...(span ? [{ label: span }] : []),
         ...(items.length ? [{ label: `${percent}% complete` }] : []),
       ]}
+      controls={
+        items.length > 0 ? (
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <button
+              onClick={() => chooseView("list")}
+              className={cn("h-5 px-1.5 rounded flex items-center gap-1 text-[11px]", view === "list" && "bg-primary/10 text-primary")}
+              data-testid="button-schedule-view-list"
+              aria-label="List view"
+            >
+              <List className="h-3 w-3" /> List
+            </button>
+            <button
+              onClick={() => chooseView("timeline")}
+              className={cn("h-5 px-1.5 rounded flex items-center gap-1 text-[11px]", view === "timeline" && "bg-primary/10 text-primary")}
+              data-testid="button-schedule-view-timeline"
+              aria-label="Timeline view"
+            >
+              <GanttChartSquare className="h-3 w-3" /> Timeline
+            </button>
+          </div>
+        ) : undefined
+      }
     >
       {loading ? (
         <div className="flex items-center justify-center py-16">
@@ -126,6 +161,8 @@ export default function ClientSchedule() {
           variant="inline"
           className="py-16"
         />
+      ) : view === "timeline" ? (
+        <ClientScheduleTimeline items={items} />
       ) : (
         groups.map(([groupName, groupItems]) => {
           const groupDone = groupItems.filter(isDone).length;

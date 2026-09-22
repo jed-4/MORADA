@@ -225,7 +225,15 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
-import { isVariationClientVisible, projectClientVariation, projectClientVariationItems } from "./clientProjections";
+import {
+  isInvoiceClientVisible,
+  isVariationClientVisible,
+  projectClientInvoice,
+  projectClientInvoiceItem,
+  projectClientInvoicePayments,
+  projectClientVariation,
+  projectClientVariationItems,
+} from "./clientProjections";
 import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
@@ -22618,6 +22626,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
+    }
+  });
+
+  /**
+   * The progress claim as a DOCUMENT for a signed-in client: the claim itself
+   * plus who it is from and to, so the portal can render it the way the
+   * variation renders — rather than a screen of totals with no letterhead.
+   *
+   * Same projection as every other client invoice route (the gate shapes the
+   * invoice), with the company/branding and the addressee resolved here.
+   */
+  app.get("/api/client-invoices/:id/client-view", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice || !isInvoiceClientVisible(invoice)) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      if (!(await clientOwnsProject(invoice.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const project: any = await storage.getProject(invoice.projectId);
+      const company = project?.companyId ? await storage.getCompany(project.companyId) : undefined;
+      const settings = project?.companyId
+        ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
+        : undefined;
+      // The "TO" block: projects carry a clientId, not a client name.
+      const clientContact = project?.clientId && project?.companyId
+        ? await storage.getContact(project.clientId, project.companyId).catch(() => undefined)
+        : undefined;
+
+      const [items, payments] = await Promise.all([
+        storage.getClientInvoiceItems(invoice.id),
+        storage.getClientInvoicePayments(invoice.id),
+      ]);
+
+      res.json({
+        invoice: projectClientInvoice(invoice),
+        items: items.map(projectClientInvoiceItem),
+        payments: projectClientInvoicePayments(payments),
+        project: project
+          ? {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              clientName: clientContact?.name ?? null,
+              clientEmail: clientContact?.email ?? null,
+              clientPhone: clientContact?.phone ?? null,
+            }
+          : undefined,
+        company: company
+          ? {
+              id: company.id,
+              name: company.name,
+              abn: (company as any).abn,
+              phone: (company as any).phone,
+              email: (company as any).email,
+              logo: (company as any).logo,
+              brandColor: (settings as any)?.brandColor ?? null,
+            }
+          : undefined,
+      });
+    } catch (error) {
+      console.error("Error building client invoice view:", error);
+      res.status(500).json({ error: "Failed to load invoice" });
     }
   });
 
