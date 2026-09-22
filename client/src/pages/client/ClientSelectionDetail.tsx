@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCents } from "@shared/money";
+import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useClientPortal } from "@/hooks/use-client-portal";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { firstImage } from "@/components/selections/selectionHelpers";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
-import { ClientError, ClientLoading, ClientPage, ClientStatus } from "@/components/client/ClientPage";
+import { ClientError, ClientLoading, ClientPage, ClientScroll, ClientStatus } from "@/components/client/ClientPage";
 import { selectionStatus, type ClientSelection, type ClientSelectionOption } from "./ClientSelections";
 import { ClientOptionDialog } from "./ClientOptionDialog";
 
@@ -139,6 +140,7 @@ export default function ClientSelectionDetail() {
   const openOption = options.find((o) => o.id === openOptionId) ?? null;
 
   return (
+    <ClientScroll>
     <div className="p-4 md:p-6 space-y-4" data-testid="client-selection-detail">
       <div className="flex items-center gap-2">
         <Button
@@ -242,18 +244,37 @@ export default function ClientSelectionDetail() {
       {canComment && (
         <Card data-testid="client-selection-comments">
           <CardContent className="p-4 md:p-6 space-y-3">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              Questions about this selection
-            </h2>
+            <div>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Comments
+                {comments.length > 0 && (
+                  <span className="text-data text-muted-foreground uppercase tracking-wide">
+                    {comments.length}
+                  </span>
+                )}
+              </h2>
+              {/* The same thread the builder sees on their selection page —
+                  worth saying, so a client knows a comment reaches someone. */}
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Anything you post here goes to your builder on this selection.
+              </p>
+            </div>
 
             {comments.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {comments.map((c) => (
-                  <div key={c.id} className="text-sm">
-                    <div className="text-muted-foreground text-xs">
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "rounded-md border p-3 text-sm",
+                      c.isClientComment ? "bg-primary-light/60 border-primary/20" : "bg-muted/40",
+                    )}
+                    data-testid={`client-comment-${c.id}`}
+                  >
+                    <div className="text-xs text-muted-foreground mb-1">
                       {c.createdByName || (c.isClientComment ? "You" : "Your builder")}
-                      {c.createdAt ? ` · ${format(new Date(c.createdAt), "d MMM yyyy")}` : ""}
+                      {c.createdAt ? ` · ${format(new Date(c.createdAt), "d MMM yyyy 'at' h:mm a")}` : ""}
                     </div>
                     <p className="whitespace-pre-wrap">{c.content}</p>
                   </div>
@@ -264,7 +285,7 @@ export default function ClientSelectionDetail() {
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Ask your builder a question about this selection"
+              placeholder="Ask a question or leave a note about this selection"
               rows={3}
               data-testid="input-selection-comment"
             />
@@ -281,5 +302,6 @@ export default function ClientSelectionDetail() {
         </Card>
       )}
     </div>
+    </ClientScroll>
   );
 }

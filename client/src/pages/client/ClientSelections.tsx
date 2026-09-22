@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
-import { Palette } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Palette, Search, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { firstImage, getCategoryColour } from "@/components/selections/selectionHelpers";
@@ -159,14 +162,47 @@ function ClientSelectionCard({
   );
 }
 
+type StatusFilter = "all" | "to-choose" | "sent" | "confirmed";
+type GroupBy = "room" | "category" | "none";
+
 export default function ClientSelections() {
   const { projectId } = useParams<{ projectId: string }>();
   const [, navigate] = useLocation();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [groupBy, setGroupBy] = useState<GroupBy>("room");
 
   const { data: selections = [], isLoading } = useQuery<ClientSelection[]>({
     queryKey: [`/api/selections/with-options?projectId=${projectId}`],
     enabled: !!projectId,
   });
+
+  const statusOf = (s: ClientSelection): StatusFilter => {
+    const label = selectionStatus(s).label;
+    return label === "Choose an option" ? "to-choose" : label === "Your choice sent" ? "sent" : "confirmed";
+  };
+
+  const groups = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const matched = selections.filter((s) => {
+      if (status !== "all" && statusOf(s) !== status) return false;
+      if (!term) return true;
+      return [s.name, s.room, s.category, ...(s.options ?? []).map((o) => o.name)]
+        .some((field) => (field ?? "").toLowerCase().includes(term));
+    });
+
+    // Waiting-on-you first within each group: the reason a client opens this page.
+    const rank = (s: ClientSelection) => ({ "to-choose": 0, sent: 1, confirmed: 2, all: 3 }[statusOf(s)]);
+    const ordered = [...matched].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+
+    if (groupBy === "none") return [["", ordered] as const];
+    const by = new Map<string, ClientSelection[]>();
+    for (const selection of ordered) {
+      const key = (groupBy === "room" ? selection.room : selection.category) || "Everything else";
+      by.set(key, [...(by.get(key) ?? []), selection]);
+    }
+    return Array.from(by.entries());
+  }, [selections, search, status, groupBy]);
 
   if (isLoading) {
     return (
@@ -188,15 +224,8 @@ export default function ClientSelections() {
     );
   }
 
-  // Waiting-on-you first: the reason a client opens this page at all.
-  const rank = (s: ClientSelection) => {
-    const label = selectionStatus(s).label;
-    return label === "Choose an option" ? 0 : label === "Your choice sent" ? 1 : 2;
-  };
-  const ordered = [...selections].sort(
-    (a, b) => rank(a) - rank(b) || (a.room ?? "").localeCompare(b.room ?? "") || a.name.localeCompare(b.name),
-  );
-  const toChoose = selections.filter((s) => selectionStatus(s).label === "Choose an option").length;
+  const toChoose = selections.filter((s) => statusOf(s) === "to-choose").length;
+  const shown = groups.reduce((sum, [, items]) => sum + items.length, 0);
 
   return (
     <ClientPage
@@ -210,15 +239,82 @@ export default function ClientSelections() {
         )
       }
     >
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {ordered.map((selection) => (
-          <ClientSelectionCard
-            key={selection.id}
-            selection={selection}
-            onOpen={() => navigate(`/projects/${projectId}/selections/${selection.id}`)}
+      {/* Toolbar, like the builder's list: search, filter, grouping. A client
+          with thirty selections needs to find "the ensuite tap" too. */}
+      <div className="flex flex-wrap items-center gap-2" data-testid="client-selections-toolbar">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search selections"
+            className="pl-9 pr-9"
+            data-testid="input-search-selections"
           />
-        ))}
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+          <SelectTrigger className="w-[190px]" data-testid="select-selection-status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All selections</SelectItem>
+            <SelectItem value="to-choose">Still to choose</SelectItem>
+            <SelectItem value="sent">Your choice sent</SelectItem>
+            <SelectItem value="confirmed">Confirmed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+          <SelectTrigger className="w-[160px]" data-testid="select-selection-grouping">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="room">Group by room</SelectItem>
+            <SelectItem value="category">Group by category</SelectItem>
+            <SelectItem value="none">No grouping</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      {shown === 0 ? (
+        <ClientEmpty
+          icon={Search}
+          title="Nothing matches that"
+          description="Try a different search, or change the filter."
+        />
+      ) : (
+        groups.map(([groupName, items]) => (
+          <section key={groupName || "all"} className="space-y-3">
+            {groupName && (
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-sm font-semibold">{groupName}</h2>
+                <span className="text-data text-muted-foreground uppercase tracking-wide">
+                  {items.length} item{items.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {items.map((selection) => (
+                <ClientSelectionCard
+                  key={selection.id}
+                  selection={selection}
+                  onOpen={() => navigate(`/projects/${projectId}/selections/${selection.id}`)}
+                />
+              ))}
+            </div>
+          </section>
+        ))
+      )}
     </ClientPage>
   );
 }

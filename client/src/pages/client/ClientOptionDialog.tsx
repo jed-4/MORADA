@@ -181,7 +181,10 @@ export function ClientOptionDialog({
               data-testid="button-choose-in-dialog"
             >
               {choosing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {picked ? <><Check className="h-4 w-4 mr-2" />Chosen</> : "Choose this"}
+              {/* Not "Approve": the builder confirms a client's pick, so a
+                  client approving would promise something the flow doesn't do.
+                  This says what the button actually does. */}
+              {picked ? <><Check className="h-4 w-4 mr-2" />Selected — your builder has been told</> : "Select this option"}
             </Button>
           )}
         </div>

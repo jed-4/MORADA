@@ -7,7 +7,7 @@ import { useClientPortal } from "@/hooks/use-client-portal";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import type { VariationDocumentColumns } from "@shared/variationDocumentColumns";
-import { ClientError, ClientLoading, ClientPage } from "@/components/client/ClientPage";
+import { ClientError, ClientLoading, ClientPage, ClientScroll } from "@/components/client/ClientPage";
 
 /**
  * One variation, as the document the client was sent.
@@ -68,6 +68,7 @@ export default function ClientVariationDetail() {
   const signed = !!variation.clientSignedName;
 
   return (
+    <ClientScroll>
     <div className="p-4 md:p-6 space-y-4" data-testid="client-variation-document">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button
@@ -118,5 +119,6 @@ export default function ClientVariationDetail() {
         />
       </div>
     </div>
+    </ClientScroll>
   );
 }

@@ -75,10 +75,17 @@ export function ReviewDecisionPanel({
   const approveBlocked = needsAck && !acknowledged;
 
   return (
-    <div className="rounded-md border p-4 space-y-3" data-testid="review-decision-panel">
+    // This is the one thing the page is asking the reader to DO, and as a
+    // plain bordered box it sat below the documents reading like another
+    // section. Tinted, accented and titled larger so it is obviously the
+    // action, not more content.
+    <div
+      className="rounded-md border border-primary/30 border-l-[3px] border-l-primary bg-primary-light/50 p-4 space-y-3"
+      data-testid="review-decision-panel"
+    >
       <div>
-        <h2 className="text-sm font-semibold">Your response</h2>
-        <p className="text-xs text-muted-foreground">
+        <h2 className="text-base font-semibold">Your response</h2>
+        <p className="text-sm text-muted-foreground">
           Tell your builder what you'd like to happen. They'll be notified either way.
         </p>
       </div>

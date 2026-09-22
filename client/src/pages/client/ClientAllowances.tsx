@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { CheckCircle2, CircleDashed, Clock, Wallet } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 import { ClientEmpty, ClientLoading, ClientPage, ClientStatus, type ClientTone } from "@/components/client/ClientPage";
 
 /**
@@ -68,10 +68,10 @@ export default function ClientAllowances() {
   }
 
   const settled = rows.filter((r) => r.finalised).length;
-  const percent = rows.length ? Math.round((settled / rows.length) * 100) : 0;
+  const percent = Math.round((settled / rows.length) * 100);
 
-  // Grouped the way the estimate groups them, so an allowance sits next to the
-  // part of the house it belongs to.
+  // Grouped the way the estimate groups them, so an allowance sits with the
+  // part of the house it belongs to — the same shape as the builder's list.
   const groups = new Map<string, AllowanceRow[]>();
   for (const row of rows) {
     const key = row.item.groupName || "Allowances";
@@ -83,7 +83,7 @@ export default function ClientAllowances() {
       title="Allowances"
       description="Items with a budget set aside in your contract, to be chosen as the job goes."
       aside={
-        <div className="w-40">
+        <div className="w-44">
           <div className="flex justify-between text-sm mb-1">
             <span className="text-muted-foreground">Settled</span>
             <span className="tabular-nums font-medium">{settled}/{rows.length}</span>
@@ -92,41 +92,58 @@ export default function ClientAllowances() {
         </div>
       }
     >
-      {Array.from(groups.entries()).map(([groupName, groupRows]) => (
-        <section key={groupName} className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground">{groupName}</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {groupRows.map(({ item, finalised }) => {
-              const status = STATUS[item.allowanceStatus ?? "pending"] ?? STATUS.pending;
-              const Icon = finalised ? CheckCircle2 : status.icon;
-              return (
-                <Card key={item.id} data-testid={`client-allowance-${item.id}`}>
-                  <CardContent className="p-4 flex gap-3">
-                    <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
+      <div className="space-y-4">
+        {Array.from(groups.entries()).map(([groupName, groupRows]) => {
+          const groupSettled = groupRows.filter((r) => r.finalised).length;
+          return (
+            <section key={groupName} className="surface-panel overflow-hidden" data-testid={`client-allowance-group-${groupName.toLowerCase().replace(/\s+/g, "-")}`}>
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
+                <h2 className="text-sm font-semibold">{groupName}</h2>
+                <span className="text-data text-muted-foreground uppercase tracking-wide">
+                  {groupSettled} of {groupRows.length} settled
+                </span>
+              </div>
+
+              {groupRows.map(({ item, finalised }) => {
+                const status = STATUS[item.allowanceStatus ?? "pending"] ?? STATUS.pending;
+                const Icon = finalised ? CheckCircle2 : status.icon;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-3 px-4 py-3 border-b last:border-b-0"
+                    data-testid={`client-allowance-${item.id}`}
+                  >
+                    <div
+                      className={cn(
+                        "mt-0.5 h-5 w-5 rounded-full flex items-center justify-center shrink-0 border",
+                        finalised
+                          ? "bg-[hsl(var(--sage-light))] border-[hsl(var(--sage))]"
+                          : "bg-muted border-border",
+                      )}
+                      aria-hidden
+                    >
+                      <Icon className={cn("h-3 w-3", finalised ? "text-[hsl(147_39%_35%)]" : "text-muted-foreground")} />
                     </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="font-medium">{item.name}</div>
-                        <ClientStatus
-                          label={finalised ? "Settled" : status.label}
-                          tone={finalised ? "done" : status.tone}
-                        />
+
+                    <div className="min-w-0 flex-1">
+                      <div className={cn("font-medium", finalised && "text-muted-foreground")}>{item.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {item.allowance || "Allowance"}
+                        {item.description ? ` · ${item.description}` : ""}
                       </div>
-                      {item.allowance && (
-                        <div className="text-xs text-muted-foreground">{item.allowance}</div>
-                      )}
-                      {item.description && (
-                        <p className="text-sm text-muted-foreground">{item.description}</p>
-                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+
+                    <ClientStatus
+                      label={finalised ? "Settled" : status.label}
+                      tone={finalised ? "done" : status.tone}
+                    />
+                  </div>
+                );
+              })}
+            </section>
+          );
+        })}
+      </div>
 
       <p className="text-sm text-muted-foreground">
         Talk to your builder about the amount allowed for any of these.

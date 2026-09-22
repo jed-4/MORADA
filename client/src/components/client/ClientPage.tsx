@@ -14,6 +14,22 @@ import { cn } from "@/lib/utils";
  * rather than eight trimmed-down builder screens.
  */
 
+/**
+ * Every client section scrolls ITSELF.
+ *
+ * The project shell gives the active tab a fixed-height, overflow-hidden box
+ * and expects the page inside to handle its own scrolling — the builder's
+ * pages all do. A plain <div> is simply clipped, which is why the variation
+ * document ended below the fold with no way to reach it.
+ */
+export function ClientScroll({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("h-full overflow-y-auto", className)} data-testid="client-scroll">
+      {children}
+    </div>
+  );
+}
+
 interface ClientPageProps {
   title: string;
   /** One line telling the client what this section is for. */
@@ -25,7 +41,8 @@ interface ClientPageProps {
 
 export function ClientPage({ title, description, aside, children }: ClientPageProps) {
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6" data-testid={`client-page-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <ClientScroll>
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6" data-testid={`client-page-${title.toLowerCase().replace(/\s+/g, "-")}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">{title}</h1>
@@ -34,7 +51,8 @@ export function ClientPage({ title, description, aside, children }: ClientPagePr
         {aside}
       </div>
       {children}
-    </div>
+      </div>
+    </ClientScroll>
   );
 }
 
