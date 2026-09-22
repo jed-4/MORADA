@@ -2,10 +2,17 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { format, isAfter, isBefore, startOfDay } from "date-fns";
-import { CalendarDays, Check, Flag } from "lucide-react";
+import { CalendarDays, Check, Flag, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { ClientEmpty, ClientLoading, ClientPage, ClientStatus } from "@/components/client/ClientPage";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  ClientGroupHeader,
+  ClientListPage,
+  ClientListRow,
+  ClientMarker,
+} from "@/components/client/ClientListPage";
+import { ClientStatus } from "@/components/client/ClientPage";
 
 /**
  * The client's view of the programme.
@@ -91,111 +98,76 @@ export default function ClientSchedule() {
     return Array.from(byGroup.entries());
   }, [items]);
 
-  if (schedulesLoading || itemsLoading) {
-    return (
-      <ClientPage title="Schedule">
-        <ClientLoading label="Loading the schedule…" />
-      </ClientPage>
-    );
-  }
-
-  if (!schedule || items.length === 0) {
-    return (
-      <ClientPage title="Schedule" description="The programme of works for your project.">
-        <ClientEmpty
-          icon={CalendarDays}
-          title="No schedule to show yet"
-          description="Your builder hasn't published a schedule for this project. It'll appear here once they do."
-        />
-      </ClientPage>
-    );
-  }
-
+  const loading = schedulesLoading || itemsLoading;
   const done = items.filter(isDone).length;
-  const percent = Math.round((done / items.length) * 100);
+  const percent = items.length ? Math.round((done / items.length) * 100) : 0;
   const dates = items.flatMap((i) => [new Date(i.startDate), new Date(i.endDate)]).filter((d) => !Number.isNaN(d.getTime()));
   const span = dates.length
     ? `${format(new Date(Math.min(...dates.map(Number))), "MMM yyyy")} – ${format(new Date(Math.max(...dates.map(Number))), "MMM yyyy")}`
     : undefined;
 
   return (
-    <ClientPage
+    <ClientListPage
       title="Schedule"
-      description="The programme of works for your project. Dates can move as the job progresses."
-      aside={
-        <div className="w-44">
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-muted-foreground">{span}</span>
-            <span className="tabular-nums font-medium">{percent}%</span>
-          </div>
-          <Progress value={percent} className="h-1.5" />
-        </div>
-      }
+      chips={[
+        ...(span ? [{ label: span }] : []),
+        ...(items.length ? [{ label: `${percent}% complete` }] : []),
+      ]}
     >
-      <div className="space-y-4">
-        {groups.map(([groupName, groupItems]) => {
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : !schedule || items.length === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title="No schedule to show yet"
+          description="Your builder hasn't published a schedule for this project. It'll appear here once they do."
+          variant="inline"
+          className="py-16"
+        />
+      ) : (
+        groups.map(([groupName, groupItems]) => {
           const groupDone = groupItems.filter(isDone).length;
           return (
-            <section key={groupName} className="surface-panel overflow-hidden" data-testid={`client-schedule-group-${groupName.toLowerCase().replace(/\s+/g, "-")}`}>
-              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
-                <h2 className="text-sm font-semibold">{groupName}</h2>
-                <span className="text-data text-muted-foreground uppercase tracking-wide">
-                  {groupDone} of {groupItems.length} done
-                </span>
-              </div>
-
+            <div key={groupName} data-testid={`client-schedule-group-${groupName.toLowerCase().replace(/\s+/g, "-")}`}>
+              <ClientGroupHeader title={groupName} meta={`${groupDone} of ${groupItems.length} done`} />
               {groupItems.map((item) => {
                 const complete = isDone(item);
                 const underway = isUnderway(item);
                 const progress = item.progressPercent ?? 0;
                 return (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "flex items-start gap-3 px-4 py-3 border-b last:border-b-0",
-                      item.parentItemId && "pl-10",
-                    )}
-                    data-testid={`client-schedule-item-${item.id}`}
-                  >
-                    {/* One dot, two states. Complete or not — see the file note. */}
-                    <div
-                      className={cn(
-                        "mt-0.5 h-5 w-5 rounded-full flex items-center justify-center shrink-0 border",
-                        complete
-                          ? "bg-[hsl(var(--sage-light))] border-[hsl(var(--sage))]"
-                          : "bg-muted border-border",
-                      )}
-                      aria-hidden
+                  <div key={item.id} className={cn(item.parentItemId && "pl-6")} data-testid={`client-schedule-item-${item.id}`}>
+                    <ClientListRow
+                      marker={<ClientMarker done={complete} icon={complete ? <Check className="h-3 w-3 text-[hsl(147_39%_35%)]" /> : undefined} />}
+                      title={
+                        <span className="flex items-center gap-2">
+                          {item.type === "milestone" && <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                          <span className="truncate">{item.name}</span>
+                        </span>
+                      }
+                      muted={complete}
+                      meta={dateRange(item)}
+                      status={
+                        complete ? <ClientStatus label="Done" tone="done" />
+                        : underway ? <ClientStatus label="Underway" tone="info" />
+                        : undefined
+                      }
                     >
-                      {complete && <Check className="h-3 w-3 text-[hsl(147_39%_35%)]" />}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className={cn("flex items-center gap-2 font-medium", complete && "text-muted-foreground")}>
-                        {item.type === "milestone" && <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                        <span className="truncate">{item.name}</span>
-                      </div>
-                      <div className="text-sm text-muted-foreground">{dateRange(item)}</div>
                       {!complete && progress > 0 && (
                         <div className="flex items-center gap-2 mt-2 max-w-xs">
                           <Progress value={progress} className="h-1.5" />
                           <span className="text-xs text-muted-foreground tabular-nums">{progress}%</span>
                         </div>
                       )}
-                    </div>
-
-                    {complete ? (
-                      <ClientStatus label="Done" tone="done" />
-                    ) : underway ? (
-                      <ClientStatus label="Underway" tone="info" />
-                    ) : null}
+                    </ClientListRow>
                   </div>
                 );
               })}
-            </section>
+            </div>
           );
-        })}
-      </div>
-    </ClientPage>
+        })
+      )}
+    </ClientListPage>
   );
 }

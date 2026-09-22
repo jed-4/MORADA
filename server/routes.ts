@@ -15647,6 +15647,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdByName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
         isClientComment: false,
       });
+
+      const project = await storage.getProject(selection.projectId).catch(() => undefined);
+      await notifyProjectClients({
+        projectId: selection.projectId,
+        companyId: (project as any)?.companyId,
+        type: "selection_builder_comment",
+        title: "New comment on a selection",
+        message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(selection as any).name}`,
+        link: `/projects/${selection.projectId}/selections/${selection.id}`,
+        entityType: "selection",
+        entityId: selection.id,
+        // `user.id` is typed away by the empty Express.User shadowing
+        // (@types/passport); the row above stores the same value.
+        exceptUserId: comment.createdById,
+      });
+
       res.status(201).json(comment);
     } catch (error) {
       res.status(500).json({ error: "Failed to create comment" });
@@ -18798,6 +18814,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     return { status: 201, body: comment };
+  };
+
+  /**
+   * Notify the CLIENTS on a project.
+   *
+   * Conversation only ran one way: a client comment notified the builder, but
+   * a builder's reply reached the client only if they happened to reopen the
+   * page. This is the other direction — in-app notifications (the bell), not
+   * email.
+   *
+   * Non-fatal by construction: a comment that saved must not fail because a
+   * bell did not ring.
+   */
+  const notifyProjectClients = async (input: {
+    projectId: string;
+    companyId: string | null | undefined;
+    type: string;
+    title: string;
+    message: string;
+    link: string;
+    entityType: string;
+    entityId: string;
+    /** Never notify the person who just acted. */
+    exceptUserId?: string | null;
+  }): Promise<void> => {
+    try {
+      if (!input.companyId) return;
+      const clients = await storage.getUsersByCompanyWithRoles(input.companyId, "client" as any);
+      if (clients.length === 0) return;
+
+      for (const client of clients) {
+        if (!client.id || client.id === input.exceptUserId) continue;
+        if ((client as any).isActive === false) continue;
+        // Only clients actually granted this project — a company can have
+        // several clients, one per job.
+        const access = await storage.getUserProjectAccess(client.id);
+        if (!access.some((a: any) => a.projectId === input.projectId)) continue;
+
+        const notification = await storage.createNotification({
+          userId: client.id,
+          companyId: input.companyId,
+          type: input.type,
+          title: input.title,
+          message: input.message,
+          link: input.link,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          isRead: false,
+          createdByUserId: input.exceptUserId ?? null,
+        });
+        emitNotification(client.id, notification);
+      }
+    } catch (error) {
+      console.error("[client notify] failed:", error);
+    }
   };
 
   /** The name a client's action is recorded under. */
@@ -45895,6 +45966,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         isInternal: isInternal === true && !getClientUser(req),
         ...author,
       } as any);
+
+      // A builder's reply reaches the client's bell. Internal notes never do —
+      // the client cannot see them, so a notification would be a tease.
+      if (!getClientUser(req) && !(comment as any).isInternal) {
+        await notifyProjectClients({
+          projectId: item.projectId,
+          companyId: item.companyId,
+          type: "review_builder_comment",
+          title: "New comment on a review",
+          message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${item.name}`,
+          link: `/projects/${item.projectId}/reviews/${item.id}`,
+          entityType: "review",
+          entityId: item.id,
+          exceptUserId: req.user!.id,
+        });
+      }
 
       res.status(201).json(comment);
     } catch (error) {

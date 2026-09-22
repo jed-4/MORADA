@@ -38,6 +38,14 @@ const isPdf = (d: PreviewableDocument) =>
 
 export const isPreviewable = (d: PreviewableDocument) => isImage(d) || isPdf(d);
 
+/** "PDF", "JPG", "Photo" — what the reader is about to open. */
+export const fileKind = (d: PreviewableDocument): string => {
+  if (isPdf(d)) return "PDF";
+  if (isImage(d)) return "Photo";
+  const ext = /\.([a-z0-9]+)$/i.exec(d.fileName)?.[1];
+  return ext ? ext.toUpperCase() : "File";
+};
+
 export const formatBytes = (n: number | null) =>
   n == null ? "" : n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
@@ -112,7 +120,9 @@ export function ReviewDocumentPreview({ documents }: { documents: PreviewableDoc
         <div className="flex items-center gap-2 px-3 py-2 border-t bg-card">
           <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
           <span className="text-sm truncate flex-1">{active.fileName}</span>
-          <span className="text-xs text-muted-foreground">{formatBytes(active.fileSize)}</span>
+          <span className="text-xs text-muted-foreground">
+            {[fileKind(active), formatBytes(active.fileSize)].filter(Boolean).join(" · ")}
+          </span>
           <a
             href={active.url}
             target="_blank"
@@ -140,11 +150,24 @@ export function ReviewDocumentPreview({ documents }: { documents: PreviewableDoc
               title={d.fileName}
               data-testid={`review-doc-tile-${d.id}`}
             >
+              {/* A photo's tile shows the photo. A row of identical glyphs
+                  tells the reader nothing about which drawing is which. */}
+              <div className="h-16 w-full rounded-sm overflow-hidden bg-muted/40 mb-1.5 flex items-center justify-center">
+                {isImage(d) ? (
+                  <img src={d.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center gap-0.5 text-muted-foreground">
+                    <FileText className="h-4 w-4" />
+                    <span className="text-[9px] uppercase tracking-wide">{fileKind(d)}</span>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-1.5">
-                <FileText className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                 <span className="text-xs truncate">{d.fileName}</span>
               </div>
-              <span className="text-[10px] text-muted-foreground">{formatBytes(d.fileSize)}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {[fileKind(d), formatBytes(d.fileSize)].filter(Boolean).join(" · ")}
+              </span>
             </button>
           ))}
         </div>

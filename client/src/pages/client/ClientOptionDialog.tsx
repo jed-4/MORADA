@@ -93,7 +93,7 @@ export function ClientOptionDialog({
               <img
                 src={hero?.filePath ?? ""}
                 alt=""
-                className="w-full rounded-md border object-cover bg-muted max-h-[42vh]"
+                className="w-full rounded-md border object-cover bg-muted aspect-square max-h-[42vh]"
                 style={{ objectPosition: `${hero?.thumbnailX ?? 50}% ${hero?.thumbnailY ?? 50}%` }}
               />
               {images.length > 1 && (

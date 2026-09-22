@@ -2,9 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
 import { useMemo, useState } from "react";
-import { Palette, Search, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Loader2, Palette } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  ClientGroupHeader,
+  ClientListPage,
+  ClientToolbarSelect,
+} from "@/components/client/ClientListPage";
 import { Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { firstImage, getCategoryColour } from "@/components/selections/selectionHelpers";
@@ -91,7 +96,9 @@ function ClientSelectionCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       data-testid={`client-selection-${selection.id}`}
     >
-      <div className="relative h-40 bg-muted/60 overflow-hidden">
+      {/* Square: the app's primary image shape for selections, and the shape
+          product photos are cropped to. A 4:3 band letterboxed them. */}
+      <div className="relative aspect-square bg-muted/60 overflow-hidden">
         {images.length === 0 ? (
           <div
             className="w-full h-full flex items-center justify-center"
@@ -191,7 +198,7 @@ export default function ClientSelections() {
         .some((field) => (field ?? "").toLowerCase().includes(term));
     });
 
-    // Waiting-on-you first within each group: the reason a client opens this page.
+    // Waiting-on-you first: the reason a client opens this page.
     const rank = (s: ClientSelection) => ({ "to-choose": 0, sent: 1, confirmed: 2, all: 3 }[statusOf(s)]);
     const ordered = [...matched].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 
@@ -204,106 +211,81 @@ export default function ClientSelections() {
     return Array.from(by.entries());
   }, [selections, search, status, groupBy]);
 
-  if (isLoading) {
-    return (
-      <ClientPage title="Selections">
-        <ClientLoading label="Loading selections…" />
-      </ClientPage>
-    );
-  }
-
-  if (selections.length === 0) {
-    return (
-      <ClientPage title="Selections" description="Fixtures, finishes and fittings to choose for your home.">
-        <ClientEmpty
-          icon={Palette}
-          title="No selections yet"
-          description="Your builder will add the items you need to choose. They'll show up here."
-        />
-      </ClientPage>
-    );
-  }
-
   const toChoose = selections.filter((s) => statusOf(s) === "to-choose").length;
   const shown = groups.reduce((sum, [, items]) => sum + items.length, 0);
 
   return (
-    <ClientPage
+    <ClientListPage
       title="Selections"
-      description="Fixtures, finishes and fittings to choose for your home."
-      aside={
-        toChoose > 0 ? (
-          <ClientStatus label={`${toChoose} still to choose`} tone="waiting" />
-        ) : (
-          <ClientStatus label="All chosen" tone="done" />
-        )
+      chips={
+        toChoose > 0
+          ? [{ label: `${toChoose} to choose`, tone: "alert" as const }]
+          : selections.length > 0
+            ? [{ label: "All chosen" }]
+            : []
+      }
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search selections..."
+      controls={
+        <>
+          <ClientToolbarSelect>
+            <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+              <SelectTrigger className="w-[150px]" data-testid="select-selection-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All selections</SelectItem>
+                <SelectItem value="to-choose">Still to choose</SelectItem>
+                <SelectItem value="sent">Your choice sent</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
+              </SelectContent>
+            </Select>
+          </ClientToolbarSelect>
+          <ClientToolbarSelect>
+            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+              <SelectTrigger className="w-[140px]" data-testid="select-selection-grouping">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="room">By room</SelectItem>
+                <SelectItem value="category">By category</SelectItem>
+                <SelectItem value="none">No grouping</SelectItem>
+              </SelectContent>
+            </Select>
+          </ClientToolbarSelect>
+        </>
       }
     >
-      {/* Toolbar, like the builder's list: search, filter, grouping. A client
-          with thirty selections needs to find "the ensuite tap" too. */}
-      <div className="flex flex-wrap items-center gap-2" data-testid="client-selections-toolbar">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search selections"
-            className="pl-9 pr-9"
-            data-testid="input-search-selections"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-
-        <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-          <SelectTrigger className="w-[190px]" data-testid="select-selection-status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All selections</SelectItem>
-            <SelectItem value="to-choose">Still to choose</SelectItem>
-            <SelectItem value="sent">Your choice sent</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
-          <SelectTrigger className="w-[160px]" data-testid="select-selection-grouping">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="room">Group by room</SelectItem>
-            <SelectItem value="category">Group by category</SelectItem>
-            <SelectItem value="none">No grouping</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {shown === 0 ? (
-        <ClientEmpty
-          icon={Search}
+      ) : selections.length === 0 ? (
+        <EmptyState
+          icon={Palette}
+          title="No selections yet"
+          description="Your builder will add the items you need to choose. They'll show up here."
+          variant="inline"
+          className="py-16"
+        />
+      ) : shown === 0 ? (
+        <EmptyState
+          icon={Palette}
           title="Nothing matches that"
           description="Try a different search, or change the filter."
+          variant="inline"
+          className="py-16"
         />
       ) : (
         groups.map(([groupName, items]) => (
-          <section key={groupName || "all"} className="space-y-3">
+          <div key={groupName || "all"}>
             {groupName && (
-              <div className="flex items-baseline gap-2">
-                <h2 className="text-sm font-semibold">{groupName}</h2>
-                <span className="text-data text-muted-foreground uppercase tracking-wide">
-                  {items.length} item{items.length === 1 ? "" : "s"}
-                </span>
-              </div>
+              <ClientGroupHeader title={groupName} meta={`${items.length} item${items.length === 1 ? "" : "s"}`} />
             )}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* Two across even on a phone: square photo tiles read as a
+                catalogue, and one-per-row made each image enormous. */}
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 p-4">
               {items.map((selection) => (
                 <ClientSelectionCard
                   key={selection.id}
@@ -312,9 +294,9 @@ export default function ClientSelections() {
                 />
               ))}
             </div>
-          </section>
+          </div>
         ))
       )}
-    </ClientPage>
+    </ClientListPage>
   );
 }
