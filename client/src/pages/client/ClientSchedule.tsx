@@ -1,20 +1,35 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { format, isAfter, isBefore, startOfDay } from "date-fns";
-import { CalendarDays, Flag } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { CalendarDays, Check, Flag, GanttChartSquare, List, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { ClientEmpty, ClientLoading, ClientPage, ClientRow, ClientStatus, type ClientTone } from "@/components/client/ClientPage";
+import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  ClientGroupHeader,
+  ClientListPage,
+  ClientListRow,
+  ClientMarker,
+} from "@/components/client/ClientListPage";
+import { ClientStatus } from "@/components/client/ClientPage";
+import { ClientScheduleTimeline } from "./ClientScheduleTimeline";
 
 /**
  * The client's view of the programme.
  *
- * Read-only by construction: there is no Gantt, no drag, no add. A client
- * wants "what's happening, and when" — so this is a dated list, grouped by
- * phase, with today's work called out. Whether they see every item or only
- * the top-level phases is decided server-side by the role's
- * portal.schedule.all_items tick, so this component renders whatever arrives.
+ * Read-only by construction: no Gantt, no drag, no add. It answers "what is
+ * happening and when", grouped by phase, with today's work called out.
+ *
+ * DONE OR NOT — nothing else. The builder's statuses (not started, in
+ * progress, on hold, delayed) are how a builder runs a job, and a client
+ * reading "On hold" against their kitchen has no way to tell whether that is
+ * routine sequencing or a problem. Jed's call: a client sees complete or not
+ * complete, and the dates say the rest.
+ *
+ * Whether they see every item or only the top-level phases is decided
+ * server-side by the role's portal.schedule.all_items tick, so this renders
+ * whatever arrives.
  */
 
 interface ScheduleItem {
@@ -38,16 +53,14 @@ interface Schedule {
   status?: string | null;
 }
 
-const statusLabel = (item: ScheduleItem): { label: string; tone: ClientTone } => {
+const isDone = (item: ScheduleItem) =>
+  item.status === "completed" || (item.progressPercent ?? 0) >= 100;
+
+/** Underway = started, not finished. Said with dates, not a builder status. */
+const isUnderway = (item: ScheduleItem) => {
+  if (isDone(item)) return false;
   const today = startOfDay(new Date());
-  const start = new Date(item.startDate);
-  const end = new Date(item.endDate);
-  if (item.status === "completed") return { label: "Done", tone: "done" };
-  if (item.status === "on_hold") return { label: "On hold", tone: "attention" };
-  if (item.status === "in_progress") return { label: "In progress", tone: "info" };
-  if (isBefore(end, today)) return { label: "Due", tone: "waiting" };
-  if (!isAfter(start, today)) return { label: "In progress", tone: "info" };
-  return { label: "Upcoming", tone: "neutral" };
+  return !isAfter(new Date(item.startDate), today) && !isBefore(new Date(item.endDate), today);
 };
 
 const dateRange = (item: ScheduleItem) => {
@@ -59,13 +72,24 @@ const dateRange = (item: ScheduleItem) => {
 
 export default function ClientSchedule() {
   const { projectId } = useParams<{ projectId: string }>();
+  // Remembered per browser, like the builder's own view toggles.
+  const [view, setView] = useState<"list" | "timeline">(() => {
+    try {
+      return localStorage.getItem("client-schedule-view") === "timeline" ? "timeline" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const chooseView = (next: "list" | "timeline") => {
+    setView(next);
+    try { localStorage.setItem("client-schedule-view", next); } catch { /* private window */ }
+  };
 
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<Schedule[]>({
     queryKey: [`/api/projects/${projectId}/schedules`],
     enabled: !!projectId,
   });
 
-  // The builder may keep several; the client is shown the live one.
   const schedule = schedules.find((s) => s.status === "online" || s.status === "locked") ?? schedules[0];
 
   const { data: items = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
@@ -74,83 +98,113 @@ export default function ClientSchedule() {
   });
 
   const groups = useMemo(() => {
-    const visible = [...items].sort((a, b) => {
+    const sorted = [...items].sort((a, b) => {
       const byDate = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
       if (byDate !== 0) return byDate;
       return (a.sortOrder ?? a.order ?? 0) - (b.sortOrder ?? b.order ?? 0);
     });
     const byGroup = new Map<string, ScheduleItem[]>();
-    for (const item of visible) {
+    for (const item of sorted) {
       const key = item.groupName || "Programme";
       byGroup.set(key, [...(byGroup.get(key) ?? []), item]);
     }
     return Array.from(byGroup.entries());
   }, [items]);
 
+  const loading = schedulesLoading || itemsLoading;
+  const done = items.filter(isDone).length;
+  const percent = items.length ? Math.round((done / items.length) * 100) : 0;
   const dates = items.flatMap((i) => [new Date(i.startDate), new Date(i.endDate)]).filter((d) => !Number.isNaN(d.getTime()));
   const span = dates.length
     ? `${format(new Date(Math.min(...dates.map(Number))), "MMM yyyy")} – ${format(new Date(Math.max(...dates.map(Number))), "MMM yyyy")}`
     : undefined;
 
-  if (schedulesLoading || itemsLoading) {
-    return (
-      <ClientPage title="Schedule">
-        <ClientLoading label="Loading the schedule…" />
-      </ClientPage>
-    );
-  }
-
-  if (!schedule || items.length === 0) {
-    return (
-      <ClientPage title="Schedule" description="The programme of works for your project.">
-        <ClientEmpty
+  return (
+    <ClientListPage
+      title="Schedule"
+      chips={[
+        ...(span ? [{ label: span }] : []),
+        ...(items.length ? [{ label: `${percent}% complete` }] : []),
+      ]}
+      controls={
+        items.length > 0 ? (
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <button
+              onClick={() => chooseView("list")}
+              className={cn("h-5 px-1.5 rounded flex items-center gap-1 text-[11px]", view === "list" && "bg-primary/10 text-primary")}
+              data-testid="button-schedule-view-list"
+              aria-label="List view"
+            >
+              <List className="h-3 w-3" /> List
+            </button>
+            <button
+              onClick={() => chooseView("timeline")}
+              className={cn("h-5 px-1.5 rounded flex items-center gap-1 text-[11px]", view === "timeline" && "bg-primary/10 text-primary")}
+              data-testid="button-schedule-view-timeline"
+              aria-label="Timeline view"
+            >
+              <GanttChartSquare className="h-3 w-3" /> Timeline
+            </button>
+          </div>
+        ) : undefined
+      }
+    >
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : !schedule || items.length === 0 ? (
+        <EmptyState
           icon={CalendarDays}
           title="No schedule to show yet"
           description="Your builder hasn't published a schedule for this project. It'll appear here once they do."
+          variant="inline"
+          className="py-16"
         />
-      </ClientPage>
-    );
-  }
-
-  return (
-    <ClientPage
-      title="Schedule"
-      description="The programme of works for your project. Dates can move as the job progresses."
-      aside={span ? <div className="text-sm text-muted-foreground">{span}</div> : undefined}
-    >
-      <div className="space-y-4">
-        {groups.map(([groupName, groupItems]) => (
-          <Card key={groupName} data-testid={`client-schedule-group-${groupName.toLowerCase().replace(/\s+/g, "-")}`}>
-            <CardContent className="p-0">
-              <div className="px-4 py-3 border-b bg-muted/40 font-medium text-sm">{groupName}</div>
+      ) : view === "timeline" ? (
+        <ClientScheduleTimeline items={items} />
+      ) : (
+        groups.map(([groupName, groupItems]) => {
+          const groupDone = groupItems.filter(isDone).length;
+          return (
+            <div key={groupName} data-testid={`client-schedule-group-${groupName.toLowerCase().replace(/\s+/g, "-")}`}>
+              <ClientGroupHeader title={groupName} meta={`${groupDone} of ${groupItems.length} done`} />
               {groupItems.map((item) => {
-                const { label, tone } = statusLabel(item);
+                const complete = isDone(item);
+                const underway = isUnderway(item);
                 const progress = item.progressPercent ?? 0;
                 return (
-                  <ClientRow
-                    key={item.id}
-                    title={
-                      <span className="flex items-center gap-2">
-                        {item.type === "milestone" && <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                        {item.name}
-                      </span>
-                    }
-                    meta={dateRange(item)}
-                    status={<ClientStatus label={label} tone={tone} />}
-                  >
-                    {progress > 0 && progress < 100 && (
-                      <div className="flex items-center gap-2 mt-2 max-w-xs">
-                        <Progress value={progress} className="h-1.5" />
-                        <span className="text-xs text-muted-foreground tabular-nums">{progress}%</span>
-                      </div>
-                    )}
-                  </ClientRow>
+                  <div key={item.id} className={cn(item.parentItemId && "pl-6")} data-testid={`client-schedule-item-${item.id}`}>
+                    <ClientListRow
+                      marker={<ClientMarker done={complete} icon={complete ? <Check className="h-3 w-3 text-[hsl(147_39%_35%)]" /> : undefined} />}
+                      title={
+                        <span className="flex items-center gap-2">
+                          {item.type === "milestone" && <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                          <span className="truncate">{item.name}</span>
+                        </span>
+                      }
+                      muted={complete}
+                      meta={dateRange(item)}
+                      status={
+                        complete ? <ClientStatus label="Done" tone="done" />
+                        : underway ? <ClientStatus label="Underway" tone="info" />
+                        : undefined
+                      }
+                    >
+                      {!complete && progress > 0 && (
+                        <div className="flex items-center gap-2 mt-2 max-w-xs">
+                          <Progress value={progress} className="h-1.5" />
+                          <span className="text-xs text-muted-foreground tabular-nums">{progress}%</span>
+                        </div>
+                      )}
+                    </ClientListRow>
+                  </div>
                 );
               })}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </ClientPage>
+            </div>
+          );
+        })
+      )}
+    </ClientListPage>
   );
 }

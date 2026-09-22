@@ -80,6 +80,16 @@ export interface VariationPreviewProps {
   columns?: VariationDocumentColumns;
   mode: "preview" | "portal";
   portalToken?: string;
+  /**
+   * Where a signature is posted, and where attachments are fetched from. The
+   * emailed link is token-scoped; a signed-in client in the portal uses the
+   * session routes instead. Defaults keep the token behaviour, so the portal
+   * page is unchanged.
+   */
+  signUrl?: string;
+  attachmentHref?: (index: number) => string;
+  /** Signed-in client: their name, shown locked on the signature card. */
+  signerName?: string;
   onSigned?: (data: { signerType: "client" | "builder"; name: string; action: "approve" | "reject" }) => void;
 }
 
@@ -110,6 +120,7 @@ function SignatureCard({
   onSign,
   onReject,
   loading,
+  fixedName,
 }: {
   title: string;
   signedName?: string | null;
@@ -118,8 +129,14 @@ function SignatureCard({
   onSign?: (name: string) => void;
   onReject?: (name: string, reason: string) => void;
   loading?: boolean;
+  /**
+   * Signed-in client: the signature is their session identity, recorded
+   * server-side. Shown and locked so the card can't say one name while the
+   * record keeps another. The emailed link has no session, so it still types.
+   */
+  fixedName?: string;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(fixedName ?? "");
   const [reason, setReason] = useState("");
   const [showReject, setShowReject] = useState(false);
 
@@ -166,6 +183,7 @@ function SignatureCard({
             placeholder="Your full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            readOnly={!!fixedName}
             className="text-sm"
           />
           <Textarea
@@ -196,6 +214,7 @@ function SignatureCard({
             placeholder="Your full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            readOnly={!!fixedName}
             className="text-sm"
           />
           <div className="flex gap-2">
@@ -237,6 +256,9 @@ export function VariationPreviewContent({
   columns,
   mode,
   portalToken,
+  signUrl,
+  attachmentHref,
+  signerName,
   onSigned,
 }: VariationPreviewProps) {
   const { toast } = useToast();
@@ -290,7 +312,7 @@ export function VariationPreviewContent({
       action: "approve" | "reject";
       rejectionReason?: string;
     }) => {
-      const res = await fetch(`/api/portal/variation/${portalToken}/sign`, {
+      const res = await fetch(signUrl ?? `/api/portal/variation/${portalToken}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -616,7 +638,8 @@ export function VariationPreviewContent({
           </div>
         )}
 
-        {/* Attachments — downloadable through the token-scoped portal route */}
+        {/* Attachments — downloaded through whichever route authorised this
+            view: the token link, or the client's own session. */}
         {attachments.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Attachments</h2>
@@ -628,9 +651,9 @@ export function VariationPreviewContent({
                   style={{ backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff" }}
                 >
                   <span className="text-foreground truncate pr-3">{att.name}</span>
-                  {portalToken ? (
+                  {attachmentHref || portalToken ? (
                     <a
-                      href={`/api/portal/variation/${portalToken}/attachments/${att.index}`}
+                      href={attachmentHref ? attachmentHref(att.index) : `/api/portal/variation/${portalToken}/attachments/${att.index}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-xs font-medium flex-shrink-0"
@@ -714,6 +737,7 @@ export function VariationPreviewContent({
               signedName={variation.clientSignedName}
               signedDate={variation.clientSignedDate}
               mode={mode}
+              fixedName={signerName}
               loading={signMutation.isPending}
               onSign={(name) =>
                 signMutation.mutate({ signerType: "client", name, action: "approve" })

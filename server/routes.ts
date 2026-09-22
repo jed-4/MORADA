@@ -225,7 +225,15 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
-import { isVariationClientVisible, projectClientVariation, projectClientVariationItems } from "./clientProjections";
+import {
+  isInvoiceClientVisible,
+  isVariationClientVisible,
+  projectClientInvoice,
+  projectClientInvoiceItem,
+  projectClientInvoicePayments,
+  projectClientVariation,
+  projectClientVariationItems,
+} from "./clientProjections";
 import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
@@ -15647,6 +15655,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdByName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
         isClientComment: false,
       });
+
+      const project = await storage.getProject(selection.projectId).catch(() => undefined);
+      await notifyProjectClients({
+        projectId: selection.projectId,
+        companyId: (project as any)?.companyId,
+        type: "selection_builder_comment",
+        title: "New comment on a selection",
+        message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(selection as any).name}`,
+        link: `/projects/${selection.projectId}/selections/${selection.id}`,
+        entityType: "selection",
+        entityId: selection.id,
+        // `user.id` is typed away by the empty Express.User shadowing
+        // (@types/passport); the row above stores the same value.
+        exceptUserId: comment.createdById,
+      });
+
       res.status(201).json(comment);
     } catch (error) {
       res.status(500).json({ error: "Failed to create comment" });
@@ -18798,6 +18822,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     return { status: 201, body: comment };
+  };
+
+  /**
+   * Notify the CLIENTS on a project.
+   *
+   * Conversation only ran one way: a client comment notified the builder, but
+   * a builder's reply reached the client only if they happened to reopen the
+   * page. This is the other direction — in-app notifications (the bell), not
+   * email.
+   *
+   * Non-fatal by construction: a comment that saved must not fail because a
+   * bell did not ring.
+   */
+  const notifyProjectClients = async (input: {
+    projectId: string;
+    companyId: string | null | undefined;
+    type: string;
+    title: string;
+    message: string;
+    link: string;
+    entityType: string;
+    entityId: string;
+    /** Never notify the person who just acted. */
+    exceptUserId?: string | null;
+  }): Promise<void> => {
+    try {
+      if (!input.companyId) return;
+      const clients = await storage.getUsersByCompanyWithRoles(input.companyId, "client" as any);
+      if (clients.length === 0) return;
+
+      for (const client of clients) {
+        if (!client.id || client.id === input.exceptUserId) continue;
+        if ((client as any).isActive === false) continue;
+        // Only clients actually granted this project — a company can have
+        // several clients, one per job.
+        const access = await storage.getUserProjectAccess(client.id);
+        if (!access.some((a: any) => a.projectId === input.projectId)) continue;
+
+        const notification = await storage.createNotification({
+          userId: client.id,
+          companyId: input.companyId,
+          type: input.type,
+          title: input.title,
+          message: input.message,
+          link: input.link,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          isRead: false,
+          createdByUserId: input.exceptUserId ?? null,
+        });
+        emitNotification(client.id, notification);
+      }
+    } catch (error) {
+      console.error("[client notify] failed:", error);
+    }
   };
 
   /** The name a client's action is recorded under. */
@@ -22181,6 +22260,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       const project: any = projectRows[0];
       const company = project ? await storage.getCompany(project.companyId) : undefined;
+      // Who the document is addressed to (see the project block below).
+      const clientContact = project?.clientId && project?.companyId
+        ? await storage.getContact(project.clientId, project.companyId).catch(() => undefined)
+        : undefined;
       // No session here — the portal token is the only credential — so the
       // branding/terms shown to the client come from the company that owns the
       // variation's project, never from whichever settings row came back first.
@@ -22262,9 +22345,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               id: project.id,
               name: project.name,
               address: project.address,
-              clientName: project.clientName,
-              clientPhone: project.clientPhone,
-              clientEmail: project.clientEmail,
+              // The document's "TO" block. `projects` has no clientName /
+              // clientEmail / clientPhone columns — only clientId, pointing at
+              // the CRM contact — so reading them off the project row left the
+              // addressee blank on every variation the client was ever sent.
+              clientName: clientContact?.name ?? null,
+              clientPhone: clientContact?.phone ?? null,
+              clientEmail: clientContact?.email ?? null,
             }
           : undefined,
         company: company
@@ -22539,6 +22626,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
+    }
+  });
+
+  /**
+   * The progress claim as a DOCUMENT for a signed-in client: the claim itself
+   * plus who it is from and to, so the portal can render it the way the
+   * variation renders — rather than a screen of totals with no letterhead.
+   *
+   * Same projection as every other client invoice route (the gate shapes the
+   * invoice), with the company/branding and the addressee resolved here.
+   */
+  app.get("/api/client-invoices/:id/client-view", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice || !isInvoiceClientVisible(invoice)) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      if (!(await clientOwnsProject(invoice.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const project: any = await storage.getProject(invoice.projectId);
+      const company = project?.companyId ? await storage.getCompany(project.companyId) : undefined;
+      const settings = project?.companyId
+        ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
+        : undefined;
+      // The "TO" block: projects carry a clientId, not a client name.
+      const clientContact = project?.clientId && project?.companyId
+        ? await storage.getContact(project.clientId, project.companyId).catch(() => undefined)
+        : undefined;
+
+      const [items, payments] = await Promise.all([
+        storage.getClientInvoiceItems(invoice.id),
+        storage.getClientInvoicePayments(invoice.id),
+      ]);
+
+      res.json({
+        invoice: projectClientInvoice(invoice),
+        items: items.map(projectClientInvoiceItem),
+        payments: projectClientInvoicePayments(payments),
+        project: project
+          ? {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              clientName: clientContact?.name ?? null,
+              clientEmail: clientContact?.email ?? null,
+              clientPhone: clientContact?.phone ?? null,
+            }
+          : undefined,
+        company: company
+          ? {
+              id: company.id,
+              name: company.name,
+              abn: (company as any).abn,
+              phone: (company as any).phone,
+              email: (company as any).email,
+              logo: (company as any).logo,
+              brandColor: (settings as any)?.brandColor ?? null,
+            }
+          : undefined,
+      });
+    } catch (error) {
+      console.error("Error building client invoice view:", error);
+      res.status(500).json({ error: "Failed to load invoice" });
+    }
+  });
+
+  /**
+   * The variation document for a signed-in client — the SAME payload the
+   * emailed portal link serves (buildVariationPortalPayload), so the portal
+   * page and the email render one document rather than two lookalikes.
+   */
+  app.get("/api/variations/:id/client-view", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      res.json(await buildVariationPortalPayload(variation));
+    } catch (error) {
+      console.error("Error building client variation view:", error);
+      res.status(500).json({ error: "Failed to load variation" });
+    }
+  });
+
+  /** An attachment on the client's own variation, by index (never a raw path). */
+  app.get("/api/variations/:id/client-attachments/:index", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const attachments = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const attachment = attachments[Number(req.params.index)];
+      const objectPath: string | undefined = attachment?.url;
+      if (!attachment || typeof objectPath !== "string" || !objectPath.startsWith("/objects/")) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
+      if (attachment.name) {
+        res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      console.error("Error serving client attachment:", error);
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
+  /**
+   * The PDF the client was emailed, served back verbatim from the archive —
+   * never re-rendered, because the variation may have changed since and a
+   * lookalike is not the document they were sent (or signed).
+   */
+  app.get("/api/variations/:id/client-document", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation || !isVariationClientVisible(variation)) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const { variationSends } = await import("@shared/schema");
+      // The send the signature belongs to, else the most recent one.
+      const sends = await db
+        .select()
+        .from(variationSends)
+        .where(eq(variationSends.variationId, variation.id))
+        .orderBy(desc(variationSends.sentAt));
+      const signedSendId = (variation as any).signedSendId;
+      const send = sends.find((row: any) => row.id === signedSendId) ?? sends[0];
+      const stored = (send as any)?.sentPdfPath as string | null | undefined;
+      if (!stored) return res.status(404).json({ error: "No document was archived for this variation" });
+
+      const normalisedPath = stored.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await new ObjectStorageService().getObjectEntityFile(normalisedPath);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${String((variation as any).variationNumber || "variation").replace(/"/g, "")}.pdf"`,
+      );
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      console.error("Error serving client variation document:", error);
+      res.status(500).json({ error: "Failed to load document" });
     }
   });
 
@@ -45783,6 +46041,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         isInternal: isInternal === true && !getClientUser(req),
         ...author,
       } as any);
+
+      // A builder's reply reaches the client's bell. Internal notes never do —
+      // the client cannot see them, so a notification would be a tease.
+      if (!getClientUser(req) && !(comment as any).isInternal) {
+        await notifyProjectClients({
+          projectId: item.projectId,
+          companyId: item.companyId,
+          type: "review_builder_comment",
+          title: "New comment on a review",
+          message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${item.name}`,
+          link: `/projects/${item.projectId}/reviews/${item.id}`,
+          entityType: "review",
+          entityId: item.id,
+          exceptUserId: req.user!.id,
+        });
+      }
 
       res.status(201).json(comment);
     } catch (error) {

@@ -476,6 +476,26 @@ const ALLOW_RULES: AllowRule[] = [
     project: projectViaVariation,
     shape: shapeVariationItems,
   },
+  // The document itself: the same payload the emailed link renders, its
+  // attachments, and the archived PDF that was sent (and signed).
+  {
+    methods: ["GET"],
+    pattern: /^\/variations\/[^/]+\/client-view$/,
+    permission: [PORTAL_KEYS.variations, "view"],
+    project: projectViaVariation,
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/variations\/[^/]+\/client-attachments\/\d+$/,
+    permission: [PORTAL_KEYS.variations, "view"],
+    project: projectViaVariation,
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/variations\/[^/]+\/client-document$/,
+    permission: [PORTAL_KEYS.variations, "view"],
+    project: projectViaVariation,
+  },
   // Signing in the portal. Same handler as the emailed link, so the role's
   // "Sign to approve or reject" tick is what decides whether it is offered.
   {
@@ -506,6 +526,14 @@ const ALLOW_RULES: AllowRule[] = [
     permission: [PORTAL_KEYS.invoices, "view"],
     project: projectViaClientInvoice,
     shape: shapeInvoiceChild,
+  },
+  // The claim as a document (letterhead, addressee, lines, payments). The
+  // route projects its own payload, so no shaper here.
+  {
+    methods: ["GET"],
+    pattern: /^\/client-invoices\/[^/]+\/client-view$/,
+    permission: [PORTAL_KEYS.invoices, "view"],
+    project: projectViaClientInvoice,
   },
 
   // --- Site diary ---
