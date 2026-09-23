@@ -12,6 +12,79 @@ export function fractionsToPixels(pts: Point[], w: number, h: number): Point[] {
 }
 
 /**
+ * One drawn shape, and the plan page it was drawn on.
+ *
+ * A measurement is one item in the take-off list — "Wall tiles" — and it is
+ * measured across the whole plan, not per page: mark it on the ground floor
+ * and again on the first floor and both add to the one row. So each shape
+ * carries its own page, and `qty` carries what that shape measured on that
+ * page. The quantity has to be kept per shape because each page has its own
+ * scale: 1:100 on one sheet and 1:50 on the next give different metres for the
+ * same number of pixels, and there is no way to re-derive a shape's size once
+ * you are looking at a different page.
+ */
+export type Shape = {
+  /** The takeoff_plan_pages id this shape was drawn on. */
+  pageId: string | null;
+  points: Point[];
+  /** m² / lm / count for this shape alone, at its own page's scale. */
+  qty: number;
+};
+
+/**
+ * Read any of the three geometry shapes that exist in the wild:
+ *   - `[{pageId, points, qty}]`  — current
+ *   - `[[{x,y}, …], …]`          — sub-shapes, all on the measurement's own page
+ *   - `[{x,y}, …]`               — one shape (and how count markers were stored)
+ *
+ * `homePageId` is the measurement's `pageId` column, which is where everything
+ * drawn before pages were tracked per shape must have been.
+ */
+export function normalizeEntries(geometry: unknown, homePageId: string | null): Shape[] {
+  if (!Array.isArray(geometry) || geometry.length === 0) return [];
+  const first: any = geometry[0];
+  if (first && typeof first === "object" && Array.isArray(first.points)) {
+    return (geometry as any[])
+      .filter((e) => e && Array.isArray(e.points) && e.points.length > 0)
+      .map((e) => ({
+        pageId: e.pageId ?? homePageId,
+        points: e.points as Point[],
+        qty: Number(e.qty) || 0,
+      }));
+  }
+  return normalizeShapes(geometry).map((points) => ({ pageId: homePageId, points, qty: 0 }));
+}
+
+/** The shapes drawn on one page — what that page's canvas draws and hit-tests. */
+export function entriesForPage(entries: Shape[], pageId: string | null | undefined): Shape[] {
+  if (!pageId) return [];
+  return entries.filter((e) => e.pageId === pageId);
+}
+
+/**
+ * The item's quantity across every page.
+ *
+ * Count is the number of markers. Everything else sums the per-shape
+ * quantities, then applies a height if the item has one (a wall run measured
+ * as a line: metres x height = m²).
+ */
+export function totalQuantity(
+  entries: Shape[],
+  type: string,
+  heightMm?: number | null,
+): number {
+  if (type === "count") return entries.reduce((n, e) => n + e.points.length, 0);
+  const base = entries.reduce((sum, e) => sum + (Number(e.qty) || 0), 0);
+  const scaled = type === "linear" && heightMm ? base * (heightMm / 1000) : base;
+  return Math.round(scaled * 100) / 100;
+}
+
+/** The unit a linear item reports: m² once it has a height, lm without one. */
+export function unitForLinear(heightMm?: number | null, fallback = "lm"): string {
+  return heightMm ? "m²" : fallback;
+}
+
+/**
  * Normalize a measurement's geometry to an array of shapes (Point[][]).
  * Supports legacy single-shape geometry (Point[]) and multi-shape (Point[][]).
  * Used by area/linear measurements which can have multiple sub-shapes.

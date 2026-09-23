@@ -24,6 +24,8 @@ export type TemplateItem = {
   categoryName: string | null;
   multiplier: number;
   wastePercent: number;
+  /** Wall height in mm for a linear item, or null/absent for a plain run. */
+  heightMm?: number | null;
 };
 export type Template = {
   id: string;
@@ -64,6 +66,8 @@ export function SaveTemplateModal({ open, onOpenChange, measurements, categories
           categoryName: m.categoryId ? categories.find((c) => c.id === m.categoryId)?.name ?? null : null,
           multiplier: m.multiplier ?? 1,
           wastePercent: m.wastePercent ?? 0,
+          // The height is part of what the item IS, so it travels with it.
+          heightMm: (m as { heightMm?: number | null }).heightMm ?? null,
         }));
       const newTemplate: Template = {
         id: crypto.randomUUID(),
@@ -206,7 +210,12 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
           color: item.color,
           geometry: [],
           quantity: 0,
-          unit: item.measurementType === "area" ? "m²" : item.measurementType === "linear" ? "lm" : item.measurementType === "count" ? "each" : "",
+          unit:
+            item.measurementType === "area" || (item.measurementType === "linear" && item.heightMm)
+              ? "m²"
+              : item.measurementType === "linear" ? "lm"
+              : item.measurementType === "count" ? "each" : "",
+          heightMm: item.heightMm ?? null,
           multiplier: item.multiplier,
           wastePercent: item.wastePercent,
         });

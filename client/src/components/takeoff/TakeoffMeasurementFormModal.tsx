@@ -29,6 +29,8 @@ export interface MeasurementFormData {
   color: string;
   multiplier: number;
   wastePercent: number;
+  /** Linear items only: wall height in mm, or null for a plain lm run. */
+  heightMm: number | null;
   unit: string;
   fillPattern: FillPattern;
   lineType: LineType;
@@ -52,14 +54,14 @@ const COLOR_SWATCHES = [
 
 const TYPE_OPTIONS: Array<{ value: MeasurementType; label: string; hint: string }> = [
   { value: "area", label: "Area", hint: "Polygon area on plan" },
-  { value: "linear", label: "Linear", hint: "Polyline length" },
+  { value: "linear", label: "Linear", hint: "Polyline length, or a wall height" },
   { value: "count", label: "Count", hint: "Click to place items" },
   { value: "manual", label: "Manual", hint: "Type quantity manually" },
 ];
 
 const UNIT_OPTIONS: Record<MeasurementType, string[]> = {
   area: ["m²", "ft²"],
-  linear: ["m", "lm", "ft"],
+  linear: ["lm", "m", "m²", "ft"],
   count: ["each", "pcs"],
   manual: ["", "m", "m²", "m³", "kg", "L", "hrs", "each"],
 };
@@ -106,6 +108,9 @@ export default function TakeoffMeasurementFormModal({
   const [fillPattern, setFillPattern] = useState<FillPattern>("solid");
   const [lineType, setLineType] = useState<LineType>("solid");
   const [lineSize, setLineSize] = useState<number>(2);
+  // Metres in the box, millimetres in the column — 2.4 is how a wall height is
+  // said out loud, and "" means the item has no height at all.
+  const [heightM, setHeightM] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -121,6 +126,11 @@ export default function TakeoffMeasurementFormModal({
       setFillPattern((editing.fillPattern as FillPattern) || "solid");
       setLineType((editing.lineType as LineType) || "solid");
       setLineSize(editing.lineSize ?? 2);
+      setHeightM(
+        (editing as { heightMm?: number | null }).heightMm
+          ? String((editing as { heightMm?: number | null }).heightMm! / 1000)
+          : "",
+      );
     } else {
       setName("");
       setCategoryId("__none__");
@@ -133,6 +143,7 @@ export default function TakeoffMeasurementFormModal({
       setFillPattern("solid");
       setLineType("solid");
       setLineSize(2);
+      setHeightM("");
     }
   }, [open, editing]);
 
@@ -177,13 +188,20 @@ export default function TakeoffMeasurementFormModal({
       color,
       multiplier: parseFloat(multiplier) || 1,
       wastePercent: parseFloat(wastePercent) || 0,
-      unit,
+      heightMm: heightMmValue,
+      // A height turns a run into an area, so the unit follows it rather than
+      // leaving the row saying "lm" beside a square-metre figure.
+      unit: heightMmValue ? "m²" : unit,
       fillPattern,
       lineType,
       lineSize,
     });
   };
 
+  const heightMmValue =
+    measurementType === "linear" && parseFloat(heightM) > 0
+      ? Math.round(parseFloat(heightM) * 1000)
+      : null;
   const showFillRow = measurementType === "area";
   const showLineRow = measurementType === "area" || measurementType === "linear";
   const unitOptions = UNIT_OPTIONS[measurementType];
@@ -259,7 +277,13 @@ export default function TakeoffMeasurementFormModal({
             </div>
             <div className="space-y-1.5">
               <Label>Unit</Label>
-              <Select value={unit} onValueChange={setUnit}>
+              {/* A height decides the unit — the item is an area now — so the
+                  picker shows what will be saved rather than a stale "lm". */}
+              <Select
+                value={heightMmValue ? "m²" : unit}
+                onValueChange={setUnit}
+                disabled={!!heightMmValue}
+              >
                 <SelectTrigger data-testid="select-measurement-unit">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
@@ -273,6 +297,23 @@ export default function TakeoffMeasurementFormModal({
               </Select>
             </div>
           </div>
+
+          {measurementType === "linear" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="m-height">Height (m)</Label>
+              <Input
+                id="m-height" type="number" step="0.01" min="0"
+                value={heightM} onChange={(e) => setHeightM(e.target.value)}
+                placeholder="Leave empty to measure in lm"
+                data-testid="input-measurement-height"
+              />
+              <p className="text-xs text-muted-foreground">
+                {heightMmValue
+                  ? `Trace the wall run — the item reports m² (length × ${heightM} m). For wall linings and tiles.`
+                  : "Give a wall height to measure linings or tiles as area; leave it empty for a plain length."}
+              </p>
+            </div>
+          )}
 
           {(showFillRow || showLineRow) && (
             <div className="grid grid-cols-2 gap-2">
