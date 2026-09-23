@@ -217,6 +217,17 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     onSuccess: () => {
       if (pageMeasurementsKey) queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
+      // Estimate lines can be built on this measurement, and the server has
+      // just re-priced them. Queries hold their data forever (staleTime
+      // Infinity), so without this the grid behind the take-off tab would keep
+      // showing the old quantity until a reload. Only the lines and totals —
+      // not the estimates list, groups, versions and the rest that a bare
+      // ["/api/estimates"] prefix would drag in with them.
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "/api/estimates"
+          && (q.queryKey[2] === "items" || q.queryKey[2] === "summary"),
+      });
     },
   });
 

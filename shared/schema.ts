@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date, doublePrecision, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, primaryKey, date, doublePrecision, serial } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1018,6 +1018,12 @@ export const estimateItems = pgTable("estimate_items", {
   allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
   pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
   quantity: doublePrecision("quantity").notNull().default(1),
+  // What the estimator wrote in the quantity cell, when it is more than a
+  // number: an expression over take-off measurements, e.g. "{takeoff:9f3…}*1.1"
+  // (migration 0088). `quantity` above stays the evaluated result and is what
+  // pricing and the client ever see. Null = a plain typed quantity.
+  // Evaluated ONLY by shared/quantityFormula.ts — never with eval().
+  quantityFormula: text("quantity_formula"),
   wastagePercent: integer("wastage_percent").notNull().default(0), // Wastage percentage (0, 10, 15, 20, etc.)
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
@@ -8117,6 +8123,23 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
 export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+/**
+ * Which estimate lines depend on which take-off measurement.
+ *
+ * Derived from estimate_items.quantity_formula and rewritten whenever a line is
+ * saved. It exists so re-measuring on the plan finds the lines to re-price in
+ * one indexed query, and so the take-off list can warn "used by 3 estimate
+ * lines" before an item is deleted. See migration 0088.
+ */
+export const estimateItemTakeoffRefs = pgTable("estimate_item_takeoff_refs", {
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }),
+  measurementId: varchar("measurement_id").notNull().references(() => takeoffMeasurements.id, { onDelete: "cascade" }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.estimateItemId, table.measurementId] }),
+  measurementIdx: index("estimate_item_takeoff_refs_measurement_idx").on(table.measurementId),
+}));
+export type EstimateItemTakeoffRef = typeof estimateItemTakeoffRefs.$inferSelect;
 
 export const takeoffMarkups = pgTable("takeoff_markups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

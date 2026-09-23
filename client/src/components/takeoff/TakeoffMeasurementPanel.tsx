@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TakeoffMeasurement, TakeoffCategory, TakeoffPlan } from "@shared/schema";
 import TakeoffColorPicker from "./TakeoffColorPicker";
 import { normalizeEntries } from "./useTakeoffGeometry";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Props {
   projectId: string;
@@ -88,6 +92,24 @@ export default function TakeoffMeasurementPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<TakeoffMeasurement | null>(null);
+
+  /* Estimate lines can be built on a measurement, so deleting one is not a
+     private act. This is what the row's "used by" note and the delete warning
+     are made of. */
+  const usageKey = ["/api/projects", projectId, "takeoff/measurement-usage"];
+  const { data: usage = [] } = useQuery<
+    Array<{ measurementId: string; items: Array<{ itemId: string; itemName: string; estimateName: string }> }>
+  >({
+    queryKey: usageKey,
+    enabled: !!projectId,
+  });
+  const usageById = useMemo(
+    () => new Map(usage.map((u) => [u.measurementId, u.items] as const)),
+    [usage],
+  );
 
   const measurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
   const pageMeasurementsKeyPrefix = ["/api/projects", projectId, "takeoff/pages"];
@@ -141,6 +163,13 @@ export default function TakeoffMeasurementPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: measurementsKey });
       queryClient.invalidateQueries({ queryKey: pageMeasurementsKeyPrefix });
+      // The estimate lines that used it are now showing a broken reference.
+      queryClient.invalidateQueries({ queryKey: usageKey });
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "/api/estimates"
+          && (q.queryKey[2] === "items" || q.queryKey[2] === "summary"),
+      });
       toast({ title: "Deleted" });
     },
   });
@@ -313,12 +342,54 @@ export default function TakeoffMeasurementPanel({
                   onDeleteMeasurement={(id) => deleteMeasurement.mutate(id)}
                   currentPageId={currentPageId}
                   pageNumberById={pageNumberById}
+                  usageById={usageById}
+                  editingQtyId={editingQtyId}
+                  editQty={editQty}
+                  setEditQty={setEditQty}
+                  setEditingQtyId={setEditingQtyId}
+                  onRequestDelete={setPendingDelete}
                 />
               ))}
             </SortableContext>
           </DndContext>
         )}
       </div>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent data-testid="dialog-measurement-in-use">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete?.name} is used by {usageById.get(pendingDelete?.id ?? "")?.length ?? 0} estimate{" "}
+              {(usageById.get(pendingDelete?.id ?? "")?.length ?? 0) === 1 ? "line" : "lines"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Those lines keep the figure they have now, and their quantity will show as
+              a broken take-off reference until you edit it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-40 overflow-auto text-sm space-y-1">
+            {(usageById.get(pendingDelete?.id ?? "") ?? []).map((u) => (
+              <div key={u.itemId} className="flex justify-between gap-3">
+                <span className="truncate">{u.itemName}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{u.estimateName}</span>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-measurement">Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDelete) deleteMeasurement.mutate(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              data-testid="button-confirm-delete-measurement"
+            >
+              Delete anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="p-3 border-t border-border space-y-2">
         <Button onClick={onAddClick} className="w-full" data-testid="button-add-measurement">
@@ -375,6 +446,12 @@ function SortableGroup({
   onDeleteMeasurement,
   currentPageId,
   pageNumberById,
+  usageById,
+  editingQtyId,
+  editQty,
+  setEditQty,
+  setEditingQtyId,
+  onRequestDelete,
 }: {
   group: { id: string; name: string; rows: TakeoffMeasurement[] };
   isCollapsed: boolean;
@@ -395,6 +472,12 @@ function SortableGroup({
   onDeleteMeasurement: (id: string) => void;
   currentPageId: string | null;
   pageNumberById?: Map<string, number>;
+  usageById: Map<string, Array<{ itemId: string; itemName: string; estimateName: string }>>;
+  editingQtyId: string | null;
+  editQty: string;
+  setEditQty: (v: string) => void;
+  setEditingQtyId: (id: string | null) => void;
+  onRequestDelete: (m: TakeoffMeasurement) => void;
 }) {
   const sortable = useSortable({ id: group.id, disabled: !draggable });
   const style = {
@@ -459,12 +542,31 @@ function SortableGroup({
                 onHighlight={onHighlight}
                 onColor={(color) => onUpdateMeasurement(m.id, { color } as any)}
                 onToggleVisible={() => onUpdateMeasurement(m.id, { isVisible: !m.isVisible } as any)}
-                onDelete={() => onDeleteMeasurement(m.id)}
+                onDelete={() => {
+                  // A measurement an estimate is built on gets a question first.
+                  if ((usageById.get(m.id)?.length ?? 0) > 0) onRequestDelete(m);
+                  else onDeleteMeasurement(m.id);
+                }}
                 onEdit={onEditClick ? () => onEditClick(m) : undefined}
                 active={m.id === activeDrawingId}
                 onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
                 currentPageId={currentPageId}
                 pageNumberById={pageNumberById}
+                usedBy={usageById.get(m.id) ?? []}
+                editingQty={editingQtyId === m.id}
+                editQty={editQty}
+                setEditQty={setEditQty}
+                onStartQtyEdit={() => {
+                  setEditingQtyId(m.id);
+                  setEditQty(String(m.quantity ?? 0));
+                }}
+                onCommitQty={() => {
+                  const next = parseFloat(editQty);
+                  if (!Number.isNaN(next) && next !== m.quantity) {
+                    onUpdateMeasurement(m.id, { quantity: next } as any);
+                  }
+                  setEditingQtyId(null);
+                }}
               />
             ))}
           </SortableContext>
@@ -478,6 +580,7 @@ function SortableRow({
   m, editing, editName, setEditName, onStartEdit, onCommitName,
   highlighted, onHighlight, onColor, onToggleVisible, onDelete, onEdit,
   active, onActivate, currentPageId, pageNumberById,
+  usedBy, editingQty, editQty, setEditQty, onStartQtyEdit, onCommitQty,
 }: {
   m: TakeoffMeasurement;
   editing: boolean;
@@ -495,6 +598,12 @@ function SortableRow({
   onActivate?: () => void;
   currentPageId: string | null;
   pageNumberById?: Map<string, number>;
+  usedBy: Array<{ itemId: string; itemName: string; estimateName: string }>;
+  editingQty: boolean;
+  editQty: string;
+  setEditQty: (v: string) => void;
+  onStartQtyEdit: () => void;
+  onCommitQty: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: m.id });
@@ -579,6 +688,15 @@ function SortableRow({
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
           <span>{m.measurementType}</span>
           {heightMm ? <span className="normal-case">· {heightMm / 1000} m high</span> : null}
+          {usedBy.length > 0 && (
+            <span
+              className="normal-case text-primary"
+              title={`Used by ${usedBy.map((u) => `${u.itemName} — ${u.estimateName}`).join(", ")}`}
+              data-testid={`row-used-by-${m.id}`}
+            >
+              · used by {usedBy.length}
+            </span>
+          )}
           {pageNumbers.length > 0 && (
             <span
               className={`normal-case ${onThisPage ? "text-foreground/70" : ""}`}
@@ -594,10 +712,42 @@ function SortableRow({
           )}
         </div>
       </div>
-      <div className="text-sm tabular-nums w-20 text-right">
-        {Math.round((m.quantity ?? 0) * 100) / 100}
-        <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
-      </div>
+      {/* A manual measurement has no shape to measure, so its quantity is
+          typed here — the row used to say "edit the quantity on the row" with
+          nowhere to do it. A drawn measurement's quantity is the drawing's. */}
+      {m.measurementType === "manual" && editingQty ? (
+        <Input
+          autoFocus
+          type="number"
+          value={editQty}
+          onChange={(e) => setEditQty(e.target.value)}
+          onBlur={onCommitQty}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") onCommitQty();
+          }}
+          className="h-7 w-20 text-sm text-right"
+          data-testid={`input-manual-qty-${m.id}`}
+        />
+      ) : (
+        <div
+          className={`text-sm tabular-nums w-20 text-right ${
+            m.measurementType === "manual" ? "cursor-text hover-elevate rounded-sm" : ""
+          }`}
+          title={m.measurementType === "manual" ? "Click to type the quantity" : undefined}
+          onClick={(e) => {
+            if (m.measurementType !== "manual") return;
+            e.stopPropagation();
+            onStartQtyEdit();
+          }}
+          data-testid={`qty-${m.id}`}
+        >
+          {Math.round((m.quantity ?? 0) * 100) / 100}
+          <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
+        </div>
+      )}
       <Button
         size="icon"
         variant="ghost"
