@@ -12,7 +12,14 @@
  *   3. Unlinked stages are spread evenly and flagged.
  */
 import assert from "node:assert";
-import { buildForecast, type ClaimStageInput, type ForecastInput, type JobInput } from "@shared/cashflow";
+import {
+  buildForecast,
+  resolveClaimStages,
+  suggestScheduleItem,
+  type ClaimStageInput,
+  type ForecastInput,
+  type JobInput,
+} from "@shared/cashflow";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -125,6 +132,59 @@ check("with no stages at all, what's left is spread evenly", () => {
   const { claims } = run(job([], { remainingToClaimCents: 600_000, endDate: "2027-02-28" }));
   assert.strictEqual(claims.length, 6);
   assert.strictEqual(sum(claims.map((c) => c.amountCents)), 600_000);
+});
+
+// --- resolving stages against invoices (shared/cashflow/claims) -------------
+
+
+const row = (id: string, percent: number | null, amountCents: number | null = null) => ({
+  id,
+  name: id,
+  percent,
+  amountCents,
+  scheduleItemId: null,
+  plannedDate: null,
+  itemName: null,
+  itemEnd: null,
+  itemActualEnd: null,
+});
+
+check("stages are used up in order by the claim % invoiced", () => {
+  const r = resolveClaimStages([row("a", 20), row("b", 30), row("c", 50)], 100_000_00, 35, 0);
+  assert.deepStrictEqual(r.map((s) => [s.state, s.unclaimedCents]), [["claimed", 0], ["part", 15_000_00], ["to_claim", 50_000_00]]);
+});
+
+check("with no claim rows, the invoiced total uses them up instead", () => {
+  const r = resolveClaimStages([row("a", 50), row("b", 50)], 100_000_00, 0, 60_000_00);
+  assert.deepStrictEqual(r.map((s) => s.unclaimedCents), [0, 40_000_00]);
+});
+
+check("a stage left under a dollar short by rounding counts as claimed", () => {
+  // 20% + 30% + 50% of an odd contract, fully invoiced: the last stage would be 1c short.
+  const contract = 49_738_473;
+  const r = resolveClaimStages([row("a", 20), row("b", 30), row("c", 50)], contract, 0, contract);
+  assert.ok(r.every((s) => s.state === "claimed" && s.unclaimedCents === 0));
+});
+
+check("a linked item's actual finish wins over its planned finish", () => {
+  const r = resolveClaimStages(
+    [{ ...row("a", 100), scheduleItemId: "i1", itemEnd: new Date("2027-03-01T00:00:00+11:00"), itemActualEnd: new Date("2027-02-20T00:00:00+11:00") }],
+    100_00,
+    0,
+    0,
+  );
+  assert.strictEqual(r[0].date, "2027-02-20");
+  assert.strictEqual(r[0].dateSource, "schedule");
+});
+
+check("suggestions match stage names to schedule items, milestones first", () => {
+  const items = [
+    { id: "t", name: "Lock-up windows install", type: "task", category: "construction", endDate: null },
+    { id: "m", name: "Lock-Up Stage", type: "milestone", category: "construction", endDate: null },
+    { id: "x", name: "Demolition", type: "task", category: "construction", endDate: null },
+  ];
+  assert.strictEqual(suggestScheduleItem("Lock-up claim", items), "m");
+  assert.strictEqual(suggestScheduleItem("Deposit", items), null);
 });
 
 console.log(`\ncashflow-claims: ${passed} passed`);

@@ -13,24 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { addDays, type CashflowJobRow } from "@shared/cashflow";
+import { addDays, maxKey, toDateKey, type CashflowJobRow, type ResolvedClaimStage } from "@shared/cashflow";
 import { invalidateCashflow, money, PHASE_CLASSES, PHASE_LABELS, shortDate } from "./cashflowShared";
 
-// Mirrors server/services/cashflowService ClaimSchedule.
-interface ResolvedStage {
-  id: string;
-  name: string;
-  percent: number | null;
-  amountCents: number | null;
-  scheduleItemId: string | null;
-  scheduleItemName: string | null;
-  plannedDate: string | null;
-  date: string | null;
-  dateSource: "schedule" | "planned" | null;
-  valueCents: number;
-  unclaimedCents: number;
-  state: "claimed" | "part" | "to_claim";
-}
+type ResolvedStage = ResolvedClaimStage;
+// Mirrors ClaimSchedule in server/services/cashflowService.
 interface ClaimSchedule {
   originalContractCents: number;
   invoicedCents: number;
@@ -125,6 +112,7 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
   const { toast } = useToast();
   const canEdit = usePermission("business.cashflow", "edit");
   const [fields, setFields] = useInfoFields();
+  const today = toDateKey(new Date())!;
   const claimsKey = [`/api/cashflow/projects/${job?.projectId}/claims`];
   const { data, isLoading } = useQuery<ClaimSchedule>({ queryKey: claimsKey, enabled: !!job });
 
@@ -188,10 +176,15 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
 
   const nextClaim = useMemo(() => {
     if (!job || !data) return null;
-    const upcoming = data.stages
-      .filter((s) => s.unclaimedCents > 0 && s.date)
-      .sort((a, b) => (a.date! < b.date! ? -1 : 1))[0];
-    return upcoming ? `${upcoming.name} · ${money(upcoming.unclaimedCents)} · paid ~${shortDate(addDays(upcoming.date!, job.clientPayDays))}` : null;
+    const open = data.stages.filter((s) => s.unclaimedCents > 0);
+    const upcoming = open.filter((s) => s.date).sort((a, b) => (a.date! < b.date! ? -1 : 1))[0];
+    if (!upcoming) return null;
+    // Same fitting as the engine: stages scaled down to what's left, or the
+    // extra (variations) added to the next claim.
+    const total = open.reduce((s, st) => s + st.unclaimedCents, 0);
+    const left = job.remainingToClaimCents;
+    const amount = total > left ? Math.round((upcoming.unclaimedCents * left) / total) : upcoming.unclaimedCents + (left - total);
+    return `${upcoming.name} · ${money(amount)} · paid ~${shortDate(addDays(maxKey(upcoming.date!, today), job.clientPayDays))}`;
   }, [job, data]);
 
   const info: Record<InfoField, string> = job
@@ -338,6 +331,7 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
                               </Button>
                             )}
                           </div>
+                          {(!claimed || d.scheduleItemId) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-muted-foreground w-14 shrink-0">Paid after</span>
                             <SearchableSelect
@@ -364,16 +358,18 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
                               />
                             )}
                           </div>
+                          )}
                           <div className="flex items-center gap-2 text-xs">
-                            {item?.endDate ? (
+                            {claimed ? null : item?.endDate ? (
                               <span className="text-muted-foreground">
-                                Finishes {shortDate(item.endDate)} → paid ~{shortDate(addDays(item.endDate, job.clientPayDays))}
+                                {item.endDate < today ? "Finished" : "Finishes"} {shortDate(item.endDate)} → paid ~
+                                {shortDate(addDays(maxKey(item.endDate, today), job.clientPayDays))}
                               </span>
                             ) : d.plannedDate ? (
-                              <span className="text-muted-foreground">Paid ~{shortDate(addDays(d.plannedDate, job.clientPayDays))}</span>
-                            ) : !claimed ? (
+                              <span className="text-muted-foreground">Paid ~{shortDate(addDays(maxKey(d.plannedDate, today), job.clientPayDays))}</span>
+                            ) : (
                               <span className="text-status-warning">Not linked — spread evenly over the job</span>
-                            ) : null}
+                            )}
                             {suggestion && canEdit && (
                               <button
                                 type="button"
