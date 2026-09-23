@@ -2,6 +2,7 @@
  * Prints one company's cashflow forecast as text, to check the numbers by hand.
  *
  *   npx tsx --env-file-if-exists=.env scripts/cashflow-forecast-check.ts
+ *   npx tsx --env-file-if-exists=../MORADA/.env scripts/…   # from a worktree with no .env of its own
  *   ... --company <companyId>     # default: the company with the most jobs
  *   ... --fortnight               # fortnightly instead of monthly
  *   ... --events                  # also list every dated cash event
