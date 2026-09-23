@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Calculator, Ruler } from "lucide-react";
 import type { TakeoffMeasurement, TakeoffCategory } from "@shared/schema";
@@ -15,6 +16,10 @@ import type { TakeoffMeasurement, TakeoffCategory } from "@shared/schema";
  * Tab, Enter, Escape and type-to-replace keep working exactly as they do in
  * every other cell. Buttons inside the popovers suppress mousedown so the
  * input never loses focus — a blur would commit the cell mid-edit.
+ *
+ * Both panels are PORTALLED to the body and positioned against the cell. A
+ * grid cell is `overflow-hidden` and 60px wide, so a panel rendered inside it
+ * is clipped to nothing: the list was there, correct, and completely invisible.
  */
 
 export interface QuantityPreview {
@@ -55,8 +60,27 @@ export default function QuantityFormulaEditor({
   testId,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+
+  // Where the panels hang: under the cell, right edges aligned. Measured from
+  // the viewport because they are portalled out of the scrolling grid.
+  useLayoutEffect(() => {
+    if (!pickerOpen && !keypadOpen) return;
+    const place = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      if (r) setAnchor({ top: r.bottom + 2, right: window.innerWidth - r.right });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [pickerOpen, keypadOpen]);
 
   // What has been typed since the `{`, used to narrow the list as you keep typing.
   const search = useMemo(() => {
@@ -118,8 +142,12 @@ export default function QuantityFormulaEditor({
     if (!pickerOpen && !keypadOpen) onBlur();
   };
 
+  const panelStyle = anchor
+    ? { position: "fixed" as const, top: anchor.top, right: anchor.right, zIndex: 60 }
+    : { display: "none" };
+
   return (
-    <div className="relative flex h-full w-full items-center">
+    <div ref={anchorRef} className="relative flex h-full w-full items-center">
       <Input
         ref={inputRef}
         value={value}
@@ -178,9 +206,10 @@ export default function QuantityFormulaEditor({
         <Calculator className="h-3.5 w-3.5" />
       </button>
 
-      {keypadOpen && (
+      {keypadOpen && createPortal(
         <div
-          className="absolute top-full right-0 z-50 mt-1 grid grid-cols-4 gap-1 rounded-md border border-border bg-popover p-2 shadow-lg"
+          className="grid grid-cols-4 gap-1 rounded-md border border-border bg-popover p-2 shadow-lg"
+          style={panelStyle}
           onMouseDown={keepFocus}
           data-testid={`${testId}-keypad-panel`}
         >
@@ -206,12 +235,14 @@ export default function QuantityFormulaEditor({
           <div className="col-span-4 pt-1 text-[11px] text-muted-foreground">
             ROUND( … ) rounds up to a whole number
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {pickerOpen && (
+      {pickerOpen && createPortal(
         <div
-          className="absolute top-full right-0 z-50 mt-1 max-h-72 w-[22rem] overflow-auto rounded-md border border-border bg-popover shadow-lg"
+          className="max-h-72 w-[22rem] overflow-auto rounded-md border border-border bg-popover shadow-lg"
+          style={panelStyle}
           onMouseDown={keepFocus}
           data-testid={`${testId}-picker`}
         >
@@ -259,7 +290,8 @@ export default function QuantityFormulaEditor({
               <Ruler className="h-4 w-4" /> Add in take-off
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
