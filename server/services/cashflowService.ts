@@ -32,6 +32,8 @@ import {
   buildForecast,
   toDateKey,
   type BillInput,
+  type CashflowJobRow,
+  type OpeningBalance,
   type DateKey,
   type ExpenseInput,
   type ForecastInput,
@@ -69,14 +71,6 @@ export async function getCashflowSettings(companyId: string): Promise<CashflowSe
 }
 
 // ── Opening balance ─────────────────────────────────────────────────────────
-
-export interface OpeningBalance {
-  cents: number | null;
-  source: "xero" | "manual" | null;
-  accounts: { id: string; name: string; balanceCents: number; included: boolean }[];
-  /** Set when Xero is connected but the balance couldn't be read. */
-  error?: string;
-}
 
 const BALANCE_TTL_MS = 5 * 60 * 1000;
 const balanceCache = new Map<string, { value: Awaited<ReturnType<typeof xeroService.getBankAccountBalances>>; expiresAt: number }>();
@@ -120,28 +114,6 @@ export async function getOpeningBalance(companyId: string, settings: CashflowSet
 }
 
 // ── Jobs register ───────────────────────────────────────────────────────────
-
-/** One row of the Projects tab — also what the engine's JobInput is built from. */
-export interface CashflowJobRow {
-  projectId: string;
-  name: string;
-  jobNumber: string | null;
-  phase: JobPhase;
-  included: boolean;
-  /** true when someone has changed this job's settings (a row exists). */
-  customised: boolean;
-  mode: JobMode;
-  winPercent: number;
-  clientPayDays: number;
-  clientPayDaysOverride: number | null;
-  contractCents: number;
-  invoicedCents: number;
-  remainingToClaimCents: number;
-  remainingCostCents: number;
-  costBasis: "budget" | "margin";
-  startDate: DateKey | null;
-  endDate: DateKey | null;
-}
 
 export interface CashflowLoad {
   input: ForecastInput;
@@ -412,6 +384,7 @@ export async function loadCashflow(
       costBasis,
       startDate,
       endDate,
+      manualAmounts: manualByProject.get(p.id) ?? [],
     });
   }
 
@@ -429,7 +402,7 @@ export async function loadCashflow(
       costBasis: j.costBasis,
       startDate: j.startDate,
       endDate: j.endDate,
-      manualAmounts: manualByProject.get(j.projectId),
+      manualAmounts: j.manualAmounts,
     }));
 
   // ── Money already owed either way ─────────────────────────────────────────
