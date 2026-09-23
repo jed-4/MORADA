@@ -57,6 +57,13 @@ interface Props {
   currentPageId?: string | null;
   /** Page id → page number, for the "pages 1, 3" note on a row. */
   pageNumberById?: Map<string, number>;
+  /** The one mark being pointed at on the plan, if any. */
+  highlightedShape?: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  /** Open the page a mark is on and point at it. */
+  onShowShape?: (m: TakeoffMeasurement, index: number) => void;
+  /** Remove one mark, leaving the rest of the item alone. */
+  onDeleteShape?: (m: TakeoffMeasurement, index: number) => void;
   categories: TakeoffCategory[];
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
@@ -77,6 +84,10 @@ export default function TakeoffMeasurementPanel({
   measurements,
   currentPageId = null,
   pageNumberById,
+  highlightedShape = null,
+  onHighlightShape,
+  onShowShape,
+  onDeleteShape,
   categories,
   highlightedId,
   onHighlight,
@@ -95,6 +106,9 @@ export default function TakeoffMeasurementPanel({
   const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState("");
   const [pendingDelete, setPendingDelete] = useState<TakeoffMeasurement | null>(null);
+  /* Which items are showing their marks. Checking a take-off means reading the
+     three squares you drew against the three on the plan, one at a time. */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   /* Estimate lines can be built on a measurement, so deleting one is not a
      private act. This is what the row's "used by" note and the delete warning
@@ -343,6 +357,12 @@ export default function TakeoffMeasurementPanel({
                   currentPageId={currentPageId}
                   pageNumberById={pageNumberById}
                   usageById={usageById}
+                  expanded={expanded}
+                  onToggleExpand={(id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))}
+                  highlightedShape={highlightedShape}
+                  onHighlightShape={onHighlightShape}
+                  onShowShape={onShowShape}
+                  onDeleteShape={onDeleteShape}
                   editingQtyId={editingQtyId}
                   editQty={editQty}
                   setEditQty={setEditQty}
@@ -447,6 +467,12 @@ function SortableGroup({
   currentPageId,
   pageNumberById,
   usageById,
+  expanded,
+  onToggleExpand,
+  highlightedShape,
+  onHighlightShape,
+  onShowShape,
+  onDeleteShape,
   editingQtyId,
   editQty,
   setEditQty,
@@ -473,6 +499,12 @@ function SortableGroup({
   currentPageId: string | null;
   pageNumberById?: Map<string, number>;
   usageById: Map<string, Array<{ itemId: string; itemName: string; estimateName: string }>>;
+  expanded: Record<string, boolean>;
+  onToggleExpand: (id: string) => void;
+  highlightedShape: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  onShowShape?: (m: TakeoffMeasurement, index: number) => void;
+  onDeleteShape?: (m: TakeoffMeasurement, index: number) => void;
   editingQtyId: string | null;
   editQty: string;
   setEditQty: (v: string) => void;
@@ -553,6 +585,12 @@ function SortableGroup({
                 currentPageId={currentPageId}
                 pageNumberById={pageNumberById}
                 usedBy={usageById.get(m.id) ?? []}
+                expanded={!!expanded[m.id]}
+                onToggleExpand={() => onToggleExpand(m.id)}
+                highlightedShape={highlightedShape}
+                onHighlightShape={onHighlightShape}
+                onShowShape={onShowShape ? (i) => onShowShape(m, i) : undefined}
+                onDeleteShape={onDeleteShape ? (i) => onDeleteShape(m, i) : undefined}
                 editingQty={editingQtyId === m.id}
                 editQty={editQty}
                 setEditQty={setEditQty}
@@ -581,6 +619,7 @@ function SortableRow({
   highlighted, onHighlight, onColor, onToggleVisible, onDelete, onEdit,
   active, onActivate, currentPageId, pageNumberById,
   usedBy, editingQty, editQty, setEditQty, onStartQtyEdit, onCommitQty,
+  expanded, onToggleExpand, highlightedShape, onHighlightShape, onShowShape, onDeleteShape,
 }: {
   m: TakeoffMeasurement;
   editing: boolean;
@@ -599,6 +638,12 @@ function SortableRow({
   currentPageId: string | null;
   pageNumberById?: Map<string, number>;
   usedBy: Array<{ itemId: string; itemName: string; estimateName: string }>;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  highlightedShape: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  onShowShape?: (index: number) => void;
+  onDeleteShape?: (index: number) => void;
   editingQty: boolean;
   editQty: string;
   setEditQty: (v: string) => void;
@@ -638,10 +683,11 @@ function SortableRow({
     onActivate();
   };
   const canDraw = m.measurementType !== "manual";
+  const marks = entries.map((e, index) => ({ ...e, index }));
+
   return (
+    <div ref={setNodeRef} style={style}>
     <div
-      ref={setNodeRef}
-      style={style}
       {...attributes}
       {...listeners}
       onMouseEnter={() => onHighlight(m.id)}
@@ -658,6 +704,21 @@ function SortableRow({
       data-active={active ? "true" : "false"}
       title={canDraw && onActivate ? (active ? "Click to stop drawing — drag to reorder" : "Click to draw on plan — drag to reorder") : "Drag to reorder"}
     >
+      {/* Open the item to check what was actually drawn for it. */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+        onPointerDown={(e) => e.stopPropagation()}
+        disabled={marks.length === 0}
+        className={`p-0.5 rounded-sm ${marks.length === 0 ? "opacity-0 cursor-default" : "hover-elevate text-muted-foreground"}`}
+        aria-expanded={expanded}
+        title={expanded ? "Hide the marks" : `Show the ${marks.length} mark${marks.length === 1 ? "" : "s"} on the plan`}
+        data-testid={`button-toggle-marks-${m.id}`}
+      >
+        {expanded
+          ? <ChevronDown className="h-3.5 w-3.5" />
+          : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
       <TakeoffColorPicker color={m.color} onChange={onColor} testId={`color-${m.id}`} />
       <div className="flex-1 min-w-0">
         {editing ? (
@@ -788,6 +849,65 @@ function SortableRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+
+    {/* What was actually drawn for this item: one row per mark, in the order
+        they were drawn, each with the page it is on and what it measured
+        there. Hovering points at it on the plan; clicking opens its page. */}
+    {expanded && marks.length > 0 && (
+      <div className="bg-muted/30 border-b border-border" data-testid={`marks-${m.id}`}>
+        {marks.map((mark) => {
+          const page = mark.pageId ? pageNumberById?.get(mark.pageId) : undefined;
+          const picked =
+            highlightedShape?.measurementId === m.id && highlightedShape?.index === mark.index;
+          const amount =
+            m.measurementType === "count"
+              ? `${mark.points.length} marker${mark.points.length === 1 ? "" : "s"}`
+              : `${Math.round((mark.qty ?? 0) * 100) / 100} ${
+                  m.measurementType === "linear" && heightMm ? "lm" : m.unit
+                }`;
+          return (
+            <div
+              key={mark.index}
+              className={`flex items-center gap-2 pl-8 pr-2 py-1.5 text-xs ${picked ? "bg-primary/10" : ""} ${onShowShape ? "cursor-pointer hover-elevate" : ""}`}
+              onMouseEnter={() => onHighlightShape?.({ measurementId: m.id, index: mark.index })}
+              onMouseLeave={() => onHighlightShape?.(null)}
+              onClick={(e) => { e.stopPropagation(); onShowShape?.(mark.index); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={page ? `Mark ${mark.index + 1} on page ${page}` : `Mark ${mark.index + 1}`}
+              data-testid={`mark-${m.id}-${mark.index}`}
+            >
+              <span className="text-muted-foreground w-12 flex-shrink-0">
+                {page ? `Page ${page}` : "—"}
+              </span>
+              <span className="flex-1 tabular-nums">{amount}</span>
+              {onDeleteShape && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDeleteShape(mark.index); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="p-1 rounded-sm text-muted-foreground hover-elevate"
+                  title="Remove just this mark"
+                  data-testid={`button-delete-mark-${m.id}-${mark.index}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {/* The item's own figure, so the marks can be checked against it. */}
+        <div className="flex items-center gap-2 pl-8 pr-9 py-1.5 text-xs border-t border-border">
+          <span className="flex-1 text-muted-foreground">
+            {marks.length} mark{marks.length === 1 ? "" : "s"}
+            {heightMm ? ` × ${heightMm / 1000} m high` : ""}
+          </span>
+          <span className="tabular-nums font-medium">
+            {Math.round((m.quantity ?? 0) * 100) / 100} {m.unit}
+          </span>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
