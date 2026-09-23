@@ -97,7 +97,16 @@ function jobWindow(job: JobInput, today: DateKey, warnings: ForecastWarning[]): 
   return { from, to: job.endDate };
 }
 
-export function buildEvents(input: ForecastInput, horizonEnd: DateKey, warnings: ForecastWarning[]): CashEvent[] {
+export function whatIfLineId(id: string): string {
+  return `whatif:${id}`;
+}
+
+export function buildEvents(
+  input: ForecastInput,
+  horizonEnd: DateKey,
+  warnings: ForecastWarning[],
+  includeWhatIfs = true,
+): CashEvent[] {
   const { today, settings } = input;
   const events: CashEvent[] = [];
 
@@ -217,6 +226,27 @@ export function buildEvents(input: ForecastInput, horizonEnd: DateKey, warnings:
     }
   }
 
+  // What-ifs that are switched on.
+  if (includeWhatIfs) {
+    for (const w of input.whatIfs ?? []) {
+      if (!w.enabled) continue;
+      for (const s of w.streams) {
+        for (const date of occurrences(s.startDate, s.frequency, s.endDate, today, horizonEnd)) {
+          events.push({
+            date,
+            amountCents: s.amountCents,
+            gstCents: s.gstCents,
+            category: "what_if",
+            source: "what_if",
+            lineId: whatIfLineId(w.id),
+            label: s.name,
+            sourceId: w.id,
+          });
+        }
+      }
+    }
+  }
+
   const inWindow = events.filter((e) => e.date >= today && e.date <= horizonEnd);
   return [...inWindow, ...basEvents(input, inWindow, horizonEnd)];
 }
@@ -257,6 +287,26 @@ function basEvents(input: ForecastInput, events: CashEvent[], horizonEnd: DateKe
   return out;
 }
 
+function lowestOf(closing: number[]): { cents: number; periodIndex: number } {
+  let i = 0;
+  closing.forEach((c, j) => {
+    if (c < closing[i]) i = j;
+  });
+  return { cents: closing[i], periodIndex: i };
+}
+
+function rollForward(opening: number, net: number[]): { openingCents: number[]; closingCents: number[] } {
+  const openingCents: number[] = [];
+  const closingCents: number[] = [];
+  let running = opening;
+  for (const n of net) {
+    openingCents.push(running);
+    running += n;
+    closingCents.push(running);
+  }
+  return { openingCents, closingCents };
+}
+
 export function buildForecast(input: ForecastInput): ForecastResult {
   const warnings: ForecastWarning[] = [];
   const periods = buildPeriods(input.today, input.granularity, input.periodCount, input.settings.fortnightAnchor);
@@ -270,30 +320,42 @@ export function buildForecast(input: ForecastInput): ForecastResult {
     return Math.floor(daysBetween(periods[0].start, date) / 14);
   };
 
-  // Lines: one per job with money in, then the fixed money-out lines.
+  // Lines: one per job with money in, the fixed money-out lines, one per what-if.
   const lines = new Map<string, ForecastLine>();
   const jobNames = new Map<string, string>();
   for (const job of input.jobs) jobNames.set(job.projectId, job.name);
   for (const inv of input.invoices) if (!jobNames.has(inv.projectId)) jobNames.set(inv.projectId, inv.projectName);
+  const whatIfNames = new Map((input.whatIfs ?? []).map((w) => [w.id, w.name]));
   const blank = () => periods.map(() => 0);
+
+  const newLine = (e: CashEvent): ForecastLine => {
+    if (e.lineId.startsWith("job:")) {
+      return { id: e.lineId, label: jobNames.get(e.projectId!) ?? "Job", section: "in", projectId: e.projectId, values: blank(), totalCents: 0 };
+    }
+    if (e.lineId.startsWith("whatif:")) {
+      return { id: e.lineId, label: whatIfNames.get(e.sourceId!) ?? "What-if", section: "whatif", values: blank(), totalCents: 0 };
+    }
+    return { id: e.lineId, label: OUT_LINE_LABELS[e.lineId] ?? e.lineId, section: "out", values: blank(), totalCents: 0 };
+  };
 
   for (const e of events) {
     const i = periodIndex(e.date);
     if (i < 0 || i >= periods.length) continue;
     let line = lines.get(e.lineId);
     if (!line) {
-      line = e.lineId.startsWith("job:")
-        ? { id: e.lineId, label: jobNames.get(e.projectId!) ?? "Job", section: "in", projectId: e.projectId, values: blank(), totalCents: 0 }
-        : { id: e.lineId, label: OUT_LINE_LABELS[e.lineId] ?? e.lineId, section: "out", values: blank(), totalCents: 0 };
+      line = newLine(e);
       lines.set(e.lineId, line);
     }
     line.values[i] += e.amountCents;
     line.totalCents += e.amountCents;
   }
 
-  const inLines = Array.from(lines.values())
-    .filter((l) => l.section === "in")
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const bySection = (section: ForecastLine["section"]) =>
+    Array.from(lines.values())
+      .filter((l) => l.section === section)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  const inLines = bySection("in");
+  const whatIfLines = bySection("whatif");
   const outLines = [LINE_JOB_COSTS, LINE_BUSINESS_EXPENSES, LINE_GST].map(
     (id) => lines.get(id) ?? { id, label: OUT_LINE_LABELS[id], section: "out" as const, values: blank(), totalCents: 0 },
   );
@@ -301,25 +363,24 @@ export function buildForecast(input: ForecastInput): ForecastResult {
   const sumBy = (ls: ForecastLine[]) => periods.map((_, i) => ls.reduce((s, l) => s + l.values[i], 0));
   const inCents = sumBy(inLines);
   const outCents = sumBy(outLines);
-  const netCents = periods.map((_, i) => inCents[i] + outCents[i]);
+  const whatIfCents = sumBy(whatIfLines);
+  const netCents = periods.map((_, i) => inCents[i] + outCents[i] + whatIfCents[i]);
 
   if (input.openingBalanceCents == null) {
     warnings.push({ code: "no_opening_balance", message: "No bank balance — connect Xero or enter one in settings. Starting from $0." });
   }
   const opening = input.openingBalanceCents ?? 0;
-  const openingCents: number[] = [];
-  const closingCents: number[] = [];
-  let running = opening;
-  for (let i = 0; i < periods.length; i++) {
-    openingCents.push(running);
-    running += netCents[i];
-    closingCents.push(running);
-  }
+  const { openingCents, closingCents } = rollForward(opening, netCents);
 
-  let lowestIndex = 0;
-  closingCents.forEach((c, i) => {
-    if (c < closingCents[lowestIndex]) lowestIndex = i;
-  });
+  // The baseline: the same forecast with no what-ifs, GST included — a
+  // what-if's GST changes the BAS, so its effect isn't just its own line.
+  const baselineNet = blank();
+  for (const e of buildEvents(input, horizonEnd, [], false)) {
+    const i = periodIndex(e.date);
+    if (i >= 0 && i < periods.length) baselineNet[i] += e.amountCents;
+  }
+  const baselineClosingCents = rollForward(opening, baselineNet).closingCents;
+
   const below = closingCents.findIndex((c) => c < input.settings.bufferCents);
 
   return {
@@ -327,14 +388,17 @@ export function buildForecast(input: ForecastInput): ForecastResult {
     granularity: input.granularity,
     periods,
     openingBalanceCents: opening,
-    lines: [...inLines, ...outLines],
+    lines: [...inLines, ...outLines, ...whatIfLines],
     inCents,
     outCents,
+    whatIfCents,
     netCents,
     openingCents,
     closingCents,
     bufferCents: input.settings.bufferCents,
-    lowest: { cents: closingCents[lowestIndex], periodIndex: lowestIndex },
+    lowest: lowestOf(closingCents),
+    baselineClosingCents,
+    baselineLowest: lowestOf(baselineClosingCents),
     firstBelowBufferIndex: below === -1 ? null : below,
     events,
     warnings,

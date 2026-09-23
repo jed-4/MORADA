@@ -6,6 +6,7 @@
 import type { DateKey } from "./dates";
 import type { BasFrequency } from "./gst";
 import type { Frequency } from "./recurrence";
+import type { WhatIfInput } from "./whatifs";
 
 export type PeriodGranularity = "month" | "fortnight";
 
@@ -98,11 +99,13 @@ export interface ForecastInput {
    * still has to go to the ATO on the next BAS.
    */
   openPeriodGstCents: Record<string, number>;
+  /** Every what-if; only the enabled ones count in the main forecast. */
+  whatIfs?: WhatIfInput[];
 }
 
-export type EventCategory = "job_income" | "job_cost" | "business_expense" | "gst";
+export type EventCategory = "job_income" | "job_cost" | "business_expense" | "gst" | "what_if";
 
-export type EventSource = "invoice" | "claim" | "job_cost" | "bill" | "expense" | "bas";
+export type EventSource = "invoice" | "claim" | "job_cost" | "bill" | "expense" | "bas" | "what_if";
 
 export interface CashEvent {
   date: DateKey;
@@ -128,10 +131,10 @@ export interface ForecastPeriod {
 }
 
 export interface ForecastLine {
-  /** 'job:<projectId>' · 'job_costs' · 'business_expenses' · 'gst' */
+  /** 'job:<projectId>' · 'job_costs' · 'business_expenses' · 'gst' · 'whatif:<id>' */
   id: string;
   label: string;
-  section: "in" | "out";
+  section: "in" | "out" | "whatif";
   projectId?: string;
   /** Signed cents per period, aligned with ForecastResult.periods. */
   values: number[];
@@ -150,14 +153,18 @@ export interface ForecastResult {
   periods: ForecastPeriod[];
   openingBalanceCents: number;
   lines: ForecastLine[];
-  /** Per period. */
+  /** Per period. In and out exclude what-ifs; net includes them. */
   inCents: number[];
   outCents: number[];
+  whatIfCents: number[];
   netCents: number[];
   openingCents: number[];
   closingCents: number[];
   bufferCents: number;
   lowest: { cents: number; periodIndex: number };
+  /** The same forecast with every what-if left out. */
+  baselineClosingCents: number[];
+  baselineLowest: { cents: number; periodIndex: number };
   /** First period whose closing balance is under the buffer, or null. */
   firstBelowBufferIndex: number | null;
   events: CashEvent[];

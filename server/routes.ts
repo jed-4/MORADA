@@ -45036,6 +45036,102 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // What-ifs. A template + its params; the template's payments are worked out
+  // by the engine, only hand-added lines are stored (what_if_lines).
+  app.get("/api/cashflow/what-ifs", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { loadWhatIfs } = await import("./services/cashflowService");
+      res.json(await loadWhatIfs(companyId));
+    } catch (error: any) {
+      console.error("[cashflow] what-ifs read failed:", error);
+      res.status(500).json({ error: "Failed to load what-ifs" });
+    }
+  });
+
+  app.post("/api/cashflow/what-ifs", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs, whatIfLines, saveWhatIfSchema } = await import("@shared/schema");
+      const parsed = saveWhatIfSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid what-if", issues: parsed.error.issues });
+      const { lines, ...fields } = parsed.data;
+
+      const created = await db.transaction(async (tx) => {
+        const [row] = await tx.insert(whatIfs).values({ ...fields, companyId }).returning();
+        if (lines.length > 0) {
+          await tx.insert(whatIfLines).values(lines.map((l, i) => ({ ...l, sortOrder: i, whatIfId: row.id, companyId })));
+        }
+        return row;
+      });
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[cashflow] what-if create failed:", error);
+      res.status(500).json({ error: "Failed to add what-if" });
+    }
+  });
+
+  // Either a full save (same body as POST, lines replaced) or just
+  // { isEnabled } to switch it on or off the forecast.
+  app.patch("/api/cashflow/what-ifs/:id", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs, whatIfLines, saveWhatIfSchema } = await import("@shared/schema");
+      const { z } = await import("zod");
+      const scope = and(eq(whatIfs.id, req.params.id), eq(whatIfs.companyId, companyId));
+
+      const toggle = z.object({ isEnabled: z.boolean() }).strict().safeParse(req.body);
+      if (toggle.success) {
+        const [row] = await db.update(whatIfs).set({ isEnabled: toggle.data.isEnabled, updatedAt: new Date() }).where(scope).returning();
+        if (!row) return res.status(404).json({ error: "What-if not found" });
+        return res.json(row);
+      }
+
+      const parsed = saveWhatIfSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid what-if", issues: parsed.error.issues });
+      const { lines, ...fields } = parsed.data;
+
+      const updated = await db.transaction(async (tx) => {
+        const [row] = await tx.update(whatIfs).set({ ...fields, updatedAt: new Date() }).where(scope).returning();
+        if (!row) return null;
+        await tx.delete(whatIfLines).where(and(eq(whatIfLines.whatIfId, row.id), eq(whatIfLines.companyId, companyId)));
+        if (lines.length > 0) {
+          await tx.insert(whatIfLines).values(lines.map((l, i) => ({ ...l, sortOrder: i, whatIfId: row.id, companyId })));
+        }
+        return row;
+      });
+      if (!updated) return res.status(404).json({ error: "What-if not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[cashflow] what-if update failed:", error);
+      res.status(500).json({ error: "Failed to save what-if" });
+    }
+  });
+
+  app.delete("/api/cashflow/what-ifs/:id", requireAuth, requirePermission("business.cashflow", "delete"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs } = await import("@shared/schema");
+      const [row] = await db
+        .delete(whatIfs)
+        .where(and(eq(whatIfs.id, req.params.id), eq(whatIfs.companyId, companyId)))
+        .returning({ id: whatIfs.id });
+      if (!row) return res.status(404).json({ error: "What-if not found" });
+      res.status(204).end();
+    } catch (error: any) {
+      console.error("[cashflow] what-if delete failed:", error);
+      res.status(500).json({ error: "Failed to delete what-if" });
+    }
+  });
+
   // ── Focus Blocks API ────────────────────────────────────────────────────────
 
   app.get("/api/focus-blocks", async (req, res) => {

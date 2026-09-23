@@ -7984,6 +7984,111 @@ export const updateBusinessExpenseSchema = insertBusinessExpenseSchema.omit({ co
 export type InsertBusinessExpense = z.infer<typeof insertBusinessExpenseSchema>;
 export type BusinessExpense = typeof businessExpenses.$inferSelect;
 
+// What-ifs: decisions tried on the forecast (engine: shared/cashflow/whatifs).
+// A template plus its inputs in `params`; the template's payments are worked
+// out when the forecast runs, never stored. Only lines the user adds by hand
+// live in what_if_lines.
+export const whatIfs = pgTable("what_ifs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  template: text("template").notNull(), // WHAT_IF_TEMPLATES in shared/cashflow/whatifs
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  params: jsonb("params").notNull().default({}),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("what_ifs_company_idx").on(table.companyId),
+}));
+export type WhatIf = typeof whatIfs.$inferSelect;
+
+export const whatIfLines = pgTable("what_if_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  whatIfId: varchar("what_if_id").notNull().references(() => whatIfs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  direction: text("direction").notNull().default("out"), // "in" | "out"
+  amountCents: integer("amount_cents").notNull().default(0), // each payment, inc GST
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull().default("monthly"),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => ({
+  whatIfIdx: index("what_if_lines_what_if_idx").on(table.whatIfId),
+}));
+export type WhatIfLineRow = typeof whatIfLines.$inferSelect;
+
+const cents = z.number().int().min(0);
+const pct = z.number().min(0).max(100);
+export const whatIfParamSchemas = {
+  employee: z.object({
+    role: z.string(),
+    payType: z.enum(["salary", "hourly"]),
+    annualSalaryCents: cents,
+    hourlyRateCents: cents,
+    hoursPerWeek: z.number().min(0).max(100),
+    payCycle: z.enum(["weekly", "fortnightly", "monthly"]),
+    startDate: dateKeySchema,
+    endDate: dateKeySchema.nullable(),
+    superPercent: pct,
+    workcoverPercent: pct,
+    payrollTaxPercent: pct,
+  }),
+  vehicle: z.object({
+    priceCents: cents,
+    purchaseDate: dateKeySchema,
+    payWith: z.enum(["cash", "finance"]),
+    depositCents: cents,
+    termMonths: z.number().int().min(1).max(120),
+    ratePercent: z.number().min(0).max(50),
+    balloonCents: cents,
+    regoInsuranceYearlyCents: cents,
+    runningMonthlyCents: cents,
+    savingsMonthlyCents: cents,
+  }),
+  win_job: z.object({
+    valueCents: cents,
+    startDate: dateKeySchema,
+    months: z.number().int().min(1).max(60),
+    winPercent: pct,
+    marginPercent: z.number().min(0).max(99),
+  }),
+  one_off: z.object({
+    amountCents: cents,
+    date: dateKeySchema,
+    hasGst: z.boolean(),
+    direction: z.enum(["in", "out"]),
+  }),
+  custom: z.object({}),
+} as const;
+
+export const whatIfLineInputSchema = z.object({
+  name: z.string().trim().min(1),
+  direction: z.enum(["in", "out"]),
+  amountCents: cents,
+  hasGst: z.boolean(),
+  frequency: z.enum(FREQUENCIES),
+  startDate: dateKeySchema,
+  endDate: dateKeySchema.nullable(),
+});
+
+const whatIfBase = z.object({
+  name: z.string().trim().min(1).max(120),
+  isEnabled: z.boolean(),
+  lines: z.array(whatIfLineInputSchema).max(50),
+});
+// One schema per template, so params are checked against the right shape.
+export const saveWhatIfSchema = z.discriminatedUnion("template", [
+  whatIfBase.extend({ template: z.literal("employee"), params: whatIfParamSchemas.employee }),
+  whatIfBase.extend({ template: z.literal("vehicle"), params: whatIfParamSchemas.vehicle }),
+  whatIfBase.extend({ template: z.literal("win_job"), params: whatIfParamSchemas.win_job }),
+  whatIfBase.extend({ template: z.literal("one_off"), params: whatIfParamSchemas.one_off }),
+  whatIfBase.extend({ template: z.literal("custom"), params: whatIfParamSchemas.custom }),
+]);
+export type SaveWhatIf = z.infer<typeof saveWhatIfSchema>;
+
 // ── Focus Blocks (Motion-style time-blocking) ─────────────────────────────────
 
 export const focusBlocks = pgTable("focus_blocks", {
