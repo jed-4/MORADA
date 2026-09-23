@@ -109,6 +109,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  /* One mark picked out of the list — hovering "Page 1 · 24.13 m²" in the panel
+     points at the shape it came from. */
+  const [highlightedShape, setHighlightedShape] =
+    useState<{ measurementId: string; index: number } | null>(null);
+  const deletingShapeRef = useRef(false);
   const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
@@ -438,6 +443,48 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         ? `Drawing ${data.name} — click to drop markers, click another row or tool to finish`
         : `Drawing ${data.name} — click to add points, double-click to finish`,
     );
+  };
+
+  /**
+   * Remove ONE mark from an item — the way to fix a mis-drawn square without
+   * losing the other two. The item's quantity is re-totalled from what is left.
+   */
+  const handleDeleteShape = async (m: TakeoffMeasurement, index: number) => {
+    // One at a time. Each delete rewrites the whole geometry from the copy it
+    // can see, so two in flight together would have the second one working
+    // from a list the first has already changed — and take the wrong mark with
+    // it.
+    if (deletingShapeRef.current) return;
+    const entries = normalizeEntries(m.geometry, m.pageId);
+    if (index < 0 || index >= entries.length) return;
+    deletingShapeRef.current = true;
+    const next = entries.filter((_, i) => i !== index);
+    setHighlightedShape(null);
+    try {
+      await updateMeasurement.mutateAsync({
+        id: m.id,
+        data: {
+          geometry: next as any,
+          quantity: totalQuantity(next, m.measurementType, (m as any).heightMm ?? null),
+        } as any,
+      });
+    } finally {
+      deletingShapeRef.current = false;
+    }
+    setStatusMessage(
+      next.length === 0
+        ? `Removed the last mark from ${m.name}`
+        : `Removed a mark from ${m.name} — ${next.length} left`,
+    );
+  };
+
+  /** Jump to the page a mark is on, so it can actually be looked at. */
+  const handleShowShape = (m: TakeoffMeasurement, index: number) => {
+    const entries = normalizeEntries(m.geometry, m.pageId);
+    const entry = entries[index];
+    const pageNumber = entry?.pageId ? pageNumberById.get(entry.pageId) : undefined;
+    if (pageNumber && pageNumber !== currentPage) openPage(pageNumber);
+    setHighlightedShape({ measurementId: m.id, index });
   };
 
   const handleEditMeasurement = (m: TakeoffMeasurement) => {
@@ -1019,6 +1066,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                 <TakeoffDrawingCanvas
                   width={finalRenderWidth}
                   height={finalRenderHeight}
+                  highlightedShape={highlightedShape}
                   drawMode={markupMode ? "select" : drawMode}
                   selectedColor={activeMeasurement?.color ?? "#A890D4"}
                   selectedFillPattern={(activeMeasurement?.fillPattern as FillPattern) || "solid"}
@@ -1109,6 +1157,10 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               onEditClick={handleEditMeasurement}
               activeDrawingId={activeMeasurementId}
               onActivateDrawing={handleActivateMeasurement}
+              highlightedShape={highlightedShape}
+              onHighlightShape={setHighlightedShape}
+              onShowShape={handleShowShape}
+              onDeleteShape={handleDeleteShape}
               onCollapse={() => setPanelCollapsed(true)}
               onLoadTemplate={() => setLoadTemplateOpen(true)}
               onSaveTemplate={() => setSaveTemplateOpen(true)}

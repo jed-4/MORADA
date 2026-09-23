@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TakeoffMeasurement } from "@shared/schema";
-import { normalizeEntries, entriesForPage, type Point } from "./useTakeoffGeometry";
+import { normalizeEntries, type Point } from "./useTakeoffGeometry";
 import {
   PatternDef, lineDashArray,
   type FillPattern, type LineType,
@@ -21,6 +21,12 @@ interface Props {
   /** The takeoff_plan_pages id of the page on screen. */
   pageId: string | null;
   highlightedId?: string | null;
+  /**
+   * One mark, picked out from the list — so "24.13 m²" in the panel can be
+   * pointed at on the plan. Indexes the measurement's shapes in stored order,
+   * which is the order the list shows them in.
+   */
+  highlightedShape?: { measurementId: string; index: number } | null;
   /** Called when a polygon (area) or polyline (linear) drawing finishes (double-click). */
   onAreaComplete?: (points: Point[]) => void;
   onLinearComplete?: (points: Point[]) => void;
@@ -32,6 +38,10 @@ interface Props {
 
 /** Mid-grey at 45% — readable over white paper and over a dark plan alike. */
 const CROSSHAIR = "rgba(90, 90, 90, 0.45)";
+
+/* The one mark being pointed at from the list. Ink rather than a brand colour:
+   it has to stand out from whatever colour the measurement itself is. */
+const MARK_HIGHLIGHT = "#2C2825";
 
 const svgPoints = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
 
@@ -46,6 +56,7 @@ export default function TakeoffDrawingCanvas({
   measurements,
   pageId,
   highlightedId,
+  highlightedShape = null,
   onAreaComplete,
   onLinearComplete,
   onCountClick,
@@ -161,28 +172,38 @@ export default function TakeoffDrawingCanvas({
         .filter((m) => m.isVisible)
         .map((m) => {
           const isHighlighted = m.id === highlightedId;
-          // An item spans the plan; this canvas is one page of it.
-          const shapes = entriesForPage(
-            normalizeEntries(m.geometry, m.pageId),
-            pageId,
-          ).map((e) => e.points);
+          // An item spans the plan; this canvas is one page of it. Each shape
+          // keeps its index in the measurement's own list, so one mark can be
+          // pointed at from the panel.
+          const here = normalizeEntries(m.geometry, m.pageId)
+            .map((e, index) => ({ e, index }))
+            .filter(({ e }) => e.pageId === pageId);
+          const shapes = here.map(({ e }) => e.points);
+          const isPicked = (idx: number) =>
+            !!highlightedShape
+            && highlightedShape.measurementId === m.id
+            && here[idx]?.index === highlightedShape.index;
           if (shapes.length === 0) return null;
 
           if (m.measurementType === "count") {
-            const pts = shapes.flat().map((p) => ({ x: p.x * width, y: p.y * height }));
             return (
               <g key={m.id}>
-                {pts.map((p, i) => (
-                  <circle
-                    key={i}
-                    cx={p.x}
-                    cy={p.y}
-                    r={isHighlighted ? 7 : 5}
-                    fill={m.color}
-                    stroke="white"
-                    strokeWidth={1.5}
-                  />
-                ))}
+                {shapes.map((shape, idx) =>
+                  shape.map((p, i) => {
+                    const picked = isPicked(idx);
+                    return (
+                      <circle
+                        key={`${idx}-${i}`}
+                        cx={p.x * width}
+                        cy={p.y * height}
+                        r={picked || isHighlighted ? 7 : 5}
+                        fill={m.color}
+                        stroke={picked ? MARK_HIGHLIGHT : "white"}
+                        strokeWidth={picked ? 3 : 1.5}
+                      />
+                    );
+                  }),
+                )}
               </g>
             );
           }
@@ -200,14 +221,15 @@ export default function TakeoffDrawingCanvas({
                 {shapes.map((shape, idx) => {
                   const pts = shape.map((p) => ({ x: p.x * width, y: p.y * height }));
                   if (pts.length < 2) return null;
+                  const picked = isPicked(idx);
                   return (
                     <polygon
                       key={idx}
                       points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
                       fill={fill}
-                      stroke={m.color}
-                      strokeWidth={strokeWidth}
-                      strokeDasharray={strokeDash}
+                      stroke={picked ? MARK_HIGHLIGHT : m.color}
+                      strokeWidth={picked ? strokeWidth + 2 : strokeWidth}
+                      strokeDasharray={picked ? undefined : strokeDash}
                     />
                   );
                 })}
@@ -220,14 +242,15 @@ export default function TakeoffDrawingCanvas({
                 {shapes.map((shape, idx) => {
                   const pts = shape.map((p) => ({ x: p.x * width, y: p.y * height }));
                   if (pts.length < 2) return null;
+                  const picked = isPicked(idx);
                   return (
                     <polyline
                       key={idx}
                       points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
                       fill="none"
-                      stroke={m.color}
-                      strokeWidth={strokeWidth}
-                      strokeDasharray={strokeDash}
+                      stroke={picked ? MARK_HIGHLIGHT : m.color}
+                      strokeWidth={picked ? strokeWidth + 2 : strokeWidth}
+                      strokeDasharray={picked ? undefined : strokeDash}
                     />
                   );
                 })}
