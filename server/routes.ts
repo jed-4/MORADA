@@ -44961,6 +44961,64 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // A job's claim schedule: stages linked to schedule items.
+  app.get("/api/cashflow/projects/:projectId/claims", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { getClaimSchedule } = await import("./services/cashflowService");
+      const schedule = await getClaimSchedule(companyId, req.params.projectId);
+      if (!schedule) return res.status(404).json({ error: "Project not found" });
+      res.json(schedule);
+    } catch (error: any) {
+      console.error("[cashflow] claim schedule read failed:", error);
+      res.status(500).json({ error: "Failed to load the claim schedule" });
+    }
+  });
+
+  app.put("/api/cashflow/projects/:projectId/claims", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { putClaimStagesSchema } = await import("@shared/schema");
+      const parsed = putClaimStagesSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid claims", issues: parsed.error.issues });
+
+      const { replaceClaimStages, ClaimStageError } = await import("./services/cashflowService");
+      try {
+        await replaceClaimStages(companyId, req.params.projectId, parsed.data.stages);
+      } catch (err) {
+        if (err instanceof ClaimStageError) return res.status(400).json({ error: err.message });
+        throw err;
+      }
+      res.status(204).end();
+    } catch (error: any) {
+      console.error("[cashflow] claim schedule save failed:", error);
+      res.status(500).json({ error: "Failed to save the claim schedule" });
+    }
+  });
+
+  app.post("/api/cashflow/projects/:projectId/claims/from-proposal", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { seedClaimStagesFromProposal, ClaimStageError } = await import("./services/cashflowService");
+      try {
+        const count = await seedClaimStagesFromProposal(companyId, req.params.projectId);
+        res.status(201).json({ count });
+      } catch (err) {
+        if (err instanceof ClaimStageError) return res.status(400).json({ error: err.message });
+        throw err;
+      }
+    } catch (error: any) {
+      console.error("[cashflow] claim seed failed:", error);
+      res.status(500).json({ error: "Failed to copy the proposal's claims" });
+    }
+  });
+
   app.get("/api/cashflow/expenses", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;

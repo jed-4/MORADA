@@ -5,7 +5,7 @@
 // Every query is company-scoped and they all run at once: Neon is ~400 ms a
 // round trip from Australia, so nothing is queried per job in a loop.
 
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { xeroService } from "./xeroService";
@@ -20,6 +20,10 @@ import {
   contacts,
   projectCashflowManual,
   projectCashflowSettings,
+  projectClaimStages,
+  proposalPaymentMilestones,
+  proposals,
+  scheduleItems,
   projects,
   schedules,
   timesheets,
@@ -36,6 +40,7 @@ import {
   toDateKey,
   type BillInput,
   type CashflowJobRow,
+  type ClaimStageInput,
   type OpeningBalance,
   type DateKey,
   type ExpenseInput,
@@ -137,6 +142,102 @@ function openBasWindowStart(today: DateKey, settings: CashflowSettings): DateKey
   return previous.due >= today ? previous.start : current.start;
 }
 
+// ── Claim stages ────────────────────────────────────────────────────────────
+
+export interface ResolvedClaimStage {
+  id: string;
+  name: string;
+  percent: number | null;
+  amountCents: number | null;
+  scheduleItemId: string | null;
+  scheduleItemName: string | null;
+  plannedDate: DateKey | null;
+  /** When it's expected to be claimed: the item's finish, else the planned date. */
+  date: DateKey | null;
+  dateSource: "schedule" | "planned" | null;
+  /** Its full value in cents (a % is of the original contract). */
+  valueCents: number;
+  /** What's still to claim on it after the invoices so far. */
+  unclaimedCents: number;
+  state: "claimed" | "part" | "to_claim";
+}
+
+type StageRow = {
+  id: string;
+  name: string;
+  percent: number | null;
+  amountCents: number | null;
+  scheduleItemId: string | null;
+  plannedDate: string | null;
+  itemName: string | null;
+  itemEnd: Date | null;
+  itemActualEnd: Date | null;
+};
+
+/** Sum of claim % across a job's issued invoices (client_invoices.contract_claim_rows). */
+export function claimedPercentOf(rows: unknown): number {
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((s, r: any) => s + (Number(r?.claimPercent) || 0), 0);
+}
+
+/**
+ * Resolves each stage's value and date, then uses them up IN ORDER against
+ * what's been claimed: the claim % on issued invoices, or — when a job has
+ * been invoiced without claim rows — the invoiced total.
+ */
+export function resolveClaimStages(
+  rows: StageRow[],
+  originalContractCents: number,
+  claimedPercent: number,
+  invoicedCents: number,
+): ResolvedClaimStage[] {
+  let consumed =
+    claimedPercent > 0
+      ? Math.round((claimedPercent / 100) * originalContractCents)
+      : Math.min(invoicedCents, originalContractCents);
+  return rows.map((r) => {
+    const value = r.amountCents ?? Math.round(((r.percent ?? 0) / 100) * originalContractCents);
+    const used = Math.min(value, Math.max(0, consumed));
+    consumed -= used;
+    const itemDate = toDateKey(r.itemActualEnd ?? r.itemEnd);
+    const date = r.scheduleItemId && itemDate ? itemDate : r.plannedDate;
+    return {
+      id: r.id,
+      name: r.name,
+      percent: r.percent,
+      amountCents: r.amountCents,
+      scheduleItemId: r.scheduleItemId,
+      scheduleItemName: r.itemName,
+      plannedDate: r.plannedDate,
+      date,
+      dateSource: r.scheduleItemId && itemDate ? "schedule" : r.plannedDate ? "planned" : null,
+      valueCents: value,
+      unclaimedCents: value - used,
+      state: used >= value && value > 0 ? "claimed" : used > 0 ? "part" : "to_claim",
+    };
+  });
+}
+
+function stageRowsQuery(where: SQL | undefined) {
+  return db
+    .select({
+      id: projectClaimStages.id,
+      projectId: projectClaimStages.projectId,
+      name: projectClaimStages.name,
+      percent: projectClaimStages.percent,
+      amountCents: projectClaimStages.amountCents,
+      scheduleItemId: projectClaimStages.scheduleItemId,
+      plannedDate: projectClaimStages.plannedDate,
+      itemName: scheduleItems.name,
+      itemEnd: scheduleItems.endDate,
+      itemActualEnd: scheduleItems.actualEndDate,
+    })
+    .from(projectClaimStages)
+    .leftJoin(scheduleItems, eq(projectClaimStages.scheduleItemId, scheduleItems.id))
+    .where(where)
+    .orderBy(asc(projectClaimStages.sortOrder));
+}
+
 /** Every what-if with its hand-added lines, in display order. */
 export async function loadWhatIfs(companyId: string): Promise<WhatIfDefinition[]> {
   const [rows, lines] = await Promise.all([
@@ -192,6 +293,7 @@ export async function loadCashflow(
     billPaymentRows,
     opening,
     whatIfDefs,
+    stageRows,
   ] = await Promise.all([
     db
       .select({
@@ -236,6 +338,7 @@ export async function loadCashflow(
         gstAmount: clientInvoices.gstAmount,
         paidAmount: clientInvoices.paidAmount,
         balanceAmount: clientInvoices.balanceAmount,
+        contractClaimRows: clientInvoices.contractClaimRows,
       })
       .from(clientInvoices)
       .innerJoin(projects, eq(clientInvoices.projectId, projects.id))
@@ -337,13 +440,22 @@ export async function loadCashflow(
       ),
     getOpeningBalance(companyId, settings),
     loadWhatIfs(companyId),
+    stageRowsQuery(eq(projectClaimStages.companyId, companyId)),
   ]);
 
   // ── Per-job aggregates ─────────────────────────────────────────────────────
   const invoicedByProject = new Map<string, number>();
+  const claimedPctByProject = new Map<string, number>();
   for (const inv of invoiceRows) {
     if (!isIssuedInvoice(inv.status)) continue;
     invoicedByProject.set(inv.projectId, (invoicedByProject.get(inv.projectId) ?? 0) + (inv.totalAmount || 0));
+    claimedPctByProject.set(inv.projectId, (claimedPctByProject.get(inv.projectId) ?? 0) + claimedPercentOf(inv.contractClaimRows));
+  }
+  const stagesByProject = new Map<string, StageRow[]>();
+  for (const st of stageRows) {
+    const list = stagesByProject.get(st.projectId) ?? [];
+    list.push(st);
+    stagesByProject.set(st.projectId, list);
   }
   const variationsByProject = new Map<string, number>();
   for (const v of variationRows) {
@@ -379,6 +491,7 @@ export async function loadCashflow(
   }
 
   const jobRows: CashflowJobRow[] = [];
+  const claimStagesByProject = new Map<string, ClaimStageInput[]>();
   for (const p of projectRows) {
     const phase = (p.phase ?? "lead") as JobPhase;
     const ps = jobSettings.get(p.id);
@@ -399,6 +512,13 @@ export async function loadCashflow(
         ? Math.max(0, budgetEx - spentEx)
         : Math.round(exGstFromInc(remainingToClaimCents) * (1 - settings.defaultMarginPercent / 100));
 
+    const stages = resolveClaimStages(
+      stagesByProject.get(p.id) ?? [],
+      baseContract,
+      claimedPctByProject.get(p.id) ?? 0,
+      invoicedCents,
+    );
+
     const sched = scheduleDates.get(p.id);
     const startDate = sched?.start ?? toDateKey(p.proposedStartDate) ?? toDateKey(p.startDate);
     const endDate = sched?.end ?? toDateKey(p.proposedEndDate) ?? toDateKey(p.endDate);
@@ -410,7 +530,7 @@ export async function loadCashflow(
       phase,
       included,
       customised: !!ps,
-      mode: (ps?.mode as JobMode) ?? "even",
+      mode: (ps?.mode as JobMode) ?? (stages.length > 0 ? "claims" : "even"),
       winPercent: ps?.winPercent ?? (phase === "lead" ? 50 : 100),
       clientPayDays: ps?.clientPayDays ?? settings.clientPayDays,
       clientPayDaysOverride: ps?.clientPayDays ?? null,
@@ -422,7 +542,15 @@ export async function loadCashflow(
       startDate,
       endDate,
       manualAmounts: manualByProject.get(p.id) ?? [],
+      claimStageCount: stages.length,
+      unlinkedClaimStageCount: stages.filter((st) => st.state !== "claimed" && !st.date).length,
     });
+    claimStagesByProject.set(
+      p.id,
+      stages
+        .filter((st) => st.unclaimedCents > 0)
+        .map((st): ClaimStageInput => ({ id: st.id, name: st.name, amountCents: st.unclaimedCents, date: st.date })),
+    );
   }
 
   const jobs: JobInput[] = jobRows
@@ -440,6 +568,7 @@ export async function loadCashflow(
       startDate: j.startDate,
       endDate: j.endDate,
       manualAmounts: j.manualAmounts,
+      claimStages: claimStagesByProject.get(j.projectId),
     }));
 
   // ── Money already owed either way ─────────────────────────────────────────
@@ -559,4 +688,214 @@ export async function getForecast(
     opening: load.opening,
     settings: load.settings,
   };
+}
+
+// ── One job's claim schedule (Projects tab drawer) ──────────────────────────
+
+export interface ClaimScheduleItem {
+  id: string;
+  name: string;
+  type: string;
+  category: string;
+  endDate: DateKey | null;
+}
+
+export interface ClaimSchedule {
+  projectId: string;
+  originalContractCents: number;
+  invoicedCents: number;
+  claimedPercent: number;
+  stages: ResolvedClaimStage[];
+  scheduleItems: ClaimScheduleItem[];
+  /** Best schedule item for each unlinked stage, by name. */
+  suggestions: Record<string, string>;
+  /** Payment milestones on the job's accepted proposal, if any. */
+  proposalMilestoneCount: number;
+}
+
+const STOP_WORDS = new Set(["the", "and", "claim", "stage", "payment", "progress", "for", "of", "to", "complete", "completion"]);
+const words = (s: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 3 && !STOP_WORDS.has(w)),
+  );
+
+/** The schedule item whose name shares the most words with the stage's; milestones win ties. */
+export function suggestScheduleItem(stageName: string, items: ClaimScheduleItem[]): string | null {
+  const want = words(stageName);
+  if (want.size === 0) return null;
+  let best: { id: string; score: number } | null = null;
+  for (const it of items) {
+    let score = 0;
+    for (const w of Array.from(words(it.name))) if (want.has(w)) score += 1;
+    if (score === 0) continue;
+    if (it.type === "milestone") score += 0.5;
+    if (!best || score > best.score) best = { id: it.id, score };
+  }
+  return best?.id ?? null;
+}
+
+async function ownedProject(companyId: string, projectId: string) {
+  const [p] = await db
+    .select({
+      id: projects.id,
+      contractPrice: projects.contractPrice,
+      contractCost: projects.contractCost,
+      clientBudget: projects.clientBudget,
+      contractedAt: projects.contractedAt,
+      contractedTotalExGstCents: projects.contractedTotalExGstCents,
+      contractedTotalIncGstCents: projects.contractedTotalIncGstCents,
+      phase: projects.currentSystemPhase,
+    })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.companyId, companyId)))
+    .limit(1);
+  return p ?? null;
+}
+
+async function latestAcceptedProposalId(companyId: string, projectId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: proposals.id })
+    .from(proposals)
+    .innerJoin(projects, eq(proposals.projectId, projects.id))
+    .where(and(eq(proposals.projectId, projectId), eq(projects.companyId, companyId), eq(proposals.status, "accepted")))
+    .orderBy(desc(proposals.acceptedDate), desc(proposals.version))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+export async function getClaimSchedule(companyId: string, projectId: string): Promise<ClaimSchedule | null> {
+  const project = await ownedProject(companyId, projectId);
+  if (!project) return null;
+
+  const [stageRows, invoiceRows, itemRows, proposalId] = await Promise.all([
+    stageRowsQuery(and(eq(projectClaimStages.projectId, projectId), eq(projectClaimStages.companyId, companyId))),
+    db
+      .select({ status: clientInvoices.status, totalAmount: clientInvoices.totalAmount, contractClaimRows: clientInvoices.contractClaimRows })
+      .from(clientInvoices)
+      .where(eq(clientInvoices.projectId, projectId)),
+    db
+      .select({
+        id: scheduleItems.id,
+        name: scheduleItems.name,
+        type: scheduleItems.type,
+        endDate: scheduleItems.endDate,
+        actualEndDate: scheduleItems.actualEndDate,
+        category: schedules.scheduleCategory,
+      })
+      .from(scheduleItems)
+      .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+      .where(and(eq(schedules.projectId, projectId), eq(schedules.isArchived, false)))
+      .orderBy(asc(scheduleItems.endDate)),
+    latestAcceptedProposalId(companyId, projectId),
+  ]);
+
+  const milestones = proposalId
+    ? await db.select({ id: proposalPaymentMilestones.id }).from(proposalPaymentMilestones).where(eq(proposalPaymentMilestones.proposalId, proposalId))
+    : [];
+
+  const issued = invoiceRows.filter((i) => isIssuedInvoice(i.status));
+  const invoicedCents = issued.reduce((s, i) => s + (i.totalAmount || 0), 0);
+  const claimedPercent = issued.reduce((s, i) => s + claimedPercentOf(i.contractClaimRows), 0);
+  const frozen = frozenContractTotalFrom(project);
+  const phase = (project.phase ?? "lead") as JobPhase;
+  const originalContractCents =
+    frozen?.incGstCents ?? project.contractPrice ?? (phase === "lead" ? project.clientBudget : null) ?? project.contractCost ?? 0;
+
+  const stages = resolveClaimStages(stageRows, originalContractCents, claimedPercent, invoicedCents);
+  const items: ClaimScheduleItem[] = itemRows.map((it) => ({
+    id: it.id,
+    name: it.name,
+    type: it.type,
+    category: it.category,
+    endDate: toDateKey(it.actualEndDate ?? it.endDate),
+  }));
+  const suggestions: Record<string, string> = {};
+  for (const st of stages) {
+    if (st.scheduleItemId || st.state === "claimed") continue;
+    const id = suggestScheduleItem(st.name, items);
+    if (id) suggestions[st.id] = id;
+  }
+
+  return {
+    projectId,
+    originalContractCents,
+    invoicedCents,
+    claimedPercent,
+    stages,
+    scheduleItems: items,
+    suggestions,
+    proposalMilestoneCount: milestones.length,
+  };
+}
+
+export class ClaimStageError extends Error {}
+
+export async function replaceClaimStages(
+  companyId: string,
+  projectId: string,
+  stages: {
+    name: string;
+    percent: number | null;
+    amountCents: number | null;
+    scheduleItemId: string | null;
+    plannedDate: string | null;
+  }[],
+): Promise<void> {
+  if (!(await ownedProject(companyId, projectId))) throw new ClaimStageError("Project not found");
+
+  // A stage may only link to one of THIS job's schedule items.
+  const itemIds = Array.from(new Set(stages.map((s) => s.scheduleItemId).filter((x): x is string => !!x)));
+  if (itemIds.length > 0) {
+    const found = await db
+      .select({ id: scheduleItems.id })
+      .from(scheduleItems)
+      .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+      .where(and(inArray(scheduleItems.id, itemIds), eq(schedules.projectId, projectId)));
+    if (found.length !== itemIds.length) throw new ClaimStageError("A linked schedule item isn't on this job");
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(projectClaimStages)
+      .where(and(eq(projectClaimStages.projectId, projectId), eq(projectClaimStages.companyId, companyId)));
+    if (stages.length > 0) {
+      await tx.insert(projectClaimStages).values(stages.map((st, i) => ({ ...st, sortOrder: i, projectId, companyId })));
+    }
+  });
+}
+
+/** Copies the accepted proposal's payment milestones in as the job's claim stages. */
+export async function seedClaimStagesFromProposal(companyId: string, projectId: string): Promise<number> {
+  if (!(await ownedProject(companyId, projectId))) throw new ClaimStageError("Project not found");
+  const [existing] = await db
+    .select({ id: projectClaimStages.id })
+    .from(projectClaimStages)
+    .where(and(eq(projectClaimStages.projectId, projectId), eq(projectClaimStages.companyId, companyId)))
+    .limit(1);
+  if (existing) throw new ClaimStageError("This job already has claims set up");
+
+  const proposalId = await latestAcceptedProposalId(companyId, projectId);
+  if (!proposalId) throw new ClaimStageError("No accepted proposal on this job");
+  const milestones = await db
+    .select()
+    .from(proposalPaymentMilestones)
+    .where(eq(proposalPaymentMilestones.proposalId, proposalId))
+    .orderBy(asc(proposalPaymentMilestones.order));
+  if (milestones.length === 0) throw new ClaimStageError("The accepted proposal has no payment milestones");
+
+  await db.insert(projectClaimStages).values(
+    milestones.map((m, i) => ({
+      companyId,
+      projectId,
+      name: m.name,
+      sortOrder: i,
+      percent: m.amountCents == null ? m.percentage ?? 0 : null,
+      amountCents: m.amountCents ?? null,
+      sourceMilestoneId: m.id,
+    })),
+  );
+  return milestones.length;
 }

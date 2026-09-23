@@ -10,7 +10,7 @@ import type { WhatIfInput } from "./whatifs";
 
 export type PeriodGranularity = "month" | "fortnight";
 
-export const JOB_MODES = ["even", "manual"] as const;
+export const JOB_MODES = ["even", "manual", "claims"] as const;
 export type JobMode = (typeof JOB_MODES)[number];
 
 export type JobPhase = "lead" | "pre_construction" | "construction";
@@ -45,6 +45,19 @@ export interface JobInput {
   endDate: DateKey | null;
   /** Manual mode only: expected claim per month, keyed by the month's first day. */
   manualAmounts?: { month: DateKey; amountCents: number }[];
+  /**
+   * Claims mode only: the claim stages not yet claimed, before win %. A stage
+   * with a date lands on it (its linked schedule item's finish, or a planned
+   * date); a stage with no date is spread evenly over the job.
+   */
+  claimStages?: ClaimStageInput[];
+}
+
+export interface ClaimStageInput {
+  id: string;
+  name: string;
+  amountCents: number;
+  date: DateKey | null;
 }
 
 /** An issued client invoice that still has money owing. */
@@ -142,7 +155,13 @@ export interface ForecastLine {
 }
 
 export interface ForecastWarning {
-  code: "no_opening_balance" | "job_no_end_date" | "job_past_end_date" | "job_no_dates" | "job_cost_from_margin";
+  code:
+    | "no_opening_balance"
+    | "job_no_end_date"
+    | "job_past_end_date"
+    | "job_no_dates"
+    | "job_cost_from_margin"
+    | "job_unlinked_claims";
   projectId?: string;
   message: string;
 }
@@ -203,4 +222,7 @@ export interface CashflowJobRow {
   endDate: DateKey | null;
   /** Manual mode: expected claim per month ('YYYY-MM-01'), before win %. */
   manualAmounts: { month: DateKey; amountCents: number }[];
+  /** Claim stages set up for the job, and how many aren't linked to a date. */
+  claimStageCount: number;
+  unlinkedClaimStageCount: number;
 }
