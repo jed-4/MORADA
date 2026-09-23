@@ -1,7 +1,7 @@
 import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { defaultStatusKey } from "@/lib/statusChip";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
@@ -26,6 +26,9 @@ const BLANK_GROUP_FORM = {
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  formulaToDisplay, displayToFormula, evaluateQuantityFormula, isPlainNumber,
+} from "@shared/quantityFormula";
 import { ToastAction } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -86,7 +89,7 @@ import {
   ExternalLink,
   Archive
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection, type TakeoffMeasurement, type TakeoffCategory } from "@shared/schema";
 import { computeEstimateItemPrice, isFixedPriceLine, round2, computeEstimateSummary } from "@shared/pricing";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -627,6 +630,54 @@ export default function EstimateDetail() {
 
   // Fetch project details
   const projectId = isNewEstimate ? effectiveProjectId : estimate?.projectId;
+  /* Take-off measurements are project-wide, so any estimate or revision in the
+     project can build a quantity on them. Read-only here: the numbers are the
+     take-off's, and this page only references them. */
+  const { data: takeoffMeasurements = [] } = useQuery<TakeoffMeasurement[]>({
+    queryKey: ["/api/projects", projectId, "takeoff/measurements"],
+    enabled: !!projectId,
+  });
+  const { data: takeoffCategories = [] } = useQuery<TakeoffCategory[]>({
+    queryKey: ["/api/projects", projectId, "takeoff/categories"],
+    enabled: !!projectId,
+  });
+
+  /* A formula is stored by id and shown by name. These three indexes are the
+     translation both ways, plus what each measurement currently comes to. */
+  const takeoffNames = useMemo(
+    () => new Map(takeoffMeasurements.map((m) => [m.id, m.name] as const)),
+    [takeoffMeasurements],
+  );
+  const takeoffByName = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const m of takeoffMeasurements) {
+      if (!map.has(m.name)) map.set(m.name, []);
+      map.get(m.name)!.push(m.id);
+    }
+    return map;
+  }, [takeoffMeasurements]);
+  const takeoffQuantities = useMemo(
+    () => new Map(takeoffMeasurements.map((m) => [m.id, Number(m.quantity) || 0] as const)),
+    [takeoffMeasurements],
+  );
+  /* Which item a name was picked from, so two measurements sharing a name still
+     resolve to the one that was actually chosen from the list. */
+  const pickedTakeoffRef = useRef<Map<string, string>>(new Map());
+
+  const quantityPreview = useCallback(
+    (text: string): { text: string; error?: string } => {
+      const trimmed = (text ?? "").trim();
+      if (!trimmed || isPlainNumber(trimmed)) return { text: "" };
+      const converted = displayToFormula(trimmed, takeoffByName, pickedTakeoffRef.current);
+      if (!converted.ok) return { text: "", error: converted.error };
+      const result = evaluateQuantityFormula(converted.formula, takeoffQuantities);
+      return result.ok
+        ? { text: String(result.value) }
+        : { text: "", error: result.error };
+    },
+    [takeoffByName, takeoffQuantities],
+  );
+
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId,
@@ -2518,6 +2569,13 @@ export default function EstimateDetail() {
       // po-links on every keystroke commit — pure churn.
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      // Linking a line to a take-off item (or unlinking it) changes the
+      // "used by" note the take-off list shows against that measurement.
+      if (projectId) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/projects", projectId, "takeoff/measurement-usage"],
+        });
+      }
     },
     onError: (error: any, variables, context) => {
       // Rollback to previous value on error
@@ -2745,11 +2803,19 @@ export default function EstimateDetail() {
     
     // Set initial value based on field type
     switch (field) {
-      case 'quantity':
+      case 'quantity': {
+        // A take-off-backed quantity opens as its formula, in words — editing
+        // the number it produced would only throw the link away.
+        const formula = (item as any).quantityFormula as string | null | undefined;
+        if (formula) {
+          setEditingValue(formulaToDisplay(formula, takeoffNames));
+          break;
+        }
         // Preserve up to 4 decimals so editing a small fractional qty (e.g.
         // 0.0065) doesn't pre-fill a rounded "0.01" and silently corrupt it.
         setEditingValue(parseFloat(item.quantity.toFixed(4)).toString());
         break;
+      }
       case 'unitCostExTax':
         setEditingValue(parseFloat(item.unitCostExTax.toFixed(2)).toString());
         break;
@@ -2800,6 +2866,33 @@ export default function EstimateDetail() {
       || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup'
       || field === 'name';
     if (rejectsBlank && String(editingValue ?? "").trim() === "") {
+      setEditingCell(null);
+      return;
+    }
+
+    // A quantity that isn't a plain number is an expression over the take-off.
+    // It is checked here for a straight answer, then sent as the formula — the
+    // server evaluates it again and stores both it and what it came to.
+    if (field === 'quantity' && !isPlainNumber(String(editingValue ?? ""))) {
+      const text = String(editingValue ?? "").trim();
+      const converted = displayToFormula(text, takeoffByName, pickedTakeoffRef.current);
+      if (!converted.ok) {
+        toast({ title: "Can't read that quantity", description: converted.error, variant: "destructive" });
+        return;
+      }
+      const preview = evaluateQuantityFormula(converted.formula, takeoffQuantities);
+      if (!preview.ok) {
+        toast({ title: "Can't work that quantity out", description: preview.error, variant: "destructive" });
+        return;
+      }
+      if (converted.formula === ((item as any).quantityFormula ?? null)) {
+        setEditingCell(null);
+        return;
+      }
+      updateItemMutation.mutate({
+        itemId: item.id,
+        data: { quantityFormula: converted.formula } as any,
+      });
       setEditingCell(null);
       return;
     }
@@ -2885,9 +2978,15 @@ export default function EstimateDetail() {
     } else if (field === 'quantity') {
       // Send actual value to backend (backend will multiply by 100)
       valueToSave = parseFloat(editingValue);
-      
-      // Check if value actually changed (compare actual to stored cents)
-      if (Math.abs(valueToSave - item.quantity) < 0.0001) {
+
+      // Check if value actually changed (compare actual to stored cents).
+      // A line that was on the take-off always saves, even at the same number:
+      // typing the figure by hand is how you take it OFF the take-off, and the
+      // server clears the formula on the way through.
+      if (
+        !(item as any).quantityFormula
+        && Math.abs(valueToSave - item.quantity) < 0.0001
+      ) {
         setEditingCell(null);
         return;
       }
@@ -4552,6 +4651,14 @@ export default function EstimateDetail() {
     updateItemMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
     form, setEditingItemId, setIsEditDialogOpen, setIsAddItemOpen,
     setItemToDelete, setIsDeleteDialogOpen, setLocation, toast,
+    takeoff: {
+      measurements: takeoffMeasurements,
+      categories: takeoffCategories,
+      names: takeoffNames,
+      preview: quantityPreview,
+      onPick: (name, id) => pickedTakeoffRef.current.set(name, id),
+      onAddInTakeoff: () => setEstimateTab('takeoff'),
+    },
   };
 
   const renderItemWithSubItems = (

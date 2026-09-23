@@ -2723,6 +2723,7 @@ export class MemStorage implements IStorage {
         groupId: null,
         parentItemId: null,
         costCode: null,
+        quantityFormula: null,
         allowance: "None",
         markupPercent: null,
         notes: null,
@@ -12829,6 +12830,8 @@ export class DbStorage implements IStorage {
         ...item[0],
         id: undefined,
         name: `${item[0].name} (Copy)`,
+        // Same rule as a new revision: the copy keeps the number, not the link.
+        quantityFormula: null,
         createdAt: undefined,
         updatedAt: undefined,
       };
@@ -13538,6 +13541,11 @@ export class DbStorage implements IStorage {
         estimateId: newId,
         groupId: item.groupId ? (groupMapping.get(item.groupId) ?? null) : null,
         parentItemId: item.parentItemId ? (itemMapping.get(item.parentItemId) ?? null) : null,
+        // A copy keeps the NUMBER but not the link to the take-off: the new
+        // revision is its own document, and a quantity that moved under it later
+        // — because someone re-measured a plan — would be a change nobody made
+        // to it. Re-link from the cell if that is what you want.
+        quantityFormula: null,
         createdAt: now,
         updatedAt: now,
       });
