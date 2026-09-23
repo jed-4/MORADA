@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -7,11 +7,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Building2, LogOut, User, Check } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { Building2, LogOut, User, Check, Loader2 } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  fmtPrice,
+  foundingPrice,
+  planHighlights,
+  planPrice,
+  type BillingCycle,
+  type PlansResponse,
+} from "@/lib/plans";
 
 const userProfileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -30,52 +38,7 @@ const companyFormSchema = z.object({
 type UserProfileValues = z.infer<typeof userProfileSchema>;
 type CompanyFormValues = z.infer<typeof companyFormSchema>;
 
-type PlanKey = "subbie" | "solo" | "builder" | "studio";
-type BillingCycle = "monthly" | "annual";
-
-const PLAN_CARDS: {
-  key: PlanKey;
-  name: string;
-  monthly: number;
-  annual: number;
-  popular?: boolean;
-  tagline: string;
-  highlights: string[];
-}[] = [
-  {
-    key: "subbie",
-    name: "Subbie",
-    monthly: 35,
-    annual: 350,
-    tagline: "For solo trades getting started",
-    highlights: ["1 active project", "1 user included", "5 GB storage"],
-  },
-  {
-    key: "solo",
-    name: "Solo",
-    monthly: 149,
-    annual: 1490,
-    tagline: "For small teams running a few jobs",
-    highlights: ["3 active projects", "2 users included", "25 GB storage"],
-  },
-  {
-    key: "builder",
-    name: "Builder",
-    monthly: 249,
-    annual: 2490,
-    popular: true,
-    tagline: "For growing residential builders",
-    highlights: ["10 active projects", "5 users included", "100 GB storage"],
-  },
-  {
-    key: "studio",
-    name: "Studio",
-    monthly: 349,
-    annual: 3490,
-    tagline: "For established multi-project builders",
-    highlights: ["Unlimited projects", "15 users included", "Unlimited storage"],
-  },
-];
+const DEFAULT_PLAN_KEY = "builder";
 
 export default function OnboardingPage() {
   const { toast } = useToast();
@@ -86,10 +49,27 @@ export default function OnboardingPage() {
   const [needsProfile] = useState(() => !user?.firstName || !user?.lastName);
   const [step, setStep] = useState<1 | 2 | 3>(needsProfile ? 1 : 2);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("builder");
+  const [selectedPlan, setSelectedPlan] = useState<string>(DEFAULT_PLAN_KEY);
   const totalSteps = needsProfile ? 3 : 2;
   const displayStep = needsProfile ? step : step - 1;
-  
+
+  // Prices, limits and the founding-member offer all come from the server so
+  // this step can never drift from the paywall or the public pricing page.
+  const { data: plansData, isLoading: plansLoading } = useQuery<PlansResponse>({
+    queryKey: ["/api/billing/plans"],
+    enabled: step === 3,
+  });
+  const plans = plansData?.plans ?? [];
+  const foundingOffer = plansData?.foundingOffer ?? null;
+
+  // Keep the selection valid if the catalogue ever stops shipping the default.
+  useEffect(() => {
+    if (plans.length && !plans.some((p) => p.key === selectedPlan)) {
+      setSelectedPlan(plans.find((p) => p.mostPopular)?.key ?? plans[0].key);
+    }
+  }, [plans, selectedPlan]);
+
+
   const userProfileForm = useForm<UserProfileValues>({
     resolver: zodResolver(userProfileSchema),
     defaultValues: {
@@ -466,55 +446,97 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {PLAN_CARDS.map((plan) => {
-                const isSelected = selectedPlan === plan.key;
-                const price = billingCycle === "monthly" ? plan.monthly : plan.annual;
-                const perMonth = billingCycle === "annual" ? Math.round(plan.annual / 12) : plan.monthly;
-                return (
-                  <Card
-                    key={plan.key}
-                    onClick={() => setSelectedPlan(plan.key)}
-                    className={`relative flex flex-col cursor-pointer hover-elevate ${isSelected ? "border-primary ring-1 ring-primary" : ""}`}
-                    data-testid={`card-plan-${plan.key}`}
-                  >
-                    {plan.popular && (
-                      <Badge className="absolute -top-2 right-3">Most Popular</Badge>
-                    )}
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg">{plan.name}</CardTitle>
-                      <CardDescription>{plan.tagline}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-1 flex-col gap-4">
-                      <div>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl font-bold text-foreground">${price.toLocaleString()}</span>
-                          <span className="text-sm text-muted-foreground">/{billingCycle === "monthly" ? "mo" : "yr"}</span>
-                        </div>
-                        {billingCycle === "annual" && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            ${perMonth.toLocaleString()}/mo billed annually
-                          </p>
-                        )}
-                      </div>
-                      <ul className="space-y-2">
-                        {plan.highlights.map((h) => (
-                          <li key={h} className="flex items-start gap-2 text-sm text-foreground">
-                            <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                            <span>{h}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="mt-auto pt-2">
-                        <Badge variant={isSelected ? "default" : "outline"} className="w-full justify-center">
-                          {isSelected ? "Selected" : "Select"}
+            {foundingOffer && (
+              <Card className="mx-auto max-w-2xl p-4" data-testid="note-founding-offer">
+                <p className="text-center text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Founding member offer</span>
+                  {" — "}subscribe while spots last and your first month is free, with
+                  Studio half price for life.{" "}
+                  <span className="text-foreground">
+                    {foundingOffer.spotsLeft} of {foundingOffer.limit} spots left.
+                  </span>
+                </p>
+              </Card>
+            )}
+
+            {plansLoading ? (
+              <div className="flex items-center justify-center py-16" data-testid="plans-loading">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {plans.map((plan) => {
+                  const isSelected = selectedPlan === plan.key;
+                  const price = planPrice(plan, billingCycle);
+                  const founding = foundingPrice(plan, billingCycle, foundingOffer);
+                  const effective = founding ?? price;
+                  const perMonth =
+                    billingCycle === "annual" ? Math.round(effective / 12) : effective;
+                  return (
+                    <Card
+                      key={plan.key}
+                      onClick={() => setSelectedPlan(plan.key)}
+                      className={`relative flex flex-col cursor-pointer hover-elevate ${isSelected ? "border-primary ring-1 ring-primary" : ""}`}
+                      data-testid={`card-plan-${plan.key}`}
+                    >
+                      {founding !== null ? (
+                        <Badge className="absolute -top-2 right-3" data-testid="badge-founding-studio">
+                          Founding price
                         </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                      ) : (
+                        plan.mostPopular && (
+                          <Badge className="absolute -top-2 right-3">Most Popular</Badge>
+                        )
+                      )}
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg">{plan.name}</CardTitle>
+                        <CardDescription>{plan.tagline}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-1 flex-col gap-4">
+                        <div>
+                          <div className="flex items-baseline gap-1">
+                            {founding !== null && (
+                              <span className="text-sm text-muted-foreground line-through">
+                                ${fmtPrice(price)}
+                              </span>
+                            )}
+                            <span className="text-2xl font-bold text-foreground">
+                              ${fmtPrice(effective)}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              /{billingCycle === "monthly" ? "mo" : "yr"}
+                            </span>
+                          </div>
+                          {billingCycle === "annual" && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              ${perMonth.toLocaleString()}/mo billed annually
+                            </p>
+                          )}
+                          {founding !== null && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Half price for life for founding members
+                            </p>
+                          )}
+                        </div>
+                        <ul className="space-y-2">
+                          {planHighlights(plan.limits).map((h) => (
+                            <li key={h} className="flex items-start gap-2 text-sm text-foreground">
+                              <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                              <span>{h}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-auto pt-2">
+                          <Badge variant={isSelected ? "default" : "outline"} className="w-full justify-center">
+                            {isSelected ? "Selected" : "Select"}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
 
             <p className="text-center text-xs text-muted-foreground">
               Your card won't be charged during the 14-day trial. You can change or cancel your plan anytime.
@@ -528,7 +550,7 @@ export default function OnboardingPage() {
                 type="button"
                 size="lg"
                 onClick={() => selectPlanMutation.mutate()}
-                disabled={selectPlanMutation.isPending}
+                disabled={selectPlanMutation.isPending || plansLoading}
                 data-testid="button-start-trial"
               >
                 {selectPlanMutation.isPending ? "Starting your trial..." : "Start 14-day free trial"}
