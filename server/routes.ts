@@ -44827,6 +44827,215 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // ── Cashflow forecast ───────────────────────────────────────────────────────
+  // Engine: shared/cashflow. Loader: server/services/cashflowService.ts.
+  // business.cashflow is held by owners and admins only by default.
+
+  const cashflowToday = async () => {
+    const { toDateKey } = await import("@shared/cashflow");
+    return toDateKey(new Date())!;
+  };
+
+  app.get("/api/cashflow/forecast", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const period = req.query.period === "fortnight" ? "fortnight" : req.query.period === "month" ? "month" : undefined;
+      const rawCount = Number(req.query.periods);
+      const periodCount = Number.isInteger(rawCount) && rawCount >= 1 && rawCount <= 60 ? rawCount : undefined;
+
+      const { getForecast } = await import("./services/cashflowService");
+      res.json(await getForecast(companyId, { today: await cashflowToday(), granularity: period, periodCount }));
+    } catch (error: any) {
+      console.error("[cashflow] forecast failed:", error);
+      res.status(500).json({ error: "Failed to build the cashflow forecast" });
+    }
+  });
+
+  app.get("/api/cashflow/settings", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { getCashflowSettings, getOpeningBalance } = await import("./services/cashflowService");
+      const settings = await getCashflowSettings(companyId);
+      res.json({ settings, opening: await getOpeningBalance(companyId, settings) });
+    } catch (error: any) {
+      console.error("[cashflow] settings read failed:", error);
+      res.status(500).json({ error: "Failed to load cashflow settings" });
+    }
+  });
+
+  app.patch("/api/cashflow/settings", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { cashflowSettings, updateCashflowSettingsSchema } = await import("@shared/schema");
+      const parsed = updateCashflowSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid settings", issues: parsed.error.issues });
+
+      const { CASHFLOW_SETTINGS_DEFAULTS, clearCashflowBalanceCache } = await import("./services/cashflowService");
+      const values = { ...parsed.data, updatedAt: new Date() };
+      const [row] = await db
+        .insert(cashflowSettings)
+        .values({ ...CASHFLOW_SETTINGS_DEFAULTS, ...values, companyId })
+        .onConflictDoUpdate({ target: cashflowSettings.companyId, set: values })
+        .returning();
+      if (parsed.data.bankAccountIds !== undefined) clearCashflowBalanceCache(companyId);
+      res.json(row);
+    } catch (error: any) {
+      console.error("[cashflow] settings update failed:", error);
+      res.status(500).json({ error: "Failed to save cashflow settings" });
+    }
+  });
+
+  app.get("/api/cashflow/projects", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { loadCashflow } = await import("./services/cashflowService");
+      const { jobs } = await loadCashflow(companyId, { today: await cashflowToday() });
+      res.json(jobs);
+    } catch (error: any) {
+      console.error("[cashflow] projects failed:", error);
+      res.status(500).json({ error: "Failed to load cashflow projects" });
+    }
+  });
+
+  app.patch("/api/cashflow/projects/:projectId", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projectCashflowSettings, updateProjectCashflowSettingsSchema } = await import("@shared/schema");
+      const parsed = updateProjectCashflowSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid job settings", issues: parsed.error.issues });
+
+      const project = await storage.getProject(req.params.projectId);
+      if (!project || project.companyId !== companyId) return res.status(404).json({ error: "Project not found" });
+
+      const values = { ...parsed.data, updatedAt: new Date() };
+      const [row] = await db
+        .insert(projectCashflowSettings)
+        .values({ ...values, projectId: project.id, companyId })
+        .onConflictDoUpdate({ target: projectCashflowSettings.projectId, set: values })
+        .returning();
+      res.json(row);
+    } catch (error: any) {
+      console.error("[cashflow] job settings update failed:", error);
+      res.status(500).json({ error: "Failed to save job settings" });
+    }
+  });
+
+  // Replaces every manual-mode amount for the job.
+  app.put("/api/cashflow/projects/:projectId/manual", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projectCashflowManual, putProjectCashflowManualSchema } = await import("@shared/schema");
+      const parsed = putProjectCashflowManualSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid amounts", issues: parsed.error.issues });
+
+      const project = await storage.getProject(req.params.projectId);
+      if (!project || project.companyId !== companyId) return res.status(404).json({ error: "Project not found" });
+
+      const rows = await db.transaction(async (tx) => {
+        await tx
+          .delete(projectCashflowManual)
+          .where(and(eq(projectCashflowManual.projectId, project.id), eq(projectCashflowManual.companyId, companyId)));
+        const amounts = parsed.data.amounts.filter((a) => a.amountCents !== 0);
+        if (amounts.length === 0) return [];
+        return tx
+          .insert(projectCashflowManual)
+          .values(amounts.map((a) => ({ ...a, projectId: project.id, companyId })))
+          .returning();
+      });
+      res.json(rows);
+    } catch (error: any) {
+      console.error("[cashflow] manual amounts failed:", error);
+      res.status(500).json({ error: "Failed to save manual amounts" });
+    }
+  });
+
+  app.get("/api/cashflow/expenses", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { businessExpenses } = await import("@shared/schema");
+      const rows = await db
+        .select()
+        .from(businessExpenses)
+        .where(eq(businessExpenses.companyId, companyId))
+        .orderBy(asc(businessExpenses.sortOrder), asc(businessExpenses.name));
+      res.json(rows);
+    } catch (error: any) {
+      console.error("[cashflow] expenses read failed:", error);
+      res.status(500).json({ error: "Failed to load business expenses" });
+    }
+  });
+
+  app.post("/api/cashflow/expenses", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { businessExpenses, insertBusinessExpenseSchema } = await import("@shared/schema");
+      const parsed = insertBusinessExpenseSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid expense", issues: parsed.error.issues });
+
+      const [row] = await db.insert(businessExpenses).values({ ...parsed.data, companyId }).returning();
+      res.status(201).json(row);
+    } catch (error: any) {
+      console.error("[cashflow] expense create failed:", error);
+      res.status(500).json({ error: "Failed to add expense" });
+    }
+  });
+
+  app.patch("/api/cashflow/expenses/:id", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { businessExpenses, updateBusinessExpenseSchema } = await import("@shared/schema");
+      const parsed = updateBusinessExpenseSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid expense", issues: parsed.error.issues });
+
+      const [row] = await db
+        .update(businessExpenses)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(eq(businessExpenses.id, req.params.id), eq(businessExpenses.companyId, companyId)))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Expense not found" });
+      res.json(row);
+    } catch (error: any) {
+      console.error("[cashflow] expense update failed:", error);
+      res.status(500).json({ error: "Failed to save expense" });
+    }
+  });
+
+  app.delete("/api/cashflow/expenses/:id", requireAuth, requirePermission("business.cashflow", "delete"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { businessExpenses } = await import("@shared/schema");
+      const [row] = await db
+        .delete(businessExpenses)
+        .where(and(eq(businessExpenses.id, req.params.id), eq(businessExpenses.companyId, companyId)))
+        .returning({ id: businessExpenses.id });
+      if (!row) return res.status(404).json({ error: "Expense not found" });
+      res.status(204).end();
+    } catch (error: any) {
+      console.error("[cashflow] expense delete failed:", error);
+      res.status(500).json({ error: "Failed to delete expense" });
+    }
+  });
+
   // ── Focus Blocks API ────────────────────────────────────────────────────────
 
   app.get("/api/focus-blocks", async (req, res) => {

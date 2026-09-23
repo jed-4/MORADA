@@ -1,0 +1,532 @@
+// Loads one company's data into a ForecastInput for the cashflow engine
+// (shared/cashflow). All the business rules about WHICH rows count live here;
+// the arithmetic lives in the engine.
+//
+// Every query is company-scoped and they all run at once: Neon is ~400 ms a
+// round trip from Australia, so nothing is queried per job in a loop.
+
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { db } from "../db";
+import { storage } from "../storage";
+import { xeroService } from "./xeroService";
+import {
+  bills,
+  billPayments,
+  budgets,
+  businessExpenses,
+  cashflowSettings,
+  clientInvoicePayments,
+  clientInvoices,
+  contacts,
+  projectCashflowManual,
+  projectCashflowSettings,
+  projects,
+  schedules,
+  timesheets,
+  variations,
+  type CashflowSettings,
+} from "@shared/schema";
+import {
+  addDays,
+  basPeriodFor,
+  buildForecast,
+  toDateKey,
+  type BillInput,
+  type DateKey,
+  type ExpenseInput,
+  type ForecastInput,
+  type ForecastResult,
+  type Frequency,
+  type InvoiceInput,
+  type JobInput,
+  type JobMode,
+  type JobPhase,
+  type PeriodGranularity,
+} from "@shared/cashflow";
+import { dollarsToCents, exGstFromInc, incGstFromEx } from "@shared/money";
+import { frozenContractTotalFrom, isApprovedVariationStatus } from "@shared/projectMetrics";
+import { invoiceBalanceCents, isIssuedInvoice } from "@shared/invoiceMetrics";
+
+const FORECAST_PHASES: JobPhase[] = ["lead", "pre_construction", "construction"];
+
+export const CASHFLOW_SETTINGS_DEFAULTS: Omit<CashflowSettings, "companyId" | "updatedAt"> = {
+  bufferCents: 5_000_000,
+  clientPayDays: 14,
+  supplierPayDays: 30,
+  defaultMarginPercent: 20,
+  defaultPeriod: "month",
+  fortnightAnchor: null,
+  bankAccountIds: null,
+  manualOpeningBalanceCents: null,
+  gstBasis: "cash",
+  basFrequency: "quarterly",
+  basViaAgent: false,
+};
+
+export async function getCashflowSettings(companyId: string): Promise<CashflowSettings> {
+  const [row] = await db.select().from(cashflowSettings).where(eq(cashflowSettings.companyId, companyId)).limit(1);
+  return row ?? { companyId, updatedAt: new Date(0), ...CASHFLOW_SETTINGS_DEFAULTS };
+}
+
+// ── Opening balance ─────────────────────────────────────────────────────────
+
+export interface OpeningBalance {
+  cents: number | null;
+  source: "xero" | "manual" | null;
+  accounts: { id: string; name: string; balanceCents: number; included: boolean }[];
+  /** Set when Xero is connected but the balance couldn't be read. */
+  error?: string;
+}
+
+const BALANCE_TTL_MS = 5 * 60 * 1000;
+const balanceCache = new Map<string, { value: Awaited<ReturnType<typeof xeroService.getBankAccountBalances>>; expiresAt: number }>();
+
+export function clearCashflowBalanceCache(companyId: string): void {
+  balanceCache.delete(companyId);
+}
+
+export async function getOpeningBalance(companyId: string, settings: CashflowSettings): Promise<OpeningBalance> {
+  const manual: OpeningBalance = {
+    cents: settings.manualOpeningBalanceCents,
+    source: settings.manualOpeningBalanceCents == null ? null : "manual",
+    accounts: [],
+  };
+
+  const connection = await storage.getXeroConnectionByCompanyId(companyId);
+  if (!connection) return manual;
+
+  try {
+    let hit = balanceCache.get(companyId);
+    if (!hit || hit.expiresAt <= Date.now()) {
+      hit = { value: await xeroService.getBankAccountBalances(connection.id), expiresAt: Date.now() + BALANCE_TTL_MS };
+      balanceCache.set(companyId, hit);
+    }
+    const chosen = settings.bankAccountIds && settings.bankAccountIds.length > 0 ? new Set(settings.bankAccountIds) : null;
+    const accounts = hit.value.map((a) => ({
+      id: a.accountId,
+      name: a.name,
+      balanceCents: dollarsToCents(a.xeroBalance),
+      included: chosen ? chosen.has(a.accountId) : true,
+    }));
+    return {
+      cents: accounts.filter((a) => a.included).reduce((s, a) => s + a.balanceCents, 0),
+      source: "xero",
+      accounts,
+    };
+  } catch (err: any) {
+    console.error("[cashflow] Xero bank balance failed:", err?.message ?? err);
+    return { ...manual, error: "Couldn't read the bank balance from Xero." };
+  }
+}
+
+// ── Jobs register ───────────────────────────────────────────────────────────
+
+/** One row of the Projects tab — also what the engine's JobInput is built from. */
+export interface CashflowJobRow {
+  projectId: string;
+  name: string;
+  jobNumber: string | null;
+  phase: JobPhase;
+  included: boolean;
+  /** true when someone has changed this job's settings (a row exists). */
+  customised: boolean;
+  mode: JobMode;
+  winPercent: number;
+  clientPayDays: number;
+  clientPayDaysOverride: number | null;
+  contractCents: number;
+  invoicedCents: number;
+  remainingToClaimCents: number;
+  remainingCostCents: number;
+  costBasis: "budget" | "margin";
+  startDate: DateKey | null;
+  endDate: DateKey | null;
+}
+
+export interface CashflowLoad {
+  input: ForecastInput;
+  settings: CashflowSettings;
+  opening: OpeningBalance;
+  jobs: CashflowJobRow[];
+}
+
+/** The BAS periods whose GST hasn't been paid yet: this one, and last one if it isn't due yet. */
+function openBasWindowStart(today: DateKey, settings: CashflowSettings): DateKey {
+  const freq = settings.basFrequency === "monthly" ? "monthly" : "quarterly";
+  const current = basPeriodFor(today, freq, settings.basViaAgent);
+  const previous = basPeriodFor(addDays(current.start, -1), freq, settings.basViaAgent);
+  return previous.due >= today ? previous.start : current.start;
+}
+
+export async function loadCashflow(
+  companyId: string,
+  opts: { today: DateKey; granularity?: PeriodGranularity; periodCount?: number },
+): Promise<CashflowLoad> {
+  const settings = await getCashflowSettings(companyId);
+  const granularity: PeriodGranularity =
+    opts.granularity ?? (settings.defaultPeriod === "fortnight" ? "fortnight" : "month");
+  const periodCount = opts.periodCount ?? (granularity === "fortnight" ? 26 : 12);
+  const today = opts.today;
+  const gstFrom = openBasWindowStart(today, settings);
+
+  const [
+    projectRows,
+    jobSettingsRows,
+    manualRows,
+    invoiceRows,
+    variationRows,
+    billRows,
+    billCostRows,
+    labourRows,
+    budgetRows,
+    scheduleRows,
+    expenseRows,
+    invoicePaymentRows,
+    billPaymentRows,
+    opening,
+  ] = await Promise.all([
+    db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        jobNumber: projects.jobNumber,
+        phase: projects.currentSystemPhase,
+        contractPrice: projects.contractPrice,
+        contractCost: projects.contractCost,
+        clientBudget: projects.clientBudget,
+        contractedAt: projects.contractedAt,
+        contractedTotalExGstCents: projects.contractedTotalExGstCents,
+        contractedTotalIncGstCents: projects.contractedTotalIncGstCents,
+        startDate: projects.startDate,
+        endDate: projects.endDate,
+        proposedStartDate: projects.proposedStartDate,
+        proposedEndDate: projects.proposedEndDate,
+      })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.companyId, companyId),
+          eq(projects.isArchived, false),
+          eq(projects.isBusiness, false),
+          inArray(projects.currentSystemPhase, FORECAST_PHASES),
+        ),
+      ),
+    db.select().from(projectCashflowSettings).where(eq(projectCashflowSettings.companyId, companyId)),
+    db.select().from(projectCashflowManual).where(eq(projectCashflowManual.companyId, companyId)),
+    // Invoices are scoped through their project: client_invoices.company_id is
+    // null on legacy rows.
+    db
+      .select({
+        id: clientInvoices.id,
+        projectId: clientInvoices.projectId,
+        projectName: projects.name,
+        invoiceNumber: clientInvoices.invoiceNumber,
+        status: clientInvoices.status,
+        invoiceDate: clientInvoices.invoiceDate,
+        dueDate: clientInvoices.dueDate,
+        totalAmount: clientInvoices.totalAmount,
+        gstAmount: clientInvoices.gstAmount,
+        paidAmount: clientInvoices.paidAmount,
+        balanceAmount: clientInvoices.balanceAmount,
+      })
+      .from(clientInvoices)
+      .innerJoin(projects, eq(clientInvoices.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), ne(clientInvoices.status, "draft"), ne(clientInvoices.status, "cancelled"))),
+    db
+      .select({ projectId: variations.projectId, status: variations.status, totalAmount: variations.totalAmount })
+      .from(variations)
+      .innerJoin(projects, eq(variations.projectId, projects.id))
+      .where(eq(projects.companyId, companyId)),
+    // Bills with money still to move.
+    db
+      .select({
+        id: bills.id,
+        projectId: bills.projectId,
+        billNumber: bills.billNumber,
+        billReference: bills.billReference,
+        supplierName: contacts.name,
+        billType: bills.billType,
+        billDate: bills.billDate,
+        dueDate: bills.dueDate,
+        total: bills.total,
+        tax: bills.tax,
+        paidAmount: bills.paidAmount,
+      })
+      .from(bills)
+      .leftJoin(contacts, eq(bills.supplierId, contacts.id))
+      .where(and(eq(bills.companyId, companyId), ne(bills.status, "paid"))),
+    // Cost to date per job, ex GST, credits subtracted.
+    db
+      .select({
+        projectId: bills.projectId,
+        exGstCents: sql<number>`coalesce(sum(case when ${bills.billType} = 'credit' then -${bills.subtotal} else ${bills.subtotal} end), 0)`,
+      })
+      .from(bills)
+      .where(and(eq(bills.companyId, companyId), sql`${bills.projectId} is not null`))
+      .groupBy(bills.projectId),
+    // Employee labour only: subcontractor timesheets are paid through POs and
+    // bills, which are already counted above.
+    db
+      .select({ projectId: timesheets.projectId, total: sql<string>`coalesce(sum(${timesheets.total}), 0)` })
+      .from(timesheets)
+      .innerJoin(projects, eq(timesheets.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`))
+      .groupBy(timesheets.projectId),
+    db
+      .select({ projectId: budgets.projectId, revisedAmount: budgets.revisedAmount, baselineAmount: budgets.baselineAmount })
+      .from(budgets)
+      .innerJoin(projects, eq(budgets.projectId, projects.id))
+      .where(eq(projects.companyId, companyId)),
+    db
+      .select({
+        projectId: schedules.projectId,
+        category: schedules.scheduleCategory,
+        startDate: schedules.startDate,
+        endDate: schedules.endDate,
+      })
+      .from(schedules)
+      .innerJoin(projects, eq(schedules.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false))),
+    db
+      .select()
+      .from(businessExpenses)
+      .where(and(eq(businessExpenses.companyId, companyId), eq(businessExpenses.isActive, true))),
+    // GST already collected in BAS periods not yet paid.
+    db
+      .select({
+        amount: clientInvoicePayments.amount,
+        paymentDate: clientInvoicePayments.paymentDate,
+        totalAmount: clientInvoices.totalAmount,
+        gstAmount: clientInvoices.gstAmount,
+      })
+      .from(clientInvoicePayments)
+      .innerJoin(clientInvoices, eq(clientInvoicePayments.invoiceId, clientInvoices.id))
+      .innerJoin(projects, eq(clientInvoices.projectId, projects.id))
+      .where(
+        and(
+          eq(projects.companyId, companyId),
+          eq(clientInvoicePayments.isVoided, false),
+          sql`${clientInvoicePayments.paymentDate} >= ${gstFrom}::date - interval '1 day'`,
+        ),
+      ),
+    // … and GST already paid to suppliers in them.
+    db
+      .select({
+        amount: billPayments.amount,
+        paymentDate: billPayments.paymentDate,
+        total: bills.total,
+        tax: bills.tax,
+        billType: bills.billType,
+      })
+      .from(billPayments)
+      .innerJoin(bills, eq(billPayments.billId, bills.id))
+      .where(
+        and(
+          eq(bills.companyId, companyId),
+          eq(billPayments.isVoided, false),
+          sql`${billPayments.paymentDate} >= ${gstFrom}::date - interval '1 day'`,
+        ),
+      ),
+    getOpeningBalance(companyId, settings),
+  ]);
+
+  // ── Per-job aggregates ─────────────────────────────────────────────────────
+  const invoicedByProject = new Map<string, number>();
+  for (const inv of invoiceRows) {
+    if (!isIssuedInvoice(inv.status)) continue;
+    invoicedByProject.set(inv.projectId, (invoicedByProject.get(inv.projectId) ?? 0) + (inv.totalAmount || 0));
+  }
+  const variationsByProject = new Map<string, number>();
+  for (const v of variationRows) {
+    if (!isApprovedVariationStatus(v.status)) continue;
+    variationsByProject.set(v.projectId, (variationsByProject.get(v.projectId) ?? 0) + (Number(v.totalAmount) || 0));
+  }
+  const billCostByProject = new Map(billCostRows.map((r) => [r.projectId!, Number(r.exGstCents) || 0]));
+  const labourByProject = new Map(labourRows.map((r) => [r.projectId!, dollarsToCents(r.total)]));
+  const budgetByProject = new Map(budgetRows.map((r) => [r.projectId, r.revisedAmount || r.baselineAmount || 0]));
+  const jobSettings = new Map(jobSettingsRows.map((r) => [r.projectId, r]));
+
+  // Construction schedule dates win over pre-construction, which win over
+  // the dates typed on the project.
+  const scheduleDates = new Map<string, { start: DateKey | null; end: DateKey | null; rank: number }>();
+  for (const s of scheduleRows) {
+    const rank = s.category === "construction" ? 2 : 1;
+    const start = toDateKey(s.startDate);
+    const end = toDateKey(s.endDate);
+    const prev = scheduleDates.get(s.projectId);
+    if (!prev || rank > prev.rank) {
+      scheduleDates.set(s.projectId, { start, end, rank });
+    } else if (rank === prev.rank) {
+      if (start && (!prev.start || start < prev.start)) prev.start = start;
+      if (end && (!prev.end || end > prev.end)) prev.end = end;
+    }
+  }
+
+  const manualByProject = new Map<string, { month: DateKey; amountCents: number }[]>();
+  for (const m of manualRows) {
+    const list = manualByProject.get(m.projectId) ?? [];
+    list.push({ month: m.month, amountCents: m.amountCents });
+    manualByProject.set(m.projectId, list);
+  }
+
+  const jobRows: CashflowJobRow[] = [];
+  for (const p of projectRows) {
+    const phase = (p.phase ?? "lead") as JobPhase;
+    const ps = jobSettings.get(p.id);
+    const included = ps?.included ?? phase !== "lead";
+
+    const frozen = frozenContractTotalFrom(p);
+    const baseContract =
+      frozen?.incGstCents ?? p.contractPrice ?? (phase === "lead" ? p.clientBudget : null) ?? p.contractCost ?? 0;
+    const contractCents = baseContract + (variationsByProject.get(p.id) ?? 0);
+    const invoicedCents = invoicedByProject.get(p.id) ?? 0;
+    const remainingToClaimCents = Math.max(0, contractCents - invoicedCents);
+
+    const budgetEx = budgetByProject.get(p.id) ?? 0;
+    const spentEx = (billCostByProject.get(p.id) ?? 0) + (labourByProject.get(p.id) ?? 0);
+    const costBasis: "budget" | "margin" = budgetEx > 0 ? "budget" : "margin";
+    const remainingCostEx =
+      costBasis === "budget"
+        ? Math.max(0, budgetEx - spentEx)
+        : Math.round(exGstFromInc(remainingToClaimCents) * (1 - settings.defaultMarginPercent / 100));
+
+    const sched = scheduleDates.get(p.id);
+    const startDate = sched?.start ?? toDateKey(p.proposedStartDate) ?? toDateKey(p.startDate);
+    const endDate = sched?.end ?? toDateKey(p.proposedEndDate) ?? toDateKey(p.endDate);
+
+    jobRows.push({
+      projectId: p.id,
+      name: p.name,
+      jobNumber: p.jobNumber,
+      phase,
+      included,
+      customised: !!ps,
+      mode: (ps?.mode as JobMode) ?? "even",
+      winPercent: ps?.winPercent ?? (phase === "lead" ? 50 : 100),
+      clientPayDays: ps?.clientPayDays ?? settings.clientPayDays,
+      clientPayDaysOverride: ps?.clientPayDays ?? null,
+      contractCents,
+      invoicedCents,
+      remainingToClaimCents,
+      remainingCostCents: incGstFromEx(remainingCostEx),
+      costBasis,
+      startDate,
+      endDate,
+    });
+  }
+
+  const jobs: JobInput[] = jobRows
+    .filter((j) => j.included)
+    .map((j) => ({
+      projectId: j.projectId,
+      name: j.name,
+      phase: j.phase,
+      mode: j.mode,
+      winPercent: j.winPercent,
+      clientPayDays: j.clientPayDays,
+      remainingToClaimCents: j.remainingToClaimCents,
+      remainingCostCents: j.remainingCostCents,
+      costBasis: j.costBasis,
+      startDate: j.startDate,
+      endDate: j.endDate,
+      manualAmounts: manualByProject.get(j.projectId),
+    }));
+
+  // ── Money already owed either way ─────────────────────────────────────────
+  // Receivables count whether or not the job is ticked: the money is owed.
+  const invoices: InvoiceInput[] = [];
+  for (const inv of invoiceRows) {
+    if (!isIssuedInvoice(inv.status) || inv.status === "paid") continue;
+    // balance_amount is NOT NULL DEFAULT 0, so a row that never had it
+    // written reads as "nothing owed". An unpaid invoice with a zero balance
+    // falls back to total − paid.
+    const balance = invoiceBalanceCents(inv) || (inv.totalAmount || 0) - (inv.paidAmount || 0);
+    if (balance <= 0) continue;
+    invoices.push({
+      id: inv.id,
+      projectId: inv.projectId,
+      projectName: inv.projectName,
+      label: inv.invoiceNumber ? `Invoice ${inv.invoiceNumber}` : "Invoice",
+      balanceCents: balance,
+      gstRatio: inv.totalAmount ? (inv.gstAmount || 0) / inv.totalAmount : 0,
+      dueDate: toDateKey(inv.dueDate),
+      invoiceDate: toDateKey(inv.invoiceDate) ?? today,
+    });
+  }
+
+  const billInputs: BillInput[] = [];
+  for (const b of billRows) {
+    const outstanding = (b.total || 0) - (b.paidAmount || 0);
+    if (outstanding === 0) continue;
+    const sign = b.billType === "credit" ? -1 : 1;
+    const who = b.supplierName ?? "Supplier";
+    billInputs.push({
+      id: b.id,
+      projectId: b.projectId,
+      label: `${who} — ${b.billReference || b.billNumber}`,
+      balanceCents: sign * outstanding,
+      gstRatio: b.total ? (b.tax || 0) / b.total : 0,
+      dueDate: toDateKey(b.dueDate),
+      billDate: toDateKey(b.billDate) ?? today,
+    });
+  }
+
+  const expenses: ExpenseInput[] = expenseRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    amountCents: e.amountCents,
+    hasGst: e.hasGst,
+    frequency: e.frequency as Frequency,
+    nextDate: e.nextDate,
+    endDate: e.endDate,
+  }));
+
+  // GST that moved before today in periods the ATO hasn't been paid for.
+  const basFreq = settings.basFrequency === "monthly" ? "monthly" : "quarterly";
+  const openPeriodGstCents: Record<string, number> = {};
+  const addGst = (date: DateKey | null, gst: number) => {
+    if (!date || date < gstFrom || date >= today || !gst) return;
+    const key = basPeriodFor(date, basFreq, settings.basViaAgent).key;
+    openPeriodGstCents[key] = (openPeriodGstCents[key] ?? 0) + gst;
+  };
+  for (const p of invoicePaymentRows) {
+    const ratio = p.totalAmount ? (p.gstAmount || 0) / p.totalAmount : 0;
+    addGst(toDateKey(p.paymentDate), Math.round(p.amount * ratio));
+  }
+  for (const p of billPaymentRows) {
+    const ratio = p.total ? (p.tax || 0) / p.total : 0;
+    const sign = p.billType === "credit" ? 1 : -1;
+    addGst(toDateKey(p.paymentDate), sign * Math.round(p.amount * ratio));
+  }
+
+  const input: ForecastInput = {
+    today,
+    granularity,
+    periodCount,
+    settings: {
+      bufferCents: settings.bufferCents,
+      clientPayDays: settings.clientPayDays,
+      supplierPayDays: settings.supplierPayDays,
+      defaultMarginPercent: settings.defaultMarginPercent,
+      basFrequency: basFreq,
+      basViaAgent: settings.basViaAgent,
+      fortnightAnchor: settings.fortnightAnchor,
+    },
+    openingBalanceCents: opening.cents,
+    jobs,
+    invoices,
+    bills: billInputs,
+    expenses,
+    openPeriodGstCents,
+  };
+
+  return { input, settings, opening, jobs: jobRows };
+}
+
+export async function getForecast(
+  companyId: string,
+  opts: { today: DateKey; granularity?: PeriodGranularity; periodCount?: number },
+): Promise<{ forecast: ForecastResult; opening: OpeningBalance; settings: CashflowSettings }> {
+  const load = await loadCashflow(companyId, opts);
+  return { forecast: buildForecast(load.input), opening: load.opening, settings: load.settings };
+}
