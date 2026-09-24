@@ -5,7 +5,7 @@
 -- forecast runs (shared/cashflow/whatifs.ts), never stored, so a rate change
 -- reaches every scenario. Only lines the user adds by hand are stored.
 --
--- Two new tables; nothing existing is altered. Needs 0088 first.
+-- Two new tables; nothing existing is altered. Needs 0090 first.
 
 CREATE TABLE IF NOT EXISTS what_ifs (
   id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
