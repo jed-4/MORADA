@@ -76,25 +76,44 @@ function landing(date: DateKey, today: DateKey): { date: DateKey; overdue: boole
   return date < today ? { date: today, overdue: true } : { date, overdue: false };
 }
 
+/**
+ * The months a job's remaining money is spread over: from today (or its
+ * start, if later) to its end date. No end date → six months; already past
+ * its end → this month and next.
+ */
+export function jobDateWindow(
+  startDate: DateKey | null,
+  endDate: DateKey | null,
+  today: DateKey,
+): { from: DateKey; to: DateKey; issue: "no_end_date" | "no_dates" | "past_end_date" | null } {
+  const from = maxKey(today, startDate ?? today);
+  if (!endDate) {
+    return {
+      from,
+      to: monthEnd(addMonths(monthStart(from), MONTHS_WHEN_NO_END_DATE - 1, 1)),
+      issue: startDate ? "no_end_date" : "no_dates",
+    };
+  }
+  if (endDate < from) return { from, to: monthEnd(addMonths(monthStart(today), 1, 1)), issue: "past_end_date" };
+  return { from, to: endDate, issue: null };
+}
+
 function jobWindow(job: JobInput, today: DateKey, warnings: ForecastWarning[]): { from: DateKey; to: DateKey } {
-  const from = maxKey(today, job.startDate ?? today);
-  if (!job.endDate) {
+  const w = jobDateWindow(job.startDate, job.endDate, today);
+  if (w.issue === "no_end_date" || w.issue === "no_dates") {
     warnings.push({
-      code: job.startDate ? "job_no_end_date" : "job_no_dates",
+      code: w.issue === "no_end_date" ? "job_no_end_date" : "job_no_dates",
       projectId: job.projectId,
       message: `${job.name} has no end date, so it's spread over ${MONTHS_WHEN_NO_END_DATE} months.`,
     });
-    return { from, to: monthEnd(addMonths(monthStart(from), MONTHS_WHEN_NO_END_DATE - 1, 1)) };
-  }
-  if (job.endDate < from) {
+  } else if (w.issue === "past_end_date") {
     warnings.push({
       code: "job_past_end_date",
       projectId: job.projectId,
       message: `${job.name} is past its end date, so what's left is spread over this month and next.`,
     });
-    return { from, to: monthEnd(addMonths(monthStart(today), 1, 1)) };
   }
-  return { from, to: job.endDate };
+  return { from: w.from, to: w.to };
 }
 
 export function whatIfLineId(id: string): string {
@@ -274,6 +293,24 @@ export function buildEvents(
           projectId: job.projectId,
         });
       });
+    }
+
+    if (job.costChunks) {
+      for (const c of job.costChunks) {
+        const amount = Math.round(c.amountCents * weight);
+        if (!amount) continue;
+        events.push({
+          date: maxKey(c.date, today),
+          amountCents: amount,
+          gstCents: Math.round(c.gstCents * weight),
+          category: "job_cost",
+          source: "job_cost",
+          lineId: LINE_JOB_COSTS,
+          label: c.label,
+          projectId: job.projectId,
+        });
+      }
+      continue;
     }
 
     const costParts = splitEvenly(-Math.round(job.remainingCostCents * weight), claimDates.length);

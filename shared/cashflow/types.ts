@@ -51,6 +51,11 @@ export interface JobInput {
    * date); a stage with no date is spread evenly over the job.
    */
   claimStages?: ClaimStageInput[];
+  /**
+   * Dated costs from the job's budget, POs and schedule (planJobCosts). When
+   * present they replace the even spread of remainingCostCents.
+   */
+  costChunks?: { date: DateKey; amountCents: number; gstCents: number; label: string }[];
 }
 
 export interface ClaimStageInput {
@@ -217,6 +222,8 @@ export interface CashflowJobRow {
   invoicedCents: number;
   remainingToClaimCents: number;
   remainingCostCents: number;
+  /** Open POs not billed yet, inc GST (part of remainingCostCents). */
+  committedCents: number;
   costBasis: "budget" | "margin";
   startDate: DateKey | null;
   endDate: DateKey | null;

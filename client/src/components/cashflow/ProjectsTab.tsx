@@ -234,7 +234,11 @@ export function ProjectsTab() {
         cell: ({ row }) => (
           <span
             className="text-xs tabular-nums"
-            title={row.original.costBasis === "margin" ? "No budget — estimated from your default margin" : "From the job's budget"}
+            title={
+              row.original.costBasis === "margin"
+                ? "No budget — estimated from your default margin"
+                : `From the job's budget, less bills, labour and open POs. Includes ${money(row.original.committedCents)} on open POs.`
+            }
           >
             {money(row.original.remainingCostCents)}
             {row.original.costBasis === "margin" && <span className="ml-1 text-muted-foreground">est.</span>}

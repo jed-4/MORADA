@@ -47,6 +47,7 @@ const INFO_FIELDS = {
   invoiced: "Invoiced to date",
   toClaim: "Left to claim",
   costsLeft: "Costs left",
+  committed: "Committed (open POs)",
   dates: "Start – finish",
   nextClaim: "Next claim",
   showAs: "Shows on forecast as",
@@ -55,7 +56,7 @@ const INFO_FIELDS = {
   claimedPercent: "Claimed % of contract",
 } as const;
 type InfoField = keyof typeof INFO_FIELDS;
-const DEFAULT_FIELDS: InfoField[] = ["contract", "invoiced", "toClaim", "costsLeft", "dates", "nextClaim"];
+const DEFAULT_FIELDS: InfoField[] = ["contract", "invoiced", "toClaim", "costsLeft", "committed", "nextClaim"];
 const FIELDS_KEY = "morada.cashflow.projectInfoFields";
 
 function useInfoFields(): [InfoField[], (f: InfoField[]) => void] {
@@ -193,6 +194,7 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
         invoiced: money(job.invoicedCents),
         toClaim: money(job.remainingToClaimCents),
         costsLeft: `${money(job.remainingCostCents)}${job.costBasis === "margin" ? " (est. from margin)" : ""}`,
+        committed: job.costBasis === "margin" ? "— (no budget)" : money(job.committedCents),
         dates: `${shortDate(job.startDate)} – ${job.endDate ? shortDate(job.endDate) : "no end date"}`,
         nextClaim: nextClaim ?? "—",
         showAs: MODE_TEXT[job.mode],
