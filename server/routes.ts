@@ -9000,6 +9000,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * A block of rows pasted out of a spreadsheet, into one group of one labour
+   * template. Same shape as the project-side paste
+   * (/api/labour-estimate-categories/:catId/tasks/bulk) so both read the
+   * clipboard with the one parser.
+   */
+  app.post("/api/labour-task-templates/bulk", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+      if (!rows) return res.status(400).json({ error: "rows must be an array" });
+      if (rows.length > 1000) {
+        return res.status(400).json({ error: "Too many rows in one paste (limit 1000)" });
+      }
+      const categoryName = String(req.body?.categoryName ?? "").trim();
+      if (!categoryName) return res.status(400).json({ error: "categoryName is required" });
+      const templateSetId = req.body?.templateSetId ?? null;
+
+      const created = [];
+      for (const r of rows) {
+        const description = String(r?.description ?? "").trim().slice(0, 2000);
+        if (!description) continue;
+        created.push(await storage.createLabourTaskTemplate({
+          companyId,
+          categoryName,
+          templateSetId,
+          description,
+          subHeading: r?.subHeading ? String(r.subHeading).trim().slice(0, 200) : null,
+          numMen: Number.isFinite(Number(r?.numMen)) ? Math.max(0, Number(r.numMen)) : 1,
+          hoursPerMan: Number.isFinite(Number(r?.hoursPerMan)) ? Math.max(0, Number(r.hoursPerMan)) : 0,
+        } as any));
+      }
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("[labour-templates] bulk paste:", error);
+      res.status(500).json({ error: "Failed to add pasted rows" });
+    }
+  });
+
   app.patch("/api/labour-task-templates/:id", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourTaskTemplate(req.params.id, req.body);

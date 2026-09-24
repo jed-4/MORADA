@@ -1,4 +1,5 @@
-import { useState, useRef, useMemo, type ReactNode } from "react";
+import { useState, useRef, useMemo, useEffect, type ReactNode } from "react";
+import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
 import { useLocation } from "wouter";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -23,6 +24,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -208,6 +213,13 @@ export default function EstimateTemplates() {
     enabled: activeTab === 'labour' || activeTab === 'enotes',
   });
 
+  /* Which labour template is open, reachable from the mutations above. The
+     state itself lives further down with the rest of the labour tab, and a ref
+     keeps these callbacks from having to be re-created on every change. */
+  const openLabourSetRef = useRef<string | null>(null);
+  /** The open template's rows, for the group-wide rename/delete above. */
+  const labourRowsRef = useRef<any[]>([]);
+
   const addLabourTemplateMutation = useMutation({
     mutationFn: (data: { description: string; categoryName: string; subHeading?: string; numMen?: number; hoursPerMan?: number }) =>
       apiRequest("/api/labour-task-templates", "POST", {
@@ -222,32 +234,60 @@ export default function EstimateTemplates() {
     onError: () => toast({ title: "Failed to add template item", variant: "destructive" }),
   });
 
+  /**
+   * The rows on screen come from the OPEN TEMPLATE's own query
+   * (["/api/labour-template-sets", id, "rows"]), not from the company-wide
+   * ["/api/labour-task-templates"] list. Editing and deleting only ever touched
+   * the company list, so a delete left the row sitting there and an edit
+   * reverted on the next refetch — the row WAS deleted, you just could not tell.
+   * Both caches are written here, and both are invalidated.
+   */
+  const patchLabourCaches = (mutator: (rows: any[]) => any[]) => {
+    const companyKey = ["/api/labour-task-templates"];
+    const prevCompany = queryClient.getQueryData<LabourTemplate[]>(companyKey);
+    queryClient.setQueryData<LabourTemplate[]>(companyKey, old => (old ? mutator(old) : old) as any);
+
+    const setKey = ["/api/labour-template-sets", openLabourSetRef.current, "rows"];
+    const prevSet = openLabourSetRef.current
+      ? queryClient.getQueryData<LabourTemplate[]>(setKey)
+      : undefined;
+    if (openLabourSetRef.current) {
+      queryClient.setQueryData<LabourTemplate[]>(setKey, old => (old ? mutator(old) : old) as any);
+    }
+    return { prevCompany, prevSet, companyKey, setKey };
+  };
+
+  const restoreLabourCaches = (ctx: any) => {
+    if (!ctx) return;
+    queryClient.setQueryData(ctx.companyKey, ctx.prevCompany);
+    if (ctx.prevSet !== undefined) queryClient.setQueryData(ctx.setKey, ctx.prevSet);
+  };
+
+  const invalidateLabourCaches = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] });
+    // Prefix-matched, so it covers the open template's rows query as well.
+    queryClient.invalidateQueries({ queryKey: ["/api/labour-template-sets"] });
+  };
+
   const updateLabourTemplateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<LabourTemplate> }) =>
       apiRequest(`/api/labour-task-templates/${id}`, "PATCH", data),
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates"] });
-      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates"]);
-      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates"], old =>
-        old?.map(t => t.id === id ? { ...t, ...data } : t) ?? []
-      );
-      return { prev };
+      return patchLabourCaches(rows => rows.map(t => (t.id === id ? { ...t, ...data } : t)));
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates"], ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] }),
+    onError: (_e, _v, ctx) => restoreLabourCaches(ctx),
+    onSettled: () => invalidateLabourCaches(),
   });
 
   const deleteLabourTemplateMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/labour-task-templates/${id}`, "DELETE"),
-    onMutate: async (id) => {
-      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates"]);
-      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates"], old =>
-        old?.filter(t => t.id !== id) ?? []
-      );
-      return { prev };
+    onMutate: async (id) => patchLabourCaches(rows => rows.filter(t => t.id !== id)),
+    onError: (_e, _v, ctx) => {
+      restoreLabourCaches(ctx);
+      toast({ title: "Couldn't delete that row", variant: "destructive" });
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates"], ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] }),
+    onSettled: () => invalidateLabourCaches(),
   });
 
   // E-Notes tab queries — always load so group panel works in both Labour and E-Notes
@@ -442,6 +482,43 @@ export default function EstimateTemplates() {
   // enote_templates row. Labour now has its own sets and its own categories.
   const [openLabourSet, setOpenLabourSet] = useState<{ id: string | null; name: string } | null>(null);
 
+  openLabourSetRef.current = openLabourSet?.id ?? null;
+
+  /* Renaming and deleting a group. The panel had neither — a group could be
+     made and never touched again. Both work across the open template's rows:
+     the "group" is just the categoryName they carry. */
+  const [renamingLabourGroup, setRenamingLabourGroup] = useState<string | null>(null);
+  const [labourGroupRenameValue, setLabourGroupRenameValue] = useState("");
+  const [labourGroupToDelete, setLabourGroupToDelete] = useState<string | null>(null);
+
+  const renameLabourGroupMutation = useMutation({
+    mutationFn: async ({ from, to }: { from: string; to: string }) => {
+      const rows = (labourRowsRef.current ?? []).filter((t: any) => t.categoryName === from);
+      await Promise.all(rows.map((t: any) =>
+        apiRequest(`/api/labour-task-templates/${t.id}`, "PATCH", { categoryName: to })));
+    },
+    onMutate: ({ from, to }) =>
+      patchLabourCaches(rows => rows.map(t => (t.categoryName === from ? { ...t, categoryName: to } : t))),
+    onError: (_e, _v, ctx) => {
+      restoreLabourCaches(ctx);
+      toast({ title: "Couldn't rename that group", variant: "destructive" });
+    },
+    onSettled: () => invalidateLabourCaches(),
+  });
+
+  const deleteLabourGroupMutation = useMutation({
+    mutationFn: async (group: string) => {
+      const rows = (labourRowsRef.current ?? []).filter((t: any) => t.categoryName === group);
+      await Promise.all(rows.map((t: any) => apiRequest(`/api/labour-task-templates/${t.id}`, "DELETE")));
+    },
+    onMutate: (group) => patchLabourCaches(rows => rows.filter(t => t.categoryName !== group)),
+    onError: (_e, _v, ctx) => {
+      restoreLabourCaches(ctx);
+      toast({ title: "Couldn't delete that group", variant: "destructive" });
+    },
+    onSettled: () => invalidateLabourCaches(),
+  });
+
   const { data: labourTemplateSets = [] } = useQuery<any[]>({
     queryKey: ["/api/labour-template-sets"],
     enabled: activeTab === 'labour',
@@ -457,6 +534,77 @@ export default function EstimateTemplates() {
   const labourRows: any[] = openLabourSet?.id
     ? (openLabourRows as any[])
     : (allLabourTemplates as any[]).filter((t: any) => !t.templateSetId);
+
+  labourRowsRef.current = labourRows;
+
+  const pasteLabourRowsMutation = useMutation({
+    mutationFn: (rows: Array<{ description: string; numMen: number; hoursPerMan: number }>) =>
+      apiRequest("/api/labour-task-templates/bulk", "POST", {
+        rows,
+        categoryName: selectedGroupRef.current,
+        templateSetId: openLabourSetRef.current,
+      }),
+    onSuccess: () => invalidateLabourCaches(),
+    onError: () => toast({ title: "Couldn't add those rows", variant: "destructive" }),
+  });
+
+  /**
+   * Paste a block straight out of a spreadsheet, the same way the project's
+   * Labour estimate does — same parser, same column sniffing, same limits. A
+   * template is built from a spreadsheet as often as a job is, and this tab had
+   * no way to do it: every row was typed in one at a time.
+   *
+   * The listener is on `document` because focus is usually on <body> after
+   * clicking about, which is why it needs the guards: an editable target keeps
+   * its own paste, the labour panel has to be the one on screen, and the text
+   * has to actually be a block (a tab or a newline) rather than a stray word.
+   */
+  const labourPasteRef = useRef<HTMLDivElement>(null);
+  const selectedGroupRef = useRef<string>("");
+  selectedGroupRef.current = selectedGroup;
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (activeTab !== 'labour' || !selectedGroupRef.current) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (!labourPasteRef.current || labourPasteRef.current.offsetParent === null) return;
+
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text.includes("\t") && !text.includes("\n")) return;
+
+      const parsed = parseLabourPaste(text);
+      if (parsed.rows.length === 0) return;
+      e.preventDefault();
+
+      if (parsed.rows.length > MAX_PASTE_ROWS) {
+        toast({
+          title: "That paste is too big",
+          description: `${parsed.rows.length} rows — the limit is ${MAX_PASTE_ROWS}. Paste it in a few goes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Say how the columns were read, so a wrong guess is obvious now rather
+      // than after the template has been applied to a job.
+      const notes: string[] = [];
+      const layout = describeRoles(parsed.roles);
+      if (layout) notes.push(`read as ${layout}`);
+      if (parsed.skippedHeader) notes.push("header row skipped");
+      if (parsed.skippedBlank) notes.push(`${parsed.skippedBlank} row(s) had no description`);
+      if (parsed.extraColumns > 0) notes.push(`${parsed.extraColumns} extra column(s) ignored`);
+
+      pasteLabourRowsMutation.mutate(parsed.rows, {
+        onSuccess: () => toast({
+          title: `Added ${parsed.rows.length} row${parsed.rows.length === 1 ? "" : "s"} to ${selectedGroupRef.current}`,
+          description: notes.length ? notes.join(" · ") : undefined,
+        }),
+      });
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [activeTab, pasteLabourRowsMutation, toast]);
 
   const labourGroups = useMemo(
     () => orderGroups(Array.from(new Set(labourRows.map((t: any) => t.categoryName))).filter(Boolean) as string[], savedGroupOrder),
@@ -1335,17 +1483,81 @@ export default function EstimateTemplates() {
                 // rows this tab used to borrow its groups from, and means
                 // nothing now labour has its own.
                 const labourCount = labourRows.filter((t: any) => t.categoryName === group && t.description).length;
+                const renaming = renamingLabourGroup === group;
                 return (
                   <SortableGroupRow key={group} id={group}>
-                  <button onClick={() => setSelectedGroup(group)}
-                    data-testid={`labour-group-${group}`}
-                    title="Drag to reorder"
-                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate cursor-grab active:cursor-grabbing ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                    <span className="text-xs font-medium truncate w-full">{group}</span>
-                    <span className="text-data text-muted-foreground">
-                      {labourCount} task{labourCount !== 1 ? 's' : ''}
-                    </span>
-                  </button>
+                  <div className={`group/lgroup flex items-center border-b border-border/20 ${isSelected ? 'bg-primary/15' : ''}`}>
+                  {renaming ? (
+                    <Input
+                      autoFocus
+                      value={labourGroupRenameValue}
+                      onChange={e => setLabourGroupRenameValue(e.target.value)}
+                      onPointerDown={e => e.stopPropagation()}
+                      onBlur={() => {
+                        const next = labourGroupRenameValue.trim();
+                        if (next && next !== group) {
+                          renameLabourGroupMutation.mutate({ from: group, to: next });
+                          if (selectedGroup === group) setSelectedGroup(next);
+                        }
+                        setRenamingLabourGroup(null);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') { setRenamingLabourGroup(null); return; }
+                        if (e.key !== 'Enter') return;
+                        const next = labourGroupRenameValue.trim();
+                        if (next && next !== group) {
+                          renameLabourGroupMutation.mutate({ from: group, to: next });
+                          if (selectedGroup === group) setSelectedGroup(next);
+                        }
+                        setRenamingLabourGroup(null);
+                      }}
+                      className="h-7 text-xs m-1.5"
+                      data-testid={`input-rename-labour-group-${group}`}
+                    />
+                  ) : (
+                    <>
+                      <button onClick={() => setSelectedGroup(group)}
+                        data-testid={`labour-group-${group}`}
+                        title="Drag to reorder"
+                        className={`flex-1 min-w-0 text-left px-3 py-2 flex flex-col gap-0.5 transition-colors hover-elevate cursor-grab active:cursor-grabbing ${isSelected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                        <span className="text-xs font-medium truncate w-full">{group}</span>
+                        <span className="text-data text-muted-foreground">
+                          {labourCount} task{labourCount !== 1 ? 's' : ''}
+                        </span>
+                      </button>
+                      {/* Rename / delete. Outside the drag button, and with
+                          pointerdown stopped, or dnd-kit swallows the click. */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => e.stopPropagation()}
+                            className="h-6 w-6 mr-1 flex-shrink-0 flex items-center justify-center rounded text-muted-foreground hover-elevate opacity-0 group-hover/lgroup:opacity-100 focus-visible:opacity-100"
+                            aria-label={`Options for ${group}`}
+                            data-testid={`button-labour-group-menu-${group}`}
+                          >
+                            <MoreVertical className="w-3 h-3" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => { setRenamingLabourGroup(group); setLabourGroupRenameValue(group); }}
+                            data-testid={`menu-rename-labour-group-${group}`}
+                          >
+                            <Edit3 className="h-4 w-4 mr-2" /> Rename group
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setLabourGroupToDelete(group)}
+                            className="text-destructive"
+                            data-testid={`menu-delete-labour-group-${group}`}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" /> Delete group
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  )}
+                  </div>
                   </SortableGroupRow>
                 );
               })}
@@ -1379,7 +1591,7 @@ export default function EstimateTemplates() {
           </div>
 
           {/* RIGHT: Items for selected group */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div ref={labourPasteRef} className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {!selectedGroup ? (
               <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
                 <Clock className="w-8 h-8 text-muted-foreground/40" />
@@ -1527,6 +1739,9 @@ export default function EstimateTemplates() {
                     onClick={() => { if (newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedGroup, subHeading: newLabourSubHeading || undefined }); setNewLabourDesc(""); } }}>
                     <Plus className="w-3 h-3 mr-1" />Add
                   </Button>
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid="labour-paste-hint">
+                    or paste from a spreadsheet
+                  </span>
                 </div>
               </>
             )}
@@ -1534,6 +1749,39 @@ export default function EstimateTemplates() {
         </div>
         </div>
       )}
+
+      {/* Deleting a group takes its tasks with it, so it says how many. */}
+      <AlertDialog open={!!labourGroupToDelete} onOpenChange={(open) => !open && setLabourGroupToDelete(null)}>
+        <AlertDialogContent data-testid="dialog-delete-labour-group">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{labourGroupToDelete}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const n = labourRows.filter((t: any) => t.categoryName === labourGroupToDelete && t.description).length;
+                return n === 0
+                  ? "The group is empty, so nothing else goes with it."
+                  : `Its ${n} task${n === 1 ? "" : "s"} will be deleted from this template too. This cannot be undone.`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-labour-group">Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (labourGroupToDelete) {
+                  deleteLabourGroupMutation.mutate(labourGroupToDelete);
+                  if (selectedGroup === labourGroupToDelete) setSelectedGroup("");
+                }
+                setLabourGroupToDelete(null);
+              }}
+              data-testid="button-confirm-delete-labour-group"
+            >
+              Delete group
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Details Tab — the library. Open one to edit it. */}
       {activeTab === 'enotes' && !openDetailsSet && (
