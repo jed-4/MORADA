@@ -34,6 +34,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Columns3 } from "lucide-react";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
 // ─── The template's own row shape ────────────────────────────────────────────
@@ -145,8 +148,14 @@ const CELL_FIELD_SOURCE: Record<string, string> = {
 };
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
-// The estimate page's 16 defaults minus the columns a template has no data for.
-
+/**
+ * Every column this grid can draw, and which of them start on.
+ *
+ * The list used to be fixed and entirely visible, with no picker: the four
+ * derived money columns the estimate offers simply did not exist here, and the
+ * ones that did could not be turned off. The estimate's own toggles live on
+ * `visible`, so the same shape is kept and a picker drives it.
+ */
 const TEMPLATE_DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "item", label: "Item", visible: true, widthPx: 240 },
   { id: "description", label: "Description", visible: true, widthPx: 180 },
@@ -163,7 +172,40 @@ const TEMPLATE_DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "builderCost", label: "Builder Cost", visible: true, widthPx: 100 },
   { id: "clientPriceExTax", label: "Client (ex)", visible: true, widthPx: 100 },
   { id: "clientPriceIncTax", label: "Client (inc)", visible: true, widthPx: 100 },
+  // Derived from what is already on the row, so they cost nothing to carry and
+  // are off until asked for — the same defaults the estimate uses.
+  { id: "unitCostIncTax", label: "Unit Cost (inc)", visible: false, widthPx: 92 },
+  { id: "builderCostIncTax", label: "Builder Cost (inc)", visible: false, widthPx: 105 },
+  { id: "markupDollarAmount", label: "Markup $", visible: false, widthPx: 90 },
+  { id: "clientTax", label: "Tax", visible: false, widthPx: 70 },
 ];
+
+const COLUMN_VISIBILITY_KEY = "estimate-template-grid:columns";
+
+/**
+ * Which columns are on, read from localStorage and MERGED against the list
+ * above rather than trusted wholesale.
+ *
+ * A stored array is a snapshot of the columns that existed when it was saved:
+ * taken as-is, a column added later is missing from it, missing reads as off,
+ * and its checkbox appears to do nothing forever. Unknown ids fall back to
+ * their default and ids that no longer exist are dropped.
+ */
+function readColumnVisibility(): Record<string, boolean> {
+  const merged: Record<string, boolean> = {};
+  for (const c of TEMPLATE_DEFAULT_COLUMNS) merged[c.id] = c.visible;
+  try {
+    const raw = localStorage.getItem(COLUMN_VISIBILITY_KEY);
+    if (!raw) return merged;
+    const saved = JSON.parse(raw) as Record<string, boolean>;
+    for (const c of TEMPLATE_DEFAULT_COLUMNS) {
+      if (typeof saved[c.id] === "boolean") merged[c.id] = saved[c.id];
+    }
+  } catch {
+    // A private window, or something else wrote nonsense there. Defaults.
+  }
+  return merged;
+}
 
 interface Props {
   items: TemplateItem[];
@@ -192,9 +234,20 @@ export function TemplateEstimateGrid({
   // detail and price-list tables use — so this grid gets drag-to-reorder and
   // drag-to-resize headers instead of a fixed layout, and behaves like the rest
   // of the app's bespoke grids rather than being a third way of doing columns.
+  // Read once, synchronously, so the first paint already has the right columns.
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(readColumnVisibility);
+
+  const toggleColumn = useCallback((id: string) => {
+    setColumnVisibility((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next)); } catch { /* not worth an error */ }
+      return next;
+    });
+  }, []);
+
   const taskCols = useResizableColumns(
     "estimate-template-grid",
-    TEMPLATE_DEFAULT_COLUMNS.map((c) => ({
+    TEMPLATE_DEFAULT_COLUMNS.filter((c) => columnVisibility[c.id] !== false).map((c) => ({
       key: c.id,
       defaultWidth: c.widthPx,
       flex: c.id === "item",     // the item name soaks up the leftover width
@@ -645,6 +698,44 @@ export function TemplateEstimateGrid({
               wrapped in p-1.5 on top of their own 1px border, so every body
               column sat 7px right of its heading; the live estimate offsets the
               header by just the border. */}
+        {/* Columns picker. The header row itself reorders and resizes; this is
+            what turns a column on or off, which this grid had no way to do. */}
+        <div className="sticky top-0 z-40 flex justify-end bg-card px-2 py-1 border-b border-border">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                title="Columns"
+                aria-label="Columns"
+                data-testid="button-template-column-visibility"
+              >
+                <Columns3 className="w-3 h-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-60 p-2" data-testid="popover-template-columns">
+              <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
+              <p className="px-1.5 pb-2 text-xs text-muted-foreground">
+                Drag a heading to reorder · toggle to show or hide.
+              </p>
+              <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
+                {TEMPLATE_DEFAULT_COLUMNS.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 px-1.5 py-1 rounded-sm hover-elevate cursor-pointer text-sm"
+                    data-testid={`template-column-toggle-${c.id}`}
+                  >
+                    <Checkbox
+                      checked={columnVisibility[c.id] !== false}
+                      onCheckedChange={() => toggleColumn(c.id)}
+                    />
+                    <span className="truncate">{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
         <div
           className="grid items-center h-7 bg-card border-b border-border sticky top-0 z-30 pl-px text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
           style={{ gridTemplateColumns: gridTemplate }}
