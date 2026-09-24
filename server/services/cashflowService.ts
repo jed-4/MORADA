@@ -5,13 +5,14 @@
 // Every query is company-scoped and they all run at once: Neon is ~400 ms a
 // round trip from Australia, so nothing is queried per job in a loop.
 
-import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { xeroService } from "./xeroService";
 import {
   bills,
   billPayments,
+  budgetLineItems,
   budgets,
   businessExpenses,
   cashflowSettings,
@@ -25,8 +26,12 @@ import {
   proposals,
   scheduleItems,
   projects,
+  purchaseOrderItems,
+  purchaseOrders,
   schedules,
+  timesheetCostCodes,
   timesheets,
+  users,
   variations,
   whatIfLines,
   whatIfs,
@@ -37,10 +42,15 @@ import {
   basPeriodFor,
   buildForecast,
   expandWhatIf,
+  jobDateWindow,
+  assembleJobCostInputs,
+  planJobCosts,
+  type JobCostData,
   toDateKey,
   type BillInput,
   type CashflowJobRow,
   type ClaimScheduleItem,
+  type CostChunk,
   type ClaimStageInput,
   type ResolvedClaimStage,
   type StageRow,
@@ -168,6 +178,95 @@ function stageRowsQuery(where: SQL | undefined) {
     .orderBy(asc(projectClaimStages.sortOrder));
 }
 
+// ── Job costs inputs ────────────────────────────────────────────────────────
+
+/** PO statuses whose unbilled value is committed (COMMITTED_COST_PLAN.md §4a). */
+const NOT_COMMITTED_PO_STATUSES = ["draft", "pending_approval", "cancelled", "paid"] as const;
+
+/**
+ * Everything planJobCosts needs, per project, in one round of parallel
+ * company-scoped queries.
+ *
+ * Budget and billed figures come from budget_line_items — what the Budget
+ * page shows, as of its last recalculation (every bill change triggers one).
+ */
+export async function loadJobCostInputs(companyId: string): Promise<Map<string, JobCostData>> {
+  const [lineRows, poRows, poItemRows, linkedBillRows, labourRows, splitRows, awaitingRows, itemRows] = await Promise.all([
+    db
+      .select({
+        projectId: budgets.projectId,
+        costCodeId: budgetLineItems.costCodeId,
+        title: budgetLineItems.costCodeTitle,
+        budgeted: budgetLineItems.budgetedAmount,
+        actual: budgetLineItems.actualAmount,
+      })
+      .from(budgetLineItems)
+      .innerJoin(budgets, eq(budgetLineItems.budgetId, budgets.id))
+      .innerJoin(projects, eq(budgets.projectId, projects.id))
+      .where(eq(projects.companyId, companyId)),
+    db
+      .select({
+        id: purchaseOrders.id,
+        projectId: purchaseOrders.projectId,
+        poNumber: purchaseOrders.poNumber,
+        supplierName: purchaseOrders.supplierName,
+        requiredByDate: purchaseOrders.requiredByDate,
+        total: purchaseOrders.total,
+        gstAmount: purchaseOrders.gstAmount,
+      })
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.companyId, companyId), notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]))),
+    db
+      .select({
+        purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+        costCodeId: purchaseOrderItems.costCodeId,
+        total: purchaseOrderItems.total,
+        gstAmount: purchaseOrderItems.gstAmount,
+        gstMode: purchaseOrders.gstMode,
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+      .where(and(eq(purchaseOrders.companyId, companyId), notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]))),
+    db
+      .select({ poId: bills.matchedSitePOId, total: bills.total, tax: bills.tax, billType: bills.billType })
+      .from(bills)
+      .where(and(eq(bills.companyId, companyId), sql`${bills.matchedSitePOId} is not null`)),
+    // Employee labour (subcontractors are paid through POs and bills).
+    db
+      .select({ id: timesheets.id, projectId: timesheets.projectId, costCodeId: timesheets.costCodeId, total: timesheets.total })
+      .from(timesheets)
+      .innerJoin(projects, eq(timesheets.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+    db
+      .select({ timesheetId: timesheetCostCodes.timesheetId, costCodeId: timesheetCostCodes.costCodeId, total: timesheetCostCodes.total })
+      .from(timesheetCostCodes)
+      .innerJoin(timesheets, eq(timesheetCostCodes.timesheetId, timesheets.id))
+      .innerJoin(projects, eq(timesheets.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+    // Subbie hours approved but not on a PO yet: hours × the subbie's profile rate.
+    db
+      .select({ projectId: timesheets.projectId, duration: timesheets.duration, rate: users.hourlyRate })
+      .from(timesheets)
+      .innerJoin(projects, eq(timesheets.projectId, projects.id))
+      .innerJoin(users, eq(timesheets.userId, users.id))
+      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), eq(timesheets.poStatus, "awaiting_po"))),
+    db
+      .select({
+        projectId: schedules.projectId,
+        costCodeId: scheduleItems.costCodeId,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        status: scheduleItems.status,
+      })
+      .from(scheduleItems)
+      .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+      .innerJoin(projects, eq(schedules.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false), sql`${scheduleItems.costCodeId} is not null`)),
+  ]);
+
+  return assembleJobCostInputs({ lineRows, poRows, poItemRows, linkedBillRows, labourRows, splitRows, awaitingRows, itemRows });
+}
+
 /** Every what-if with its hand-added lines, in display order. */
 export async function loadWhatIfs(companyId: string): Promise<WhatIfDefinition[]> {
   const [rows, lines] = await Promise.all([
@@ -214,9 +313,7 @@ export async function loadCashflow(
     invoiceRows,
     variationRows,
     billRows,
-    billCostRows,
-    labourRows,
-    budgetRows,
+    costInputs,
     scheduleRows,
     expenseRows,
     invoicePaymentRows,
@@ -296,28 +393,7 @@ export async function loadCashflow(
       .from(bills)
       .leftJoin(contacts, eq(bills.supplierId, contacts.id))
       .where(and(eq(bills.companyId, companyId), ne(bills.status, "paid"))),
-    // Cost to date per job, ex GST, credits subtracted.
-    db
-      .select({
-        projectId: bills.projectId,
-        exGstCents: sql<number>`coalesce(sum(case when ${bills.billType} = 'credit' then -${bills.subtotal} else ${bills.subtotal} end), 0)`,
-      })
-      .from(bills)
-      .where(and(eq(bills.companyId, companyId), sql`${bills.projectId} is not null`))
-      .groupBy(bills.projectId),
-    // Employee labour only: subcontractor timesheets are paid through POs and
-    // bills, which are already counted above.
-    db
-      .select({ projectId: timesheets.projectId, total: sql<string>`coalesce(sum(${timesheets.total}), 0)` })
-      .from(timesheets)
-      .innerJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`))
-      .groupBy(timesheets.projectId),
-    db
-      .select({ projectId: budgets.projectId, revisedAmount: budgets.revisedAmount, baselineAmount: budgets.baselineAmount })
-      .from(budgets)
-      .innerJoin(projects, eq(budgets.projectId, projects.id))
-      .where(eq(projects.companyId, companyId)),
+    loadJobCostInputs(companyId),
     db
       .select({
         projectId: schedules.projectId,
@@ -392,9 +468,6 @@ export async function loadCashflow(
     if (!isApprovedVariationStatus(v.status)) continue;
     variationsByProject.set(v.projectId, (variationsByProject.get(v.projectId) ?? 0) + (Number(v.totalAmount) || 0));
   }
-  const billCostByProject = new Map(billCostRows.map((r) => [r.projectId!, Number(r.exGstCents) || 0]));
-  const labourByProject = new Map(labourRows.map((r) => [r.projectId!, dollarsToCents(r.total)]));
-  const budgetByProject = new Map(budgetRows.map((r) => [r.projectId, r.revisedAmount || r.baselineAmount || 0]));
   const jobSettings = new Map(jobSettingsRows.map((r) => [r.projectId, r]));
 
   // Construction schedule dates win over pre-construction, which win over
@@ -422,6 +495,7 @@ export async function loadCashflow(
 
   const jobRows: CashflowJobRow[] = [];
   const claimStagesByProject = new Map<string, ClaimStageInput[]>();
+  const costChunksByProject = new Map<string, CostChunk[]>();
   for (const p of projectRows) {
     const phase = (p.phase ?? "lead") as JobPhase;
     const ps = jobSettings.get(p.id);
@@ -434,14 +508,6 @@ export async function loadCashflow(
     const invoicedCents = invoicedByProject.get(p.id) ?? 0;
     const remainingToClaimCents = Math.max(0, contractCents - invoicedCents);
 
-    const budgetEx = budgetByProject.get(p.id) ?? 0;
-    const spentEx = (billCostByProject.get(p.id) ?? 0) + (labourByProject.get(p.id) ?? 0);
-    const costBasis: "budget" | "margin" = budgetEx > 0 ? "budget" : "margin";
-    const remainingCostEx =
-      costBasis === "budget"
-        ? Math.max(0, budgetEx - spentEx)
-        : Math.round(exGstFromInc(remainingToClaimCents) * (1 - settings.defaultMarginPercent / 100));
-
     const stages = resolveClaimStages(
       stagesByProject.get(p.id) ?? [],
       baseContract,
@@ -452,6 +518,31 @@ export async function loadCashflow(
     const sched = scheduleDates.get(p.id);
     const startDate = sched?.start ?? toDateKey(p.proposedStartDate) ?? toDateKey(p.startDate);
     const endDate = sched?.end ?? toDateKey(p.proposedEndDate) ?? toDateKey(p.endDate);
+
+    // Costs to come: from the budget, bills, labour, open POs and the
+    // schedule when the job has a budget; otherwise estimated from margin.
+    const costData = costInputs.get(p.id);
+    let costBasis: "budget" | "margin" = "margin";
+    let remainingCostCents: number;
+    let committedCents = 0;
+    if (costData && costData.budgetLines.some((l) => l.budgetedExCents > 0)) {
+      const w = jobDateWindow(startDate, endDate, today);
+      const plan = planJobCosts({
+        ...costData,
+        today,
+        supplierPayDays: settings.supplierPayDays,
+        jobName: p.name,
+        window: { from: w.from, to: w.to },
+      });
+      costBasis = "budget";
+      remainingCostCents = plan.totalIncCents;
+      committedCents = plan.committedIncCents;
+      costChunksByProject.set(p.id, plan.chunks);
+    } else {
+      remainingCostCents = incGstFromEx(
+        Math.round(exGstFromInc(remainingToClaimCents) * (1 - settings.defaultMarginPercent / 100)),
+      );
+    }
 
     jobRows.push({
       projectId: p.id,
@@ -467,7 +558,8 @@ export async function loadCashflow(
       contractCents,
       invoicedCents,
       remainingToClaimCents,
-      remainingCostCents: incGstFromEx(remainingCostEx),
+      remainingCostCents,
+      committedCents,
       costBasis,
       startDate,
       endDate,
@@ -499,6 +591,7 @@ export async function loadCashflow(
       endDate: j.endDate,
       manualAmounts: j.manualAmounts,
       claimStages: claimStagesByProject.get(j.projectId),
+      costChunks: costChunksByProject.get(j.projectId),
     }));
 
   // ── Money already owed either way ─────────────────────────────────────────

@@ -3,6 +3,7 @@ import * as schema from "@shared/schema";
 import { and, eq, gte, isNull, or, inArray, sql } from "drizzle-orm";
 import { recomputePOStatusFromBills } from "./poStatusFromBills";
 import { storage } from "../storage";
+import { poUnbilled } from "@shared/cashflow/jobCosts";
 
 /**
  * PO number patterns BuildPro generates today. Covers any PO type:
@@ -137,21 +138,29 @@ export async function suggestPOsForBill(
       .select({
         poId: schema.bills.matchedSitePOId,
         total: schema.bills.total,
+        tax: schema.bills.tax,
+        billType: schema.bills.billType,
       })
       .from(schema.bills)
       .where(and(
         inArray(schema.bills.matchedSitePOId, candidatePOIds),
       ));
-    const billedByPO = new Map<string, number>();
+    const billsByPO = new Map<string, { total: number; tax: number; billType: string | null }[]>();
     for (const row of linked) {
       if (!row.poId) continue;
-      billedByPO.set(row.poId, (billedByPO.get(row.poId) || 0) + (Number(row.total) || 0));
+      const list = billsByPO.get(row.poId) ?? [];
+      list.push({ total: Number(row.total) || 0, tax: Number(row.tax) || 0, billType: row.billType });
+      billsByPO.set(row.poId, list);
     }
+    // Same rule as the cashflow forecast's committed cost: vendor credits
+    // don't count as billed (poStatusFromBills skips them too).
     for (const id of candidatePOIds) {
       const po = byId.get(id);
-      const total = Number(po?.total) || 0;
-      const billed = billedByPO.get(id) || 0;
-      remainingByPOId.set(id, Math.max(0, total - billed));
+      const unbilled = poUnbilled(
+        { total: Number(po?.total) || 0, gstAmount: Number(po?.gstAmount) || 0 },
+        billsByPO.get(id) ?? [],
+      );
+      remainingByPOId.set(id, unbilled.incCents);
     }
   }
 
