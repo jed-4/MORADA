@@ -40,14 +40,19 @@ import {
 } from "@/components/ui/select";
 import {
   MoreVertical, Plus, Edit, Copy, FileText, Trash2, Palette, ExternalLink,
-  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical,
+  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical, Ruler,
 } from "lucide-react";
 import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker";
+import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
+import { formulaToDisplay } from "@shared/quantityFormula";
+import { isFixedPriceLine } from "@shared/pricing";
 import type {
   EstimateItem,
   CostCode,
   CostCategory,
   FieldCategoryWithOptions,
+  TakeoffMeasurement,
+  TakeoffCategory,
 } from "@shared/schema";
 
 // Column configuration type - defined outside component to avoid re-creation
@@ -266,6 +271,19 @@ export interface EstimateGridCtx {
   dropTarget: { id: string; position: 'above' | 'below' } | null;
   activeId: string | null;
 
+  // take-off backed quantities (optional: the template grid has no take-off)
+  takeoff?: {
+    measurements: TakeoffMeasurement[];
+    categories: TakeoffCategory[];
+    /** id → name, for reading a stored formula back as words. */
+    names: Map<string, string>;
+    /** What the text in the cell comes to right now. */
+    preview: (text: string) => { text: string; error?: string };
+    /** Remember which item a picked name came from. */
+    onPick: (name: string, id: string) => void;
+    onAddInTakeoff: () => void;
+  };
+
   // actions
   updateItemMutation: any;
   createSelectionFromItemMutation: any;
@@ -283,7 +301,7 @@ export interface EstimateGridCtx {
 
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -772,22 +790,40 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
       
       case 'quantity':
         if (isEditing) {
+          // With a take-off on the project the cell takes a formula as well as
+          // a number; without one it stays the plain number field it was.
           return (
             <div className={`${cellBase} ${cellActive}`} role="gridcell">
-              <Input
-                type="number"
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
-                onBlur={() => handleCellSave(item, 'quantity')}
-                onFocus={handleEditorFocus}
-                onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                autoFocus
-                min="0"
-                step="0.01"
-                data-testid={`input-edit-quantity-${item.id}`}
-              />
+              {takeoff ? (
+                <QuantityFormulaEditor
+                  value={String(editingValue ?? "")}
+                  onChange={(v) => setEditingValue(v)}
+                  onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
+                  onBlur={() => handleCellSave(item, 'quantity')}
+                  onFocus={handleEditorFocus}
+                  measurements={takeoff.measurements}
+                  categories={takeoff.categories}
+                  preview={takeoff.preview(String(editingValue ?? ""))}
+                  onPick={takeoff.onPick}
+                  onAddInTakeoff={takeoff.onAddInTakeoff}
+                  testId={`input-edit-quantity-${item.id}`}
+                />
+              ) : (
+                <Input
+                  type="number"
+                  value={editingValue}
+                  onChange={(e) => setEditingValue(e.target.value)}
+                  onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
+                  onBlur={() => handleCellSave(item, 'quantity')}
+                  onFocus={handleEditorFocus}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  autoFocus
+                  min="0"
+                  step="0.01"
+                  data-testid={`input-edit-quantity-${item.id}`}
+                />
+              )}
             </div>
           );
         }
@@ -796,19 +832,42 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         // the Builder Cost cell instead (see the builderCost case).
         const baseQuantity = item.quantity;
         const wastage = (item as any).wastagePercent || 0;
+        // A quantity that came off the plan says so, and says what from.
+        const formula = (item as any).quantityFormula as string | null | undefined;
+        const formulaWords = formula && takeoff ? formulaToDisplay(formula, takeoff.names) : null;
+        const formulaBroken = !!formulaWords && formulaWords.includes("{deleted item}");
 
         return (
           <div
-            className={`${cellBase} ${cellEditable}`}
+            className={`${cellBase} ${cellEditable} gap-1`}
             role="gridcell"
-            title={isLocked ? '' : `Click to edit${wastage > 0 ? ` (builder cost includes +${wastage}% waste)` : ''}`}
+            title={
+              isLocked
+                ? ''
+                : formulaWords
+                  ? `${formulaWords}${formulaBroken ? " — a take-off item in this formula was deleted, so this is the last figure it gave" : " — from the take-off"}`
+                  : `Click to edit${wastage > 0 ? ` (builder cost includes +${wastage}% waste)` : ''}`
+            }
             onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'quantity');
             }}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {baseQuantity.toFixed(2).replace(/\.?0+$/, '')}
+            {isFixedPriceLine(item.unitCostExTax) && !formulaWords ? (
+              /* 0 × $0 = $454.55 reads as a broken row. A flat line has no
+                 quantity and no unit cost; its amount is in Builder Cost. */
+              <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
+            ) : null}
+            {formulaWords && (
+              <Ruler
+                className={`h-3 w-3 flex-shrink-0 ${formulaBroken ? "text-destructive" : "text-muted-foreground"}`}
+                data-testid={`quantity-from-takeoff-${item.id}`}
+              />
+            )}
+            {isFixedPriceLine(item.unitCostExTax) && !formulaWords ? null : (
+              <span>{baseQuantity.toFixed(2).replace(/\.?0+$/, '')}</span>
+            )}
           </div>
         );
       
@@ -934,12 +993,15 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             }}
             data-testid={`cell-unitCostExTax-${item.id}`}
           >
-            {formatCurrency(item.unitCostExTax)}
+            {isFixedPriceLine(item.unitCostExTax)
+              ? <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
+              : formatCurrency(item.unitCostExTax)}
           </div>
         );
       
       case 'unitCostIncTax':
         const unitCostIncTax = pricingValues.unitCostIncTax || 0;
+        const unitIncIsFlat = isFixedPriceLine(item.unitCostExTax);
         
         if (isEditing) {
           return (
@@ -972,18 +1034,52 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             }}
             data-testid={`cell-unitCostIncTax-${item.id}`}
           >
-            {formatCurrency(unitCostIncTax)}
+            {unitIncIsFlat
+              ? <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
+              : formatCurrency(unitCostIncTax)}
           </div>
         );
       
       case 'builderCost': {
         const wastagePct = (item as any).wastagePercent || 0;
+        /* On a flat line — a lump sum with no unit cost — this cell IS the
+           line's amount rather than qty × unit cost, so it is the one place
+           the amount can be typed. On a priced line it stays derived. */
+        const isFlat = isFixedPriceLine(item.unitCostExTax);
+        if (isFlat && isEditing) {
+          return (
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'builderCost')}
+                onBlur={() => handleCellSave(item, 'builderCost')}
+                onFocus={handleEditorFocus}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className="h-full w-full bg-transparent border-0 rounded-none shadow-none px-0 text-sm text-right focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                autoFocus
+                step="0.01"
+                data-testid={`input-edit-builderCost-${item.id}`}
+              />
+            </div>
+          );
+        }
         return (
           <div
-            className={`${cellBase} ${wastagePct > 0 ? "ring-1 ring-inset ring-amber/60 rounded-sm bg-amber/5" : ""}`}
+            className={`${cellBase} ${isFlat && !isLocked ? cellEditable : ""} ${wastagePct > 0 ? "ring-1 ring-inset ring-amber/60 rounded-sm bg-amber/5" : ""}`}
             role="gridcell"
             data-testid={`cell-builderCost-${item.id}`}
-            title={wastagePct > 0 ? `Includes +${wastagePct}% wastage` : undefined}
+            title={
+              isFlat
+                ? "A fixed amount for the whole line — click to change it"
+                : wastagePct > 0 ? `Includes +${wastagePct}% wastage` : undefined
+            }
+            onClick={(e) => {
+              if (!isFlat || isLocked) return;
+              e.stopPropagation();
+              handleCellEdit(item, 'builderCost');
+            }}
           >
             {formatCurrency(pricingValues.builderCost)}
           </div>

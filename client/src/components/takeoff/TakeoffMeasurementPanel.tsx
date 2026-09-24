@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -42,11 +42,28 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { TakeoffMeasurement, TakeoffCategory, TakeoffPlan } from "@shared/schema";
 import TakeoffColorPicker from "./TakeoffColorPicker";
+import { normalizeEntries } from "./useTakeoffGeometry";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Props {
   projectId: string;
   plan: TakeoffPlan;
+  /** Every item on the plan — one list, however many pages it is drawn across. */
   measurements: TakeoffMeasurement[];
+  /** The page on screen, so rows can say whether they are marked up here. */
+  currentPageId?: string | null;
+  /** Page id → page number, for the "pages 1, 3" note on a row. */
+  pageNumberById?: Map<string, number>;
+  /** The one mark being pointed at on the plan, if any. */
+  highlightedShape?: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  /** Open the page a mark is on and point at it. */
+  onShowShape?: (m: TakeoffMeasurement, index: number) => void;
+  /** Remove one mark, leaving the rest of the item alone. */
+  onDeleteShape?: (m: TakeoffMeasurement, index: number) => void;
   categories: TakeoffCategory[];
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
@@ -65,6 +82,12 @@ export default function TakeoffMeasurementPanel({
   projectId,
   plan,
   measurements,
+  currentPageId = null,
+  pageNumberById,
+  highlightedShape = null,
+  onHighlightShape,
+  onShowShape,
+  onDeleteShape,
   categories,
   highlightedId,
   onHighlight,
@@ -80,6 +103,27 @@ export default function TakeoffMeasurementPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<TakeoffMeasurement | null>(null);
+  /* Which items are showing their marks. Checking a take-off means reading the
+     three squares you drew against the three on the plan, one at a time. */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  /* Estimate lines can be built on a measurement, so deleting one is not a
+     private act. This is what the row's "used by" note and the delete warning
+     are made of. */
+  const usageKey = ["/api/projects", projectId, "takeoff/measurement-usage"];
+  const { data: usage = [] } = useQuery<
+    Array<{ measurementId: string; items: Array<{ itemId: string; itemName: string; estimateName: string }> }>
+  >({
+    queryKey: usageKey,
+    enabled: !!projectId,
+  });
+  const usageById = useMemo(
+    () => new Map(usage.map((u) => [u.measurementId, u.items] as const)),
+    [usage],
+  );
 
   const measurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
   const pageMeasurementsKeyPrefix = ["/api/projects", projectId, "takeoff/pages"];
@@ -133,6 +177,13 @@ export default function TakeoffMeasurementPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: measurementsKey });
       queryClient.invalidateQueries({ queryKey: pageMeasurementsKeyPrefix });
+      // The estimate lines that used it are now showing a broken reference.
+      queryClient.invalidateQueries({ queryKey: usageKey });
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "/api/estimates"
+          && (q.queryKey[2] === "items" || q.queryKey[2] === "summary"),
+      });
       toast({ title: "Deleted" });
     },
   });
@@ -240,7 +291,9 @@ export default function TakeoffMeasurementPanel({
     <div className="flex flex-col h-full bg-card border-l border-border">
       <div className="px-3 py-2 border-b border-border flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">This plan</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            This plan — all pages
+          </div>
           <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
         </div>
         <Button size="sm" variant="ghost" onClick={onAddClick} data-testid="button-add-measurement-header">
@@ -301,12 +354,62 @@ export default function TakeoffMeasurementPanel({
                   onEditClick={onEditClick}
                   onUpdateMeasurement={(id, data) => updateMeasurement.mutate({ id, data })}
                   onDeleteMeasurement={(id) => deleteMeasurement.mutate(id)}
+                  currentPageId={currentPageId}
+                  pageNumberById={pageNumberById}
+                  usageById={usageById}
+                  expanded={expanded}
+                  onToggleExpand={(id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))}
+                  highlightedShape={highlightedShape}
+                  onHighlightShape={onHighlightShape}
+                  onShowShape={onShowShape}
+                  onDeleteShape={onDeleteShape}
+                  editingQtyId={editingQtyId}
+                  editQty={editQty}
+                  setEditQty={setEditQty}
+                  setEditingQtyId={setEditingQtyId}
+                  onRequestDelete={setPendingDelete}
                 />
               ))}
             </SortableContext>
           </DndContext>
         )}
       </div>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent data-testid="dialog-measurement-in-use">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete?.name} is used by {usageById.get(pendingDelete?.id ?? "")?.length ?? 0} estimate{" "}
+              {(usageById.get(pendingDelete?.id ?? "")?.length ?? 0) === 1 ? "line" : "lines"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Those lines keep the figure they have now, and their quantity will show as
+              a broken take-off reference until you edit it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-40 overflow-auto text-sm space-y-1">
+            {(usageById.get(pendingDelete?.id ?? "") ?? []).map((u) => (
+              <div key={u.itemId} className="flex justify-between gap-3">
+                <span className="truncate">{u.itemName}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{u.estimateName}</span>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-measurement">Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDelete) deleteMeasurement.mutate(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              data-testid="button-confirm-delete-measurement"
+            >
+              Delete anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="p-3 border-t border-border space-y-2">
         <Button onClick={onAddClick} className="w-full" data-testid="button-add-measurement">
@@ -361,6 +464,20 @@ function SortableGroup({
   onEditClick,
   onUpdateMeasurement,
   onDeleteMeasurement,
+  currentPageId,
+  pageNumberById,
+  usageById,
+  expanded,
+  onToggleExpand,
+  highlightedShape,
+  onHighlightShape,
+  onShowShape,
+  onDeleteShape,
+  editingQtyId,
+  editQty,
+  setEditQty,
+  setEditingQtyId,
+  onRequestDelete,
 }: {
   group: { id: string; name: string; rows: TakeoffMeasurement[] };
   isCollapsed: boolean;
@@ -379,6 +496,20 @@ function SortableGroup({
   onEditClick?: (m: TakeoffMeasurement) => void;
   onUpdateMeasurement: (id: string, data: Partial<TakeoffMeasurement>) => void;
   onDeleteMeasurement: (id: string) => void;
+  currentPageId: string | null;
+  pageNumberById?: Map<string, number>;
+  usageById: Map<string, Array<{ itemId: string; itemName: string; estimateName: string }>>;
+  expanded: Record<string, boolean>;
+  onToggleExpand: (id: string) => void;
+  highlightedShape: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  onShowShape?: (m: TakeoffMeasurement, index: number) => void;
+  onDeleteShape?: (m: TakeoffMeasurement, index: number) => void;
+  editingQtyId: string | null;
+  editQty: string;
+  setEditQty: (v: string) => void;
+  setEditingQtyId: (id: string | null) => void;
+  onRequestDelete: (m: TakeoffMeasurement) => void;
 }) {
   const sortable = useSortable({ id: group.id, disabled: !draggable });
   const style = {
@@ -443,10 +574,37 @@ function SortableGroup({
                 onHighlight={onHighlight}
                 onColor={(color) => onUpdateMeasurement(m.id, { color } as any)}
                 onToggleVisible={() => onUpdateMeasurement(m.id, { isVisible: !m.isVisible } as any)}
-                onDelete={() => onDeleteMeasurement(m.id)}
+                onDelete={() => {
+                  // A measurement an estimate is built on gets a question first.
+                  if ((usageById.get(m.id)?.length ?? 0) > 0) onRequestDelete(m);
+                  else onDeleteMeasurement(m.id);
+                }}
                 onEdit={onEditClick ? () => onEditClick(m) : undefined}
                 active={m.id === activeDrawingId}
                 onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
+                currentPageId={currentPageId}
+                pageNumberById={pageNumberById}
+                usedBy={usageById.get(m.id) ?? []}
+                expanded={!!expanded[m.id]}
+                onToggleExpand={() => onToggleExpand(m.id)}
+                highlightedShape={highlightedShape}
+                onHighlightShape={onHighlightShape}
+                onShowShape={onShowShape ? (i) => onShowShape(m, i) : undefined}
+                onDeleteShape={onDeleteShape ? (i) => onDeleteShape(m, i) : undefined}
+                editingQty={editingQtyId === m.id}
+                editQty={editQty}
+                setEditQty={setEditQty}
+                onStartQtyEdit={() => {
+                  setEditingQtyId(m.id);
+                  setEditQty(String(m.quantity ?? 0));
+                }}
+                onCommitQty={() => {
+                  const next = parseFloat(editQty);
+                  if (!Number.isNaN(next) && next !== m.quantity) {
+                    onUpdateMeasurement(m.id, { quantity: next } as any);
+                  }
+                  setEditingQtyId(null);
+                }}
               />
             ))}
           </SortableContext>
@@ -459,7 +617,9 @@ function SortableGroup({
 function SortableRow({
   m, editing, editName, setEditName, onStartEdit, onCommitName,
   highlighted, onHighlight, onColor, onToggleVisible, onDelete, onEdit,
-  active, onActivate,
+  active, onActivate, currentPageId, pageNumberById,
+  usedBy, editingQty, editQty, setEditQty, onStartQtyEdit, onCommitQty,
+  expanded, onToggleExpand, highlightedShape, onHighlightShape, onShowShape, onDeleteShape,
 }: {
   m: TakeoffMeasurement;
   editing: boolean;
@@ -475,9 +635,36 @@ function SortableRow({
   onEdit?: () => void;
   active: boolean;
   onActivate?: () => void;
+  currentPageId: string | null;
+  pageNumberById?: Map<string, number>;
+  usedBy: Array<{ itemId: string; itemName: string; estimateName: string }>;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  highlightedShape: { measurementId: string; index: number } | null;
+  onHighlightShape?: (shape: { measurementId: string; index: number } | null) => void;
+  onShowShape?: (index: number) => void;
+  onDeleteShape?: (index: number) => void;
+  editingQty: boolean;
+  editQty: string;
+  setEditQty: (v: string) => void;
+  onStartQtyEdit: () => void;
+  onCommitQty: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: m.id });
+  /* Where this item has been marked up. The quantity on the row is the sum of
+     all of them, so the row says which pages it came from — otherwise a total
+     that includes pages you cannot see reads like a bug. */
+  const entries = normalizeEntries(m.geometry, m.pageId);
+  const pageNumbers = Array.from(
+    new Set(
+      entries
+        .map((e) => (e.pageId ? pageNumberById?.get(e.pageId) : undefined))
+        .filter((n): n is number => typeof n === "number"),
+    ),
+  ).sort((a, b) => a - b);
+  const onThisPage = entries.some((e) => e.pageId === currentPageId);
+  const heightMm = (m as { heightMm?: number | null }).heightMm ?? null;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -485,15 +672,22 @@ function SortableRow({
   };
   const handleRowClick = (e: React.MouseEvent) => {
     if (!onActivate) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, [role='button'], [role='menuitem']")) return;
+    // Clicks on the row's own controls (colour, eye, menu, the rename input)
+    // are theirs, not "start drawing". The row must be excluded from that test
+    // by hand: useSortable puts role="button" on it, so closest() matched the
+    // ROW for every click and drawing could never be started from the list.
+    const hit = (e.target as HTMLElement).closest(
+      "button, input, [role='button'], [role='menuitem']",
+    );
+    if (hit && hit !== e.currentTarget) return;
     onActivate();
   };
   const canDraw = m.measurementType !== "manual";
+  const marks = entries.map((e, index) => ({ ...e, index }));
+
   return (
+    <div ref={setNodeRef} style={style}>
     <div
-      ref={setNodeRef}
-      style={style}
       {...attributes}
       {...listeners}
       onMouseEnter={() => onHighlight(m.id)}
@@ -510,6 +704,21 @@ function SortableRow({
       data-active={active ? "true" : "false"}
       title={canDraw && onActivate ? (active ? "Click to stop drawing — drag to reorder" : "Click to draw on plan — drag to reorder") : "Drag to reorder"}
     >
+      {/* Open the item to check what was actually drawn for it. */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+        onPointerDown={(e) => e.stopPropagation()}
+        disabled={marks.length === 0}
+        className={`p-0.5 rounded-sm ${marks.length === 0 ? "opacity-0 cursor-default" : "hover-elevate text-muted-foreground"}`}
+        aria-expanded={expanded}
+        title={expanded ? "Hide the marks" : `Show the ${marks.length} mark${marks.length === 1 ? "" : "s"} on the plan`}
+        data-testid={`button-toggle-marks-${m.id}`}
+      >
+        {expanded
+          ? <ChevronDown className="h-3.5 w-3.5" />
+          : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
       <TakeoffColorPicker color={m.color} onChange={onColor} testId={`color-${m.id}`} />
       <div className="flex-1 min-w-0">
         {editing ? (
@@ -537,14 +746,69 @@ function SortableRow({
             <span className="truncate">{m.name}</span>
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {m.measurementType}
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+          <span>{m.measurementType}</span>
+          {heightMm ? <span className="normal-case">· {heightMm / 1000} m high</span> : null}
+          {usedBy.length > 0 && (
+            <span
+              className="normal-case text-primary"
+              title={`Used by ${usedBy.map((u) => `${u.itemName} — ${u.estimateName}`).join(", ")}`}
+              data-testid={`row-used-by-${m.id}`}
+            >
+              · used by {usedBy.length}
+            </span>
+          )}
+          {pageNumbers.length > 0 && (
+            <span
+              className={`normal-case ${onThisPage ? "text-foreground/70" : ""}`}
+              title={
+                pageNumbers.length > 1
+                  ? `Marked up on pages ${pageNumbers.join(", ")} — the quantity is all of them`
+                  : `Marked up on page ${pageNumbers[0]}`
+              }
+              data-testid={`row-pages-${m.id}`}
+            >
+              · {pageNumbers.length > 1 ? "pp" : "p"} {pageNumbers.join(", ")}
+            </span>
+          )}
         </div>
       </div>
-      <div className="text-sm tabular-nums w-20 text-right">
-        {Math.round((m.quantity ?? 0) * 100) / 100}
-        <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
-      </div>
+      {/* A manual measurement has no shape to measure, so its quantity is
+          typed here — the row used to say "edit the quantity on the row" with
+          nowhere to do it. A drawn measurement's quantity is the drawing's. */}
+      {m.measurementType === "manual" && editingQty ? (
+        <Input
+          autoFocus
+          type="number"
+          value={editQty}
+          onChange={(e) => setEditQty(e.target.value)}
+          onBlur={onCommitQty}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") onCommitQty();
+          }}
+          className="h-7 w-20 text-sm text-right"
+          data-testid={`input-manual-qty-${m.id}`}
+        />
+      ) : (
+        <div
+          className={`text-sm tabular-nums w-20 text-right ${
+            m.measurementType === "manual" ? "cursor-text hover-elevate rounded-sm" : ""
+          }`}
+          title={m.measurementType === "manual" ? "Click to type the quantity" : undefined}
+          onClick={(e) => {
+            if (m.measurementType !== "manual") return;
+            e.stopPropagation();
+            onStartQtyEdit();
+          }}
+          data-testid={`qty-${m.id}`}
+        >
+          {Math.round((m.quantity ?? 0) * 100) / 100}
+          <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
+        </div>
+      )}
       <Button
         size="icon"
         variant="ghost"
@@ -585,6 +849,65 @@ function SortableRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+
+    {/* What was actually drawn for this item: one row per mark, in the order
+        they were drawn, each with the page it is on and what it measured
+        there. Hovering points at it on the plan; clicking opens its page. */}
+    {expanded && marks.length > 0 && (
+      <div className="bg-muted/30 border-b border-border" data-testid={`marks-${m.id}`}>
+        {marks.map((mark) => {
+          const page = mark.pageId ? pageNumberById?.get(mark.pageId) : undefined;
+          const picked =
+            highlightedShape?.measurementId === m.id && highlightedShape?.index === mark.index;
+          const amount =
+            m.measurementType === "count"
+              ? `${mark.points.length} marker${mark.points.length === 1 ? "" : "s"}`
+              : `${Math.round((mark.qty ?? 0) * 100) / 100} ${
+                  m.measurementType === "linear" && heightMm ? "lm" : m.unit
+                }`;
+          return (
+            <div
+              key={mark.index}
+              className={`flex items-center gap-2 pl-8 pr-2 py-1.5 text-xs ${picked ? "bg-primary/10" : ""} ${onShowShape ? "cursor-pointer hover-elevate" : ""}`}
+              onMouseEnter={() => onHighlightShape?.({ measurementId: m.id, index: mark.index })}
+              onMouseLeave={() => onHighlightShape?.(null)}
+              onClick={(e) => { e.stopPropagation(); onShowShape?.(mark.index); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={page ? `Mark ${mark.index + 1} on page ${page}` : `Mark ${mark.index + 1}`}
+              data-testid={`mark-${m.id}-${mark.index}`}
+            >
+              <span className="text-muted-foreground w-12 flex-shrink-0">
+                {page ? `Page ${page}` : "—"}
+              </span>
+              <span className="flex-1 tabular-nums">{amount}</span>
+              {onDeleteShape && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDeleteShape(mark.index); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="p-1 rounded-sm text-muted-foreground hover-elevate"
+                  title="Remove just this mark"
+                  data-testid={`button-delete-mark-${m.id}-${mark.index}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {/* The item's own figure, so the marks can be checked against it. */}
+        <div className="flex items-center gap-2 pl-8 pr-9 py-1.5 text-xs border-t border-border">
+          <span className="flex-1 text-muted-foreground">
+            {marks.length} mark{marks.length === 1 ? "" : "s"}
+            {heightMm ? ` × ${heightMm / 1000} m high` : ""}
+          </span>
+          <span className="tabular-nums font-medium">
+            {Math.round((m.quantity ?? 0) * 100) / 100} {m.unit}
+          </span>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
