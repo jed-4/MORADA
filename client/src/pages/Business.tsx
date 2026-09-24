@@ -23,16 +23,21 @@ const BusinessSchedule = lazy(() => import("./BusinessSchedule"));
 const ComingSoonPage = lazy(() => import("./ComingSoonPage"));
 const BusinessMetrics = lazy(() => import("./BusinessMetrics"));
 const BusinessOverheads = lazy(() => import("./BusinessOverheads"));
+const BusinessCashflow = lazy(() => import("./BusinessCashflow"));
 
 export default function Business() {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
   const businessLabel = (user as any)?.companyNickname || "Business";
   const canViewOverheads = usePermission("business.overheads", "view");
+  const canViewCashflow = usePermission("business.cashflow", "view");
 
   const visibleTabs = useMemo(
-    () => BUSINESS_TABS.filter((t) => t.id !== "overheads" || canViewOverheads),
-    [canViewOverheads],
+    () =>
+      BUSINESS_TABS.filter(
+        (t) => (t.id !== "overheads" || canViewOverheads) && (t.id !== "cashflow" || canViewCashflow),
+      ),
+    [canViewOverheads, canViewCashflow],
   );
 
   const { toolbarVisible } = useToolbarVisible();
@@ -75,6 +80,21 @@ export default function Business() {
             <h3 className="text-sm font-semibold">No overheads access</h3>
             <p className="text-xs text-muted-foreground max-w-xs">
               You don't have permission to view business overheads. Contact your administrator to request access.
+            </p>
+          </div>
+        );
+      case "cashflow":
+        return canViewCashflow ? (
+          <BusinessCashflow />
+        ) : (
+          <div
+            className="flex flex-col h-full items-center justify-center gap-2 text-center p-8"
+            data-testid="page-cashflow-no-access"
+          >
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">No cashflow access</h3>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              The cashflow forecast is for owners and admins. Contact your administrator to request access.
             </p>
           </div>
         );

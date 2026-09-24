@@ -218,6 +218,7 @@ function Router() {
       <Route path="/business/schedule" component={Business} />
       <Route path="/business/files" component={Business} />
       <Route path="/business/overheads" component={Business} />
+      <Route path="/business/cashflow" component={Business} />
       <Route path="/business/timesheets" component={Business} />
       <Route path="/business/minutes" component={Business} />
       <Route path="/business/minutes/:id" component={MinuteDetail} />

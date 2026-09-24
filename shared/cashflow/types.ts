@@ -163,3 +163,37 @@ export interface ForecastResult {
   events: CashEvent[];
   warnings: ForecastWarning[];
 }
+
+// ── API responses (/api/cashflow/*) ─────────────────────────────────────────
+
+export interface OpeningBalance {
+  cents: number | null;
+  source: "xero" | "manual" | null;
+  accounts: { id: string; name: string; balanceCents: number; included: boolean }[];
+  /** Set when Xero is connected but the balance couldn't be read. */
+  error?: string;
+}
+
+/** One row of the Projects tab — also what the engine's JobInput is built from. */
+export interface CashflowJobRow {
+  projectId: string;
+  name: string;
+  jobNumber: string | null;
+  phase: JobPhase;
+  included: boolean;
+  /** true when someone has changed this job's settings (a row exists). */
+  customised: boolean;
+  mode: JobMode;
+  winPercent: number;
+  clientPayDays: number;
+  clientPayDaysOverride: number | null;
+  contractCents: number;
+  invoicedCents: number;
+  remainingToClaimCents: number;
+  remainingCostCents: number;
+  costBasis: "budget" | "margin";
+  startDate: DateKey | null;
+  endDate: DateKey | null;
+  /** Manual mode: expected claim per month ('YYYY-MM-01'), before win %. */
+  manualAmounts: { month: DateKey; amountCents: number }[];
+}
