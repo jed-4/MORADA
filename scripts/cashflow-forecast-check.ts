@@ -7,7 +7,7 @@
  *   ... --fortnight               # fortnightly instead of monthly
  *   ... --events                  # also list every dated cash event
  *
- * Read-only. Needs migration 0088 on the database it points at.
+ * Read-only. Needs migration 0090 on the database it points at.
  */
 import { sql } from "drizzle-orm";
 import { db } from "../server/db";
