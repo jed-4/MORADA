@@ -6,7 +6,7 @@
 -- client's pay days. Stages are consumed in order by the claim % already
 -- invoiced, so issuing an invoice needs no change here.
 --
--- One new table; nothing existing is altered. Needs 0088.
+-- One new table; nothing existing is altered. Needs 0090.
 
 CREATE TABLE IF NOT EXISTS project_claim_stages (
   id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
