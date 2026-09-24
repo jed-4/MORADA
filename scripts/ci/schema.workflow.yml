@@ -1,0 +1,36 @@
+# NOT YET ACTIVE — this file must live at .github/workflows/schema.yml.
+#
+# Parked here for the same reason as tenancy.workflow.yml: the push token for
+# this branch lacks GitHub's `workflow` OAuth scope, so it cannot create files
+# under .github/workflows/. To activate, either:
+#   gh auth refresh -h github.com -s workflow
+#   git mv scripts/ci/schema.workflow.yml .github/workflows/schema.yml
+# or paste this file in via the GitHub web UI (which does not need the scope).
+#
+# Until it is activated, run the check by hand before merging anything that
+# touches shared/schema.ts or server/routes.ts:
+#   npx tsx scripts/check-schema-sync.ts
+#
+name: Schema
+
+# Does the code still declare everything the database has? See
+# scripts/check-schema-sync.ts — three mechanical checks that catch a merge
+# which reverts a long-lived branch's copy of shared/schema.ts or
+# server/routes.ts. Nothing else catches it: the columns stay in the database
+# (migrations are hand-applied), so the queries just quietly return nothing.
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  schema-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Schema sync
+        run: npx tsx scripts/check-schema-sync.ts

@@ -10,7 +10,9 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "check:tenancy": "node scripts/check-route-tenancy.mjs",
-    "check:tenancy:update": "node scripts/check-route-tenancy.mjs --update"
+    "check:tenancy:update": "node scripts/check-route-tenancy.mjs --update",
+    "check:schema": "tsx scripts/check-schema-sync.ts",
+    "check:schema:update": "tsx scripts/check-schema-sync.ts --update"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

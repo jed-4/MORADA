@@ -11,7 +11,9 @@
  *
  * Self-maintaining on purpose. It parses the .sql files rather than holding a
  * list, so a new migration is covered the moment it lands and nobody has to
- * remember to update this.
+ * remember to update this. The parser lives in scripts/lib/migrationClaims.ts,
+ * shared with scripts/check-schema-sync.ts, which asks the same question of
+ * shared/schema.ts instead of a database.
  *
  * What it cannot see: a migration whose only effect is data (an UPDATE or a
  * backfill), or an index. Those are reported as UNKNOWN rather than quietly
@@ -20,6 +22,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { neon } from "@neondatabase/serverless";
+import { claimsOf, foldEffects, isSuperseded, migrationFileNames } from "./lib/migrationClaims.ts";
 
 const ROOT = join(import.meta.dirname ?? ".", "..");
 const fromIdx = process.argv.indexOf("--from");
@@ -31,33 +34,17 @@ if (!process.env.DATABASE_URL) {
 }
 const sql = neon(process.env.DATABASE_URL);
 
-interface Claim { table: string; column?: string }
-
-/** Tables and columns a migration says it creates. */
-function claimsOf(text: string): Claim[] {
-  // Strip comments first: an inline `--` can carry a semicolon, and a commented
-  // CREATE TABLE would otherwise be read as a real one.
-  const body = text
-    .split("\n")
-    .map((l) => { const i = l.indexOf("--"); return i === -1 ? l : l.slice(0, i); })
-    .join("\n");
-
-  const claims: Claim[] = [];
-  for (const m of body.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi)) {
-    claims.push({ table: m[1].toLowerCase() });
-  }
-  for (const m of body.matchAll(/ALTER\s+TABLE\s+(?:ONLY\s+)?["`]?(\w+)["`]?[\s\S]*?ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi)) {
-    claims.push({ table: m[1].toLowerCase(), column: m[2].toLowerCase() });
-  }
-  return claims;
-}
-
 async function main() {
   const [meta] = await sql`SELECT current_database() AS db`;
-  const files = readdirSync(join(ROOT, "migrations"))
-    .filter((f) => /^\d{4}.*\.sql$/.test(f))
-    .filter((f) => f.slice(0, 4) >= FROM)
-    .sort();
+  const allNames = migrationFileNames(readdirSync(join(ROOT, "migrations")));
+  const files = migrationFileNames(allNames, FROM);
+
+  // Folded over ALL migrations, not just the --from subset: a column renamed by
+  // a later file is gone from the database by design, and reporting it as
+  // missing made the migration that added it look permanently unapplied.
+  const effects = foldEffects(
+    allNames.map((name) => ({ name, sql: readFileSync(join(ROOT, "migrations", name), "utf8") })),
+  );
 
   // Two queries for the whole run, not two per migration.
   const tables = new Set(
@@ -74,7 +61,12 @@ async function main() {
   const missing: string[] = [];
   const unknown: string[] = [];
   for (const f of files) {
-    const claims = claimsOf(readFileSync(join(ROOT, "migrations", f), "utf8"));
+    const all = claimsOf(readFileSync(join(ROOT, "migrations", f), "utf8"));
+    const claims = all.filter((c) => !isSuperseded(c, effects));
+    if (all.length > 0 && claims.length === 0) {
+      console.log(`  ~  ${f.padEnd(46)} superseded by a later migration`);
+      continue;
+    }
     if (claims.length === 0) {
       unknown.push(f);
       console.log(`  ?  ${f.padEnd(46)} no table/column to check (data or index only)`);
