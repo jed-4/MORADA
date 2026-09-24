@@ -21,8 +21,9 @@
  *      A route that disappears fails the check. It may legitimately go, but it
  *      has to go in a diff someone can see, not inside a merge resolution.
  *
- *   3. Orphan modules — every module in shared/, server/services/ and
- *      server/middleware/ must be imported by something. This is the half of
+ *   3. Orphan modules — every module under shared/, server/services/ and
+ *      server/middleware/, nested directories included, must be imported by
+ *      something. This is the half of
  *      the clobber the route inventory misses: the lost routes.ts hunks were
  *      mostly CALLS into server/services/quantityFormulas.ts, which stayed on
  *      disk with nothing importing it.
@@ -202,23 +203,29 @@ function importedSpecifiers(): Set<string> {
 }
 
 function checkNoOrphanModules() {
-  const specs = importedSpecifiers();
+  const specs = [...importedSpecifiers()];
   const orphans: string[] = [];
   let checked = 0;
 
+  // Nested too: shared/cashflow/ is a dozen modules of the newest work, which
+  // is exactly what a stale branch's merge resolution would take back.
   for (const dir of MODULE_DIRS) {
-    for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
-      if (!entry.isFile() || !/\.ts$/.test(entry.name) || /\.d\.ts$/.test(entry.name)) continue;
-      const base = entry.name.replace(/\.ts$/, "");
-      const parent = dir.split("/").pop();
+    for (const file of sourceFiles(dir).filter((f) => /\.ts$/.test(f) && !/\.d\.ts$/.test(f))) {
+      const parts = file.replace(/\.ts$/, "").split("/");
+      const base = parts.pop()!;
+      const parent = parts.pop();
       checked++;
       // `@shared/pricing` and `./services/quantityFormulas` both end in
       // <parent>/<base>, which keeps the two templateOptionSync modules apart.
-      // A same-directory `./base` import counts as well.
-      const referenced = [...specs].some((s) =>
-        s.endsWith(`${parent}/${base}`) || s === `./${base}` || s === `../${base}`,
+      // A same-directory `./base` import counts, and a directory's index.ts is
+      // reached by importing the directory itself.
+      const referenced = specs.some((s) =>
+        s.endsWith(`${parent}/${base}`)
+        || s === `./${base}`
+        || s === `../${base}`
+        || (base === "index" && s.endsWith(`/${parent}`)),
       );
-      if (!referenced) orphans.push(`  ${dir}/${entry.name}`);
+      if (!referenced) orphans.push(`  ${file}`);
     }
   }
 
