@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   Bar,
   CartesianGrid,
@@ -179,23 +180,47 @@ function ForecastChart({ f, whatIfs }: { f: ForecastResult; whatIfs: WhatIfDefin
 
 // ─── Grid ────────────────────────────────────────────────────────────────────
 
-/** The payments behind one number. */
+/** Where a payment comes from, when it has a page of its own. */
+function sourceHref(e: CashEvent): string | null {
+  if (e.source === "invoice" && e.projectId && e.sourceId) return `/projects/${e.projectId}/client-invoices/${e.sourceId}`;
+  if (e.source === "bill" && e.sourceId) return e.projectId ? `/projects/${e.projectId}/bills/${e.sourceId}` : `/bills/${e.sourceId}`;
+  if ((e.source === "claim" || e.source === "job_cost") && e.projectId) return `/projects/${e.projectId}`;
+  return null;
+}
+
+/** The payments behind one number, each linked to its source. */
 function CellEvents({ events }: { events: CashEvent[] }) {
+  const total = events.reduce((s, e) => s + e.amountCents, 0);
   return (
-    <div className="max-h-72 overflow-auto">
+    <div className="max-h-80 overflow-auto">
       <table className="w-full text-xs">
         <tbody>
-          {events.map((e, i) => (
-            <tr key={i} className="border-b border-border/60 last:border-0">
-              <td className="py-1.5 pr-3 text-muted-foreground whitespace-nowrap">{shortDate(e.date)}</td>
-              <td className="py-1.5 pr-3">
-                {e.label}
-                {e.overdue && <span className="ml-1.5 text-destructive">overdue</span>}
-              </td>
-              <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(e.amountCents)}</td>
-            </tr>
-          ))}
+          {events.map((e, i) => {
+            const href = sourceHref(e);
+            return (
+              <tr key={i} className="border-b border-border/60 last:border-0">
+                <td className="py-1.5 pr-3 text-muted-foreground whitespace-nowrap">{shortDate(e.date)}</td>
+                <td className="py-1.5 pr-3">
+                  {href ? (
+                    <Link href={href} className="hover:underline decoration-dotted underline-offset-2">{e.label}</Link>
+                  ) : (
+                    e.label
+                  )}
+                  {e.overdue && <span className="ml-1.5 text-destructive">overdue</span>}
+                </td>
+                <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(e.amountCents)}</td>
+              </tr>
+            );
+          })}
         </tbody>
+        {events.length > 1 && (
+          <tfoot>
+            <tr className="border-t border-border">
+              <td className="pt-1.5 font-semibold" colSpan={2}>{events.length} payments</td>
+              <td className="pt-1.5 text-right tabular-nums font-semibold">{money(total)}</td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
@@ -255,6 +280,26 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
       map.set(e.lineId, row);
     }
     return map;
+  }, [f]);
+
+  // The same, pooled by what the total rows add up: in, out, and everything (net).
+  const eventsBySection = useMemo(() => {
+    // f.events is already in date order.
+    const pool = (keep: (e: CashEvent) => boolean) => {
+      const row: CashEvent[][] = f.periods.map(() => []);
+      for (const e of f.events) {
+        if (!keep(e)) continue;
+        const i = f.periods.findIndex((p) => e.date >= p.start && e.date <= p.end);
+        if (i >= 0) row[i].push(e);
+      }
+      return row;
+    };
+    const outIds = new Set(f.lines.filter((l) => l.section === "out").map((l) => l.id));
+    return {
+      in: pool((e) => e.lineId.startsWith("job:")),
+      out: pool((e) => outIds.has(e.lineId)),
+      net: pool(() => true),
+    };
   }, [f]);
 
   const inLines = f.lines.filter((l) => l.section === "in");
@@ -319,7 +364,7 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
             )}
             <tr className="border-b border-border">
               <td className="sticky left-0 bg-card px-3 py-1.5 font-semibold text-status-success">Total in</td>
-              {f.inCents.map((v, i) => <ValueCell key={i} cents={v} className="font-semibold text-status-success" />)}
+              {f.inCents.map((v, i) => <ValueCell key={i} cents={v} events={eventsBySection.in[i]} className="font-semibold text-status-success" />)}
               <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-status-success">{money(total(f.inCents))}</td>
             </tr>
 
@@ -327,7 +372,7 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
             {showOutLines && outLines.map((l) => lineRow(l, true))}
             <tr className="border-b border-border">
               <td className="sticky left-0 bg-card px-3 py-1.5 font-semibold text-destructive">Total out</td>
-              {f.outCents.map((v, i) => <ValueCell key={i} cents={v} flip className="font-semibold text-destructive" />)}
+              {f.outCents.map((v, i) => <ValueCell key={i} cents={v} flip events={eventsBySection.out[i]} className="font-semibold text-destructive" />)}
               <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-destructive">{money(-total(f.outCents))}</td>
             </tr>
 
@@ -336,7 +381,7 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
 
             <tr className="border-b border-border/60">
               <td className="sticky left-0 bg-card px-3 py-1.5 font-semibold">Net movement</td>
-              {f.netCents.map((v, i) => <ValueCell key={i} cents={v} className="font-semibold" />)}
+              {f.netCents.map((v, i) => <ValueCell key={i} cents={v} events={eventsBySection.net[i]} className="font-semibold" />)}
               <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{money(total(f.netCents))}</td>
             </tr>
             <tr className="bg-muted/50">

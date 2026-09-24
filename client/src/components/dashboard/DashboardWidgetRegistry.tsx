@@ -77,6 +77,7 @@ import MyProjectsWidget from "@/components/user-workspace/widgets/MyProjectsWidg
 // Business dashboard widgets
 import BusinessKPIsWidget from "@/components/business-widgets/BusinessKPIsWidget";
 import BusinessCashFlowWidget from "@/components/business-widgets/BusinessCashFlowWidget";
+import BusinessCashflowForecastWidget from "@/components/business-widgets/BusinessCashflowForecastWidget";
 import BusinessActivityWidget from "@/components/business-widgets/BusinessActivityWidget";
 import BusinessProjectsWidget from "@/components/business-widgets/BusinessProjectsWidget";
 import BusinessFinancialsWidget from "@/components/business-widgets/BusinessFinancialsWidget";
@@ -651,6 +652,20 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     accent: "green",
     financialGated: true,
     requiredPermission: { key: "dashboard.financial", action: "view" },
+    defaultColumns: 5,
+    defaultRowSpan: 2,
+  },
+  businessCashflowForecast: {
+    type: "businessCashflowForecast",
+    name: "Cashflow Forecast",
+    description: "Bank balance for the next 12 months against your safety buffer (Business → Cashflow)",
+    icon: Wallet,
+    component: BusinessCashflowForecastWidget,
+    defaultSize: "lg",
+    configurable: false,
+    accent: "financial",
+    financialGated: true,
+    requiredPermission: { key: "business.cashflow", action: "view" },
     defaultColumns: 5,
     defaultRowSpan: 2,
   },
