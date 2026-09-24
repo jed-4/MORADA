@@ -133,6 +133,7 @@ function SuggestionCard({ s }: { s: ExpenseSuggestion }) {
       <div className="flex items-center gap-1.5 flex-wrap">
         {s.category && <Badge variant="secondary" className="text-data no-default-active-elevate">{s.category}</Badge>}
         {looksJob && <Badge className="text-data no-default-active-elevate bg-status-warning-bg text-status-warning">Looks like a job cost</Badge>}
+        {s.aiKind === "not_expense" && <Badge className="text-data no-default-active-elevate bg-status-warning-bg text-status-warning">Probably not an expense</Badge>}
         {s.lapsed && <Badge className="text-data no-default-active-elevate bg-status-warning-bg text-status-warning">Stopped?</Badge>}
         {s.confidence === "low" && !s.lapsed && <Badge variant="outline" className="text-data no-default-active-elevate">Check</Badge>}
         <span className="text-data text-muted-foreground">next {shortDate(s.nextDate)}</span>
@@ -191,7 +192,7 @@ export function SuggestionsPanel({ data }: { data: SuggestionsResponse }) {
         <p className="text-sm font-semibold text-primary flex items-center gap-1.5"><Sparkles className="h-4 w-4" />Suggested from Xero</p>
         <span className="text-xs text-muted-foreground">{pending.length} to check</span>
       </div>
-      <div className="space-y-2">
+      <div className="grid gap-2 grid-cols-1 md:grid-cols-2 2xl:grid-cols-1">
         {pending.map((s) => <SuggestionCard key={s.id} s={s} />)}
       </div>
       {decided.length > 0 && (

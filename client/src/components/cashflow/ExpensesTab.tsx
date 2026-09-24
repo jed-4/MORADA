@@ -476,9 +476,14 @@ export function ExpensesTab() {
   return (
     <div className="flex flex-col gap-4">
       {suggestions && <SuggestionsBanner data={suggestions} />}
-      <div className={cn("grid gap-4 items-start", hasPanel && "xl:grid-cols-[1fr_380px]")}>
+      {/* Side by side only when there's room for the register's columns; otherwise the suggestions sit above it. */}
+      <div className={cn("grid gap-4 items-start", hasPanel && "2xl:grid-cols-[1fr_380px]")}>
         {register}
-        {suggestions && hasPanel && <SuggestionsPanel data={suggestions} />}
+        {suggestions && hasPanel && (
+          <div className="order-first 2xl:order-none">
+            <SuggestionsPanel data={suggestions} />
+          </div>
+        )}
       </div>
     </div>
   );

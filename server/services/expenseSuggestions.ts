@@ -174,7 +174,7 @@ For each supplier, return:
 
 Use only the evidence given. Return one item per supplier, with the same key.`;
 
-async function describeWithAi(patterns: DetectedPattern[]): Promise<Map<string, AiNote> | null> {
+export async function describeWithAi(patterns: DetectedPattern[]): Promise<Map<string, AiNote> | null> {
   if (patterns.length === 0) return new Map();
   if (!process.env.ANTHROPIC_API_KEY) return null;
 
