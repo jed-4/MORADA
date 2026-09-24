@@ -8089,6 +8089,48 @@ export const saveWhatIfSchema = z.discriminatedUnion("template", [
 ]);
 export type SaveWhatIf = z.infer<typeof saveWhatIfSchema>;
 
+// A job's claim schedule for the forecast. Seeded from the accepted proposal's
+// payment milestones, then edited on the job. A stage is claimed by invoices
+// (the cashflow loader consumes stages in order by the claim % invoiced), so
+// nothing here needs updating when an invoice goes out.
+export const projectClaimStages = pgTable("project_claim_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // One of these two: a % of the original contract, or a fixed amount (cents inc GST).
+  percent: doublePrecision("percent"),
+  amountCents: integer("amount_cents"),
+  // Lands when this schedule item finishes; plannedDate is the fallback.
+  scheduleItemId: varchar("schedule_item_id").references((): AnyPgColumn => scheduleItems.id, { onDelete: "set null" }),
+  plannedDate: text("planned_date"), // 'YYYY-MM-DD'
+  sourceMilestoneId: varchar("source_milestone_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_claim_stages_project_idx").on(table.projectId),
+}));
+export type ProjectClaimStage = typeof projectClaimStages.$inferSelect;
+
+export const putClaimStagesSchema = z.object({
+  stages: z
+    .array(
+      z
+        .object({
+          name: z.string().trim().min(1).max(120),
+          percent: z.number().min(0).max(100).nullable(),
+          amountCents: z.number().int().min(0).nullable(),
+          scheduleItemId: z.string().nullable(),
+          plannedDate: dateKeySchema.nullable(),
+        })
+        .refine((st) => (st.percent == null) !== (st.amountCents == null), {
+          message: "Give each claim a % or an amount, not both",
+        }),
+    )
+    .max(60),
+});
+
 // ── Focus Blocks (Motion-style time-blocking) ─────────────────────────────────
 
 export const focusBlocks = pgTable("focus_blocks", {

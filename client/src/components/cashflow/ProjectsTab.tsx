@@ -16,12 +16,14 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { addMonths, monthLabel, monthStart, toDateKey, type CashflowJobRow, type JobMode } from "@shared/cashflow";
 import { invalidateCashflow, money, PHASE_CLASSES, PHASE_LABELS, PROJECTS_KEY, shortDate } from "./cashflowShared";
+import { ProjectDrawer } from "./ProjectDrawer";
 
 type Filter = "all" | "included" | "leads";
 
 const MODE_LABELS: Record<JobMode, string> = {
   even: "Even spread",
   manual: "By month",
+  claims: "Claims → schedule",
 };
 
 /** A number field that saves when you leave it, not on every keystroke. */
@@ -147,6 +149,7 @@ export function ProjectsTab() {
   const canEdit = usePermission("business.cashflow", "edit");
   const [filter, setFilter] = useState<Filter>("all");
   const [manualJob, setManualJob] = useState<CashflowJobRow | null>(null);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
   const { data: jobs = [], isLoading, error } = useQuery<CashflowJobRow[]>({ queryKey: PROJECTS_KEY });
 
   const update = useMutation({
@@ -271,9 +274,11 @@ export function ProjectsTab() {
                   // morada-radix-select-value-wipe) — never a real choice.
                   if (!v || v === job.mode) return;
                   patch(job.projectId, { mode: v });
+                  // Claims need setting up: open the job's claim schedule.
+                  if (v === "claims" && job.claimStageCount === 0) setDrawerId(job.projectId);
                 }}
               >
-                <SelectTrigger className="h-7 text-xs w-[110px]" data-testid={`select-mode-${job.projectId}`}>
+                <SelectTrigger className="h-7 text-xs w-[118px]" data-testid={`select-mode-${job.projectId}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -282,6 +287,11 @@ export function ProjectsTab() {
                   ))}
                 </SelectContent>
               </Select>
+              {job.mode === "claims" && job.unlinkedClaimStageCount > 0 && (
+                <span className="text-data text-status-warning whitespace-nowrap" title="Claims not linked to the schedule are spread evenly">
+                  {job.unlinkedClaimStageCount} unlinked
+                </span>
+              )}
               {job.mode === "manual" && (
                 <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!canEdit} onClick={() => setManualJob(job)}>
                   Amounts
@@ -376,7 +386,8 @@ export function ProjectsTab() {
         storageKey="cashflow-projects"
         rowKey={(r) => r.projectId}
         rowHeight={44}
-        rowClassName={(r) => (r.included ? "" : "opacity-60")}
+        rowClassName={(r) => cn("cursor-pointer", !r.included && "opacity-60")}
+        onRowClick={(r) => setDrawerId(r.projectId)}
         emptyState={<p className="py-10 text-center text-sm text-muted-foreground">No Pre-construction, Construction or lead jobs.</p>}
       />
       <div className="flex items-center justify-between gap-2 flex-wrap px-4 py-3 border-t border-border bg-muted/40 text-xs">
@@ -386,6 +397,7 @@ export function ProjectsTab() {
         <span className="font-semibold">{money(weightedLeft)} left to claim, weighted by win chance</span>
       </div>
       <ManualAmountsDialog job={manualJob} onClose={() => setManualJob(null)} />
+      <ProjectDrawer job={jobs.find((j) => j.projectId === drawerId) ?? null} onClose={() => setDrawerId(null)} />
     </Card>
   );
 }

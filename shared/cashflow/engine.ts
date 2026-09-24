@@ -101,6 +101,86 @@ export function whatIfLineId(id: string): string {
   return `whatif:${id}`;
 }
 
+/**
+ * Claims mode: each unclaimed stage lands when its date comes (plus the
+ * client's pay days); a stage already due but not yet claimed goes out now.
+ *
+ * The stages are then made to add up to exactly what's left to claim:
+ *   - more left than the stages hold (approved variations, usually) → the
+ *     extra goes with the NEXT dated claim;
+ *   - less left than they hold (part-claimed already) → every stage is scaled
+ *     down in proportion.
+ * Stages with no date share one pot spread evenly over the job's months.
+ */
+function claimStageEvents(
+  job: JobInput,
+  weight: number,
+  claimDates: DateKey[],
+  today: DateKey,
+  warnings: ForecastWarning[],
+): CashEvent[] {
+  const stages = job.claimStages ?? [];
+  const remaining = job.remainingToClaimCents;
+  const total = stages.reduce((s, st) => s + Math.max(0, st.amountCents), 0);
+
+  // Scale to fit what's left, distributing rounding so the sum is exact.
+  let amounts = stages.map((st) => Math.max(0, st.amountCents));
+  if (total > remaining && total > 0) {
+    let assigned = 0;
+    amounts = amounts.map((a, i) => {
+      if (i === amounts.length - 1) return remaining - assigned;
+      const v = Math.round((a * remaining) / total);
+      assigned += v;
+      return v;
+    });
+  }
+  const extra = Math.max(0, remaining - total);
+
+  const dated = stages
+    .map((st, i) => ({ st, amount: amounts[i] }))
+    .filter((x) => x.st.date)
+    .sort((a, b) => (a.st.date! < b.st.date! ? -1 : a.st.date! > b.st.date! ? 1 : 0));
+  let undatedPot = stages.reduce((s, st, i) => s + (st.date ? 0 : amounts[i]), 0);
+  if (dated.length > 0) dated[0].amount += extra;
+  else undatedPot += extra;
+
+  const events: CashEvent[] = [];
+  const push = (date: DateKey, amount: number, label: string) => {
+    const weighted = Math.round(amount * weight);
+    if (!weighted) return;
+    events.push({
+      date,
+      amountCents: weighted,
+      gstCents: gstOfInc(weighted),
+      category: "job_income",
+      source: "claim",
+      lineId: jobLineId(job.projectId),
+      label,
+      projectId: job.projectId,
+    });
+  };
+
+  for (const { st, amount } of dated) {
+    const claimOn = st.date! < today ? today : st.date!;
+    push(addDays(claimOn, job.clientPayDays), amount, `${job.name} — ${st.name}`);
+  }
+
+  const unlinked = stages.filter((st) => !st.date).length;
+  if (unlinked > 0) {
+    warnings.push({
+      code: "job_unlinked_claims",
+      projectId: job.projectId,
+      message: `${job.name}: ${unlinked} claim${unlinked === 1 ? " isn't" : "s aren't"} linked to the schedule, so ${unlinked === 1 ? "it's" : "they're"} spread evenly.`,
+    });
+  }
+  if (undatedPot > 0 && claimDates.length > 0) {
+    splitEvenly(undatedPot, claimDates.length).forEach((part, i) =>
+      push(addDays(claimDates[i], job.clientPayDays), part, `${job.name} — claims not linked yet`),
+    );
+  }
+  return events;
+}
+
 export function buildEvents(
   input: ForecastInput,
   horizonEnd: DateKey,
@@ -162,7 +242,9 @@ export function buildEvents(
       });
     }
 
-    if (job.mode === "manual") {
+    if (job.mode === "claims") {
+      events.push(...claimStageEvents(job, weight, claimDates, today, warnings));
+    } else if (job.mode === "manual") {
       for (const m of job.manualAmounts ?? []) {
         const amount = Math.round(m.amountCents * weight);
         if (!amount) continue;
