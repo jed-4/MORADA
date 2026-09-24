@@ -1991,10 +1991,12 @@ export class MemStorage implements IStorage {
       { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
       { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
 
-      // Business category (13 keys)
+      // Business category (14 keys)
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      // Owners and admins only by default: not in any non-admin role's default list.
+      { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7199,10 +7201,12 @@ export class DbStorage implements IStorage {
       { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
       { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
 
-      // Business category (13 keys)
+      // Business category (14 keys)
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      // Owners and admins only by default: not in any non-admin role's default list.
+      { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },

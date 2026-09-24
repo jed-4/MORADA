@@ -3,6 +3,8 @@ import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnu
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { JOB_MODES } from "./cashflow/types";
+import { FREQUENCIES } from "./cashflow/recurrence";
 
 // Session storage table for Replit Auth
 // IMPORTANT: This table is mandatory for Replit Auth, don't drop it
@@ -7851,6 +7853,142 @@ export const overheadForecastOverrides = pgTable("overhead_forecast_overrides", 
 export const insertOverheadForecastOverrideSchema = createInsertSchema(overheadForecastOverrides).omit({ id: true, updatedAt: true });
 export type InsertOverheadForecastOverride = z.infer<typeof insertOverheadForecastOverrideSchema>;
 export type OverheadForecastOverride = typeof overheadForecastOverrides.$inferSelect;
+
+// ── Cashflow forecast ─────────────────────────────────────────────────────────
+// Whole-business forecast of cash in and out (engine: shared/cashflow). Money
+// is integer cents inc GST; dates are 'YYYY-MM-DD' text, like the calendar-day
+// columns on projects, so no time zone can move them.
+//
+// Settings live in their own table rather than on company_settings: that
+// table is read with select * on a hot path, and a column missing on a
+// lagging database takes every page down with it.
+
+
+export const cashflowSettings = pgTable("cashflow_settings", {
+  companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
+  bufferCents: integer("buffer_cents").notNull().default(5_000_000),
+  clientPayDays: integer("client_pay_days").notNull().default(14),
+  supplierPayDays: integer("supplier_pay_days").notNull().default(30),
+  // Estimates a job's remaining cost when it has no budget: cost = sell × (1 − margin).
+  defaultMarginPercent: integer("default_margin_percent").notNull().default(20),
+  defaultPeriod: text("default_period").notNull().default("month"), // "month" | "fortnight"
+  fortnightAnchor: text("fortnight_anchor"), // 'YYYY-MM-DD' pay-cycle start; null = counted from 2024-01-01
+  // Xero bank account ids that make up the opening balance; null = every bank account.
+  bankAccountIds: text("bank_account_ids").array(),
+  // Used when Xero isn't connected. Ignored while Xero supplies a balance.
+  manualOpeningBalanceCents: integer("manual_opening_balance_cents"),
+  gstBasis: text("gst_basis").notNull().default("cash"), // only "cash" is modelled in v1
+  basFrequency: text("bas_frequency").notNull().default("quarterly"), // "quarterly" | "monthly"
+  basViaAgent: boolean("bas_via_agent").notNull().default(false),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const updateCashflowSettingsSchema = z.object({
+  bufferCents: z.number().int().min(0),
+  clientPayDays: z.number().int().min(0).max(365),
+  supplierPayDays: z.number().int().min(0).max(365),
+  defaultMarginPercent: z.number().int().min(0).max(99),
+  defaultPeriod: z.enum(["month", "fortnight"]),
+  fortnightAnchor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  bankAccountIds: z.array(z.string()).nullable(),
+  manualOpeningBalanceCents: z.number().int().nullable(),
+  basFrequency: z.enum(["quarterly", "monthly"]),
+  basViaAgent: z.boolean(),
+}).partial();
+export type CashflowSettings = typeof cashflowSettings.$inferSelect;
+
+// One row per job, created the first time someone changes how it shows.
+// No row = the defaults for its phase (Pre-construction/Construction included
+// at 100%, leads left out).
+export const projectCashflowSettings = pgTable("project_cashflow_settings", {
+  projectId: varchar("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  included: boolean("included"), // null = default for the job's phase
+  mode: text("mode").notNull().default("even"), // JOB_MODES in shared/cashflow/types
+  winPercent: integer("win_percent"), // null = 100 for signed work, 50 for leads
+  clientPayDays: integer("client_pay_days"), // null = cashflow_settings.client_pay_days
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("project_cashflow_settings_company_idx").on(table.companyId),
+}));
+
+export const updateProjectCashflowSettingsSchema = z.object({
+  included: z.boolean().nullable(),
+  mode: z.enum(JOB_MODES),
+  winPercent: z.number().int().min(0).max(100).nullable(),
+  clientPayDays: z.number().int().min(0).max(365).nullable(),
+}).partial();
+export type ProjectCashflowSettings = typeof projectCashflowSettings.$inferSelect;
+
+// Manual-mode claims: what the builder expects to be paid per month.
+export const projectCashflowManual = pgTable("project_cashflow_manual", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  month: text("month").notNull(), // 'YYYY-MM-01'
+  amountCents: integer("amount_cents").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectMonth: uniqueIndex("project_cashflow_manual_project_month_unique").on(table.projectId, table.month),
+}));
+
+export const putProjectCashflowManualSchema = z.object({
+  amounts: z.array(z.object({
+    month: z.string().regex(/^\d{4}-\d{2}-01$/),
+    amountCents: z.number().int(),
+  })).max(120),
+});
+export type ProjectCashflowManual = typeof projectCashflowManual.$inferSelect;
+
+// The business expenses register: everything the business pays that isn't a
+// job cost, with WHEN it's paid. Separate from overhead_items on purpose —
+// that register is accrual budgeting mirrored from the Xero chart of
+// accounts; this one is cash, with dates. overheadItemId optionally links the two.
+export const businessExpenses = pgTable("business_expenses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category"),
+  amountCents: integer("amount_cents").notNull().default(0), // each payment, inc GST
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull().default("monthly"), // FREQUENCIES in shared/cashflow/recurrence
+  nextDate: text("next_date").notNull(), // 'YYYY-MM-DD' of the next payment
+  endDate: text("end_date"), // 'YYYY-MM-DD' of the last payment; null = ongoing
+  source: text("source").notNull().default("manual"), // "manual" | "suggestion"
+  xeroContactId: text("xero_contact_id"),
+  overheadItemId: varchar("overhead_item_id").references(() => overheadItems.id, { onDelete: "set null" }),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("business_expenses_company_idx").on(table.companyId),
+}));
+
+const dateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+// companyId stays on the insert schema (routes .omit() it at the call site
+// and take it from the session, per scripts/check-route-tenancy.mjs).
+export const insertBusinessExpenseSchema = createInsertSchema(businessExpenses).omit({
+  id: true,
+  source: true,
+  xeroContactId: true,
+  // A parent id must never come from the client; linking to an overhead item
+  // needs an ownership check and arrives with the UI that sets it.
+  overheadItemId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1),
+  amountCents: z.number().int().min(0),
+  frequency: z.enum(FREQUENCIES),
+  nextDate: dateKeySchema,
+  endDate: dateKeySchema.nullable().optional(),
+});
+export const updateBusinessExpenseSchema = insertBusinessExpenseSchema.omit({ companyId: true }).partial();
+export type InsertBusinessExpense = z.infer<typeof insertBusinessExpenseSchema>;
+export type BusinessExpense = typeof businessExpenses.$inferSelect;
 
 // ── Focus Blocks (Motion-style time-blocking) ─────────────────────────────────
 
