@@ -5,7 +5,7 @@
 -- supplier; the builder's decision (added / job cost / ignore) sticks across
 -- re-scans — only pending rows are refreshed.
 --
--- One new table; nothing existing is altered. Needs 0088 (business_expenses).
+-- One new table; nothing existing is altered. Needs 0090 (business_expenses).
 
 CREATE TABLE IF NOT EXISTS expense_suggestions (
   id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
