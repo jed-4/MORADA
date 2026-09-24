@@ -1158,6 +1158,26 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
       return apiRequest(`/api/schedule-items/${id}`, "PATCH", { startDate, endDate });
     },
+    // The server cascades dependencies itself and hands back every row it
+    // moved. Applying that is the whole point: this component used to PATCH the
+    // successors too — two writers for one row, racing, with a refetch that
+    // could read either — and a successor would follow the drag and then jump
+    // back on drop.
+    onSuccess: (response: any) => {
+      const cascaded: any[] = Array.isArray(response?.cascadedItems) ? response.cascadedItems : [];
+      if (cascaded.length === 0) return;
+      const key = scheduleIdRef.current
+        ? `/api/schedules/${scheduleIdRef.current}/items`
+        : `/api/projects/${projectIdRef.current}/schedule-items`;
+      queryClient.setQueryData<ScheduleItem[]>([key], prev =>
+        prev
+          ? prev.map(it => {
+              const moved = cascaded.find(c => String(c.id) === String(it.id));
+              return moved ? { ...it, startDate: moved.startDate, endDate: moved.endDate } : it;
+            })
+          : prev,
+      );
+    },
     // Cancel only the key that updateCacheOptimistically writes to so a stale
     // GET for the OTHER key can't overwrite the optimistic state mid-drag.
     onMutate: async () => {
@@ -1827,19 +1847,16 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           isNonWorking: isNonWorkingDayRef.current,
         });
 
-        const promises: Promise<any>[] = [];
+        // Preview only. The server rolls the parent's dates up from its children
+        // on the child's own PATCH and cascades the parent's successors from
+        // there, returning every row it moved — so writing them from here would
+        // just be the second writer again.
         for (const u of parentCascade) {
           const parsedStart = parseLocalMidnight(u.startDate);
           const parsedEnd = parseLocalMidnight(u.endDate);
           updateCacheOptimistically(u.id, parsedStart, parsedEnd);
-          pendingMutationCountRef.current++;
-          promises.push(mutate.mutateAsync({
-            id: u.id,
-            startDate: u.startDate as any,
-            endDate: u.endDate as any,
-          }));
         }
-        return promises;
+        return [] as Promise<any>[];
       };
 
       // Collect promises for every bar-date mutation in this drag batch so that
@@ -1875,21 +1892,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             updateCacheOptimistically(u.id, parsedStart, parsedEnd);
           }
 
+          // One write. The cascade above is the optimistic preview; the server
+          // does the real one and returns it (see updateItemMutation.onSuccess).
           pendingMutationCountRef.current++;
           batchPromises.push(mutate.mutateAsync({
             id: drag.id,
             startDate: format(newStart, 'yyyy-MM-dd') as any,
             endDate: format(newEnd, 'yyyy-MM-dd') as any,
           }));
-
-          for (const u of cascadeUpdates) {
-            pendingMutationCountRef.current++;
-            batchPromises.push(mutate.mutateAsync({
-              id: u.id,
-              startDate: u.startDate as any,
-              endDate: u.endDate as any,
-            }));
-          }
 
           batchPromises.push(...recalcLagForItem(drag.id, newStart, currentItems));
           batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
@@ -1927,13 +1937,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 let newSuccStart = addDays(succStart, snapStartDelta);
                 newSuccStart = snap(newSuccStart, snapDirSS as 'forward' | 'backward');
                 const newSuccEnd = addWD(newSuccStart, succWorkDuration);
+                // Preview only: the server moves SS successors itself.
                 updateCacheOptimistically(succ.id, newSuccStart, newSuccEnd);
-                pendingMutationCountRef.current++;
-                batchPromises.push(mutate.mutateAsync({
-                  id: succ.id,
-                  startDate: format(newSuccStart, 'yyyy-MM-dd') as any,
-                  endDate: format(newSuccEnd, 'yyyy-MM-dd') as any,
-                }));
               }
             }
           } else {
@@ -1973,21 +1978,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               updateCacheOptimistically(u.id, parsedStart, parsedEnd);
             }
 
+            // One write — the server cascades and returns what it moved.
             pendingMutationCountRef.current++;
             batchPromises.push(mutate.mutateAsync({
               id: drag.id,
               startDate: format(drag.originalStart, 'yyyy-MM-dd') as any,
               endDate: format(newEnd, 'yyyy-MM-dd') as any,
             }));
-
-            for (const u of cascadeUpdates) {
-              pendingMutationCountRef.current++;
-              batchPromises.push(mutate.mutateAsync({
-                id: u.id,
-                startDate: u.startDate as any,
-                endDate: u.endDate as any,
-              }));
-            }
 
             batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
           }
