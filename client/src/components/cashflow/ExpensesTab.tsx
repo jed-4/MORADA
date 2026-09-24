@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import type { BusinessExpense } from "@shared/schema";
 import { FREQUENCIES, TIMES_PER_YEAR, toDateKey, type Frequency } from "@shared/cashflow";
 import { EXPENSES_KEY, invalidateCashflow, money, shortDate } from "./cashflowShared";
+import { SuggestionsBanner, SuggestionsPanel, useExpenseSuggestions } from "./ExpenseSuggestions";
 
 const FREQUENCY_LABELS: Record<Frequency, string> = {
   once: "Once",
@@ -279,6 +280,8 @@ export function ExpensesTab() {
   const canEdit = usePermission("business.cashflow", "edit");
   const canDelete = usePermission("business.cashflow", "delete");
   const { data: expenses = [], isLoading, error } = useQuery<BusinessExpense[]>({ queryKey: EXPENSES_KEY });
+  const { data: suggestions } = useExpenseSuggestions();
+  const hasPanel = !!suggestions?.suggestions.some((s) => s.status !== "accepted");
   const [dialog, setDialog] = useState<{ open: boolean; expense: BusinessExpense | null }>({ open: false, expense: null });
   const [toDelete, setToDelete] = useState<BusinessExpense | null>(null);
 
@@ -411,8 +414,8 @@ export function ExpensesTab() {
   }
   if (error) return <p className="py-16 text-center text-sm text-muted-foreground">Couldn't load business expenses.</p>;
 
-  return (
-    <Card className="overflow-hidden" data-testid="card-cashflow-expenses">
+  const register = (
+    <Card className="overflow-hidden min-w-0" data-testid="card-cashflow-expenses">
       <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-border">
         <div>
           <h3 className="text-sm font-semibold">Business expenses</h3>
@@ -468,5 +471,20 @@ export function ExpensesTab() {
         onConfirm={() => toDelete && remove.mutate(toDelete.id)}
       />
     </Card>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {suggestions && <SuggestionsBanner data={suggestions} />}
+      {/* Side by side only when there's room for the register's columns; otherwise the suggestions sit above it. */}
+      <div className={cn("grid gap-4 items-start", hasPanel && "2xl:grid-cols-[1fr_380px]")}>
+        {register}
+        {suggestions && hasPanel && (
+          <div className="order-first 2xl:order-none">
+            <SuggestionsPanel data={suggestions} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

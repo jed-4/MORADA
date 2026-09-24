@@ -8113,6 +8113,49 @@ export const projectClaimStages = pgTable("project_claim_stages", {
 }));
 export type ProjectClaimStage = typeof projectClaimStages.$inferSelect;
 
+// Business expenses Morada found in Xero, waiting for the builder to check.
+// One row per supplier (contact_key). A decision — added, it's a job cost,
+// ignore — sticks across re-scans; only pending rows are refreshed.
+export const expenseSuggestions = pgTable("expense_suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  contactKey: text("contact_key").notNull(), // Xero ContactID, or name:<lowercased name>
+  xeroContactId: text("xero_contact_id"),
+  contactName: text("contact_name").notNull(),
+  name: text("name").notNull(), // suggested display name, e.g. "Yard rent"
+  category: text("category"),
+  aiKind: text("ai_kind"), // "business" | "job_cost" | "not_expense" | null when AI didn't run
+  amountCents: integer("amount_cents").notNull(),
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull(),
+  nextDate: text("next_date").notNull(),
+  confidence: text("confidence").notNull(), // "high" | "medium" | "low"
+  lapsed: boolean("lapsed").notNull().default(false),
+  reason: text("reason").notNull(),
+  evidence: jsonb("evidence"), // { count, firstDate, lastDate, amounts, accounts, jobShare }
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "job_cost" | "ignored"
+  businessExpenseId: varchar("business_expense_id").references(() => businessExpenses.id, { onDelete: "set null" }),
+  scannedAt: timestamp("scanned_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyContactUnique: uniqueIndex("expense_suggestions_company_contact_unique").on(table.companyId, table.contactKey),
+}));
+export type ExpenseSuggestion = typeof expenseSuggestions.$inferSelect;
+
+export const acceptExpenseSuggestionSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  category: z.string().trim().max(60).nullable(),
+  amountCents: z.number().int().min(0),
+  hasGst: z.boolean(),
+  frequency: z.enum(FREQUENCIES),
+  nextDate: dateKeySchema,
+}).partial();
+
+export const decideExpenseSuggestionSchema = z.object({
+  status: z.enum(["job_cost", "ignored", "pending"]),
+});
+
 export const putClaimStagesSchema = z.object({
   stages: z
     .array(

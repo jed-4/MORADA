@@ -223,6 +223,11 @@ async function xeroErrorFromResponse(response: Response, fallbackPrefix: string)
  * failure into a brief wait. The wait is capped and retries are bounded so a
  * request can never hang indefinitely.
  */
+/** Xero `where` clause for "on or after this day": Date>=DateTime(2025,9,24). */
+function xeroDateFilter(since: Date): string {
+  return `Date>=DateTime(${since.getUTCFullYear()},${since.getUTCMonth() + 1},${since.getUTCDate()})`;
+}
+
 async function xeroFetchWithRetry(
   url: string,
   init: RequestInit,
@@ -1298,7 +1303,7 @@ export class XeroService {
    */
   async listBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; page?: number; statuses?: string[]; maxRetries?: number } = {}
+    opts: { modifiedSince?: Date; page?: number; statuses?: string[]; maxRetries?: number; since?: Date } = {}
   ): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
@@ -1310,7 +1315,7 @@ export class XeroService {
 
     // Build filter: Type=="ACCPAY" AND (Status=="AUTHORISED" OR ...)
     const statusClause = statuses.map(s => `Status=="${s}"`).join(" OR ");
-    const where = `Type=="ACCPAY" AND (${statusClause})`;
+    const where = `Type=="ACCPAY" AND (${statusClause})${opts.since ? ` AND ${xeroDateFilter(opts.since)}` : ""}`;
 
     const params = new URLSearchParams({
       where,
@@ -1351,7 +1356,7 @@ export class XeroService {
    */
   async listAllBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number; maxRetries?: number } = {}
+    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number; maxRetries?: number; since?: Date } = {}
   ): Promise<any[]> {
     const maxPages = opts.maxPages ?? 50;
     const all: any[] = [];
@@ -1365,12 +1370,49 @@ export class XeroService {
         statuses: opts.statuses,
         page,
         maxRetries: opts.maxRetries,
+        since: opts.since,
       });
       pagesFetched = page;
       all.push(...batch);
       if (batch.length < 100) break;
     }
     console.log(`[Xero] listAllBills: fetched ${pagesFetched} page(s), ${all.length} bill(s) total`);
+    return all;
+  }
+
+  /**
+   * Money spent straight from the bank (direct debits, card payments) since a
+   * date — SPEND bank transactions, 100 per page, deleted ones left out.
+   * Bills paid in Xero are Payments, not bank transactions, so the two never
+   * double up.
+   */
+  async listAllSpendTransactions(
+    connectionId: string,
+    opts: { since: Date; maxPages?: number; maxRetries?: number },
+  ): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-Tenant-Id": connection.tenantId,
+      Accept: "application/json",
+    };
+    const where = `Type=="SPEND" AND Status=="AUTHORISED" AND ${xeroDateFilter(opts.since)}`;
+    const all: any[] = [];
+    for (let page = 1; page <= (opts.maxPages ?? 20); page++) {
+      if (page > 1) await new Promise((resolve) => setTimeout(resolve, 300));
+      const params = new URLSearchParams({ where, order: "Date DESC", page: String(page) });
+      const response = await xeroFetchWithRetry(
+        `${XERO_API_BASE}/BankTransactions?${params}`,
+        { headers },
+        { label: "listSpendTransactions", maxRetries: opts.maxRetries },
+      );
+      if (!response.ok) throw await xeroErrorFromResponse(response, "Failed to fetch Xero bank transactions");
+      const batch = ((await response.json()) as any).BankTransactions || [];
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
     return all;
   }
 
