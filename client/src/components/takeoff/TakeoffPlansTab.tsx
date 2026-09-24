@@ -37,6 +37,7 @@ import {
   ChevronRight, ChevronDown, RotateCw,
 } from "lucide-react";
 import type { TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement } from "@shared/schema";
+import { normalizeEntries } from "./useTakeoffGeometry";
 
 interface Props {
   projectId: string;
@@ -52,6 +53,25 @@ async function getPdfPageCount(file: File): Promise<number> {
   const count = pdf.numPages;
   await pdf.destroy();
   return count;
+}
+
+/**
+ * How many items are marked up on each page.
+ *
+ * An item belongs to the plan and can be drawn on any number of its pages, so
+ * a page's count is the items with a shape ON that page — not the items that
+ * happened to be created there.
+ */
+function countMeasurementsByPage(measurements: TakeoffMeasurement[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const m of measurements) {
+    const pages = new Set<string>();
+    for (const entry of normalizeEntries(m.geometry, m.pageId)) {
+      if (entry.pageId) pages.add(entry.pageId);
+    }
+    pages.forEach((id) => map.set(id, (map.get(id) ?? 0) + 1));
+  }
+  return map;
 }
 
 export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
@@ -90,8 +110,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   }, [plans, planPagesQueries]);
 
   const activeGroups = useMemo(() => {
-    const measByPage = new Map<string, number>();
-    for (const m of measurements) measByPage.set(m.pageId, (measByPage.get(m.pageId) ?? 0) + 1);
+    const measByPage = countMeasurementsByPage(measurements);
     const groups: { plan: TakeoffPlan; pages: { pageRow: TakeoffPlanPage; count: number }[] }[] = [];
     for (const plan of plans) {
       const rows = (pagesByPlanId.get(plan.id) ?? [])
@@ -377,14 +396,10 @@ function PlanGroup({
   const [pdfPageCount, setPdfPageCount] = useState<number>(plan.pageCount || 1);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
-  const measurementsByPageId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of measurements) {
-      if (m.planId !== plan.id) continue;
-      map.set(m.pageId, (map.get(m.pageId) ?? 0) + 1);
-    }
-    return map;
-  }, [measurements, plan.id]);
+  const measurementsByPageId = useMemo(
+    () => countMeasurementsByPage(measurements.filter((m) => m.planId === plan.id)),
+    [measurements, plan.id],
+  );
 
   const renamePage = useMutation({
     mutationFn: async ({ pageNumber, name }: { pageNumber: number; name: string }) => {
