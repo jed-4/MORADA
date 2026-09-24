@@ -17,9 +17,12 @@ import type { TakeoffMeasurement, TakeoffCategory } from "@shared/schema";
  * every other cell. Buttons inside the popovers suppress mousedown so the
  * input never loses focus — a blur would commit the cell mid-edit.
  *
- * Both panels are PORTALLED to the body and positioned against the cell. A
- * grid cell is `overflow-hidden` and 60px wide, so a panel rendered inside it
- * is clipped to nothing: the list was there, correct, and completely invisible.
+ * The editor itself is PORTALLED too, and floats over the columns beside it.
+ * A quantity cell is 60px wide with `overflow-hidden` — enough for "12", and
+ * nowhere near enough for `{Wall tiles} * 1.1`, its result and two buttons all
+ * at once. It opens as a card anchored to the cell instead, which is also what
+ * makes the dropdowns visible at all: rendered inside the cell they were
+ * clipped to nothing.
  */
 
 export interface QuantityPreview {
@@ -63,24 +66,35 @@ export default function QuantityFormulaEditor({
   const anchorRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [keypadOpen, setKeypadOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number; cardBottom: number } | null>(null);
 
-  // Where the panels hang: under the cell, right edges aligned. Measured from
-  // the viewport because they are portalled out of the scrolling grid.
+  // Where the card and its dropdowns sit: over the cell, right edges aligned.
+  // Measured from the viewport because they are portalled out of the grid,
+  // which scrolls in both directions.
   useLayoutEffect(() => {
-    if (!pickerOpen && !keypadOpen) return;
     const place = () => {
-      const r = anchorRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.bottom + 2, right: window.innerWidth - r.right });
+      const cell = anchorRef.current;
+      // The estimate page keeps its other tabs mounted and merely hidden, so a
+      // card left open would float over the take-off or details tab. No cell on
+      // screen, no card.
+      if (!cell || cell.offsetParent === null) { setAnchor(null); return; }
+      const r = cell.getBoundingClientRect();
+      setAnchor({
+        top: r.top - 3,
+        right: Math.max(8, window.innerWidth - r.right - 4),
+        cardBottom: r.bottom + 3,
+      });
     };
+    const poll = window.setInterval(place, 400);
     place();
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => {
+      window.clearInterval(poll);
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [pickerOpen, keypadOpen]);
+  }, []);
 
   // What has been typed since the `{`, used to narrow the list as you keep typing.
   const search = useMemo(() => {
@@ -142,12 +156,32 @@ export default function QuantityFormulaEditor({
     if (!pickerOpen && !keypadOpen) onBlur();
   };
 
+  /** The dropdowns hang under the card; the card sits over the cell. */
   const panelStyle = anchor
-    ? { position: "fixed" as const, top: anchor.top, right: anchor.right, zIndex: 60 }
+    ? { position: "fixed" as const, top: anchor.cardBottom + 2, right: anchor.right, zIndex: 61 }
     : { display: "none" };
+  const cardStyle = anchor
+    ? { position: "fixed" as const, top: anchor.top, right: anchor.right, zIndex: 60, width: 340 }
+    : { display: "none" as const };
 
   return (
-    <div ref={anchorRef} className="relative flex h-full w-full items-center">
+    <div ref={anchorRef} className="relative flex h-full w-full items-center justify-end">
+      {/* The cell keeps the value visible underneath while the card is open, so
+          the row does not appear to empty itself as you type. */}
+      <span className="pointer-events-none truncate text-sm text-muted-foreground" aria-hidden="true">
+        {preview.text || (preview.error ? "—" : value)}
+      </span>
+
+      {createPortal(
+        <div
+          style={cardStyle}
+          className="rounded-md border border-border bg-popover shadow-lg p-1.5 flex items-center gap-1.5"
+          onMouseDown={(e) => {
+            // Clicking the card's chrome must not blur the input and commit.
+            if (e.target !== inputRef.current) e.preventDefault();
+          }}
+          data-testid={`editor-card-${testId}`}
+        >
       <Input
         ref={inputRef}
         value={value}
@@ -166,22 +200,25 @@ export default function QuantityFormulaEditor({
         onBlur={closeAndBlur}
         onFocus={onFocus}
         onDoubleClick={(e) => e.stopPropagation()}
-        className="h-full flex-1 bg-transparent border-0 rounded-none shadow-none px-0 text-sm text-right focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="h-7 flex-1 min-w-0 bg-transparent border-0 shadow-none px-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         autoFocus
+        placeholder="12  ·  {Wall tiles} * 1.1"
         data-testid={testId}
       />
 
-      {/* What the expression comes to. Nothing is shown for a plain number —
-          repeating it back would only take up room. */}
+      {/* What the expression comes to, or why it cannot be worked out. A plain
+          number says nothing — repeating "12" back beside "12" is noise. */}
       {(preview.text || preview.error) && (
         <span
-          className={`px-1 text-xs tabular-nums whitespace-nowrap ${
-            preview.error ? "text-destructive" : "text-muted-foreground"
+          className={`flex-shrink-0 rounded-sm px-1.5 py-0.5 text-xs tabular-nums whitespace-nowrap ${
+            preview.error
+              ? "bg-destructive/10 text-destructive"
+              : "bg-primary/10 text-foreground font-medium"
           }`}
           title={preview.error}
           data-testid={`${testId}-preview`}
         >
-          {preview.error ? "—" : preview.text}
+          {preview.error ? "—" : `= ${preview.text}`}
         </span>
       )}
 
@@ -189,7 +226,7 @@ export default function QuantityFormulaEditor({
         type="button"
         onMouseDown={keepFocus}
         onClick={() => { setPickerOpen((o) => !o); setKeypadOpen(false); }}
-        className="px-1 text-muted-foreground hover:text-foreground"
+        className={`h-6 w-6 flex-shrink-0 flex items-center justify-center rounded-sm hover-elevate ${pickerOpen ? "bg-primary/15 text-foreground" : "text-muted-foreground"}`}
         title="Use a take-off measurement"
         data-testid={`${testId}-takeoff`}
       >
@@ -199,12 +236,15 @@ export default function QuantityFormulaEditor({
         type="button"
         onMouseDown={keepFocus}
         onClick={() => { setKeypadOpen((o) => !o); setPickerOpen(false); }}
-        className="pr-0.5 text-muted-foreground hover:text-foreground"
+        className={`h-6 w-6 flex-shrink-0 flex items-center justify-center rounded-sm hover-elevate ${keypadOpen ? "bg-primary/15 text-foreground" : "text-muted-foreground"}`}
         title="Calculator"
         data-testid={`${testId}-keypad`}
       >
         <Calculator className="h-3.5 w-3.5" />
       </button>
+        </div>,
+        document.body,
+      )}
 
       {keypadOpen && createPortal(
         <div

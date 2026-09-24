@@ -668,6 +668,9 @@ export default function EstimateDetail() {
     (text: string): { text: string; error?: string } => {
       const trimmed = (text ?? "").trim();
       if (!trimmed || isPlainNumber(trimmed)) return { text: "" };
+      // Mid-reference — "{Wall ti" — is not an error, it is someone typing.
+      const lastOpen = trimmed.lastIndexOf("{");
+      if (lastOpen >= 0 && !trimmed.slice(lastOpen).includes("}")) return { text: "" };
       const converted = displayToFormula(trimmed, takeoffByName, pickedTakeoffRef.current);
       if (!converted.ok) return { text: "", error: converted.error };
       const result = evaluateQuantityFormula(converted.formula, takeoffQuantities);
