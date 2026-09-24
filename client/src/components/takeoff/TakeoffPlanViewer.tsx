@@ -28,8 +28,9 @@ import { LoadTemplateModal, SaveTemplateModal } from "./TakeoffTemplatesModal";
 import TakeoffColorPicker, { MARKUP_COLORS } from "./TakeoffColorPicker";
 import {
   computeQuantity, defaultUnitForType, pixelsToFractions,
-  pointInPolygon, distanceToPolyline, normalizeShapes,
-  type Point,
+  pointInPolygon, distanceToPolyline,
+  normalizeEntries, entriesForPage, totalQuantity, unitForLinear,
+  type Point, type Shape,
 } from "./useTakeoffGeometry";
 
 interface Props {
@@ -108,6 +109,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  /* One mark picked out of the list — hovering "Page 1 · 24.13 m²" in the panel
+     points at the shape it came from. */
+  const [highlightedShape, setHighlightedShape] =
+    useState<{ measurementId: string; index: number } | null>(null);
+  const deletingShapeRef = useRef(false);
   const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
@@ -123,16 +129,25 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     () => allMeasurements.filter((m) => m.planId === plan.id),
     [allMeasurements, plan.id],
   );
+  const pageNumberById = useMemo(
+    () => new Map(pages.map((p) => [p.id, p.pageNumber] as const)),
+    [pages],
+  );
   const activePageNumbers = useMemo(() => {
     const set = new Set<number>();
-    const pageById = new Map(pages.map((p) => [p.id, p] as const));
     for (const p of pages) if (p.isScaled) set.add(p.pageNumber);
+    // An item can be marked on several pages, so every page its shapes sit on
+    // is active — not just the page the item happened to be created on.
     for (const m of planMeasurements) {
-      const row = pageById.get(m.pageId);
-      if (row) set.add(row.pageNumber);
+      for (const entry of normalizeEntries(m.geometry, m.pageId)) {
+        const n = entry.pageId ? pageNumberById.get(entry.pageId) : undefined;
+        if (n) set.add(n);
+      }
+      const home = pageNumberById.get(m.pageId);
+      if (home) set.add(home);
     }
     return set;
-  }, [pages, planMeasurements]);
+  }, [pages, planMeasurements, pageNumberById]);
   const seenActivePagesRef = useRef<Set<number>>(new Set());
   // Reset the auto-tab dedup set when switching to a different plan so the new
   // plan's active pages get added as tabs.
@@ -160,7 +175,10 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const pageMeasurementsKey = currentPageData
     ? ["/api/projects", projectId, "takeoff/pages", currentPageData.id, "measurements"]
     : null;
-  const { data: pageMeasurements = [] } = useQuery<TakeoffMeasurement[]>({
+  // Measurements are read plan-wide (planMeasurements). This query is still
+  // registered so the per-page cache is warm and invalidations below land
+  // somewhere real — the Measurements tab reads it.
+  useQuery<TakeoffMeasurement[]>({
     queryKey: pageMeasurementsKey ?? [],
     enabled: !!currentPageData,
   });
@@ -204,6 +222,17 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     onSuccess: () => {
       if (pageMeasurementsKey) queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
+      // Estimate lines can be built on this measurement, and the server has
+      // just re-priced them. Queries hold their data forever (staleTime
+      // Infinity), so without this the grid behind the take-off tab would keep
+      // showing the old quantity until a reload. Only the lines and totals —
+      // not the estimates list, groups, versions and the rest that a bare
+      // ["/api/estimates"] prefix would drag in with them.
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "/api/estimates"
+          && (q.queryKey[2] === "items" || q.queryKey[2] === "summary"),
+      });
     },
   });
 
@@ -260,11 +289,46 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     return await upsertPage.mutateAsync({ pageNumber: currentPage, isScaled: false });
   };
 
+  /**
+   * Re-measure everything drawn on one page after its scale changes.
+   *
+   * Each shape stores what it measured at the scale in force when it was
+   * drawn — that is the only way an item can span pages at different scales.
+   * The flip side is that changing a page's scale has to walk that page's
+   * shapes and price them again, or the row keeps quoting the old scale.
+   */
+  const recomputePageQuantities = async (page: TakeoffPlanPage) => {
+    const affected = planMeasurements.filter(
+      (m) =>
+        m.measurementType !== "manual" &&
+        m.measurementType !== "count" &&
+        entriesForPage(normalizeEntries(m.geometry, m.pageId), page.id).length > 0,
+    );
+    for (const m of affected) {
+      const entries = normalizeEntries(m.geometry, m.pageId).map((entry) => {
+        if (entry.pageId !== page.id) return entry;
+        const { quantity } = computeQuantity(
+          [entry.points], m.measurementType, page,
+          finalRenderWidth, finalRenderHeight, pageWidthMm,
+        );
+        return { ...entry, qty: quantity };
+      });
+      await updateMeasurement.mutateAsync({
+        id: m.id,
+        data: {
+          geometry: entries as any,
+          quantity: totalQuantity(entries, m.measurementType, (m as any).heightMm ?? null),
+        } as any,
+      });
+    }
+  };
+
   const handleStandardScale = async (ratio: number) => {
-    await upsertPage.mutateAsync({
+    const page = await upsertPage.mutateAsync({
       pageNumber: currentPage, isScaled: true, scaleRatio: ratio,
       calibrationPixelLength: null as any, calibrationRealDistance: null as any,
     });
+    await recomputePageQuantities(page as TakeoffPlanPage);
     toast({ title: `Scale set to 1:${ratio}` });
   };
 
@@ -290,12 +354,13 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   }) => {
     const fractionOfWidth =
       finalRenderWidth > 0 ? data.calibrationPixelLength / finalRenderWidth : 0;
-    await upsertPage.mutateAsync({
+    const page = await upsertPage.mutateAsync({
       pageNumber: currentPage, isScaled: true, scaleRatio: null as any,
       calibrationPixelLength: fractionOfWidth,
       calibrationRealDistance: data.calibrationRealDistance,
       calibrationUnit: data.calibrationUnit,
     });
+    await recomputePageQuantities(page as TakeoffPlanPage);
     setScaleModalOpen(false);
     toast({ title: "Scale calibrated" });
   };
@@ -314,11 +379,14 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   };
 
   const activeMeasurement = activeMeasurementId
-    ? pageMeasurements.find((m) => m.id === activeMeasurementId) ?? null
+    ? planMeasurements.find((m) => m.id === activeMeasurementId) ?? null
     : null;
 
   const handleFormSubmit = async (data: MeasurementFormData) => {
     if (editingMeasurement) {
+      // Height is part of the sum (a wall run x its height), so changing it
+      // re-totals the item there and then — without anything being redrawn.
+      const entries = normalizeEntries(editingMeasurement.geometry, editingMeasurement.pageId);
       await updateMeasurement.mutateAsync({
         id: editingMeasurement.id,
         data: {
@@ -327,6 +395,12 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           color: data.color,
           multiplier: data.multiplier,
           wastePercent: data.wastePercent,
+          heightMm: data.heightMm,
+          quantity: totalQuantity(
+            entries,
+            editingMeasurement.measurementType,
+            data.heightMm,
+          ),
           unit: data.unit === "__blank__" ? "" : data.unit,
           fillPattern: data.fillPattern,
           lineType: data.lineType,
@@ -349,7 +423,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     const created = (await createMeasurement.mutateAsync({
       planId: plan.id, pageId: page.id, categoryId: data.categoryId,
       name: data.name, measurementType: data.measurementType, color: data.color,
-      geometry: [] as any, quantity: 0,
+      geometry: [] as any, quantity: 0, heightMm: data.heightMm,
       unit: unitToSave,
       multiplier: data.multiplier, wastePercent: data.wastePercent,
       fillPattern: data.fillPattern,
@@ -369,6 +443,48 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         ? `Drawing ${data.name} — click to drop markers, click another row or tool to finish`
         : `Drawing ${data.name} — click to add points, double-click to finish`,
     );
+  };
+
+  /**
+   * Remove ONE mark from an item — the way to fix a mis-drawn square without
+   * losing the other two. The item's quantity is re-totalled from what is left.
+   */
+  const handleDeleteShape = async (m: TakeoffMeasurement, index: number) => {
+    // One at a time. Each delete rewrites the whole geometry from the copy it
+    // can see, so two in flight together would have the second one working
+    // from a list the first has already changed — and take the wrong mark with
+    // it.
+    if (deletingShapeRef.current) return;
+    const entries = normalizeEntries(m.geometry, m.pageId);
+    if (index < 0 || index >= entries.length) return;
+    deletingShapeRef.current = true;
+    const next = entries.filter((_, i) => i !== index);
+    setHighlightedShape(null);
+    try {
+      await updateMeasurement.mutateAsync({
+        id: m.id,
+        data: {
+          geometry: next as any,
+          quantity: totalQuantity(next, m.measurementType, (m as any).heightMm ?? null),
+        } as any,
+      });
+    } finally {
+      deletingShapeRef.current = false;
+    }
+    setStatusMessage(
+      next.length === 0
+        ? `Removed the last mark from ${m.name}`
+        : `Removed a mark from ${m.name} — ${next.length} left`,
+    );
+  };
+
+  /** Jump to the page a mark is on, so it can actually be looked at. */
+  const handleShowShape = (m: TakeoffMeasurement, index: number) => {
+    const entries = normalizeEntries(m.geometry, m.pageId);
+    const entry = entries[index];
+    const pageNumber = entry?.pageId ? pageNumberById.get(entry.pageId) : undefined;
+    if (pageNumber && pageNumber !== currentPage) openPage(pageNumber);
+    setHighlightedShape({ measurementId: m.id, index });
   };
 
   const handleEditMeasurement = (m: TakeoffMeasurement) => {
@@ -402,35 +518,53 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     );
   };
 
+  /**
+   * The unit an item reports once it has been measured. A user-chosen unit
+   * (ft², "pcs") is kept; a height on a linear item wins, because it has
+   * turned a run into an area.
+   */
+  const unitFor = (m: TakeoffMeasurement, type: MeasurementType): string => {
+    const heightMm = (m as { heightMm?: number | null }).heightMm ?? null;
+    if (type === "linear") return unitForLinear(heightMm, m.unit || "lm");
+    return m.unit || defaultUnitForType(type);
+  };
+
   const finishGeometry = async (geometryPx: Point[], type: MeasurementType) => {
     const target = activeMeasurement;
     if (!target) return;
     const page = await ensurePageRow();
-    const newShapeFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+    const points = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+    const entries = normalizeEntries(target.geometry, target.pageId);
 
-    let nextGeometry: any;
+    // Each shape remembers the page it was drawn on and what it measured
+    // there, so one item can be marked up across as many pages as it takes and
+    // the row shows the sum. Count markers on a page share one entry.
+    let nextEntries: Shape[];
     if (type === "count") {
-      // Count stays as a flat Point[] — append.
-      const existing = (target.geometry as Point[] | null) ?? [];
-      const flat = Array.isArray(existing) && existing.length > 0 ? existing : [];
-      nextGeometry = [...flat, ...newShapeFractions];
-    } else if (type === "area" || type === "linear") {
-      // Area/linear use Point[][] so multiple sub-shapes can be added to one measurement.
-      const existingShapes = normalizeShapes(target.geometry);
-      nextGeometry = [...existingShapes, newShapeFractions];
+      const idx = entries.findIndex((e) => e.pageId === page.id);
+      nextEntries =
+        idx >= 0
+          ? entries.map((e, i) =>
+              i === idx
+                ? { ...e, points: [...e.points, ...points], qty: e.points.length + points.length }
+                : e,
+            )
+          : [...entries, { pageId: page.id, points, qty: points.length }];
     } else {
-      nextGeometry = newShapeFractions;
+      // Priced at THIS page's scale, now, because a later page may be at a
+      // different scale and this shape can never be re-measured from there.
+      const { quantity: shapeQty } = computeQuantity(
+        [points], type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
+      );
+      nextEntries = [...entries, { pageId: page.id, points, qty: shapeQty }];
     }
 
-    const { quantity, unit } = computeQuantity(
-      nextGeometry, type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
-    );
     await updateMeasurement.mutateAsync({
       id: target.id,
       data: {
-        geometry: nextGeometry,
-        quantity,
-        unit: unit || defaultUnitForType(type),
+        geometry: nextEntries as any,
+        quantity: totalQuantity(nextEntries, type, (target as any).heightMm ?? null),
+        unit: unitFor(target, type),
       } as any,
     });
     if (type === "count") {
@@ -461,21 +595,22 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   // Hit-testing for the Select tool. Returns the topmost measurement under p (px).
   const hitTest = (p: Point): TakeoffMeasurement | null => {
     const tolerance = 8;
-    for (let i = pageMeasurements.length - 1; i >= 0; i--) {
-      const m = pageMeasurements[i];
+    for (let i = planMeasurements.length - 1; i >= 0; i--) {
+      const m = planMeasurements[i];
       if (!m.isVisible) continue;
+      const here = entriesForPage(normalizeEntries(m.geometry, m.pageId), currentPageData?.id);
+      if (here.length === 0) continue;
       if (m.measurementType === "count") {
-        const geo = (m.geometry as Point[] | null) ?? [];
-        if (!Array.isArray(geo) || geo.length === 0) continue;
-        for (const pp of geo) {
-          const px = { x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight };
-          if (Math.hypot(px.x - p.x, px.y - p.y) <= 8) return m;
+        for (const entry of here) {
+          for (const pp of entry.points) {
+            const px = { x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight };
+            if (Math.hypot(px.x - p.x, px.y - p.y) <= 8) return m;
+          }
         }
         continue;
       }
-      const shapes = normalizeShapes(m.geometry);
-      for (const shape of shapes) {
-        const pts = shape.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
+      for (const entry of here) {
+        const pts = entry.points.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
         if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return m;
         if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return m;
       }
@@ -512,7 +647,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     return "Scaled";
   }, [isScaled, currentPageData]);
 
-  const selectedMeasurement = selection ? pageMeasurements.find((m) => m.id === selection.id) ?? null : null;
+  const selectedMeasurement = selection ? planMeasurements.find((m) => m.id === selection.id) ?? null : null;
 
   const setMeasureMode = (mode: DrawMode) => {
     setMarkupMode(null);
@@ -536,7 +671,13 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    /* h-full, not h-screen: the viewer opens INSIDE the project shell, ~163px
+       down the window. A screen-height box there hangs that far below the
+       viewport, taking the status bar and the last stretch of the plan with
+       it — the scroll area's own bottom was off-screen, so the bottom of the
+       PDF could never be scrolled into view. min-h-0 keeps the flex children
+       (the scrolling plan area) free to shrink inside it. */
+    <div className="flex flex-col h-full min-h-0 bg-background">
       <div className="h-12 flex items-center justify-between px-3 border-b border-border bg-background gap-3">
         <Button variant="ghost" size="sm" onClick={onClose} data-testid="button-close-viewer">
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -925,12 +1066,14 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                 <TakeoffDrawingCanvas
                   width={finalRenderWidth}
                   height={finalRenderHeight}
+                  highlightedShape={highlightedShape}
                   drawMode={markupMode ? "select" : drawMode}
                   selectedColor={activeMeasurement?.color ?? "#A890D4"}
                   selectedFillPattern={(activeMeasurement?.fillPattern as FillPattern) || "solid"}
                   selectedLineType={(activeMeasurement?.lineType as LineType) || "solid"}
                   selectedLineSize={activeMeasurement?.lineSize ?? 2}
-                  measurements={pageMeasurements}
+                  measurements={planMeasurements}
+                  pageId={currentPageData?.id ?? null}
                   highlightedId={highlightedId}
                   onAreaComplete={(pts) => finishGeometry(pts, "area")}
                   onLinearComplete={(pts) => finishGeometry(pts, "linear")}
@@ -1004,7 +1147,9 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             <TakeoffMeasurementPanel
               projectId={projectId}
               plan={plan}
-              measurements={pageMeasurements}
+              measurements={planMeasurements}
+              currentPageId={currentPageData?.id ?? null}
+              pageNumberById={pageNumberById}
               categories={categories}
               highlightedId={highlightedId}
               onHighlight={setHighlightedId}
@@ -1012,6 +1157,10 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               onEditClick={handleEditMeasurement}
               activeDrawingId={activeMeasurementId}
               onActivateDrawing={handleActivateMeasurement}
+              highlightedShape={highlightedShape}
+              onHighlightShape={setHighlightedShape}
+              onShowShape={handleShowShape}
+              onDeleteShape={handleDeleteShape}
               onCollapse={() => setPanelCollapsed(true)}
               onLoadTemplate={() => setLoadTemplateOpen(true)}
               onSaveTemplate={() => setSaveTemplateOpen(true)}
