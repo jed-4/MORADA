@@ -260,6 +260,7 @@ import { refuseDecision, buildDecisionSnapshot, normaliseDecisionComment, decisi
 import { shouldRaiseVariation, buildVariationForReview } from "./reviews/variationHook";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
+import { scheduleDayUTC } from "@shared/scheduleDates";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { buildLegacyApplyRows, buildFlatApplyRows, optionFromRows } from "@shared/applyTemplate";
@@ -35241,6 +35242,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // then cascade FS dependencies from the parent (and the child itself).
       const datesChanged = updateData.startDate !== undefined || updateData.endDate !== undefined;
 
+      // Every row this request moved besides the one being PATCHed — returned to
+      // the caller so a Gantt drag can apply the result instead of PATCHing the
+      // successors itself and then refetching to find out what happened.
+      const cascadedItems: any[] = [];
+
       // Helper: full cascade (FS/SS/FF/SF) with working-day rules, mirroring scheduleCascade.ts.
       const runCascade = async (origins: Array<{ predId: string; newStart: Date; newEnd: Date }>) => {
         // Fetch schedule/project/holidays once
@@ -35366,11 +35372,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               succEnd.getTime() === newSuccEnd.getTime()
             ) continue;
 
-            await storage.updateScheduleItem(succ.id, {
-              startDate: requiredStart,
-              endDate: newSuccEnd,
+            const cascaded = await storage.updateScheduleItem(succ.id, {
+              // Date-only UTC midnight, like every other path that writes a
+              // schedule date. The arithmetic above works in LOCAL time
+              // (setHours(0,0,0,0)), so on a server east of UTC these Dates are
+              // 13:00Z the day before — and the Gantt reads the UTC day off the
+              // ISO string, so the bar drew a day early and the whole cascade
+              // looked like it had slipped. See scheduleDayUTC.
+              startDate: scheduleDayUTC(requiredStart),
+              endDate: scheduleDayUTC(newSuccEnd),
               updatedAt: new Date(),
             });
+            if (cascaded) cascadedItems.push(cascaded);
 
             // Update in-memory copy so chain items see fresh dates
             const idx = allItems.findIndex((si: any) => si.id === succ.id);
@@ -35527,7 +35540,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      res.json(item);
+      // The moved row, plus every row the cascade moved with it. The Gantt
+      // applies `cascadedItems` straight to its cache: it used to PATCH those
+      // rows itself, in parallel with this request, so each one had two writers
+      // racing and a refetch that could read either.
+      res.json({ ...item, cascadedItems });
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to update schedule item",
