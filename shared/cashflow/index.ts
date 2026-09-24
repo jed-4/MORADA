@@ -7,3 +7,4 @@ export * from "./recurrence";
 export * from "./spread";
 export * from "./types";
 export * from "./whatifs";
+export * from "./expenseDetection";

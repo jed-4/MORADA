@@ -45019,6 +45019,77 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // Business expenses suggested from a year of Xero spend (rules find the
+  // repeats, Claude names and explains them). The scan runs in the background.
+  app.get("/api/cashflow/expense-suggestions", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { listSuggestions, getScanStatus } = await import("./services/expenseSuggestions");
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      res.json({
+        xeroConnected: !!connection,
+        scan: getScanStatus(companyId),
+        suggestions: await listSuggestions(companyId),
+      });
+    } catch (error: any) {
+      console.error("[cashflow] suggestions read failed:", error);
+      res.status(500).json({ error: "Failed to load suggestions" });
+    }
+  });
+
+  app.post("/api/cashflow/expense-suggestions/scan", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { startScan } = await import("./services/expenseSuggestions");
+      res.status(202).json(startScan(companyId));
+    } catch (error: any) {
+      console.error("[cashflow] scan start failed:", error);
+      res.status(500).json({ error: "Failed to start the scan" });
+    }
+  });
+
+  app.post("/api/cashflow/expense-suggestions/:id/accept", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { acceptExpenseSuggestionSchema } = await import("@shared/schema");
+      const parsed = acceptExpenseSuggestionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Invalid expense", issues: parsed.error.issues });
+
+      const { acceptSuggestion } = await import("./services/expenseSuggestions");
+      const expense = await acceptSuggestion(companyId, req.params.id, parsed.data);
+      if (!expense) return res.status(404).json({ error: "Suggestion not found" });
+      res.status(201).json(expense);
+    } catch (error: any) {
+      console.error("[cashflow] suggestion accept failed:", error);
+      res.status(500).json({ error: "Failed to add the expense" });
+    }
+  });
+
+  app.patch("/api/cashflow/expense-suggestions/:id", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { decideExpenseSuggestionSchema } = await import("@shared/schema");
+      const parsed = decideExpenseSuggestionSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid decision", issues: parsed.error.issues });
+
+      const { decideSuggestion } = await import("./services/expenseSuggestions");
+      const row = await decideSuggestion(companyId, req.params.id, parsed.data.status);
+      if (!row) return res.status(404).json({ error: "Suggestion not found" });
+      res.json(row);
+    } catch (error: any) {
+      console.error("[cashflow] suggestion decision failed:", error);
+      res.status(500).json({ error: "Failed to save" });
+    }
+  });
+
   app.get("/api/cashflow/expenses", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
