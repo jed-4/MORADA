@@ -24,12 +24,15 @@ import {
   schedules,
   timesheets,
   variations,
+  whatIfLines,
+  whatIfs,
   type CashflowSettings,
 } from "@shared/schema";
 import {
   addDays,
   basPeriodFor,
   buildForecast,
+  expandWhatIf,
   toDateKey,
   type BillInput,
   type CashflowJobRow,
@@ -44,6 +47,9 @@ import {
   type JobMode,
   type JobPhase,
   type PeriodGranularity,
+  type WhatIfDefinition,
+  type WhatIfLine,
+  type WhatIfTemplate,
 } from "@shared/cashflow";
 import { dollarsToCents, exGstFromInc, incGstFromEx } from "@shared/money";
 import { frozenContractTotalFrom, isApprovedVariationStatus } from "@shared/projectMetrics";
@@ -120,6 +126,7 @@ export interface CashflowLoad {
   settings: CashflowSettings;
   opening: OpeningBalance;
   jobs: CashflowJobRow[];
+  whatIfs: WhatIfDefinition[];
 }
 
 /** The BAS periods whose GST hasn't been paid yet: this one, and last one if it isn't due yet. */
@@ -128,6 +135,34 @@ function openBasWindowStart(today: DateKey, settings: CashflowSettings): DateKey
   const current = basPeriodFor(today, freq, settings.basViaAgent);
   const previous = basPeriodFor(addDays(current.start, -1), freq, settings.basViaAgent);
   return previous.due >= today ? previous.start : current.start;
+}
+
+/** Every what-if with its hand-added lines, in display order. */
+export async function loadWhatIfs(companyId: string): Promise<WhatIfDefinition[]> {
+  const [rows, lines] = await Promise.all([
+    db.select().from(whatIfs).where(eq(whatIfs.companyId, companyId)).orderBy(whatIfs.sortOrder, whatIfs.createdAt),
+    db.select().from(whatIfLines).where(eq(whatIfLines.companyId, companyId)).orderBy(whatIfLines.sortOrder),
+  ]);
+  return rows.map((w) => ({
+    id: w.id,
+    name: w.name,
+    template: w.template as WhatIfTemplate,
+    isEnabled: w.isEnabled,
+    params: (w.params ?? {}) as WhatIfDefinition["params"],
+    lines: lines
+      .filter((l) => l.whatIfId === w.id)
+      .map(
+        (l): WhatIfLine => ({
+          name: l.name,
+          direction: l.direction === "in" ? "in" : "out",
+          amountCents: l.amountCents,
+          hasGst: l.hasGst,
+          frequency: l.frequency as Frequency,
+          startDate: l.startDate,
+          endDate: l.endDate,
+        }),
+      ),
+  }));
 }
 
 export async function loadCashflow(
@@ -156,6 +191,7 @@ export async function loadCashflow(
     invoicePaymentRows,
     billPaymentRows,
     opening,
+    whatIfDefs,
   ] = await Promise.all([
     db
       .select({
@@ -300,6 +336,7 @@ export async function loadCashflow(
         ),
       ),
     getOpeningBalance(companyId, settings),
+    loadWhatIfs(companyId),
   ]);
 
   // ── Per-job aggregates ─────────────────────────────────────────────────────
@@ -491,15 +528,35 @@ export async function loadCashflow(
     bills: billInputs,
     expenses,
     openPeriodGstCents,
+    whatIfs: whatIfDefs.map((d) =>
+      expandWhatIf(d, { clientPayDays: settings.clientPayDays, supplierPayDays: settings.supplierPayDays }),
+    ),
   };
 
-  return { input, settings, opening, jobs: jobRows };
+  return { input, settings, opening, jobs: jobRows, whatIfs: whatIfDefs };
 }
 
+/**
+ * The forecast plus everything it was built from. `input` goes to the browser
+ * so the What-ifs screen can re-run the engine as you type — toggling or
+ * editing a what-if redraws without a round trip.
+ */
 export async function getForecast(
   companyId: string,
   opts: { today: DateKey; granularity?: PeriodGranularity; periodCount?: number },
-): Promise<{ forecast: ForecastResult; opening: OpeningBalance; settings: CashflowSettings }> {
+): Promise<{
+  forecast: ForecastResult;
+  input: ForecastInput;
+  whatIfs: WhatIfDefinition[];
+  opening: OpeningBalance;
+  settings: CashflowSettings;
+}> {
   const load = await loadCashflow(companyId, opts);
-  return { forecast: buildForecast(load.input), opening: load.opening, settings: load.settings };
+  return {
+    forecast: buildForecast(load.input),
+    input: load.input,
+    whatIfs: load.whatIfs,
+    opening: load.opening,
+    settings: load.settings,
+  };
 }

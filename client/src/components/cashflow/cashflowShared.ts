@@ -1,9 +1,12 @@
 import { queryClient } from "@/lib/queryClient";
 import type { CashflowSettings } from "@shared/schema";
-import type { ForecastResult, OpeningBalance, PeriodGranularity } from "@shared/cashflow";
+import type { ForecastInput, ForecastResult, OpeningBalance, PeriodGranularity, WhatIfDefinition } from "@shared/cashflow";
 
 export interface ForecastResponse {
   forecast: ForecastResult;
+  /** What the forecast was built from — re-run in the browser for what-if previews. */
+  input: ForecastInput;
+  whatIfs: WhatIfDefinition[];
   opening: OpeningBalance;
   settings: CashflowSettings;
 }

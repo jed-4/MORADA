@@ -244,9 +244,6 @@ import {
   readTimesheetBreakFromRow,
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
-import {
-  resolveFormulaOnWrite, syncItemRefs, repriceLinesForMeasurement, getMeasurementUsage,
-} from "./services/quantityFormulas";
 import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import {
@@ -7017,13 +7014,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // A new line may be priced inc-GST (typed price remembered) or ex-GST.
       const priceBasis = resolveUnitCostBasis(req.body, null, estimate.taxRate);
       const unitCostExTax = priceBasis.unitCostExTax;
-
-      // A quantity can be a formula over take-off measurements. Evaluated here,
-      // server-side, so what gets stored is never just what a client posted.
-      const formulaOutcome = await resolveFormulaOnWrite(req.body, null, estimate.projectId);
-      if (!formulaOutcome.ok) {
-        return res.status(400).json({ error: formulaOutcome.error });
-      }
       const quantity = req.body.quantity ?? 0;
       const markupPercent = req.body.markupPercent ?? null;
 
@@ -7058,7 +7048,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const item = await storage.createEstimateItem(validationResult.data);
-      await syncItemRefs(item.id, (item as any).quantityFormula);
       triggerBudgetAutoRecalc(estimateId);
       res.status(201).json(item);
     } catch (error: any) {
@@ -7564,13 +7553,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const next: Record<string, any> = { ...cleanPatch };
 
-        // Setting a quantity in bulk is a hand-typed quantity like any other:
-        // it takes the line off the take-off rather than leaving a formula
-        // behind that would overwrite it at the next re-measure.
-        if (next.quantity !== undefined && (item as any).quantityFormula) {
-          next.quantityFormula = null;
-        }
-
         // Re-price using the merged values so the cached tax/inc-tax stay
         // in sync whenever quantity / unitCost / markup is in the patch.
         const priceBasis = resolveUnitCostBasis(next, item as any, estimate?.taxRate);
@@ -7593,7 +7575,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         next.priceIncTax = priceIncTax;
 
         await storage.updateEstimateItem(itemId, next);
-        if (next.quantityFormula === null) await syncItemRefs(itemId, null);
         updated++;
       }
 
@@ -7792,16 +7773,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isRelinking && costChanged && existingItem.priceListItemId) {
         updateData.priceListItemId = null;
       }
-      // A quantity can be a formula over take-off measurements; typing a plain
-      // number in its place takes the line off the take-off, exactly as editing
-      // a unit cost takes it off the catalogue above.
-      const formulaOutcome = await resolveFormulaOnWrite(
-        updateData, existingItem as any, estimate.projectId,
-      );
-      if (!formulaOutcome.ok) {
-        return res.status(400).json({ error: formulaOutcome.error });
-      }
-
       const quantity = updateData.quantity !== undefined
         ? updateData.quantity
         : existingItem.quantity;
@@ -7845,11 +7816,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const item = await storage.updateEstimateItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Estimate item not found" });
-      }
-      // Keep the reverse index in step whenever the formula could have changed
-      // — including when a typed quantity has just cleared it.
-      if (updateData.quantityFormula !== undefined) {
-        await syncItemRefs(item.id, (item as any).quantityFormula);
       }
       triggerBudgetAutoRecalc(existingItem.estimateId);
       res.json(item);
@@ -11541,7 +11507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const updateTakeoffMeasurementSchema = insertTakeoffMeasurementSchema
       .pick({
         name: true, categoryId: true, color: true, geometry: true,
-        quantity: true, unit: true, heightMm: true, multiplier: true, wastePercent: true,
+        quantity: true, unit: true, multiplier: true, wastePercent: true,
         fillPattern: true, lineType: true, lineSize: true,
         isVisible: true, order: true,
       })
@@ -11671,21 +11637,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (e) { console.error("[takeoff] getMeasurements:", e); res.status(500).json({ error: "Failed to load measurements" }); }
     });
 
-    // Which estimate lines are built on each measurement — the note in the
-    // take-off list, and the warning before one is deleted.
-    app.get("/api/projects/:projectId/takeoff/measurement-usage", requireAuth, requireTeamMember, async (req: any, res) => {
-      try {
-        const project = await storage.getProject(req.params.projectId);
-        if (!project || project.companyId !== req.user.companyId) {
-          return res.status(404).json({ error: "Project not found" });
-        }
-        res.json(await getMeasurementUsage(req.params.projectId));
-      } catch (e) {
-        console.error("[takeoff] measurementUsage:", e);
-        res.status(500).json({ error: "Failed to load usage" });
-      }
-    });
-
     app.get("/api/projects/:projectId/takeoff/pages/:pageId/measurements", requireAuth, requireTeamMember, async (req: any, res) => {
       try {
         const page = await storage.getTakeoffPlanPageById(req.params.pageId);
@@ -11734,18 +11685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const updated = await storage.updateTakeoffMeasurement(req.params.id, req.user.companyId, parsed.data);
         if (!updated) return res.status(404).json({ error: "Measurement not found" });
-        // Drawing, deleting a shape, a height change or a rescale all land here.
-        // Estimate lines built on this measurement follow it — unless their
-        // estimate is locked or is a superseded revision.
-        let repricedItems: string[] = [];
-        if (parsed.data.quantity !== undefined || parsed.data.geometry !== undefined || (parsed.data as any).heightMm !== undefined) {
-          try {
-            repricedItems = await repriceLinesForMeasurement(updated.id);
-          } catch (e) {
-            console.error("[takeoff] repriceLinesForMeasurement:", e);
-          }
-        }
-        res.json({ ...updated, repricedItems });
+        res.json(updated);
       } catch (e) { console.error("[takeoff] updateMeasurement:", e); res.status(500).json({ error: "Failed to update measurement" }); }
     });
 
@@ -45093,6 +45033,102 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("[cashflow] expense delete failed:", error);
       res.status(500).json({ error: "Failed to delete expense" });
+    }
+  });
+
+  // What-ifs. A template + its params; the template's payments are worked out
+  // by the engine, only hand-added lines are stored (what_if_lines).
+  app.get("/api/cashflow/what-ifs", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { loadWhatIfs } = await import("./services/cashflowService");
+      res.json(await loadWhatIfs(companyId));
+    } catch (error: any) {
+      console.error("[cashflow] what-ifs read failed:", error);
+      res.status(500).json({ error: "Failed to load what-ifs" });
+    }
+  });
+
+  app.post("/api/cashflow/what-ifs", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs, whatIfLines, saveWhatIfSchema } = await import("@shared/schema");
+      const parsed = saveWhatIfSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid what-if", issues: parsed.error.issues });
+      const { lines, ...fields } = parsed.data;
+
+      const created = await db.transaction(async (tx) => {
+        const [row] = await tx.insert(whatIfs).values({ ...fields, companyId }).returning();
+        if (lines.length > 0) {
+          await tx.insert(whatIfLines).values(lines.map((l, i) => ({ ...l, sortOrder: i, whatIfId: row.id, companyId })));
+        }
+        return row;
+      });
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[cashflow] what-if create failed:", error);
+      res.status(500).json({ error: "Failed to add what-if" });
+    }
+  });
+
+  // Either a full save (same body as POST, lines replaced) or just
+  // { isEnabled } to switch it on or off the forecast.
+  app.patch("/api/cashflow/what-ifs/:id", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs, whatIfLines, saveWhatIfSchema } = await import("@shared/schema");
+      const { z } = await import("zod");
+      const scope = and(eq(whatIfs.id, req.params.id), eq(whatIfs.companyId, companyId));
+
+      const toggle = z.object({ isEnabled: z.boolean() }).strict().safeParse(req.body);
+      if (toggle.success) {
+        const [row] = await db.update(whatIfs).set({ isEnabled: toggle.data.isEnabled, updatedAt: new Date() }).where(scope).returning();
+        if (!row) return res.status(404).json({ error: "What-if not found" });
+        return res.json(row);
+      }
+
+      const parsed = saveWhatIfSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid what-if", issues: parsed.error.issues });
+      const { lines, ...fields } = parsed.data;
+
+      const updated = await db.transaction(async (tx) => {
+        const [row] = await tx.update(whatIfs).set({ ...fields, updatedAt: new Date() }).where(scope).returning();
+        if (!row) return null;
+        await tx.delete(whatIfLines).where(and(eq(whatIfLines.whatIfId, row.id), eq(whatIfLines.companyId, companyId)));
+        if (lines.length > 0) {
+          await tx.insert(whatIfLines).values(lines.map((l, i) => ({ ...l, sortOrder: i, whatIfId: row.id, companyId })));
+        }
+        return row;
+      });
+      if (!updated) return res.status(404).json({ error: "What-if not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[cashflow] what-if update failed:", error);
+      res.status(500).json({ error: "Failed to save what-if" });
+    }
+  });
+
+  app.delete("/api/cashflow/what-ifs/:id", requireAuth, requirePermission("business.cashflow", "delete"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { whatIfs } = await import("@shared/schema");
+      const [row] = await db
+        .delete(whatIfs)
+        .where(and(eq(whatIfs.id, req.params.id), eq(whatIfs.companyId, companyId)))
+        .returning({ id: whatIfs.id });
+      if (!row) return res.status(404).json({ error: "What-if not found" });
+      res.status(204).end();
+    } catch (error: any) {
+      console.error("[cashflow] what-if delete failed:", error);
+      res.status(500).json({ error: "Failed to delete what-if" });
     }
   });
 

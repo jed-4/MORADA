@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   Bar,
   CartesianGrid,
@@ -10,12 +11,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { CashEvent, ForecastLine, ForecastResult } from "@shared/cashflow";
-import { money, moneyShort, shortDate, type ForecastResponse } from "./cashflowShared";
+import { apiRequest } from "@/lib/queryClient";
+import { usePermission } from "@/hooks/use-permission";
+import { useToast } from "@/hooks/use-toast";
+import type { CashEvent, ForecastLine, ForecastResult, WhatIfDefinition } from "@shared/cashflow";
+import { invalidateCashflow, money, moneyShort, shortDate, type ForecastResponse } from "./cashflowShared";
 
 // ─── KPI cards ───────────────────────────────────────────────────────────────
 
@@ -42,6 +46,7 @@ function KpiRow({ data }: { data: ForecastResponse }) {
         ? "Entered in settings"
         : data.opening.error ?? "No balance — set one in settings";
   const below = f.firstBelowBufferIndex;
+  const withWhatIfs = data.whatIfs.some((w) => w.isEnabled) ? " · with what-ifs" : "";
 
   return (
     <div className="flex flex-wrap gap-3">
@@ -50,7 +55,7 @@ function KpiRow({ data }: { data: ForecastResponse }) {
         testId="kpi-lowest"
         label="Lowest point"
         value={money(f.lowest.cents)}
-        sub={`${f.periods[f.lowest.periodIndex].label}${f.lowest.cents < f.bufferCents ? " · below your buffer" : ""}`}
+        sub={`${f.periods[f.lowest.periodIndex].label}${f.lowest.cents < f.bufferCents ? " · below your buffer" : ""}${withWhatIfs}`}
         tone={f.lowest.cents < f.bufferCents ? "bad" : undefined}
       />
       <Kpi
@@ -80,17 +85,60 @@ function ChartTooltip({ active, payload }: any) {
       <p className="font-semibold">{p.label}</p>
       <p className="text-status-success">In {money(p.in)}</p>
       <p className="text-destructive">Out {money(-p.out)}</p>
-      <p className="font-medium">Balance {money(p.closing)}</p>
+      {p.showBoth ? (
+        <>
+          <p className="font-medium">Balance {money(p.baseline)}</p>
+          <p className="font-medium text-primary">With what-ifs {money(p.closing)}</p>
+        </>
+      ) : (
+        <p className="font-medium">Balance {money(p.closing)}</p>
+      )}
     </div>
   );
 }
 
-function ForecastChart({ f }: { f: ForecastResult }) {
+function WhatIfChips({ whatIfs }: { whatIfs: WhatIfDefinition[] }) {
+  const { toast } = useToast();
+  const canEdit = usePermission("business.cashflow", "edit");
+  const toggle = useMutation({
+    mutationFn: (w: WhatIfDefinition) => apiRequest(`/api/cashflow/what-ifs/${w.id}`, "PATCH", { isEnabled: !w.isEnabled }),
+    onSuccess: () => invalidateCashflow(),
+    onError: () => toast({ title: "Couldn't switch that what-if", variant: "destructive" }),
+  });
+  if (whatIfs.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap mb-3">
+      <span className="text-xs text-muted-foreground">What-ifs on the forecast:</span>
+      {whatIfs.map((w) => (
+        <button
+          key={w.id}
+          type="button"
+          disabled={!canEdit || toggle.isPending}
+          onClick={() => toggle.mutate(w)}
+          className={cn(
+            "h-6 px-2.5 rounded-full border text-xs flex items-center gap-1 transition-colors",
+            w.isEnabled ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground border-border hover-elevate",
+          )}
+          data-testid={`chip-whatif-${w.id}`}
+        >
+          {w.isEnabled && <Check className="h-3 w-3" />}
+          {w.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ForecastChart({ f, whatIfs }: { f: ForecastResult; whatIfs: WhatIfDefinition[] }) {
+  const showBoth = whatIfs.some((w) => w.isEnabled);
   const rows = f.periods.map((p, i) => ({
     label: p.label,
-    in: f.inCents[i],
-    out: -f.outCents[i],
+    // A what-if's net for the period joins the in or out bar it pushes.
+    in: f.inCents[i] + Math.max(0, f.whatIfCents[i]),
+    out: -(f.outCents[i] + Math.min(0, f.whatIfCents[i])),
     closing: f.closingCents[i],
+    baseline: f.baselineClosingCents[i],
+    showBoth,
   }));
   return (
     <Card className="p-4" data-testid="card-cashflow-chart">
@@ -100,9 +148,13 @@ function ForecastChart({ f }: { f: ForecastResult }) {
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sage" />Cash in</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-coral" />Cash out</span>
           <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-foreground" />Balance</span>
+          {showBoth && (
+            <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-primary" />With what-ifs</span>
+          )}
           <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-destructive" />Buffer</span>
         </div>
       </div>
+      <WhatIfChips whatIfs={whatIfs} />
       <div className="h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -114,7 +166,10 @@ function ForecastChart({ f }: { f: ForecastResult }) {
             <ReferenceLine y={f.bufferCents} stroke="hsl(var(--destructive))" strokeDasharray="5 4" />
             <Bar dataKey="in" fill="hsl(var(--sage))" radius={[3, 3, 0, 0]} maxBarSize={22} />
             <Bar dataKey="out" fill="hsl(var(--coral))" radius={[3, 3, 0, 0]} maxBarSize={22} />
-            <Line dataKey="closing" stroke="hsl(var(--foreground))" strokeWidth={2} dot={{ r: 3 }} type="linear" />
+            <Line dataKey="baseline" stroke="hsl(var(--foreground))" strokeWidth={2} dot={{ r: 3 }} type="linear" isAnimationActive={false} />
+            {showBoth && (
+              <Line dataKey="closing" stroke="hsl(var(--primary))" strokeWidth={2.5} strokeDasharray="7 5" dot={false} type="linear" isAnimationActive={false} />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -187,6 +242,7 @@ function ValueCell({
 function ForecastGrid({ f }: { f: ForecastResult }) {
   const [showInLines, setShowInLines] = useState(true);
   const [showOutLines, setShowOutLines] = useState(true);
+  const [showWhatIfLines, setShowWhatIfLines] = useState(true);
 
   // events[lineId][periodIndex]
   const eventsByCell = useMemo(() => {
@@ -203,6 +259,7 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
 
   const inLines = f.lines.filter((l) => l.section === "in");
   const outLines = f.lines.filter((l) => l.section === "out");
+  const whatIfLines = f.lines.filter((l) => l.section === "whatif");
   const total = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
   const lineRow = (l: ForecastLine, flip: boolean) => (
@@ -274,6 +331,9 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
               <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-destructive">{money(-total(f.outCents))}</td>
             </tr>
 
+            {whatIfLines.length > 0 && sectionRow("What-ifs", showWhatIfLines, () => setShowWhatIfLines((v) => !v), "text-primary")}
+            {showWhatIfLines && whatIfLines.map((l) => lineRow(l, false))}
+
             <tr className="border-b border-border/60">
               <td className="sticky left-0 bg-card px-3 py-1.5 font-semibold">Net movement</td>
               {f.netCents.map((v, i) => <ValueCell key={i} cents={v} className="font-semibold" />)}
@@ -325,7 +385,7 @@ export function ForecastTab({ data }: { data: ForecastResponse }) {
     <div className="flex flex-col gap-4">
       <Warnings f={data.forecast} />
       <KpiRow data={data} />
-      <ForecastChart f={data.forecast} />
+      <ForecastChart f={data.forecast} whatIfs={data.whatIfs} />
       <ForecastGrid f={data.forecast} />
     </div>
   );

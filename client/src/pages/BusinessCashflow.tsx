@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, LineChart, Loader2, Receipt, Settings2 } from "lucide-react";
+import { FlaskConical, FolderOpen, LineChart, Loader2, Receipt, Settings2 } from "lucide-react";
 import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { PeriodGranularity } from "@shared/cashflow";
@@ -8,17 +8,19 @@ import { ForecastTab } from "@/components/cashflow/ForecastTab";
 import { ProjectsTab } from "@/components/cashflow/ProjectsTab";
 import { ExpensesTab } from "@/components/cashflow/ExpensesTab";
 import { SettingsDialog } from "@/components/cashflow/SettingsDialog";
+import { WhatIfsTab } from "@/components/cashflow/WhatIfsTab";
 import { forecastKey, SETTINGS_KEY, type ForecastResponse, type SettingsResponse } from "@/components/cashflow/cashflowShared";
 
-type TabId = "forecast" | "projects" | "expenses";
+type TabId = "forecast" | "projects" | "expenses" | "whatifs";
 
 const TABS: { id: TabId; label: string; Icon: typeof LineChart }[] = [
   { id: "forecast", label: "Forecast", Icon: LineChart },
   { id: "projects", label: "Projects", Icon: FolderOpen },
   { id: "expenses", label: "Business expenses", Icon: Receipt },
+  { id: "whatifs", label: "What-ifs", Icon: FlaskConical },
 ];
 
-function ForecastPanel({ period }: { period: PeriodGranularity }) {
+function ForecastPanel({ period, view }: { period: PeriodGranularity; view: "forecast" | "whatifs" }) {
   const { data, isLoading, error } = useQuery<ForecastResponse>({ queryKey: forecastKey(period) });
   if (isLoading) {
     return (
@@ -31,7 +33,7 @@ function ForecastPanel({ period }: { period: PeriodGranularity }) {
   if (error || !data) {
     return <p className="py-16 text-center text-sm text-muted-foreground">Couldn't build the forecast.</p>;
   }
-  return <ForecastTab data={data} />;
+  return view === "whatifs" ? <WhatIfsTab data={data} /> : <ForecastTab data={data} />;
 }
 
 export default function BusinessCashflow() {
@@ -103,12 +105,13 @@ export default function BusinessCashflow() {
 
       {activeTab === "forecast" &&
         (period ? (
-          <ForecastPanel period={period} />
+          <ForecastPanel period={period} view="forecast" />
         ) : (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
         ))}
       {activeTab === "projects" && <ProjectsTab />}
       {activeTab === "expenses" && <ExpensesTab />}
+      {activeTab === "whatifs" && (period ? <ForecastPanel period={period} view="whatifs" /> : null)}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
