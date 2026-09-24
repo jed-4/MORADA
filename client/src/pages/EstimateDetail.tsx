@@ -2819,6 +2819,11 @@ export default function EstimateDetail() {
       case 'unitCostExTax':
         setEditingValue(parseFloat(item.unitCostExTax.toFixed(2)).toString());
         break;
+      case 'builderCost':
+        // Only ever reached on a flat line (see the cell): the amount IS the
+        // line, so it opens with the amount rather than a derived figure.
+        setEditingValue(parseFloat(calculatePricingValues(item).builderCost.toFixed(2)).toString());
+        break;
       case 'unitCostIncTax':
         const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
         setEditingValue(parseFloat(unitCostIncTax.toFixed(2)).toString());
@@ -2864,7 +2869,7 @@ export default function EstimateDetail() {
     // description or note is legitimately cleared to empty.
     const rejectsBlank = field === 'quantity' || field === 'unitCostExTax'
       || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup'
-      || field === 'name';
+      || field === 'builderCost' || field === 'name';
     if (rejectsBlank && String(editingValue ?? "").trim() === "") {
       setEditingCell(null);
       return;
@@ -2898,11 +2903,12 @@ export default function EstimateDetail() {
     }
 
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup' || field === 'builderCost') {
       const numValue = parseFloat(editingValue);
       // Quantity and unit costs may be NEGATIVE (deduction / credit lines) — they
       // net correctly against positive lines. Markup stays non-negative.
-      const allowNegative = field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax';
+      const allowNegative = field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax'
+        || field === 'builderCost';
       if (isNaN(numValue) || (!allowNegative && numValue < 0)) {
         toast({
           title: "Invalid Value",
@@ -2964,6 +2970,20 @@ export default function EstimateDetail() {
 
       valueToSave = incTaxValue;
       fieldToUpdate = 'unitCostIncTax';
+    } else if (field === 'builderCost') {
+      /* A flat line — a lump sum with no unit cost, which is how an imported
+         "Site Clean $454.55" arrives. Its amount lives in priceIncTax and was
+         unreachable from the grid: qty and unit cost are 0 on such a line, and
+         typing in either of them changed nothing at all. Typing here writes the
+         amount, and 0 zeroes the line. */
+      const exTax = parseFloat(editingValue);
+      const rate = estimate?.taxRate ?? 10;
+      valueToSave = round2(exTax * (1 + rate / 100));
+      fieldToUpdate = 'priceIncTax';
+      if (Math.abs(Number(valueToSave) - Number(item.priceIncTax ?? 0)) < 0.005) {
+        setEditingCell(null);
+        return;
+      }
     } else if (field === 'markupPercent' || field === 'markup') {
       // Save markup as number (supports decimals like 12.5%)
       const markup = parseFloat(editingValue);
@@ -3117,7 +3137,7 @@ export default function EstimateDetail() {
   const navigableColumns = (): string[] =>
     columns.filter(c => c.visible && INTERACTIVE_COLUMNS[c.id]).map(c => c.id);
 
-  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'description'];
+  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'builderCost', 'markup', 'costCode', 'description'];
 
   /**
    * Every visible row, top to bottom, exactly as the grid draws it: ungrouped
