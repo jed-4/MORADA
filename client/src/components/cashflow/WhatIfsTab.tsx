@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, Briefcase, CheckCircle2, FlaskConical, Loader2, Plus, Receipt, Truck, UserPlus, Wrench, XCircle } from "lucide-react";
+import { AlertTriangle, Briefcase, CheckCircle2, FlaskConical, Lightbulb, Loader2, Plus, Receipt, Truck, UserPlus, Wrench, XCircle } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
   defaultParams,
   employeeCost,
   expandWhatIf,
+  findLevers,
   type EmployeeParams,
   type ForecastResult,
   type WhatIfDefinition,
@@ -98,6 +99,13 @@ function ImpactPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, draft]);
 
+  // Real engine runs on changed inputs — only options that actually help.
+  const levers = useMemo(
+    () => findLevers(data.input, { ...draft, isEnabled: true }, othersOn, ctx),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, draft, othersOn],
+  );
+
   const rows = base.periods.map((p, i) => ({
     label: p.label,
     base: base.closingCents[i],
@@ -145,6 +153,20 @@ function ImpactPanel({
       <Verdict title={`${draft.name} on its own`} r={alone} extra={breakEven} />
       {othersOn.length > 0 && (
         <Verdict title={`With ${othersOn.map((w) => w.name).join(", ")} too`} r={together} />
+      )}
+      {levers.length > 0 && (
+        <div className="rounded-lg border p-3 space-y-1.5" data-testid="list-whatif-levers">
+          <p className="text-xs font-semibold text-primary flex items-center gap-1.5"><Lightbulb className="h-3.5 w-3.5" />Ways to make it work</p>
+          {levers.map((l) => (
+            <p key={l.id} className="text-xs">
+              <span className="font-medium">{l.label}</span>
+              <span className="text-muted-foreground">
+                {" "}→ lowest {money(l.lowestCents)} in {l.lowestLabel}
+                {l.staysAboveBuffer ? ", above your buffer" : ""}
+              </span>
+            </p>
+          ))}
+        </div>
       )}
       <p className="text-xs text-muted-foreground">
         Without any what-ifs: lowest {money(base.lowest.cents)} in {base.periods[base.lowest.periodIndex].label}.
