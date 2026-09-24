@@ -178,7 +178,16 @@ function SortableWidget({
 }
 
 export default function UserOverview({ user, isOwnPage, currentUserId }: UserOverviewProps) {
-  const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
+  /**
+   * null means "we do not know yet".
+   *
+   * This used to start at DEFAULT_WIDGETS, so every load painted the default
+   * workspace, waited for the saved layout (a second on a slow connection) and
+   * then swapped — you watched a workspace that was not yours flick past on the
+   * way to your own. Nothing is drawn until the answer is in; the skeleton
+   * below holds the space in the meantime.
+   */
+  const [widgets, setWidgets] = useState<Widget[] | null>(null);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
@@ -225,7 +234,12 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
 
   // Load from server, with one-time localStorage migration
   useEffect(() => {
-    if (!isOwnPage || isLoadingView || initializedRef.current) return;
+    // Someone else's page has no saved layout to wait for.
+    if (!isOwnPage) {
+      if (widgets === null) setWidgets(DEFAULT_WIDGETS);
+      return;
+    }
+    if (isLoadingView || initializedRef.current) return;
 
     // Any existing server row is authoritative — including an intentionally empty layout
     if (serverView && Array.isArray(serverView.widgets)) {
@@ -269,6 +283,10 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     if (isOwnPage) saveMutation.mutate(next);
   };
 
+  /** The layout, once it is known. Everything below reads this. */
+  const loadedWidgets = widgets ?? [];
+  const isLayoutUnknown = widgets === null;
+
   const addWidget = (type: string) => {
     const definition = personalDashboard.getDefinition(type);
     if (!definition) return;
@@ -279,14 +297,14 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
       size: definition.defaultSize,
       config: {},
     };
-    persist([...widgets, newWidget]);
+    persist([...loadedWidgets, newWidget]);
     setIsAddingWidget(false);
   };
 
-  const removeWidget = (widgetId: string) => persist(widgets.filter(w => w.id !== widgetId));
+  const removeWidget = (widgetId: string) => persist(loadedWidgets.filter(w => w.id !== widgetId));
 
   const updateWidget = (updated: Widget) => {
-    persist(widgets.map(w => (w.id === updated.id ? updated : w)));
+    persist(loadedWidgets.map(w => (w.id === updated.id ? updated : w)));
     if (configuringWidget === updated.id) setConfiguringWidget(null);
   };
 
@@ -294,6 +312,9 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setWidgets(prev => {
+      // Nothing is draggable before the layout has loaded, so this is only
+      // ever reached with a real list.
+      if (!prev) return prev;
       const oldIndex = prev.findIndex(w => w.id === active.id);
       const newIndex = prev.findIndex(w => w.id === over.id);
       const next = arrayMove(prev, oldIndex, newIndex);
@@ -388,10 +409,26 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
       )}
 
       <div className="flex-1 overflow-auto">
+        {isLayoutUnknown ? (
+          /* Placeholders the shape of a workspace, not a workspace. Showing
+             real widgets here would mean showing the wrong ones. */
+          <div
+            className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4"
+            data-testid="user-overview-loading"
+            aria-busy="true"
+          >
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="col-span-2 h-48 rounded-md border border-border bg-card/60 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={widgets.map(w => w.id)} strategy={rectSortingStrategy}>
+          <SortableContext items={loadedWidgets.map(w => w.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-              {widgets.map((widget) => (
+              {loadedWidgets.map((widget) => (
                 <SortableWidget
                   key={widget.id}
                   widget={widget}
@@ -404,7 +441,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                 />
               ))}
 
-              {widgets.length === 0 && (
+              {loadedWidgets.length === 0 && (
                 <div className="col-span-full flex items-center justify-center py-16">
                   <div className="flex flex-col items-center text-center gap-3 max-w-sm">
                     <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
@@ -431,6 +468,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             </div>
           </SortableContext>
         </DndContext>
+        )}
       </div>
 
       <Dialog open={isAddingWidget} onOpenChange={setIsAddingWidget}>
