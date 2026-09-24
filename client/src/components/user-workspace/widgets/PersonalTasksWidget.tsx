@@ -42,7 +42,31 @@ import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 // Every value here is offered in the config dropdown AND handled in the filter
 // switch below. (It previously declared seven date filters that existed in
 // neither, while omitting 'upcoming' — which the dropdown actually sets.)
-type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
+type FilterType = 'all' | 'current' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
+
+/** The tabs across the top of the widget. 'current' is what it opens on. */
+type TabFilter = 'current' | 'all' | 'today' | 'overdue' | 'upcoming';
+
+/**
+ * The tab the widget is on, remembered per widget.
+ *
+ * Read synchronously when the state is created (never in an effect), so the
+ * first paint is already the right tab — an effect would show the default for
+ * a frame and then swap, which is the flicker this is here to avoid.
+ */
+const tabStorageKey = (widgetId: string) => `personal-tasks-tab:${widgetId}`;
+
+function readStoredTab(widgetId: string): TabFilter | null {
+  try {
+    const raw = localStorage.getItem(tabStorageKey(widgetId));
+    return raw === 'current' || raw === 'all' || raw === 'today' || raw === 'overdue' || raw === 'upcoming'
+      ? raw
+      : null;
+  } catch {
+    // Private windows and blocked site data throw on read.
+    return null;
+  }
+}
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
 type ViewType = 'list' | 'board';
 
@@ -159,7 +183,41 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupsInitialized, setGroupsInitialized] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'overdue' | 'upcoming' | null>(null);
+  /**
+   * "Current" — everything overdue or due today — is what the widget opens on:
+   * it is the one list of what actually needs doing, without flipping between
+   * two tabs. A tab chosen before wins, and the widget's own configured filter
+   * wins over both (someone who set this widget to "Upcoming" meant it).
+   */
+  const [activeFilter, setActiveFilter] = useState<FilterType>(() => {
+    const stored = readStoredTab(widget.id);
+    if (stored) return stored;
+    // A widget configured to a particular filter keeps it — including
+    // "high-priority", which has no tab of its own.
+    const configured = config.showFilter as FilterType | undefined;
+    if (configured && configured !== 'all') return configured;
+    return 'current';
+  });
+
+  /**
+   * On the Current tab the list is split into "Overdue" and "Today", using the
+   * widget's own due-date grouping — the point of the tab is seeing both at
+   * once and still being able to tell them apart. A widget deliberately
+   * grouped by project or priority keeps that grouping.
+   */
+  const groupByForList: GroupByType =
+    activeFilter === 'current' && effectiveGroupBy === 'none' && view !== 'board'
+      ? 'dueDate'
+      : effectiveGroupBy;
+
+  const selectTab = (next: TabFilter) => {
+    setActiveFilter(next);
+    try {
+      localStorage.setItem(tabStorageKey(widget.id), next);
+    } catch {
+      // Not being able to remember the tab is not worth an error.
+    }
+  };
 
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -245,8 +303,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       result = result.filter(t => t.projectId === projectFilter);
     }
 
-    const effectiveFilter = activeFilter ?? showFilter;
+    const effectiveFilter: FilterType = activeFilter;
     switch (effectiveFilter) {
+      case 'current':
+        // Overdue OR due today — the two lists people were flipping between.
+        result = result.filter(t => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          return isBefore(due, today) || isToday(due);
+        });
+        break;
       case 'overdue':
         result = result.filter(t => t.dueDate && isBefore(new Date(t.dueDate), today));
         break;
@@ -269,11 +335,20 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     // than an arbitrary slice of whatever order the server returned.
     const projectNameOf = (t: Task) =>
       (t.projectId ? projectMap.get(t.projectId)?.name : null) ?? (isBusinessTask(t) ? businessLabel : '');
-    const dir = sortDir === 'desc' ? -1 : 1;
-    result = [...result].sort((a, b) => compareTasks(a, b, sortBy, projectNameOf) * dir);
+    if (effectiveFilter === 'current') {
+      // The order IS the point of this tab: longest overdue at the top, then
+      // today's. A sort setting chosen for another tab must not bury the thing
+      // that is three weeks late.
+      result = [...result].sort(
+        (a, b) => new Date(a.dueDate as any).getTime() - new Date(b.dueDate as any).getTime(),
+      );
+    } else {
+      const dir = sortDir === 'desc' ? -1 : 1;
+      result = [...result].sort((a, b) => compareTasks(a, b, sortBy, projectNameOf) * dir);
+    }
 
     return result.slice(0, maxTasks);
-  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today, isLingering, sortBy, sortDir, projectMap, businessLabel]);
+  }, [tasks, activeFilter, showCompleted, projectFilter, maxTasks, today, isLingering, sortBy, sortDir, projectMap, businessLabel]);
 
   const filterCounts = useMemo(() => {
     let base = tasks;
@@ -289,6 +364,11 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
     return {
       all: base.length,
+      current: base.filter(t => {
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate);
+        return isBefore(due, today) || isToday(due);
+      }).length,
       today: base.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length,
       overdue: base.filter(t => t.dueDate && isBefore(new Date(t.dueDate), today)).length,
       upcoming: base.filter(t => {
@@ -300,7 +380,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }, [tasks, showCompleted, projectFilter, today, isLingering]);
 
   const groupedTasks = useMemo(() => {
-    if (effectiveGroupBy === 'none') {
+    if (groupByForList === 'none') {
       return [{ key: 'all', label: '', tasks: filteredTasks }];
     }
 
@@ -311,7 +391,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       let label: string;
       let color: string | undefined;
 
-      switch (effectiveGroupBy) {
+      switch (groupByForList) {
         case 'project':
           // Include scope='business' OR legacy tasks (no scope + no projectId) as business
           if (isBusinessTask(task)) {
@@ -359,26 +439,30 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     });
 
     return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
-  }, [filteredTasks, effectiveGroupBy, projectMap, today]);
+  }, [filteredTasks, groupByForList, projectMap, today]);
 
-  const [prevGroupBy, setPrevGroupBy] = useState(effectiveGroupBy);
+  const [prevGroupBy, setPrevGroupBy] = useState(groupByForList);
   useEffect(() => {
-    if (effectiveGroupBy !== prevGroupBy) {
-      setPrevGroupBy(effectiveGroupBy);
+    if (groupByForList !== prevGroupBy) {
+      setPrevGroupBy(groupByForList);
       setGroupsInitialized(false);
       setCollapsedGroups(new Set());
     }
-  }, [effectiveGroupBy, prevGroupBy]);
+  }, [groupByForList, prevGroupBy]);
 
   useEffect(() => {
-    if (!groupsInitialized && effectiveGroupBy !== 'none' && groupedTasks.length > 0) {
+    if (!groupsInitialized && groupByForList !== 'none' && groupedTasks.length > 0) {
       const { defaultExpanded } = getWorkspacePreferences();
-      if (!defaultExpanded) {
+      // Current is meant to be the one screen of what needs doing, so its two
+      // headings start open whatever the collapse preference says — opening
+      // onto "Overdue 2 / Today 1" and nothing else would be worse than the
+      // two tabs it replaces.
+      if (!defaultExpanded && activeFilter !== 'current') {
         setCollapsedGroups(new Set(groupedTasks.map(g => g.key)));
       }
       setGroupsInitialized(true);
     }
-  }, [groupedTasks, effectiveGroupBy, groupsInitialized]);
+  }, [groupedTasks, groupByForList, groupsInitialized, activeFilter]);
 
   /**
    * Every task row in this widget goes through here so the grouped and
@@ -434,9 +518,9 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   // hook count between renders and crashes with "Rendered fewer hooks than
   // expected" the moment the config panel opens.
   const allCollapsed = useMemo(() => {
-    if (effectiveGroupBy === 'none') return false;
+    if (groupByForList === 'none') return false;
     return groupedTasks.every(g => collapsedGroups.has(g.key));
-  }, [groupedTasks, collapsedGroups, effectiveGroupBy]);
+  }, [groupedTasks, collapsedGroups, groupByForList]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -613,7 +697,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }
 
   const toggleAllGroups = () => {
-    if (effectiveGroupBy === 'none') return;
+    if (groupByForList === 'none') return;
     if (allCollapsed) {
       setCollapsedGroups(new Set());
     } else {
@@ -621,17 +705,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
   };
 
-  const filterTabs: Array<{ key: 'all' | 'today' | 'overdue' | 'upcoming'; label: string }> = [
-    { key: 'all', label: 'All' },
+  const filterTabs: Array<{ key: TabFilter; label: string }> = [
+    { key: 'current', label: 'Current' },
     { key: 'today', label: 'Today' },
     { key: 'overdue', label: 'Overdue' },
     { key: 'upcoming', label: 'Upcoming' },
+    { key: 'all', label: 'All' },
   ];
-  const effectiveActiveFilter = activeFilter ?? (
-    showFilter === 'today' || showFilter === 'overdue' || showFilter === 'upcoming' || showFilter === 'all'
-      ? showFilter
-      : 'all'
-  );
+  const effectiveActiveFilter = activeFilter;
 
   return (
     <div className="flex flex-col h-full">
@@ -644,7 +725,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveFilter(tab.key)}
+                onClick={() => selectTab(tab.key)}
                 data-testid={`tab-filter-${tab.key}`}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium hover-elevate ${
                   isActive
@@ -658,7 +739,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             );
           })}
         </div>
-        {view !== 'board' && effectiveGroupBy !== 'none' && groupedTasks.length > 1 && (
+        {view !== 'board' && groupByForList !== 'none' && groupedTasks.length > 1 && (
           <Button
             size="icon"
             variant="ghost"
@@ -732,11 +813,11 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                     {group.tasks.map((task) => {
                       const project = task.projectId ? projectMap.get(task.projectId) : null;
                       const isBusiness = isBusinessTask(task);
-                      const showAccent = effectiveGroupBy !== 'project';
+                      const showAccent = groupByForList !== 'project';
                       return (
                         <TaskCard
                           key={task.id}
-                          task={{ ...task, dueDate: effectiveGroupBy === 'dueDate' ? null : task.dueDate } as any}
+                          task={{ ...task, dueDate: groupByForList === 'dueDate' ? null : task.dueDate } as any}
                           accentColor={
                             !showAccent ? null
                               : project ? generateNotionColors(project.color).originalHex
@@ -757,7 +838,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                 </div>
               ))}
             </div>
-          ) : effectiveGroupBy === 'none' ? (
+          ) : groupByForList === 'none' ? (
             <div className="space-y-0.5">
               {filteredTasks.map((task) => renderTaskRow(task))}
             </div>
@@ -777,7 +858,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   {group.color && (
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color }} />
                   )}
-                  {!group.color && effectiveGroupBy === 'project' && (
+                  {!group.color && groupByForList === 'project' && (
                     <Folder className="h-3 w-3 text-muted-foreground" />
                   )}
                   <span className="text-table font-medium flex-1 text-left">{group.label}</span>
@@ -788,8 +869,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                 <CollapsibleContent className="pt-1 space-y-0.5 ml-2">
                   {/* Inside a group, don't repeat what the group heading already says. */}
                   {group.tasks.map((task) => renderTaskRow(task, {
-                    hideDue: effectiveGroupBy === 'dueDate',
-                    hideAccent: effectiveGroupBy === 'project',
+                    hideDue: groupByForList === 'dueDate',
+                    hideAccent: groupByForList === 'project',
                   }))}
                 </CollapsibleContent>
               </Collapsible>

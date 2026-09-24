@@ -1,0 +1,22 @@
+-- A height for a take-off item measured as a line.
+--
+-- Wall linings, wall tiles, skirting-height finishes: on a plan these are a
+-- run, not a shape — you trace the wall and the area is that run times the
+-- wall height. Until now the only way to get m² was to draw a polygon, which
+-- a wall in plan view does not have.
+--
+-- Stored in MILLIMETRES, like every other real-world dimension in the take-off
+-- (takeoff_plan_pages.calibration_unit defaults to mm, and the geometry maths
+-- works in mm per pixel). Millimetres also keep 2400 and 2700 exact, which a
+-- metre float does not.
+--
+-- NULLABLE with no default, and that is the whole point: null means "no
+-- height", which is every linear item that exists today. Those keep measuring
+-- in lm exactly as before; only an item given a height switches to m².
+--
+-- ⚠️ Apply BEFORE deploying. takeoff_measurements is read by the plan viewer,
+-- the measurements tab and the template import, and code that selects this
+-- column will fail those reads until it exists.
+--
+-- Additive and idempotent: safe to run twice.
+ALTER TABLE takeoff_measurements ADD COLUMN IF NOT EXISTS height_mm DOUBLE PRECISION;
