@@ -32,6 +32,16 @@ export interface DayCalendar {
 
 const DAY_MS = 86_400_000;
 
+/**
+ * The day a STORED schedule date means. Item dates are written as UTC midnight
+ * (shared/scheduleDates.ts), so a Date is read in UTC — reading its local
+ * fields would give the previous day on any server west of Greenwich.
+ */
+export function storedDay(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return scheduleDayString(value);
+}
+
 function toUTC(day: string): number {
   return Date.parse(`${day}T00:00:00.000Z`);
 }
@@ -122,8 +132,8 @@ export function placeItems(
   const everyDay: DayCalendar = { includeSaturday: true, includeSunday: true };
   const out = new Map<string, Placement>();
   for (const item of items) {
-    const s = scheduleDayString(item.startDate);
-    const e = scheduleDayString(item.endDate);
+    const s = storedDay(item.startDate);
+    const e = storedDay(item.endDate);
     const srcCal = item.useWorkingDaysOverride ? everyDay : source.calendar;
     const tgtCal = item.useWorkingDaysOverride ? everyDay : target.calendar;
     // Offsets are always measured on the schedule's own week, so an override
@@ -139,5 +149,5 @@ export function placeItems(
 
 /** "Day N" label for a date on a template schedule (Day 1 = the anchor). */
 export function templateDayNumber(day: Date | string, cal: DayCalendar): number {
-  return workingOffset(TEMPLATE_ANCHOR_DAY, scheduleDayString(day), { ...cal, holidays: undefined }) + 1;
+  return workingOffset(TEMPLATE_ANCHOR_DAY, storedDay(day), { ...cal, holidays: undefined }) + 1;
 }

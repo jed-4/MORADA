@@ -4000,6 +4000,9 @@ export const schedules = pgTable("schedules", {
 
 export const insertScheduleSchema = createInsertSchema(schedules).omit({
   id: true,
+  // A template's schedule is created by the server alone
+  // (server/services/scheduleTemplates.ts); no request may attach one.
+  templateId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({

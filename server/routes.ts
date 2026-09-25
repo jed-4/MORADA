@@ -260,12 +260,14 @@ import { refuseDecision, buildDecisionSnapshot, normaliseDecisionComment, decisi
 import { shouldRaiseVariation, buildVariationForReview } from "./reviews/variationHook";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
-import { scheduleDayUTC } from "@shared/scheduleDates";
+import { scheduleDayString, scheduleDayUTC } from "@shared/scheduleDates";
+import { storedDay } from "@shared/scheduleTemplateDates";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { buildLegacyApplyRows, buildFlatApplyRows, optionFromRows } from "@shared/applyTemplate";
 import { syncTemplateOptions } from "./services/templateOptionSync";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
+import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateSchedule, getTemplateSchedule, templateCompanyId } from "./services/scheduleTemplates";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
@@ -6390,6 +6392,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return group;
   };
 
+  /**
+   * A schedule is owned through its project — or, for a schedule template's
+   * schedule (projectId null, migration 0095), through its template.
+   */
+  const enforceScheduleCompany = async (
+    req: any, res: any, schedule: { projectId: string | null; templateId?: string | null } | undefined | null,
+    notFound = "Schedule not found",
+  ): Promise<boolean> => {
+    if (schedule?.templateId) {
+      const owner = await templateCompanyId(schedule);
+      if (!owner || owner !== req.user?.companyId) { res.status(404).json({ error: notFound }); return false; }
+      return true;
+    }
+    return enforceProjectCompany(req, res, schedule?.projectId as string, notFound);
+  };
+
   const getOwnedScheduleItem = async (
     req: any, res: any, itemId: string, notFound = "Schedule item not found",
   ): Promise<any | null> => {
@@ -6398,7 +6416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!item) { res.status(404).json({ error: notFound }); return null; }
     const schedule = await storage.getScheduleById((item as any).scheduleId);
     if (!schedule) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await enforceProjectCompany(req, res, (schedule as any).projectId, notFound))) return null;
+    if (!(await enforceScheduleCompany(req, res, schedule as any, notFound))) return null;
     return item;
   };
 
@@ -6598,8 +6616,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     loadBudget, (b) => b?.projectId, projectGuard, "Budget not found");
   const getOwnedBudgetLineItem = makeOwnedViaParent(
     (id) => storage.getBudgetLineItem(id), (i) => i?.budgetId, getOwnedBudget, "Budget line item not found");
-  const getOwnedSchedule = makeOwnedViaParent(
-    (id) => storage.getScheduleById(id), (sc) => sc?.projectId, projectGuard, "Schedule not found");
+  const getOwnedSchedule: any = async (req: any, res: any, id: string, notFound = "Schedule not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const schedule = await storage.getScheduleById(id);
+    if (!schedule) { res.status(404).json({ error: notFound }); return null; }
+    return (await enforceScheduleCompany(req, res, schedule as any, notFound)) ? schedule : null;
+  };
   const getOwnedBaseline = makeOwnedViaParent(
     loadBaseline, (b) => b?.scheduleId, getOwnedSchedule, "Baseline not found");
   const getOwnedScheduleItemStep = makeOwnedViaParent(
@@ -6640,13 +6662,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * schedules, so this must not become N queries.
    */
   const ownsAllScheduleItems = makeOwnsAllByIds(async (ids, companyId) => {
-    const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl } = await import("@shared/schema");
+    const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl, scheduleTemplates: tplTbl } = await import("@shared/schema");
+    // A schedule belongs to a project OR a template (never both), so exactly
+    // one of the two joins matches.
     const rows = await db
       .select({ id: siTbl.id })
       .from(siTbl)
       .innerJoin(schTbl, eq(siTbl.scheduleId, schTbl.id))
-      .innerJoin(projTbl, eq(schTbl.projectId, projTbl.id))
-      .where(and(inArray(siTbl.id, ids), eq(projTbl.companyId, companyId)));
+      .leftJoin(projTbl, eq(schTbl.projectId, projTbl.id))
+      .leftJoin(tplTbl, eq(schTbl.templateId, tplTbl.id))
+      .where(and(inArray(siTbl.id, ids), or(eq(projTbl.companyId, companyId), eq(tplTbl.companyId, companyId))));
     return rows.map((r: any) => r.id);
   }, "Schedule item not found");
 
@@ -33666,7 +33691,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
     const existingSchedule = await storage.getScheduleById(req.params.id);
     if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
-    if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+    if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
     const { includeSaturday, includeSunday, clientVisibilityWeeks, businessAssignColor, businessAssignStatus } = req.body;
     const setFields: any = { 
       includeSaturday: includeSaturday ?? false, 
@@ -33774,7 +33799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingSchedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
 
       // Which project a schedule belongs to, who created it and its edit
       // session are server-managed. Accepting projectId here let a caller move
@@ -33808,7 +33833,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingSchedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
 
       const userId = req.user?.id;
       const schedule = await storage.updateScheduleStatus(req.params.id, status, userId);
@@ -33874,7 +33899,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const existingSchedule = await storage.getScheduleById(req.params.id);
       if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
 
       const statusUpdate = await buildScheduleStatusUpdate("online", req.user?.id);
       const schedule = await db.transaction(async (tx) => {
@@ -33895,7 +33920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const existingSchedule = await storage.getScheduleById(req.params.id);
       if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
 
       const statusUpdate = await buildScheduleStatusUpdate("locked", req.user?.id);
       const result = await db.update(schedules)
@@ -33912,7 +33937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const existingSchedule = await storage.getScheduleById(req.params.id);
       if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
 
       const snapshot = (existingSchedule as any).editSnapshot as any[] | null;
       const statusUpdate = await buildScheduleStatusUpdate("locked", req.user?.id);
@@ -33973,7 +33998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingSchedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
       const schedule = await storage.updateScheduleOnline(req.params.id, isOnline);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
@@ -33993,7 +34018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingSchedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
-      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+      if (!(await enforceScheduleCompany(req, res, existingSchedule as any))) return;
       const success = await storage.deleteSchedule(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Schedule not found" });
@@ -34021,18 +34046,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper: Recalculate parent's progressPercent as average of children
+  // Helper: Recalculate a parent's progressPercent as the average of its
+  // children — then its parent's, and so on up. Schedules nest three levels,
+  // and stopping at one left a group's progress stale whenever a sub-item moved.
   async function recalculateParentProgress(parentId: string) {
-    const children = await db.select().from(scheduleItems)
-      .where(eq(scheduleItems.parentItemId, parentId));
-
-    if (children.length > 0) {
+    let current: string | null = parentId;
+    for (let depth = 0; current && depth < 10; depth++) {
+      const children = await db.select().from(scheduleItems)
+        .where(eq(scheduleItems.parentItemId, current));
+      if (children.length === 0) return;
       const avgProgress = Math.round(
         children.reduce((sum, s) => sum + (s.progressPercent || 0), 0) / children.length
       );
-      await db.update(scheduleItems)
+      const [updated]: Array<{ parentItemId: string | null }> = await db.update(scheduleItems)
         .set({ progressPercent: avgProgress, updatedAt: new Date() })
-        .where(eq(scheduleItems.id, parentId));
+        .where(eq(scheduleItems.id, current))
+        .returning({ parentItemId: scheduleItems.parentItemId });
+      current = updated?.parentItemId ?? null;
     }
   }
 
@@ -34910,6 +34940,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Resolve the project so the booking is filed against the right job.
       const schedule = item.scheduleId ? await storage.getScheduleById(item.scheduleId) : null;
+      if ((schedule as any)?.templateId) {
+        return res.status(400).json({ error: "Time can't be booked against a schedule template" });
+      }
       const projectId = (item as any).projectId || schedule?.projectId || null;
 
       const task = await storage.createTask({
@@ -35062,7 +35095,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const weekendOverride = createData.useWorkingDaysOverride === true;
           const inclSat = weekendOverride ? true : (schedule.includeSaturday ?? false);
           const inclSun = weekendOverride ? true : (schedule.includeSunday ?? false);
-          const project = await storage.getProject(schedule.projectId);
+          // A template schedule has no project, and so no holidays: its dates
+          // are offsets from an anchor, not real days.
+          const project = schedule.projectId ? await storage.getProject(schedule.projectId) : null;
           const holidays = project?.companyId ? await fetchNonWorkingDaySet(project.companyId, createData.scheduleId) : new Set<string>();
           const isWorkingDay = (d: Date): boolean => {
             const dow = d.getDay();
@@ -35138,7 +35173,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
           
-          await storage.createActivity({
+          // Template schedules have no project; their edits are not project activity.
+          if (schedule.projectId) await storage.createActivity({
             projectId: schedule.projectId,
             userId: req.user.id,
             userName: userName,
@@ -35479,15 +35515,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // If the child has a parent, recompute parent date range, then cascade from parent
-        // if its endDate has moved (primary trigger — parent becoming longer pushes its dependents)
-        if (item.parentItemId) {
+        // if its endDate has moved (primary trigger — parent becoming longer pushes its dependents).
+        // Walk every ancestor: a sub-item that moves its parent moves the group too.
+        let rollupParentId: string | null = item.parentItemId ?? null;
+        for (let depth = 0; rollupParentId && depth < 10; depth++) {
+          const parentId: string = rollupParentId;
+          rollupParentId = null;
           try {
-            const parentBefore = await storage.getScheduleItem(item.parentItemId);
+            const parentBefore = await storage.getScheduleItem(parentId);
+            rollupParentId = parentBefore?.parentItemId ?? null;
             const parentOldEnd = parentBefore?.endDate ? new Date(parentBefore.endDate) : null;
 
             const siblings = await db.select()
               .from(scheduleItems)
-              .where(eq(scheduleItems.parentItemId, item.parentItemId));
+              .where(eq(scheduleItems.parentItemId, parentId));
 
             if (siblings.length > 0) {
               let minStart: Date | null = null;
@@ -35508,7 +35549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 if (maxEnd) parentUpdate.endDate = maxEnd;
                 await db.update(scheduleItems)
                   .set(parentUpdate)
-                  .where(eq(scheduleItems.id, item.parentItemId));
+                  .where(eq(scheduleItems.id, parentId));
 
                 // Cascade from parent whenever its endDate moved in either direction
                 // (grew → push dependents later; shrank → pull dependents earlier).
@@ -35516,7 +35557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   const parentNewStart = minStart
                     ?? (parentBefore?.startDate ? new Date(parentBefore.startDate) : maxEnd);
                   cascadeOrigins.push({
-                    predId: item.parentItemId,
+                    predId: parentId,
                     newStart: parentNewStart,
                     newEnd: maxEnd,
                   });
@@ -35576,7 +35617,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const changeDescription = changes.length > 0 ? changes.join(", ") : "updated";
           
-          await storage.createActivity({
+          // Template schedules have no project; their edits are not project activity.
+          if (schedule.projectId) await storage.createActivity({
             projectId: schedule.projectId,
             userId: req.user.id,
             userName: userName,
@@ -35755,7 +35797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               changes.push({ name: item.name, change: changeText, fields, itemId: item.id });
             }
             
-            await storage.createActivity({
+            // Template schedules have no project; their edits are not project activity.
+            if (schedule.projectId) await storage.createActivity({
               projectId: schedule.projectId,
               userId: req.user.id,
               userName: userName,
@@ -35803,10 +35846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!schedule) {
           return res.status(404).json({ error: "Schedule not found" });
         }
-        const project = await storage.getProject(schedule.projectId);
-        if (!project || project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Unauthorized" });
-        }
+        if (!(await enforceScheduleCompany(req, res, schedule as any))) return;
       } else {
         // Fallback: verify via first item in the list
         const firstUpdate = updates.find(u => u.id);
@@ -35819,10 +35859,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!schedule) {
             return res.status(404).json({ error: "Schedule not found" });
           }
-          const project = await storage.getProject(schedule.projectId);
-          if (!project || project.companyId !== userCompanyId) {
-            return res.status(403).json({ error: "Unauthorized" });
-          }
+          if (!(await enforceScheduleCompany(req, res, schedule as any))) return;
         }
       }
 
@@ -35878,7 +35915,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingItems = await storage.getScheduleItems(scheduleId);
       const sortOrderOffset = existingItems.length;
 
-      const bulkProject = await storage.getProject(schedule.projectId);
+      const bulkProject = schedule.projectId ? await storage.getProject(schedule.projectId) : null;
       const bulkHolidays = bulkProject?.companyId ? await fetchNonWorkingDaySet(bulkProject.companyId, scheduleId) : new Set<string>();
       const isNonWorkingDayBulk = (date: Date): boolean => {
         const day = date.getDay();
@@ -35936,7 +35973,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
           
-          await storage.createActivity({
+          // Template schedules have no project; their edits are not project activity.
+          if (schedule.projectId) await storage.createActivity({
             projectId: schedule.projectId,
             userId: req.user.id,
             userName: userName,
@@ -35989,7 +36027,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ? `${req.user.firstName} ${req.user.lastName}`
               : req.user.username || req.user.email || "User";
             
-            await storage.createActivity({
+            // Template schedules have no project; their edits are not project activity.
+            if (schedule.projectId) await storage.createActivity({
               projectId: schedule.projectId,
               userId: req.user.id,
               userName: userName,
@@ -36146,23 +36185,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/schedule-items/bulk-delete", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
-      const { itemIds, projectId: requestedProjectId } = req.body;
+      const { itemIds, projectId: requestedProjectId, scheduleId: requestedScheduleId } = req.body;
       
       if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
         return res.status(400).json({ error: "itemIds array is required" });
       }
 
-      if (!requestedProjectId || typeof requestedProjectId !== 'string' || requestedProjectId.trim() === '') {
-        return res.status(400).json({ error: "Valid projectId is required" });
-      }
+      // A schedule template's schedule has no project, so the template page
+      // scopes the delete by scheduleId instead.
+      let scope;
+      if (typeof requestedScheduleId === "string" && requestedScheduleId && !requestedProjectId) {
+        if (!(await getOwnedSchedule(req, res, requestedScheduleId))) return;
+        scope = eq(schedules.id, requestedScheduleId);
+      } else {
+        if (!requestedProjectId || typeof requestedProjectId !== 'string' || requestedProjectId.trim() === '') {
+          return res.status(400).json({ error: "Valid projectId is required" });
+        }
 
-      // Verify project exists and belongs to the user's company
-      const project = await storage.getProject(requestedProjectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
-      if (project.companyId !== user?.companyId) {
-        return res.status(403).json({ error: "Access denied to this project" });
+        // Verify project exists and belongs to the user's company
+        const project = await storage.getProject(requestedProjectId);
+        if (!project) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+        if (project.companyId !== user?.companyId) {
+          return res.status(403).json({ error: "Access denied to this project" });
+        }
+        scope = eq(schedules.projectId, requestedProjectId);
       }
 
       // Single query: find all provided IDs that belong to a schedule under this project
@@ -36173,7 +36221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
         .where(and(
           inArray(scheduleItems.id, itemIds),
-          eq(schedules.projectId, requestedProjectId)
+          scope
         ));
 
       if (validItems.length === 0) {
@@ -36188,7 +36236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       try {
-        if (req.user && validItems.length > 0) {
+        if (req.user && validItems.length > 0 && requestedProjectId) {
           const userName = req.user.firstName && req.user.lastName 
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
@@ -36290,7 +36338,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const weekendOverride = item.useWorkingDaysOverride === true;
         const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
         const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
-        const depProject = schedule ? await storage.getProject(schedule.projectId) : null;
+        const depProject = schedule?.projectId ? await storage.getProject(schedule.projectId) : null;
         const depHolidays = depProject?.companyId ? await fetchNonWorkingDaySet(depProject.companyId, item.scheduleId) : new Set<string>();
         const isWorkingDay = (d: Date): boolean => {
           const dow = d.getDay();
@@ -36410,7 +36458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const weekendOverride = item.useWorkingDaysOverride === true;
           const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
           const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
-          const patchDepProject = schedule ? await storage.getProject(schedule.projectId) : null;
+          const patchDepProject = schedule?.projectId ? await storage.getProject(schedule.projectId) : null;
           const patchDepHolidays = patchDepProject?.companyId ? await fetchNonWorkingDaySet(patchDepProject.companyId, item.scheduleId) : new Set<string>();
           const isWorkingDay = (d: Date): boolean => {
             const dow = d.getDay();
@@ -36659,13 +36707,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const schedule = await storage.getScheduleById(scheduleId);
       if (!schedule) return res.status(404).json({ error: "Schedule not found" });
 
-      // Authorize: user must belong to the project's company
-      const project = await storage.getProject(schedule.projectId);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-      const userCompanyId = (req.user as any)?.companyId;
-      if (!userCompanyId || project.companyId !== userCompanyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      // Authorize: the schedule's project (or template) is the caller's company's
+      if (!(await enforceScheduleCompany(req, res, schedule as any))) return;
 
       const items = await storage.getScheduleItems(scheduleId);
       const itemIds = items.map(i => i.id);
@@ -36721,8 +36764,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Change activities (project-scoped, type=schedule)
-      if (filter !== "notes") {
+      // Change activities (project-scoped, type=schedule). A template's
+      // schedule has no project and records none.
+      if (filter !== "notes" && schedule.projectId) {
         const acts = await db.select()
           .from(activitiesTable)
           .where(and(
@@ -36831,12 +36875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const schedule = await storage.getScheduleById(scheduleId);
       if (!schedule) return res.status(404).json({ error: "Schedule not found" });
-      const project = await storage.getProject(schedule.projectId);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-      const userCompanyId = (req.user as any)?.companyId;
-      if (!userCompanyId || project.companyId !== userCompanyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      if (!(await enforceScheduleCompany(req, res, schedule as any))) return;
 
       const items = await storage.getScheduleItems(scheduleId);
       const itemIds = items.map(i => i.id);
@@ -36855,7 +36894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         noteCount = noteRows.length;
       }
 
-      const actRows = await db.select({
+      const actRows = !schedule.projectId ? [] : await db.select({
         id: activitiesTable.id,
         entityId: activitiesTable.entityId,
         metadata: activitiesTable.metadata,
@@ -36911,12 +36950,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const category = req.query.category as string | undefined;
       // Storage layer now filters by companyId + public templates
       const templates = await storage.getScheduleTemplates(user.companyId, category);
-      res.json(templates);
+      // Items live in the template's schedule now; template_data is only a
+      // backup, and stale once the template has been edited. Count the rows.
+      const ids = templates.map((t: any) => t.id);
+      const counts = ids.length === 0 ? [] : await db
+        .select({ templateId: schedules.templateId, n: sql<number>`count(${scheduleItems.id})::int` })
+        .from(schedules)
+        .leftJoin(scheduleItems, eq(scheduleItems.scheduleId, schedules.id))
+        .where(inArray(schedules.templateId, ids))
+        .groupBy(schedules.templateId);
+      const countOf = new Map(counts.map((c) => [c.templateId, c.n]));
+      res.json(templates.map((t: any) => ({
+        ...t,
+        itemCount: countOf.get(t.id) ?? (Array.isArray(t.templateData) ? t.templateData.length : 0),
+      })));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule templates",
         details: error.message 
       });
+    }
+  });
+
+  /**
+   * The schedule a template's items live in, created on first use (and any
+   * legacy template_data converted into rows). The template page then drives
+   * it through the ordinary /api/schedules and /api/schedule-items routes.
+   */
+  app.get("/api/schedule-templates/:id/schedule", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+      const template = await storage.getScheduleTemplate(req.params.id, user.companyId);
+      // A public template from another company can be applied, not opened.
+      if (!template || template.companyId !== user.companyId) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+      res.json(await ensureTemplateSchedule(template));
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to load the template's schedule", details: error.message });
     }
   });
 
@@ -36969,7 +37041,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdByName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
       };
       
-      const template = await storage.createScheduleTemplate(templateData);
+      // Where the items come from. Checked BEFORE anything is written.
+      const sourceTemplateId = typeof req.body?.sourceTemplateId === "string" ? req.body.sourceTemplateId : null;
+      const fromScheduleId = typeof req.body?.fromScheduleId === "string" ? req.body.fromScheduleId : null;
+      const sourceTemplate = sourceTemplateId ? await storage.getScheduleTemplate(sourceTemplateId, user.companyId) : null;
+      if (sourceTemplateId && !sourceTemplate) return res.status(404).json({ error: "Schedule template not found" });
+      const fromSchedule = fromScheduleId ? await getOwnedSchedule(req, res, fromScheduleId) : null;
+      if (fromScheduleId && !fromSchedule) return;
+
+      const template = await storage.createScheduleTemplate(
+        sourceTemplate || fromSchedule ? { ...templateData, templateData: [] } : templateData,
+      );
+
+      if (sourceTemplate) {
+        const source = await ensureTemplateSchedule(sourceTemplate);
+        const target = await createTemplateSchedule(template, source);
+        await copyScheduleItems({ source, target, sourceCompanyId: null, targetCompanyId: null });
+      } else if (fromSchedule) {
+        // Saving a project schedule as a template keeps its working week, and
+        // measures offsets from its earliest start on its own calendar
+        // (holidays included), so every item lands on the same working day.
+        const target = await createTemplateSchedule(template, fromSchedule);
+        await copyScheduleItems({ source: fromSchedule, target, sourceCompanyId: user.companyId, targetCompanyId: null });
+      } else {
+        await ensureTemplateSchedule(template);
+      }
       res.status(201).json(template);
     } catch (error: any) {
       res.status(500).json({ 
@@ -37057,163 +37153,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Apply template to a schedule
+  /**
+   * Apply a template to a project schedule. The template's items are copied
+   * in AFTER whatever the schedule already holds — below it in the list, and
+   * starting the next working day after its last item unless the caller picks
+   * a start date. Each item keeps its working-day offset and duration, placed
+   * on THIS project's week and holidays.
+   */
   app.post("/api/schedule-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const { scheduleId } = req.body;
+      const { scheduleId, startDate: startDateStr } = req.body;
       const user = req.user as any;
-      
+
       if (!scheduleId) {
         return res.status(400).json({ error: "scheduleId is required" });
       }
-
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Get the template (storage layer enforces companyId + public access)
+      // Storage enforces companyId-or-public on the template.
       const template = await storage.getScheduleTemplate(req.params.id, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Schedule template not found or access denied" });
       }
 
-      // Get the schedule to verify it exists and belongs to user's company
-      // Note: getScheduleById takes a schedule ID, getSchedule takes a projectId
-      const schedule = await storage.getScheduleById(scheduleId);
-      if (!schedule) {
-        return res.status(404).json({ error: "Schedule not found" });
+      // The target must be a PROJECT schedule the caller owns.
+      const target = await getOwnedSchedule(req, res, scheduleId);
+      if (!target) return;
+      if (!target.projectId) {
+        return res.status(400).json({ error: "A template can only be applied to a project schedule" });
       }
+      const project = await storage.getProject(target.projectId);
 
-      // Verify schedule belongs to a project in the user's company
-      const project = await storage.getProject(schedule.projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
+      const source = await ensureTemplateSchedule(template);
+      const { sortOrderBase, nextDay } = await appendPoint(target, user.companyId);
+      // Day 0: the caller's pick, else straight after the last item, else the
+      // project's start, else today.
+      const targetDay0 = startDateStr
+        ? scheduleDayString(startDateStr)
+        : nextDay
+          ?? (project?.startDate ? storedDay(project.startDate as any) : scheduleDayString(new Date()));
 
-      if (project.companyId !== user.companyId) {
-        return res.status(403).json({ error: "Access denied to this schedule" });
-      }
+      const createdItems = await copyScheduleItems({
+        source, target,
+        sourceCompanyId: null,
+        targetCompanyId: user.companyId,
+        targetDay0,
+        sortOrderBase,
+      });
 
-      // Company-level access is sufficient for applying templates
-      // (project membership check removed as company ownership is already verified)
-
-      const tplHolidays = project.companyId ? await fetchNonWorkingDaySet(project.companyId, scheduleId) : new Set<string>();
-      const isNonWorkingDay = (date: Date): boolean => {
-        const day = date.getDay();
-        if (day === 0 && !schedule.includeSunday) return true;
-        if (day === 6 && !schedule.includeSaturday) return true;
-        if (isHoliday(date, tplHolidays)) return true;
-        return false;
-      };
-
-      const addWorkingDaysServer = (date: Date, days: number): Date => {
-        let d = new Date(date);
-        let remaining = Math.abs(days);
-        const step = days >= 0 ? 1 : -1;
-        while (remaining > 0) {
-          d = new Date(d);
-          d.setDate(d.getDate() + step);
-          if (!isNonWorkingDay(d)) remaining--;
-        }
-        return d;
-      };
-
-      // Idempotency guard: if the schedule already has items, refuse to re-apply
-      const existingItems = await storage.getScheduleItems(scheduleId);
-      if (existingItems && existingItems.length > 0) {
-        return res.status(409).json({
-          error: "Template already applied",
-          message: "This schedule already has items. Clear them first before applying a template.",
-        });
-      }
-
-      const { startDate: startDateStr } = req.body;
-      // Fallback order: (1) caller-supplied startDate, (2) project.startDate, (3) today
-      const day0 = startDateStr
-        ? new Date(startDateStr)
-        : project.startDate
-          ? new Date(project.startDate)
-          : new Date();
-
-      const templateItems = (template.templateData as any[]) || [];
-
-      // Topological sort: parents must be created before their children so parentItemId
-      // remapping works correctly regardless of the order items appear in templateData.
-      const sorted: any[] = [];
-      {
-        const remaining = [...templateItems];
-        const addedIds = new Set<string>();
-        let guard = remaining.length * 2 + 1;
-        while (remaining.length > 0 && guard-- > 0) {
-          for (let i = remaining.length - 1; i >= 0; i--) {
-            const tItem = remaining[i];
-            const pid = tItem.parentItemId ?? null;
-            if (pid === null || addedIds.has(String(pid))) {
-              sorted.push(tItem);
-              if (tItem.id) addedIds.add(String(tItem.id));
-              remaining.splice(i, 1);
-            }
-          }
-        }
-        // Any items still stuck (orphaned parents missing) — append as-is
-        sorted.push(...remaining);
-      }
-
-      // Track old template item ID → new schedule item ID mapping for parentItemId rewiring
-      const idMap: Record<string, string> = {};
-      const createdItems = [];
-
-      for (const templateItem of sorted) {
-        const duration = Math.max(1, templateItem.duration || 1);
-        const relDay = templateItem.relativeStartDay ?? 0;
-        const itemStartDate = relDay === 0 ? new Date(day0) : addWorkingDaysServer(new Date(day0), relDay);
-        const itemEndDate = duration <= 1 ? new Date(itemStartDate) : addWorkingDaysServer(new Date(itemStartDate), duration - 1);
-
-        // Remap parentItemId using the old→new ID map
-        const oldParentId = templateItem.parentItemId ?? null;
-        const newParentId = oldParentId ? (idMap[oldParentId] ?? null) : null;
-
-        const newItem = await storage.createScheduleItem({
-          scheduleId: scheduleId,
-          name: templateItem.name,
-          description: templateItem.description || null,
-          notes: templateItem.notes || null,
-          type: templateItem.type || "task",
-          status: "not_started",
-          priority: templateItem.priority || "low",
-          startDate: itemStartDate,
-          endDate: itemEndDate,
-          duration,
-          progressPercent: 0,
-          sortOrder: templateItem.sortOrder || 0,
-          parentItemId: newParentId,
-          color: templateItem.color || null,
-        });
-        createdItems.push(newItem);
-
-        // Record mapping so children can reference this new ID
-        if (templateItem.id) {
-          idMap[templateItem.id] = newItem.id;
-        }
-      }
-
-      // Second pass: remap dependency IDs from template IDs to newly-created item IDs.
-      // Done after all items are created so forward-references also resolve correctly.
-      for (const templateItem of sorted) {
-        const rawDeps = (templateItem.dependencies as any[]) || [];
-        if (rawDeps.length > 0 && templateItem.id && idMap[templateItem.id]) {
-          const newItemId = idMap[templateItem.id];
-          const remapped = rawDeps.map((dep: any) => ({
-            ...dep,
-            id: idMap[dep.id] ?? dep.id,
-          }));
-          await storage.updateScheduleItem(newItemId, { dependencies: remapped });
-        }
-      }
-
-      res.status(201).json({ 
+      res.status(201).json({
         message: "Template applied successfully",
         itemsCreated: createdItems.length,
-        items: createdItems 
+        startDate: targetDay0,
+        items: createdItems,
       });
     } catch (error: any) {
       console.error("Error applying schedule template:", error);

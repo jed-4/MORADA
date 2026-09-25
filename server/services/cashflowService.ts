@@ -268,7 +268,7 @@ export async function loadJobCostInputs(companyId: string): Promise<Map<string, 
       .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), eq(timesheets.poStatus, "awaiting_po"))),
     db
       .select({
-        projectId: schedules.projectId,
+        projectId: projects.id, // same value via the inner join; never null
         costCodeId: scheduleItems.costCodeId,
         startDate: scheduleItems.startDate,
         endDate: scheduleItems.endDate,
@@ -416,7 +416,7 @@ export async function loadCashflow(
     // items — so take the earliest item start and the latest item finish.
     db
       .select({
-        projectId: schedules.projectId,
+        projectId: projects.id, // same value via the inner join; never null
         category: schedules.scheduleCategory,
         // mapWith: read like the timestamp columns themselves, not as raw text.
         startDate: sql<Date | null>`coalesce(min(${scheduleItems.startDate}), min(${schedules.startDate}))`.mapWith(schedules.startDate),
@@ -426,7 +426,7 @@ export async function loadCashflow(
       .innerJoin(projects, eq(schedules.projectId, projects.id))
       .leftJoin(scheduleItems, eq(scheduleItems.scheduleId, schedules.id))
       .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false)))
-      .groupBy(schedules.id, schedules.projectId, schedules.scheduleCategory),
+      .groupBy(schedules.id, projects.id, schedules.scheduleCategory),
     db
       .select()
       .from(businessExpenses)
