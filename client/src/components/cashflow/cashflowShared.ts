@@ -16,7 +16,18 @@ export interface SettingsResponse {
   opening: OpeningBalance;
 }
 
-export const forecastKey = (period: PeriodGranularity) => [`/api/cashflow/forecast?period=${period}`];
+/** How far ahead the forecast looks. */
+export const HORIZON_MONTHS = [3, 6, 9, 12] as const;
+export type HorizonMonths = (typeof HORIZON_MONTHS)[number];
+
+/** Months → periods: 6 months is 6 months or 13 fortnights (rounded up, so the last one isn't cut short). */
+export function periodsFor(period: PeriodGranularity, months: number): number {
+  return period === "month" ? months : Math.ceil((months * 26) / 12);
+}
+
+export const forecastKey = (period: PeriodGranularity, months: number = 12) => [
+  `/api/cashflow/forecast?period=${period}&periods=${periodsFor(period, months)}`,
+];
 export const SETTINGS_KEY = ["/api/cashflow/settings"];
 export const PROJECTS_KEY = ["/api/cashflow/projects"];
 export const EXPENSES_KEY = ["/api/cashflow/expenses"];

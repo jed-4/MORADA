@@ -9,7 +9,14 @@ import { ProjectsTab } from "@/components/cashflow/ProjectsTab";
 import { ExpensesTab } from "@/components/cashflow/ExpensesTab";
 import { SettingsDialog } from "@/components/cashflow/SettingsDialog";
 import { WhatIfsTab } from "@/components/cashflow/WhatIfsTab";
-import { forecastKey, SETTINGS_KEY, type ForecastResponse, type SettingsResponse } from "@/components/cashflow/cashflowShared";
+import {
+  forecastKey,
+  HORIZON_MONTHS,
+  SETTINGS_KEY,
+  type ForecastResponse,
+  type HorizonMonths,
+  type SettingsResponse,
+} from "@/components/cashflow/cashflowShared";
 
 type TabId = "forecast" | "projects" | "expenses" | "whatifs";
 
@@ -20,8 +27,20 @@ const TABS: { id: TabId; label: string; Icon: typeof LineChart }[] = [
   { id: "whatifs", label: "What-ifs", Icon: FlaskConical },
 ];
 
-function ForecastPanel({ period, view }: { period: PeriodGranularity; view: "forecast" | "whatifs" }) {
-  const { data, isLoading, error } = useQuery<ForecastResponse>({ queryKey: forecastKey(period) });
+const HORIZON_STORAGE_KEY = "morada.cashflow.horizonMonths";
+
+/** The viewer's last horizon — a per-browser convenience, so storage may be unavailable. */
+function readHorizon(): HorizonMonths {
+  try {
+    const n = Number(localStorage.getItem(HORIZON_STORAGE_KEY));
+    return (HORIZON_MONTHS as readonly number[]).includes(n) ? (n as HorizonMonths) : 12;
+  } catch {
+    return 12;
+  }
+}
+
+function ForecastPanel({ period, months, view }: { period: PeriodGranularity; months: HorizonMonths; view: "forecast" | "whatifs" }) {
+  const { data, isLoading, error } = useQuery<ForecastResponse>({ queryKey: forecastKey(period, months) });
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-16 text-xs text-muted-foreground">
@@ -39,6 +58,15 @@ function ForecastPanel({ period, view }: { period: PeriodGranularity; view: "for
 export default function BusinessCashflow() {
   const [activeTab, setActiveTab] = useState<TabId>("forecast");
   const [period, setPeriod] = useState<PeriodGranularity | null>(null);
+  const [months, setMonthsState] = useState<HorizonMonths>(readHorizon);
+  const setMonths = (m: HorizonMonths) => {
+    setMonthsState(m);
+    try {
+      localStorage.setItem(HORIZON_STORAGE_KEY, String(m));
+    } catch {
+      /* private window — the choice just won't be remembered */
+    }
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const canEditSettings = usePermission("business.cashflow", "edit");
 
@@ -75,6 +103,21 @@ export default function BusinessCashflow() {
           })}
         </div>
         <div className="flex items-center gap-2 pb-1.5">
+          {(activeTab === "forecast" || activeTab === "whatifs") && (
+            <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" title="How far ahead to forecast">
+              {HORIZON_MONTHS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMonths(m)}
+                  className={cn("h-6 px-2 text-xs rounded tabular-nums", months === m ? "bg-card font-semibold shadow-sm" : "text-muted-foreground")}
+                  data-testid={`toggle-horizon-${m}`}
+                >
+                  {m} mo
+                </button>
+              ))}
+            </div>
+          )}
           {activeTab === "forecast" && (
             <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
               {(["fortnight", "month"] as PeriodGranularity[]).map((p) => (
@@ -105,13 +148,13 @@ export default function BusinessCashflow() {
 
       {activeTab === "forecast" &&
         (period ? (
-          <ForecastPanel period={period} view="forecast" />
+          <ForecastPanel period={period} months={months} view="forecast" />
         ) : (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
         ))}
       {activeTab === "projects" && <ProjectsTab />}
       {activeTab === "expenses" && <ExpensesTab />}
-      {activeTab === "whatifs" && (period ? <ForecastPanel period={period} view="whatifs" /> : null)}
+      {activeTab === "whatifs" && (period ? <ForecastPanel period={period} months={months} view="whatifs" /> : null)}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
