@@ -2,10 +2,14 @@ import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
+  Area,
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
+  LabelList,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -189,12 +193,17 @@ function KpiRow({ data }: { data: ForecastResponse }) {
 
 function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
-  const p = payload[0].payload;
+  const p = payload[0].payload as ChartRow;
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-sm space-y-0.5">
-      <p className="font-semibold">{p.label}</p>
-      <p className="text-status-success">In {money(p.in)}</p>
-      <p className="text-destructive">Out {money(-p.out)}</p>
+      <p className="font-semibold">{p.isToday ? "In the bank today" : p.label}</p>
+      {!p.isToday && (
+        <>
+          <p className="text-status-success">In {money(p.in ?? 0)}</p>
+          <p className="text-destructive">Out {money(-(p.out ?? 0))}</p>
+          <p className="text-muted-foreground">Net {money(p.net ?? 0)}</p>
+        </>
+      )}
       {p.showBoth ? (
         <>
           <p className="font-medium">Balance {money(p.baseline)}</p>
@@ -239,50 +248,274 @@ function WhatIfChips({ whatIfs }: { whatIfs: WhatIfDefinition[] }) {
   );
 }
 
+type ChartStyle = "split" | "paired" | "net" | "balance";
+const CHART_STYLES: { id: ChartStyle; label: string; hint: string }[] = [
+  { id: "split", label: "In / out", hint: "Cash in above zero, cash out below — tight months hang down" },
+  { id: "paired", label: "Side by side", hint: "Cash in and out side by side, above zero" },
+  { id: "net", label: "Net", hint: "One bar per period: what came in less what went out" },
+  { id: "balance", label: "Balance", hint: "Just the balance line, with in and out listed underneath" },
+];
+const CHART_STYLE_KEY = "morada.cashflow.chartStyle";
+
+/** The viewer's last chart style — a per-browser convenience, so storage may be unavailable. */
+function useChartStyle(): [ChartStyle, (s: ChartStyle) => void] {
+  const [style, setStyle] = useState<ChartStyle>(() => {
+    try {
+      const v = localStorage.getItem(CHART_STYLE_KEY);
+      return CHART_STYLES.some((c) => c.id === v) ? (v as ChartStyle) : "split";
+    } catch {
+      return "split";
+    }
+  });
+  return [
+    style,
+    (s) => {
+      setStyle(s);
+      try {
+        localStorage.setItem(CHART_STYLE_KEY, s);
+      } catch {
+        /* private window — just not remembered */
+      }
+    },
+  ];
+}
+
+interface ChartRow {
+  label: string;
+  isToday: boolean;
+  in: number | null;
+  out: number | null; // positive
+  outDown: number | null; // negative, for the in-above/out-below style
+  net: number | null;
+  closing: number;
+  baseline: number;
+  showBoth: boolean;
+}
+
+/** Round axis steps (1, 2, 2.5, 5 × 10ⁿ) that always include $0 and the buffer. */
+function niceAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
+  const span = Math.max(hi - lo, 100_000);
+  const raw = span / 5;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw)!;
+  const min = Math.floor(lo / step) * step;
+  const max = Math.ceil(hi / step) * step;
+  const ticks: number[] = [];
+  for (let t = min; t <= max + step / 2; t += step) ticks.push(Math.round(t));
+  return { domain: [min, max], ticks };
+}
+
 function ForecastChart({ f, whatIfs }: { f: ForecastResult; whatIfs: WhatIfDefinition[] }) {
+  const [style, setStyle] = useChartStyle();
   const showBoth = whatIfs.some((w) => w.isEnabled);
-  const rows = f.periods.map((p, i) => ({
-    label: p.label,
-    // A what-if's net for the period joins the in or out bar it pushes.
-    in: f.inCents[i] + Math.max(0, f.whatIfCents[i]),
-    out: -(f.outCents[i] + Math.min(0, f.whatIfCents[i])),
-    closing: f.closingCents[i],
-    baseline: f.baselineClosingCents[i],
-    showBoth,
-  }));
+  const buffer = f.bufferCents;
+
+  const rows: ChartRow[] = useMemo(() => {
+    const periods = f.periods.map((p, i) => {
+      // A what-if's net for the period joins the in or out bar it pushes.
+      const cin = f.inCents[i] + Math.max(0, f.whatIfCents[i]);
+      const cout = -(f.outCents[i] + Math.min(0, f.whatIfCents[i]));
+      return {
+        label: p.label,
+        isToday: false,
+        in: cin,
+        out: cout,
+        outDown: -cout,
+        net: cin - cout,
+        closing: f.closingCents[i],
+        baseline: f.baselineClosingCents[i],
+        showBoth,
+      };
+    });
+    // Start the line from what's in the bank now.
+    const today: ChartRow = {
+      label: "Today",
+      isToday: true,
+      in: null,
+      out: null,
+      outDown: null,
+      net: null,
+      closing: f.openingBalanceCents,
+      baseline: f.openingBalanceCents,
+      showBoth,
+    };
+    return [today, ...periods];
+  }, [f, showBoth]);
+
+  // The line the labels go on: with what-ifs when they're on, else the balance.
+  const mainKey = showBoth ? "closing" : "baseline";
+  const axis = useMemo(() => {
+    const vals = [buffer, ...rows.flatMap((r) => [r.closing, r.baseline])];
+    for (const r of rows) {
+      if (style === "split") vals.push(r.in ?? 0, r.outDown ?? 0);
+      if (style === "paired") vals.push(r.in ?? 0, r.out ?? 0);
+      if (style === "net") vals.push(r.net ?? 0);
+    }
+    return niceAxis(vals);
+  }, [rows, buffer, style]);
+
+  // Every point gets its figure when there's room; on a long forecast, only
+  // today, the lowest point and the end.
+  const lowestIdx = rows.reduce((m, r, i) => (r[mainKey] < rows[m][mainKey] ? i : m), 0);
+  const labelAll = rows.length <= 14;
+  const showLabel = (i: number) => labelAll || i === 0 || i === lowestIdx || i === rows.length - 1;
+
+  const renderLabel = (props: any) => {
+    const { x, y, value, index } = props;
+    if (!showLabel(index) || x == null || y == null) return null;
+    const prev = index > 0 ? rows[index - 1][mainKey] : value;
+    const below = value < prev; // falling: label under the point, clear of the line
+    return (
+      <text
+        x={x}
+        y={below ? y + 16 : y - 9}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={600}
+        fill={value < buffer ? "hsl(var(--destructive))" : "hsl(var(--foreground))"}
+      >
+        {moneyShort(value)}
+      </text>
+    );
+  };
+  const renderDot = (props: any) => {
+    const { cx, cy, value, index } = props;
+    if (cx == null || cy == null) return <g key={index} />;
+    return (
+      <circle
+        key={index}
+        cx={cx}
+        cy={cy}
+        r={3.5}
+        strokeWidth={2}
+        stroke="hsl(var(--card))"
+        fill={value < buffer ? "hsl(var(--destructive))" : "hsl(var(--foreground))"}
+      />
+    );
+  };
+
+  const bars = style === "split" || style === "paired" || style === "net";
+  const hint = CHART_STYLES.find((c) => c.id === style)!.hint;
+
   return (
     <Card className="p-4" data-testid="card-cashflow-chart">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <h3 className="text-sm font-semibold">Bank balance and cash movement</h3>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sage" />Cash in</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-coral" />Cash out</span>
-          <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-foreground" />Balance</span>
-          {showBoth && (
-            <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-primary" />With what-ifs</span>
-          )}
-          <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-destructive" />Buffer</span>
+        <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" title={hint}>
+          {CHART_STYLES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setStyle(c.id)}
+              title={c.hint}
+              className={cn("h-6 px-2.5 text-xs rounded", style === c.id ? "bg-card font-semibold shadow-sm" : "text-muted-foreground")}
+              data-testid={`toggle-chart-${c.id}`}
+            >
+              {c.label}
+            </button>
+          ))}
         </div>
       </div>
+      <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground mb-3">
+        {style !== "net" && style !== "balance" && (
+          <>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sage" />Cash in</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-coral" />Cash out</span>
+          </>
+        )}
+        {style === "net" && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-sage" /><span className="h-2.5 w-2.5 rounded-sm bg-coral -ml-1" />Net for the period
+          </span>
+        )}
+        <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-foreground" />Balance</span>
+        {showBoth && (
+          <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-primary" />With what-ifs</span>
+        )}
+        <span className="flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-destructive" />Buffer {moneyShort(buffer)}</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-destructive/10" />Below buffer</span>
+      </div>
       <WhatIfChips whatIfs={whatIfs} />
-      <div className="h-[280px]">
+      <div className={style === "balance" ? "h-[240px]" : "h-[300px]"}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-            <YAxis tickFormatter={moneyShort} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={56} />
-            <Tooltip content={<ChartTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }} />
-            <ReferenceLine y={0} stroke="hsl(var(--border))" />
-            <ReferenceLine y={f.bufferCents} stroke="hsl(var(--destructive))" strokeDasharray="5 4" />
-            <Bar dataKey="in" fill="hsl(var(--sage))" radius={[3, 3, 0, 0]} maxBarSize={22} />
-            <Bar dataKey="out" fill="hsl(var(--coral))" radius={[3, 3, 0, 0]} maxBarSize={22} />
-            <Line dataKey="baseline" stroke="hsl(var(--foreground))" strokeWidth={2} dot={{ r: 3 }} type="linear" isAnimationActive={false} />
+          <ComposedChart
+            data={rows}
+            margin={{ top: 18, right: 12, bottom: 0, left: 8 }}
+            stackOffset={style === "split" ? "sign" : undefined}
+            barGap={2}
+            barCategoryGap={style === "paired" ? "28%" : "38%"}
+          >
+            <ReferenceArea y1={axis.domain[0]} y2={Math.min(buffer, axis.domain[1])} fill="hsl(var(--destructive))" fillOpacity={0.06} ifOverflow="hidden" />
+            <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis
+              tickFormatter={moneyShort}
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              domain={axis.domain}
+              ticks={axis.ticks}
+              allowDataOverflow
+            />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.6 }} />
+            <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeOpacity={0.5} />
+            <ReferenceLine y={buffer} stroke="hsl(var(--destructive))" strokeDasharray="5 4" />
+
+            {style === "split" && <Bar dataKey="in" stackId="flow" fill="hsl(var(--sage))" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />}
+            {style === "split" && <Bar dataKey="outDown" stackId="flow" fill="hsl(var(--coral))" radius={[0, 0, 4, 4]} maxBarSize={28} isAnimationActive={false} />}
+            {style === "paired" && <Bar dataKey="in" fill="hsl(var(--sage))" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />}
+            {style === "paired" && <Bar dataKey="out" fill="hsl(var(--coral))" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />}
+            {style === "net" && (
+              <Bar dataKey="net" radius={[4, 4, 4, 4]} maxBarSize={28} isAnimationActive={false}>
+                {rows.map((r, i) => (
+                  <Cell key={i} fill={(r.net ?? 0) >= 0 ? "hsl(var(--sage))" : "hsl(var(--coral))"} />
+                ))}
+              </Bar>
+            )}
+            {style === "balance" && (
+              <Area dataKey={mainKey} type="monotone" stroke="none" fill="hsl(var(--foreground))" fillOpacity={0.06} isAnimationActive={false} />
+            )}
+
+            <Line
+              dataKey="baseline"
+              stroke="hsl(var(--foreground))"
+              strokeWidth={2}
+              dot={showBoth ? { r: 2.5 } : renderDot}
+              activeDot={{ r: 5 }}
+              type="monotone"
+              isAnimationActive={false}
+            >
+              {!showBoth && <LabelList dataKey="baseline" content={renderLabel} />}
+            </Line>
             {showBoth && (
-              <Line dataKey="closing" stroke="hsl(var(--primary))" strokeWidth={2.5} strokeDasharray="7 5" dot={false} type="linear" isAnimationActive={false} />
+              <Line dataKey="closing" stroke="hsl(var(--primary))" strokeWidth={2.5} strokeDasharray="7 5" dot={renderDot} type="monotone" isAnimationActive={false}>
+                <LabelList dataKey="closing" content={renderLabel} />
+              </Line>
             )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {style === "balance" && (
+        <div
+          className="grid text-data tabular-nums text-center mt-1"
+          style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`, marginLeft: 64, marginRight: 12 }}
+          data-testid="strip-cashflow-figures"
+        >
+          {rows.map((r, i) =>
+            r.isToday ? (
+              <div key={i} />
+            ) : (
+              <div key={i} className={cn(rows.length > 14 && "hidden md:block")}>
+                <div className="text-status-success">+{moneyShort(r.in ?? 0)}</div>
+                <div className="text-destructive">−{moneyShort(r.out ?? 0).replace("−", "")}</div>
+              </div>
+            ),
+          )}
+        </div>
+      )}
     </Card>
   );
 }
