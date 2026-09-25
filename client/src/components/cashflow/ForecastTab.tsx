@@ -47,6 +47,13 @@ function syncedAgo(iso: string | undefined): string {
   return ` · synced ${new Date(iso).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
 }
 
+/** "Operations" / "Operations + Tax holding" / "all 6 accounts" — say which cash this is. */
+function accountLabel(names: string[]): string {
+  if (names.length === 0) return "no accounts ticked";
+  if (names.length <= 2) return names.join(" + ");
+  return `${names.length} accounts`;
+}
+
 /** "In the bank today", with Sync from Xero and a typed-in override. */
 function OpeningKpi({ data }: { data: ForecastResponse }) {
   const { toast } = useToast();
@@ -72,7 +79,7 @@ function OpeningKpi({ data }: { data: ForecastResponse }) {
 
   const sub =
     o.source === "xero"
-      ? `From Xero · ${o.accounts.filter((a) => a.included).length} account(s)${syncedAgo(o.fetchedAt)}`
+      ? `From Xero · ${accountLabel(o.accounts.filter((a) => a.included).map((a) => a.name))}${syncedAgo(o.fetchedAt)}`
       : o.source === "manual"
         ? o.xeroConnected ? "Entered by hand · Xero not used" : "Entered by hand"
         : o.error ?? (o.xeroConnected ? "No balance yet — sync from Xero" : "No balance yet — enter today's balance");
