@@ -95,7 +95,9 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 export default function BusinessRevenueWidget({ widget }: WidgetProps) {
   const range = readRange(widget);
   const { data, isLoading, isError, refetch } = useQuery<RevenueTrendsResponse>({
-    queryKey: ["/api/business/revenue-trends", range],
+    // The default fetcher joins key parts with "/", so a separate `range` part
+    // requested /revenue-trends/6m and 404'd. The server reads ?range=.
+    queryKey: [`/api/business/revenue-trends?range=${range}`],
   });
 
   if (isLoading) return <WidgetSkeleton />;

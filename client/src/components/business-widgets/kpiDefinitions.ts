@@ -125,7 +125,7 @@ export const KPI_DEFINITIONS: Record<KPIKey, KPIDefinition> = {
     description: "Total value of variations approved in the selected period",
     format: "currency",
     accent: "green",
-    financialGated: false,
+    financialGated: true,
     periodFilter: true,
     endpoint: "/api/kpis/variations-approved",
   },
