@@ -154,7 +154,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               <Label>Opening balance</Label>
               {opening?.source === "xero" ? (
                 <div className="space-y-1.5 pt-1">
-                  <p className="text-xs text-muted-foreground">From Xero. Tick the accounts that count as cash for the business.</p>
+                  <p className="text-xs text-muted-foreground">From Xero. Tick the account(s) the forecast should start from — usually just your operating account.</p>
                   {xeroAccounts.map((a) => (
                     <label key={a.id} className="flex items-center gap-2 text-sm">
                       <Checkbox
@@ -173,7 +173,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               ) : (
                 <div className="space-y-1.5 pt-1">
                   <p className="text-xs text-muted-foreground">
-                    {opening?.error ?? "Xero isn't connected, so enter today's bank balance."}
+                    {opening?.error ??
+                      (opening?.xeroConnected
+                        ? "Typed in by hand, so Xero isn't used. Clear it, or press Sync from Xero on the forecast, to go back to Xero."
+                        : "Xero isn't connected, so enter today's bank balance.")}
                   </p>
                   <NumericInput
                     value={draft.manualOpeningDollars}

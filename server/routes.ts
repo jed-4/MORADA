@@ -45009,6 +45009,33 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // "Sync from Xero": drop any typed-in balance and read Xero fresh, skipping
+  // the few-minute cache.
+  app.post("/api/cashflow/opening-balance/sync", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { cashflowSettings } = await import("@shared/schema");
+      const { CASHFLOW_SETTINGS_DEFAULTS, clearCashflowBalanceCache, getCashflowSettings, getOpeningBalance } = await import("./services/cashflowService");
+      if (!(await storage.getXeroConnectionByCompanyId(companyId))) {
+        return res.status(409).json({ error: "Xero isn't connected" });
+      }
+      const values = { manualOpeningBalanceCents: null, updatedAt: new Date() };
+      await db
+        .insert(cashflowSettings)
+        .values({ ...CASHFLOW_SETTINGS_DEFAULTS, ...values, companyId })
+        .onConflictDoUpdate({ target: cashflowSettings.companyId, set: values });
+      clearCashflowBalanceCache(companyId);
+      const opening = await getOpeningBalance(companyId, await getCashflowSettings(companyId));
+      if (opening.error) return res.status(502).json({ error: opening.error });
+      res.json(opening);
+    } catch (error: any) {
+      console.error("[cashflow] opening balance sync failed:", error);
+      res.status(500).json({ error: "Failed to sync the bank balance" });
+    }
+  });
+
   app.get("/api/cashflow/projects", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;

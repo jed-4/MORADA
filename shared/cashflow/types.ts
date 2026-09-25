@@ -203,6 +203,10 @@ export interface OpeningBalance {
   accounts: { id: string; name: string; balanceCents: number; included: boolean }[];
   /** Set when Xero is connected but the balance couldn't be read. */
   error?: string;
+  /** Xero is connected, so "Sync from Xero" can replace a typed balance. */
+  xeroConnected?: boolean;
+  /** When the Xero balance was read (ISO) — it's cached for a few minutes. */
+  fetchedAt?: string;
 }
 
 /** One row of the Projects tab — also what the engine's JobInput is built from. */

@@ -12,7 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Pencil, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Card } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -37,21 +39,128 @@ function Kpi({ label, value, sub, tone, testId }: { label: string; value: string
   );
 }
 
+function syncedAgo(iso: string | undefined): string {
+  if (!iso) return "";
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return " · synced just now";
+  if (mins < 60) return ` · synced ${mins} min ago`;
+  return ` · synced ${new Date(iso).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/** "Operations" / "Operations + Tax holding" / "all 6 accounts" — say which cash this is. */
+function accountLabel(names: string[]): string {
+  if (names.length === 0) return "no accounts ticked";
+  if (names.length <= 2) return names.join(" + ");
+  return `${names.length} accounts`;
+}
+
+/** "In the bank today", with Sync from Xero and a typed-in override. */
+function OpeningKpi({ data }: { data: ForecastResponse }) {
+  const { toast } = useToast();
+  const canEdit = usePermission("business.cashflow", "edit");
+  const [editing, setEditing] = useState(false);
+  const [dollars, setDollars] = useState<number | null>(null);
+  const o = data.opening;
+
+  const sync = useMutation({
+    mutationFn: () => apiRequest("/api/cashflow/opening-balance/sync", "POST"),
+    onSuccess: () => invalidateCashflow(),
+    onError: (e: any) =>
+      toast({ title: "Couldn't sync from Xero", description: e?.message?.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const save = useMutation({
+    mutationFn: (cents: number | null) => apiRequest("/api/cashflow/settings", "PATCH", { manualOpeningBalanceCents: cents }),
+    onSuccess: () => {
+      setEditing(false);
+      invalidateCashflow();
+    },
+    onError: () => toast({ title: "Couldn't save the balance", variant: "destructive" }),
+  });
+
+  const sub =
+    o.source === "xero"
+      ? `From Xero · ${accountLabel(o.accounts.filter((a) => a.included).map((a) => a.name))}${syncedAgo(o.fetchedAt)}`
+      : o.source === "manual"
+        ? o.xeroConnected ? "Entered by hand · Xero not used" : "Entered by hand"
+        : o.error ?? (o.xeroConnected ? "No balance yet — sync from Xero" : "No balance yet — enter today's balance");
+
+  return (
+    <Card className="flex-1 min-w-[200px] px-4 py-3" data-testid="kpi-opening">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs text-muted-foreground">In the bank today</p>
+        {canEdit && (
+          <div className="flex items-center gap-1 -mt-0.5 -mr-1">
+            {o.xeroConnected && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs text-muted-foreground"
+                disabled={sync.isPending}
+                onClick={() => sync.mutate()}
+                data-testid="button-sync-opening"
+              >
+                {sync.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                Sync from Xero
+              </Button>
+            )}
+            <Popover
+              open={editing}
+              onOpenChange={(v) => {
+                setEditing(v);
+                if (v) setDollars(o.cents == null ? null : Math.round(o.cents) / 100);
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground" data-testid="button-edit-opening">
+                  <Pencil className="w-3 h-3 mr-1" />Enter
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 space-y-2">
+                <p className="text-sm font-semibold">Today's bank balance</p>
+                <p className="text-xs text-muted-foreground">
+                  {o.xeroConnected
+                    ? "Used instead of Xero until you press Sync from Xero."
+                    : "Xero isn't connected, so type in what's in the bank today."}
+                </p>
+                <NumericInput
+                  value={dollars}
+                  onCommit={setDollars}
+                  placeholder="e.g. 184320"
+                  className="h-8 text-sm"
+                  autoFocus
+                  data-testid="input-opening-balance"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    disabled={dollars == null || save.isPending}
+                    onClick={() => dollars != null && save.mutate(Math.round(dollars * 100))}
+                    data-testid="button-save-opening"
+                  >
+                    {save.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}Save
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
+      </div>
+      <p className="text-2xl font-bold tabular-nums mt-0.5">{money(data.forecast.openingBalanceCents)}</p>
+      <p className={cn("text-xs mt-0.5", o.error ? "text-destructive" : "text-muted-foreground")}>{sub}</p>
+    </Card>
+  );
+}
+
 function KpiRow({ data }: { data: ForecastResponse }) {
   const f = data.forecast;
   const last = f.periods.length - 1;
-  const openingSub =
-    data.opening.source === "xero"
-      ? `From Xero · ${data.opening.accounts.filter((a) => a.included).length} account(s)`
-      : data.opening.source === "manual"
-        ? "Entered in settings"
-        : data.opening.error ?? "No balance — set one in settings";
   const below = f.firstBelowBufferIndex;
   const withWhatIfs = data.whatIfs.some((w) => w.isEnabled) ? " · with what-ifs" : "";
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Kpi testId="kpi-opening" label="In the bank today" value={money(f.openingBalanceCents)} sub={openingSub} />
+      <OpeningKpi data={data} />
       <Kpi
         testId="kpi-lowest"
         label="Lowest point"

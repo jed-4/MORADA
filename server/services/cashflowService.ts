@@ -100,26 +100,38 @@ export async function getCashflowSettings(companyId: string): Promise<CashflowSe
 // ── Opening balance ─────────────────────────────────────────────────────────
 
 const BALANCE_TTL_MS = 5 * 60 * 1000;
-const balanceCache = new Map<string, { value: Awaited<ReturnType<typeof xeroService.getBankAccountBalances>>; expiresAt: number }>();
+const balanceCache = new Map<string, { value: Awaited<ReturnType<typeof xeroService.getBankAccountBalances>>; expiresAt: number; fetchedAt: string }>();
 
 export function clearCashflowBalanceCache(companyId: string): void {
   balanceCache.delete(companyId);
 }
 
+/**
+ * Today's bank balance. A balance typed in by hand wins — it's how you correct
+ * Xero when the bank feed is behind — until "Sync from Xero" clears it.
+ * Without a typed balance, Xero supplies it when connected.
+ */
 export async function getOpeningBalance(companyId: string, settings: CashflowSettings): Promise<OpeningBalance> {
-  const manual: OpeningBalance = {
-    cents: settings.manualOpeningBalanceCents,
-    source: settings.manualOpeningBalanceCents == null ? null : "manual",
-    accounts: [],
-  };
-
   const connection = await storage.getXeroConnectionByCompanyId(companyId);
-  if (!connection) return manual;
+  const xeroConnected = !!connection;
+
+  if (settings.manualOpeningBalanceCents != null || !connection) {
+    return {
+      cents: settings.manualOpeningBalanceCents,
+      source: settings.manualOpeningBalanceCents == null ? null : "manual",
+      accounts: [],
+      xeroConnected,
+    };
+  }
 
   try {
     let hit = balanceCache.get(companyId);
     if (!hit || hit.expiresAt <= Date.now()) {
-      hit = { value: await xeroService.getBankAccountBalances(connection.id), expiresAt: Date.now() + BALANCE_TTL_MS };
+      hit = {
+        value: await xeroService.getBankAccountBalances(connection.id),
+        expiresAt: Date.now() + BALANCE_TTL_MS,
+        fetchedAt: new Date().toISOString(),
+      };
       balanceCache.set(companyId, hit);
     }
     const chosen = settings.bankAccountIds && settings.bankAccountIds.length > 0 ? new Set(settings.bankAccountIds) : null;
@@ -133,10 +145,12 @@ export async function getOpeningBalance(companyId: string, settings: CashflowSet
       cents: accounts.filter((a) => a.included).reduce((s, a) => s + a.balanceCents, 0),
       source: "xero",
       accounts,
+      xeroConnected,
+      fetchedAt: hit.fetchedAt,
     };
   } catch (err: any) {
     console.error("[cashflow] Xero bank balance failed:", err?.message ?? err);
-    return { ...manual, error: "Couldn't read the bank balance from Xero." };
+    return { cents: null, source: null, accounts: [], xeroConnected, error: "Couldn't read the bank balance from Xero." };
   }
 }
 

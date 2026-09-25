@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import type { XeroConnection } from "@shared/schema";
 import { encryptToken, decryptToken } from "../utils/encryption";
+import { parseBankSummaryBalances } from "./xeroBankSummary";
 
 // Encrypt Xero tokens at rest when a 32-char key is configured; otherwise store
 // as-is so a missing key never breaks the connection. Reads transparently
@@ -2013,9 +2014,12 @@ export class XeroService {
       "Xero-Tenant-Id": connection.tenantId,
       Accept: "application/json",
     };
+    // Balance as at today in Sydney — left unset, Xero reports to the end of
+    // the current month, which counts future-dated transactions.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date());
     const [accountsResponse, summaryResponse] = await Promise.all([
       fetch(`${XERO_API_BASE}/Accounts?where=Type=="BANK"`, { headers }),
-      fetch(`${XERO_API_BASE}/Reports/BankSummary`, { headers }),
+      fetch(`${XERO_API_BASE}/Reports/BankSummary?fromDate=${today}&toDate=${today}`, { headers }),
     ]);
     if (!accountsResponse.ok) {
       const errorText = await accountsResponse.text();
@@ -2024,29 +2028,15 @@ export class XeroService {
     const accountsData = (await accountsResponse.json()) as any;
     const accounts: any[] = accountsData.Accounts || [];
 
-    // BankSummary parsing: each non-summary section corresponds to one bank
-    // account. The header row carries the account UUID via the `account`
-    // Attribute; the SummaryRow inside the section carries the closing
-    // balance (last numeric cell).
-    const balances = new Map<string, { statement: number; xero: number }>();
-    if (summaryResponse.ok) {
-      const summaryData = (await summaryResponse.json()) as any;
-      const report = summaryData.Reports?.[0];
-      const sections: any[] = report?.Rows || [];
-      for (const section of sections) {
-        if (section.RowType !== "Section" || !Array.isArray(section.Rows)) continue;
-        const headerRow = section.Rows.find((r: any) => r.RowType === "Row");
-        const accountUuid = headerRow?.Cells?.[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value;
-        if (!accountUuid) continue;
-        const summaryRow = section.Rows.find((r: any) => r.RowType === "SummaryRow");
-        const cells: any[] = summaryRow?.Cells || headerRow?.Cells || [];
-        const numericCells = cells
-          .map((c: any) => parseFloat(c?.Value || ""))
-          .filter((v: number) => Number.isFinite(v));
-        const closing = numericCells.length > 0 ? numericCells[numericCells.length - 1] : 0;
-        balances.set(accountUuid, { statement: closing, xero: closing });
-      }
+    // A failed report must not read as $0 in every account.
+    if (!summaryResponse.ok) {
+      const errorText = await summaryResponse.text();
+      throw new Error(`Failed to fetch BankSummary: ${summaryResponse.status} ${errorText}`);
     }
+    const summaryData = (await summaryResponse.json()) as any;
+    const closing = parseBankSummaryBalances(summaryData.Reports?.[0]);
+    const balances = new Map<string, { statement: number; xero: number }>();
+    closing.forEach((v, id) => balances.set(id, { statement: v, xero: v }));
 
     return accounts.map((a: any) => {
       const bal = balances.get(a.AccountID) || { statement: 0, xero: 0 };
