@@ -877,6 +877,7 @@
     "server/routes.ts POST /api/cashflow/expense-suggestions/scan",
     "server/routes.ts POST /api/cashflow/expenses",
     "server/routes.ts POST /api/cashflow/opening-balance/sync",
+    "server/routes.ts POST /api/cashflow/projects/:projectId/claims/from-invoices",
     "server/routes.ts POST /api/cashflow/projects/:projectId/claims/from-proposal",
     "server/routes.ts POST /api/cashflow/what-ifs",
     "server/routes.ts POST /api/channels",

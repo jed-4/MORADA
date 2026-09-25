@@ -75,7 +75,7 @@ import {
 } from "@shared/cashflow";
 import { dollarsToCents, exGstFromInc, incGstFromEx } from "@shared/money";
 import { frozenContractTotalFrom, isApprovedVariationStatus } from "@shared/projectMetrics";
-import { invoiceBalanceCents, isIssuedInvoice } from "@shared/invoiceMetrics";
+import { invoiceBalanceCents, isCountableInvoice, isIssuedInvoice } from "@shared/invoiceMetrics";
 
 const FORECAST_PHASES: JobPhase[] = ["lead", "pre_construction", "construction"];
 
@@ -385,7 +385,9 @@ export async function loadCashflow(
       })
       .from(clientInvoices)
       .innerJoin(projects, eq(clientInvoices.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), ne(clientInvoices.status, "draft"), ne(clientInvoices.status, "cancelled"))),
+      // Drafts too: they're the job's planned claims (value and set-up). Every
+      // money loop below still skips anything not issued.
+      .where(and(eq(projects.companyId, companyId), ne(clientInvoices.status, "cancelled"))),
     db
       .select({ projectId: variations.projectId, status: variations.status, totalAmount: variations.totalAmount })
       .from(variations)
@@ -410,16 +412,21 @@ export async function loadCashflow(
       .leftJoin(contacts, eq(bills.supplierId, contacts.id))
       .where(and(eq(bills.companyId, companyId), ne(bills.status, "paid"))),
     loadJobCostInputs(companyId),
+    // A schedule's own start/end are often blank — the dates live on its
+    // items — so take the earliest item start and the latest item finish.
     db
       .select({
         projectId: schedules.projectId,
         category: schedules.scheduleCategory,
-        startDate: schedules.startDate,
-        endDate: schedules.endDate,
+        // mapWith: read like the timestamp columns themselves, not as raw text.
+        startDate: sql<Date | null>`coalesce(min(${scheduleItems.startDate}), min(${schedules.startDate}))`.mapWith(schedules.startDate),
+        endDate: sql<Date | null>`coalesce(max(coalesce(${scheduleItems.actualEndDate}, ${scheduleItems.endDate})), max(${schedules.endDate}))`.mapWith(schedules.endDate),
       })
       .from(schedules)
       .innerJoin(projects, eq(schedules.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false))),
+      .leftJoin(scheduleItems, eq(scheduleItems.scheduleId, schedules.id))
+      .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false)))
+      .groupBy(schedules.id, schedules.projectId, schedules.scheduleCategory),
     db
       .select()
       .from(businessExpenses)
@@ -468,6 +475,11 @@ export async function loadCashflow(
   // ── Per-job aggregates ─────────────────────────────────────────────────────
   const invoicedByProject = new Map<string, number>();
   const claimedPctByProject = new Map<string, number>();
+  const allInvoicesByProject = new Map<string, number>();
+  for (const inv of invoiceRows) {
+    if (!isCountableInvoice(inv.status)) continue;
+    allInvoicesByProject.set(inv.projectId, (allInvoicesByProject.get(inv.projectId) ?? 0) + (inv.totalAmount || 0));
+  }
   for (const inv of invoiceRows) {
     if (!isIssuedInvoice(inv.status)) continue;
     invoicedByProject.set(inv.projectId, (invoicedByProject.get(inv.projectId) ?? 0) + (inv.totalAmount || 0));
@@ -517,7 +529,7 @@ export async function loadCashflow(
     const ps = jobSettings.get(p.id);
     const included = ps?.included ?? phase !== "lead";
 
-    const value = jobBaseValue(p, frozenContractTotalFrom(p)?.incGstCents, phase, ps?.forecastValueCents);
+    const value = jobBaseValue(p, frozenContractTotalFrom(p)?.incGstCents, phase, ps?.forecastValueCents, allInvoicesByProject.get(p.id));
     const baseContract = value.cents;
     const contractCents = baseContract + (variationsByProject.get(p.id) ?? 0);
     const invoicedCents = invoicedByProject.get(p.id) ?? 0;
@@ -751,6 +763,8 @@ export interface ClaimSchedule {
   suggestions: Record<string, string>;
   /** Payment milestones on the job's accepted proposal, if any. */
   proposalMilestoneCount: number;
+  /** Invoices (issued and draft) claims can be built from. */
+  invoiceCount: number;
 }
 
 async function ownedProject(companyId: string, projectId: string) {
@@ -820,7 +834,8 @@ export async function getClaimSchedule(companyId: string, projectId: string): Pr
     .select({ forecastValueCents: projectCashflowSettings.forecastValueCents })
     .from(projectCashflowSettings)
     .where(and(eq(projectCashflowSettings.projectId, projectId), eq(projectCashflowSettings.companyId, companyId)));
-  const originalContractCents = jobBaseValue(project, frozenContractTotalFrom(project)?.incGstCents, phase, ps?.forecastValueCents).cents;
+  const invoicesTotal = invoiceRows.filter((i) => isCountableInvoice(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0);
+  const originalContractCents = jobBaseValue(project, frozenContractTotalFrom(project)?.incGstCents, phase, ps?.forecastValueCents, invoicesTotal).cents;
 
   const stages = resolveClaimStages(stageRows, originalContractCents, claimedPercent, invoicedCents);
   const items: ClaimScheduleItem[] = itemRows.map((it) => ({
@@ -846,6 +861,7 @@ export async function getClaimSchedule(companyId: string, projectId: string): Pr
     scheduleItems: items,
     suggestions,
     proposalMilestoneCount: milestones.length,
+    invoiceCount: invoiceRows.filter((i) => isCountableInvoice(i.status) && (i.totalAmount || 0) > 0).length,
   };
 }
 
@@ -883,6 +899,50 @@ export async function replaceClaimStages(
       await tx.insert(projectClaimStages).values(stages.map((st, i) => ({ ...st, sortOrder: i, projectId, companyId })));
     }
   });
+}
+
+/**
+ * Builds the job's claim stages from its invoices — issued and draft, in date
+ * order — so a job whose claims are already drafted as invoices forecasts on
+ * those dates and amounts. Issued ones come out as claimed (they're already
+ * owed or paid); drafts are the claims to come. Each stage keeps the invoice's
+ * date until it's linked to a schedule item, after which it follows the
+ * schedule. `replace` swaps out any claims already set up.
+ */
+export async function seedClaimStagesFromInvoices(companyId: string, projectId: string, replace: boolean): Promise<number> {
+  if (!(await ownedProject(companyId, projectId))) throw new ClaimStageError("Project not found");
+  const scope = and(eq(projectClaimStages.projectId, projectId), eq(projectClaimStages.companyId, companyId));
+  const [existing] = await db.select({ id: projectClaimStages.id }).from(projectClaimStages).where(scope).limit(1);
+  if (existing && !replace) throw new ClaimStageError("This job already has claims set up");
+
+  const invoices = (
+    await db
+      .select({ name: clientInvoices.name, invoiceNumber: clientInvoices.invoiceNumber, status: clientInvoices.status, invoiceDate: clientInvoices.invoiceDate, totalAmount: clientInvoices.totalAmount })
+      .from(clientInvoices)
+      .where(and(eq(clientInvoices.projectId, projectId), eq(clientInvoices.companyId, companyId)))
+      .orderBy(asc(clientInvoices.invoiceDate), asc(clientInvoices.invoiceNumber))
+  ).filter((i) => isCountableInvoice(i.status) && (i.totalAmount || 0) > 0);
+  if (invoices.length === 0) throw new ClaimStageError("This job has no invoices to build claims from");
+
+  if (existing) await db.delete(projectClaimStages).where(scope);
+  await db.insert(projectClaimStages).values(
+    invoices.map((inv, i) => ({
+      companyId,
+      projectId,
+      name: (inv.name?.trim() || (inv.invoiceNumber ? `Invoice ${inv.invoiceNumber}` : `Claim ${i + 1}`)).slice(0, 200),
+      sortOrder: i,
+      percent: null,
+      amountCents: inv.totalAmount,
+      plannedDate: toDateKey(inv.invoiceDate),
+    })),
+  );
+  // Show the job as claims, since that's what was just set up.
+  const values = { mode: "claims" as const, updatedAt: new Date() };
+  await db
+    .insert(projectCashflowSettings)
+    .values({ ...values, projectId, companyId })
+    .onConflictDoUpdate({ target: projectCashflowSettings.projectId, set: values });
+  return invoices.length;
 }
 
 /** Copies the accepted proposal's payment milestones in as the job's claim stages. */

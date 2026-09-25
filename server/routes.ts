@@ -45164,6 +45164,26 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // Claim stages from the job's invoices (issued + draft), on their dates.
+  app.post("/api/cashflow/projects/:projectId/claims/from-invoices", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { seedClaimStagesFromInvoices, ClaimStageError } = await import("./services/cashflowService");
+      try {
+        const count = await seedClaimStagesFromInvoices(companyId, req.params.projectId, req.body?.replace === true);
+        res.status(201).json({ count });
+      } catch (err) {
+        if (err instanceof ClaimStageError) return res.status(400).json({ error: err.message });
+        throw err;
+      }
+    } catch (error: any) {
+      console.error("[cashflow] claims from invoices failed:", error);
+      res.status(500).json({ error: "Failed to build claims from the invoices" });
+    }
+  });
+
   // Business expenses suggested from a year of Xero spend (rules find the
   // repeats, Claude names and explains them). The scan runs in the background.
   app.get("/api/cashflow/expense-suggestions", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
