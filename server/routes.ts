@@ -14,6 +14,7 @@ import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionField
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
+import { isProposalEditable, blockedFieldsWhenLocked, proposalLockMessage, READY_STATUS } from "@shared/proposalLock";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
@@ -25975,6 +25976,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Refuse a content change to a proposal that is no longer a draft.
+   *
+   * 409 rather than 403: nothing is wrong with the caller or their permissions,
+   * the document is simply in a state that does not take edits. Returns false
+   * once it has answered, so callers read `if (!requireEditable(...)) return;`.
+   */
+  function requireEditableProposal(res: any, proposal: { status?: string | null } | undefined | null): boolean {
+    if (!proposal) return false;
+    if (isProposalEditable(proposal.status)) return true;
+    res.status(409).json({ error: proposalLockMessage(proposal.status), status: proposal.status });
+    return false;
+  }
+
   app.patch("/api/proposals/:id", async (req, res) => {
     try {
       // `status` is owned by the state machine — /send, the portal's accept and
@@ -25998,6 +26013,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+
+      // A locked proposal still takes the handful of changes that are not
+      // edits to the document — see LOCKED_WRITABLE_FIELDS for why each one
+      // is on the list. Everything else is refused by name, so a caller finds
+      // out which field it was.
+      if (!isProposalEditable(ownedProposal.status)) {
+        const blocked = blockedFieldsWhenLocked(validationResult.data as Record<string, unknown>);
+        if (blocked.length > 0) {
+          return res.status(409).json({
+            error: proposalLockMessage(ownedProposal.status),
+            status: ownedProposal.status,
+            blockedFields: blocked,
+          });
+        }
+      }
 
       // Expiring is not a one-way door. A client who asks for another week
       // gets it by moving the date, and the proposal has to come back — the
@@ -26069,6 +26099,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const validationResult = insertProposalSectionSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
@@ -26091,7 +26122,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalSections: psTbl } = await import("@shared/schema");
       const [psRow] = await db.select({ proposalId: psTbl.proposalId }).from(psTbl).where(eq(psTbl.id, req.params.id));
       if (!psRow) return res.status(404).json({ error: "Proposal section not found" });
-      if (!(await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
 
       const validationResult = insertProposalSectionSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -26115,7 +26148,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalSections: psTbl } = await import("@shared/schema");
       const [psRow] = await db.select({ proposalId: psTbl.proposalId }).from(psTbl).where(eq(psTbl.id, req.params.id));
       if (!psRow) return res.status(404).json({ error: "Proposal section not found" });
-      if (!(await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const deleted = await storage.deleteProposalSection(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Proposal section not found" });
@@ -26142,6 +26177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const validationResult = insertProposalItemSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
@@ -26164,7 +26200,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalItems: piTbl } = await import("@shared/schema");
       const [piRow] = await db.select({ proposalId: piTbl.proposalId }).from(piTbl).where(eq(piTbl.id, req.params.id));
       if (!piRow) return res.status(404).json({ error: "Proposal item not found" });
-      if (!(await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
 
       const validationResult = insertProposalItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -26188,7 +26226,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalItems: piTbl } = await import("@shared/schema");
       const [piRow] = await db.select({ proposalId: piTbl.proposalId }).from(piTbl).where(eq(piTbl.id, req.params.id));
       if (!piRow) return res.status(404).json({ error: "Proposal item not found" });
-      if (!(await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const deleted = await storage.deleteProposalItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Proposal item not found" });
@@ -26340,8 +26380,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) return;
 
       // Validate state transition
-      if (existing.status !== "draft") {
-        return res.status(400).json({ error: "Only draft proposals can be sent" });
+      // Ready is a draft that has been signed off, so it is exactly the state
+      // you send from — refusing it would mean unlocking to send.
+      if (existing.status !== "draft" && existing.status !== READY_STATUS) {
+        return res.status(400).json({ error: "Only draft or ready proposals can be sent" });
       }
 
       const sendSchema = z.object({
@@ -26480,8 +26522,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = await getOwnedProposal(req, res, req.params.id);
       if (!existing) return;
 
-      if (existing.status !== "draft") {
-        return res.status(400).json({ error: "Only draft proposals can be marked as sent" });
+      if (existing.status !== "draft" && existing.status !== READY_STATUS) {
+        return res.status(400).json({ error: "Only draft or ready proposals can be marked as sent" });
       }
 
       const markSentSchema = z.object({
@@ -26551,6 +26593,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error marking proposal as sent:", error);
       res.status(500).json({ error: "Failed to mark the proposal as sent" });
+    }
+  });
+
+  /**
+   * Sign a proposal off: finished, checked, not to be fiddled with.
+   *
+   * Status is the state machine's to set, so this is an action rather than a
+   * field — the same reason /send and /accept exist. It locks the content the
+   * way sending does, except this one can be undone, because catching a typo
+   * before it goes out should not cost a revision number.
+   */
+  app.post("/api/proposals/:id/ready", async (req, res) => {
+    try {
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
+      if (existing.status !== "draft") {
+        return res.status(400).json({
+          error: existing.status === READY_STATUS
+            ? "This proposal is already marked ready"
+            : "Only a draft can be marked ready",
+        });
+      }
+      // Totals now rather than at send: a proposal being signed off should show
+      // the money it will show the client, and the column is still 0 until
+      // something recomputes it.
+      await storage.recomputeProposalTotals(req.params.id);
+      const proposal = await storage.updateProposal(req.params.id, { status: READY_STATUS } as any);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      res.json(proposal);
+    } catch (error) {
+      console.error("Error marking proposal ready:", error);
+      res.status(500).json({ error: "Failed to mark the proposal ready" });
+    }
+  });
+
+  /**
+   * Put a ready proposal back to draft.
+   *
+   * Only from ready. A sent proposal stays locked for good — the client is
+   * holding a copy of it, and the way to change that document is a new
+   * revision, not an edit behind their back.
+   */
+  app.post("/api/proposals/:id/unlock", async (req, res) => {
+    try {
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
+      if (existing.status !== READY_STATUS) {
+        return res.status(400).json({
+          error: existing.status === "draft"
+            ? "This proposal is already a draft"
+            : "A proposal that has been sent cannot be unlocked. Create a new revision instead.",
+        });
+      }
+      const proposal = await storage.updateProposal(req.params.id, { status: "draft" } as any);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      res.json(proposal);
+    } catch (error) {
+      console.error("Error unlocking proposal:", error);
+      res.status(500).json({ error: "Failed to unlock the proposal" });
     }
   });
 
@@ -27094,6 +27195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const validated = insertProposalPaymentMilestoneSchema.safeParse({
         ...req.body,
         proposalId: req.params.id,
@@ -27113,6 +27215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const list = z.array(insertProposalPaymentMilestoneSchema.omit({ proposalId: true })).parse(req.body?.milestones ?? []);
       const withProp: InsertProposalPaymentMilestone[] = list.map((m) => ({ ...m, proposalId: req.params.id }));
       const created = await storage.replaceProposalPaymentMilestones(req.params.id, withProp);
@@ -27128,7 +27231,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalPaymentMilestones: pmTbl } = await import("@shared/schema");
       const [pmRow] = await db.select({ proposalId: pmTbl.proposalId }).from(pmTbl).where(eq(pmTbl.id, req.params.id));
       if (!pmRow) return res.status(404).json({ error: "Milestone not found" });
-      if (!(await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
 
       const validated = insertProposalPaymentMilestoneSchema.partial().safeParse(req.body);
       if (!validated.success) {
@@ -27147,7 +27252,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { proposalPaymentMilestones: pmTbl } = await import("@shared/schema");
       const [pmRow] = await db.select({ proposalId: pmTbl.proposalId }).from(pmTbl).where(eq(pmTbl.id, req.params.id));
       if (!pmRow) return res.status(404).json({ error: "Milestone not found" });
-      if (!(await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found"))) return;
+      const ownedProposal = await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found");
+      if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
       const ok = await storage.deleteProposalPaymentMilestone(req.params.id);
       if (!ok) return res.status(404).json({ error: "Milestone not found" });
       res.status(204).send();
@@ -27169,6 +27276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const ownedProposal = await getOwnedProposal(req, res, req.params.id);
       if (!ownedProposal) return;
+      if (!requireEditableProposal(res, ownedProposal)) return;
 
       // Reject duplicate IDs in payload
       if (new Set(orderedIds).size !== orderedIds.length) {
