@@ -1,3 +1,5 @@
+import { templateDayNumber, type DayCalendar } from "@shared/scheduleTemplateDates";
+import { templateDayRange } from "@/components/schedule/TemplateDayInput";
 import { ScheduleItem } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
@@ -54,7 +56,8 @@ export interface MoradaScheduleRowProps {
   indentLevel?: number;
   onAddSubItem?: () => void;
   isTemplate?: boolean;
-  templateReferenceDate?: Date;
+  /** A template's working week, for "Day N" labels. */
+  templateCalendar?: DayCalendar;
 }
 
 export function MoradaScheduleRow({ 
@@ -80,23 +83,23 @@ export function MoradaScheduleRow({
   indentLevel = 0,
   onAddSubItem,
   isTemplate = false,
-  templateReferenceDate,
+  templateCalendar,
 }: MoradaScheduleRowProps) {
   const hasValidDates = item.startDate && item.endDate;
   const startDate = hasValidDates ? new Date(item.startDate) : null;
   const endDate = hasValidDates ? new Date(item.endDate) : null;
-  const duration = startDate && endDate ? differenceInDays(endDate, startDate) + 1 : null;
+  // A template counts working days — the same number its item dialog and
+  // apply use; a project row keeps its calendar-day span.
+  const duration = startDate && endDate
+    ? (isTemplate && templateCalendar
+        ? templateDayNumber(item.endDate as any, templateCalendar) - templateDayNumber(item.startDate as any, templateCalendar) + 1
+        : differenceInDays(endDate, startDate) + 1)
+    : null;
 
   const isGrandchild = indentLevel >= 2;
 
-  const dateRange = isTemplate && startDate && templateReferenceDate
-    ? (() => {
-        const refMs = templateReferenceDate.getTime();
-        const msPerDay = 86400000;
-        const startDay = Math.round((startDate.getTime() - refMs) / msPerDay);
-        const endDay = startDay + (duration ?? 1) - 1;
-        return `D${startDay}–D${endDay}`;
-      })()
+  const dateRange = isTemplate && startDate && endDate && templateCalendar
+    ? templateDayRange(item.startDate as any, item.endDate as any, templateCalendar)
     : startDate && endDate
       ? `${format(startDate, 'MMM d')}–${format(endDate, 'MMM d')}`
       : 'No dates';

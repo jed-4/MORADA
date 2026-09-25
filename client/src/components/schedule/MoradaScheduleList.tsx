@@ -1,3 +1,5 @@
+import type { DayCalendar } from "@shared/scheduleTemplateDates";
+import { templateDayRange } from "@/components/schedule/TemplateDayInput";
 import { ScheduleItem } from "@shared/schema";
 import { MoradaScheduleRow } from "./MoradaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
@@ -49,7 +51,8 @@ export interface MoradaScheduleListProps {
   allCollapsed?: boolean;
   locked?: boolean;
   isTemplate?: boolean;
-  templateReferenceDate?: Date;
+  /** A template's working week, for "Day N" labels. */
+  templateCalendar?: DayCalendar;
 }
 
 interface FlatRow {
@@ -78,7 +81,7 @@ export function MoradaScheduleList({
   allCollapsed,
   locked = false,
   isTemplate = false,
-  templateReferenceDate,
+  templateCalendar,
 }: MoradaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
@@ -712,7 +715,9 @@ export function MoradaScheduleList({
                               <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{subtasks.length} item{subtasks.length !== 1 ? 's' : ''}</span>
                               {childMinDate && childMaxDate && (
                                 <span className="text-[10px] text-muted-foreground shrink-0">
-                                  · {childMinDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}–{childMaxDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                                  · {isTemplate && templateCalendar
+                                    ? templateDayRange(childMinDate, childMaxDate, templateCalendar)
+                                    : <>{childMinDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}–{childMaxDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</>}
                                 </span>
                               )}
                             </div>
@@ -786,7 +791,7 @@ export function MoradaScheduleList({
                         isCollapsed={false}
                         locked={locked}
                         isTemplate={isTemplate}
-                        templateReferenceDate={templateReferenceDate}
+                        templateCalendar={templateCalendar}
                       />
                     )}
                     
@@ -837,7 +842,7 @@ export function MoradaScheduleList({
                             onAddSubItem={onAddSubItem ? () => onAddSubItem(subtask) : undefined}
                             locked={locked}
                             isTemplate={isTemplate}
-                            templateReferenceDate={templateReferenceDate}
+                            templateCalendar={templateCalendar}
                           />
                           
                         </TableRow>
@@ -883,7 +888,7 @@ export function MoradaScheduleList({
                               indentLevel={2}
                               locked={locked}
                               isTemplate={isTemplate}
-                              templateReferenceDate={templateReferenceDate}
+                              templateCalendar={templateCalendar}
                             />
                           </TableRow>
                         ))}

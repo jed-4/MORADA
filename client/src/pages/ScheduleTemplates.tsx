@@ -89,10 +89,9 @@ const EMPTY_COLUMN_MAPPING: ColumnMapping = {
   predecessorRelation: "",
 };
 
-const getItemCount = (template: ScheduleTemplate) => {
-  const data = template.templateData as TemplateItem[] | null;
-  return data?.length || 0;
-};
+// Items live in the template's schedule; the list route counts the rows.
+const getItemCount = (template: ScheduleTemplate & { itemCount?: number }) =>
+  template.itemCount ?? ((template.templateData as TemplateItem[] | null)?.length || 0);
 
 const getCategoryColor = (category: string | null) => {
   switch (category?.toLowerCase()) {
@@ -784,9 +783,13 @@ export default function ScheduleTemplates() {
         },
       },
       duplicatePayload: (template) => {
-        const { id, createdAt, updatedAt, isArchived, ...rest } = template;
+        const { id, createdAt, updatedAt, isArchived, itemCount, ...rest } = template as any;
         return {
           ...rest,
+          // The server copies the template's schedule rows; the blob is a
+          // stale backup and must not be converted a second time.
+          templateData: [],
+          sourceTemplateId: id,
           name: `${template.name} (Copy)`,
           createdBy: user?.id,
           createdByName: user?.firstName && user?.lastName
