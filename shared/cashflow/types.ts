@@ -231,6 +231,13 @@ export interface CashflowJobRow {
   costBasis: "budget" | "margin";
   startDate: DateKey | null;
   endDate: DateKey | null;
+  /** Where the value and dates came from — the drawer says so, and only offers to edit what isn't fixed. */
+  valueSource: "contract" | "forecast" | "budget" | "none";
+  dateSource: "forecast" | "schedule" | "project" | "none";
+  /** The builder's own figures (project_cashflow_settings), as saved. */
+  forecastValueCents: number | null;
+  forecastStart: DateKey | null;
+  forecastEnd: DateKey | null;
   /** Manual mode: expected claim per month ('YYYY-MM-01'), before win %. */
   manualAmounts: { month: DateKey; amountCents: number }[];
   /** Claim stages set up for the job, and how many aren't linked to a date. */
