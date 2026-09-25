@@ -17,6 +17,7 @@ import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
+import { freezeProposalForSend, resolveBaseUrl } from "./services/proposalSend";
 import {
   isLocalObjectStorage,
   LocalObjectFile,
@@ -26374,92 +26375,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const { recipients, pdfBase64, sentAt } = parsed.data;
 
-      // Totals first: the snapshot, the emailed figure and every percentage
-      // milestone all read proposals.totalAmount, and until this ran the column
-      // was still the 0 it was created with.
-      await storage.recomputeProposalTotals(req.params.id);
-      const priced = (await storage.getProposal(req.params.id)) ?? existing;
-
-      const [sections, items, milestones, companySettings] = await Promise.all([
-        storage.getProposalSections(req.params.id),
-        storage.getProposalItems(req.params.id),
-        storage.getProposalPaymentMilestones(req.params.id),
-        storage.getCompanySettings(getSessionCompanyId(req)),
-      ]);
-
-      // Persist the exact PDF the client is about to be emailed, so the portal
-      // can serve that document back instead of re-deriving a lookalike.
-      const oss = new ObjectStorageService();
-      const sentPdfPath = await oss.uploadObjectEntity(
-        Buffer.from(pdfBase64, "base64"),
-        "application/pdf",
-        priced.companyId ?? getSessionCompanyId(req),
-      );
-
-      const sentDate = sentAt ? new Date(sentAt) : new Date();
-      // Resolve the expiry BEFORE the snapshot: the client's frozen copy shows
-      // "Valid until", so a date set in this same request has to be inside the
-      // snapshot, not only on the row we update afterwards.
-      const resolvedExpiry = parsed.data.expiryDate
-        ? endOfDay(parsed.data.expiryDate)
-        : priced.expiryDate ?? null;
-      const sentProposalPreview = {
-        ...priced,
-        status: "sent" as const,
-        sentDate,
-        sentPdfPath,
-        sentTo: recipients,
-        expiryDate: resolvedExpiry,
-      };
-
-      const snapshot = {
-        capturedAt: new Date().toISOString(),
-        proposal: sentProposalPreview,
-        sections,
-        items,
-        milestones,
-        // Present and empty on purpose. The portal decides whether the client
-        // has already responded by looking here; when the key was absent the
-        // sign panel came back on every reload and the same client could sign
-        // the same proposal any number of times.
-        acceptances: [] as unknown[],
-        company: companySettings
-          ? {
-              companyName: companySettings.companyName,
-              address: companySettings.address,
-              phone: companySettings.phone,
-              email: companySettings.email,
-              website: companySettings.website,
-              logoUrl: companySettings.logoUrl,
-              proposalPrimaryColor: companySettings.proposalPrimaryColor,
-              proposalSecondaryColor: companySettings.proposalSecondaryColor,
-              proposalFontFamily: companySettings.proposalFontFamily,
-              proposalHeaderText: companySettings.proposalHeaderText,
-              proposalFooterText: companySettings.proposalFooterText,
-              taxRate: companySettings.taxRate,
-              termsTemplates: companySettings.termsTemplates,
-              paymentScheduleTemplates: companySettings.paymentScheduleTemplates,
-            }
-          : null,
-      };
-
-      const proposal = await storage.updateProposal(req.params.id, {
-        status: "sent",
-        sentDate,
-        contentSnapshot: snapshot,
-        sentPdfPath,
-        sentTo: recipients,
+      // Freeze the document. Identical for an emailed send and one made
+      // outside the system — see server/services/proposalSend.ts.
+      const { proposal, portalLink, companySettings } = await freezeProposalForSend({
+        proposalId: req.params.id,
+        companyId: getSessionCompanyId(req),
+        pdfBase64,
+        sentAt,
+        expiryDate: parsed.data.expiryDate,
+        recipients,
         remindersEnabled: parsed.data.remindersEnabled === true,
-        ...(parsed.data.expiryDate ? { expiryDate: resolvedExpiry } : {}),
-      } as any);
-
-      // Prefer the canonical domain over the host this request happened to
-      // arrive on: the client's link lives for weeks, and building it from
-      // req.host bakes a preview/staging host into it. Mirrors RFQ send.
-      const baseUrl =
-        (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
-        `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
-      const portalLink = `${baseUrl}/portal/proposal/${proposal!.id}?token=${encodeURIComponent(proposal!.shareToken)}`;
+        baseUrl: resolveBaseUrl(req),
+      });
+      const priced = proposal;
 
       const companyName = companySettings?.companyName || "Morada";
       const senderName =
@@ -26531,6 +26459,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error sending proposal:", error);
       res.status(500).json({ error: "Failed to send proposal" });
+    }
+  });
+
+  /**
+   * Record a proposal that went out some other way — printed, handed over, or
+   * attached to the builder's own email.
+   *
+   * Everything a send does except the email: the same frozen snapshot, the same
+   * stored PDF, the same live portal link, so the client can still open it and
+   * accept or decline online and the status carries on to viewed/accepted by
+   * itself. Without this the only way to progress a proposal sent by hand was
+   * to email it a second time from the app, which sends the client a duplicate.
+   *
+   * Reminders are deliberately not offered: chasing needs an address, and this
+   * path has none to chase. Recipients, if given, are recorded for the file.
+   */
+  app.post("/api/proposals/:id/mark-sent", async (req, res) => {
+    try {
+      const existing = await getOwnedProposal(req, res, req.params.id);
+      if (!existing) return;
+
+      if (existing.status !== "draft") {
+        return res.status(400).json({ error: "Only draft proposals can be marked as sent" });
+      }
+
+      const markSentSchema = z.object({
+        // Still rendered in the browser and posted here, exactly as /send does.
+        // The portal serves this document back, so skipping it would leave a
+        // manually sent proposal showing a lookalike rebuilt from live data.
+        pdfBase64: z.string().min(1, "The proposal PDF is still generating"),
+        pdfFilename: z.string().optional(),
+        sentAt: z.coerce.date(),
+        expiryDate: z.coerce.date().optional(),
+        recipients: z.array(z.object({
+          name: z.string().optional(),
+          email: z.string().email("Each recipient needs a valid email address"),
+        })).optional(),
+        note: z.string().max(500).optional(),
+      });
+      const parsed = markSentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+
+      // A date in the future is a typo, not a send. Tomorrow's "sent" date
+      // would also put the proposal ahead of any view the client records.
+      if (parsed.data.sentAt.getTime() > Date.now()) {
+        return res.status(400).json({ error: "A proposal cannot have been sent in the future" });
+      }
+
+      const { proposal, portalLink } = await freezeProposalForSend({
+        proposalId: req.params.id,
+        companyId: getSessionCompanyId(req),
+        pdfBase64: parsed.data.pdfBase64,
+        sentAt: parsed.data.sentAt,
+        expiryDate: parsed.data.expiryDate,
+        recipients: parsed.data.recipients ?? [],
+        remindersEnabled: false,
+        baseUrl: resolveBaseUrl(req),
+      });
+
+      try {
+        const senderName =
+          `${(req.user as any)?.firstName || ""} ${(req.user as any)?.lastName || ""}`.trim()
+          || (req.user as any)?.email
+          || "Someone";
+        const to = (parsed.data.recipients ?? []).map((r) => r.email).join(", ");
+        await storage.createActivity({
+          projectId: proposal.projectId,
+          userId: (req.user as any)?.id,
+          userName: senderName,
+          activityType: "proposal",
+          action: "sent",
+          description:
+            `marked proposal '${proposal.name}' as sent outside the system`
+            + (to ? ` to ${to}` : "")
+            + (parsed.data.note ? ` — ${parsed.data.note}` : ""),
+          entityId: proposal.id,
+          entityName: proposal.proposalNumber,
+          metadata: { outsideSystem: true, sentAt: parsed.data.sentAt.toISOString(), note: parsed.data.note ?? null },
+        });
+      } catch (err) {
+        console.error("Failed to log manual proposal send activity:", err);
+      }
+
+      res.json({ proposal, portalLink });
+    } catch (error) {
+      console.error("Error marking proposal as sent:", error);
+      res.status(500).json({ error: "Failed to mark the proposal as sent" });
     }
   });
 
