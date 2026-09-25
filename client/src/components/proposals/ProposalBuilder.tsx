@@ -38,7 +38,7 @@ import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
-import { revisionLabel } from '@/components/proposals/proposalDisplay';
+import { revisionLabel, proposalFileName } from '@/components/proposals/proposalDisplay';
 import { summaryHasContent } from '@/components/proposals/pdf/sections/SummarySection';
 import { ProposalDetailsCard } from '@/components/proposals/ProposalDetailsCard';
 import { documentToTemplatePayload, type ProposalDocumentSource } from '@/components/proposals/proposalDocumentSource';
@@ -1614,7 +1614,12 @@ export function ProposalBuilder({
           >
             <a
               href={pdfUrl || '#'}
-              download={`${proposal.proposalNumber}.pdf`}
+              download={proposalFileName({
+                projectName: project?.name,
+                proposalName: proposal.name,
+                version: proposal.version,
+                proposalNumber: proposal.proposalNumber,
+              })}
               onClick={(e) => {
                 if (!pdfUrl) e.preventDefault();
               }}
@@ -1693,6 +1698,7 @@ export function ProposalBuilder({
         proposal={proposal}
         client={client}
         companyName={companyName}
+        projectName={project?.name}
         pdfBlob={pdfBlob}
       />
 

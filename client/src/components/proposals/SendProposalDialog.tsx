@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { formatCents } from "@shared/money";
 import { expiryFromDays } from "@shared/proposalExpiry";
+import { proposalFileName } from "@/components/proposals/proposalDisplay";
 import { format } from "date-fns";
 import type { Contact, Proposal } from "@shared/schema";
 
@@ -33,6 +34,8 @@ interface SendProposalDialogProps {
   proposal: Proposal;
   client?: Contact;
   companyName?: string;
+  /** Names the attachment the client receives — see proposalFileName. */
+  projectName?: string | null;
   /** The rendered document. Send is blocked until the preview has produced it. */
   pdfBlob: Blob | null;
 }
@@ -63,6 +66,7 @@ export function SendProposalDialog({
   proposal,
   client,
   companyName,
+  projectName,
   pdfBlob,
 }: SendProposalDialogProps) {
   const { toast } = useToast();
@@ -128,7 +132,12 @@ export function SendProposalDialog({
           subject: subject.trim() || undefined,
           message: message.trim() || undefined,
           pdfBase64,
-          pdfFilename: `${proposal.proposalNumber}.pdf`,
+          pdfFilename: proposalFileName({
+            projectName,
+            proposalName: proposal.name,
+            version: proposal.version,
+            proposalNumber: proposal.proposalNumber,
+          }),
           remindersEnabled: chase,
           ...(expiresOn ? { expiryDate: expiresOn.toISOString() } : {}),
         }),
