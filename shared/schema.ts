@@ -7907,6 +7907,12 @@ export const projectCashflowSettings = pgTable("project_cashflow_settings", {
   mode: text("mode").notNull().default("even"), // JOB_MODES in shared/cashflow/types
   winPercent: integer("win_percent"), // null = 100 for signed work, 50 for leads
   clientPayDays: integer("client_pay_days"), // null = cashflow_settings.client_pay_days
+  // The builder's own figures for a job that isn't set up yet (migration 0094).
+  // Value is used only while the job has no contract; dates win over the
+  // schedule and the project's proposed dates.
+  forecastValueCents: integer("forecast_value_cents"),
+  forecastStart: text("forecast_start"), // 'YYYY-MM-DD'
+  forecastEnd: text("forecast_end"), // 'YYYY-MM-DD'
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   companyIdx: index("project_cashflow_settings_company_idx").on(table.companyId),
@@ -7917,7 +7923,13 @@ export const updateProjectCashflowSettingsSchema = z.object({
   mode: z.enum(JOB_MODES),
   winPercent: z.number().int().min(0).max(100).nullable(),
   clientPayDays: z.number().int().min(0).max(365).nullable(),
-}).partial();
+  forecastValueCents: z.number().int().min(0).nullable(),
+  forecastStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  forecastEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+}).partial().refine(
+  (v) => !v.forecastStart || !v.forecastEnd || v.forecastStart <= v.forecastEnd,
+  { message: "Finish must be on or after start", path: ["forecastEnd"] },
+);
 export type ProjectCashflowSettings = typeof projectCashflowSettings.$inferSelect;
 
 // Manual-mode claims: what the builder expects to be paid per month.

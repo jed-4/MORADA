@@ -42,6 +42,7 @@ import {
   basPeriodFor,
   buildForecast,
   expandWhatIf,
+  jobBaseValue,
   jobDateWindow,
   assembleJobCostInputs,
   planJobCosts,
@@ -141,6 +142,7 @@ export async function getOpeningBalance(companyId: string, settings: CashflowSet
 }
 
 // ── Jobs register ───────────────────────────────────────────────────────────
+
 
 export interface CashflowLoad {
   input: ForecastInput;
@@ -501,9 +503,8 @@ export async function loadCashflow(
     const ps = jobSettings.get(p.id);
     const included = ps?.included ?? phase !== "lead";
 
-    const frozen = frozenContractTotalFrom(p);
-    const baseContract =
-      frozen?.incGstCents ?? p.contractPrice ?? (phase === "lead" ? p.clientBudget : null) ?? p.contractCost ?? 0;
+    const value = jobBaseValue(p, frozenContractTotalFrom(p)?.incGstCents, phase, ps?.forecastValueCents);
+    const baseContract = value.cents;
     const contractCents = baseContract + (variationsByProject.get(p.id) ?? 0);
     const invoicedCents = invoicedByProject.get(p.id) ?? 0;
     const remainingToClaimCents = Math.max(0, contractCents - invoicedCents);
@@ -515,9 +516,14 @@ export async function loadCashflow(
       invoicedCents,
     );
 
+    // The builder's forecast dates win; then the schedule; then the project's own dates.
     const sched = scheduleDates.get(p.id);
-    const startDate = sched?.start ?? toDateKey(p.proposedStartDate) ?? toDateKey(p.startDate);
-    const endDate = sched?.end ?? toDateKey(p.proposedEndDate) ?? toDateKey(p.endDate);
+    const projStart = toDateKey(p.proposedStartDate) ?? toDateKey(p.startDate);
+    const projEnd = toDateKey(p.proposedEndDate) ?? toDateKey(p.endDate);
+    const startDate = ps?.forecastStart ?? sched?.start ?? projStart;
+    const endDate = ps?.forecastEnd ?? sched?.end ?? projEnd;
+    const dateSource: CashflowJobRow["dateSource"] =
+      ps?.forecastStart || ps?.forecastEnd ? "forecast" : sched?.start || sched?.end ? "schedule" : projStart || projEnd ? "project" : "none";
 
     // Costs to come: from the budget, bills, labour, open POs and the
     // schedule when the job has a budget; otherwise estimated from margin.
@@ -563,6 +569,11 @@ export async function loadCashflow(
       costBasis,
       startDate,
       endDate,
+      valueSource: value.source,
+      dateSource,
+      forecastValueCents: ps?.forecastValueCents ?? null,
+      forecastStart: (ps?.forecastStart as DateKey | null) ?? null,
+      forecastEnd: (ps?.forecastEnd as DateKey | null) ?? null,
       manualAmounts: manualByProject.get(p.id) ?? [],
       claimStageCount: stages.length,
       unlinkedClaimStageCount: stages.filter((st) => st.state !== "claimed" && !st.date).length,
@@ -790,10 +801,12 @@ export async function getClaimSchedule(companyId: string, projectId: string): Pr
   const issued = invoiceRows.filter((i) => isIssuedInvoice(i.status));
   const invoicedCents = issued.reduce((s, i) => s + (i.totalAmount || 0), 0);
   const claimedPercent = issued.reduce((s, i) => s + claimedPercentOf(i.contractClaimRows), 0);
-  const frozen = frozenContractTotalFrom(project);
   const phase = (project.phase ?? "lead") as JobPhase;
-  const originalContractCents =
-    frozen?.incGstCents ?? project.contractPrice ?? (phase === "lead" ? project.clientBudget : null) ?? project.contractCost ?? 0;
+  const [ps] = await db
+    .select({ forecastValueCents: projectCashflowSettings.forecastValueCents })
+    .from(projectCashflowSettings)
+    .where(and(eq(projectCashflowSettings.projectId, projectId), eq(projectCashflowSettings.companyId, companyId)));
+  const originalContractCents = jobBaseValue(project, frozenContractTotalFrom(project)?.incGstCents, phase, ps?.forecastValueCents).cents;
 
   const stages = resolveClaimStages(stageRows, originalContractCents, claimedPercent, invoicedCents);
   const items: ClaimScheduleItem[] = itemRows.map((it) => ({

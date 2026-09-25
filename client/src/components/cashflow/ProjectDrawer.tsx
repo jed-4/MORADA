@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Settings2, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -107,12 +107,117 @@ const STATE_BADGE: Record<ResolvedStage["state"], [string, string]> = {
   to_claim: ["To claim", "bg-primary/10 text-primary"],
 };
 
+// ─── Set-up (edit mode) ──────────────────────────────────────────────────────
+
+const VALUE_SOURCE_TEXT: Record<CashflowJobRow["valueSource"], string> = {
+  contract: "From the signed contract",
+  forecast: "Your forecast value",
+  budget: "From the project's client budget / cost",
+  none: "Not set — the job adds nothing to the forecast",
+};
+const DATE_SOURCE_TEXT: Record<CashflowJobRow["dateSource"], string> = {
+  forecast: "Your forecast dates",
+  schedule: "From the job's schedule",
+  project: "From the project's proposed dates",
+  none: "Not set — the job can't be spread over time",
+};
+
+/**
+ * The builder's own figures for a job that isn't set up yet. A signed contract's
+ * value is never overridden here — the forecast must agree with the contract.
+ */
+function JobSetup({ job, onDone }: { job: CashflowJobRow; onDone: () => void }) {
+  const { toast } = useToast();
+  const contracted = job.valueSource === "contract";
+  const [valueDollars, setValueDollars] = useState<number | null>(job.forecastValueCents == null ? null : job.forecastValueCents / 100);
+  const [start, setStart] = useState(job.forecastStart ?? "");
+  const [end, setEnd] = useState(job.forecastEnd ?? "");
+
+  const save = useMutation({
+    mutationFn: (body: Record<string, unknown>) => apiRequest(`/api/cashflow/projects/${job.projectId}`, "PATCH", body),
+    onSuccess: async () => {
+      await invalidateCashflow();
+      onDone();
+    },
+    onError: (e: any) => toast({ title: e?.payload?.issues?.[0]?.message ?? "Couldn't save the job set-up", variant: "destructive" }),
+  });
+  const badDates = !!start && !!end && end < start;
+
+  return (
+    <div className="rounded-lg border p-3 space-y-3 bg-muted/30" data-testid="panel-job-setup">
+      <div className="space-y-1">
+        <p className="text-xs font-medium">Job value (inc GST)</p>
+        {contracted ? (
+          <p className="text-sm">
+            {money(job.contractCents)} <span className="text-xs text-muted-foreground">— from the signed contract, can't be changed here</span>
+          </p>
+        ) : (
+          <>
+            <NumericInput
+              value={valueDollars}
+              onCommit={setValueDollars}
+              placeholder={job.valueSource === "budget" ? `${Math.round(job.contractCents / 100)} (client budget)` : "e.g. 850000"}
+              className="h-8 text-sm"
+              data-testid="input-job-value"
+            />
+            <p className="text-data text-muted-foreground">Used until the job has a contract. Leave empty to use the client budget.</p>
+          </>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="space-y-1">
+          <span className="text-xs font-medium">Start</span>
+          <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-8 text-sm" data-testid="input-job-start" />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-medium">Finish</span>
+          <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-8 text-sm" data-testid="input-job-end" />
+        </label>
+      </div>
+      <p className={cn("text-xs", badDates ? "text-destructive" : "text-muted-foreground")}>
+        {badDates ? "Finish is before start." : "Leave empty to use the schedule, or the project's proposed dates."}
+      </p>
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground"
+          disabled={save.isPending || (job.forecastValueCents == null && !job.forecastStart && !job.forecastEnd)}
+          onClick={() => save.mutate({ forecastValueCents: null, forecastStart: null, forecastEnd: null })}
+          data-testid="button-job-setup-reset"
+        >
+          Reset to automatic
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onDone}>Cancel</Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            disabled={save.isPending || badDates}
+            onClick={() =>
+              save.mutate({
+                ...(contracted ? {} : { forecastValueCents: valueDollars == null ? null : Math.round(valueDollars * 100) }),
+                forecastStart: start || null,
+                forecastEnd: end || null,
+              })
+            }
+            data-testid="button-job-setup-save"
+          >
+            {save.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Drawer ──────────────────────────────────────────────────────────────────
 
 export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; onClose: () => void }) {
   const { toast } = useToast();
   const canEdit = usePermission("business.cashflow", "edit");
   const [fields, setFields] = useInfoFields();
+  const [editing, setEditing] = useState(false);
   const today = toDateKey(new Date())!;
   const claimsKey = [`/api/cashflow/projects/${job?.projectId}/claims`];
   const { data, isLoading } = useQuery<ClaimSchedule>({ queryKey: claimsKey, enabled: !!job });
@@ -121,7 +226,10 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
   const [dirty, setDirty] = useState(false);
   // A different job throws away unsaved edits; otherwise load what's saved
   // whenever it changes — but never over edits in progress.
-  useEffect(() => setDirty(false), [job?.projectId]);
+  useEffect(() => {
+    setDirty(false);
+    setEditing(false);
+  }, [job?.projectId]);
   useEffect(() => {
     if (data && !dirty) setDraft(data.stages.map(toDraft));
   }, [data, dirty]);
@@ -188,6 +296,8 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
     return `${upcoming.name} · ${money(amount)} · paid ~${shortDate(addDays(maxKey(upcoming.date!, today), job.clientPayDays))}`;
   }, [job, data]);
 
+  const needsSetup = !!job && (job.valueSource === "none" || !job.startDate || !job.endDate);
+
   const info: Record<InfoField, string> = job
     ? {
         contract: money(job.contractCents),
@@ -221,6 +331,12 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-label font-semibold uppercase tracking-wide text-muted-foreground">Project info</p>
+                <div className="flex items-center gap-1">
+                {canEdit && !editing && (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-job">
+                    <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                  </Button>
+                )}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button size="sm" variant="ghost" className="h-7 text-xs" data-testid="button-choose-info">
@@ -240,16 +356,27 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
                     ))}
                   </PopoverContent>
                 </Popover>
+                </div>
               </div>
+              {editing && <JobSetup job={job} onDone={() => setEditing(false)} />}
               <div className="grid grid-cols-2 rounded-lg border overflow-hidden" data-testid="grid-project-info">
                 {fields.map((f, i) => (
                   <div key={f} className={cn("px-3 py-2", i % 2 === 0 && "border-r", i < fields.length - (fields.length % 2 === 0 ? 2 : 1) && "border-b")}>
-                    <p className="text-xs text-muted-foreground">{INFO_FIELDS[f]}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {f === "contract" && job.valueSource !== "contract" ? "Job value (not contracted)" : INFO_FIELDS[f]}
+                    </p>
                     <p className="text-sm font-semibold tabular-nums">{info[f]}</p>
                   </div>
                 ))}
                 {fields.length === 0 && <p className="col-span-2 px-3 py-3 text-xs text-muted-foreground">Choose what to show here.</p>}
               </div>
+              <p className={cn("text-xs", needsSetup ? "text-status-warning" : "text-muted-foreground")} data-testid="text-job-sources">
+                Value: {VALUE_SOURCE_TEXT[job.valueSource]}. Dates: {DATE_SOURCE_TEXT[job.dateSource]}
+                {job.dateSource !== "none" && !job.endDate ? ", but no finish date" : ""}.
+                {needsSetup && canEdit && !editing && (
+                  <button type="button" className="ml-1 text-primary hover:underline" onClick={() => setEditing(true)}>Set it up</button>
+                )}
+              </p>
             </div>
 
             {/* Claim schedule */}

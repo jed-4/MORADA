@@ -9,3 +9,4 @@ export * from "./types";
 export * from "./whatifs";
 export * from "./expenseDetection";
 export * from "./levers";
+export * from "./jobValue";
