@@ -232,7 +232,7 @@ export interface CashflowJobRow {
   startDate: DateKey | null;
   endDate: DateKey | null;
   /** Where the value and dates came from — the drawer says so, and only offers to edit what isn't fixed. */
-  valueSource: "contract" | "forecast" | "budget" | "none";
+  valueSource: "contract" | "forecast" | "budget" | "invoices" | "none";
   dateSource: "forecast" | "schedule" | "project" | "none";
   /** The builder's own figures (project_cashflow_settings), as saved. */
   forecastValueCents: number | null;

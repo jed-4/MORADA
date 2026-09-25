@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, Pencil, Plus, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { FileText, Link2, Loader2, Pencil, Plus, Settings2, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ interface ClaimSchedule {
   scheduleItems: { id: string; name: string; type: string; category: string; endDate: string | null }[];
   suggestions: Record<string, string>;
   proposalMilestoneCount: number;
+  invoiceCount: number;
 }
 
 /** One editable row. `key` is local; `id` is the saved stage it came from (for its state). */
@@ -113,6 +114,7 @@ const VALUE_SOURCE_TEXT: Record<CashflowJobRow["valueSource"], string> = {
   contract: "From the signed contract",
   forecast: "Your forecast value",
   budget: "From the project's client budget / cost",
+  invoices: "The total of the job's invoices (drafts included)",
   none: "Not set — the job adds nothing to the forecast",
 };
 const DATE_SOURCE_TEXT: Record<CashflowJobRow["dateSource"], string> = {
@@ -260,6 +262,18 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
     },
     onError: (e: any) => toast({ title: e?.payload?.error ?? "Couldn't save the claims", variant: "destructive" }),
   });
+  const [confirmRebuild, setConfirmRebuild] = useState(false);
+  const fromInvoices = useMutation({
+    mutationFn: (replace: boolean) => apiRequest(`/api/cashflow/projects/${job!.projectId}/claims/from-invoices`, "POST", { replace }),
+    onSuccess: async (res: any) => {
+      setDirty(false);
+      setConfirmRebuild(false);
+      await invalidateCashflow();
+      const n = res?.count;
+      toast({ title: n ? `${n} claims built from the invoices` : "Claims built from the invoices" });
+    },
+    onError: (e: any) => toast({ title: e?.payload?.error ?? "Couldn't build claims from the invoices", variant: "destructive" }),
+  });
   const seed = useMutation({
     mutationFn: () => apiRequest(`/api/cashflow/projects/${job!.projectId}/claims/from-proposal`, "POST"),
     onSuccess: () => invalidateCashflow(),
@@ -282,6 +296,7 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
   const contract = data?.originalContractCents ?? 0;
   const valueOf = (d: DraftStage) => (d.kind === "amount" ? Math.round((d.amountDollars ?? 0) * 100) : Math.round(((d.percent ?? 0) / 100) * contract));
   const totalValue = draft.reduce((s, d) => s + valueOf(d), 0);
+  const pendingLinks = data ? draft.filter((d) => d.id && !d.scheduleItemId && data.suggestions[d.id]) : [];
 
   const nextClaim = useMemo(() => {
     if (!job || !data) return null;
@@ -388,6 +403,43 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
                     Link each claim to the schedule item that triggers it. It's paid {job.clientPayDays} days after that item finishes.
                   </p>
                 </div>
+                {canEdit && data && draft.length > 0 && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {pendingLinks.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => edit(draft.map((d) => (d.id && !d.scheduleItemId && data.suggestions[d.id] ? { ...d, scheduleItemId: data.suggestions[d.id] } : d)))}
+                        title="Link every claim to the schedule item it matches, so its date follows the schedule"
+                        data-testid="button-link-all-suggested"
+                      >
+                        <Link2 className="h-3.5 w-3.5 mr-1" />Link {pendingLinks.length} to the schedule
+                      </Button>
+                    )}
+                    {data.invoiceCount > 0 && (
+                      <Popover open={confirmRebuild} onOpenChange={setConfirmRebuild}>
+                        <PopoverTrigger asChild>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" data-testid="button-rebuild-from-invoices">
+                            <FileText className="h-3.5 w-3.5 mr-1" />Rebuild from invoices
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-72 space-y-2">
+                          <p className="text-sm font-semibold">Replace these claims?</p>
+                          <p className="text-xs text-muted-foreground">
+                            The {draft.length} claims here are replaced by one per invoice ({data.invoiceCount}), on the invoice dates. Links to the schedule are cleared.
+                          </p>
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmRebuild(false)}>Cancel</Button>
+                            <Button size="sm" className="h-7 text-xs" disabled={fromInvoices.isPending} onClick={() => fromInvoices.mutate(true)} data-testid="button-confirm-rebuild">
+                              {fromInvoices.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Replace
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
+                )}
               </div>
 
               {isLoading || !data ? (
@@ -395,9 +447,15 @@ export function ProjectDrawer({ job, onClose }: { job: CashflowJobRow | null; on
               ) : draft.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-4 text-center space-y-2">
                   <p className="text-sm text-muted-foreground">No claims set up for this job.</p>
-                  <div className="flex justify-center gap-2">
+                  <div className="flex justify-center gap-2 flex-wrap">
+                    {data.invoiceCount > 0 && canEdit && (
+                      <Button size="sm" onClick={() => fromInvoices.mutate(false)} disabled={fromInvoices.isPending} data-testid="button-claims-from-invoices">
+                        {fromInvoices.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileText className="h-3.5 w-3.5 mr-1" />}
+                        Build from {data.invoiceCount} invoice{data.invoiceCount === 1 ? "" : "s"}
+                      </Button>
+                    )}
                     {data.proposalMilestoneCount > 0 && canEdit && (
-                      <Button size="sm" onClick={() => seed.mutate()} disabled={seed.isPending} data-testid="button-claims-from-proposal">
+                      <Button size="sm" variant={data.invoiceCount > 0 ? "outline" : "default"} onClick={() => seed.mutate()} disabled={seed.isPending} data-testid="button-claims-from-proposal">
                         {seed.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         Copy {data.proposalMilestoneCount} from the proposal
                       </Button>

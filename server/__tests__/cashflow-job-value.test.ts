@@ -46,4 +46,14 @@ check("a $0 contract price isn't a contract", () => {
   assert.deepStrictEqual(jobBaseValue({ ...bare, contractPrice: 0 }, null, "pre_construction", 85_000_000), { cents: 85_000_000, source: "forecast" });
 });
 
+check("with nothing else, the job is worth its invoices (drafts included)", () => {
+  assert.deepStrictEqual(jobBaseValue(bare, null, "pre_construction", null, 42_000_000), { cents: 42_000_000, source: "invoices" });
+});
+
+check("invoices never override a contract, a forecast value or a budget", () => {
+  assert.strictEqual(jobBaseValue({ ...bare, contractPrice: 90_000_000 }, null, "construction", null, 42_000_000).source, "contract");
+  assert.strictEqual(jobBaseValue(bare, null, "pre_construction", 85_000_000, 42_000_000).source, "forecast");
+  assert.strictEqual(jobBaseValue({ ...bare, clientBudget: 60_000_000 }, null, "lead", null, 42_000_000).source, "budget");
+});
+
 console.log(`\ncashflow-job-value: ${passed} passed`);
