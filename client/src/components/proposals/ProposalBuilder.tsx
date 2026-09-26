@@ -19,7 +19,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, CheckCircle2, LayoutTemplate, CornerDownRight } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, LockOpen, BellRing, CheckCircle2, LayoutTemplate, CornerDownRight } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -35,6 +35,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { SendProposalDialog } from './SendProposalDialog';
 import { MarkProposalSentDialog } from './MarkProposalSentDialog';
+import { isProposalEditable, isProposalReady } from '@shared/proposalLock';
 import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -1180,6 +1181,30 @@ export function ProposalBuilder({
     },
   });
 
+  const readyMutation = useMutation({
+    mutationFn: async (): Promise<Proposal> =>
+      (await apiRequest(`/api/proposals/${proposal.id}/ready`, 'POST', {})) as Proposal,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Marked ready', description: 'The content is locked. Unlock it if you need to change anything.' });
+    },
+    onError: (e: unknown) => {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Could not mark it ready', variant: 'destructive' });
+    },
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: async (): Promise<Proposal> =>
+      (await apiRequest(`/api/proposals/${proposal.id}/unlock`, 'POST', {})) as Proposal,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Unlocked', description: 'Back to draft — you can edit it again.' });
+    },
+    onError: (e: unknown) => {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Could not unlock it', variant: 'destructive' });
+    },
+  });
+
   const newRevisionMutation = useMutation({
     mutationFn: async (): Promise<Proposal> => {
       const newProposal = await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
@@ -1220,6 +1245,10 @@ export function ProposalBuilder({
   // frozen copy, so edits made here no longer reach them. The banner says so
   // and offers the revision that would.
   const isSentToClient = ['sent', 'viewed', 'accepted', 'rejected', 'expired'].includes(proposal.status ?? '');
+  // Ready is locked too, but undoably — the banner and the menu treat the two
+  // differently because one of them has a way back.
+  const isReady = isProposalReady(proposal.status);
+  const isLocked = !isProposalEditable(proposal.status);
   const isExpired = proposal.status === 'expired';
   const [pdfEstimatesData, setPdfEstimatesData] = useState<Record<string, {
     estimate: Estimate;
@@ -1598,6 +1627,26 @@ export function ProposalBuilder({
               send behind it. */}
           {proposal.status === 'draft' && (
             <DropdownMenuItem
+              onSelect={() => readyMutation.mutate()}
+              disabled={readyMutation.isPending}
+              data-testid="menu-mark-ready"
+            >
+              <Lock className="w-4 h-4 mr-2" />
+              Mark ready
+            </DropdownMenuItem>
+          )}
+          {isReady && (
+            <DropdownMenuItem
+              onSelect={() => unlockMutation.mutate()}
+              disabled={unlockMutation.isPending}
+              data-testid="menu-unlock"
+            >
+              <LockOpen className="w-4 h-4 mr-2" />
+              Unlock for editing
+            </DropdownMenuItem>
+          )}
+          {!isSentToClient && (
+            <DropdownMenuItem
               onSelect={() => setIsMarkSentOpen(true)}
               data-testid="menu-mark-sent"
             >
@@ -1716,8 +1765,39 @@ export function ProposalBuilder({
         pdfBlob={pdfBlob}
       />
 
-      {/* Soft lock. The client holds the snapshot frozen at send time, so edits
-          made here are invisible to them until a new revision goes out. */}
+      {/* Locked and ready: signed off, not yet gone anywhere. The one lock with
+          a way back, so it offers Unlock rather than a new revision. */}
+      {isReady && (
+        <div
+          className="mb-3 flex items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+          data-testid="banner-proposal-ready"
+        >
+          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="text-muted-foreground">
+            This proposal is marked ready, so its content is locked. Unlock it if something
+            needs changing, or send it when you are.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => unlockMutation.mutate()}
+            disabled={unlockMutation.isPending}
+            data-testid="button-banner-unlock"
+          >
+            {unlockMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <LockOpen className="w-4 h-4 mr-2" />
+            )}
+            Unlock
+          </Button>
+        </div>
+      )}
+
+      {/* Sent: the client holds the snapshot frozen at send time, and now the
+          content routes refuse edits too, so this states a rule rather than
+          asking nicely. */}
       {isSentToClient && (
         <div
           className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
@@ -1731,7 +1811,7 @@ export function ProposalBuilder({
                 ? 'This proposal has been accepted. The client holds the signed copy — edits here will not change it.'
                 : proposal.status === 'rejected'
                   ? 'This proposal was declined. The client holds the copy they were sent — edits here will not change it.'
-                  : 'This proposal has been sent. The client sees the copy frozen at send time, so changes you make here will not reach them.'}
+                  : 'This proposal has been sent, so its content is locked. The client holds the copy frozen at send time — changing it takes a new revision.'}
           </span>
           <Button
             size="sm"

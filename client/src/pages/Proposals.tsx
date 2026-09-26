@@ -23,6 +23,7 @@ import {
   Filter,
   MoreHorizontal,
   Trash2,
+  Lock,
 } from "lucide-react";
 import {
   Tooltip,
@@ -254,6 +255,7 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'draft': return <FileText className="w-4 h-4" />;
+      case 'ready': return <Lock className="w-4 h-4" />;
       case 'sent': return <Send className="w-4 h-4" />;
       case 'accepted': return <CheckCircle className="w-4 h-4" />;
       case 'rejected': return <XCircle className="w-4 h-4" />;
@@ -269,6 +271,7 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
 
     switch (status) {
       case 'draft': return "secondary";
+      case 'ready': return "outline";
       case 'sent': return "default";
       case 'accepted': return "default";
       case 'rejected': return "destructive";
@@ -448,7 +451,9 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
               data-testid={`badge-proposal-status-${proposal.id}`}
             >
               {getStatusIcon(proposal.status)}
-              <span className="font-medium">{statusOption?.name || proposal.status}</span>
+              <span className="font-medium">
+                {statusOption?.name || (proposal.status === 'ready' ? 'Ready' : proposal.status)}
+              </span>
             </Badge>
           );
         },
