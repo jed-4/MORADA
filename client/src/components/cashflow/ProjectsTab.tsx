@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { addMonths, monthLabel, monthStart, toDateKey, type CashflowJobRow, type JobMode } from "@shared/cashflow";
+import { addMonths, daysBetween, monthLabel, monthStart, toDateKey, type CashflowJobRow, type JobMode } from "@shared/cashflow";
 import { invalidateCashflow, money, PHASE_CLASSES, PHASE_LABELS, PROJECTS_KEY, shortDate } from "./cashflowShared";
 import { ProjectDrawer } from "./ProjectDrawer";
 
@@ -251,13 +251,19 @@ export function ProjectsTab() {
         id: "dates",
         header: "Start – finish",
         accessorFn: (r) => r.startDate ?? "",
-        cell: ({ row }) => (
-          <span className={cn("text-xs", !row.original.endDate && "text-status-warning")}>
-            {!row.original.startDate && !row.original.endDate
-              ? "No dates"
-              : `${shortDate(row.original.startDate)} – ${row.original.endDate ? shortDate(row.original.endDate) : "no end date"}`}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const { startDate, endDate } = row.original;
+          return (
+            <div className="flex flex-col justify-center h-full">
+              <span className={cn("text-xs", !endDate && "text-status-warning")}>
+                {!startDate && !endDate ? "No dates" : `${shortDate(startDate)} – ${endDate ? shortDate(endDate) : "no end date"}`}
+              </span>
+              {startDate && endDate && (
+                <span className="text-data text-muted-foreground">{Math.max(1, Math.round((daysBetween(startDate, endDate) + 1) / 7))} weeks</span>
+              )}
+            </div>
+          );
+        },
         size: 150,
         meta: { defaultWidth: 150, headerLabel: "Start – finish" } satisfies DataTableColumnMeta,
       },
