@@ -101,7 +101,20 @@ const ALL_ESTIMATES_PATH = "/estimates";
 /** Estimates in this status are held back from the normal views. */
 const ARCHIVED_STATUS = "archived";
 type CardWidth = 'compact' | 'comfortable' | 'spacious';
-const VIEW_KEY = "estimates-view";
+/**
+ * The remembered view, per scope.
+ *
+ * One key used to serve both pages, so choosing the board on "all estimates"
+ * flipped every project's own list to the board as well, and back again. They
+ * are different jobs: a project has a handful of estimates and wants a list,
+ * while the cross-project page is where a board earns its keep.
+ *
+ * The legacy single key is still read when a scoped one is missing, so a view
+ * someone already chose carries over instead of being reset to the default.
+ */
+const LEGACY_VIEW_KEY = "estimates-view";
+const viewKeyFor = (scoped: boolean) => `estimates-view:${scoped ? "project" : "all"}`;
+const defaultViewFor = (scoped: boolean): ViewMode => (scoped ? "list" : "kanban");
 const CARD_WIDTH_KEY = "estimates-card-width";
 
 export default function EstimatesView({ projectId, embedded }: EstimatesViewProps = {}) {
@@ -134,17 +147,24 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
   // Remembers the last view between visits — coming back to this page should
   // land you where you left off, not reset to the list every time.
   const [currentView, setCurrentView] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return 'list';
-    return window.localStorage.getItem(VIEW_KEY) === 'kanban' ? 'kanban' : 'list';
+    if (typeof window === "undefined") return defaultViewFor(scoped);
+    try {
+      const saved = window.localStorage.getItem(viewKeyFor(scoped))
+        ?? window.localStorage.getItem(LEGACY_VIEW_KEY);
+      if (saved === 'kanban' || saved === 'list') return saved;
+    } catch {
+      /* noop — private browsing / storage disabled */
+    }
+    return defaultViewFor(scoped);
   });
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(VIEW_KEY, currentView);
+      window.localStorage.setItem(viewKeyFor(scoped), currentView);
     } catch {
       /* noop — private browsing / storage disabled */
     }
-  }, [currentView]);
+  }, [currentView, scoped]);
   // The archive is a separate destination rather than a filter: archived
   // estimates stay out of the normal list and board entirely, and are reached
   // from the overflow menu.
