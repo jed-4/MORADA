@@ -19,7 +19,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, LayoutTemplate, CornerDownRight } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal, Lock, BellRing, CheckCircle2, LayoutTemplate, CornerDownRight } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
@@ -34,6 +34,7 @@ import { RichTextEditor } from '@/components/RichTextEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { SendProposalDialog } from './SendProposalDialog';
+import { MarkProposalSentDialog } from './MarkProposalSentDialog';
 import { ProposalRemindersDialog } from './ProposalRemindersDialog';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -1163,6 +1164,7 @@ export function ProposalBuilder({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isMarkSentOpen, setIsMarkSentOpen] = useState(false);
   const [isRemindersOpen, setIsRemindersOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
@@ -1592,6 +1594,17 @@ export function ProposalBuilder({
             <History className="w-4 h-4 mr-2" />
             Revision history
           </DropdownMenuItem>
+          {/* Only from draft, same as Send: every later status already has a
+              send behind it. */}
+          {proposal.status === 'draft' && (
+            <DropdownMenuItem
+              onSelect={() => setIsMarkSentOpen(true)}
+              data-testid="menu-mark-sent"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Mark as sent…
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           </>
           )}
@@ -1693,6 +1706,13 @@ export function ProposalBuilder({
         proposal={proposal}
         client={client}
         companyName={companyName}
+        pdfBlob={pdfBlob}
+      />
+
+      <MarkProposalSentDialog
+        open={isMarkSentOpen}
+        onOpenChange={setIsMarkSentOpen}
+        proposal={proposal}
         pdfBlob={pdfBlob}
       />
 
