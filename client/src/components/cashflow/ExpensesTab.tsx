@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Loader2, MoreVertical, Pencil, Plus, Receipt, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, MoreVertical, Pencil, Plus, Receipt, Trash2 } from "lucide-react";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,15 @@ const FREQUENCY_LABELS: Record<Frequency, string> = {
   quarterly: "Quarterly",
   yearly: "Yearly",
 };
+
+/** Starter groups, offered alongside the ones already in use. */
+const STARTER_GROUPS = ["Premises", "People", "Vehicles", "Insurance", "Software", "Finance", "Admin", "Marketing"];
+const UNGROUPED = "Uncategorised";
+const groupOf = (e: Pick<BusinessExpense, "category">) => e.category?.trim() || UNGROUPED;
+
+type RegisterRow =
+  | { kind: "group"; id: string; label: string; count: number; monthlyCents: number; open: boolean }
+  | { kind: "item"; id: string; e: BusinessExpense };
 
 /** Average cost per month, for comparing items that repeat differently. */
 function perMonthCents(e: Pick<BusinessExpense, "amountCents" | "frequency">): number {
@@ -74,10 +83,13 @@ function ExpenseDialog({
   open,
   expense,
   onClose,
+  groupOptions,
 }: {
   open: boolean;
   expense: BusinessExpense | null;
   onClose: () => void;
+  /** Groups already in use, then the starters — for the Category field. */
+  groupOptions: string[];
 }) {
   const { toast } = useToast();
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: blankForm() });
@@ -227,8 +239,12 @@ function ExpenseDialog({
                 <FormItem>
                   <FormLabel>Category</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="e.g. Premises, People, Insurance" data-testid="input-expense-category" />
+                    <Input {...field} list="expense-groups" placeholder="Pick a group or type a new one" autoComplete="off" data-testid="input-expense-category" />
                   </FormControl>
+                  <datalist id="expense-groups">
+                    {groupOptions.map((g) => <option key={g} value={g} />)}
+                  </datalist>
+                  <FormDescription>Expenses are grouped by this on the register and the forecast.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -299,86 +315,149 @@ export function ExpensesTab() {
   const active = expenses.filter((e) => e.isActive);
   const monthly = active.reduce((s, e) => s + perMonthCents(e), 0);
 
-  const columns = useMemo<ColumnDef<BusinessExpense, unknown>[]>(
+  // Grouped by category: A–Z, "Uncategorised" last; soonest payment first within.
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) =>
+    setClosed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  const rows = useMemo<RegisterRow[]>(() => {
+    const byGroup = new Map<string, BusinessExpense[]>();
+    for (const e of expenses) {
+      const g = groupOf(e);
+      byGroup.set(g, [...(byGroup.get(g) ?? []), e]);
+    }
+    const labels = Array.from(byGroup.keys()).sort((a, b) =>
+      a === UNGROUPED ? 1 : b === UNGROUPED ? -1 : a.localeCompare(b),
+    );
+    const out: RegisterRow[] = [];
+    for (const label of labels) {
+      const items = byGroup.get(label)!.sort((a, b) => (a.nextDate < b.nextDate ? -1 : a.nextDate > b.nextDate ? 1 : a.name.localeCompare(b.name)));
+      const open = !closed.has(label);
+      out.push({
+        kind: "group",
+        id: `group:${label}`,
+        label,
+        count: items.length,
+        monthlyCents: items.filter((e) => e.isActive).reduce((s, e) => s + perMonthCents(e), 0),
+        open,
+      });
+      if (open) for (const e of items) out.push({ kind: "item", id: e.id, e });
+    }
+    return out;
+  }, [expenses, closed]);
+  const groupOptions = useMemo(() => {
+    const used = Array.from(new Set(expenses.map((e) => e.category?.trim()).filter((c): c is string => !!c)));
+    return [...used.sort(), ...STARTER_GROUPS.filter((g) => !used.some((u) => u.toLowerCase() === g.toLowerCase()))];
+  }, [expenses]);
+
+  const columns = useMemo<ColumnDef<RegisterRow, unknown>[]>(
     () => [
       {
         id: "name",
         header: "Item",
-        accessorFn: (r) => r.name,
-        cell: ({ row }) => (
-          <div className="flex flex-col justify-center h-full min-w-0 py-1">
-            <span className="text-xs font-medium truncate">{row.original.name}</span>
-            {row.original.category && <span className="text-data text-muted-foreground">{row.original.category}</span>}
-          </div>
-        ),
+        accessorFn: (r) => (r.kind === "group" ? r.label : r.e.name),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.kind === "group") {
+            return (
+              <div className="flex items-center gap-1.5 h-full min-w-0" data-testid={`row-expense-group-${r.label}`}>
+                {r.open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                <span className="text-xs font-semibold truncate">{r.label}</span>
+                <span className="text-data text-muted-foreground">{r.count}</span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col justify-center h-full min-w-0 py-1 pl-5">
+              <span className="text-xs font-medium truncate">{r.e.name}</span>
+            </div>
+          );
+        },
+        enableSorting: false,
         size: 240,
         meta: { defaultWidth: 240, headerLabel: "Item", flex: true } satisfies DataTableColumnMeta,
       },
       {
         id: "amount",
         header: "Amount",
-        accessorFn: (r) => r.amountCents,
-        cell: ({ row }) => <span className="text-xs tabular-nums">{money(row.original.amountCents)}</span>,
+        accessorFn: (r) => (r.kind === "group" ? null : r.e.amountCents),
+        cell: ({ row }) => row.original.kind === "group" ? null : <span className="text-xs tabular-nums">{money(row.original.e.amountCents)}</span>,
+        enableSorting: false,
         size: 100,
         meta: { defaultWidth: 100, align: "right", headerLabel: "Amount" } satisfies DataTableColumnMeta,
       },
       {
         id: "frequency",
         header: "How often",
-        accessorFn: (r) => r.frequency,
-        cell: ({ row }) => <span className="text-xs">{FREQUENCY_LABELS[row.original.frequency as Frequency] ?? row.original.frequency}</span>,
+        accessorFn: (r) => (r.kind === "group" ? null : r.e.frequency),
+        cell: ({ row }) => row.original.kind === "group" ? null : <span className="text-xs">{FREQUENCY_LABELS[row.original.e.frequency as Frequency] ?? row.original.e.frequency}</span>,
+        enableSorting: false,
         size: 100,
         meta: { defaultWidth: 100, headerLabel: "How often" } satisfies DataTableColumnMeta,
       },
       {
         id: "next",
         header: "Next paid",
-        accessorFn: (r) => r.nextDate,
-        cell: ({ row }) => (
+        accessorFn: (r) => (r.kind === "group" ? null : r.e.nextDate),
+        cell: ({ row }) => row.original.kind === "group" ? null : (
           <span className="text-xs">
-            {shortDate(row.original.nextDate)}
-            {row.original.endDate && <span className="text-muted-foreground"> → {shortDate(row.original.endDate)}</span>}
+            {shortDate(row.original.e.nextDate)}
+            {row.original.e.endDate && <span className="text-muted-foreground"> → {shortDate(row.original.e.endDate)}</span>}
           </span>
         ),
+        enableSorting: false,
         size: 150,
         meta: { defaultWidth: 150, headerLabel: "Next paid" } satisfies DataTableColumnMeta,
       },
       {
         id: "perMonth",
         header: "Per month",
-        accessorFn: (r) => perMonthCents(r),
+        accessorFn: (r) => (r.kind === "group" ? r.monthlyCents : perMonthCents(r.e)),
         cell: ({ row }) =>
-          row.original.frequency === "once" ? (
+          row.original.kind === "group" ? (
+            <span className="text-xs tabular-nums font-semibold">{money(row.original.monthlyCents)}</span>
+          ) : row.original.e.frequency === "once" ? (
             <span className="text-xs text-muted-foreground">one-off</span>
           ) : (
-            <span className="text-xs tabular-nums font-medium">{money(perMonthCents(row.original))}</span>
+            <span className="text-xs tabular-nums font-medium">{money(perMonthCents(row.original.e))}</span>
           ),
+        enableSorting: false,
         size: 100,
         meta: { defaultWidth: 100, align: "right", headerLabel: "Per month" } satisfies DataTableColumnMeta,
       },
       {
         id: "gst",
         header: "GST",
-        accessorFn: (r) => (r.hasGst ? 1 : 0),
-        cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.hasGst ? "Inc GST" : "No GST"}</span>,
+        accessorFn: (r) => (r.kind === "group" ? null : (r.e.hasGst ? 1 : 0)),
+        cell: ({ row }) => row.original.kind === "group" ? null : <span className="text-xs text-muted-foreground">{row.original.e.hasGst ? "Inc GST" : "No GST"}</span>,
+        enableSorting: false,
         size: 80,
         meta: { defaultWidth: 80, headerLabel: "GST" } satisfies DataTableColumnMeta,
       },
       {
         id: "status",
         header: "On forecast",
-        accessorFn: (r) => (r.isActive ? 1 : 0),
-        cell: ({ row }) => (
-          <div onClick={(e) => e.stopPropagation()} className="flex items-center h-full">
-            <Switch
-              checked={row.original.isActive}
-              disabled={!canEdit}
-              onCheckedChange={() => toggleActive.mutate(row.original)}
-              aria-label="On the forecast"
-              data-testid={`switch-expense-active-${row.original.id}`}
-            />
-          </div>
-        ),
+        accessorFn: (r) => (r.kind === "group" ? null : (r.e.isActive ? 1 : 0)),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.kind === "group") return null;
+          return (
+            <div onClick={(e) => e.stopPropagation()} className="flex items-center h-full">
+              <Switch
+                checked={r.e.isActive}
+                disabled={!canEdit}
+                onCheckedChange={() => toggleActive.mutate(r.e)}
+                aria-label="On the forecast"
+                data-testid={`switch-expense-active-${r.e.id}`}
+              />
+            </div>
+          );
+        },
+        enableSorting: false,
         size: 100,
         meta: { defaultWidth: 100, headerLabel: "On forecast" } satisfies DataTableColumnMeta,
       },
@@ -386,21 +465,25 @@ export function ExpensesTab() {
         id: "actions",
         header: "",
         enableSorting: false,
-        cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <Button size="icon" variant="ghost" aria-label="Expense actions"><MoreVertical className="w-3 h-3" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled={!canEdit} onClick={() => setDialog({ open: true, expense: row.original })}>
-                <Pencil className="w-3.5 h-3.5 mr-2" />Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!canDelete} className="text-destructive" onClick={() => setToDelete(row.original)}>
-                <Trash2 className="w-3.5 h-3.5 mr-2" />Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.kind === "group") return null;
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button size="icon" variant="ghost" aria-label="Expense actions"><MoreVertical className="w-3 h-3" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem disabled={!canEdit} onClick={() => setDialog({ open: true, expense: r.e })}>
+                  <Pencil className="w-3.5 h-3.5 mr-2" />Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!canDelete} className="text-destructive" onClick={() => setToDelete(r.e)}>
+                  <Trash2 className="w-3.5 h-3.5 mr-2" />Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          );
+        },
         size: 44,
         meta: { defaultWidth: 44 } satisfies DataTableColumnMeta,
       },
@@ -442,13 +525,16 @@ export function ExpensesTab() {
         </div>
       ) : (
         <DataTable
-          data={expenses}
+          data={rows}
           columns={columns}
           storageKey="cashflow-expenses"
           rowKey={(r) => r.id}
           rowHeight={44}
-          rowClassName={(r) => cn(!r.isActive && "opacity-50")}
-          onRowClick={canEdit ? (r) => setDialog({ open: true, expense: r }) : undefined}
+          rowClassName={(r) => (r.kind === "group" ? "bg-muted/60 cursor-pointer" : cn(!r.e.isActive && "opacity-50"))}
+          onRowClick={(r) => {
+            if (r.kind === "group") toggleGroup(r.label);
+            else if (canEdit) setDialog({ open: true, expense: r.e });
+          }}
         />
       )}
       {expenses.length > 0 && (
@@ -460,7 +546,7 @@ export function ExpensesTab() {
         </span>
       </div>
       )}
-      <ExpenseDialog open={dialog.open} expense={dialog.expense} onClose={() => setDialog({ open: false, expense: null })} />
+      <ExpenseDialog open={dialog.open} expense={dialog.expense} groupOptions={groupOptions} onClose={() => setDialog({ open: false, expense: null })} />
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}

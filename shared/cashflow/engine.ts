@@ -41,6 +41,9 @@ const MONTHS_WHEN_NO_END_DATE = 6;
 
 export const LINE_JOB_COSTS = "job_costs";
 export const LINE_BUSINESS_EXPENSES = "business_expenses";
+/** Business-expense groups that don't come from the register's categories. */
+export const GROUP_UNCATEGORISED = "Uncategorised";
+export const GROUP_UNALLOCATED_BILLS = "Bills not on a job";
 export const LINE_GST = "gst";
 
 export function jobLineId(projectId: string): string {
@@ -243,6 +246,7 @@ export function buildEvents(
       label: bill.label,
       projectId: bill.projectId ?? undefined,
       sourceId: bill.id,
+      group: bill.projectId ? undefined : GROUP_UNALLOCATED_BILLS,
     });
   }
 
@@ -341,6 +345,7 @@ export function buildEvents(
         lineId: LINE_BUSINESS_EXPENSES,
         label: exp.name,
         sourceId: exp.id,
+        group: exp.category?.trim() || GROUP_UNCATEGORISED,
       });
     }
   }

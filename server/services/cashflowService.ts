@@ -678,6 +678,7 @@ export async function loadCashflow(
     frequency: e.frequency as Frequency,
     nextDate: e.nextDate,
     endDate: e.endDate,
+    category: e.category,
   }));
 
   // GST that moved before today in periods the ATO hasn't been paid for.
