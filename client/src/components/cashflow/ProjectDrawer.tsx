@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { addDays, maxKey, toDateKey, type CashflowJobRow, type ResolvedClaimStage } from "@shared/cashflow";
+import { addDays, daysBetween, maxKey, toDateKey, type CashflowJobRow, type DateKey, type ResolvedClaimStage } from "@shared/cashflow";
 import { invalidateCashflow, money, PHASE_CLASSES, PHASE_LABELS, shortDate } from "./cashflowShared";
 
 type ResolvedStage = ResolvedClaimStage;
@@ -133,7 +133,11 @@ function JobSetup({ job, onDone }: { job: CashflowJobRow; onDone: () => void }) 
   const contracted = job.valueSource === "contract";
   const [valueDollars, setValueDollars] = useState<number | null>(job.forecastValueCents == null ? null : job.forecastValueCents / 100);
   const [start, setStart] = useState(job.forecastStart ?? "");
-  const [end, setEnd] = useState(job.forecastEnd ?? "");
+  // Length in weeks rather than a finish date; the finish is start + weeks.
+  const [weeks, setWeeks] = useState<number | null>(
+    job.forecastStart && job.forecastEnd ? Math.max(1, Math.round((daysBetween(job.forecastStart, job.forecastEnd) + 1) / 7)) : null,
+  );
+  const end = start && weeks ? addDays(start as DateKey, weeks * 7 - 1) : null;
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => apiRequest(`/api/cashflow/projects/${job.projectId}`, "PATCH", body),
@@ -143,7 +147,7 @@ function JobSetup({ job, onDone }: { job: CashflowJobRow; onDone: () => void }) 
     },
     onError: (e: any) => toast({ title: e?.payload?.issues?.[0]?.message ?? "Couldn't save the job set-up", variant: "destructive" }),
   });
-  const badDates = !!start && !!end && end < start;
+  const badDates = !!weeks && !start;
 
   return (
     <div className="rounded-lg border p-3 space-y-3 bg-muted/30" data-testid="panel-job-setup">
@@ -172,12 +176,25 @@ function JobSetup({ job, onDone }: { job: CashflowJobRow; onDone: () => void }) 
           <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-8 text-sm" data-testid="input-job-start" />
         </label>
         <label className="space-y-1">
-          <span className="text-xs font-medium">Finish</span>
-          <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-8 text-sm" data-testid="input-job-end" />
+          <span className="text-xs font-medium">Length (weeks)</span>
+          <NumericInput
+            value={weeks}
+            onCommit={(v) => setWeeks(v == null ? null : Math.max(1, Math.round(v)))}
+            integer
+            min={1}
+            max={520}
+            placeholder="e.g. 36"
+            className="h-8 text-sm"
+            data-testid="input-job-weeks"
+          />
         </label>
       </div>
-      <p className={cn("text-xs", badDates ? "text-destructive" : "text-muted-foreground")}>
-        {badDates ? "Finish is before start." : "Leave empty to use the schedule, or the project's proposed dates."}
+      <p className={cn("text-xs", badDates ? "text-destructive" : "text-muted-foreground")} data-testid="text-job-finish">
+        {badDates
+          ? "Add a start date for the weeks to count from."
+          : end
+            ? `Finishes ${shortDate(end)}.`
+            : "Leave empty to use the schedule, or the project's proposed dates."}
       </p>
       <div className="flex items-center justify-between gap-2">
         <Button
@@ -200,7 +217,7 @@ function JobSetup({ job, onDone }: { job: CashflowJobRow; onDone: () => void }) 
               save.mutate({
                 ...(contracted ? {} : { forecastValueCents: valueDollars == null ? null : Math.round(valueDollars * 100) }),
                 forecastStart: start || null,
-                forecastEnd: end || null,
+                forecastEnd: end,
               })
             }
             data-testid="button-job-setup-save"
