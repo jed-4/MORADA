@@ -1089,6 +1089,7 @@
     "server/routes.ts POST /api/proposals/:id/accept",
     "server/routes.ts POST /api/proposals/:id/acceptances",
     "server/routes.ts POST /api/proposals/:id/items",
+    "server/routes.ts POST /api/proposals/:id/mark-sent",
     "server/routes.ts POST /api/proposals/:id/milestones",
     "server/routes.ts POST /api/proposals/:id/milestones/reorder",
     "server/routes.ts POST /api/proposals/:id/new-revision",
