@@ -17,7 +17,7 @@ import type { WidgetProps } from "@/types/widgets";
 import type { Widget } from "@/types/widgets";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { formatCurrency } from "@/lib/formatters";
-import { useFinancialPermission } from "@/hooks/use-permission";
+import { useFinancialPermission, usePermission } from "@/hooks/use-permission";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -135,7 +135,9 @@ function CashFlowTooltip({ active, payload, view }: any) {
 }
 
 export default function BusinessCashFlowWidget({ widget }: WidgetProps) {
-  const hasFinancialAccess = useFinancialPermission();
+  // Reads client invoices directly, so it needs "Progress Claims" as well.
+  const canViewInvoices = usePermission("projects.invoices", "view");
+  const hasFinancialAccess = useFinancialPermission() && canViewInvoices;
   const view = readView(widget);
 
   const billsQ = useQuery<BillRow[]>({

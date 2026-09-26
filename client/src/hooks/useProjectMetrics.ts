@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
+import { usePermission } from "@/hooks/use-permission";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
 import { computeContractMetrics, frozenContractTotalFrom, isPendingVariationStatus, type ContractMetrics } from "@shared/projectMetrics";
 import { timesheetTotalExGstCents, exGstFromInc } from "@shared/money";
@@ -189,6 +190,11 @@ export function useProjectMetrics() {
     enabled: !!projectId,
   });
 
+  // Client invoices follow "Progress Claims". Without it the invoice queries
+  // don't run (the server would 403), so every figure that doesn't depend on
+  // invoices still loads instead of the whole dashboard erroring.
+  const canViewInvoices = usePermission("projects.invoices", "view");
+
   const { data: clientInvoices = [], isLoading: invoicesLoading, isError: invoicesError } = useQuery<ClientInvoice[]>({
     queryKey: ["/api/client-invoices", { projectId }],
     queryFn: async () => {
@@ -197,7 +203,7 @@ export function useProjectMetrics() {
       if (!response.ok) throw new Error(`Failed to load invoices (${response.status})`);
       return response.json();
     },
-    enabled: !!projectId,
+    enabled: !!projectId && canViewInvoices,
   });
 
   const { data: invoiceVariations = [], isLoading: invoiceVariationsLoading, isError: invoiceVariationsError } = useQuery<
@@ -210,7 +216,7 @@ export function useProjectMetrics() {
       if (!response.ok) throw new Error(`Failed to load invoice variations (${response.status})`);
       return response.json();
     },
-    enabled: !!projectId,
+    enabled: !!projectId && canViewInvoices,
   });
 
   // Variation items feed change-order costs (builder cost ex GST, no markup)
@@ -687,6 +693,8 @@ export function useProjectMetrics() {
     metricsList: getMetricsList(),
     isLoading,
     isError,
+    /** False when the user's role lacks Progress Claims: invoice figures are blank, not zero. */
+    canViewInvoices,
     formatCurrency,
     formatPercentage,
   };

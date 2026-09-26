@@ -189,6 +189,7 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
     component: InvoicesSummaryWidget,
     defaultSize: "md",
     configurable: true,
+    requiredPermission: { key: "projects.invoices", action: "view" },
   },
   quickActions: {
     type: "quickActions",

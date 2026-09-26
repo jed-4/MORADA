@@ -271,7 +271,7 @@ import { syncTemplateOptions } from "./services/templateOptionSync";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateSchedule, getTemplateSchedule, templateCompanyId } from "./services/scheduleTemplates";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
@@ -24595,7 +24595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Client Invoices API Routes
-  app.get("/api/client-invoices", async (req, res) => {
+  app.get("/api/client-invoices", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId, status } = req.query;
       // Tenant scoping: results are always restricted to the caller's company.
@@ -24655,7 +24655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Auto-generate next invoice number for a project — must be before /:id route
-  app.get("/api/client-invoices/next-number", async (req, res) => {
+  app.get("/api/client-invoices/next-number", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
       const { projectId } = req.query;
       if (!projectId) {
@@ -24682,7 +24682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/client-invoices/:id", async (req, res) => {
+  app.get("/api/client-invoices/:id", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!invoice) return;
@@ -24754,7 +24754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return null;
   };
 
-  app.post("/api/client-invoices", async (req, res) => {
+  app.post("/api/client-invoices", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
       const validationResult = insertClientInvoiceSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -24812,7 +24812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/client-invoices/:id", async (req, res) => {
+  app.patch("/api/client-invoices/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const validationResult = insertClientInvoiceSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -24856,7 +24856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/client-invoices/:id", async (req, res) => {
+  app.delete("/api/client-invoices/:id", requireAuth, requireTeamPermission("projects.invoices", "delete"), async (req, res) => {
     try {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
@@ -24911,7 +24911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Duplicate an invoice as a fresh draft: copies the document content (lines,
   // claims, junctions, snapshot) but resets lifecycle state — new number,
   // today's date, no payments, no Xero link, no locked contract price.
-  app.post("/api/client-invoices/:id/duplicate", async (req, res) => {
+  app.post("/api/client-invoices/:id/duplicate", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
       const original = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!original) return;
@@ -25095,7 +25095,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return true;
   };
 
-  app.post("/api/client-invoices/full", async (req, res) => {
+  app.post("/api/client-invoices/full", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
       const { invoice: invoiceBody, ...childrenBody } = (req.body ?? {}) as any;
       const invoiceResult = insertClientInvoiceSchema.safeParse(invoiceBody);
@@ -25147,7 +25147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/client-invoices/:id/full", async (req, res) => {
+  app.put("/api/client-invoices/:id/full", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
@@ -25198,7 +25198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Client Invoice Items API Routes
-  app.get("/api/client-invoices/:id/items", async (req, res) => {
+  app.get("/api/client-invoices/:id/items", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
@@ -25209,7 +25209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/items", async (req, res) => {
+  app.post("/api/client-invoices/:id/items", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!ownedInvoice) return;
@@ -25231,7 +25231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/client-invoice-items/:id", async (req, res) => {
+  app.patch("/api/client-invoice-items/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Ownership: item → invoice → project → company
       const existingItem = await storage.getClientInvoiceItem(req.params.id);
@@ -25259,7 +25259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/client-invoice-items/:id", async (req, res) => {
+  app.delete("/api/client-invoice-items/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Ownership: item → invoice → project → company
       const existingItem = await storage.getClientInvoiceItem(req.params.id);
@@ -25280,7 +25280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Client Invoice Payments API Routes
-  app.get("/api/client-invoices/:id/payments", async (req, res) => {
+  app.get("/api/client-invoices/:id/payments", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found"))) return;
       const payments = await storage.getClientInvoicePayments(req.params.id);
@@ -25290,7 +25290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/payments", async (req, res) => {
+  app.post("/api/client-invoices/:id/payments", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found"))) return;
       const validationResult = insertClientInvoicePaymentSchema.safeParse({
@@ -25316,7 +25316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/client-invoice-payments/:id", async (req, res) => {
+  app.delete("/api/client-invoice-payments/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Ownership: payment → invoice → project → company
       const existingPayment = await storage.getClientInvoicePayment(req.params.id);
@@ -25335,7 +25335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/client-invoice-payments/:id/void", requireAuth, async (req, res) => {
+  app.patch("/api/client-invoice-payments/:id/void", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Ownership: payment → invoice → project → company
       const existingPayment = await storage.getClientInvoicePayment(req.params.id);
@@ -25355,7 +25355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice-Estimate Junction Routes
-  app.get("/api/client-invoices/:id/estimates", async (req, res) => {
+  app.get("/api/client-invoices/:id/estimates", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const estimates = await storage.getInvoiceEstimates(req.params.id);
@@ -25365,7 +25365,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/estimates", async (req, res) => {
+  app.post("/api/client-invoices/:id/estimates", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const validationResult = insertInvoiceEstimateSchema.safeParse({
@@ -25388,7 +25388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-estimates/:id", async (req, res) => {
+  app.delete("/api/invoice-estimates/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice before deleting the junction row.
       const link = await storage.getInvoiceEstimateById(req.params.id);
@@ -25407,7 +25407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice-Variation Junction Routes
-  app.get("/api/client-invoices/:id/variations", async (req, res) => {
+  app.get("/api/client-invoices/:id/variations", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const variations = await storage.getInvoiceVariations(req.params.id);
@@ -25417,7 +25417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/variations", async (req, res) => {
+  app.post("/api/client-invoices/:id/variations", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!invoice) return;
@@ -25472,7 +25472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invoice-variations/by-project", requireAuth, async (req, res) => {
+  app.get("/api/invoice-variations/by-project", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId } = req.query as { projectId?: string };
       if (!projectId) return res.status(400).json({ error: "projectId required" });
@@ -25490,7 +25490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/invoice-variations/:id", async (req, res) => {
+  app.patch("/api/invoice-variations/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceVariationById(req.params.id);
@@ -25512,7 +25512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-variations/:id", async (req, res) => {
+  app.delete("/api/invoice-variations/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceVariationById(req.params.id);
@@ -25531,7 +25531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice-Allowance Junction Routes
-  app.get("/api/client-invoices/:id/allowances", async (req, res) => {
+  app.get("/api/client-invoices/:id/allowances", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const allowances = await storage.getInvoiceAllowances(req.params.id);
@@ -25541,7 +25541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/allowances", async (req, res) => {
+  app.post("/api/client-invoices/:id/allowances", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
       if (!ownedInvoice) return;
@@ -25565,7 +25565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invoice-allowances/by-project", requireAuth, async (req, res) => {
+  app.get("/api/invoice-allowances/by-project", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId } = req.query as { projectId?: string };
       if (!projectId) return res.status(400).json({ error: "projectId required" });
@@ -25583,7 +25583,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/invoice-allowances/:id", async (req, res) => {
+  app.patch("/api/invoice-allowances/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceAllowanceById(req.params.id);
@@ -25604,7 +25604,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-allowances/:id", async (req, res) => {
+  app.delete("/api/invoice-allowances/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceAllowanceById(req.params.id);
@@ -25622,7 +25622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice-Bill Junction Routes
-  app.get("/api/client-invoices/:id/bills", async (req, res) => {
+  app.get("/api/client-invoices/:id/bills", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const bills = await storage.getInvoiceBills(req.params.id);
@@ -25632,7 +25632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/bills", async (req, res) => {
+  app.post("/api/client-invoices/:id/bills", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
       if (!ownedInvoice) return;
@@ -25656,7 +25656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-bills/:id", async (req, res) => {
+  app.delete("/api/invoice-bills/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceBillById(req.params.id);
@@ -25674,7 +25674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice Timesheet Routes
-  app.get("/api/client-invoices/:id/timesheets", async (req, res) => {
+  app.get("/api/client-invoices/:id/timesheets", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const rows = await storage.getInvoiceTimesheets(req.params.id);
@@ -25684,7 +25684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/timesheets", async (req, res) => {
+  app.post("/api/client-invoices/:id/timesheets", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
       if (!ownedInvoice) return;
@@ -25706,7 +25706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-timesheets/:id", async (req, res) => {
+  app.delete("/api/invoice-timesheets/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceTimesheetById(req.params.id);
@@ -25724,7 +25724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice Selection Routes
-  app.get("/api/client-invoices/:id/selections", async (req, res) => {
+  app.get("/api/client-invoices/:id/selections", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const rows = await storage.getInvoiceSelections(req.params.id);
@@ -25734,7 +25734,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/client-invoices/:id/selections", async (req, res) => {
+  app.post("/api/client-invoices/:id/selections", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
       if (!ownedInvoice) return;
@@ -25770,7 +25770,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoice-selections/:id", async (req, res) => {
+  app.delete("/api/invoice-selections/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       // Scope by the owning client invoice.
       const link = await storage.getInvoiceSelectionById(req.params.id);
@@ -25788,7 +25788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // T004: Send invoice by email — sends email, updates status to sent, and stamps sentDate
-  app.post("/api/client-invoices/:id/send-email", requireAuth, requireTeamMember, async (req: any, res) => {
+  app.post("/api/client-invoices/:id/send-email", requireAuth, requireTeamMember, requireTeamPermission("projects.invoices", "send"), async (req: any, res) => {
     try {
       const userId = req.user.id;
       // Ownership: only the invoice's own company can email it.
@@ -30119,7 +30119,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const unpaidBillCount = ctx.unpaidBills.length;
       const openBlockedItemCount = openBlocked.length;
       res.json({
-        actionableCount: overdueTaskCount + ctx.overdueClientInvoices.length + ctx.unpaidBills.filter(b => b.daysOverdue > 0).length,
+        actionableCount:
+          overdueTaskCount +
+          ((await userHasPermission(req.user as any, "projects.invoices", "view")) ? ctx.overdueClientInvoices.length : 0) +
+          ctx.unpaidBills.filter(b => b.daysOverdue > 0).length,
         openBlockedCount: openBlockedItemCount,
         overdueTaskCount,
         unpaidBillCount,
@@ -42827,7 +42830,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     return undefined;
   };
 
-  app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {
+  app.post("/api/xero/push-client-invoice", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -43056,7 +43059,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Update an existing client invoice in Xero (upsert)
-  app.patch("/api/xero/update-client-invoice/:id", requireAuth, async (req, res) => {
+  app.patch("/api/xero/update-client-invoice/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -43232,7 +43235,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Pull client invoice state from Xero (status, paid amount, balance)
-  app.post("/api/xero/pull-client-invoice/:id", requireAuth, async (req, res) => {
+  app.post("/api/xero/pull-client-invoice/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -43529,7 +43532,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Sync client invoice payment from Xero
-  app.post("/api/xero/sync-client-invoice-payment/:id", requireAuth, async (req, res) => {
+  app.post("/api/xero/sync-client-invoice-payment/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -45963,7 +45966,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // GET /api/tasks/my — thin alias for current user's tasks across projects
   // ─────────────────────────────────────────────────────────────────────
   // Project Cash Flow widget data endpoint
-  app.get("/api/projects/:projectId/cash-flow", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/projects/:projectId/cash-flow", requireAuth, requireTeamMember, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId } = req.params;
       const groupBy = (req.query.groupBy === "week" ? "week" : "month") as "week" | "month";

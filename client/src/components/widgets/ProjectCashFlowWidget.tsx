@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
-import { useFinancialPermission } from "@/hooks/use-permission";
+import { useFinancialPermission, usePermission } from "@/hooks/use-permission";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -196,7 +196,9 @@ function SCurveTooltip({ active, payload }: any) {
 
 export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
-  const allowed = useFinancialPermission();
+  // Money in is client invoices, so it needs "Progress Claims" as well.
+  const canViewInvoices = usePermission("projects.invoices", "view");
+  const allowed = useFinancialPermission() && canViewInvoices;
   const [, navigate] = useLocation();
   const projectId = currentProject?.id;
   const config = useMemo(() => readConfig(widget), [widget]);

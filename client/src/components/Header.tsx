@@ -1,4 +1,5 @@
 import { Calendar, User, Settings, LogOut, Plus, FileText, CheckSquare, Folder, Palette, FileBarChart, FileSearch, HelpCircle, File, Receipt, BookOpen, Timer, ClipboardList, Kanban, Search, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy, Gift } from "lucide-react";
+import { usePermission } from "@/hooks/use-permission";
 import moradaLogo from "@assets/icon_1783074833445.png";
 import { useLocation } from "wouter";
 import { openCrispChat, resetCrispSession } from "@/lib/crisp";
@@ -35,6 +36,7 @@ import type { Company } from "@shared/schema";
 
 export default function Header() {
   const [location, navigate] = useLocation();
+  const canViewInvoices = usePermission("projects.invoices", "view");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
@@ -226,10 +228,12 @@ export default function Header() {
               <FileText className="h-3.5 w-3.5 mr-2" />
               Variations
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/client-invoices')} className="text-xs">
-              <Receipt className="h-3.5 w-3.5 mr-2" />
-              Client Invoices
-            </DropdownMenuItem>
+            {canViewInvoices && (
+              <DropdownMenuItem onClick={() => navigate('/client-invoices')} className="text-xs">
+                <Receipt className="h-3.5 w-3.5 mr-2" />
+                Client Invoices
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => navigate('/site-diary')} className="text-xs">
               <BookOpen className="h-3.5 w-3.5 mr-2" />
               Site Diary

@@ -86,9 +86,9 @@ export const BUSINESS_CALENDAR_LAYERS: BusinessCalendarLayer[] = [
     label: "Invoices due",
     description: "Client invoices by their due date",
     colorToken: "inspection",
-    // Commercial figures on a screen the whole team opens — gated behind the same
-    // permission as the revenue KPIs rather than merely hidden in the UI.
-    permission: { key: "dashboard.financial", action: "view" },
+    // Client invoices on a screen the whole team opens — gated server-side by
+    // the same permission as the invoices themselves ("Progress Claims").
+    permission: { key: "projects.invoices", action: "view" },
   },
   {
     key: "timesheets",

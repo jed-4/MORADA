@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { userHasPermission } from "../middleware/auth";
 import { db } from "../db";
 import * as schema from "@shared/schema";
 import { eq, and, not, isNull, desc, asc } from "drizzle-orm";
@@ -7,6 +8,12 @@ export interface ToolResult {
   success: boolean;
   data?: any;
   error?: string;
+}
+
+async function canSeeInvoices(userId: string, companyId: string): Promise<boolean> {
+  const user = await storage.getUser(userId);
+  if (!user || user.companyId !== companyId) return false;
+  return userHasPermission(user, "projects.invoices", "view");
 }
 
 export async function executeTool(
@@ -23,6 +30,8 @@ export async function executeTool(
 
       case "get_business_overview": {
         const ctx = await storage.getCircuitContext(companyId);
+        // Client invoices follow "Progress Claims", in chat as everywhere else.
+        const canInvoices = await canSeeInvoices(userId, companyId);
         return {
           success: true,
           data: {
@@ -30,13 +39,14 @@ export async function executeTool(
             overdueTaskCount: ctx.overdueTasks.length,
             tasksDueThisWeekCount: ctx.tasksDueThisWeek.length,
             unpaidBillCount: ctx.unpaidBills.length,
-            overdueInvoiceCount: ctx.overdueClientInvoices.length,
+            overdueInvoiceCount: canInvoices ? ctx.overdueClientInvoices.length : undefined,
             openBlockedItemCount: ctx.openBlockedItems.length,
             leadProjectCount: ctx.leadProjects.length,
             overdueTasks: ctx.overdueTasks.slice(0, 8),
             tasksDueThisWeek: ctx.tasksDueThisWeek.slice(0, 8),
             unpaidBills: ctx.unpaidBills.slice(0, 8),
-            overdueInvoices: ctx.overdueClientInvoices.slice(0, 8),
+            overdueInvoices: canInvoices ? ctx.overdueClientInvoices.slice(0, 8) : undefined,
+            ...(canInvoices ? {} : { note: "Client invoices are left out: this user's role doesn't include Progress Claims." }),
             openBlockedItems: ctx.openBlockedItems.slice(0, 5),
           },
         };
@@ -111,6 +121,9 @@ export async function executeTool(
       }
 
       case "get_client_invoices": {
+        if (!(await canSeeInvoices(userId, companyId))) {
+          return { success: false, error: "This user's role doesn't include Progress Claims, so client invoices can't be shown." };
+        }
         const ctx = await storage.getCircuitContext(companyId);
         const status = input.status || "all";
         if (status === "all" || status === "overdue") {
