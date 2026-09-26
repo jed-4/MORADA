@@ -36938,6 +36938,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Add company and creator information (server-side only)
       const templateData = {
         ...validationResult.data,
+        // Public templates are visible to every company, so a user can never
+        // make one — only Morada can.
+        isPublic: false,
         companyId: user.companyId,
         createdBy: user.id,
         createdByName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
@@ -36968,7 +36971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Prevent modification of public templates (they should be read-only)
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
       }
 
@@ -37012,7 +37015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Prevent deletion of public templates (they should be permanent)
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
 
@@ -37299,6 +37302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const templateData = {
         ...validationResult.data,
+        isPublic: false, // visible to every company — never user-settable
         companyId: user.companyId,
         createdBy: user.id,
       };
@@ -37322,7 +37326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "Estimate template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
       }
       const validationResult = updateEstimateTemplateSchema.safeParse(req.body);
@@ -37332,9 +37336,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      const { isPublic: _isPublic, ...estimateUpdates } = validationResult.data;
       const updatedTemplate = await storage.updateEstimateTemplate(
         req.params.id,
-        validationResult.data,
+        estimateUpdates,
         user.companyId
       );
       res.json(updatedTemplate);
@@ -37356,7 +37361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "Estimate template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
       const success = await storage.deleteEstimateTemplate(req.params.id, user.companyId);
@@ -37510,6 +37515,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupIds, ...rest } = validationResult.data;
       const templateData = {
         ...rest,
+        isPublic: false, // visible to every company — never user-settable
         companyId: user.companyId,
         createdBy: user.id,
       };
@@ -37547,7 +37553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "Selection template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
       }
       const validationResult = updateSelectionTemplateSchema.safeParse(req.body);
@@ -37557,7 +37563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { groupIds, ...updateData } = validationResult.data;
+      const { groupIds, isPublic: _isPublic, ...updateData } = validationResult.data;
       const updated = await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
       if (!updated) {
         return res.status(404).json({ error: "Selection template not found or access denied" });
@@ -37594,7 +37600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "Selection template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
       const success = await storage.deleteSelectionTemplate(req.params.id, user.companyId);
@@ -37885,6 +37891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const templateData = {
         ...validationResult.data,
+        isPublic: false, // visible to every company — never user-settable
         companyId: user.companyId,
         createdBy: user.id,
         createdByName: user.name || user.username,
@@ -37909,7 +37916,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "RFQ template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
       }
       const validationResult = insertRfqTemplateSchema.partial().safeParse(req.body);
@@ -37919,9 +37926,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      const { isPublic: _isPublic, ...rfqUpdates } = validationResult.data;
       const updatedTemplate = await storage.updateRfqTemplate(
         req.params.id,
-        validationResult.data,
+        rfqUpdates,
         user.companyId
       );
       res.json(updatedTemplate);
@@ -37943,7 +37951,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "RFQ template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
       const success = await storage.deleteRfqTemplate(req.params.id, user.companyId);
@@ -38112,6 +38120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const templateData = {
         ...validationResult.data,
+        isPublic: false, // visible to every company — never user-settable
         companyId: user.companyId,
         createdBy: user.id,
         createdByName: user.name || user.username,
@@ -38136,7 +38145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "RFI template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
       }
       const validationResult = insertRfiTemplateSchema.partial().safeParse(req.body);
@@ -38146,9 +38155,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      const { isPublic: _isPublic, ...rfiUpdates } = validationResult.data;
       const updatedTemplate = await storage.updateRfiTemplate(
         req.params.id,
-        validationResult.data,
+        rfiUpdates,
         user.companyId
       );
       res.json(updatedTemplate);
@@ -38170,7 +38180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingTemplate) {
         return res.status(404).json({ error: "RFI template not found" });
       }
-      if (existingTemplate.isPublic) {
+      if (existingTemplate.isPublic && existingTemplate.companyId !== user.companyId) {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
       const success = await storage.deleteRfiTemplate(req.params.id, user.companyId);
