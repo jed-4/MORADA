@@ -45,7 +45,7 @@ import {
 import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker";
 import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
 import { formulaToDisplay } from "@shared/quantityFormula";
-import { isFixedPriceLine } from "@shared/pricing";
+import { isFixedPriceLine, isLumpSumLine } from "@shared/pricing";
 import type {
   EstimateItem,
   CostCode,
@@ -854,9 +854,11 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             }}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {isFixedPriceLine(item.unitCostExTax) && !formulaWords ? (
-              /* 0 × $0 = $454.55 reads as a broken row. A flat line has no
-                 quantity and no unit cost; its amount is in Builder Cost. */
+            {isLumpSumLine(item.unitCostExTax, item.priceIncTax) && !formulaWords ? (
+              /* 0 × $0 = $454.55 reads as a broken row. A lump sum has no
+                 quantity and no unit cost; its amount is in Builder Cost.
+                 An EMPTY line is not a lump sum — it has no amount either —
+                 and dashing it out took away the cell people type into. */
               <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
             ) : null}
             {formulaWords && (
@@ -865,7 +867,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 data-testid={`quantity-from-takeoff-${item.id}`}
               />
             )}
-            {isFixedPriceLine(item.unitCostExTax) && !formulaWords ? null : (
+            {isLumpSumLine(item.unitCostExTax, item.priceIncTax) && !formulaWords ? null : (
               <span>{baseQuantity.toFixed(2).replace(/\.?0+$/, '')}</span>
             )}
           </div>
@@ -993,7 +995,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             }}
             data-testid={`cell-unitCostExTax-${item.id}`}
           >
-            {isFixedPriceLine(item.unitCostExTax)
+            {isLumpSumLine(item.unitCostExTax, item.priceIncTax)
               ? <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
               : formatCurrency(item.unitCostExTax)}
           </div>
@@ -1001,7 +1003,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
       
       case 'unitCostIncTax':
         const unitCostIncTax = pricingValues.unitCostIncTax || 0;
-        const unitIncIsFlat = isFixedPriceLine(item.unitCostExTax);
+        const unitIncIsFlat = isLumpSumLine(item.unitCostExTax, item.priceIncTax);
         
         if (isEditing) {
           return (
@@ -1044,7 +1046,10 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         const wastagePct = (item as any).wastagePercent || 0;
         /* On a flat line — a lump sum with no unit cost — this cell IS the
            line's amount rather than qty × unit cost, so it is the one place
-           the amount can be typed. On a priced line it stays derived. */
+           the amount can be typed. On a priced line it stays derived.
+           Deliberately the LOOSER test, unlike the cells above: an empty line
+           has no amount yet, and typing one here is how it becomes a lump sum
+           in the first place. */
         const isFlat = isFixedPriceLine(item.unitCostExTax);
         if (isFlat && isEditing) {
           return (

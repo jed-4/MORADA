@@ -7875,9 +7875,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate item not found" });
       }
       // Keep the reverse index in step whenever the formula could have changed
-      // — including when a typed quantity has just cleared it.
-      if (updateData.quantityFormula !== undefined) {
-        await syncItemRefs(item.id, (item as any).quantityFormula);
+      // — including when a typed quantity has just cleared it. Skipped when it
+      // was null and still is: the grid sends quantityFormula on every plain
+      // quantity edit, and rewriting an empty index cost a round trip per
+      // keystroke commit (~250ms of the ~2.1s save, measured on dev).
+      const formulaWas = (existingItem as any).quantityFormula ?? null;
+      const formulaNow = (item as any).quantityFormula ?? null;
+      if (updateData.quantityFormula !== undefined && !(formulaWas === null && formulaNow === null)) {
+        await syncItemRefs(item.id, formulaNow);
       }
       triggerBudgetAutoRecalc(existingItem.estimateId);
       res.json(item);

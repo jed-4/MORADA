@@ -230,6 +230,27 @@ export function isFixedPriceLine(
   return (Number(unitCostExTax) || 0) === 0;
 }
 
+/**
+ * A line whose amount really IS a lump sum, rather than one that simply has no
+ * unit cost yet.
+ *
+ * isFixedPriceLine answers a PRICING question — "is there a unit cost to
+ * multiply?" — and for a brand-new empty line the answer is also no. Using it
+ * to decide what the grid SHOWS was wrong: every empty line rendered a dash
+ * where its quantity and unit cost go, so typing a number into one looked like
+ * it had not saved. A lump sum is a line with no unit cost that nonetheless
+ * carries an amount.
+ *
+ * A lump sum whose amount is genuinely 0 reads as empty here, which is the
+ * safe way round: it shows the editable cells that let you fix it.
+ */
+export function isLumpSumLine(
+  unitCostExTax: number | null | undefined,
+  priceIncTax: number | null | undefined,
+): boolean {
+  return isFixedPriceLine(unitCostExTax) && (Number(priceIncTax) || 0) !== 0;
+}
+
 export interface StoredPriceResolveInput {
   unitCostExTax: number | null | undefined;
   quantity: number | null | undefined;
