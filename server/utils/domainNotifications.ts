@@ -472,6 +472,9 @@ export async function notifyScheduleItemChange(params: {
     try {
       if (item.scheduleId) {
         const schedule = await storage.getScheduleById(item.scheduleId);
+        // A schedule template's item isn't work anyone has been given — the
+        // assignee on a template is a default for future jobs.
+        if ((schedule as any)?.templateId) return;
         projectId = (schedule as any)?.projectId ?? null;
       }
     } catch {

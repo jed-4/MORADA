@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { format } from "date-fns";
+import { useState, useEffect, useMemo, useRef, useCallback, type ComponentProps, type ReactNode } from "react";
+import { TemplateDayInput } from "@/components/schedule/TemplateDayInput";
+import { TEMPLATE_ANCHOR_DAY, isWorkingDay as isTemplateWorkingDay, templateDayNumber } from "@shared/scheduleTemplateDates";
+import { format, differenceInCalendarDays, startOfMonth, endOfMonth } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -171,7 +173,18 @@ function installScheduleHistoryGuard(guard: ScheduleHistoryGuard): () => void {
   };
 }
 
-export default function Schedule() {
+/**
+ * The project schedule — and, with `templateId`, a schedule template.
+ *
+ * A template owns a real schedule (server/services/scheduleTemplates.ts), so
+ * it runs through this same page: same views, dialog, dependencies, cascade
+ * and editing session. Template mode only swaps where the schedule comes from,
+ * shows dates as working-day numbers, and hides what belongs to one job
+ * (online/clients, baselines, holidays, Today, linked checklists and tasks,
+ * Business Schedule markers, loading or saving templates).
+ */
+export default function Schedule({ templateId, templateHeader }: { templateId?: string; templateHeader?: ReactNode } = {}) {
+  const isTemplate = !!templateId;
   const { currentProject } = useProject();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -183,14 +196,15 @@ export default function Schedule() {
     return momentLocalizer(moment);
   }, [weekStartDay]);
   const params = useParams<ScheduleParams>();
-  const projectId = params.projectId || currentProject?.id;
+  const projectId = isTemplate ? undefined : (params.projectId || currentProject?.id);
 
   const [scheduleCategory, setScheduleCategory] = useState<"construction" | "preconstruction">("construction");
   const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
   const [ganttSortResetKey, setGanttSortResetKey] = useState(0);
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
-  const [calendarDate, setCalendarDate] = useState(new Date());
+  // A template's calendar opens on its Day 1, not today.
+  const [calendarDate, setCalendarDate] = useState(() => (templateId ? new Date(`${TEMPLATE_ANCHOR_DAY}T00:00:00`) : new Date()));
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [showOfflineConfirm, setShowOfflineConfirm] = useState(false);
@@ -273,19 +287,75 @@ export default function Schedule() {
   });
   const hasPreconstruction = allProjectSchedules.some(s => (s as any).scheduleCategory === "preconstruction");
 
-  // Fetch schedule for project (filtered by category)
+  // Fetch schedule for project (filtered by category), or the template's own
   const { data: schedule, isLoading: scheduleLoading } = useQuery<ScheduleType>({
-    queryKey: ["/api/projects", projectId, "schedule", { category: scheduleCategory }],
+    queryKey: isTemplate
+      ? ["/api/schedule-templates", templateId, "schedule"]
+      : ["/api/projects", projectId, "schedule", { category: scheduleCategory }],
     queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/schedule?category=${scheduleCategory}`, { credentials: "include" });
+      const res = await fetch(
+        isTemplate ? `/api/schedule-templates/${templateId}/schedule` : `/api/projects/${projectId}/schedule?category=${scheduleCategory}`,
+        { credentials: "include" },
+      );
       if (!res.ok) {
         if (res.status === 404) return null;
         throw new Error("Failed to fetch schedule");
       }
       return res.json();
     },
-    enabled: !!projectId,
+    enabled: !!projectId || isTemplate,
   });
+
+  // The schedule row itself (status, lock, working week) after a change to it.
+  const invalidateScheduleRow = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: isTemplate ? ["/api/schedule-templates", templateId, "schedule"] : ["/api/projects", projectId, "schedule"],
+    });
+  }, [isTemplate, templateId, projectId]);
+
+  // Working week for "Day N" labels on a template.
+  const templateCalendar = useMemo(
+    () => ({ includeSaturday: schedule?.includeSaturday, includeSunday: schedule?.includeSunday }),
+    [schedule?.includeSaturday, schedule?.includeSunday],
+  );
+
+  // The item dialog's date inputs. On a template they show "Day N" and hand
+  // back the same yyyy-MM-dd string, so the dialog's date logic is unchanged.
+  const DateField = useCallback(
+    (props: ComponentProps<typeof Input>) =>
+      isTemplate
+        ? <TemplateDayInput {...(props as any)} calendar={templateCalendar} />
+        : <Input {...props} />,
+    [isTemplate, templateCalendar],
+  );
+
+  // Calendar view on a template: working-day numbers in place of dates.
+  const templateDayOf = useCallback((d: Date): number | null => {
+    const key = format(d, "yyyy-MM-dd");
+    if (key < TEMPLATE_ANCHOR_DAY || !isTemplateWorkingDay(key, templateCalendar)) return null;
+    return templateDayNumber(key, templateCalendar);
+  }, [templateCalendar]);
+  const templateWeekOf = (d: Date) =>
+    Math.floor(differenceInCalendarDays(d, new Date(`${TEMPLATE_ANCHOR_DAY}T00:00:00`)) / 7) + 1;
+  const templateCalendarTitle = (d: Date, view: string) => {
+    if (view === "month") {
+      const first = Math.max(1, templateWeekOf(startOfMonth(d)));
+      return `Weeks ${first}–${Math.max(first, templateWeekOf(endOfMonth(d)))}`;
+    }
+    const day = templateDayOf(d);
+    return view === "day" && day ? `Week ${Math.max(1, templateWeekOf(d))} · Day ${day}` : `Week ${Math.max(1, templateWeekOf(d))}`;
+  };
+  const templateCalendarComponents = useMemo(() => {
+    const weekdayHeader = ({ date }: { date: Date }) => {
+      const day = templateDayOf(date);
+      return <span>{format(date, "EEE")}{day ? ` · Day ${day}` : ""}</span>;
+    };
+    return {
+      month: { dateHeader: ({ date }: { date: Date }) => { const day = templateDayOf(date); return <span>{day ? `Day ${day}` : ""}</span>; } },
+      week: { header: weekdayHeader },
+      day: { header: weekdayHeader },
+    };
+  }, [templateDayOf]);
 
   const invalidateScheduleItems = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
@@ -338,7 +408,7 @@ export default function Schedule() {
         });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         isUnlockedRef.current = false;
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+        invalidateScheduleRow();
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
         invalidateScheduleItems();
         leaveTo(targetUrl);
@@ -365,7 +435,7 @@ export default function Schedule() {
       if (!anchor) return;
       const href = anchor.getAttribute("href") || "";
       if (href.startsWith("#") || href === "") return;
-      const isScheduleLink = href.includes("/schedule") && href.includes(projectId || "");
+      const isScheduleLink = href.includes("/schedule") && href.includes(projectId || templateId || "");
       if (isScheduleLink) return;
       e.preventDefault();
       e.stopPropagation();
@@ -407,7 +477,7 @@ export default function Schedule() {
         pendingNavigationRef.current = urlStr;
         setShowLeaveGuardDialog(true);
       },
-      isAllowedUrl: (urlStr) => urlStr.includes("/schedule") && urlStr.includes(projectId || ""),
+      isAllowedUrl: (urlStr) => urlStr.includes("/schedule") && urlStr.includes(projectId || templateId || ""),
     };
     const releaseGuard = installScheduleHistoryGuard(guard);
 
@@ -440,7 +510,7 @@ export default function Schedule() {
   // Fetch schedule items - when we have a schedule, fetch by scheduleId for category-specific items
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
     queryKey: schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`],
-    enabled: !!projectId && (!!schedule?.id || scheduleCategory === "construction"),
+    enabled: isTemplate ? !!schedule?.id : !!projectId && (!!schedule?.id || scheduleCategory === "construction"),
     placeholderData: (prev) => prev,
   });
 
@@ -518,7 +588,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleType>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       toast({
         title: "Schedule created",
         description: "Your project schedule has been created.",
@@ -547,7 +617,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleType>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
     },
     onError: (error: Error) => {
@@ -568,7 +638,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedules/${schedule.id}/edit-begin`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
     },
     onError: (error: Error) => {
@@ -582,7 +652,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedules/${schedule.id}/edit-commit`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
       toast({ title: "Schedule saved", description: "Your changes have been saved and the schedule is locked." });
     },
@@ -597,7 +667,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedules/${schedule.id}/edit-discard`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
       invalidateScheduleItems();
       toast({ title: "Changes discarded", description: "The schedule has been reverted to how it was before editing." });
@@ -621,7 +691,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleType>;
     },
     onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
       toast({
         title: updated.isOnline ? "Schedule is Online" : "Schedule is Offline",
@@ -1056,7 +1126,8 @@ export default function Schedule() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ itemIds, projectId }),
+        // A template's schedule has no project; scope the delete by schedule.
+        body: JSON.stringify(isTemplate ? { itemIds, scheduleId: schedule?.id } : { itemIds, projectId }),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -1139,7 +1210,8 @@ export default function Schedule() {
 
   const { data: nonWorkingDays = [], refetch: refetchNonWorkingDays } = useQuery({
     queryKey: [`/api/companies/${user?.companyId}/non-working-days?scheduleId=${schedule?.id}`],
-    enabled: !!user?.companyId && !!schedule?.id,
+    // Holidays are real dates; a template's dates are offsets from an anchor.
+    enabled: !!user?.companyId && !!schedule?.id && !isTemplate,
   });
 
   const companyHolidays = (nonWorkingDays as any[]).filter((d: any) => !d.scheduleId);
@@ -1174,7 +1246,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedules/${schedule?.id}/working-days`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      invalidateScheduleRow();
     },
   });
 
@@ -1256,42 +1328,13 @@ export default function Schedule() {
     mutationFn: async (data: { name: string; description: string; category: string }) => {
       if (!schedule) throw new Error("No schedule found");
       if (scheduleItems.length === 0) throw new Error("No schedule items to save");
-
-      // Compute D0 (earliest start date) for relative-day calculation
-      const startDates = scheduleItems
-        .map(item => item.startDate ? new Date(item.startDate).getTime() : null)
-        .filter((t): t is number => t !== null);
-      const day0Ms = startDates.length > 0 ? Math.min(...startDates) : Date.now();
-      const day0 = new Date(day0Ms);
-
-      // Convert schedule items to template format.
-      // - Keep the original `id` so the apply route can remap parentItemId + dependencies.
-      // - Store `relativeStartDay` as a WORKING-DAY offset from D0.
-      //   The server apply route uses addWorkingDaysServer(day0, relativeStartDay), so this
-      //   must be a working-day count to avoid drift across weekends/holidays.
-      //   Formula: countWorkingDays(day0, itemStart) - 1 gives 0-based working-day offset
-      //   (countWorkingDays is inclusive: D0→D0 = 1, so minus 1 = 0).
-      // - Include `parentItemId`, `dependencies`, and `color` for full fidelity.
-      const templateData = scheduleItems.map(item => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        notes: item.notes,
-        type: item.type,
-        priority: item.priority,
-        duration: item.duration || 1,
-        sortOrder: item.sortOrder || 0,
-        color: item.color || null,
-        parentItemId: item.parentItemId || null,
-        dependencies: (item.dependencies as any[]) || [],
-        relativeStartDay: item.startDate
-          ? Math.max(0, countWorkingDays(day0, new Date(item.startDate)) - 1)
-          : 0,
-      }));
-
+      // The server copies the rows — tree, dependencies with lag, sub-items,
+      // assignees, cost codes — measuring each item's working-day offset from
+      // the earliest start on this schedule's own calendar.
       return await apiRequest("/api/schedule-templates", "POST", {
         ...data,
-        templateData,
+        templateData: [],
+        fromScheduleId: schedule.id,
       });
     },
     onSuccess: () => {
@@ -1314,7 +1357,7 @@ export default function Schedule() {
 
   // Load template into current schedule
   const loadTemplateMutation = useMutation({
-    mutationFn: async ({ templateId, startDate }: { templateId: string; startDate: string }) => {
+    mutationFn: async ({ templateId, startDate }: { templateId: string; startDate?: string }) => {
       if (!schedule) throw new Error("No schedule found");
       return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", {
         scheduleId: schedule.id,
@@ -1596,7 +1639,7 @@ export default function Schedule() {
     return { timelineStart, timelineEnd, totalDays };
   }, [filteredItems]);
 
-  if (!projectId) {
+  if (!projectId && !isTemplate) {
     return (
       <div className="flex items-center justify-center h-full">
         <Card className="p-6 max-w-md text-center">
@@ -1693,6 +1736,7 @@ export default function Schedule() {
       }}
     >
       <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+        {templateHeader}
         {/* Schedule Category Tabs - only shown when preconstruction schedule exists */}
         {hasPreconstruction && (
           <div className="h-8 bg-muted/30 flex items-center px-2 gap-1 border-b border-border flex-shrink-0">
@@ -1742,7 +1786,8 @@ export default function Schedule() {
             <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border/50 flex-shrink-0">
               {/* Left side */}
               <div className="flex items-center gap-1.5 min-w-0">
-                {/* Online/Offline chip */}
+                {/* Online/Offline chip — a template has no clients to show */}
+                {!isTemplate && (<>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -1764,7 +1809,7 @@ export default function Schedule() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{schedule?.isOnline ? 'Online' : 'Offline'}</TooltipContent>
-                </Tooltip>
+                </Tooltip></>)}
 
                 {/* View segmented control */}
                 <div className="flex items-center gap-0.5">
@@ -2001,6 +2046,7 @@ export default function Schedule() {
                 </DropdownMenu>
 
                 {/* Today */}
+                {!isTemplate && (
                 <button
                   onClick={() => {
                     if (activeView === 'calendar') {
@@ -2014,6 +2060,7 @@ export default function Schedule() {
                 >
                   Today
                 </button>
+                )}
               </div>
 
               {/* Right side */}
@@ -2090,15 +2137,17 @@ export default function Schedule() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {!isTemplate && (<>
                     <DropdownMenuItem onClick={() => setShowLoadTemplateDialog(true)} disabled={schedule?.status === 'locked'}>
                       <Upload className="w-4 h-4 mr-2" />
                       Load Template
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowSaveTemplateDialog(true)} disabled={schedule?.status === 'locked' || scheduleItems.length === 0}>
+                    <DropdownMenuItem onClick={() => setShowSaveTemplateDialog(true)} disabled={scheduleItems.length === 0}>
                       <Download className="w-4 h-4 mr-2" />
                       Save as Template
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
+                    </>)}
                     <DropdownMenuItem onClick={() => setShowImportDialog(true)} disabled={schedule?.status === 'locked'}>
                       <Upload className="w-4 h-4 mr-2" />
                       Import Schedule
@@ -2107,11 +2156,13 @@ export default function Schedule() {
                       <Download className="w-4 h-4 mr-2" />
                       Export Schedule
                     </DropdownMenuItem>
+                    {!isTemplate && (<>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setShowBaselineDialog(true)}>
                       <Bookmark className="w-4 h-4 mr-2" />
                       Create Baseline
                     </DropdownMenuItem>
+                    </>)}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => sortByDateMutation.mutate()}
@@ -2125,7 +2176,7 @@ export default function Schedule() {
                       <Settings className="w-4 h-4 mr-2" />
                       Schedule Settings
                     </DropdownMenuItem>
-                    {!hasPreconstruction && scheduleCategory === 'construction' && (
+                    {!isTemplate && !hasPreconstruction && scheduleCategory === 'construction' && (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -2195,6 +2246,8 @@ export default function Schedule() {
                   <>
                     <MoradaScheduleList
                       items={filteredItems}
+                      isTemplate={isTemplate}
+                      templateCalendar={isTemplate ? templateCalendar : undefined}
                       noteCounts={noteCounts}
                       statusOptions={statusOptions}
                       visibleColumns={visibleColumns}
@@ -2288,6 +2341,7 @@ export default function Schedule() {
                 baselineItems={activeBaselineId ? baselineItems as any[] : []}
                 nonWorkingDays={nonWorkingDays as any[]}
                 sortResetKey={ganttSortResetKey}
+                isTemplate={isTemplate}
               />
             )}
 
@@ -2295,7 +2349,9 @@ export default function Schedule() {
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-center py-1.5">
                   <span className="text-sm font-medium">
-                    {calendarDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+                    {isTemplate
+                      ? templateCalendarTitle(calendarDate, calendarView)
+                      : calendarDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
                   </span>
                 </div>
                 <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
@@ -2321,6 +2377,7 @@ export default function Schedule() {
                     popup
                     toolbar={false}
                     culture="en-custom"
+                    components={isTemplate ? templateCalendarComponents : undefined}
                     data-testid="calendar-view"
                   />
                 </div>
@@ -2428,13 +2485,13 @@ export default function Schedule() {
               </div>
             </div>
 
-            {/* Dates Row */}
+            {/* Dates Row — a template edits working-day numbers, not dates */}
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="item-start-date">
-                  Start Date <span className="text-destructive">*</span>
+                  {isTemplate ? "Start Day" : "Start Date"} <span className="text-destructive">*</span>
                 </Label>
-                <Input
+                <DateField
                   id="item-start-date"
                   type="date"
                   value={formData.startDate}
@@ -2508,9 +2565,9 @@ export default function Schedule() {
 
               <div className="space-y-2">
                 <Label htmlFor="item-end-date">
-                  End Date <span className="text-destructive">*</span>
+                  {isTemplate ? "End Day" : "End Date"} <span className="text-destructive">*</span>
                 </Label>
-                <Input
+                <DateField
                   id="item-end-date"
                   type="date"
                   value={formData.endDate}
@@ -3008,7 +3065,7 @@ export default function Schedule() {
                     </div>
 
                     {/* Business Schedule Build Markers */}
-                    {bspProject && editingItem && editingItem.id && (
+                    {!isTemplate && bspProject && editingItem && editingItem.id && (
                       <div className="space-y-2 pt-3 border-t">
                         <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Business Schedule Markers</Label>
                         <div className="flex flex-wrap gap-2">
@@ -3045,8 +3102,8 @@ export default function Schedule() {
                       </div>
                     )}
 
-                    {/* Linked Items */}
-                    {editingItem && (
+                    {/* Linked Items — a job's own checklists and tasks; a template has none */}
+                    {!isTemplate && editingItem && (
                       <div className="space-y-3 pt-3 border-t">
                         <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Linked Items</Label>
 
@@ -3374,12 +3431,9 @@ export default function Schedule() {
         onOpenChange={(open) => {
           setShowLoadTemplateDialog(open);
           if (open) {
-            const projectStart = (currentProject as any)?.startDate;
-            setLoadTemplateStartDate(
-              projectStart
-                ? format(new Date(projectStart), "yyyy-MM-dd")
-                : format(new Date(), "yyyy-MM-dd")
-            );
+            // Blank = straight after the last item (or the project's start
+            // when the schedule is empty) — the server works it out.
+            setLoadTemplateStartDate("");
           }
         }}
       >
@@ -3387,19 +3441,22 @@ export default function Schedule() {
           <DialogHeader>
             <DialogTitle>Load Schedule Template</DialogTitle>
             <DialogDescription>
-              Choose a start date and a template to apply to your current schedule.
+              The template's items are added after everything already on this schedule.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium">Schedule Start Date</label>
+              <label className="text-sm font-medium">Start Date (optional)</label>
               <Input
                 type="date"
                 value={loadTemplateStartDate}
                 onChange={(e) => setLoadTemplateStartDate(e.target.value)}
                 data-testid="input-load-template-start-date"
               />
-              <p className="text-xs text-muted-foreground">Day 0 of the template maps to this date.</p>
+              <p className="text-xs text-muted-foreground">
+                Day 1 of the template lands on this date. Leave blank to start the next working day after
+                {scheduleItems.length > 0 ? " the last item" : " the project's start"}.
+              </p>
             </div>
             {scheduleTemplates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -3414,7 +3471,7 @@ export default function Schedule() {
                     className={`p-4 hover-elevate ${loadTemplateMutation.isPending ? "opacity-50 pointer-events-none cursor-not-allowed" : "cursor-pointer"}`}
                     onClick={() => {
                       if (!loadTemplateMutation.isPending)
-                        loadTemplateMutation.mutate({ templateId: template.id, startDate: loadTemplateStartDate });
+                        loadTemplateMutation.mutate({ templateId: template.id, startDate: loadTemplateStartDate || undefined });
                     }}
                     data-testid={`template-card-${template.id}`}
                   >
@@ -3434,7 +3491,7 @@ export default function Schedule() {
                           </p>
                         )}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>{template.templateData?.length || 0} items</span>
+                          <span>{template.itemCount ?? template.templateData?.length ?? 0} items</span>
                           {template.createdByName && (
                             <span>Created by {template.createdByName}</span>
                           )}
@@ -3552,6 +3609,8 @@ export default function Schedule() {
               </div>
             )}
 
+            {/* Holidays and client visibility are about a real job's dates */}
+            {!isTemplate && (<>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">Schedule-Specific Non-Working Days</Label>
@@ -3624,6 +3683,7 @@ export default function Schedule() {
                 <span className="text-xs text-muted-foreground">weeks ahead</span>
               </div>
             </div>
+            </>)}
 
             <div className="space-y-3 pt-3 border-t">
               <Label className="text-sm font-medium">Business Auto-Assign</Label>
@@ -3796,7 +3856,7 @@ export default function Schedule() {
             variant="ghost"
             className="h-7 px-2 text-xs text-destructive"
             onClick={() => {
-              if (!projectId) {
+              if (!projectId && !isTemplate) {
                 toast({ title: "Error", description: "No project selected", variant: "destructive" });
                 return;
               }
@@ -3808,7 +3868,7 @@ export default function Schedule() {
                 run: () => bulkDeleteMutation.mutate(Array.from(selectedItems)),
               });
             }}
-            disabled={bulkDeleteMutation.isPending || !projectId}
+            disabled={bulkDeleteMutation.isPending || (!projectId && !isTemplate)}
             data-testid="button-bulk-delete"
           >
             {bulkDeleteMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}

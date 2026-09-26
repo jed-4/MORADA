@@ -15,7 +15,8 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useScheduleView } from "@/contexts/ScheduleViewContext";
-import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
+import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay, parseISO } from "date-fns";
+import { TEMPLATE_ANCHOR_DAY, isWorkingDay as isTemplateWorkingDay, templateDayNumber } from "@shared/scheduleTemplateDates";
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -799,6 +800,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   // Fetch project data
   const { data: project } = useQuery({
     queryKey: [`/api/projects/${projectId}`],
+    enabled: !!projectId, // a schedule template has no project
   });
 
   // Load user view preferences for Gantt
@@ -1268,7 +1270,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   // Calculate timeline bounds with dynamic buffer for infinite scroll
   const { timelineStart, timelineEnd, totalDays, dataStart, dataEnd } = useMemo(() => {
     if (allItems.length === 0) {
-      const dataStartDate = startOfWeek(new Date());
+      // An empty template opens on its Day 1, not on today.
+      const dataStartDate = isTemplate ? parseISO(TEMPLATE_ANCHOR_DAY) : startOfWeek(new Date());
       const dataEndDate = addDays(dataStartDate, 60);
       const start = addDays(dataStartDate, -timelineBuffer.before);
       const end = addDays(dataEndDate, timelineBuffer.after);
@@ -1295,24 +1298,40 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     const days = differenceInDays(end, start) + 1;
 
     return { timelineStart: start, timelineEnd: end, totalDays: days, dataStart: dataStartDate, dataEnd: dataEndDate };
-  }, [allItems, timelineBuffer]);
+  }, [allItems, timelineBuffer, isTemplate]);
 
-  // Earliest item start date — used for relative week numbering and D0/D1 axis in template mode
+  // Earliest item start date — used for relative week numbering. A schedule
+  // template counts from its fixed anchor instead, so "Week 1" and "Day 1"
+  // mean the same thing here as in the item dialog and when it is applied.
   const projectStartDate = useMemo(() => {
+    if (isTemplate) return startOfWeek(parseISO(TEMPLATE_ANCHOR_DAY), { weekStartsOn: weekStartDay });
     if (allItems.length === 0) return timelineStart;
     const allStartDates = allItems.map(item => new Date(item.startDate).getTime());
     return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: weekStartDay });
-  }, [allItems, timelineStart, weekStartDay]);
+  }, [allItems, timelineStart, weekStartDay, isTemplate]);
+
+  // Working-day number on a template ("Mo 1", "Tu 2", … a weekend shows only
+  // its weekday), counted from the anchor on the schedule's own week.
+  const templateDayLabel = useCallback((day: Date) => {
+    const weekday = format(day, 'EEE').slice(0, 2);
+    const cal = { includeSaturday: schedule?.includeSaturday, includeSunday: schedule?.includeSunday };
+    const key = format(day, 'yyyy-MM-dd');
+    if (key < TEMPLATE_ANCHOR_DAY || !isTemplateWorkingDay(key, cal)) return { weekday, day: '' };
+    return { weekday, day: String(templateDayNumber(key, cal)) };
+  }, [schedule?.includeSaturday, schedule?.includeSunday]);
+  const templateWeekLabel = (weekStart: Date) => {
+    const n = Math.floor(differenceInDays(weekStart, projectStartDate) / 7) + 1;
+    return n >= 1 ? `Week ${n}` : '';
+  };
 
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
     if (zoomLevel === 'day') {
       return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => {
-        const dOffset = differenceInDays(day, projectStartDate);
         return {
           date: day,
-          dateLabel: isTemplate ? `D${dOffset}` : format(day, 'd'),
-          dayLabel: isTemplate ? '' : format(day, 'EEE').slice(0, 2),
+          dateLabel: isTemplate ? templateDayLabel(day).day : format(day, 'd'),
+          dayLabel: format(day, 'EEE').slice(0, 2),
           width: 40,
         };
       });
@@ -1322,10 +1341,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const nextWeek = weeks[idx + 1];
         const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
-        const dOffset = differenceInDays(week, projectStartDate);
         return {
           date: week,
-          dateLabel: isTemplate ? `D${dOffset}` : format(week, 'MMM d'),
+          dateLabel: isTemplate ? templateWeekLabel(week) : format(week, 'MMM d'),
           dayLabel: isTemplate ? '' : format(week, 'EEE').slice(0, 2),
           width: daysInSegment * 20,
         };
@@ -1336,16 +1354,15 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const nextWeek = weeks[idx + 1];
         const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
-        const dOffset = differenceInDays(week, projectStartDate);
         return {
           date: week,
-          dateLabel: isTemplate ? `D${dOffset}` : format(week, 'MMM d'),
+          dateLabel: isTemplate ? templateWeekLabel(week).replace('Week ', 'W') : format(week, 'MMM d'),
           dayLabel: '',
           width: daysInSegment * 10,
         };
       });
     }
-  }, [timelineStart, timelineEnd, zoomLevel, isTemplate, projectStartDate]);
+  }, [timelineStart, timelineEnd, zoomLevel, isTemplate, projectStartDate, templateDayLabel]);
 
   // Create week-grouped headers for double-row display (ClickUp style)
   const groupedTimelineHeaders = useMemo(() => {
@@ -1384,7 +1401,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const weekNumber = getProjectWeekNumber(currentWeekStart);
         const monthLabel = format(currentWeekStart, 'MMM');
         weeks.push({
-          weekLabel: isTemplate ? `Wk ${weekNumber}` : `${monthLabel} - Wk ${weekNumber}`,
+          weekLabel: isTemplate ? (weekNumber >= 1 ? `Week ${weekNumber}` : '') : `${monthLabel} - Wk ${weekNumber}`,
           widthPx: currentWeekDays.length * 40,
           days: currentWeekDays,
         });
@@ -1392,10 +1409,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         currentWeekStart = weekStart;
       }
       
-      const dOffset = differenceInDays(day, projectStartDate);
+      const tpl = isTemplate ? templateDayLabel(day) : null;
       currentWeekDays.push({
         date: day,
-        label: isTemplate ? `D${dOffset}` : `${format(day, 'EEE').slice(0, 2)} ${format(day, 'd')}`,
+        label: tpl ? `${tpl.weekday} ${tpl.day}`.trim() : `${format(day, 'EEE').slice(0, 2)} ${format(day, 'd')}`,
         widthPx: 40,
         isWeekend,
       });
@@ -1406,14 +1423,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       const weekNumber = getProjectWeekNumber(currentWeekStart);
       const monthLabel = format(currentWeekStart, 'MMM');
       weeks.push({
-        weekLabel: isTemplate ? `Wk ${weekNumber}` : `${monthLabel} - Wk ${weekNumber}`,
+        weekLabel: isTemplate ? (weekNumber >= 1 ? `Week ${weekNumber}` : '') : `${monthLabel} - Wk ${weekNumber}`,
         widthPx: currentWeekDays.length * 40,
         days: currentWeekDays,
       });
     }
     
     return weeks;
-  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule, nonWorkingDays, isTemplate]);
+  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule, nonWorkingDays, isTemplate, templateDayLabel]);
 
   // Calculate pixels per day based on zoom level
   const pixelsPerDay = useMemo(() => {
@@ -3393,9 +3410,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 )}
               </div>
 
-              {/* Today line - lilac color */}
+              {/* Today line - lilac color (a template has no today) */}
               <div
-                className="absolute top-0 w-0.5 bg-primary pointer-events-none z-20"
+                className={`absolute top-0 w-0.5 bg-primary pointer-events-none z-20 ${isTemplate ? 'hidden' : ''}`}
                 style={{ 
                   left: `${todayPosition}px`,
                   height: `${orderedItems.length * ROW_HEIGHT}px`,
@@ -3974,9 +3991,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 })()}
               </svg>
 
-              {/* Today line */}
+              {/* Today line (a template has no today) */}
               <div
-                className="absolute top-0 w-0.5 bg-primary pointer-events-none z-20"
+                className={`absolute top-0 w-0.5 bg-primary pointer-events-none z-20 ${isTemplate ? 'hidden' : ''}`}
                 style={{ left: `${todayPosition}px`, height: `${orderedItems.length * ROW_HEIGHT}px` }}
               />
 
@@ -4069,15 +4086,15 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <h3 className="text-sm font-medium text-muted-foreground mb-1">Start Date</h3>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">{isTemplate ? 'Start Day' : 'Start Date'}</h3>
                 <p className="text-sm font-medium">
-                  {selectedTask && format(new Date(selectedTask.startDate), 'MMM d, yyyy')}
+                  {selectedTask && (isTemplate ? `Day ${templateDayNumber(selectedTask.startDate as any, { includeSaturday: schedule?.includeSaturday, includeSunday: schedule?.includeSunday })}` : format(new Date(selectedTask.startDate), 'MMM d, yyyy'))}
                 </p>
               </div>
               <div>
-                <h3 className="text-sm font-medium text-muted-foreground mb-1">End Date</h3>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">{isTemplate ? 'End Day' : 'End Date'}</h3>
                 <p className="text-sm font-medium">
-                  {selectedTask && format(new Date(selectedTask.endDate), 'MMM d, yyyy')}
+                  {selectedTask && (isTemplate ? `Day ${templateDayNumber(selectedTask.endDate as any, { includeSaturday: schedule?.includeSaturday, includeSunday: schedule?.includeSunday })}` : format(new Date(selectedTask.endDate), 'MMM d, yyyy'))}
                 </p>
               </div>
             </div>

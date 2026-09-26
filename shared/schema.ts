@@ -3965,7 +3965,13 @@ export type TimesheetCostCode = typeof timesheetCostCodes.$inferSelect;
 // Schedules (project-level schedule with offline/online/locked states)
 export const schedules = pgTable("schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  // A schedule belongs to EITHER a project OR a schedule template — never both,
+  // never neither (CHECK schedules_owner_check, migration 0095). A template's
+  // items are ordinary schedule_items, so the template page runs on the same
+  // routes, cascade and UI as a project schedule. Every query that walks
+  // schedules to projects must tolerate projectId being null.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references((): any => scheduleTemplates.id, { onDelete: "cascade" }),
   scheduleCategory: text("schedule_category").notNull().default("construction"), // "construction" | "preconstruction"
   name: text("name").notNull().default("Project Schedule"),
   status: text("status").notNull().default("offline"), // "offline" | "online" | "locked"
@@ -3994,6 +4000,9 @@ export const schedules = pgTable("schedules", {
 
 export const insertScheduleSchema = createInsertSchema(schedules).omit({
   id: true,
+  // A template's schedule is created by the server alone
+  // (server/services/scheduleTemplates.ts); no request may attach one.
+  templateId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
@@ -4283,7 +4292,11 @@ export const scheduleTemplates = pgTable("schedule_templates", {
   description: text("description"),
   category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
   categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
-  templateData: json("template_data").notNull(), // Array of template schedule items (structure similar to scheduleItems)
+  // LEGACY. Items now live in schedule_items under the schedules row whose
+  // template_id points here. A template with no such row still has only this
+  // blob; it is converted on first open or apply (convertLegacyTemplate) and
+  // then left untouched as a backup.
+  templateData: json("template_data").notNull(),
   isPublic: boolean("is_public").notNull().default(false), // Can other users use this template
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),

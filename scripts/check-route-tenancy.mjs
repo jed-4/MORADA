@@ -39,7 +39,7 @@ const ROUTE_FILES = ["server/routes.ts", "server/auth.ts", "server/index.ts", "s
  */
 const TENANCY_TOKEN = new RegExp([
   "companyId", "company_id",
-  "enforceProjectCompany", "getOwned\\w+", "ownsAll\\w*",
+  "enforceProjectCompany", "enforceScheduleCompany", "getOwned\\w+", "ownsAll\\w*",
   "getSessionCompanyId", "requireCompany",
   "req\\.user!?\\.id", "req\\.user\\?\\.id", "userId",
 ].join("|"));
