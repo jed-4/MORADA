@@ -33725,6 +33725,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Schedule routes
   app.get("/api/projects/:projectId/schedule", async (req, res) => {
     try {
+      // Client sessions are scoped to granted projects by clientAccessGate.
+      if (!getClientUser(req) && !(await enforceProjectCompany(req, res, req.params.projectId, "Schedule not found"))) return;
       const category = (req.query.category as string) || "construction";
       const schedule = await storage.getSchedule(req.params.projectId, category);
       if (!schedule) {
@@ -33742,6 +33744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all schedules for a project (both construction and preconstruction)
   app.get("/api/projects/:projectId/schedules", async (req, res) => {
     try {
+      if (!getClientUser(req) && !(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const projectSchedules = await storage.getSchedulesByProject(req.params.projectId);
       res.json(projectSchedules);
     } catch (error: any) {
@@ -33793,7 +33796,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
 
-      const schedule = await storage.updateSchedule(req.params.id, validationResult.data);
+      // Which project a schedule belongs to, who created it and its edit
+      // session are server-managed. Accepting projectId here let a caller move
+      // their own schedule onto another company's project.
+      const {
+        projectId: _projectId, createdBy: _createdBy, createdByName: _createdByName,
+        lockedBy: _lockedBy, lockedByName: _lockedByName, lockedAt: _lockedAt,
+        editSnapshot: _editSnapshot, ...scheduleUpdates
+      } = validationResult.data as any;
+      const schedule = await storage.updateSchedule(req.params.id, scheduleUpdates);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
@@ -34019,6 +34030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Schedule Items routes
   app.get("/api/schedules/:scheduleId/items", async (req, res) => {
     try {
+      if (!getClientUser(req) && !(await getOwnedSchedule(req, res, req.params.scheduleId))) return;
       const items = await storage.getScheduleItems(req.params.scheduleId);
       res.json(items);
     } catch (error: any) {
@@ -34051,6 +34063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // project's schedule here, after clientAccessGate has scoped the request.
   app.get("/api/projects/:projectId/schedule-items", requireAuth, requireTeamMemberOrClient, async (req, res) => {
     try {
+      if (!getClientUser(req) && !(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
       
@@ -35186,6 +35199,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Handle business assignee (company:xxx format)
       const updateData = { ...validationResult.data } as any;
+      // An item never changes schedule. Accepting scheduleId here moved an
+      // owned item into any schedule, another company's included.
+      delete updateData.scheduleId;
       const wasCompanyAssigned = !!(updateData.assignedToId && updateData.assignedToId.startsWith('company:'));
       if (wasCompanyAssigned) {
         const companyId = updateData.assignedToId.replace('company:', '');
@@ -35215,7 +35231,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!wasCompanyAssigned && updateData.assignedToId !== undefined) {
         if (updateData.assignedToId && !updateData.assignedToId.startsWith('company:')) {
           try {
-            const [contact] = await db.select().from(contacts).where(eq(contacts.id, updateData.assignedToId)).limit(1);
+            const [contact] = await db.select().from(contacts)
+              .where(and(eq(contacts.id, updateData.assignedToId), eq(contacts.companyId, (req.user as any).companyId)))
+              .limit(1);
             if (contact) {
               updateData.assignedToColor = contact.scheduleColor || null;
               updateData.assignedToName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
@@ -35248,6 +35266,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Can't set self as parent
         if (parentId === itemId) {
           return res.status(400).json({ error: "Item cannot be its own parent" });
+        }
+        // The parent must be on the same schedule — this is also what stops
+        // an item being hung under another company's row.
+        const proposedParent = await storage.getScheduleItem(parentId);
+        if (!proposedParent || proposedParent.scheduleId !== originalItem.scheduleId) {
+          return res.status(400).json({ error: "Parent must be an item on the same schedule" });
         }
         
         // Check if proposed parent is a descendant of this item (would create cycle)
@@ -35656,7 +35680,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             details: `Item ${item.id}: ${fromZodError(parsed.error).toString()}`,
           });
         }
-        validatedItems.push({ id: item.id, updates: parsed.data });
+        // Same rules as the single-item PATCH: an item never changes schedule.
+        const { scheduleId: _scheduleId, ...updates } = parsed.data as any;
+        validatedItems.push({ id: item.id, updates });
+      }
+
+      // ...and a new parent must be an item on the same schedule.
+      const reparented = validatedItems.filter((v) => v.updates.parentItemId);
+      const parents = await Promise.all(reparented.map((v) => storage.getScheduleItem(v.updates.parentItemId)));
+      for (let i = 0; i < reparented.length; i++) {
+        const child = originalItemsMap.get(reparented[i].id);
+        if (!parents[i] || !child || parents[i]!.scheduleId !== child.scheduleId || parents[i]!.id === child.id) {
+          return res.status(400).json({ error: "Parent must be an item on the same schedule" });
+        }
       }
 
       const updatedItems = await storage.bulkUpdateScheduleItems(validatedItems);
@@ -36021,6 +36057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Schedule Item Steps (sub-checklist items)
   app.get("/api/schedule-items/:itemId/steps", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItem(req, res, req.params.itemId))) return;
     const steps = await db.select().from(scheduleItemSteps)
       .where(eq(scheduleItemSteps.scheduleItemId, req.params.itemId))
       .orderBy(scheduleItemSteps.sortOrder);
@@ -36064,6 +36101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/schedules/:scheduleId/baselines", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedSchedule(req, res, req.params.scheduleId))) return;
     const baselines = await db.select().from(scheduleBaselines)
       .where(eq(scheduleBaselines.scheduleId, req.params.scheduleId))
       .orderBy(desc(scheduleBaselines.createdAt));
@@ -36111,6 +36149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/baselines/:baselineId/items", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedBaseline(req, res, req.params.baselineId))) return;
     const items = await db.select().from(scheduleBaselineItems)
       .where(eq(scheduleBaselineItems.baselineId, req.params.baselineId));
     res.json(items);
@@ -36217,10 +36256,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid dependency type. Must be FS, SS, FF, or SF" });
       }
 
+      // The guard has already sent the 404; sending another threw
+      // ERR_HTTP_HEADERS_SENT out of the catch block.
       const item = await getOwnedScheduleItem(req, res, req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Schedule item not found" });
-      }
+      if (!item) return;
 
       // Check if dependency already exists
       const dependencies = (item.dependencies as any[]) || [];
@@ -36231,7 +36270,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check for circular dependencies
       const predecessor = await storage.getScheduleItem(predecessorId);
-      if (!predecessor) {
+      // A dependency only links items on the same schedule; anything else is
+      // treated as not found rather than confirming the id exists elsewhere.
+      if (!predecessor || predecessor.scheduleId !== item.scheduleId) {
         return res.status(404).json({ error: "Predecessor item not found" });
       }
 
@@ -36499,6 +36540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "scheduleItemIds must be an array" });
       }
       
+      if (!(await ownsAllScheduleItems(req, res, scheduleItemIds))) return;
       const counts = await storage.getBatchActivityNoteCounts(scheduleItemIds);
       res.json(counts);
     } catch (error: any) {
@@ -36511,6 +36553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedScheduleItem(req, res, req.params.scheduleItemId))) return;
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = parseInt(req.query.offset as string) || 0;
       
