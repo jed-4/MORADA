@@ -108,6 +108,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -625,6 +626,9 @@ export default function VariationDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variation, variationLoading, isEditMode, existingCostLines, existingVariationBills, existingVariationTimesheets]);
 
+  /** Open while asking whether to discard unsaved work on the way out. */
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
   const isDirty =
     !isLocked &&
     (form.formState.isDirty || (baselineRef.current !== null && baselineRef.current !== localSnapshot));
@@ -909,7 +913,11 @@ export default function VariationDetail() {
             value={line.quantity}
             onCommit={(v) => updateCostLine(index, "quantity", v ?? 0)}
             emptyValue={0}
-            min={0}
+            /* No min: a variation line may be a credit. A deduction is
+               entered as a negative quantity or a negative rate, and the totals
+               engine already expects it — shared/variationTotals.ts keeps
+               negative lines out of the global-markup base so a credit is not
+               marked up. The clamp was the only thing stopping it. */
             className={cn(CELL, "doc-cell text-right")}
             data-testid={`input-quantity-${index}`}
           />
@@ -930,7 +938,11 @@ export default function VariationDetail() {
             value={line.unitCostExTax}
             onCommit={(v) => updateCostLine(index, "unitCostExTax", v ?? 0)}
             emptyValue={0}
-            min={0}
+            /* No min: a variation line may be a credit. A deduction is
+               entered as a negative quantity or a negative rate, and the totals
+               engine already expects it — shared/variationTotals.ts keeps
+               negative lines out of the global-markup base so a credit is not
+               marked up. The clamp was the only thing stopping it. */
             className={cn(CELL, "doc-cell text-right")}
             data-testid={`input-unit-cost-${index}`}
           />
@@ -941,7 +953,11 @@ export default function VariationDetail() {
             value={getUnitCostIncTax(line)}
             onCommit={(v) => setUnitCostFromInc(index, v ?? 0)}
             emptyValue={0}
-            min={0}
+            /* No min: a variation line may be a credit. A deduction is
+               entered as a negative quantity or a negative rate, and the totals
+               engine already expects it — shared/variationTotals.ts keeps
+               negative lines out of the global-markup base so a credit is not
+               marked up. The clamp was the only thing stopping it. */
             className={cn(CELL, "doc-cell text-right")}
             data-testid={`input-unit-cost-inc-${index}`}
           />
@@ -1237,7 +1253,7 @@ export default function VariationDetail() {
           metadata: {},
         });
       }
-      handleCancel();
+      goToVariationList();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to create variation", variant: "destructive" });
@@ -1340,7 +1356,7 @@ export default function VariationDetail() {
           metadata: {},
         });
       }
-      handleCancel();
+      goToVariationList();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to update variation", variant: "destructive" });
@@ -1653,13 +1669,31 @@ export default function VariationDetail() {
     }
   };
 
-  const handleCancel = () => {
-    if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) return;
+  /**
+   * Back to the list, no questions asked.
+   *
+   * Kept separate from handleCancel because a SAVE ends here too, and running
+   * the unsaved-changes guard after a successful save asked "leave without
+   * saving?" about changes that had just been saved — and answering Cancel
+   * stranded you on a page that looked dirty but was not.
+   */
+  const goToVariationList = () => {
     if (projectIdFromParams) {
       setLocation(`/projects/${projectIdFromParams}/variations`);
     } else {
       setLocation("/variations");
     }
+  };
+
+  const handleCancel = () => {
+    // Leaving with work in progress is the one case that should still ask. In
+    // the app's own dialog rather than the browser's — window.confirm renders
+    // as "app.moradaco.com.au says", which reads like the site has gone wrong.
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    goToVariationList();
   };
 
   if (variationLoading) {
@@ -3037,6 +3071,21 @@ export default function VariationDetail() {
           currentUser={user as any}
         />
       )}
+
+
+      <ConfirmDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        title="Leave without saving?"
+        description="This variation has changes that have not been saved. Leaving now discards them."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        destructive
+        onConfirm={() => {
+          setShowDiscardConfirm(false);
+          goToVariationList();
+        }}
+      />
 
     </div>
   );
