@@ -983,7 +983,12 @@ export function SidebarNav() {
         <div
           ref={drawerRef}
           className={cn(
-            "bg-background shadow-xl z-30 transition-all duration-200 ease-out",
+            // z-40 to match the rail this flies out of. It was z-30, the same
+            // as the sticky column header on the estimate and template grids,
+            // and equal z-index falls back to DOM order — the grid comes later,
+            // so its white header band painted straight across the open drawer.
+            // Above page content, below dialogs and popovers at z-50.
+            "bg-background shadow-xl z-40 transition-all duration-200 ease-out",
             isMobile 
               ? "fixed bottom-0 left-0 right-0 h-[70vh] rounded-t-xl border-t border-border"
               : isPinned
