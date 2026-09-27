@@ -26,6 +26,7 @@ import type { BusinessExpense } from "@shared/schema";
 import { FREQUENCIES, TIMES_PER_YEAR, toDateKey, type Frequency } from "@shared/cashflow";
 import { EXPENSES_KEY, invalidateCashflow, money, shortDate } from "./cashflowShared";
 import { SuggestionsBanner, SuggestionsPanel, useExpenseSuggestions } from "./ExpenseSuggestions";
+import { PnlPanel } from "./PnlImport";
 
 const FREQUENCY_LABELS: Record<Frequency, string> = {
   once: "Once",
@@ -374,6 +375,11 @@ export function ExpensesTab() {
           return (
             <div className="flex flex-col justify-center h-full min-w-0 py-1 pl-5">
               <span className="text-xs font-medium truncate">{r.e.name}</span>
+              {r.e.xeroAccountCode && (
+                <span className="text-data text-muted-foreground">
+                  {r.e.source === "pnl_remainder" ? "Remainder of " : "Xero "}{r.e.xeroAccountCode}
+                </span>
+              )}
             </div>
           );
         },
@@ -561,6 +567,7 @@ export function ExpensesTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PnlPanel />
       {suggestions && <SuggestionsBanner data={suggestions} />}
       {/* Side by side only when there's room for the register's columns; otherwise the suggestions sit above it. */}
       <div className={cn("grid gap-4 items-start", hasPanel && "2xl:grid-cols-[1fr_380px]")}>
