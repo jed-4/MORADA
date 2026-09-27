@@ -1302,7 +1302,11 @@ export function renderEstimateItemWithSubItems(
             onCheckedChange={() => handleToggleSelection(item.id)}
             aria-label={`Select ${item.name}`}
             data-testid={`checkbox-item-${item.id}`}
-            disabled={estimate?.isLocked}
+            /* Selectable on a contract too. Selection alone does nothing: the
+               bulk ACTIONS menu beside it stays disabled when locked, and the
+               group/ungroup shortcuts are guarded. Without it Bulk Edit is
+               unreachable, and coding a contracted job means clicking every
+               cell one at a time. */
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -1436,7 +1440,11 @@ export function renderEstimateItemWithSubItems(
                 onCheckedChange={() => handleToggleSelection(subItem.id)}
                 aria-label={`Select ${subItem.name}`}
                 data-testid={`checkbox-item-${subItem.id}`}
-                disabled={estimate?.isLocked}
+            /* Selectable on a contract too. Selection alone does nothing: the
+               bulk ACTIONS menu beside it stays disabled when locked, and the
+               group/ungroup shortcuts are guarded. Without it Bulk Edit is
+               unreachable, and coding a contracted job means clicking every
+               cell one at a time. */
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
