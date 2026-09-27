@@ -28,7 +28,7 @@ const src = readFileSync(fileURLToPath(new URL("../routes.ts", import.meta.url))
 const ROUTE = /app\.(get|post|put|patch|delete)\(\s*"([^"]+)"\s*,([^]*?)async\s*\(/g;
 const routes = Array.from(src.matchAll(ROUTE))
   .map((m) => ({ method: m[1], path: m[2], middleware: m[3] }))
-  .filter((r) => /^\/api\/(client-invoice|invoice-(variations|allowances|estimates|bills|timesheets|selections)|xero\/[a-z-]*client-invoice)/.test(r.path) || r.path === "/api/projects/:projectId/cash-flow");
+  .filter((r) => /^\/api\/(client-invoice|invoice-(variations|allowances|estimates|bills|timesheets|selections)|xero\/[a-z-]*client-invoice)/.test(r.path) || r.path === "/api/projects/:projectId/cash-flow" || r.path === "/api/projects/:projectId/schedule-invoice-links");
 
 const EXEMPT = new Set(["get /api/client-invoices/:id/client-view"]);
 const actionOf = (mw: string) => /requireTeamPermission\("projects\.invoices", "(\w+)"\)/.exec(mw)?.[1];

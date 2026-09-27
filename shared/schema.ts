@@ -2724,6 +2724,10 @@ export const clientInvoices = pgTable("client_invoices", {
   clientId: varchar("client_id").references(() => users.id),
   invoiceDate: timestamp("invoice_date").notNull(),
   dueDate: timestamp("due_date"),
+  // The schedule item whose finish triggers this claim (migration 0096). A
+  // linked draft is forecast at the item's finish + pay days, so it moves
+  // with the schedule. Null = not linked.
+  scheduleItemId: varchar("schedule_item_id").references((): AnyPgColumn => scheduleItems.id, { onDelete: "set null" }),
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"),
   markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
   introductionText: text("introduction_text"),

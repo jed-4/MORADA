@@ -251,8 +251,31 @@ export function buildEvents(
   }
 
   // Jobs: what's left to claim and to spend, spread month by month.
-  for (const job of input.jobs) {
-    const weight = Math.max(0, Math.min(100, job.winPercent)) / 100;
+  for (const inputJob of input.jobs) {
+    const weight = Math.max(0, Math.min(100, inputJob.winPercent)) / 100;
+
+    // Draft invoices linked to schedule items: claimed when the item finishes,
+    // so they move with the schedule. What they cover is taken off the rest.
+    // A job on typed-in monthly amounts is left as typed.
+    const linked = inputJob.mode === "manual" ? [] : inputJob.linkedClaims ?? [];
+    for (const c of linked) {
+      const amount = Math.round(c.amountCents * weight);
+      if (!amount) continue;
+      events.push({
+        date: addDays(c.date < today ? today : c.date, inputJob.clientPayDays),
+        amountCents: amount,
+        gstCents: gstOfInc(amount),
+        category: "job_income",
+        source: "invoice",
+        lineId: jobLineId(inputJob.projectId),
+        label: `${inputJob.name} — ${c.label} (draft, per schedule)`,
+        projectId: inputJob.projectId,
+        sourceId: c.invoiceId,
+      });
+    }
+    const linkedTotal = linked.reduce((s, c) => s + c.amountCents, 0);
+    const job = linkedTotal ? { ...inputJob, remainingToClaimCents: Math.max(0, inputJob.remainingToClaimCents - linkedTotal) } : inputJob;
+
     const { from, to } = jobWindow(job, today, warnings);
     const claimDates = monthlyClaimDates(from, to);
     if (claimDates.length === 0) continue;

@@ -52,6 +52,12 @@ export interface JobInput {
    */
   claimStages?: ClaimStageInput[];
   /**
+   * Draft invoices linked to a schedule item: each is claimed when its item
+   * finishes (date = the item's finish), paid clientPayDays later. They come
+   * out of remainingToClaimCents before the rest is spread or staged.
+   */
+  linkedClaims?: { invoiceId: string; label: string; amountCents: number; date: DateKey }[];
+  /**
    * Dated costs from the job's budget, POs and schedule (planJobCosts). When
    * present they replace the even spread of remainingCostCents.
    */

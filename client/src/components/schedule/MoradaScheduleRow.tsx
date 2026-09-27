@@ -9,6 +9,7 @@ import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, 
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
+import { ScheduleItemInvoiceBadges } from "@/components/schedule/ScheduleInvoiceBadge";
 import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 import {
   DropdownMenu,
@@ -154,6 +155,7 @@ export function MoradaScheduleRow({
                 />
               )}
               <span className="truncate">{item.name}</span>
+              {!isTemplate && <ScheduleItemInvoiceBadges itemId={item.id} />}
             </span>
           </div>
         </TableCell>

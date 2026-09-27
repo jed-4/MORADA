@@ -337,6 +337,7 @@ export async function loadCashflow(
     opening,
     whatIfDefs,
     stageRows,
+    linkedDraftRows,
   ] = await Promise.all([
     db
       .select({
@@ -470,7 +471,37 @@ export async function loadCashflow(
     getOpeningBalance(companyId, settings),
     loadWhatIfs(companyId),
     stageRowsQuery(eq(projectClaimStages.companyId, companyId)),
+    // Draft claims linked to a schedule item, with that item's finish.
+    db
+      .select({
+        invoiceId: clientInvoices.id,
+        projectId: clientInvoices.projectId,
+        name: clientInvoices.name,
+        invoiceNumber: clientInvoices.invoiceNumber,
+        totalAmount: clientInvoices.totalAmount,
+        itemEnd: scheduleItems.endDate,
+        itemActualEnd: scheduleItems.actualEndDate,
+      })
+      .from(clientInvoices)
+      .innerJoin(scheduleItems, eq(clientInvoices.scheduleItemId, scheduleItems.id))
+      .innerJoin(projects, eq(clientInvoices.projectId, projects.id))
+      .where(and(eq(projects.companyId, companyId), eq(clientInvoices.status, "draft"))),
   ]);
+
+  // Linked draft claims per job (see JobInput.linkedClaims).
+  const linkedByProject = new Map<string, NonNullable<JobInput["linkedClaims"]>>();
+  for (const r of linkedDraftRows) {
+    const date = toDateKey(r.itemActualEnd ?? r.itemEnd);
+    if (!date || !(r.totalAmount > 0)) continue;
+    const list = linkedByProject.get(r.projectId) ?? [];
+    list.push({
+      invoiceId: r.invoiceId,
+      label: r.name?.trim() || (r.invoiceNumber ? `Invoice ${r.invoiceNumber}` : "Claim"),
+      amountCents: r.totalAmount,
+      date,
+    });
+    linkedByProject.set(r.projectId, list);
+  }
 
   // ── Per-job aggregates ─────────────────────────────────────────────────────
   const invoicedByProject = new Map<string, number>();
@@ -628,6 +659,7 @@ export async function loadCashflow(
       endDate: j.endDate,
       manualAmounts: j.manualAmounts,
       claimStages: claimStagesByProject.get(j.projectId),
+      linkedClaims: linkedByProject.get(j.projectId),
       costChunks: costChunksByProject.get(j.projectId),
     }));
 

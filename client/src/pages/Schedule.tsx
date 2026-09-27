@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentProps, type ReactNode } from "react";
+import { ScheduleItemInvoicesSection } from "@/components/schedule/ScheduleInvoiceBadge";
 import { TemplateDayInput } from "@/components/schedule/TemplateDayInput";
 import { TEMPLATE_ANCHOR_DAY, isWorkingDay as isTemplateWorkingDay, templateDayNumber } from "@shared/scheduleTemplateDates";
 import { format, differenceInCalendarDays, startOfMonth, endOfMonth } from "date-fns";
@@ -3044,6 +3045,14 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {/* Invoices this item triggers — only for "Progress Claims" viewers.
+                Outside the hidden advanced block below so it actually shows. */}
+            {!isTemplate && editingItem && projectId && (
+              <div className="pt-3 border-t">
+                <ScheduleItemInvoicesSection itemId={editingItem.id} projectId={projectId} />
               </div>
             )}
 
