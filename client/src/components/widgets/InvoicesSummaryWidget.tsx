@@ -25,7 +25,7 @@ const ROW_CONFIG: { key: RowKey; configKey: string; label: string }[] = [
 
 export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetTitleAction }: WidgetProps) {
   const { currentProject } = useProject();
-  const { metrics, isLoading, isError, formatCurrency, formatPercentage } = useProjectMetrics();
+  const { metrics, isLoading, isError, formatCurrency, formatPercentage, canViewInvoices } = useProjectMetrics();
   const allowed = useFinancialPermission();
   const [, navigate] = useLocation();
 
@@ -120,7 +120,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
   }
 
   if (!currentProject) return <WidgetEmpty message="Select a project to view invoices" />;
-  if (!allowed) return <WidgetEmpty message="You don't have access to financial data" />;
+  if (!allowed || !canViewInvoices) return <WidgetEmpty message="You don't have access to client invoices" />;
   if (isLoading) return <WidgetSkeleton />;
   if (isError) return <WidgetError />;
 

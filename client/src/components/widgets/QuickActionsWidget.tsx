@@ -10,6 +10,7 @@ import {
   MessageSquare,
   FolderOpen
 } from "lucide-react";
+import { usePermission } from "@/hooks/use-permission";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,10 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
   const enabledActions: string[] = widget.config?.enabledActions || 
     defaultActions.slice(0, 6).map(a => a.id);
   
-  const visibleActions = defaultActions.filter(a => enabledActions.includes(a.id));
+  const canCreateInvoice = usePermission("projects.invoices", "add");
+  const visibleActions = defaultActions.filter(
+    (a) => enabledActions.includes(a.id) && (a.id !== "create-invoice" || canCreateInvoice),
+  );
 
   useEffect(() => {
     setEditingTitle(widget.title);

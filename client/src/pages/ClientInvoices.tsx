@@ -1,4 +1,5 @@
 import { useState, useMemo, type ReactNode } from "react";
+import { usePermission } from "@/hooks/use-permission";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +37,7 @@ import {
   Loader2,
   RefreshCw,
   Columns3,
-  ChevronRight,
-} from "lucide-react";
+  ChevronRight, Lock } from "lucide-react";
 import { type ClientInvoice, type Project, type Variation } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -114,7 +114,7 @@ const PROJECT_COL_WIDTH = 160;
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}) {
+function ClientInvoicesInner({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
@@ -853,4 +853,26 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
       </AlertDialog>
     </div>
   );
+}
+
+/**
+ * Client invoices follow "Progress Claims" (projects.invoices) for the team —
+ * the server refuses the data without it, so say so rather than show an error.
+ * Clients reach their own invoices through the portal pages, not this one.
+ */
+export default function ClientInvoices(props: { embedded?: boolean } = {}) {
+  const canView = usePermission("projects.invoices", "view");
+  if (!canView) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="No access to client invoices"
+        description="Your role doesn't include Progress Claims. Ask an admin if you need it."
+        variant="inline"
+        className="h-full"
+        data-testid="invoices-page-denied"
+      />
+    );
+  }
+  return <ClientInvoicesInner {...props} />;
 }

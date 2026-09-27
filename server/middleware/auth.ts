@@ -201,6 +201,48 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
 }
 
 /**
+ * The same decision as requirePermission, for code that isn't a route: AI
+ * tools, a figure inside a larger response. Development passes, as it does
+ * for requirePermission; admin-like roles pass; otherwise the role's actions.
+ */
+export async function userHasPermission(
+  user: { roleId?: string | null; companyId?: string | null } | null | undefined,
+  permissionKey: string,
+  action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send',
+): Promise<boolean> {
+  if (process.env.NODE_ENV === 'development') return true;
+  if (!user?.roleId || !user.companyId) return false;
+  const role = await storage.getUserRole(user.roleId, user.companyId);
+  if (role && isAdminRole(role)) return true;
+  const [rolePermissions, allPermissions] = await Promise.all([
+    storage.getRolePermissions(user.roleId),
+    storage.getPermissions(),
+  ]);
+  const permission = allPermissions.find((p) => p.key === permissionKey);
+  if (!permission) return false;
+  const rp = rolePermissions.find((r) => r.permissionId === permission.id);
+  return Array.isArray(rp?.allowedActions) && (rp!.allowedActions as string[]).includes(action);
+}
+
+/**
+ * requirePermission for the builder's side of a route the client portal also
+ * uses. A client login carries only portal.* keys, so the team key would 403
+ * them; their access is already decided by clientAccessGate (deny-by-default,
+ * per-route portal permission, response shaping). Everyone else — team and
+ * suppliers — is checked against the team permission as usual.
+ */
+export function requireTeamPermission(...args: Parameters<typeof requirePermission>) {
+  const check = requirePermission(...args);
+  return (req: Request, res: Response, next: NextFunction): Promise<void> | void => {
+    if ((req.user as any)?.userCategory === 'client') {
+      next();
+      return;
+    }
+    return check(req, res, next);
+  };
+}
+
+/**
  * Team member access only (excludes suppliers and clients from admin functions)
  */
 export function requireTeamMember(req: Request, res: Response, next: NextFunction): void {

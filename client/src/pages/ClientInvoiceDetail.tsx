@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
+import { EmptyState } from "@/components/EmptyState";
+import { usePermission } from "@/hooks/use-permission";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -287,7 +289,7 @@ type ClaimState = Record<string, number>; // variationId/allowanceId -> claimPer
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ClientInvoiceDetail() {
+function ClientInvoiceDetailInner() {
   const { id, invoiceId, projectId: projectIdFromParams } = useParams<{
     id?: string;
     invoiceId?: string;
@@ -5352,4 +5354,26 @@ export default function ClientInvoiceDetail() {
       />
     </div>
   );
+}
+
+/**
+ * Client invoices follow "Progress Claims" (projects.invoices) for the team —
+ * the server refuses the data without it, so say so rather than show an error.
+ * Clients reach their own invoices through the portal pages, not this one.
+ */
+export default function ClientInvoiceDetail() {
+  const canView = usePermission("projects.invoices", "view");
+  if (!canView) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="No access to client invoices"
+        description="Your role doesn't include Progress Claims. Ask an admin if you need it."
+        variant="inline"
+        className="h-full"
+        data-testid="invoices-page-denied"
+      />
+    );
+  }
+  return <ClientInvoiceDetailInner  />;
 }

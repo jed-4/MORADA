@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense, type ReactNode } from "react";
+import { usePermission } from "@/hooks/use-permission";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -214,11 +215,17 @@ const visibilityOptions: { value: VisibilityOption; label: string; description: 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
   const { isClient, canSeeTab } = useClientPortal();
-  // Team members see every tab; clients see only what their role permits.
-  // Must sit above this component's early returns to keep hook order stable.
+  // Client invoices follow "Progress Claims" for the team too; admins always pass.
+  const canViewInvoices = usePermission("projects.invoices", "view");
+  // Team members see every tab they're permitted; clients see only what their
+  // role permits. Must sit above this component's early returns to keep hook
+  // order stable.
   const visibleProjectTabs = useMemo(
-    () => (isClient ? PROJECT_TABS.filter((tab) => canSeeTab(tab.id)) : PROJECT_TABS),
-    [isClient, canSeeTab],
+    () =>
+      isClient
+        ? PROJECT_TABS.filter((tab) => canSeeTab(tab.id))
+        : PROJECT_TABS.filter((tab) => (tab as { id: string }).id !== "client-invoices" || canViewInvoices),
+    [isClient, canSeeTab, canViewInvoices],
   );
   const { data: contractMetrics } = useQuery<import("@shared/projectMetrics").ContractMetrics>({
     queryKey: ["/api/projects", currentProject?.id, "contract-metrics"],
@@ -1047,6 +1054,18 @@ export default function CustomizableProjectOverview() {
       }
       case "client-invoices":
       case "invoices": {
+        if (!isClient && !canViewInvoices) {
+          return (
+            <EmptyState
+              icon={AlertCircle}
+              title="No access to client invoices"
+              description="Your role doesn't include Progress Claims. Ask an admin if you need it."
+              variant="inline"
+              className="h-full"
+              data-testid="invoices-section-denied"
+            />
+          );
+        }
         if (!isClient) return <ClientInvoices embedded />;
         const invoicesTab = activeTab === "invoices" ? "invoices" : "client-invoices";
         return detailIdFor(invoicesTab) ? <ClientInvoiceDetailPage /> : <ClientInvoicesPage />;

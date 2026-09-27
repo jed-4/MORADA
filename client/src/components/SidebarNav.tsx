@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { usePermission } from "@/hooks/use-permission";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
@@ -446,6 +447,9 @@ export function SidebarNav() {
   const [location, navigate] = useLocation();
   const isMobile = useIsMobile();
   const { isClient, canSeeSidebarItem } = useClientPortal();
+  // Client invoices follow "Progress Claims" for the team too (admins pass).
+  const canViewInvoices = usePermission("projects.invoices", "view");
+  const teamCanSee = (title: string) => isClient || title !== "Client Invoices" || canViewInvoices;
   // Clients get no company-wide "Resources" library — only their project.
   const visibleSectionOrder = useMemo(
     () => (isClient ? sectionOrder.filter((s) => s === "projects") : sectionOrder),
@@ -1124,7 +1128,7 @@ export function SidebarNav() {
                       if (!item) return null;
                       // Clients only see sections their role has view permission
                       // for — nothing renders for the rest, not even disabled.
-                      if (!canSeeSidebarItem(title)) return null;
+                      if (!canSeeSidebarItem(title) || !teamCanSee(title)) return null;
                       const url = getItemUrl(sectionId, item);
                       // Overview (empty baseUrl) must match exactly so it doesn't
                       // light up on every project subpage. Other items match nested
@@ -1184,6 +1188,7 @@ export function SidebarNav() {
               <ScrollArea className="flex-1">
                 <div className={isMobile ? "p-2" : "p-1.5"}>
                   {dynamicSections[activeSection as Exclude<SectionId, "projects" | "business">].items.map((item, index) => {
+                    if (!teamCanSee(item.title)) return null;
                     const url = getItemUrl(activeSection, item);
                     const isActive = item.url === ""
                       ? location === url
