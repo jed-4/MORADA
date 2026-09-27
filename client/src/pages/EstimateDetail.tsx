@@ -2148,6 +2148,40 @@ export default function EstimateDetail() {
     },
   });
 
+  /**
+   * Cost codes have their own writer because they are the one field that stays
+   * editable on a CONTRACTED estimate — see the route for why. Going through
+   * updateItemMutation would hit the locked-estimate guard and 409.
+   */
+  const costCodeMutation = useMutation({
+    mutationFn: async ({ itemIds, costCode }: { itemIds: string[]; costCode: string | null }) => {
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/cost-code`, "PATCH", { itemIds, costCode });
+    },
+    onMutate: async ({ itemIds, costCode }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
+      const ids = new Set(itemIds);
+      queryClient.setQueryData<EstimateItem[]>(
+        ["/api/estimates", effectiveEstimateId, "items"],
+        (old) => old?.map((i) => (ids.has(i.id) ? { ...i, costCode: costCode ?? null } as EstimateItem : i)),
+      );
+      return { previousItems };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+    },
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previousItems) {
+        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
+      }
+      toast({
+        title: "Couldn't set the cost code",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const bulkMarkupMutation = useMutation({
     mutationFn: async ({ itemIds, markupPercent }: { itemIds: string[]; markupPercent: number }) => {
       return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/bulk-markup`, "PATCH", { itemIds, markupPercent });
@@ -2793,7 +2827,10 @@ export default function EstimateDetail() {
     // there. Set before the lock check: a locked estimate is still navigable.
     setActiveCell({ itemId: item.id, field });
 
-    if (estimate?.isLocked) {
+    // The cost code is the exception: it says which bucket a line reports under,
+    // not what it costs, so it stays editable once the estimate is a contract.
+    // Everything that moves money stays locked. See the /items/cost-code route.
+    if (estimate?.isLocked && field !== "costCode") {
       toast({
         title: "Cannot Edit",
         description: "This estimate is locked and cannot be modified.",
@@ -4671,7 +4708,7 @@ export default function EstimateDetail() {
     calculatePricingValues, formatCurrency, getSubItems,
     selectedItems, handleToggleSelection, collapsedItems, handleToggleItemCollapse,
     dropTarget, activeId,
-    updateItemMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
+    updateItemMutation, costCodeMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
     form, setEditingItemId, setIsEditDialogOpen, setIsAddItemOpen,
     setItemToDelete, setIsDeleteDialogOpen, setLocation, toast,
     takeoff: {

@@ -7896,6 +7896,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Dedicated endpoint: update allowanceStatus only — bypasses the locked-estimate
   // guard because this is an operational/workflow field, not a pricing field.
+  /**
+   * Set the cost code on estimate lines — including on a CONTRACTED estimate.
+   *
+   * Deliberately outside the locked-estimate guard, for the same reason
+   * allowance-status is below: a cost code is how a line is categorised for job
+   * costing, not what it is worth. Nothing in shared/pricing.ts reads it, no
+   * client invoice or progress claim depends on it, and changing one moves a
+   * cost between report buckets without moving a single dollar.
+   *
+   * The lock exists to stop the contract sum drifting under invoices that have
+   * already been raised against it. Forgetting to code an estimate before
+   * signing it used to mean reverting the contract to fix it, which is refused
+   * outright once a claim is approved (CONTRACT_HAS_INVOICES) — so the job was
+   * stuck with no cost codes for its whole life. Leave the money alone; let the
+   * categorisation be fixed.
+   *
+   * Takes a list so a whole estimate can be coded in one request.
+   */
+  app.patch("/api/estimates/:estimateId/items/cost-code", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(403).json({ error: "Forbidden" });
+      const { estimateId } = req.params;
+      const { itemIds, costCode } = req.body as { itemIds?: unknown; costCode?: unknown };
+
+      if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds must be a non-empty array" });
+      }
+      if (costCode !== null && typeof costCode !== "string") {
+        return res.status(400).json({ error: "costCode must be a cost code id, or null to clear it" });
+      }
+
+      // Same ownership checks as bulk-markup, minus the isLocked refusal.
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      const project = await storage.getProject(estimate.projectId);
+      if (!project || project.companyId !== companyId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      const ownership = await storage.verifyEstimateItemsOwnership(itemIds as string[], companyId);
+      if (!ownership.authorized) {
+        return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
+      }
+
+      // A cost code must be one of this company's own, or the estimate ends up
+      // pointing at another company's chart of accounts.
+      if (costCode) {
+        const codes = await storage.getCostCodes(companyId);
+        if (!codes.some((c: any) => c.id === costCode)) {
+          return res.status(400).json({ error: "Unknown cost code" });
+        }
+      }
+
+      const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
+      const result = await db.update(estimateItemsTbl)
+        .set({ costCode: (costCode as string | null) || null, updatedAt: new Date() })
+        .where(and(
+          inArray(estimateItemsTbl.id, itemIds as string[]),
+          eq(estimateItemsTbl.estimateId, estimateId),
+        ))
+        .returning({ id: estimateItemsTbl.id });
+
+      // Job costing groups by cost code, so the budget has to be rebuilt.
+      if (result.length > 0) triggerBudgetAutoRecalc(estimateId);
+
+      res.json({ updated: result.length });
+    } catch (error) {
+      console.error("Error setting estimate item cost codes:", error);
+      res.status(500).json({ error: "Failed to set the cost code" });
+    }
+  });
+
   app.patch("/api/estimate-items/:id/allowance-status", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const existingItem = await getOwnedEstimateItem(req, res, req.params.id);
