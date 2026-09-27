@@ -251,6 +251,13 @@ export interface EstimateGridCtx {
   estimate: any;
   columns: ColumnConfig[];
   costCodes: CostCode[];
+  /**
+   * Cost codes have their own writer, because they stay editable on a locked
+   * estimate. Optional: the template grid reuses this row renderer and a
+   * template is never a contracted estimate, so it falls back to the generic
+   * item update there.
+   */
+  costCodeMutation?: { mutate: (vars: { itemIds: string[]; costCode: string | null }) => void };
   costCategories: CostCategory[];
   priceListItemMap: Map<string, any>;
   poLinkMap: Map<string, { poNumber: string }[]>;
@@ -301,7 +308,7 @@ export interface EstimateGridCtx {
 
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -363,10 +370,14 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onValueChange={(value) => {
                   const newValue = value || undefined;
                   setEditingValue(newValue || '');
-                  updateItemMutation.mutate({
-                    itemId: item.id,
-                    data: { costCode: newValue }
-                  });
+                  // Its own endpoint, not updateItemMutation: this is the one
+                  // field that may be set on a contracted estimate, and the
+                  // generic item PATCH would be refused by the lock.
+                  if (costCodeMutation) {
+                    costCodeMutation.mutate({ itemIds: [item.id], costCode: newValue ?? null });
+                  } else {
+                    updateItemMutation.mutate({ itemId: item.id, data: { costCode: newValue } });
+                  }
                   setEditingCell(null);
                 }}
                 placeholder="None"
@@ -382,10 +393,14 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
           <div 
             className={`${cellBase} truncate ${cellEditable}`}
             role="gridcell"
-            title={isLocked ? displayCode : 'Click to edit'}
+            /* Editable even when the estimate is locked. Coding a job for
+               reporting is not changing what it costs, and an estimate that was
+               contracted before anyone set its cost codes could otherwise never
+               be coded at all — reverting is refused once a claim is raised. */
+            title="Click to edit"
             onClick={(e) => {
               e.stopPropagation();
-              if (!isLocked) handleCellEdit(item, 'costCode');
+              handleCellEdit(item, 'costCode');
             }}
             data-testid={`cell-costCode-${item.id}`}
           >

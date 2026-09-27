@@ -706,6 +706,7 @@
     "server/routes.ts PATCH /api/estimate-templates/:id",
     "server/routes.ts PATCH /api/estimates/:estimateId/items/bulk-markup",
     "server/routes.ts PATCH /api/estimates/:estimateId/items/bulk-update",
+    "server/routes.ts PATCH /api/estimates/:estimateId/items/cost-code",
     "server/routes.ts PATCH /api/estimates/:id",
     "server/routes.ts PATCH /api/estimates/:id/enotes/:categoryId",
     "server/routes.ts PATCH /api/field-categories/:id",
