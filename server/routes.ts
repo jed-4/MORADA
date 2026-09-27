@@ -7575,13 +7575,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project || project.companyId !== companyId) {
         return res.status(404).json({ error: "Estimate not found" });
       }
+      // A locked estimate still takes a cost code. It says which bucket a line
+      // reports under, not what it is worth — the same exemption the single-cell
+      // /items/cost-code route makes, for the same reason. Any other field, or a
+      // cost code mixed WITH another field, is still refused: this is for
+      // categorising a contracted job, not a side door into its prices.
       if (estimate.isLocked) {
-        return res.status(409).json({ error: "Cannot modify items in a locked estimate" });
+        const keys = Object.keys(parsed.data);
+        const costCodeOnly = keys.length > 0 && keys.every((k) => k === "costCode");
+        if (!costCodeOnly) {
+          return res.status(409).json({ error: "Cannot modify items in a locked estimate" });
+        }
       }
       const ownership = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
       if (!ownership.authorized) {
         return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
       }
+
+      // Locked means cost-code-only by the guard above, and storage
+      // .updateEstimateItem refuses a locked estimate outright — so write the
+      // one allowed column directly, exactly as /items/cost-code does, and
+      // skip the pricing loop entirely. Nothing here can touch a price.
+      if (estimate.isLocked) {
+        const { estimateItems: lockedItemsTbl } = await import("@shared/schema");
+        const rows = await db.update(lockedItemsTbl)
+          .set({ costCode: (parsed.data.costCode as string | null) ?? null, updatedAt: new Date() })
+          .where(and(
+            inArray(lockedItemsTbl.id, itemIds as string[]),
+            eq(lockedItemsTbl.estimateId, estimateId),
+          ))
+          .returning({ id: lockedItemsTbl.id });
+        if (rows.length > 0) triggerBudgetAutoRecalc(estimateId);
+        return res.json({ updated: rows.length });
+      }
+
 
       const items = await storage.getEstimateItems(estimateId);
       let updated = 0;

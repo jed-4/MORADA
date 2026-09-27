@@ -66,6 +66,13 @@ interface Props {
   statusOptions: Array<{ key: string; name: string; isActive: boolean }>;
   taxRate: number;
   disabled?: boolean;
+  /**
+   * The estimate is a contract. Bulk edit stays available but offers only the
+   * fields that survive the lock — today that is the cost code, which says how
+   * a line is reported rather than what it costs. Disabling the whole menu left
+   * a contracted job with no way to be coded except one cell at a time.
+   */
+  lockedToCostCode?: boolean;
   onComplete: () => void;
 }
 
@@ -73,6 +80,7 @@ export function BulkEditDropdown({
   estimateId,
   selectedItemIds,
   groups,
+  lockedToCostCode,
   unitOptions,
   statusOptions,
   taxRate,
@@ -145,6 +153,9 @@ export function BulkEditDropdown({
     { key: "requestForQuote", label: "Request for Quote", kind: "switch" },
     { key: "isSelection", label: "Is Selection", kind: "switch" },
   ];
+
+  // On a contract, offer only what the lock lets through.
+  const offered = lockedToCostCode ? fields.filter((f) => f.key === "costCode") : fields;
 
   const currentField = openField ? fields.find((f) => f.key === openField) : null;
 
@@ -238,7 +249,7 @@ export function BulkEditDropdown({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center" side="top" className="max-h-96 overflow-y-auto">
-          {fields.map((f) => (
+          {offered.map((f) => (
             <DropdownMenuItem
               key={f.key}
               onClick={() => handleOpenField(f.key)}

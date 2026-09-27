@@ -7772,7 +7772,9 @@ export default function EstimateDetail() {
               unitOptions={(estimateItemUnitCategory?.options as any) || []}
               statusOptions={(estimateItemStatusCategory?.options as any) || []}
               taxRate={Number(estimate?.taxRate ?? 10)}
-              disabled={estimate?.isLocked}
+              // Not disabled on a contract any more: it drops to cost code
+              // only, which is the one field a locked estimate accepts.
+              lockedToCostCode={!!estimate?.isLocked}
               onComplete={() => setSelectedItems(new Set())}
             />
           )}
