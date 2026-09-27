@@ -1,4 +1,5 @@
 import { useParams } from "wouter";
+import { ScheduleItemInvoiceBadges } from "@/components/schedule/ScheduleInvoiceBadge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
@@ -2969,6 +2970,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           {item.name}
                         </span>
                       )}
+                      {!isTemplate && <ScheduleItemInvoiceBadges itemId={item.id} className="ml-1" compact />}
                     </div>
 
                     {/* Reorderable columns driven by columnOrder */}

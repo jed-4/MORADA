@@ -189,6 +189,7 @@ import {
   insertNonWorkingDaySchema,
   schedules,
   scheduleItems,
+  clientInvoices,
   scheduleItemSteps,
   insertScheduleItemStepSchema,
   scheduleBaselines,
@@ -24694,6 +24695,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Client Invoices API Routes
+  // A claim can only be triggered by an item on its own job's schedule.
+  // null/undefined (not linking, or unlinking) is always fine.
+  const scheduleItemInProject = async (itemId: string | null | undefined, projectId: string): Promise<boolean> => {
+    if (!itemId) return true;
+    const [row] = await db
+      .select({ projectId: schedules.projectId })
+      .from(scheduleItems)
+      .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+      .where(eq(scheduleItems.id, itemId))
+      .limit(1);
+    return row?.projectId === projectId;
+  };
+
+  // The job's invoices that are linked to schedule items — for the schedule's
+  // invoice badges. Its own route (not part of the schedule payload) so only
+  // "Progress Claims" viewers ever receive invoice details.
+  app.get("/api/projects/:projectId/schedule-invoice-links", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const rows = await db
+        .select({
+          scheduleItemId: clientInvoices.scheduleItemId,
+          invoiceId: clientInvoices.id,
+          invoiceNumber: clientInvoices.invoiceNumber,
+          name: clientInvoices.name,
+          status: clientInvoices.status,
+          totalAmount: clientInvoices.totalAmount,
+        })
+        .from(clientInvoices)
+        .where(and(eq(clientInvoices.projectId, req.params.projectId), isNotNull(clientInvoices.scheduleItemId), ne(clientInvoices.status, "cancelled")));
+      res.json(rows);
+    } catch (error) {
+      console.error("[schedule-invoice-links] failed:", error);
+      res.status(500).json({ error: "Failed to load linked invoices" });
+    }
+  });
+
   app.get("/api/client-invoices", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId, status } = req.query;
@@ -24868,6 +24906,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Tenant scoping: the target project must belong to the caller's company
       // (previously an invoice could be created under any company's project).
       if (!(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+      if (!(await scheduleItemInProject(data.scheduleItemId, data.projectId))) {
+        return res.status(400).json({ error: "That schedule item isn't on this job" });
+      }
 
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) {
@@ -24933,6 +24974,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+      if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
+        return res.status(400).json({ error: "That schedule item isn't on this job" });
+      }
 
       // Leaving draft locks the invoice to the contract price at that moment
       // (once only — a re-send never re-stamps).
@@ -25209,6 +25253,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const children = childrenResult.data;
 
       if (!(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+      if (!(await scheduleItemInProject(data.scheduleItemId, data.projectId))) {
+        return res.status(400).json({ error: "That schedule item isn't on this job" });
+      }
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
       if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
@@ -25261,6 +25308,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(childrenResult.error).toString() });
       }
       const data = invoiceResult.data;
+      if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
+        return res.status(400).json({ error: "That schedule item isn't on this job" });
+      }
       const children = childrenResult.data;
 
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);

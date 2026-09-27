@@ -243,6 +243,8 @@ const invoiceFormSchema = z.object({
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
   markupPercent: z.number().optional(),
+  // The schedule item whose finish triggers this claim (see schema).
+  scheduleItemId: z.string().nullable().optional(),
 });
 
 const paymentFormSchema = z.object({
@@ -491,6 +493,25 @@ function ClientInvoiceDetailInner() {
   });
 
   const selectedProjectId = invoice?.projectId || projectIdFromParams || "";
+  // The job's schedule items, for "Claim when".
+  const { data: claimWhenItems = [], isLoading: claimWhenLoading } = useQuery<Array<{ id: string; name: string; type: string; endDate: string | null; actualEndDate: string | null }>>({
+    queryKey: [`/api/projects/${selectedProjectId}/schedule-items`],
+    enabled: !!selectedProjectId,
+  });
+  const claimWhenOptions = useMemo(
+    () =>
+      [...claimWhenItems]
+        .sort((a, b) => String(a.endDate ?? "").localeCompare(String(b.endDate ?? "")))
+        .map((i) => {
+          const end = i.actualEndDate ?? i.endDate;
+          return {
+            value: i.id,
+            label: i.name,
+            description: end ? `Finishes ${format(new Date(end), "d MMM yyyy")}${i.type === "milestone" ? " · milestone" : ""}` : undefined,
+          };
+        }),
+    [claimWhenItems],
+  );
 
   const { data: currentProject } = useQuery<Project>({
     queryKey: [`/api/projects/${selectedProjectId}`],
@@ -616,6 +637,7 @@ function ClientInvoiceDetailInner() {
       introductionText: "",
       closingText: "",
       markupPercent: undefined,
+      scheduleItemId: null,
     },
   });
 
@@ -643,6 +665,7 @@ function ClientInvoiceDetailInner() {
         introductionText: invoice.introductionText || "",
         closingText: invoice.closingText || "",
         markupPercent: invoice.markupPercent || undefined,
+        scheduleItemId: (invoice as any).scheduleItemId ?? null,
       });
       // Restore column config
       if ((invoice as any).columnConfig) {
@@ -1407,6 +1430,7 @@ function ClientInvoiceDetailInner() {
       markupPercent: data.markupPercent,
       introductionText: data.introductionText,
       closingText: data.closingText,
+      scheduleItemId: data.scheduleItemId ?? null,
       termsAndConditions: termsAndConditions || null,
       attachments: invoiceAttachments,
       subtotal: totals.subtotal,
@@ -2843,6 +2867,34 @@ function ClientInvoiceDetailInner() {
                           </div>
                         </div>
                       </div>
+                      {/* Claim when — the schedule item whose finish triggers this
+                          claim. The cashflow forecasts a linked draft then, and
+                          the schedule shows the claim on that item. */}
+                      <FormField
+                        control={form.control}
+                        name="scheduleItemId"
+                        render={({ field }) => (
+                          <FormItem className="mt-3">
+                            <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Claim when</FormLabel>
+                            <FormControl>
+                              <SearchableSelect
+                                options={claimWhenOptions}
+                                value={field.value ?? ""}
+                                onValueChange={(v) => field.onChange(v || null)}
+                                allowClear
+                                placeholder={claimWhenLoading ? "Loading schedule…" : claimWhenOptions.length ? "Link to a schedule item…" : "No schedule items on this job"}
+                                searchPlaceholder="Search the schedule…"
+                                disabled={!claimWhenLoading && claimWhenOptions.length === 0}
+                                triggerClassName="h-7 text-xs"
+                                data-testid="select-invoice-claim-when"
+                              />
+                            </FormControl>
+                            <p className="text-[10px] text-muted-foreground">
+                              {field.value ? "Forecast and shown on the schedule when this item finishes." : "Optional — link it to the stage it claims for."}
+                            </p>
+                          </FormItem>
+                        )}
+                      />
                     </div>
 
                     {/* Bill To — static context, so it reads as a panel rather than
