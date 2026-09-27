@@ -45466,6 +45466,56 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // Business expenses from the Xero P&L: what each overhead account proposes,
+  // and how much of the P&L the register already accounts for. ?fresh=1
+  // re-reads Xero instead of the 10-minute cache.
+  app.get("/api/cashflow/pnl", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { getPnlOverview } = await import("./services/pnlExpenses");
+      res.json(await getPnlOverview(companyId, await cashflowToday(), req.query.fresh === "1"));
+    } catch (error: any) {
+      console.error("[cashflow] P&L overview failed:", error);
+      res.status(500).json({ error: "Failed to read the P&L" });
+    }
+  });
+
+  app.post("/api/cashflow/pnl/import", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const codes = Array.isArray(req.body?.accountCodes) ? req.body.accountCodes.filter((c: unknown) => typeof c === "string").slice(0, 500) : null;
+      if (!codes) return res.status(400).json({ error: "accountCodes must be a list" });
+      const { importFromPnl, PnlImportError } = await import("./services/pnlExpenses");
+      try {
+        res.status(201).json({ count: await importFromPnl(companyId, await cashflowToday(), codes) });
+      } catch (err) {
+        if (err instanceof PnlImportError) return res.status(400).json({ error: err.message });
+        throw err;
+      }
+    } catch (error: any) {
+      console.error("[cashflow] P&L import failed:", error);
+      res.status(500).json({ error: "Failed to import from the P&L" });
+    }
+  });
+
+  app.post("/api/cashflow/pnl/remainder", requireAuth, requirePermission("business.cashflow", "add"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const code = typeof req.body?.accountCode === "string" ? req.body.accountCode : null;
+      if (!code) return res.status(400).json({ error: "accountCode is required" });
+      const { addRemainder } = await import("./services/pnlExpenses");
+      const added = await addRemainder(companyId, await cashflowToday(), code);
+      if (!added) return res.status(409).json({ error: "Nothing left to account for on that account" });
+      res.status(201).json({ ok: true });
+    } catch (error: any) {
+      console.error("[cashflow] P&L remainder failed:", error);
+      res.status(500).json({ error: "Failed to add the remainder" });
+    }
+  });
+
   // Business expenses suggested from a year of Xero spend (rules find the
   // repeats, Claude names and explains them). The scan runs in the background.
   app.get("/api/cashflow/expense-suggestions", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {

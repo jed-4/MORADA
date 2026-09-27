@@ -7979,8 +7979,11 @@ export const businessExpenses = pgTable("business_expenses", {
   frequency: text("frequency").notNull().default("monthly"), // FREQUENCIES in shared/cashflow/recurrence
   nextDate: text("next_date").notNull(), // 'YYYY-MM-DD' of the next payment
   endDate: text("end_date"), // 'YYYY-MM-DD' of the last payment; null = ongoing
-  source: text("source").notNull().default("manual"), // "manual" | "suggestion"
+  source: text("source").notNull().default("manual"), // "manual" | "suggestion" | "pnl" | "pnl_remainder"
   xeroContactId: text("xero_contact_id"),
+  // The Xero P&L account an imported line came from (migration 0097) — how the
+  // register shows what share of each overhead account it accounts for.
+  xeroAccountCode: text("xero_account_code"),
   overheadItemId: varchar("overhead_item_id").references(() => overheadItems.id, { onDelete: "set null" }),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
@@ -7999,6 +8002,8 @@ export const insertBusinessExpenseSchema = createInsertSchema(businessExpenses).
   id: true,
   source: true,
   xeroContactId: true,
+  // Set only by the P&L import, which checks it against Xero.
+  xeroAccountCode: true,
   // A parent id must never come from the client; linking to an overhead item
   // needs an ownership check and arrives with the UI that sets it.
   overheadItemId: true,
