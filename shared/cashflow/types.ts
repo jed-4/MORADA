@@ -98,6 +98,8 @@ export interface ExpenseInput {
   frequency: Frequency;
   nextDate: DateKey;
   endDate: DateKey | null;
+  /** The register's group (business_expenses.category); blank = uncategorised. */
+  category?: string | null;
 }
 
 export interface ForecastInput {
@@ -139,6 +141,8 @@ export interface CashEvent {
   sourceId?: string;
   /** The money was due before today, so it's shown landing today. */
   overdue?: boolean;
+  /** Business expenses only: which group it belongs to, for the forecast's breakdown. */
+  group?: string;
 }
 
 export interface ForecastPeriod {

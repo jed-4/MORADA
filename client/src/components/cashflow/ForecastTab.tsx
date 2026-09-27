@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permission";
 import { useToast } from "@/hooks/use-toast";
-import type { CashEvent, ForecastLine, ForecastResult, WhatIfDefinition } from "@shared/cashflow";
+import { GROUP_UNALLOCATED_BILLS, GROUP_UNCATEGORISED, LINE_BUSINESS_EXPENSES, type CashEvent, type ForecastLine, type ForecastResult, type WhatIfDefinition } from "@shared/cashflow";
 import { invalidateCashflow, money, moneyShort, shortDate, type ForecastResponse } from "./cashflowShared";
 
 // ─── KPI cards ───────────────────────────────────────────────────────────────
@@ -644,14 +644,54 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
     };
   }, [f]);
 
+  // Business expenses broken down by the register's groups (plus company
+  // bills not on a job), built from the same events the cells already show.
+  const [showExpenseGroups, setShowExpenseGroups] = useState(true);
+  const expenseGroups = useMemo(() => {
+    const row = eventsByCell.get(LINE_BUSINESS_EXPENSES);
+    if (!row) return [];
+    const byGroup = new Map<string, { values: number[]; events: CashEvent[][] }>();
+    row.forEach((cell, i) => {
+      for (const e of cell) {
+        const g = e.group ?? GROUP_UNCATEGORISED;
+        let entry = byGroup.get(g);
+        if (!entry) {
+          entry = { values: f.periods.map(() => 0), events: f.periods.map(() => []) };
+          byGroup.set(g, entry);
+        }
+        entry.values[i] += e.amountCents;
+        entry.events[i].push(e);
+      }
+    });
+    const rank = (g: string) => (g === GROUP_UNALLOCATED_BILLS ? 2 : g === GROUP_UNCATEGORISED ? 1 : 0);
+    return Array.from(byGroup.entries())
+      .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+      .map(([label, v]) => ({ label, ...v, totalCents: v.values.reduce((s, x) => s + x, 0) }));
+  }, [eventsByCell, f.periods]);
+
   const inLines = f.lines.filter((l) => l.section === "in");
   const outLines = f.lines.filter((l) => l.section === "out");
   const whatIfLines = f.lines.filter((l) => l.section === "whatif");
   const total = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
+  const expandable = (l: ForecastLine) => l.id === LINE_BUSINESS_EXPENSES && expenseGroups.length > 1;
   const lineRow = (l: ForecastLine, flip: boolean) => (
     <tr key={l.id} className="border-b border-border/60 hover:bg-muted/40" data-testid={`row-cashflow-${l.id}`}>
-      <td className="sticky left-0 bg-card px-3 py-1.5 pl-7 truncate max-w-[240px]">{l.label}</td>
+      <td className="sticky left-0 bg-card px-3 py-1.5 pl-7 truncate max-w-[240px]">
+        {expandable(l) ? (
+          <button
+            type="button"
+            onClick={() => setShowExpenseGroups((v) => !v)}
+            className="-ml-4 flex items-center gap-1 hover:underline"
+            data-testid="button-toggle-expense-groups"
+          >
+            {showExpenseGroups ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {l.label}
+          </button>
+        ) : (
+          l.label
+        )}
+      </td>
       {l.values.map((v, i) => (
         <ValueCell key={i} cents={v} flip={flip} events={eventsByCell.get(l.id)?.[i]} />
       ))}
@@ -711,7 +751,21 @@ function ForecastGrid({ f }: { f: ForecastResult }) {
             </tr>
 
             {sectionRow("Cash out", showOutLines, () => setShowOutLines((v) => !v), "text-destructive")}
-            {showOutLines && outLines.map((l) => lineRow(l, true))}
+            {showOutLines &&
+              outLines.flatMap((l) => [
+                lineRow(l, true),
+                ...(expandable(l) && showExpenseGroups
+                  ? expenseGroups.map((g) => (
+                      <tr key={`group:${g.label}`} className="border-b border-border/40 hover:bg-muted/40 text-muted-foreground" data-testid={`row-cashflow-expense-group-${g.label}`}>
+                        <td className="sticky left-0 bg-card px-3 py-1 pl-11 truncate max-w-[240px]">{g.label}</td>
+                        {g.values.map((v, i) => (
+                          <ValueCell key={i} cents={v} flip events={g.events[i]} />
+                        ))}
+                        <td className="px-3 py-1 text-right tabular-nums">{money(-g.totalCents)}</td>
+                      </tr>
+                    ))
+                  : []),
+              ])}
             <tr className="border-b border-border">
               <td className="sticky left-0 bg-card px-3 py-1.5 font-semibold text-destructive">Total out</td>
               {f.outCents.map((v, i) => <ValueCell key={i} cents={v} flip events={eventsBySection.out[i]} className="font-semibold text-destructive" />)}
