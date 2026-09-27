@@ -83,6 +83,26 @@ function statusPriority(statusKey: string): number {
   return STATUS_PRIORITY[statusKey.toLowerCase()] ?? 99;
 }
 
+/**
+ * Is this allowance's final cost known?
+ *
+ * Only a settled allowance has a variance. An allowance still out for pricing
+ * has no actual yet, and counting its estimate against a $0 actual reported the
+ * whole job as a saving on day one: a job with $177k of allowances and nothing
+ * bought yet showed "−$177k under budget".
+ *
+ * Two ways to be settled. Normally a cost has landed against it. But an
+ * allowance deliberately closed at nothing — the "not included" case — is
+ * settled at $0 and IS a real saving of its full amount, so the end statuses
+ * count even with no cost against them. Approved and ordered do not: a price
+ * agreed is not a price paid, and the actual can still move.
+ */
+function isSettled(statusKey: string, actualCost: number): boolean {
+  if (actualCost > 0) return true;
+  const k = (statusKey || "").toLowerCase();
+  return k.includes("invoiced") || k.includes("finalized") || k.includes("finalised");
+}
+
 function getStatusToneClass(statusName: string): string {
   const n = statusName.toLowerCase();
   if (n.includes("overdue")) return "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))]";
@@ -417,17 +437,33 @@ export default function Allowances() {
     let totalActual = 0;
     let outstanding = 0;
     let overBudget = 0;
+    // The estimate of the settled allowances only — what the actual is allowed
+    // to be compared against. See isSettled.
+    let settledEstimate = 0;
+    let settledCount = 0;
     estimateScoped.forEach(({ item, actualCost }) => {
       const est = item.priceIncTax || 0;
       totalEstimate += est;
       totalActual += actualCost;
+      if (isSettled(item.allowanceStatus, actualCost)) {
+        settledEstimate += est;
+        settledCount += 1;
+      }
       const statusName = getStatusInfo(item.allowanceStatus).name.toLowerCase();
       if (statusName.includes("pending") || statusName.includes("quoted")) {
         outstanding += est;
       }
       if (actualCost > est) overBudget += actualCost - est;
     });
-    return { totalEstimate, totalActual, outstanding, overBudget };
+    return {
+      totalEstimate,
+      totalActual,
+      outstanding,
+      overBudget,
+      settledEstimate,
+      settledCount,
+      totalCount: estimateScoped.length,
+    };
   }, [estimateScoped, getStatusInfo]);
 
   // Toggle group collapse
@@ -464,7 +500,10 @@ export default function Allowances() {
           { key: "invoiced", name: "Invoiced", color: "#10B981" },
         ];
 
-  const grandVariance = formatVariance(stats.totalActual - stats.totalEstimate);
+  // Against the settled estimate, not the whole allowance budget: the unsettled
+  // ones have no actual to compare and would each read as a saving of their
+  // full amount.
+  const grandVariance = formatVariance(stats.totalActual - stats.settledEstimate);
 
   // Column grid (must match between header / item / subtotal rows)
   // [expand 24 | DESCRIPTION 1fr | TYPE 60 | STATUS 110 | ESTIMATE 110 | MARKUP 90 | ACTUAL 110 | VARIANCE 110 | NOTES 1fr | actions 32]
@@ -750,7 +789,11 @@ export default function Allowances() {
             const collapsed = groupItems ? collapsedGroups.has(groupName) : false;
             const groupEst = items.reduce((s, a) => s + (a.item.priceIncTax || 0), 0);
             const groupAct = items.reduce((s, a) => s + a.actualCost, 0);
-            const groupVar = formatVariance(groupAct - groupEst);
+            const groupSettledEst = items.reduce(
+              (s, a) => s + (isSettled(a.item.allowanceStatus, a.actualCost) ? (a.item.priceIncTax || 0) : 0),
+              0,
+            );
+            const groupVar = formatVariance(groupAct - groupSettledEst);
 
             return (
               <div key={groupName}>
@@ -956,6 +999,14 @@ export default function Allowances() {
               data-testid="text-grand-variance"
             >
               {grandVariance.text}
+            </div>
+            {/* Without this the row reads as a contradiction — a $177k estimate
+                beside a $98k actual and a variance of neither. Say what the
+                number is measured over. */}
+            <div className="text-[9px] text-muted-foreground tabular-nums" data-testid="text-grand-variance-basis">
+              {stats.settledCount === stats.totalCount
+                ? "all settled"
+                : `on ${stats.settledCount} of ${stats.totalCount} settled`}
             </div>
           </div>
         </div>
