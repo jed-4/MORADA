@@ -130,6 +130,40 @@ import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, Bil
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
 
+/**
+ * One row per supplier NAME for the picker, without hiding the one this bill
+ * actually points at.
+ *
+ * The same business routinely exists more than once — as a `supplier` and a
+ * `trade` record, or twice as a supplier after a Xero import — and a dropdown
+ * listing "Jones Concrete" three times is no use. But collapsing by name was
+ * being done to the lookup list itself, so if a bill referenced one of the
+ * copies that lost, nothing matched its supplierId and the field simply went
+ * BLANK: no name, no Defaults button, and the picker looking unset on a bill
+ * that is perfectly well set. The budget screen showed the supplier for the
+ * same bill, because the server resolves that one by id against all contacts.
+ *
+ * So: collapse for display, then put the selected record back if it was one of
+ * the losers. Prefer the `supplier` record when choosing which copy survives.
+ */
+function dedupeSupplierOptions(all: any[], selectedId: string | undefined): any[] {
+  const byName = new Map<string, any>();
+  for (const c of all) {
+    const key = (c.name ?? "").trim().toLowerCase();
+    const existing = byName.get(key);
+    if (!existing || existing.contactType !== "supplier") byName.set(key, c);
+  }
+  // If the bill points at one of the copies that lost, SWAP it in rather than
+  // appending — otherwise the same name appears twice, which is the mess the
+  // collapse exists to avoid. One row per name, and it is the row this bill
+  // actually uses.
+  if (selectedId && !Array.from(byName.values()).some((c) => c.id === selectedId)) {
+    const selected = all.find((c) => c.id === selectedId);
+    if (selected) byName.set((selected.name ?? "").trim().toLowerCase(), selected);
+  }
+  return Array.from(byName.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
 const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
   projectId: z.string().min(1, "Project is required"),
@@ -434,19 +468,12 @@ export default function BillDetail() {
       if (!suppliersRes.ok || !tradesRes.ok) throw new Error("Failed to fetch contacts");
       const [supplierList, tradeList] = await Promise.all([suppliersRes.json(), tradesRes.json()]);
       const combined = [...supplierList, ...tradeList];
-      // Deduplicate by ID first, then by normalised name — contacts can exist as
-      // both "supplier" and "trade" type records, prefer the supplier record.
+      // Deduplicate by ID only. This list is what every "who is this bill paid
+      // to?" lookup resolves against, so it has to contain EVERY contact a bill
+      // can point at. It used to be collapsed by name here — see
+      // dedupeSupplierOptions for why that belongs to the dropdown instead.
       const byId = Array.from(new Map(combined.map((c: any) => [c.id, c])).values());
-      const byName = new Map<string, any>();
-      for (const c of byId) {
-        const key = (c.name ?? "").trim().toLowerCase();
-        const existing = byName.get(key);
-        if (!existing || existing.contactType !== "supplier") {
-          byName.set(key, c);
-        }
-      }
-      const deduped = Array.from(byName.values());
-      return deduped.sort((a: any, b: any) => a.name.localeCompare(b.name));
+      return byId.sort((a: any, b: any) => (a.name ?? "").localeCompare(b.name ?? ""));
     },
   });
 
@@ -2953,7 +2980,7 @@ export default function BillDetail() {
                               <CommandList className="max-h-[280px]">
                                 <CommandEmpty>No suppliers found.</CommandEmpty>
                                 <CommandGroup>
-                                  {suppliers.map((supplier: any) => (
+                                  {dedupeSupplierOptions(suppliers, field.value).map((supplier: any) => (
                                     <CommandItem
                                       key={supplier.id}
                                       value={supplier.name}
