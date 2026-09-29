@@ -189,6 +189,7 @@ import type { Notification as InAppNotification, InsertNotification } from "@sha
 import type { PushToken, InsertPushToken } from "@shared/schema";
 import type { Suggestion, InsertSuggestion, SuggestionWithMeta } from "@shared/schema";
 import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
+import { syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -23098,6 +23099,12 @@ export class DbStorage implements IStorage {
         .set({ ...item, updatedAt: new Date() })
         .where(eq(schema.scheduleItems.id, id))
         .returning();
+      // Draft invoices linked to this item follow its dates. Every edit, drag,
+      // bulk update and dependency cascade comes through here. Not awaited: a
+      // sync problem must never fail or slow the schedule change.
+      if (result[0] && ("startDate" in item || "endDate" in item || "actualStartDate" in item || "actualEndDate" in item)) {
+        syncInvoicesForItemsQuietly([id]);
+      }
       return result[0];
     } catch (error) {
       console.error("Database error in updateScheduleItem:", error);

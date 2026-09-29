@@ -1956,6 +1956,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                           <SelectItem value="inspection">Inspection</SelectItem>
                           <SelectItem value="delivery">Delivery</SelectItem>
                           <SelectItem value="meeting">Meeting</SelectItem>
+                          <SelectItem value="invoice">Invoice</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2645,6 +2646,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                         <SelectItem value="inspection">Inspection</SelectItem>
                         <SelectItem value="delivery">Delivery</SelectItem>
                         <SelectItem value="meeting">Meeting</SelectItem>
+                        <SelectItem value="invoice">Invoice — a claim point</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

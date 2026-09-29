@@ -75,6 +75,7 @@ import {
 } from "@shared/cashflow";
 import { dollarsToCents, exGstFromInc, incGstFromEx } from "@shared/money";
 import { frozenContractTotalFrom, isApprovedVariationStatus } from "@shared/projectMetrics";
+import { itemClaimDate } from "@shared/invoiceScheduleDates";
 import { invoiceBalanceCents, isCountableInvoice, isIssuedInvoice } from "@shared/invoiceMetrics";
 
 const FORECAST_PHASES: JobPhase[] = ["lead", "pre_construction", "construction"];
@@ -479,6 +480,8 @@ export async function loadCashflow(
         name: clientInvoices.name,
         invoiceNumber: clientInvoices.invoiceNumber,
         totalAmount: clientInvoices.totalAmount,
+        invoiceDate: clientInvoices.invoiceDate,
+        datePinned: clientInvoices.datePinned,
         itemEnd: scheduleItems.endDate,
         itemActualEnd: scheduleItems.actualEndDate,
       })
@@ -491,7 +494,9 @@ export async function loadCashflow(
   // Linked draft claims per job (see JobInput.linkedClaims).
   const linkedByProject = new Map<string, NonNullable<JobInput["linkedClaims"]>>();
   for (const r of linkedDraftRows) {
-    const date = toDateKey(r.itemActualEnd ?? r.itemEnd);
+    // A date set by hand wins; otherwise the item's (actual) finish — which is
+    // what a following draft's invoice date already is.
+    const date = r.datePinned ? toDateKey(r.invoiceDate) : itemClaimDate({ endDate: r.itemEnd, actualEndDate: r.itemActualEnd });
     if (!date || !(r.totalAmount > 0)) continue;
     const list = linkedByProject.get(r.projectId) ?? [];
     list.push({

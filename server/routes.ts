@@ -272,6 +272,8 @@ import { syncTemplateOptions } from "./services/templateOptionSync";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateSchedule, getTemplateSchedule, templateCompanyId } from "./services/scheduleTemplates";
 import { PasswordUtils } from "./utils/auth";
+import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
+import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
@@ -24708,6 +24710,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return row?.projectId === projectId;
   };
 
+  // A draft linked to a schedule item takes its dates from the item
+  // (shared/invoiceScheduleDates). Applied to the SAME save, so approving a
+  // following draft locks the schedule's current date. Mutates `data`.
+  //   - invoice date changed by hand      → pinned (keeps its own date)
+  //   - linked / re-linked / "follow again" (datePinned: false) → follows
+  //   - unlinked                          → pin cleared
+  //   - not a draft (approved and on)     → locked: nothing moves
+  // A following draft brought onto its schedule item's current dates, re-read.
+  // Used where an invoice is shown, emailed, pushed or paid, so nothing reads a
+  // date the schedule has since moved.
+  const withFollowedDates = async <T,>(inv: T): Promise<T> => {
+    const i = inv as any;
+    if (!i || i.status !== "draft" || !i.scheduleItemId || i.datePinned || i.xeroInvoiceId) return inv;
+    await syncInvoice(i.id);
+    return ((await storage.getClientInvoice(i.id)) as any) ?? inv;
+  };
+
+  const applyInvoiceScheduleDateRules = async (owned: any, data: any): Promise<void> => {
+    const linkedAfter = data.scheduleItemId !== undefined ? data.scheduleItemId : owned.scheduleItemId;
+    if (!linkedAfter) {
+      if (data.scheduleItemId === null) data.datePinned = false;
+      return;
+    }
+    if (owned.status !== "draft" || owned.xeroInvoiceId) return;
+    const relinked = data.scheduleItemId !== undefined && data.scheduleItemId !== owned.scheduleItemId;
+    const followAgain = data.datePinned === false;
+    if (invoiceDateChanged(owned.invoiceDate, data.invoiceDate) && !followAgain) {
+      data.datePinned = true;
+      // Only the invoice date came in: keep the terms by moving the due date too.
+      if (data.dueDate === undefined) data.dueDate = shiftedDueDate(owned, data.invoiceDate);
+    }
+    else if (relinked || followAgain) data.datePinned = false;
+    const pinned = data.datePinned ?? owned.datePinned;
+    if (pinned) return;
+    const [item] = await db
+      .select({ endDate: scheduleItems.endDate, actualEndDate: scheduleItems.actualEndDate })
+      .from(scheduleItems)
+      .where(eq(scheduleItems.id, linkedAfter))
+      .limit(1);
+    const claim = item ? itemClaimDate(item) : null;
+    const next = claim
+      ? followedDates({ invoiceDate: data.invoiceDate ?? owned.invoiceDate, dueDate: data.dueDate !== undefined ? data.dueDate : owned.dueDate }, claim)
+      : null;
+    if (next) {
+      data.invoiceDate = next.invoiceDate;
+      data.dueDate = next.dueDate;
+    }
+  };
+
   // The job's invoices that are linked to schedule items — for the schedule's
   // invoice badges. Its own route (not part of the schedule payload) so only
   // "Progress Claims" viewers ever receive invoice details.
@@ -24823,7 +24874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!invoice) return;
-      res.json(invoice);
+      res.json(await withFollowedDates(invoice));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch client invoice" });
     }
@@ -24909,6 +24960,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await scheduleItemInProject(data.scheduleItemId, data.projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
+      // Created already linked: it follows the item from the start.
+      await applyInvoiceScheduleDateRules(
+        { status: (data as any).status ?? "draft", scheduleItemId: null, invoiceDate: data.invoiceDate, dueDate: data.dueDate ?? null, datePinned: false },
+        data,
+      );
 
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) {
@@ -24977,6 +25033,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
+      await applyInvoiceScheduleDateRules(owned, data);
 
       // Leaving draft locks the invoice to the contract price at that moment
       // (once only — a re-send never re-stamps).
@@ -25256,6 +25313,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await scheduleItemInProject(data.scheduleItemId, data.projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
+      // Created already linked: it follows the item from the start.
+      await applyInvoiceScheduleDateRules(
+        { status: (data as any).status ?? "draft", scheduleItemId: null, invoiceDate: data.invoiceDate, dueDate: data.dueDate ?? null, datePinned: false },
+        data,
+      );
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
       if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
@@ -25311,6 +25373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
+      await applyInvoiceScheduleDateRules(owned, data);
       const children = childrenResult.data;
 
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
@@ -25441,7 +25504,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/payments", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
-      if (!(await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found"))) return;
+      const payingInvoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!payingInvoice) return;
+      // A payment moves a draft to part paid / paid — settle its dates first.
+      await withFollowedDates(payingInvoice);
       const validationResult = insertClientInvoicePaymentSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -25941,8 +26007,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.id;
       // Ownership: only the invoice's own company can email it.
-      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Invoice not found");
-      if (!invoice) return;
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id, "Invoice not found");
+      if (!ownedInvoice) return;
+      // Sending takes it out of draft: settle a following draft's dates first.
+      const invoice = await withFollowedDates(ownedInvoice);
 
       const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
         to: string;
@@ -34266,6 +34334,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .returning();
         return result[0];
       });
+      // Restored dates skip storage — bring linked draft invoices back in step
+      // once the transaction has committed.
+      if (Array.isArray(snapshot)) syncInvoicesForItemsQuietly(snapshot.map((r: any) => r?.id).filter(Boolean));
       res.json(schedule);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to discard changes", details: error.message });
@@ -35835,6 +35906,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 await db.update(scheduleItems)
                   .set(parentUpdate)
                   .where(eq(scheduleItems.id, parentId));
+                // Written directly (not via storage), so sync its invoices here.
+                syncInvoicesForItemsQuietly([parentId]);
 
                 // Cascade from parent whenever its endDate moved in either direction
                 // (grew → push dependents later; shrank → pull dependents earlier).
@@ -42998,10 +43071,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(400).json({ error: "Xero is not connected" });
       }
 
-      const invoice = await storage.getClientInvoice(invoiceId);
-      if (!invoice) {
+      const loaded = await storage.getClientInvoice(invoiceId);
+      if (!loaded) {
         return res.status(404).json({ error: "Client invoice not found" });
       }
+      // Pushing approves it — its dates go to Xero, so a following draft takes
+      // its schedule item's current dates first.
+      const invoice = await withFollowedDates(loaded);
 
       // If invoice already has a Xero ID, redirect to update route logic
       if (invoice.xeroInvoiceId) {

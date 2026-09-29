@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
+import { invoiceDateMode, itemClaimDate, scheduleMovedSinceLock } from "@shared/invoiceScheduleDates";
 import { EmptyState } from "@/components/EmptyState";
 import { usePermission } from "@/hooks/use-permission";
 import { useParams, useLocation } from "wouter";
@@ -2889,9 +2890,7 @@ function ClientInvoiceDetailInner() {
                                 data-testid="select-invoice-claim-when"
                               />
                             </FormControl>
-                            <p className="text-[10px] text-muted-foreground">
-                              {field.value ? "Forecast and shown on the schedule when this item finishes." : "Optional — link it to the stage it claims for."}
-                            </p>
+                            <ClaimWhenStatus invoice={invoice} selectedItemId={field.value} items={claimWhenItems} />
                           </FormItem>
                         )}
                       />
@@ -5428,4 +5427,73 @@ export default function ClientInvoiceDetail() {
     );
   }
   return <ClientInvoiceDetailInner  />;
+}
+
+/**
+ * Under "Claim when": whether the invoice's dates follow its schedule item
+ * (draft), were set by hand, or are locked (approved and on — it's in Xero).
+ * See shared/invoiceScheduleDates.
+ */
+function ClaimWhenStatus({
+  invoice,
+  selectedItemId,
+  items,
+}: {
+  invoice: ClientInvoice | undefined;
+  selectedItemId: string | null | undefined;
+  items: Array<{ id: string; name: string; endDate: string | null; actualEndDate: string | null }>;
+}) {
+  const { toast } = useToast();
+  const follow = useMutation({
+    mutationFn: () => apiRequest(`/api/client-invoices/${invoice!.id}`, "PATCH", { datePinned: false }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0].startsWith("/api/client-invoices") || q.queryKey[0].startsWith("/api/cashflow")),
+      }),
+    onError: () => toast({ title: "Couldn't switch back to the schedule", variant: "destructive" }),
+  });
+  if (!selectedItemId) {
+    return <p className="text-[10px] text-muted-foreground">Optional — link it to the schedule item it claims for, and its dates follow that item.</p>;
+  }
+  const item = items.find((i) => i.id === selectedItemId);
+  const claim = item ? itemClaimDate(item) : null;
+  const claimLabel = claim ? format(new Date(`${claim}T00:00:00`), "d MMM yyyy") : null;
+  const saved = invoice as any;
+  const linkedNow = saved?.scheduleItemId === selectedItemId;
+  const mode = saved ? invoiceDateMode(saved) : "follows";
+
+  if (!saved || !linkedNow) {
+    return (
+      <p className="text-[10px] text-muted-foreground" data-testid="text-claim-when-status">
+        {mode === "locked"
+          ? "Linked for the record — this invoice is approved, so its dates won't change."
+          : `Dates move to ${item?.name ?? "this item"}${claimLabel ? ` (${claimLabel})` : ""} when you save, and follow it from then on.`}
+      </p>
+    );
+  }
+  if (mode === "locked") {
+    const moved = scheduleMovedSinceLock(saved, claim);
+    return (
+      <p className="text-[10px] text-muted-foreground" data-testid="text-claim-when-status">
+        Dates locked when it was approved.
+        {moved && <span className="text-status-warning"> The schedule has since moved to {format(new Date(`${moved}T00:00:00`), "d MMM yyyy")}.</span>}
+      </p>
+    );
+  }
+  if (mode === "pinned") {
+    return (
+      <p className="text-[10px] text-muted-foreground" data-testid="text-claim-when-status">
+        Date set by hand — not following the schedule.{" "}
+        <button type="button" className="text-primary hover:underline" disabled={follow.isPending} onClick={() => follow.mutate()} data-testid="button-follow-schedule">
+          Follow the schedule again
+        </button>
+      </p>
+    );
+  }
+  return (
+    <p className="text-[10px] text-muted-foreground" data-testid="text-claim-when-status">
+      Dates follow {item?.name ?? "the schedule item"}
+      {claimLabel ? ` (finishes ${claimLabel})` : ""} until it's approved. Changing the invoice date here stops that.
+    </p>
+  );
 }

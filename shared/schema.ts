@@ -2728,6 +2728,9 @@ export const clientInvoices = pgTable("client_invoices", {
   // linked draft is forecast at the item's finish + pay days, so it moves
   // with the schedule. Null = not linked.
   scheduleItemId: varchar("schedule_item_id").references((): AnyPgColumn => scheduleItems.id, { onDelete: "set null" }),
+  // The invoice date was set by hand, so it no longer follows the schedule
+  // item (migration 0098). Drafts only — approval locks the dates anyway.
+  datePinned: boolean("date_pinned").notNull().default(false),
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"),
   markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
   introductionText: text("introduction_text"),
@@ -4070,7 +4073,7 @@ export const scheduleItems = pgTable("schedule_items", {
   
   name: text("name").notNull(),
   description: text("description"),
-  type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting"
+  type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting" | "invoice"
   status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold" | "cancelled"
   priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   
@@ -4138,7 +4141,8 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  type: z.enum(["task", "milestone", "inspection", "delivery", "meeting"]).default("task"),
+  // "invoice": a claim point — link the claim to it and its date follows this item.
+  type: z.enum(["task", "milestone", "inspection", "delivery", "meeting", "invoice"]).default("task"),
   status: z.string().default("not_started"),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   startDate: z.coerce.date(),
