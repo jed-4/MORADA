@@ -2,6 +2,7 @@ import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
 import { computeEstimateSummary, round2 } from "@shared/pricing";
 import {
+  allowanceLineAmounts,
   clientLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
@@ -97,6 +98,7 @@ export function EstimateSection({
     showZeroLines: false,
     showColumnHeader: true,
     showAllowanceType: true,
+    allowancePricing: false,
     descriptionUnderName: true,
     groupDescriptions: true,
   };
@@ -114,6 +116,7 @@ export function EstimateSection({
         showZeroLines: fallbackToggles.showZeroLines === true,
         showColumnHeader: fallbackToggles.showColumnHeader !== false,
         showAllowanceType: fallbackToggles.showAllowanceType !== false,
+        allowancePricing: fallbackToggles.allowancePricing === true,
         descriptionUnderName: fallbackToggles.descriptionUnderName !== false,
         groupDescriptions: fallbackToggles.groupDescriptions !== false,
       }
@@ -134,6 +137,7 @@ export function EstimateSection({
         showZeroLines: false,
         showColumnHeader: false,
         showAllowanceType: false,
+        allowancePricing: false,
         descriptionUnderName: false,
         // Lump sum prints a price and nothing that itemises it.
         groupDescriptions: false,
@@ -149,6 +153,7 @@ export function EstimateSection({
       next.markup = false;
       next.amountExTax = false;
       next.amountIncTax = false;
+      next.allowancePricing = false;
       next.showSubtotals = true;
     }
     if (!showGst) {
@@ -387,6 +392,15 @@ export function EstimateSection({
       flexDirection: "row",
       alignItems: "center",
     },
+    allowancePricing: {
+      marginTop: 2,
+      fontSize: 8,
+      color: PDF_COLORS.inkMuted,
+      // Right, where money belongs. On its own line under the name rather than
+      // in a column, so it lines up with the amounts when they are switched on
+      // and with the page edge when they are not.
+      textAlign: "right",
+    },
     itemDescription: {
       marginTop: 2,
       fontSize: 8,
@@ -522,19 +536,72 @@ export function EstimateSection({
     };
   };
 
-  const renderRowText = (item: EstimateItem) => (
-    <View>
-      <View style={styles.itemCell}>
-        <Text>{item.name || "Untitled"}</Text>
-        {toggles.showAllowanceType && allowanceLabel(item) ? (
-          <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+  /**
+   * An allowance line's own pricing, printed under its name.
+   *
+   * Asked for by name: "tiles, I toggle the allowance pricing on, it shows in
+   * the allowance line item, qty, unit ex inc tax, amount inc tax". The
+   * Allowances section has always shown this in its own table; the estimate
+   * could only show it by switching the amount columns on for EVERY line,
+   * which prices the whole job line by line. This shows it for Prime Cost and
+   * Provisional Sum lines and nothing else — the two the client is choosing
+   * within, and the two where "what am I actually being allowed?" is the
+   * question.
+   *
+   * The figures are the ALLOWANCE as entered in the estimate — qty x unit cost
+   * inc GST, or a fixed-price allowance's typed amount — with no line markup
+   * and no builder's margin. That is what the Allowances page prints (#184),
+   * and the same line quoted at two different numbers in one document is the
+   * whole thing to avoid, so it uses that page's helper rather than the
+   * client-price one. The margin still sits in the contract price on the
+   * estimate's own total.
+   *
+   * A line whose Shown As is not a price is left alone. It says "Included",
+   * "Excluded" or nothing on purpose, and a figure underneath would contradict
+   * the cell above it.
+   */
+  const allowancePricingLine = (item: EstimateItem): string | null => {
+    if (!toggles.allowancePricing || !allowanceLabel(item)) return null;
+    if ((item.shownAs ?? "price") !== "price") return null;
+
+    const { exTax, incTax, unitExTax, unitIncTax } = allowanceLineAmounts(item, {
+      taxRate: taxRatePct,
+    });
+    if (incTax === 0) return null;
+
+    const qty = Number(item.quantity) || 0;
+    const parts: string[] = [];
+    // A fixed-price allowance is a lump sum with no rate behind it, so it has
+    // no unit line to print — allowanceLineAmounts returns null for those.
+    if (qty > 0 && unitIncTax !== null && unitExTax !== null) {
+      const unit = `${formatQuantity(qty)}${item.unitType ? ` ${item.unitType}` : ""}`;
+      // One rate, the one the client pays. The ex-GST rate was the figure
+      // least likely to be wanted and the one making the line long.
+      parts.push(`${unit} × ${money(showGst ? unitIncTax : unitExTax)}`);
+    }
+    // "40 m2 × $88.00 = $3,520.00" — both figures inc GST, or both ex when GST
+    // is off, so the arithmetic on the line always works out.
+    const amount = showGst ? money(incTax) : money(exTax);
+    return parts.length > 0 ? `${parts[0]} = ${amount}` : amount;
+  };
+
+  const renderRowText = (item: EstimateItem) => {
+    const pricing = allowancePricingLine(item);
+    return (
+      <View>
+        <View style={styles.itemCell}>
+          <Text>{item.name || "Untitled"}</Text>
+          {toggles.showAllowanceType && allowanceLabel(item) ? (
+            <Text style={styles.allowanceTag}>{allowanceLabel(item)}</Text>
+          ) : null}
+        </View>
+        {toggles.description && pdfHasText(item.description) ? (
+          <Text style={styles.itemDescription}>{pdfPlainText(item.description)}</Text>
         ) : null}
+        {pricing ? <Text style={styles.allowancePricing}>{pricing}</Text> : null}
       </View>
-      {toggles.description && pdfHasText(item.description) ? (
-        <Text style={styles.itemDescription}>{pdfPlainText(item.description)}</Text>
-      ) : null}
-    </View>
-  );
+    );
+  };
 
   const tableGroups: Array<PdfTableGroup<EstimateItem>> = rootGroups.map(toTableGroup);
   if (ungroupedItems.length > 0 && !hideLineItems) {

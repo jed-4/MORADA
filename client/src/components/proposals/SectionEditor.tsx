@@ -383,6 +383,7 @@ export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
     showZeroLines: false,
     showColumnHeader: true,
     showAllowanceType: true,
+    allowancePricing: false,
   };
 
   /**
@@ -596,6 +597,24 @@ export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
               checked={toggles.showAllowanceType !== false}
               onCheckedChange={(checked) => updateToggle("showAllowanceType", checked)}
               data-testid="toggle-showAllowanceType"
+            />
+          </div>
+
+          {/* Pricing for the allowance lines only. The amount columns above
+              price EVERY line; this answers "what am I allowed for the tiles?"
+              without itemising the whole job. */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="toggle-allowancePricing" className="cursor-pointer">Show allowance pricing</Label>
+              <p className="text-xs text-muted-foreground">
+                Prime cost and provisional sum lines show their quantity, unit price and amount
+              </p>
+            </div>
+            <Switch
+              id="toggle-allowancePricing"
+              checked={toggles.allowancePricing === true}
+              onCheckedChange={(checked) => updateToggle("allowancePricing", checked)}
+              data-testid="toggle-allowancePricing"
             />
           </div>
         </div>
