@@ -396,6 +396,10 @@ export function EstimateSection({
       marginTop: 2,
       fontSize: 8,
       color: PDF_COLORS.inkMuted,
+      // Right, where money belongs. On its own line under the name rather than
+      // in a column, so it lines up with the amounts when they are switched on
+      // and with the page edge when they are not.
+      textAlign: "right",
     },
     itemDescription: {
       marginTop: 2,
@@ -573,12 +577,14 @@ export function EstimateSection({
       const unit = `${formatQuantity(qty)}${item.unitType ? ` ${item.unitType}` : ""}`;
       parts.push(
         showGst
-          ? `${unit} at ${money(unitExTax)} ex GST (${money(unitIncTax)} inc)`
-          : `${unit} at ${money(unitExTax)}`,
+          ? `${unit} × ${money(unitExTax)} ex (${money(unitIncTax)} inc)`
+          : `${unit} × ${money(unitExTax)}`,
       );
     }
-    parts.push(showGst ? `${money(incTax)} inc GST` : money(exTax));
-    return parts.join(" — ");
+    // "40 m2 × $80.00 ex ($88.00 inc) = $3,520.00". The arithmetic signs carry
+    // the sentence, so "at", the dash and the second "GST" all come out.
+    const amount = showGst ? money(incTax) : money(exTax);
+    return parts.length > 0 ? `${parts[0]} = ${amount}` : amount;
   };
 
   const renderRowText = (item: EstimateItem) => {

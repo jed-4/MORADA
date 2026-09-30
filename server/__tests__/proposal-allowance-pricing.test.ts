@@ -90,9 +90,9 @@ await check("off by default: an allowance prints no figures", async () => {
 await check("on: the allowance shows qty, unit ex, unit inc and the amount inc", async () => {
   const t = await renderText({ ...BASE_TOGGLES, allowancePricing: true });
   assert.ok(t.includes("40 m2"), `quantity and unit — got: ${t.slice(0, 400)}`);
-  assert.ok(t.includes("$80.00 ex GST"), "unit price ex GST");
+  assert.ok(t.includes("$80.00 ex"), "unit price ex GST");
   assert.ok(t.includes("$88.00 inc"), "unit price inc GST");
-  assert.ok(t.includes("$3,520.00 inc GST"), "the allowance amount inc GST");
+  assert.ok(t.includes("= $3,520.00"), "the allowance amount inc GST");
 });
 
 await check("it prints the allowance, not the marked-up client price", async () => {
@@ -104,7 +104,7 @@ await check("it prints the allowance, not the marked-up client price", async () 
 
 await check("it prices provisional sums too, not just prime cost", async () => {
   const t = await renderText({ ...BASE_TOGGLES, allowancePricing: true });
-  assert.ok(t.includes("$2,200.00 inc GST"), "the provisional sum's amount");
+  assert.ok(t.includes("$2,200.00"), "the provisional sum's amount");
 });
 
 await check("ordinary lines are never priced by it", async () => {
@@ -124,7 +124,7 @@ await check("a line shown as Included keeps its word instead of a figure", async
 await check("with GST off it prints ex-GST figures only", async () => {
   const t = await renderText({ ...BASE_TOGGLES, allowancePricing: true }, false);
   assert.ok(t.includes("$3,200.00"), `ex-GST amount — got: ${t.slice(0, 400)}`);
-  assert.ok(!t.includes("inc GST"), "no inc-GST wording when GST is off");
+  assert.ok(!t.includes("inc)"), "no inc-GST figure when GST is off");
 });
 
 await check("the estimate total is untouched by the toggle", async () => {
