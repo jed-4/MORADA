@@ -16,6 +16,8 @@
  * Total Hrs is computed (men × hours), so it is never read from the clipboard.
  */
 
+import { splitPastedRows, trimEmptyEdgeColumns } from "./spreadsheetPaste";
+
 export interface ParsedLabourRow {
   description: string;
   numMen: number;
@@ -42,50 +44,7 @@ export interface LabourPasteResult {
   extraColumns: number;
 }
 
-/** Refuses rather than truncates: a silent cap reads as "it all went in". */
-export const MAX_PASTE_ROWS = 1000;
-
-/**
- * Splits TSV honouring Excel's quoting. A plain `split("\t")` breaks the moment
- * someone's task description contains a tab or a line break, which is exactly
- * the sort of row that then lands silently mangled.
- */
-function splitRows(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { cell += '"'; i++; }  // "" is a literal quote
-        else inQuotes = false;
-      } else {
-        cell += ch;
-      }
-      continue;
-    }
-
-    if (ch === '"' && cell === "") { inQuotes = true; continue; }
-    if (ch === "\t") { row.push(cell); cell = ""; continue; }
-    if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;      // CRLF is one break
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-      continue;
-    }
-    cell += ch;
-  }
-
-  row.push(cell);
-  rows.push(row);
-  return rows;
-}
+export { MAX_PASTE_ROWS } from "./spreadsheetPaste";
 
 /**
  * "1,200.5", "$95.00", " 3 " → 1200.5, 95, 3. Returns undefined for anything
@@ -98,26 +57,6 @@ function toNumber(raw: string | undefined): number | undefined {
   if (cleaned === "") return undefined;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : undefined;
-}
-
-/**
- * Drops entirely-empty columns from the left and right edges.
- *
- * Selecting a range in a spreadsheet routinely picks up empty spacer columns on
- * one side or the other; left in place they shift every column's meaning.
- * Interior blanks are deliberately kept — there the emptiness is positional
- * information, not padding.
- */
-function trimEmptyEdgeColumns(rows: string[][]): string[][] {
-  const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
-  const filled = (c: number) => rows.some(r => (r[c] || "").trim() !== "");
-  let start = 0;
-  let end = width - 1;
-  while (start <= end && !filled(start)) start++;
-  while (end >= start && !filled(end)) end--;
-  if (start === 0 && end === width - 1) return rows;
-  if (start > end) return rows;
-  return rows.map(r => r.slice(start, end + 1));
 }
 
 const DESC_HEADER = /^(description|desc|task|tasks|item|items|activity|scope|works?)$/i;
@@ -216,7 +155,7 @@ export function parseLabourPaste(text: string): LabourPasteResult {
   };
   if (!text || !text.trim()) return result;
 
-  let raw = splitRows(text).filter(r => r.some(c => (c || "").trim() !== ""));
+  let raw = splitPastedRows(text).filter(r => r.some(c => (c || "").trim() !== ""));
   if (raw.length === 0) return result;
   raw = trimEmptyEdgeColumns(raw);
 
