@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect, type ReactNode } from "react";
 import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
+import { parseDetailsPaste, describeDetailsRoles } from "@/lib/parseDetailsPaste";
 import { useLocation } from "wouter";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -483,6 +484,9 @@ export default function EstimateTemplates() {
   const [openLabourSet, setOpenLabourSet] = useState<{ id: string | null; name: string } | null>(null);
 
   openLabourSetRef.current = openLabourSet?.id ?? null;
+  /** Same, for the Details tab's paste — see pasteDetailsRowsMutation. */
+  const openDetailsSetRef = useRef<string | null>(null);
+  openDetailsSetRef.current = openDetailsSet?.id ?? null;
 
   /* Renaming and deleting a group. The panel had neither — a group could be
      made and never touched again. Both work across the open template's rows:
@@ -560,6 +564,7 @@ export default function EstimateTemplates() {
    * has to actually be a block (a tab or a newline) rather than a stray word.
    */
   const labourPasteRef = useRef<HTMLDivElement>(null);
+  const detailsPasteRef = useRef<HTMLDivElement>(null);
   const selectedGroupRef = useRef<string>("");
   selectedGroupRef.current = selectedGroup;
 
@@ -605,6 +610,70 @@ export default function EstimateTemplates() {
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
   }, [activeTab, pasteLabourRowsMutation, toast]);
+
+  const pasteDetailsRowsMutation = useMutation({
+    mutationFn: (rows: Array<{ categoryName: string; brainstormNotes: string; isRequired: boolean }>) =>
+      apiRequest("/api/enote-templates/bulk", "POST", {
+        rows,
+        groupName: selectedGroupRef.current,
+        templateSetId: openDetailsSetRef.current,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+    },
+    onError: () => toast({ title: "Couldn't add those rows", variant: "destructive" }),
+  });
+
+  /**
+   * The same paste for Details as the Labour tab has. A Details list is built
+   * from a spreadsheet as often as a labour one — this tab just had no way to
+   * do it, so every line was typed in one at a time.
+   *
+   * Guards match the labour handler: an editable target keeps its own paste,
+   * the Details panel has to be the one on screen, a group has to be selected
+   * to paste into, and the text has to be a block rather than a stray word.
+   */
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (activeTab !== 'enotes' || !selectedGroupRef.current) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (!detailsPasteRef.current || detailsPasteRef.current.offsetParent === null) return;
+
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text.includes("\t") && !text.includes("\n")) return;
+
+      const parsed = parseDetailsPaste(text);
+      if (parsed.rows.length === 0) return;
+      e.preventDefault();
+
+      if (parsed.rows.length > MAX_PASTE_ROWS) {
+        toast({
+          title: "That paste is too big",
+          description: `${parsed.rows.length} rows — the limit is ${MAX_PASTE_ROWS}. Paste it in a few goes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const notes: string[] = [];
+      const layout = describeDetailsRoles(parsed.roles);
+      if (layout) notes.push(`read as ${layout}`);
+      if (parsed.skippedHeader) notes.push("header row skipped");
+      if (parsed.skippedBlank) notes.push(`${parsed.skippedBlank} row(s) had no item`);
+      if (parsed.extraColumns > 0) notes.push(`${parsed.extraColumns} extra column(s) ignored`);
+
+      pasteDetailsRowsMutation.mutate(parsed.rows, {
+        onSuccess: () => toast({
+          title: `Added ${parsed.rows.length} row${parsed.rows.length === 1 ? "" : "s"} to ${selectedGroupRef.current}`,
+          description: notes.length ? notes.join(" · ") : undefined,
+        }),
+      });
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [activeTab, pasteDetailsRowsMutation, toast]);
 
   const labourGroups = useMemo(
     () => orderGroups(Array.from(new Set(labourRows.map((t: any) => t.categoryName))).filter(Boolean) as string[], savedGroupOrder),
@@ -1926,7 +1995,7 @@ export default function EstimateTemplates() {
           </div>
 
           {/* RIGHT: Categories for selected group */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div ref={detailsPasteRef} className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {!selectedGroup ? (
               <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
                 <StickyNote className="w-8 h-8 text-muted-foreground/40" />

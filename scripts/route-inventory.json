@@ -955,6 +955,7 @@
     "server/routes.ts POST /api/drive-attachments",
     "server/routes.ts POST /api/enote-template-sets",
     "server/routes.ts POST /api/enote-templates",
+    "server/routes.ts POST /api/enote-templates/bulk",
     "server/routes.ts POST /api/estimate-enotes/:rowId/attachments",
     "server/routes.ts POST /api/estimate-groups/:id/apply-cost-code",
     "server/routes.ts POST /api/estimate-groups/:id/copy",

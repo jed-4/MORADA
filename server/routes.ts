@@ -9272,6 +9272,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Paste a block of Details rows in one request.
+   *
+   * Mirrors /api/labour-task-templates/bulk — a paste is one user action, so it
+   * is one round trip rather than a row's worth each. The client sends the
+   * group it is pasting into; the rows carry only what a Details line holds.
+   */
+  app.post("/api/enote-templates/bulk", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "No company" });
+
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+      if (!rows) return res.status(400).json({ error: "rows must be an array" });
+      if (rows.length > 1000) {
+        return res.status(400).json({ error: "Too many rows in one paste (limit 1000)" });
+      }
+      const groupName = String(req.body?.groupName ?? "").trim();
+      if (!groupName) return res.status(400).json({ error: "groupName is required" });
+      const templateSetId = req.body?.templateSetId ?? null;
+
+      // Append after whatever the group already holds, so a paste lands at the
+      // bottom rather than interleaving with the existing rows.
+      const existing = await storage.getEnoteTemplates(companyId);
+      let nextOrder = existing
+        .filter((t: any) => t.groupName === groupName && (t.templateSetId ?? null) === templateSetId)
+        .reduce((max: number, t: any) => Math.max(max, Number(t.sortOrder) || 0), 0);
+
+      const created = [];
+      for (const r of rows) {
+        const categoryName = String(r?.categoryName ?? "").trim().slice(0, 500);
+        if (!categoryName) continue;
+        nextOrder += 1;
+        created.push(await storage.createEnoteTemplate({
+          companyId,
+          groupName,
+          templateSetId,
+          categoryName,
+          brainstormNotes: r?.brainstormNotes ? String(r.brainstormNotes).trim().slice(0, 4000) : null,
+          // Required is the default for a Details line; only an explicit false
+          // from the paste makes one optional.
+          isRequired: r?.isRequired === false ? false : true,
+          sortOrder: nextOrder,
+        } as any));
+      }
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("[enote-templates] bulk paste:", error);
+      res.status(500).json({ error: "Failed to add pasted rows" });
+    }
+  });
+
   app.patch("/api/enote-templates/:id", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateEnoteTemplate(req.params.id, req.body);
