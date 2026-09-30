@@ -575,14 +575,12 @@ export function EstimateSection({
     // no unit line to print — allowanceLineAmounts returns null for those.
     if (qty > 0 && unitIncTax !== null && unitExTax !== null) {
       const unit = `${formatQuantity(qty)}${item.unitType ? ` ${item.unitType}` : ""}`;
-      parts.push(
-        showGst
-          ? `${unit} × ${money(unitExTax)} ex (${money(unitIncTax)} inc)`
-          : `${unit} × ${money(unitExTax)}`,
-      );
+      // One rate, the one the client pays. The ex-GST rate was the figure
+      // least likely to be wanted and the one making the line long.
+      parts.push(`${unit} × ${money(showGst ? unitIncTax : unitExTax)}`);
     }
-    // "40 m2 × $80.00 ex ($88.00 inc) = $3,520.00". The arithmetic signs carry
-    // the sentence, so "at", the dash and the second "GST" all come out.
+    // "40 m2 × $88.00 = $3,520.00" — both figures inc GST, or both ex when GST
+    // is off, so the arithmetic on the line always works out.
     const amount = showGst ? money(incTax) : money(exTax);
     return parts.length > 0 ? `${parts[0]} = ${amount}` : amount;
   };
