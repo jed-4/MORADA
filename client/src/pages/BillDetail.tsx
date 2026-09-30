@@ -2921,6 +2921,13 @@ export default function BillDetail() {
                     name="supplierId"
                     render={({ field }) => {
                       const selected = suppliers.find((s: any) => s.id === field.value);
+                      // The server resolves the payee by id and sends the name
+                      // with the bill, so the label survives even when the
+                      // contacts list cannot answer — a contact of some other
+                      // type, or simply a list that has not loaded yet. Same
+                      // pattern as the PO rows below.
+                      const selectedName =
+                        selected?.name ?? (field.value ? (bill as any)?.supplierName ?? null : null);
                       return (
                       <FormItem className="space-y-1 relative">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Pay to *</FormLabel>
@@ -2958,8 +2965,8 @@ export default function BillDetail() {
                                 className="w-full h-9 justify-between border border-border bg-muted/30 text-sm font-normal overflow-hidden"
                                 data-testid="select-supplier"
                               >
-                                <span className={`truncate flex-1 min-w-0 text-left ${selected ? "" : "text-muted-foreground"}`}>
-                                  {selected?.name || "Select supplier..."}
+                                <span className={`truncate flex-1 min-w-0 text-left ${selectedName ? "" : "text-muted-foreground"}`}>
+                                  {selectedName || "Select supplier..."}
                                 </span>
                                 <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0 ml-1" />
                               </Button>

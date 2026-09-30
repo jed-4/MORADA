@@ -19862,7 +19862,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
-      res.json(bill);
+
+      // Resolve who it is paid to, by id, here — the way GET /api/bills already
+      // does for the list. The detail response used to carry only supplierId,
+      // so the screen had to name the supplier from a contacts list it fetched
+      // separately; any bill whose contact was missing from that list rendered
+      // with no supplier at all. Looking it up by id cannot miss: it does not
+      // care what contactType the contact is, or whether some other record
+      // shares its name.
+      let supplierName: string | null = null;
+      const companyId = getSessionCompanyId(req);
+      if (bill.supplierId && companyId) {
+        const contact = await storage.getContact(bill.supplierId, companyId);
+        supplierName = contact?.name ?? null;
+      }
+
+      res.json({ ...bill, supplierName });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bill" });
     }
