@@ -35888,20 +35888,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // If the child has a parent, recompute parent date range, then cascade from parent
         // if its endDate has moved (primary trigger — parent becoming longer pushes its dependents).
         // Walk every ancestor: a sub-item that moves its parent moves the group too.
-        let rollupParentId: string | null = item.parentItemId ?? null;
-        for (let depth = 0; rollupParentId && depth < 10; depth++) {
-          const parentId: string = rollupParentId;
-          rollupParentId = null;
-          try {
-            const parentBefore = await storage.getScheduleItem(parentId);
-            rollupParentId = parentBefore?.parentItemId ?? null;
-            const parentOldEnd = parentBefore?.endDate ? new Date(parentBefore.endDate) : null;
+        /**
+         * Pull every ancestor group back onto its children's span.
+         *
+         * A group's bar is the min/max of what it contains, and it is recomputed
+         * here from scratch. That is also why it has to run after EVERY write to
+         * a child, not just the one the user dragged: storage.updateScheduleItem
+         * does not touch parents, so each cascaded successor used to leave its
+         * group a little further out of step. The drift then sat there until
+         * somebody dragged anything inside that group, at which point the
+         * recompute released the whole accumulated gap at once and every
+         * dependent of the group jumped by it — days, with no relation to how
+         * far the bar was actually moved.
+         *
+         * `origins` is the cascade's work list. Pass it when the group moving
+         * should push its own dependents (the user's edit); pass null when the
+         * point is only to keep the group honest after the cascade has already
+         * run, which avoids re-entering a cascade that is finishing.
+         */
+        const rollUpAncestors = async (
+          firstParentId: string | null,
+          origins: Array<{ predId: string; newStart: Date; newEnd: Date }> | null,
+        ) => {
+          let rollupParentId: string | null = firstParentId;
+          for (let depth = 0; rollupParentId && depth < 10; depth++) {
+            const parentId: string = rollupParentId;
+            rollupParentId = null;
+            try {
+              const parentBefore = await storage.getScheduleItem(parentId);
+              rollupParentId = parentBefore?.parentItemId ?? null;
+              const parentOldEnd = parentBefore?.endDate ? new Date(parentBefore.endDate) : null;
+              const parentOldStart = parentBefore?.startDate ? new Date(parentBefore.startDate) : null;
 
-            const siblings = await db.select()
-              .from(scheduleItems)
-              .where(eq(scheduleItems.parentItemId, parentId));
+              const siblings = await db.select()
+                .from(scheduleItems)
+                .where(eq(scheduleItems.parentItemId, parentId));
+              if (siblings.length === 0) continue;
 
-            if (siblings.length > 0) {
               let minStart: Date | null = null;
               let maxEnd: Date | null = null;
               for (const sib of siblings) {
@@ -35914,39 +35937,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   if (!maxEnd || d > maxEnd) maxEnd = d;
                 }
               }
-              if (minStart || maxEnd) {
-                const parentUpdate: Record<string, any> = { updatedAt: new Date() };
-                if (minStart) parentUpdate.startDate = minStart;
-                if (maxEnd) parentUpdate.endDate = maxEnd;
-                await db.update(scheduleItems)
-                  .set(parentUpdate)
-                  .where(eq(scheduleItems.id, parentId));
-                // Written directly (not via storage), so sync its invoices here.
-                syncInvoicesForItemsQuietly([parentId]);
+              if (!minStart && !maxEnd) continue;
 
-                // Cascade from parent whenever its endDate moved in either direction
-                // (grew → push dependents later; shrank → pull dependents earlier).
-                if (maxEnd && (!parentOldEnd || maxEnd.getTime() !== parentOldEnd.getTime())) {
-                  const parentNewStart = minStart
-                    ?? (parentBefore?.startDate ? new Date(parentBefore.startDate) : maxEnd);
-                  cascadeOrigins.push({
-                    predId: parentId,
-                    newStart: parentNewStart,
-                    newEnd: maxEnd,
-                  });
-                }
+              // Same day-at-UTC-midnight convention as every other write.
+              const nextStart = minStart ? scheduleDayUTC(minStart) : null;
+              const nextEnd = maxEnd ? scheduleDayUTC(maxEnd) : null;
+              const startMoved = !!nextStart && (!parentOldStart || nextStart.getTime() !== parentOldStart.getTime());
+              const endMoved = !!nextEnd && (!parentOldEnd || nextEnd.getTime() !== parentOldEnd.getTime());
+              if (!startMoved && !endMoved) continue;
+
+              const parentUpdate: Record<string, any> = { updatedAt: new Date() };
+              if (nextStart) parentUpdate.startDate = nextStart;
+              if (nextEnd) parentUpdate.endDate = nextEnd;
+              const [updatedParent] = await db.update(scheduleItems)
+                .set(parentUpdate)
+                .where(eq(scheduleItems.id, parentId))
+                .returning();
+              // Written directly (not via storage), so sync its invoices here.
+              syncInvoicesForItemsQuietly([parentId]);
+              // The client applies what comes back, so a group whose bar just
+              // moved has to be in it or the screen keeps the old span.
+              if (updatedParent) cascadedItems.push(updatedParent);
+
+              // Cascade from parent whenever its endDate moved in either direction
+              // (grew → push dependents later; shrank → pull dependents earlier).
+              if (origins && endMoved && nextEnd) {
+                origins.push({
+                  predId: parentId,
+                  newStart: nextStart ?? (parentOldStart ?? nextEnd),
+                  newEnd: nextEnd,
+                });
               }
+            } catch (parentDateErr) {
+              console.error("Failed to update parent item dates:", parentDateErr);
             }
-          } catch (parentDateErr) {
-            console.error("Failed to update parent item dates:", parentDateErr);
           }
-        }
+        };
+
+        await rollUpAncestors(item.parentItemId ?? null, cascadeOrigins);
+
 
         if (cascadeOrigins.length > 0) {
           try {
             await runCascade(cascadeOrigins);
           } catch (cascadeErr) {
             console.error("Failed to cascade dependencies:", cascadeErr);
+          }
+
+          // The cascade moved successors through storage.updateScheduleItem,
+          // which leaves their groups untouched. Left alone, each of those is a
+          // group quietly drifting away from its children until the next drag
+          // inside it releases the gap in one jump. Settle them now.
+          //
+          // Without `origins`: these groups are being corrected to match work
+          // that has just been placed, not moved by a user, and re-entering the
+          // cascade from here risks chasing its own tail.
+          try {
+            const movedParents = Array.from(new Set(
+              cascadedItems
+                .map((ci: any) => ci?.parentItemId)
+                .filter((pid: any): pid is string => typeof pid === "string" && pid.length > 0),
+            ));
+            for (const parentId of movedParents) {
+              await rollUpAncestors(parentId, null);
+            }
+          } catch (rollupErr) {
+            console.error("Failed to settle parent groups after cascade:", rollupErr);
           }
         }
       }
