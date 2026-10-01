@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Checkbox } from "@/components/ui/checkbox";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type EstimateTemplate, type CostCode } from "@shared/schema";
 import {
@@ -63,8 +64,10 @@ import {
   ArrowLeft,
   Clock,
   Columns3,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { format } from "date-fns";
@@ -458,6 +461,29 @@ export default function EstimateTemplates() {
   const detailsRows: any[] = openDetailsSet?.id
     ? (openDetailsRows as any[])
     : (enoteTemplates as any[]).filter((t: any) => !t.templateSetId);
+
+  /** The company's own Details columns — the same set the estimate's list uses. */
+  const { data: detailFieldDefs = [] } = useQuery<any[]>({
+    queryKey: ["/api/detail-field-defs"],
+  });
+  const detailsGridTemplate = useMemo(
+    () => ["1fr", "1fr", ...detailFieldDefs.map((d: any) => (d.type === "checkbox" ? "64px" : "140px")), "32px"].join(" "),
+    [detailFieldDefs],
+  );
+
+  // Columns are company-wide, so adding one here adds it to every estimate's
+  // Details list too — that is the point: the template carries the default.
+  const addDetailFieldDef = useMutation({
+    mutationFn: (data: { label: string; type: string; options: string[] }) =>
+      apiRequest("/api/detail-field-defs", "POST", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+    onError: () => toast({ title: "Could not add the column", variant: "destructive" }),
+  });
+  const removeDetailFieldDef = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/detail-field-defs/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+    onError: () => toast({ title: "Could not remove the column", variant: "destructive" }),
+  });
 
   const detailsGroups = useMemo(
     () => orderGroups(Array.from(new Set(detailsRows.map((t: any) => t.groupName))).filter(Boolean) as string[], savedGroupOrder),
@@ -2005,9 +2031,12 @@ export default function EstimateTemplates() {
               <>
                 {/* Column headers */}
                 <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
-                  style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                  style={{ gridTemplateColumns: detailsGridTemplate }}>
                   <span>Category</span>
                   <span>Default Notes</span>
+                  {/* The company's own columns, the same set the estimate's
+                      Details list shows — so a template can carry them too. */}
+                  {detailFieldDefs.map((d: any) => <span key={d.id}>{d.label}</span>)}
                   <span />
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -2018,7 +2047,7 @@ export default function EstimateTemplates() {
                   )}
                   {detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => (
                     <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
-                      style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                      style={{ gridTemplateColumns: detailsGridTemplate }}>
                       {/* Category */}
                       <div className="pr-2 py-0.5">
                         {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
@@ -2047,6 +2076,58 @@ export default function EstimateTemplates() {
                           </span>
                         )}
                       </div>
+                      {/* The company's own columns. A template row stores the
+                          same customFields shape an estimate row does, so what
+                          is set here is what the job starts with. */}
+                      {detailFieldDefs.map((d: any) => {
+                        const vals = (t.customFields ?? {}) as Record<string, any>;
+                        const v = vals[d.id];
+                        const save = (next: any) =>
+                          updateEnoteTemplateMutation.mutate({
+                            id: t.id,
+                            data: { customFields: { ...vals, [d.id]: next } } as any,
+                          });
+                        if (d.type === "checkbox") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5 flex justify-center">
+                              <Checkbox checked={v === true} onCheckedChange={x => save(!!x)} />
+                            </div>
+                          );
+                        }
+                        if (d.type === "date") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <input type="date" value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none" />
+                            </div>
+                          );
+                        }
+                        if (d.type === "select") {
+                          const options: string[] = Array.isArray(d.options) ? d.options : [];
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <select value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none cursor-pointer">
+                                <option value="">—</option>
+                                {!options.includes(String(v ?? "")) && v ? <option value={String(v)}>{String(v)}</option> : null}
+                                {options.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={d.id} className="pr-2 py-0.5">
+                            <Input
+                              defaultValue={typeof v === "string" ? v : ""}
+                              onBlur={e => { if (e.target.value !== (v ?? "")) save(e.target.value || null); }}
+                              className="h-6 text-xs focus-visible:ring-0 border-transparent hover:border-border"
+                              placeholder="—"
+                            />
+                          </div>
+                        );
+                      })}
                       {/* Delete */}
                       <div className="flex justify-center opacity-0 group-hover/erow:opacity-100 transition-opacity">
                         <button onClick={() => deleteEnoteTemplateMutation.mutate(t.id)}
@@ -2066,6 +2147,42 @@ export default function EstimateTemplates() {
                     onClick={() => { if (newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: selectedGroup, categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}>
                     <Plus className="w-3 h-3 mr-1" />Add
                   </Button>
+                  {/* The same columns the estimate's Details list offers, managed
+                      from here as well so a template can be built out in one go. */}
+                  {/* A Popover rather than a DropdownMenu: this holds a form,
+                      and a menu's keyboard handling is built for items. */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 px-3 text-xs" data-testid="button-details-template-columns">
+                        <Columns3 className="w-3 h-3 mr-1" />Columns
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-52 p-2" onOpenAutoFocus={e => e.preventDefault()}>
+                      {detailFieldDefs.length === 0 ? (
+                        <div className="text-[11px] text-muted-foreground pb-2">No columns of your own yet.</div>
+                      ) : (
+                        <div className="pb-2 space-y-0.5">
+                          {detailFieldDefs.map((d: any) => (
+                            <div key={d.id} className="flex items-center gap-2 px-1 py-0.5 rounded hover-elevate">
+                              <span className="flex-1 text-xs truncate">{d.label}</span>
+                              <button
+                                className="text-muted-foreground/50 hover:text-destructive flex-shrink-0"
+                                onClick={() => removeDetailFieldDef.mutate(d.id)}
+                                title="Remove this column"
+                                data-testid={`remove-detail-column-${d.id}`}>
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-border pt-2">
+                        <DetailColumnsForm
+                          onAdd={(label, type, options) => addDetailFieldDef.mutate({ label, type, options })}
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </>
             )}

@@ -7441,6 +7441,8 @@ export const estimateEnotes = pgTable("estimate_enotes", {
   sortOrder: integer("sort_order").notNull().default(0),
   required: boolean("required"), // null = not reviewed, true = required, false = not required
   brainstormNotes: text("brainstorm_notes"),
+  /** Values for this company's own Details columns, keyed by detail_field_defs.id. */
+  customFields: jsonb("custom_fields").notNull().default({}),
   rfiRequired: boolean("rfi_required").notNull().default(false),
   rfqRequired: boolean("rfq_required").notNull().default(false),
   rfqDate: text("rfq_date"), // stored as ISO string
@@ -7662,11 +7664,45 @@ export const enoteTemplates = pgTable("enote_templates", {
   isRequired: boolean("is_required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   templateSetId: varchar("template_set_id"),
+  /** Values for this company's own Details columns, keyed by detail_field_defs.id. */
+  customFields: jsonb("custom_fields").notNull().default({}),
 });
 
 export const insertEnoteTemplateSchema = createInsertSchema(enoteTemplates).omit({ id: true });
 export type InsertEnoteTemplate = z.infer<typeof insertEnoteTemplateSchema>;
 export type EnoteTemplate = typeof enoteTemplates.$inferSelect;
+
+/**
+ * A company's own columns on the Details list.
+ *
+ * Applies to both an estimate's Details rows and the template rows they are
+ * built from, so a column added once is there wherever Details appears. Values
+ * live in each row's `customFields`, keyed by the definition id.
+ *
+ * Deliberately NOT the existing custom_field_defs table: that one has no
+ * company_id and a globally unique `key`, so every company would share one set.
+ */
+export const detailFieldDefs = pgTable("detail_field_defs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  /** "text" | "checkbox" | "date" | "select" — anything else renders as text. */
+  type: text("type").notNull().default("text"),
+  /** Choices for `select` only. */
+  options: jsonb("options").notNull().default([]),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("detail_field_defs_company_idx").on(table.companyId, table.displayOrder),
+}));
+
+export const insertDetailFieldDefSchema = createInsertSchema(detailFieldDefs).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertDetailFieldDef = z.infer<typeof insertDetailFieldDefSchema>;
+export type DetailFieldDef = typeof detailFieldDefs.$inferSelect;
 
 export const enoteTemplateSets = pgTable("enote_template_sets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
