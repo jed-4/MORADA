@@ -1794,59 +1794,7 @@ export default function EstimateTemplates() {
                               </span>
                             )}
                           </div>
-                          {/* The company's own columns. A template row stores the
-                          same customFields shape an estimate row does, so what
-                          is set here is what the job starts with. */}
-                      {detailFieldDefs.map((d: any) => {
-                        const vals = (t.customFields ?? {}) as Record<string, any>;
-                        const v = vals[d.id];
-                        const save = (next: any) =>
-                          updateEnoteTemplateMutation.mutate({
-                            id: t.id,
-                            data: { customFields: { ...vals, [d.id]: next } } as any,
-                          });
-                        if (d.type === "checkbox") {
-                          return (
-                            <div key={d.id} className="pr-2 py-0.5 flex justify-center">
-                              <Checkbox checked={v === true} onCheckedChange={x => save(!!x)} />
-                            </div>
-                          );
-                        }
-                        if (d.type === "date") {
-                          return (
-                            <div key={d.id} className="pr-2 py-0.5">
-                              <input type="date" value={typeof v === "string" ? v : ""}
-                                onChange={e => save(e.target.value || null)}
-                                className="w-full bg-transparent text-xs outline-none" />
-                            </div>
-                          );
-                        }
-                        if (d.type === "select") {
-                          const options: string[] = Array.isArray(d.options) ? d.options : [];
-                          return (
-                            <div key={d.id} className="pr-2 py-0.5">
-                              <select value={typeof v === "string" ? v : ""}
-                                onChange={e => save(e.target.value || null)}
-                                className="w-full bg-transparent text-xs outline-none cursor-pointer">
-                                <option value="">—</option>
-                                {!options.includes(String(v ?? "")) && v ? <option value={String(v)}>{String(v)}</option> : null}
-                                {options.map(o => <option key={o} value={o}>{o}</option>)}
-                              </select>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div key={d.id} className="pr-2 py-0.5">
-                            <Input
-                              defaultValue={typeof v === "string" ? v : ""}
-                              onBlur={e => { if (e.target.value !== (v ?? "")) save(e.target.value || null); }}
-                              className="h-6 text-xs focus-visible:ring-0 border-transparent hover:border-border"
-                              placeholder="—"
-                            />
-                          </div>
-                        );
-                      })}
-                      {/* Delete */}
+                          {/* Delete */}
                           <div className="flex justify-center opacity-0 group-hover/lrow:opacity-100 transition-opacity">
                             <button onClick={() => deleteLabourTemplateMutation.mutate(t.id)}
                               className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
@@ -2112,6 +2060,58 @@ export default function EstimateTemplates() {
                           </span>
                         )}
                       </div>
+                      {/* The company's own columns. A template row stores the
+                          same customFields shape an estimate row does, so what
+                          is set here is what the job starts with. */}
+                      {detailFieldDefs.map((d: any) => {
+                        const vals = (t.customFields ?? {}) as Record<string, any>;
+                        const v = vals[d.id];
+                        const save = (next: any) =>
+                          updateEnoteTemplateMutation.mutate({
+                            id: t.id,
+                            data: { customFields: { ...vals, [d.id]: next } } as any,
+                          });
+                        if (d.type === "checkbox") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5 flex justify-center">
+                              <Checkbox checked={v === true} onCheckedChange={x => save(!!x)} />
+                            </div>
+                          );
+                        }
+                        if (d.type === "date") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <input type="date" value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none" />
+                            </div>
+                          );
+                        }
+                        if (d.type === "select") {
+                          const options: string[] = Array.isArray(d.options) ? d.options : [];
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <select value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none cursor-pointer">
+                                <option value="">—</option>
+                                {!options.includes(String(v ?? "")) && v ? <option value={String(v)}>{String(v)}</option> : null}
+                                {options.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={d.id} className="pr-2 py-0.5">
+                            <Input
+                              defaultValue={typeof v === "string" ? v : ""}
+                              onBlur={e => { if (e.target.value !== (v ?? "")) save(e.target.value || null); }}
+                              className="h-6 text-xs focus-visible:ring-0 border-transparent hover:border-border"
+                              placeholder="—"
+                            />
+                          </div>
+                        );
+                      })}
                       {/* Delete */}
                       <div className="flex justify-center opacity-0 group-hover/erow:opacity-100 transition-opacity">
                         <button onClick={() => deleteEnoteTemplateMutation.mutate(t.id)}
