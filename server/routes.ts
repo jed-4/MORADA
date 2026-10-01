@@ -24677,7 +24677,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         displayOrder: number;
       }> = [];
 
-      const allProjects = await storage.getProjects(req.user.companyId);
+      // Only the jobs these timesheets actually touch, fetched by id and checked
+      // against the caller's company.
+      //
+      // This used to be storage.getProjects(req.user.companyId) — but that
+      // argument is an ownerId, not a company. No project is owned by a company
+      // id, so the list came back EMPTY every time, and with it went both the
+      // project on each line and the one on the PO header. The previous attempt
+      // to name the job blamed a field nothing populated; the field was fine,
+      // the lookup never returned anything to populate it with.
+      const poCompanyId = getSessionCompanyId(req);
+      const neededProjectIds = Array.from(new Set(
+        [projectId, ...timesheets.map((ts: any) => ts.projectId)].filter(Boolean),
+      )) as string[];
+      const allProjects = (await Promise.all(neededProjectIds.map(id => storage.getProject(id))))
+        .filter((p): p is NonNullable<typeof p> => !!p && p.companyId === poCompanyId);
       const allCostCodes = await storage.getCostCodes(req.user.companyId);
       const poProject = allProjects.find((p: any) => p.id === projectId);
 
@@ -24694,12 +24708,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
         const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
         const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
-        // The project is named once in the PO's description (set below) rather than
-        // repeated on every line. It used to be omitted here on the grounds that the
-        // header carried it, but nothing ever populated that field, so the project
-        // appeared nowhere and returning subcontractor invoices couldn't be matched
-        // back to a job.
-        const descParts = [`${dateStr} -- ${timeRange}${breakStr}`];
+        // The job goes on EVERY line, first, because a PO does not belong to one
+        // job. Timesheets are gathered by "awaiting PO" and subcontractor, not by
+        // project, so a single PO routinely carries a week split across several
+        // sites — and the header can only name the one it was raised against.
+        // Naming it once up there left every other line unattributable, and a
+        // returning invoice impossible to match back without opening the app.
+        const descParts: string[] = [];
+        if (project?.name) descParts.push(project.name);
+        descParts.push(`${dateStr} -- ${timeRange}${breakStr}`);
         if (costCodeStr) descParts.push(costCodeStr);
         if (ts.description) descParts.push(ts.description);
 
