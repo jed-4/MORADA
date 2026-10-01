@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Checkbox } from "@/components/ui/checkbox";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type EstimateTemplate, type CostCode } from "@shared/schema";
 import {
@@ -458,6 +459,15 @@ export default function EstimateTemplates() {
   const detailsRows: any[] = openDetailsSet?.id
     ? (openDetailsRows as any[])
     : (enoteTemplates as any[]).filter((t: any) => !t.templateSetId);
+
+  /** The company's own Details columns — the same set the estimate's list uses. */
+  const { data: detailFieldDefs = [] } = useQuery<any[]>({
+    queryKey: ["/api/detail-field-defs"],
+  });
+  const detailsGridTemplate = useMemo(
+    () => ["1fr", "1fr", ...detailFieldDefs.map((d: any) => (d.type === "checkbox" ? "64px" : "140px")), "32px"].join(" "),
+    [detailFieldDefs],
+  );
 
   const detailsGroups = useMemo(
     () => orderGroups(Array.from(new Set(detailsRows.map((t: any) => t.groupName))).filter(Boolean) as string[], savedGroupOrder),
@@ -1784,7 +1794,59 @@ export default function EstimateTemplates() {
                               </span>
                             )}
                           </div>
-                          {/* Delete */}
+                          {/* The company's own columns. A template row stores the
+                          same customFields shape an estimate row does, so what
+                          is set here is what the job starts with. */}
+                      {detailFieldDefs.map((d: any) => {
+                        const vals = (t.customFields ?? {}) as Record<string, any>;
+                        const v = vals[d.id];
+                        const save = (next: any) =>
+                          updateEnoteTemplateMutation.mutate({
+                            id: t.id,
+                            data: { customFields: { ...vals, [d.id]: next } } as any,
+                          });
+                        if (d.type === "checkbox") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5 flex justify-center">
+                              <Checkbox checked={v === true} onCheckedChange={x => save(!!x)} />
+                            </div>
+                          );
+                        }
+                        if (d.type === "date") {
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <input type="date" value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none" />
+                            </div>
+                          );
+                        }
+                        if (d.type === "select") {
+                          const options: string[] = Array.isArray(d.options) ? d.options : [];
+                          return (
+                            <div key={d.id} className="pr-2 py-0.5">
+                              <select value={typeof v === "string" ? v : ""}
+                                onChange={e => save(e.target.value || null)}
+                                className="w-full bg-transparent text-xs outline-none cursor-pointer">
+                                <option value="">—</option>
+                                {!options.includes(String(v ?? "")) && v ? <option value={String(v)}>{String(v)}</option> : null}
+                                {options.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={d.id} className="pr-2 py-0.5">
+                            <Input
+                              defaultValue={typeof v === "string" ? v : ""}
+                              onBlur={e => { if (e.target.value !== (v ?? "")) save(e.target.value || null); }}
+                              className="h-6 text-xs focus-visible:ring-0 border-transparent hover:border-border"
+                              placeholder="—"
+                            />
+                          </div>
+                        );
+                      })}
+                      {/* Delete */}
                           <div className="flex justify-center opacity-0 group-hover/lrow:opacity-100 transition-opacity">
                             <button onClick={() => deleteLabourTemplateMutation.mutate(t.id)}
                               className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
@@ -2005,9 +2067,12 @@ export default function EstimateTemplates() {
               <>
                 {/* Column headers */}
                 <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
-                  style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                  style={{ gridTemplateColumns: detailsGridTemplate }}>
                   <span>Category</span>
                   <span>Default Notes</span>
+                  {/* The company's own columns, the same set the estimate's
+                      Details list shows — so a template can carry them too. */}
+                  {detailFieldDefs.map((d: any) => <span key={d.id}>{d.label}</span>)}
                   <span />
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -2018,7 +2083,7 @@ export default function EstimateTemplates() {
                   )}
                   {detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => (
                     <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
-                      style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                      style={{ gridTemplateColumns: detailsGridTemplate }}>
                       {/* Category */}
                       <div className="pr-2 py-0.5">
                         {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
