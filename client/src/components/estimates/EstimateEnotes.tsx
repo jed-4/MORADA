@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
+import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { DetailFieldDef } from "@shared/schema";
@@ -255,27 +256,11 @@ function ColumnsDropdown({
   onAddColumn: (label: string, type: string, options: string[]) => void;
   onRemoveColumn: (id: string) => void;
 }) {
-  const [newLabel, setNewLabel] = useState("");
-  const [newType, setNewType] = useState("text");
-  const [newOptions, setNewOptions] = useState("");
-
-  const addColumn = () => {
-    const label = newLabel.trim();
-    if (!label) return;
-    onAddColumn(
-      label,
-      newType,
-      newType === "select"
-        ? newOptions.split(",").map(o => o.trim()).filter(Boolean)
-        : [],
-    );
-    setNewLabel("");
-    setNewOptions("");
-  };
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    // A Popover rather than a DropdownMenu: this holds a form, and a menu's
+    // keyboard handling (typeahead, arrow keys, Escape) is built for items.
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
           title="Manage columns"
@@ -283,8 +268,8 @@ function ColumnsDropdown({
           <Columns3 className="w-3 h-3" />
           Columns
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52 p-1" onCloseAutoFocus={e => e.preventDefault()}>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-52 p-1" onOpenAutoFocus={e => e.preventDefault()}>
         {columns.map((col, idx) => {
           const isHidden = hidden.includes(col.id);
           const isFirst = idx === 0;
@@ -340,47 +325,11 @@ function ColumnsDropdown({
 
         {/* Your own columns. Added here rather than in Settings because this is
             where you are when you notice one is missing. */}
-        <div className="mt-1 border-t border-border pt-2 px-2 pb-1 space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Add a column</div>
-          <input
-            value={newLabel}
-            onChange={e => setNewLabel(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn(); } }}
-            placeholder="Column name"
-            className="w-full h-7 px-2 text-xs rounded border border-border bg-background outline-none"
-            data-testid="input-new-detail-column"
-          />
-          <select
-            value={newType}
-            onChange={e => setNewType(e.target.value)}
-            className="w-full h-7 px-1.5 text-xs rounded border border-border bg-background outline-none"
-            data-testid="select-new-detail-column-type"
-          >
-            <option value="text">Text</option>
-            <option value="checkbox">Tick box</option>
-            <option value="date">Date</option>
-            <option value="select">Pick list</option>
-          </select>
-          {newType === "select" && (
-            <input
-              value={newOptions}
-              onChange={e => setNewOptions(e.target.value)}
-              placeholder="Options, comma separated"
-              className="w-full h-7 px-2 text-xs rounded border border-border bg-background outline-none"
-              data-testid="input-new-detail-column-options"
-            />
-          )}
-          <button
-            onClick={addColumn}
-            disabled={!newLabel.trim()}
-            className="w-full h-7 text-xs rounded bg-primary/10 text-foreground hover-elevate disabled:opacity-40"
-            data-testid="button-add-detail-column"
-          >
-            Add column
-          </button>
+        <div className="mt-1 border-t border-border pt-2 px-2 pb-1">
+          <DetailColumnsForm onAdd={onAddColumn} />
         </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   );
 }
 

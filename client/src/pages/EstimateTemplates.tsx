@@ -64,8 +64,10 @@ import {
   ArrowLeft,
   Clock,
   Columns3,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { format } from "date-fns";
@@ -468,6 +470,20 @@ export default function EstimateTemplates() {
     () => ["1fr", "1fr", ...detailFieldDefs.map((d: any) => (d.type === "checkbox" ? "64px" : "140px")), "32px"].join(" "),
     [detailFieldDefs],
   );
+
+  // Columns are company-wide, so adding one here adds it to every estimate's
+  // Details list too — that is the point: the template carries the default.
+  const addDetailFieldDef = useMutation({
+    mutationFn: (data: { label: string; type: string; options: string[] }) =>
+      apiRequest("/api/detail-field-defs", "POST", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+    onError: () => toast({ title: "Could not add the column", variant: "destructive" }),
+  });
+  const removeDetailFieldDef = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/detail-field-defs/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+    onError: () => toast({ title: "Could not remove the column", variant: "destructive" }),
+  });
 
   const detailsGroups = useMemo(
     () => orderGroups(Array.from(new Set(detailsRows.map((t: any) => t.groupName))).filter(Boolean) as string[], savedGroupOrder),
@@ -2131,6 +2147,42 @@ export default function EstimateTemplates() {
                     onClick={() => { if (newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: selectedGroup, categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}>
                     <Plus className="w-3 h-3 mr-1" />Add
                   </Button>
+                  {/* The same columns the estimate's Details list offers, managed
+                      from here as well so a template can be built out in one go. */}
+                  {/* A Popover rather than a DropdownMenu: this holds a form,
+                      and a menu's keyboard handling is built for items. */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 px-3 text-xs" data-testid="button-details-template-columns">
+                        <Columns3 className="w-3 h-3 mr-1" />Columns
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-52 p-2" onOpenAutoFocus={e => e.preventDefault()}>
+                      {detailFieldDefs.length === 0 ? (
+                        <div className="text-[11px] text-muted-foreground pb-2">No columns of your own yet.</div>
+                      ) : (
+                        <div className="pb-2 space-y-0.5">
+                          {detailFieldDefs.map((d: any) => (
+                            <div key={d.id} className="flex items-center gap-2 px-1 py-0.5 rounded hover-elevate">
+                              <span className="flex-1 text-xs truncate">{d.label}</span>
+                              <button
+                                className="text-muted-foreground/50 hover:text-destructive flex-shrink-0"
+                                onClick={() => removeDetailFieldDef.mutate(d.id)}
+                                title="Remove this column"
+                                data-testid={`remove-detail-column-${d.id}`}>
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-border pt-2">
+                        <DetailColumnsForm
+                          onAdd={(label, type, options) => addDetailFieldDef.mutate({ label, type, options })}
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </>
             )}
