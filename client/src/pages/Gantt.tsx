@@ -3036,7 +3036,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         <div key="notes" style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                           <ActivityNotesPopover 
                             scheduleItemId={item.id} 
-                            externalNoteCount={noteCounts[item.id] || 0}
+                            noteCount={noteCounts[item.id] || 0}
                           />
                         </div>
                       );
