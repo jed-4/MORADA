@@ -37365,7 +37365,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Unread count for the schedule activity feed
+  // Unread count for the schedule activity feed.
+  //
+  // Comments only, deliberately. The badge used to add every schedule change to
+  // the total, so one drag — which cascades to its successors and writes a row
+  // per item — lit the bell permanently and it stopped meaning anything. The
+  // rule now is that only a person talking raises a badge; the machine moving
+  // dates never does. Changes are still in the feed, on their own tab.
   app.get("/api/schedules/:scheduleId/activity-feed/unread-count", requireAuth, async (req, res) => {
     try {
       const scheduleId = req.params.scheduleId;
@@ -37377,10 +37383,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const items = await storage.getScheduleItems(scheduleId);
       const itemIds = items.map(i => i.id);
-      const itemNameSet = new Set(items.map(i => i.name));
       const sinceDate = since ? new Date(since) : null;
       const sinceConditionNote = sinceDate ? gt(activityNotes.createdAt, sinceDate) : undefined;
-      const sinceConditionAct = sinceDate ? gt(activitiesTable.createdAt, sinceDate) : undefined;
 
       let noteCount = 0;
       if (itemIds.length > 0) {
@@ -37392,44 +37396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         noteCount = noteRows.length;
       }
 
-      const actRows = !schedule.projectId ? [] : await db.select({
-        id: activitiesTable.id,
-        entityId: activitiesTable.entityId,
-        metadata: activitiesTable.metadata,
-      }).from(activitiesTable).where(
-        and(
-          eq(activitiesTable.projectId, schedule.projectId),
-          eq(activitiesTable.activityType, "schedule"),
-          ...(sinceConditionAct ? [sinceConditionAct] : []),
-        )
-      );
-      const itemIdSet = new Set(itemIds);
-      let actCount = 0;
-      for (const a of actRows) {
-        const meta: any = a.metadata || {};
-        const stableScheduleId: string | undefined = meta.scheduleId;
-        const stableScheduleIds: string[] = Array.isArray(meta.scheduleIds) ? meta.scheduleIds : [];
-        const matchesStable = stableScheduleId === scheduleId || stableScheduleIds.includes(scheduleId);
-
-        if (matchesStable && a.entityId) { actCount++; continue; }
-        if (!a.entityId) {
-          // Batch activity — count one per change that is either tagged with this
-          // schedule (stable) or whose itemId is a current item (legacy).
-          const changes: any[] = Array.isArray(meta.changes) ? meta.changes : [];
-          for (const c of changes) {
-            const changeScheduleId: string | undefined = c?.scheduleId || stableScheduleId;
-            if (changeScheduleId) {
-              if (changeScheduleId === scheduleId) actCount++;
-            } else if (c?.itemId && itemIdSet.has(c.itemId)) {
-              actCount++;
-            }
-          }
-        } else if (a.entityId && itemIdSet.has(a.entityId)) {
-          // Legacy single-item activity without scheduleId metadata
-          actCount++;
-        }
-      }
-      res.json({ count: noteCount + actCount });
+      res.json({ count: noteCount });
     } catch (error: any) {
       console.error("Failed to fetch activity feed unread count:", error);
       res.status(500).json({ error: "Failed to fetch unread count", details: error.message });
