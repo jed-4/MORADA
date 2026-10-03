@@ -32,11 +32,77 @@ interface Props {
   onSelectItem?: (scheduleItemId: string) => void;
 }
 
+// One drag cascades to every successor, and each moved item is written as its
+// own entry — so a single action can fill the Changes tab with near-identical
+// lines. Entries this close together, by the same person, doing the same thing,
+// are one action as far as a reader is concerned, so they are shown as one row
+// that opens to reveal the items.
+const BURST_WINDOW_MS = 60_000;
+const MIN_BURST = 2;
+
+type FeedRow =
+  | { type: "single"; key: string; entry: ActivityFeedEntry }
+  | { type: "burst"; key: string; entries: ActivityFeedEntry[] };
+
+function burstSignature(e: ActivityFeedEntry) {
+  return [e.userId ?? "", e.authorType, e.kind ?? "", e.action ?? ""].join("|");
+}
+
+/** Collapses runs of same-action change entries. Comments are never collapsed. */
+function collapseBursts(entries: ActivityFeedEntry[]): FeedRow[] {
+  const rows: FeedRow[] = [];
+  let run: ActivityFeedEntry[] = [];
+
+  const flush = () => {
+    if (run.length === 0) return;
+    rows.push(
+      run.length >= MIN_BURST
+        ? { type: "burst", key: `burst:${run[0].id}:${run.length}`, entries: run }
+        : { type: "single", key: run[0].id, entry: run[0] },
+    );
+    run = [];
+  };
+
+  for (const e of entries) {
+    if (e.source !== "change") {
+      flush();
+      rows.push({ type: "single", key: e.id, entry: e });
+      continue;
+    }
+    const head = run[0];
+    const sameAction = head
+      && burstSignature(head) === burstSignature(e)
+      // Entries arrive newest first, so the head is the latest of its run.
+      && Math.abs(new Date(head.createdAt).getTime() - new Date(e.createdAt).getTime()) <= BURST_WINDOW_MS;
+    if (!sameAction) flush();
+    run.push(e);
+  }
+  flush();
+  return rows;
+}
+
 const PAGE_SIZE = 20;
 const MAX_PAGES = 5; // backend caps limit at 100
 
 function lastSeenKey(scheduleId: string, userId?: string | null) {
   return `schedule-activity-feed:lastSeen:${userId || "anon"}:${scheduleId}`;
+}
+
+function filterKey(scheduleId: string, userId?: string | null) {
+  return `schedule-activity-feed:filter:${userId || "anon"}:${scheduleId}`;
+}
+
+// Comments first: the feed opens on what people said, not on what the machine
+// did. Changes are a click away for when you need to know what moved.
+const DEFAULT_FILTER: FilterMode = "notes";
+
+function readFilter(scheduleId: string, userId?: string | null): FilterMode {
+  try {
+    const stored = localStorage.getItem(filterKey(scheduleId, userId));
+    return stored === "all" || stored === "notes" || stored === "changes" ? stored : DEFAULT_FILTER;
+  } catch {
+    return DEFAULT_FILTER;
+  }
 }
 
 function dayLabel(d: Date) {
@@ -226,7 +292,7 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
   const { user } = useAuth() as any;
   const userId: string | null = user?.id ?? null;
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<FilterMode>("all");
+  const [filter, setFilter] = useState<FilterMode>(() => readFilter(scheduleId, userId));
   const [pages, setPages] = useState(1);
   const [lastSeen, setLastSeen] = useState<string>(() => {
     try { return localStorage.getItem(lastSeenKey(scheduleId, userId)) || ""; } catch { return ""; }
@@ -243,6 +309,15 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
 
   // Reset pagination when filter or schedule changes
   useEffect(() => { setPages(1); }, [filter, scheduleId]);
+
+  // Remember which tab you left it on, per user and schedule.
+  const chooseFilter = (f: FilterMode) => {
+    setFilter(f);
+    try { localStorage.setItem(filterKey(scheduleId, userId), f); } catch { /* ignore */ }
+  };
+
+  // Pick up the stored choice once userId arrives after mount.
+  useEffect(() => { setFilter(readFilter(scheduleId, userId)); }, [scheduleId, userId]);
 
   const limit = Math.min(pages * PAGE_SIZE, MAX_PAGES * PAGE_SIZE);
 
@@ -337,7 +412,8 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
-    return Array.from(map.entries());
+    // Collapse within a day, so a burst can never span the date heading it sits under.
+    return Array.from(map.entries()).map(([day, dayEntries]) => [day, collapseBursts(dayEntries)] as const);
   }, [entries]);
 
   const loading = feedQuery.isFetching;
@@ -365,14 +441,14 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
           <div className="text-sm font-semibold">Schedule activity</div>
           <div className="flex items-center gap-0.5">
-            {(["all", "notes", "changes"] as FilterMode[]).map(f => (
+            {(["notes", "changes", "all"] as FilterMode[]).map(f => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => chooseFilter(f)}
                 className={`h-6 px-2 text-xs rounded-md ${filter === f ? "bg-primary text-primary-foreground" : "hover-elevate"} active-elevate-2`}
                 data-testid={`filter-feed-${f}`}
               >
-                {f === "all" ? "All" : f === "notes" ? "Notes" : "Changes"}
+                {f === "all" ? "All" : f === "notes" ? "Comments" : "Changes"}
               </button>
             ))}
           </div>
@@ -392,8 +468,10 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
                     {dayLabel(new Date(dayKey))}
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    {items.map(e => (
-                      <FeedItem key={e.id} entry={e} onSelectItem={onSelectItem} resolveAssignee={resolveAssignee} />
+                    {items.map(row => row.type === "burst" ? (
+                      <FeedBurst key={row.key} entries={row.entries} onSelectItem={onSelectItem} resolveAssignee={resolveAssignee} />
+                    ) : (
+                      <FeedItem key={row.key} entry={row.entry} onSelectItem={onSelectItem} resolveAssignee={resolveAssignee} />
                     ))}
                   </div>
                 </div>
@@ -410,6 +488,71 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
         </ScrollArea>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A run of same-action changes shown as one line — "Jed moved 4 items" — that
+ * opens to the individual entries. The headline is the shared one when every
+ * entry in the run says the same thing, which is the usual case for a cascade.
+ */
+function FeedBurst({ entries, onSelectItem, resolveAssignee }: { entries: ActivityFeedEntry[]; onSelectItem?: (id: string) => void; resolveAssignee: AssigneeResolver }) {
+  const [expanded, setExpanded] = useState(false);
+  const head = entries[0];
+  const summaries = entries.map(e => buildChangeSummary(e, resolveAssignee));
+  const headlines = new Set(summaries.map(s => s.headline));
+  const sharedHeadline = headlines.size === 1 ? summaries[0].headline : null;
+  const itemNames = Array.from(new Set(entries.map(e => e.scheduleItemName).filter(Boolean))) as string[];
+  const Icon = head.authorType === "ai" ? Sparkles : Settings2;
+
+  return (
+    <div className="rounded-md" data-testid={`feed-burst-${head.id}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md text-left hover-elevate active-elevate-2"
+        aria-expanded={expanded}
+      >
+        <Avatar className="h-6 w-6 mt-0.5 flex-shrink-0">
+          <AvatarFallback className="text-data">
+            {head.authorType === "user" ? initials(head.userName) : <Icon className="w-3 h-3" />}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs flex-wrap">
+            <span className="font-medium truncate">
+              {head.authorType === "ai" ? "AI" : (head.userName || "System")}
+            </span>
+            <Badge variant="secondary" className="text-data px-1 py-0 h-4">
+              {entries.length} items
+            </Badge>
+            <span
+              className="text-muted-foreground text-table ml-auto flex-shrink-0"
+              title={format(new Date(head.createdAt), "PPpp")}
+            >
+              {formatDistanceToNowStrict(new Date(head.createdAt), { addSuffix: true })}
+            </span>
+          </div>
+          <div className="text-xs text-foreground mt-0.5 break-words">
+            {sharedHeadline || `Updated ${entries.length} items`}
+          </div>
+          <div className="text-table text-muted-foreground mt-0.5 truncate">
+            {itemNames.slice(0, 3).join(", ")}
+            {itemNames.length > 3 ? ` and ${itemNames.length - 3} more` : ""}
+          </div>
+          <div className="text-table text-muted-foreground/70 mt-0.5">
+            {expanded ? "Hide" : "Show each one"}
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <div className="flex flex-col gap-0.5 pl-6 pb-1">
+          {entries.map(e => (
+            <FeedItem key={e.id} entry={e} onSelectItem={onSelectItem} resolveAssignee={resolveAssignee} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
