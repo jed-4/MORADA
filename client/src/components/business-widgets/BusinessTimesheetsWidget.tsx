@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow, startOfWeek, endOfWeek } from "date-fns";
 import type { WidgetProps } from "@/types/widgets";
-import type { Timesheet, User, Project } from "@shared/schema";
+import type { Timesheet, Project } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Clock, CheckCircle, AlertCircle, XCircle } from "lucide-react";
@@ -9,9 +9,12 @@ import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { WidgetError } from "@/components/ui/WidgetError";
 
+type AssignableUser = { id: string; firstName: string | null; lastName: string | null };
+
 export default function BusinessTimesheetsWidget({}: WidgetProps) {
   const timesheetsQ = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
-  const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  // /api/users is admin-only, so non-admins saw "Unknown" for every name.
+  const { data: users = [] } = useQuery<AssignableUser[]>({ queryKey: ["/api/users/assignable"] });
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   if (timesheetsQ.isLoading) return <WidgetSkeleton rows={4} />;
@@ -21,8 +24,8 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
   if (timesheets.length === 0) return <WidgetEmpty title="No timesheet entries yet" />;
 
   const now = new Date();
-  const weekStart = startOfWeek(now);
-  const weekEnd = endOfWeek(now);
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
 
   const thisWeekTimesheets = timesheets.filter(t => {
     const date = new Date(t.date);
@@ -31,11 +34,11 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
 
   const pendingTimesheets = timesheets.filter(t => t.status === "submitted");
   const approvedThisWeek = thisWeekTimesheets.filter(t => t.status === "approved");
-  const totalHoursThisWeek = approvedThisWeek.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+  const totalHoursThisWeek = approvedThisWeek.reduce((sum, t) => sum + (Number(t.duration) || 0), 0);
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
-    return user ? `${user.firstName} ${user.lastName}`.trim() : "Unknown";
+    return user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || "Unknown" : "Unknown";
   };
 
   const getProjectName = (projectId: string | null) => {
@@ -89,7 +92,7 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{Number(entry.hours).toFixed(1)}h</span>
+                <span className="text-sm font-medium">{(Number(entry.duration) || 0).toFixed(1)}h</span>
                 <StatusBadge status={entry.status} />
               </div>
             </div>
