@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useRef } from "react";
+import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import type { DetailFieldDef } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -240,16 +242,25 @@ function ColumnsDropdown({
   onToggle,
   onMoveUp,
   onMoveDown,
+  customIds,
+  onAddColumn,
+  onRemoveColumn,
 }: {
   columns: ColDef[];
   hidden: string[];
   onToggle: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  /** Ids of the company's own columns — the only ones that can be removed. */
+  customIds: Set<string>;
+  onAddColumn: (label: string, type: string, options: string[]) => void;
+  onRemoveColumn: (id: string) => void;
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    // A Popover rather than a DropdownMenu: this holds a form, and a menu's
+    // keyboard handling (typeahead, arrow keys, Escape) is built for items.
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
           title="Manage columns"
@@ -257,8 +268,8 @@ function ColumnsDropdown({
           <Columns3 className="w-3 h-3" />
           Columns
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52 p-1" onCloseAutoFocus={e => e.preventDefault()}>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-52 p-1" onOpenAutoFocus={e => e.preventDefault()}>
         {columns.map((col, idx) => {
           const isHidden = hidden.includes(col.id);
           const isFirst = idx === 0;
@@ -298,11 +309,27 @@ function ColumnsDropdown({
                   <ChevronDown className="w-3 h-3" />
                 </button>
               </div>
+              {customIds.has(col.id) && (
+                <button
+                  className="text-muted-foreground/50 hover:text-destructive flex-shrink-0"
+                  onClick={() => onRemoveColumn(col.id)}
+                  title="Remove this column"
+                  data-testid={`remove-detail-column-${col.id}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
           );
         })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+
+        {/* Your own columns. Added here rather than in Settings because this is
+            where you are when you notice one is missing. */}
+        <div className="mt-1 border-t border-border pt-2 px-2 pb-1">
+          <DetailColumnsForm onAdd={onAddColumn} />
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -575,19 +602,61 @@ export default function EstimateEnotes({ estimateId }: Props) {
     });
   }, [estimateId]);
 
-  // Ordered + annotated column list (DEFAULT_COLUMNS reordered by colPrefs.order)
+  /**
+   * The company's own Details columns, which sit alongside the built-in ones.
+   * A column is identified by its definition id, and its value lives in the
+   * row's `customFields` under that id.
+   */
+  const { data: fieldDefs = [] } = useQuery<DetailFieldDef[]>({
+    queryKey: ["/api/detail-field-defs"],
+  });
+
+  const customCols = useMemo<ColDef[]>(
+    () => fieldDefs.map(d => ({
+      id: d.id,
+      label: d.label,
+      defaultWidth: d.type === "checkbox" ? 64 : d.type === "date" ? 110 : 150,
+      minWidth: 48,
+      visible: true,
+    })),
+    [fieldDefs],
+  );
+  const addFieldDef = useMutation({
+    mutationFn: (body: { label: string; type: string; options: string[] }) =>
+      apiRequest("/api/detail-field-defs", "POST", body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+  });
+
+  /**
+   * Retires the column rather than deleting it: the values already recorded
+   * against it stay in each row, so adding it back brings them with it.
+   */
+  const removeFieldDef = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/detail-field-defs/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+  });
+
+  const defById = useMemo(
+    () => Object.fromEntries(fieldDefs.map(d => [d.id, d])) as Record<string, DetailFieldDef>,
+    [fieldDefs],
+  );
+
+  // Ordered + annotated column list (built-ins plus the company's own,
+  // reordered by colPrefs.order)
   const orderedCols = useMemo<ColDef[]>(() => {
-    const byId = Object.fromEntries(DEFAULT_COLUMNS.map(c => [c.id, c]));
+    const all = [...DEFAULT_COLUMNS, ...customCols];
+    const byId = Object.fromEntries(all.map(c => [c.id, c]));
     const result: ColDef[] = [];
     for (const id of colPrefs.order) {
       if (byId[id]) result.push(byId[id]);
     }
-    // add any new columns not yet in prefs
-    for (const col of DEFAULT_COLUMNS) {
+    // add any new columns not yet in prefs — this is also how a column added
+    // today appears on an estimate whose preferences were saved yesterday.
+    for (const col of all) {
       if (!result.find(c => c.id === col.id)) result.push(col);
     }
     return result;
-  }, [colPrefs.order]);
+  }, [colPrefs.order, customCols]);
 
   const visibleCols = useMemo(
     () => orderedCols.filter(c => !colPrefs.hidden.includes(c.id)),
@@ -857,7 +926,65 @@ export default function EstimateEnotes({ estimateId }: Props) {
   };
 
   // ── Cell renderer per column id ────────────────────────────────────────────
+  /** Write one of the company's own columns without disturbing the others. */
+  const setCustom = (row: EnoteRow, defId: string, value: unknown) => {
+    const current = ((row as any).customFields ?? {}) as Record<string, unknown>;
+    update(row.id, { customFields: { ...current, [defId]: value } } as any);
+  };
+
   const renderCell = (colId: string, row: EnoteRow) => {
+    // One of the company's own columns. Checked before the switch so a custom
+    // column can never be shadowed by a built-in id.
+    const def = defById[colId];
+    if (def) {
+      const current = ((row as any).customFields ?? {}) as Record<string, unknown>;
+      const value = current[colId];
+      if (def.type === "checkbox") {
+        return (
+          <div className="flex justify-center">
+            <Checkbox checked={value === true} onCheckedChange={v => setCustom(row, colId, !!v)} />
+          </div>
+        );
+      }
+      if (def.type === "date") {
+        return (
+          <input
+            type="date"
+            value={typeof value === "string" ? value : ""}
+            onChange={e => setCustom(row, colId, e.target.value || null)}
+            className="w-full bg-transparent px-2 py-0.5 text-table outline-none"
+          />
+        );
+      }
+      if (def.type === "select") {
+        const options = Array.isArray(def.options) ? (def.options as string[]) : [];
+        return (
+          <select
+            value={typeof value === "string" ? value : ""}
+            onChange={e => setCustom(row, colId, e.target.value || null)}
+            className="w-full bg-transparent px-1.5 py-0.5 text-table outline-none cursor-pointer"
+          >
+            <option value="">—</option>
+            {/* A value saved before an option was renamed or removed would
+                otherwise vanish from the cell without being deleted. */}
+            {!options.includes(String(value ?? "")) && value ? (
+              <option value={String(value)}>{String(value)}</option>
+            ) : null}
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        );
+      }
+      return (
+        <div className="pl-2 py-0.5 overflow-hidden">
+          <NotePopover
+            value={typeof value === "string" ? value : ""}
+            placeholder="—"
+            onSave={v => setCustom(row, colId, v || null)}
+          />
+        </div>
+      );
+    }
+
     switch (colId) {
       case "required":
         return (
@@ -1046,6 +1173,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   onToggle={toggleCol}
                   onMoveUp={moveColUp}
                   onMoveDown={moveColDown}
+                  customIds={new Set(fieldDefs.map(d => d.id))}
+                  onAddColumn={(label, type, options) => addFieldDef.mutate({ label, type, options })}
+                  onRemoveColumn={id => removeFieldDef.mutate(id)}
                 />
 
                 <div className="flex-1" />

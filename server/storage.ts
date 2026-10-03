@@ -12709,6 +12709,7 @@ export class DbStorage implements IStorage {
           groupName: e.groupName,
           categoryName: e.categoryName,
           brainstormNotes: e.brainstormNotes ?? null,
+          customFields: e.customFields ?? {},
           isRequired: e.required ?? false,
           sortOrder: i,
           templateSetId: templateSet.id,
@@ -12767,6 +12768,9 @@ export class DbStorage implements IStorage {
         groupName: t.groupName,
         categoryName: t.categoryName,
         brainstormNotes: t.brainstormNotes ?? null,
+        // The company's own Details columns carry across, so a job starts with
+        // whatever the template set on each row (migration 0100).
+        customFields: t.customFields ?? {},
         required: t.isRequired,
         sortOrder: i,
         completed: false,

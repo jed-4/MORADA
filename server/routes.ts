@@ -9279,6 +9279,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * is one round trip rather than a row's worth each. The client sends the
    * group it is pasting into; the rows carry only what a Details line holds.
    */
+  /**
+   * A company's own Details columns.
+   *
+   * One set per company, used by both an estimate's Details list and the
+   * templates it is built from. Values live on each row in `customFields`,
+   * keyed by the id returned here.
+   */
+  app.get("/api/detail-field-defs", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { detailFieldDefs } = await import("@shared/schema");
+      const rows = await db.select().from(detailFieldDefs)
+        .where(and(eq(detailFieldDefs.companyId, companyId), eq(detailFieldDefs.isActive, true)))
+        .orderBy(asc(detailFieldDefs.displayOrder), asc(detailFieldDefs.createdAt));
+      res.json(rows);
+    } catch (error) {
+      console.error("[detail-field-defs] list:", error);
+      res.status(500).json({ error: "Failed to load Details columns" });
+    }
+  });
+
+  app.post("/api/detail-field-defs", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const label = String(req.body?.label ?? "").trim().slice(0, 60);
+      if (!label) return res.status(400).json({ error: "A column needs a name" });
+      const type = ["text", "checkbox", "date", "select"].includes(req.body?.type) ? req.body.type : "text";
+      const options = Array.isArray(req.body?.options)
+        ? req.body.options.map((o: any) => String(o).trim().slice(0, 60)).filter(Boolean).slice(0, 50)
+        : [];
+
+      const { detailFieldDefs } = await import("@shared/schema");
+      // Append after whatever this company already has.
+      const existing = await db.select().from(detailFieldDefs)
+        .where(eq(detailFieldDefs.companyId, companyId));
+      const displayOrder = existing.reduce((m, d) => Math.max(m, d.displayOrder ?? 0), 0) + 1;
+
+      const [created] = await db.insert(detailFieldDefs)
+        .values({ companyId, label, type, options, displayOrder } as any)
+        .returning();
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("[detail-field-defs] create:", error);
+      res.status(500).json({ error: "Failed to add the column" });
+    }
+  });
+
+  app.patch("/api/detail-field-defs/:id", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { detailFieldDefs } = await import("@shared/schema");
+      const patch: Record<string, any> = { updatedAt: new Date() };
+      if (typeof req.body?.label === "string") {
+        const label = req.body.label.trim().slice(0, 60);
+        if (!label) return res.status(400).json({ error: "A column needs a name" });
+        patch.label = label;
+      }
+      if (["text", "checkbox", "date", "select"].includes(req.body?.type)) patch.type = req.body.type;
+      if (Array.isArray(req.body?.options)) {
+        patch.options = req.body.options.map((o: any) => String(o).trim().slice(0, 60)).filter(Boolean).slice(0, 50);
+      }
+      if (Number.isFinite(Number(req.body?.displayOrder))) patch.displayOrder = Number(req.body.displayOrder);
+
+      const [updated] = await db.update(detailFieldDefs).set(patch)
+        .where(and(eq(detailFieldDefs.id, req.params.id), eq(detailFieldDefs.companyId, companyId)))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Column not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("[detail-field-defs] update:", error);
+      res.status(500).json({ error: "Failed to update the column" });
+    }
+  });
+
+  /**
+   * Retired rather than deleted: the values already recorded against it stay in
+   * each row's customFields, so turning a column back on brings the data back
+   * rather than finding it gone.
+   */
+  app.delete("/api/detail-field-defs/:id", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { detailFieldDefs } = await import("@shared/schema");
+      const [updated] = await db.update(detailFieldDefs)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(detailFieldDefs.id, req.params.id), eq(detailFieldDefs.companyId, companyId)))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Column not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("[detail-field-defs] delete:", error);
+      res.status(500).json({ error: "Failed to remove the column" });
+    }
+  });
+
   app.post("/api/enote-templates/bulk", requireAuth, async (req, res) => {
     try {
       const companyId = getSessionCompanyId(req);
