@@ -11,6 +11,34 @@ export type BillTotalsLine = {
 
 export type BillTaxMode = "inclusive" | "exclusive";
 
+/**
+ * Split ONE line into its ex-GST and GST parts, in whole cents.
+ *
+ * The single place GST is rounded. Xero rounds tax per line and sums the
+ * results; Morada used to sum the untaxed floats and round once at the end,
+ * and the two disagree on a third of ordinary bills — $123.45 + $67.89 is
+ * 1914c of GST to Xero and 1913c to Morada. That cent is what people were
+ * reconciling by hand with the rounding adjuster. Round here, per line, and
+ * every consumer agrees with Xero by construction.
+ */
+export function splitLineGstCents(
+  lineTotalCents: number,
+  taxable: boolean,
+  taxMode: BillTaxMode,
+  taxRatePercent: number = 10,
+): { ex: number; gst: number } {
+  const rate = (Number(taxRatePercent) || 0) / 100;
+  const total = Math.round(lineTotalCents || 0);
+  if (!taxable) return { ex: total, gst: 0 };
+  if (taxMode === "inclusive") {
+    // The line already contains the GST; back it out, then the GST is the
+    // remainder so ex + gst can never drift from the line's own amount.
+    const ex = Math.round(total / (1 + rate));
+    return { ex, gst: total - ex };
+  }
+  return { ex: total, gst: Math.round(total * rate) };
+}
+
 export function computeBillTotalsCents(
   lineItems: BillTotalsLine[],
   taxMode: BillTaxMode,
@@ -20,31 +48,45 @@ export function computeBillTotalsCents(
   // "Rounding" line). Applied to the total only, never to subtotal or tax.
   roundingCents: number = 0,
 ): { subtotal: number; tax: number; total: number } {
-  const rate = (Number(taxRatePercent) || 0) / 100;
-  let subtotal = 0;
-  let tax = 0;
+  let subtotalCents = 0;
+  let taxCents = 0;
 
   for (const li of lineItems) {
-    const lineTotal = li.total || 0;
-    const taxable = li.tax === "GST on expenses";
-    if (taxMode === "inclusive") {
-      if (taxable) {
-        const ex = lineTotal / (1 + rate);
-        subtotal += ex;
-        tax += lineTotal - ex;
-      } else {
-        subtotal += lineTotal;
-      }
-    } else {
-      subtotal += lineTotal;
-      if (taxable) tax += lineTotal * rate;
-    }
+    const { ex, gst } = splitLineGstCents(
+      li.total || 0,
+      li.tax === "GST on expenses",
+      taxMode,
+      taxRatePercent,
+    );
+    subtotalCents += ex;
+    taxCents += gst;
   }
 
-  const subtotalCents = Math.round(subtotal);
-  const taxCents = Math.round(tax);
   const rounding = Math.round(Number(roundingCents) || 0);
   return { subtotal: subtotalCents, tax: taxCents, total: subtotalCents + taxCents + rounding };
+}
+
+// The description Morada gives the rounding line it pushes to Xero. It is the
+// marker that lets the import side tell our own rounding line apart from a real
+// expense line, so a round trip does not fold the adjustment into the subtotal
+// or re-import it as a line item. Changing this string orphans the rounding
+// lines on already-pushed bills, so don't.
+export const XERO_ROUNDING_LINE_DESCRIPTION = "Rounding";
+
+/**
+ * Is this Xero line the rounding line Morada pushed?
+ *
+ * Matched on description and on being small enough to be a rounding
+ * adjustment — the description alone would also swallow a genuine supplier
+ * line that happened to be called "Rounding", and misreading a real line as
+ * ours would silently drop money off the bill.
+ */
+export function isXeroRoundingLine(
+  description: string | null | undefined,
+  lineAmountCents: number,
+): boolean {
+  if ((description || "").trim().toLowerCase() !== XERO_ROUNDING_LINE_DESCRIPTION.toLowerCase()) return false;
+  return Math.abs(lineAmountCents) <= MAX_ROUNDING_CENTS;
 }
 
 // Maximum absolute rounding adjustment we allow (in cents). Rounding is meant

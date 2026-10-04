@@ -36,6 +36,7 @@ import {
   Settings,
   Link2,
   Search,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { rankedCommandFilter } from "@/components/ui/searchable-select";
@@ -110,7 +111,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode, computeBillTotalsCents } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -1220,30 +1221,25 @@ export default function BillDetail() {
     setLineItems(lineItems.filter((_, i) => i !== index));
   };
 
-  const calculateSubtotal = () => {
-    if (taxMode === "inclusive") {
-      return lineItems.reduce((sum, item) => {
-        if (item.tax === "GST on expenses") {
-          return sum + (item.total - item.total / 11);
-        }
-        return sum + item.total;
-      }, 0);
-    }
-    return lineItems.reduce((sum, item) => sum + item.total, 0);
-  };
+  // Totals come from the shared helper, in cents, and are shown as dollars.
+  //
+  // This screen used to carry its own copy of the arithmetic — a third scheme
+  // alongside the server's and Xero's, which never rounded and hardcoded 10%
+  // (`item.total / 11`) in one branch while reading the company's rate in the
+  // other. Anything that rounds GST differently from Xero shows the user a
+  // total their accounting package disagrees with, so there is one
+  // implementation now and this calls it.
+  const headerTotalsCents = () =>
+    computeBillTotalsCents(
+      lineItems.map(item => ({ total: Math.round(item.total * 100), tax: item.tax })),
+      taxMode === "inclusive" ? "inclusive" : "exclusive",
+      Number(companySettings?.taxRate ?? 10),
+      0,
+    );
 
-  const calculateTax = () => {
-    const taxableItems = lineItems.filter((item) => item.tax === "GST on expenses");
-    
-    const gstRate = Number(companySettings?.taxRate ?? 10) / 100;
-    if (taxMode === "inclusive") {
-      const taxableTotal = taxableItems.reduce((sum, item) => sum + item.total, 0);
-      return taxableTotal * gstRate / (1 + gstRate);
-    }
-    
-    const taxableAmount = taxableItems.reduce((sum, item) => sum + item.total, 0);
-    return taxableAmount * gstRate;
-  };
+  const calculateSubtotal = () => headerTotalsCents().subtotal / 100;
+
+  const calculateTax = () => headerTotalsCents().tax / 100;
 
   // Total before the manual rounding adjustment (dollars).
   const calculateTotalBeforeRounding = () => {
@@ -3986,13 +3982,19 @@ export default function BillDetail() {
                           data-testid="input-invoice-total"
                         />
                       ) : (
+                        // Visibly editable at rest, not only on hover: the
+                        // dotted underline and pencil are the only cue that the
+                        // total can be matched to the supplier invoice, and
+                        // without them nobody found it.
                         <button
                           type="button"
                           onClick={() => { setInvoiceTotalInput(total.toFixed(2)); setEditingInvoiceTotal(true); }}
-                          className="text-sm font-bold hover:underline decoration-dotted underline-offset-2"
-                          title="Click to match the supplier invoice total"
+                          className="group flex items-center gap-1.5 text-sm font-bold underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground"
+                          title="Adjust rounding — set the total printed on the supplier's invoice"
+                          aria-label="Adjust rounding to match the supplier invoice total"
                           data-testid="text-total"
                         >
+                          <Pencil className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground" aria-hidden="true" />
                           {formatCurrency(total)}
                         </button>
                       )}
