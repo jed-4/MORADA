@@ -36,6 +36,7 @@ import {
   Settings,
   Link2,
   Search,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { rankedCommandFilter } from "@/components/ui/searchable-select";
@@ -3986,13 +3987,19 @@ export default function BillDetail() {
                           data-testid="input-invoice-total"
                         />
                       ) : (
+                        // Visibly editable at rest, not only on hover: the
+                        // dotted underline and pencil are the only cue that the
+                        // total can be matched to the supplier invoice, and
+                        // without them nobody found it.
                         <button
                           type="button"
                           onClick={() => { setInvoiceTotalInput(total.toFixed(2)); setEditingInvoiceTotal(true); }}
-                          className="text-sm font-bold hover:underline decoration-dotted underline-offset-2"
-                          title="Click to match the supplier invoice total"
+                          className="group flex items-center gap-1.5 text-sm font-bold underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground"
+                          title="Adjust rounding — set the total printed on the supplier's invoice"
+                          aria-label="Adjust rounding to match the supplier invoice total"
                           data-testid="text-total"
                         >
+                          <Pencil className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground" aria-hidden="true" />
                           {formatCurrency(total)}
                         </button>
                       )}

@@ -225,7 +225,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
-import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
+import { buildRoundingLine } from "./services/xeroBillRounding";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import {
@@ -861,6 +862,39 @@ export async function pushBillToXeroInternal(
       };
     });
 
+    // Rounding adjustment → its own Xero line, the way Xero's own "Rounding"
+    // line works. The payload carries no total: Xero computes it from the
+    // lines, so this line is the ONLY thing that makes the pushed invoice equal
+    // our stored total. Two things it must get right:
+    //
+    //   - It is built HERE, before the pre-flights, so a bad account or tax
+    //     type fails locally with a message naming the rounding line. It used
+    //     to be appended after them, which meant it was the one line nobody
+    //     checked and Xero rejected the whole invoice instead.
+    //   - It carries gstFreeExpenseTaxType, not a hardcoded "NONE". Many AU
+    //     orgs do not have NONE active (see where that is resolved above), and
+    //     on those orgs every rounding push failed outright.
+    const roundingCents = clampRoundingCents((bill as any).roundingCents ?? 0);
+    if (roundingCents !== 0) {
+      const roundingAccount =
+        companyDefaultAccountCode ||
+        supplierDefaultAccountCode ||
+        xeroLineItems.find((li) => li.accountCode)?.accountCode;
+      const built = buildRoundingLine({ roundingCents, accountCode: roundingAccount, gstFreeExpenseTaxType });
+      if (!built.ok) {
+        // Never drop it silently. Dropping it is how Morada and Xero ended up
+        // disagreeing by a cent with nothing on screen to say so.
+        const msg =
+          `This bill has a ${roundingCents > 0 ? "+" : ""}${(roundingCents / 100).toFixed(2)} rounding adjustment, ` +
+          `but there is no Xero account to post it to. Set an account on a line item, on the supplier ` +
+          `(Xero default account), or a company-wide default in Settings → Integrations → Xero.`;
+        await writeSyncStatus("failed", msg);
+        logOutcome({ ok: false, reason: "ROUNDING_NO_ACCOUNT", message: msg });
+        return { ok: false, status: 422, error: "ROUNDING_NO_ACCOUNT", message: msg };
+      }
+      xeroLineItems.push({ ...built.line, tracking: undefined } as any);
+    }
+
     // Pre-flight: every line must have an AccountCode, otherwise Xero responds
     // with a 400 "AccountCode is required for this line item" which previously
     // surfaced as a generic "Failed to create Xero bill" toast.
@@ -962,31 +996,6 @@ export async function pushBillToXeroInternal(
     let xeroStatus: "SUBMITTED" | "AUTHORISED" = "AUTHORISED";
     if (bill.status === "awaiting_approval") {
       xeroStatus = "SUBMITTED";
-    }
-
-    // Rounding adjustment → its own Xero line (like Xero's "Rounding" line), so
-    // the pushed invoice total matches our stored total to the cent. Added AFTER
-    // the account/tax pre-flights and given an explicit account so it can't trip
-    // them. Skipped if we have no account to code it to (the sub-cent difference
-    // is left for Xero to compute from the lines).
-    const roundingCents = (bill as any).roundingCents ?? 0;
-    if (roundingCents !== 0) {
-      const roundingAccount =
-        companyDefaultAccountCode ||
-        supplierDefaultAccountCode ||
-        xeroLineItems.find((li) => li.accountCode)?.accountCode;
-      if (roundingAccount) {
-        xeroLineItems.push({
-          description: "Rounding",
-          quantity: 1,
-          unitAmount: roundingCents / 100,
-          taxType: "NONE",
-          accountCode: roundingAccount,
-          tracking: undefined,
-        });
-      } else {
-        console.warn("[pushBillToXeroInternal] rounding adjustment skipped — no account code available");
-      }
     }
 
     const billPayload = {
@@ -1436,12 +1445,29 @@ async function syncBillFromXeroInternal(
     const xeroTaxMode: "inclusive" | "exclusive" =
       invoice.LineAmountTypes === "Inclusive" ? "inclusive" : "exclusive";
 
+    // Back our own rounding line out of the imported figures.
+    //
+    // We push the adjustment to Xero as a real line, so Xero's SubTotal counts
+    // it. Writing that straight back would fold the rounding into the subtotal
+    // while roundingCents still carried it, leaving the bill disagreeing with
+    // its own math (total ≠ subtotal + tax + rounding) and the adjustment
+    // counted twice the next time a line was edited. Xero's Total already
+    // equals our stored total, so only the subtotal needs the line taken out.
+    const roundingLineCents = ((invoice.LineItems || []) as any[]).reduce((sum, xl) => {
+      const amount = Math.round((xl.LineAmount ?? 0) * 100);
+      return isXeroRoundingLine(xl.Description, amount) ? sum + amount : sum;
+    }, 0);
+    const importedSubtotal = subtotalCents - roundingLineCents;
+
     await storage.updateBill(bill.id, {
       status: newStatus as any,
       paidAmount: amountPaidCents,
-      subtotal: subtotalCents,
+      subtotal: importedSubtotal,
       tax: taxCents,
       total: totalCents,
+      // Keep the bill self-consistent: whatever Xero says the total is, the
+      // stored rounding must be the difference the lines cannot explain.
+      roundingCents: clampRoundingCents(totalCents - importedSubtotal - taxCents),
       // Only re-stamp taxMode for draft bills, whose line items get re-imported
       // below; never flip a submitted/paid bill's tax mode under preserved lines.
       ...(bill.status === "draft" ? { taxMode: xeroTaxMode } : {}),
@@ -1481,7 +1507,12 @@ async function syncBillFromXeroInternal(
     // Only overwrite line items when local bill is still in draft.
     // Once submitted/approved/paid, BuildPro line items are preserved.
     const canOverwriteLines = bill.status === "draft";
-    const xeroLineItems: any[] = invoice.LineItems || [];
+    // Our own rounding line is not a line item of the bill — it is the carrier
+    // for roundingCents, which is preserved above. Re-importing it would turn
+    // the adjustment into a real expense line and count it twice.
+    const xeroLineItems: any[] = ((invoice.LineItems || []) as any[]).filter(
+      (xl) => !isXeroRoundingLine(xl.Description, Math.round((xl.LineAmount ?? 0) * 100)),
+    );
     let lineItemsSynced = 0;
     if (canOverwriteLines && xeroLineItems.length > 0) {
       const existingLineItems = await storage.getBillLineItems(bill.id);

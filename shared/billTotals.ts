@@ -47,6 +47,29 @@ export function computeBillTotalsCents(
   return { subtotal: subtotalCents, tax: taxCents, total: subtotalCents + taxCents + rounding };
 }
 
+// The description Morada gives the rounding line it pushes to Xero. It is the
+// marker that lets the import side tell our own rounding line apart from a real
+// expense line, so a round trip does not fold the adjustment into the subtotal
+// or re-import it as a line item. Changing this string orphans the rounding
+// lines on already-pushed bills, so don't.
+export const XERO_ROUNDING_LINE_DESCRIPTION = "Rounding";
+
+/**
+ * Is this Xero line the rounding line Morada pushed?
+ *
+ * Matched on description and on being small enough to be a rounding
+ * adjustment — the description alone would also swallow a genuine supplier
+ * line that happened to be called "Rounding", and misreading a real line as
+ * ours would silently drop money off the bill.
+ */
+export function isXeroRoundingLine(
+  description: string | null | undefined,
+  lineAmountCents: number,
+): boolean {
+  if ((description || "").trim().toLowerCase() !== XERO_ROUNDING_LINE_DESCRIPTION.toLowerCase()) return false;
+  return Math.abs(lineAmountCents) <= MAX_ROUNDING_CENTS;
+}
+
 // Maximum absolute rounding adjustment we allow (in cents). Rounding is meant
 // to reconcile sub-cent drift against a supplier invoice, not to fudge amounts.
 export const MAX_ROUNDING_CENTS = 5;
