@@ -36,7 +36,7 @@ import {
   isGstFreeTaxType,
   type XeroPayloadLine,
 } from "../services/xeroBillRounding";
-import { computeBillTotalsCents, XERO_ROUNDING_LINE_DESCRIPTION } from "@shared/billTotals";
+import { computeBillTotalsCents, splitLineGstCents, XERO_ROUNDING_LINE_DESCRIPTION } from "@shared/billTotals";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -90,12 +90,8 @@ console.log("\nXero bill rounding\n");
 for (const taxMode of ["exclusive", "inclusive"] as const) {
   for (const rounding of [1, -1, 3, -5, 5]) {
     test(`${taxMode} bill, ${rounding > 0 ? "+" : ""}${rounding}c rounding → Xero total matches stored total`, () => {
-      // Line amounts whose per-line GST is a whole number of cents, so this
-      // asserts the rounding line and nothing else. Where per-line GST is
-      // fractional, Morada and Xero already disagree for a separate reason —
-      // seen in "GST is rounded per line by Xero" below.
       const { payload, stored } = scenario({
-        lineTotalsCents: [12340, 6780, 50000],
+        lineTotalsCents: [12345, 6789, 50000],
         taxable: [true, true, false],
         taxMode,
         roundingCents: rounding,
@@ -162,14 +158,14 @@ test("no account code refuses the push instead of dropping the adjustment", () =
 test("dropping the line is exactly the cent of disagreement being guarded against", () => {
   // What the old code did: skip the line, push the rest.
   const { stored } = scenario({
-    lineTotalsCents: [12340],
+    lineTotalsCents: [12345],
     taxable: [true],
     taxMode: "exclusive",
     roundingCents: 1,
     accountCode: undefined,
   });
   const withoutRounding = xeroComputedTotals(
-    [{ quantity: 1, unitAmount: 123.4, taxType: "INPUT", accountCode: "400" }],
+    [{ quantity: 1, unitAmount: 123.45, taxType: "INPUT", accountCode: "400" }],
     "exclusive",
     10,
   );
@@ -182,7 +178,7 @@ for (const taxMode of ["exclusive", "inclusive"] as const) {
   for (const rounding of [1, -1, 4]) {
     test(`${taxMode} bill, ${rounding > 0 ? "+" : ""}${rounding}c → re-sync reproduces the bill unchanged`, () => {
       const { payload, stored } = scenario({
-        lineTotalsCents: [12340, 6789],
+        lineTotalsCents: [12345, 6789],
         taxable: [true, false],
         taxMode,
         roundingCents: rounding,
@@ -239,15 +235,12 @@ test("an untouched bill imports with no rounding at all", () => {
   assert.strictEqual(imported.total, 11000);
 });
 
-// ─── Separate, deeper defect this work uncovered ────────────────────────────
+// ─── GST is rounded per line, the way Xero does it ──────────────────────────
 
-test("GST is rounded per line by Xero but once on the sum by Morada — they diverge", () => {
-  // $123.45 + $67.89, both taxable, ex-GST.
-  //   Xero:   round(1234.5) + round(678.9) = 1235 + 679 = 1914c
-  //   Morada: round(1234.5  +      678.9)  =        1913c
-  // Nothing to do with the manual rounding adjustment: these are plain lines.
-  // It is why a bill can disagree with Xero by a cent with no adjustment set,
-  // and why adjustments were being applied by hand in the first place.
+test("GST rounds per line, matching Xero — $123.45 + $67.89 is 1914c not 1913c", () => {
+  // The cent that was being reconciled by hand. Morada used to sum the untaxed
+  // amounts and round once:  round(1234.5 + 678.9) = 1913c.
+  // Xero rounds each line:   round(1234.5) + round(678.9) = 1914c.
   const lines = [
     { quantity: 1, unitAmount: 123.45, taxType: "INPUT" },
     { quantity: 1, unitAmount: 67.89, taxType: "INPUT" },
@@ -263,13 +256,63 @@ test("GST is rounded per line by Xero but once on the sum by Morada — they div
     0,
   );
 
-  assert.strictEqual(xero.tax, 1914, "Xero rounds each line's GST");
-  assert.strictEqual(morada.tax, 1913, "Morada rounds the summed GST once");
-  assert.strictEqual(
-    xero.total - morada.total,
-    1,
-    "documented gap: changing this is a money-model decision, not part of this fix",
-  );
+  assert.strictEqual(xero.tax, 1914);
+  assert.strictEqual(morada.tax, 1914, "Morada must round per line too");
+  assert.strictEqual(morada.total, xero.total, "no cent left to reconcile by hand");
+});
+
+test("Morada and Xero agree on every total, over many generated bills", () => {
+  // The old per-sum rounding disagreed on ~25% of 2-line bills and ~61% of
+  // 10-line ones, by up to 3c. One disagreement here is a regression.
+  let rng = 1;
+  const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  let checked = 0;
+
+  for (const taxMode of ["exclusive", "inclusive"] as const) {
+    for (const lineCount of [1, 2, 3, 5, 10]) {
+      for (let t = 0; t < 400; t++) {
+        const cents: number[] = [];
+        const taxable: boolean[] = [];
+        for (let i = 0; i < lineCount; i++) {
+          cents.push(Math.floor(rand() * 200000) + 1);
+          taxable.push(rand() > 0.2);
+        }
+        const rounding = [0, 0, 0, 1, -1, 2][Math.floor(rand() * 6)];
+        const { payload, stored } = scenario({
+          lineTotalsCents: cents,
+          taxable,
+          taxMode,
+          roundingCents: rounding,
+        });
+        const xero = xeroComputedTotals(payload, taxMode, 10);
+        assert.strictEqual(
+          xero.total,
+          stored.total,
+          `${taxMode} ${lineCount}-line bill, rounding ${rounding}: Xero ${xero.total}c vs Morada ${stored.total}c`,
+        );
+        assert.strictEqual(xero.tax, stored.tax, `${taxMode} ${lineCount}-line bill: GST differs`);
+        checked++;
+      }
+    }
+  }
+  assert.strictEqual(checked, 4000);
+});
+
+test("an inclusive line's parts always add back to the line", () => {
+  // Backing GST out of an inc-GST amount is where a cent goes missing if the
+  // two halves are rounded independently.
+  for (let cents = 1; cents <= 3000; cents++) {
+    const { ex, gst } = splitLineGstCents(cents, true, "inclusive", 10);
+    assert.strictEqual(ex + gst, cents, `${cents}c split into ${ex} + ${gst}`);
+  }
+});
+
+test("a GST-free line is never taxed, in either mode", () => {
+  for (const mode of ["inclusive", "exclusive"] as const) {
+    const { ex, gst } = splitLineGstCents(12345, false, mode, 10);
+    assert.strictEqual(gst, 0);
+    assert.strictEqual(ex, 12345);
+  }
 });
 
 console.log(`\n${passed} passed\n`);

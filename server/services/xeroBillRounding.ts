@@ -13,6 +13,7 @@
 import {
   XERO_ROUNDING_LINE_DESCRIPTION,
   isXeroRoundingLine,
+  splitLineGstCents,
   type BillTaxMode,
 } from "@shared/billTotals";
 
@@ -72,25 +73,21 @@ export function xeroComputedTotals(
   taxMode: BillTaxMode,
   taxRatePercent: number = 10,
 ): { subtotal: number; tax: number; total: number } {
-  const rate = (Number(taxRatePercent) || 0) / 100;
   let subtotal = 0;
   let tax = 0;
 
   for (const l of lines) {
     const lineAmount = Math.round((l.quantity ?? 1) * (l.unitAmount ?? 0) * 100);
-    const taxable = !isGstFreeTaxType(l.taxType);
-    if (taxMode === "inclusive") {
-      if (taxable) {
-        const ex = Math.round(lineAmount / (1 + rate));
-        subtotal += ex;
-        tax += lineAmount - ex;
-      } else {
-        subtotal += lineAmount;
-      }
-    } else {
-      subtotal += lineAmount;
-      if (taxable) tax += Math.round(lineAmount * rate);
-    }
+    // The same per-line split the bill header uses, so "what Xero will compute"
+    // and "what Morada stores" cannot drift into two rounding schemes.
+    const { ex, gst } = splitLineGstCents(
+      lineAmount,
+      !isGstFreeTaxType(l.taxType),
+      taxMode,
+      taxRatePercent,
+    );
+    subtotal += ex;
+    tax += gst;
   }
 
   return { subtotal, tax, total: subtotal + tax };

@@ -111,7 +111,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode, computeBillTotalsCents } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -1221,30 +1221,25 @@ export default function BillDetail() {
     setLineItems(lineItems.filter((_, i) => i !== index));
   };
 
-  const calculateSubtotal = () => {
-    if (taxMode === "inclusive") {
-      return lineItems.reduce((sum, item) => {
-        if (item.tax === "GST on expenses") {
-          return sum + (item.total - item.total / 11);
-        }
-        return sum + item.total;
-      }, 0);
-    }
-    return lineItems.reduce((sum, item) => sum + item.total, 0);
-  };
+  // Totals come from the shared helper, in cents, and are shown as dollars.
+  //
+  // This screen used to carry its own copy of the arithmetic — a third scheme
+  // alongside the server's and Xero's, which never rounded and hardcoded 10%
+  // (`item.total / 11`) in one branch while reading the company's rate in the
+  // other. Anything that rounds GST differently from Xero shows the user a
+  // total their accounting package disagrees with, so there is one
+  // implementation now and this calls it.
+  const headerTotalsCents = () =>
+    computeBillTotalsCents(
+      lineItems.map(item => ({ total: Math.round(item.total * 100), tax: item.tax })),
+      taxMode === "inclusive" ? "inclusive" : "exclusive",
+      Number(companySettings?.taxRate ?? 10),
+      0,
+    );
 
-  const calculateTax = () => {
-    const taxableItems = lineItems.filter((item) => item.tax === "GST on expenses");
-    
-    const gstRate = Number(companySettings?.taxRate ?? 10) / 100;
-    if (taxMode === "inclusive") {
-      const taxableTotal = taxableItems.reduce((sum, item) => sum + item.total, 0);
-      return taxableTotal * gstRate / (1 + gstRate);
-    }
-    
-    const taxableAmount = taxableItems.reduce((sum, item) => sum + item.total, 0);
-    return taxableAmount * gstRate;
-  };
+  const calculateSubtotal = () => headerTotalsCents().subtotal / 100;
+
+  const calculateTax = () => headerTotalsCents().tax / 100;
 
   // Total before the manual rounding adjustment (dollars).
   const calculateTotalBeforeRounding = () => {
