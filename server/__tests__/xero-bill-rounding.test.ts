@@ -315,4 +315,54 @@ test("a GST-free line is never taxed, in either mode", () => {
   }
 });
 
+// ─── The GST scheme change cannot move a bill by dollars ────────────────────
+
+test("per-line GST moves a bill by at most half a cent per taxable line", () => {
+  // A prod audit surfaced bills whose stored header differs from their lines by
+  // dollars — up to $135.80 — and that was read as fallout from per-line GST
+  // rounding. It cannot be. Each line's GST is rounded once, so the error is
+  // under half a cent per line; summed, the two schemes differ by less than
+  // (n+1)/2 cents. Dollars require tens of thousands of lines. Whatever moves a
+  // bill by dollars is the stored header disagreeing with its own lines, which
+  // is a different problem with a different cause.
+  const oldScheme = (lines: Array<[number, boolean]>, rate: number) => {
+    let subtotal = 0, tax = 0;
+    for (const [cents, taxable] of lines) { subtotal += cents; if (taxable) tax += cents * rate; }
+    return Math.round(subtotal) + Math.round(tax);
+  };
+
+  let rng = 11;
+  const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+  for (const n of [1, 2, 5, 10, 50, 200, 500]) {
+    let worst = 0;
+    for (let t = 0; t < 600; t++) {
+      const raw: Array<[number, boolean]> = Array.from({ length: n }, () => [
+        Math.floor(rand() * 500000) + 1,
+        true,
+      ]);
+      const now = computeBillTotalsCents(
+        raw.map(([cents]) => ({ total: cents, tax: "GST on expenses" })),
+        "exclusive",
+        10,
+        0,
+      );
+      worst = Math.max(worst, Math.abs(now.total - oldScheme(raw, 0.1)));
+    }
+    const bound = Math.ceil((n + 1) / 2);
+    assert.ok(worst <= bound, `${n} lines moved ${worst}c, over the ${bound}c bound`);
+  }
+
+  // The headline: no ordinary bill can move by a dollar.
+  const twentyLines = Array.from({ length: 20 }, (_, i) => ({
+    total: 10000 + i * 777,
+    tax: "GST on expenses" as const,
+  }));
+  const moved = Math.abs(
+    computeBillTotalsCents(twentyLines, "exclusive", 10, 0).total -
+      oldScheme(twentyLines.map(l => [l.total, true] as [number, boolean]), 0.1),
+  );
+  assert.ok(moved <= 11, `a 20-line bill moved ${moved}c`);
+});
+
 console.log(`\n${passed} passed\n`);
