@@ -27166,6 +27166,47 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * Every active business reminder for a company. Which of them are due is a
+   * decision about the company's wall clock, so it is made in
+   * shared/reminderSchedule.ts rather than in SQL against the server's clock.
+   */
+  async getActiveBusinessReminders(): Promise<schema.BusinessReminder[]> {
+    try {
+      return await db.select().from(schema.businessReminders)
+        .where(eq(schema.businessReminders.isActive, true));
+    } catch (error) {
+      console.error("Database error in getActiveBusinessReminders:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Has this business reminder already produced a notification since `since`?
+   *
+   * This is what stops a reminder firing twice in a day. It used to be done
+   * with a `lastTriggeredAt` column that does not exist, so it never stopped
+   * anything; the notification rows are the durable record and survive a
+   * restart, which an in-memory flag would not.
+   */
+  async hasBusinessReminderFiredSince(businessReminderId: string, since: Date): Promise<boolean> {
+    try {
+      const rows = await db.select({ id: schema.reminderNotifications.id })
+        .from(schema.reminderNotifications)
+        .where(
+          and(
+            eq(schema.reminderNotifications.businessReminderId, businessReminderId),
+            gte(schema.reminderNotifications.scheduledFor, since),
+          )
+        )
+        .limit(1);
+      return rows.length > 0;
+    } catch (error) {
+      console.error("Database error in hasBusinessReminderFiredSince:", error);
+      throw error;
+    }
+  }
+
   async getActiveBusinessRemindersForTime(time: string, dayOfWeek: number): Promise<schema.BusinessReminder[]> {
     try {
       const result = await db.select().from(schema.businessReminders)

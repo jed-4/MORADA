@@ -190,8 +190,10 @@ export function NotificationBell() {
   });
 
   const getReminderTimeStatus = (reminder: Reminder) => {
-    if (!reminder.triggerAt) return { label: "No date", isOverdue: false };
-    const triggerDate = new Date(reminder.triggerAt);
+    // dueAt, not triggerAt: the column is `due_at` and nothing ever returns a
+    // `triggerAt`, so every reminder in the bell read "No date".
+    if (!reminder.dueAt) return { label: "No date", isOverdue: false };
+    const triggerDate = new Date(reminder.dueAt);
     
     if (reminder.status === "snoozed" && reminder.snoozedUntil) {
       return { 
@@ -445,7 +447,7 @@ export function NotificationBell() {
                       </div>
                       <p className={`text-xs ${timeStatus.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                         <Clock className="h-3 w-3 inline mr-1" />
-                        {reminder.triggerAt && formatInTimezone(new Date(reminder.triggerAt), effectiveTimezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+                        {reminder.dueAt && formatInTimezone(new Date(reminder.dueAt), effectiveTimezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
                         <span className="ml-1">({timeStatus.label})</span>
                       </p>
                     </div>

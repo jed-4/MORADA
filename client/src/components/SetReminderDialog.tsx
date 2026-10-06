@@ -105,7 +105,11 @@ export function SetReminderDialog({
         description: data.description,
         dueAt: new Date(data.triggerAt).toISOString(),
         priority: data.priority,
-        reminderType: linkedItemType || "custom",
+        // reminderType is the RECURRENCE kind ("one_time" | "recurring"), not
+        // what the reminder is attached to — that is linkedItemType, set below.
+        // It used to be given the linked item's type, so every reminder stored
+        // a reminderType the processor could not read.
+        reminderType: "one_time",
       };
 
       if (linkedItemId) {
