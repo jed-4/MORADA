@@ -17797,6 +17797,43 @@ export class DbStorage implements IStorage {
   // Recompute a bill's header (subtotal/tax/total) from its line items, which
   // are the source of truth. Skips bills with no line items so freight- or
   // header-only bills are never clobbered. Returns true when a change was made.
+  /**
+   * Claim a bill for a Xero push. Returns false when another push holds it.
+   *
+   * One conditional UPDATE is the whole mutex: only one caller can move the row
+   * from "free" to "claimed", because the WHERE clause is evaluated against the
+   * row the statement locks. A claim older than STALE_MS is treated as free so
+   * a process that died mid-push cannot wedge the bill out of sync forever.
+   */
+  async claimXeroPush(billId: string, staleMs: number = 5 * 60 * 1000): Promise<boolean> {
+    const staleBefore = new Date(Date.now() - staleMs);
+    const claimed = await db.update(schema.bills)
+      .set({ xeroPushInFlightAt: new Date() })
+      .where(
+        and(
+          eq(schema.bills.id, billId),
+          or(
+            isNull(schema.bills.xeroPushInFlightAt),
+            lt(schema.bills.xeroPushInFlightAt, staleBefore),
+          ),
+        )
+      )
+      .returning({ id: schema.bills.id });
+    return claimed.length > 0;
+  }
+
+  async releaseXeroPush(billId: string): Promise<void> {
+    try {
+      await db.update(schema.bills)
+        .set({ xeroPushInFlightAt: null })
+        .where(eq(schema.bills.id, billId));
+    } catch (error) {
+      // Never let releasing the claim mask the push's own outcome; the stale
+      // timeout will free it anyway.
+      console.error("[releaseXeroPush] failed:", error);
+    }
+  }
+
   async recomputeBillTotals(billId: string): Promise<boolean> {
     try {
       const billRows = await db.select().from(schema.bills)

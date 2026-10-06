@@ -1549,6 +1549,73 @@ export class XeroService {
     }
   }
 
+  /**
+   * Find existing ACCPAY bills in Xero for a supplier's invoice number and/or
+   * our own bill reference.
+   *
+   * The last line of defence before a create. A Morada bill that is not linked
+   * to Xero might still BE in Xero — from an earlier push that timed out after
+   * Xero had already created it, or from a concurrent push. Creating again
+   * makes the supplier's invoice exist twice in the customer's accounts, which
+   * is exactly what happened to BILL-1743.
+   *
+   * Voided and deleted invoices are excluded: those are not something to link
+   * to, and re-creating after a void is deliberate.
+   */
+  async findBillsByReference(
+    connectionId: string,
+    opts: { invoiceNumber?: string | null; reference?: string | null; contactId?: string | null },
+  ): Promise<any[]> {
+    const clauses: string[] = [];
+    const esc = (v: string) => v.replace(/"/g, '\\"');
+    if (opts.invoiceNumber) clauses.push(`InvoiceNumber=="${esc(opts.invoiceNumber)}"`);
+    if (opts.reference) clauses.push(`Reference=="${esc(opts.reference)}"`);
+    if (clauses.length === 0) return [];
+
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const found: any[] = [];
+    const seen = new Set<string>();
+
+    // Xero's `where` has no OR across different fields in a way that is
+    // reliable for these, so each clause is its own request. Two small GETs
+    // beat one unreliable filter when the cost of missing a match is a
+    // duplicate bill in someone's accounts.
+    for (const clause of clauses) {
+      const params = new URLSearchParams({ where: `Type=="ACCPAY" AND ${clause}` });
+      const response = await xeroFetchWithRetry(
+        `${XERO_API_BASE}/Invoices?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Xero-Tenant-Id": connection.tenantId,
+            Accept: "application/json",
+          },
+        },
+        { label: "findBillsByReference" },
+      );
+      if (!response.ok) {
+        // A lookup failure must not block the push; the caller treats an empty
+        // result as "no match known" and carries on.
+        console.warn(`[findBillsByReference] ${clause} -> ${response.status}`);
+        continue;
+      }
+      const data = (await response.json()) as any;
+      for (const inv of data.Invoices || []) {
+        const status = String(inv.Status || "").toUpperCase();
+        if (status === "VOIDED" || status === "DELETED") continue;
+        if (opts.contactId && inv.Contact?.ContactID && inv.Contact.ContactID !== opts.contactId) continue;
+        if (inv.InvoiceID && !seen.has(inv.InvoiceID)) {
+          seen.add(inv.InvoiceID);
+          found.push(inv);
+        }
+      }
+    }
+    return found;
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

@@ -345,6 +345,11 @@ export default function BillDetail() {
   const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("inclusive");
   // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
   // total so it can be nudged to match the supplier invoice — like Xero.
+  // True while a save's Xero push is still in flight. The save mutation has
+  // already settled by then, so without this the Save button re-enables while
+  // the bill is mid-push — and a second click starts a second push, which is
+  // how one bill became two in Xero.
+  const [isSyncingToXero, setIsSyncingToXero] = useState(false);
   const [roundingCents, setRoundingCents] = useState(0);
   // The total printed on the supplier's invoice (cents inc GST) — the ANCHOR.
   // While set, roundingCents is re-derived from it on every lines/taxMode
@@ -1402,6 +1407,7 @@ export default function BillDetail() {
       }
 
       if (form.getValues("sendToXero") && newBill?.id) {
+        setIsSyncingToXero(true);
         try {
           const pushRes = await fetch("/api/xero/push-bill", {
             method: "POST",
@@ -1426,6 +1432,16 @@ export default function BillDetail() {
               toast({ title: "Credit created", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
               return;
             }
+            if (errData.error === "PUSH_IN_FLIGHT") {
+              // Another push for this bill is mid-flight and a follow-up is
+              // queued, so the save still reaches Xero. Calling that a failure
+              // would invite the retry that caused the duplicate.
+              toast({
+                title: "Bill created",
+                description: errData.message || "Already sending to Xero — your changes will follow automatically.",
+              });
+              return;
+            }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
               { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
@@ -1446,6 +1462,8 @@ export default function BillDetail() {
             variant: "destructive",
           });
           return; // stay on page so user can see the error
+        } finally {
+          setIsSyncingToXero(false);
         }
       } else {
         toast({ title: "Success", description: "Bill created successfully" });
@@ -1556,6 +1574,7 @@ export default function BillDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
 
       if (form.getValues("sendToXero") && id) {
+        setIsSyncingToXero(true);
         try {
           const pushRes = await fetch("/api/xero/push-bill", {
             method: "POST",
@@ -1572,6 +1591,18 @@ export default function BillDetail() {
               setUnmappedContactDialogOpen(true);
               toast({ title: "Bill saved", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page so user can complete the mapping
+            }
+            if (errData.error === "PUSH_IN_FLIGHT") {
+              // Not a failure: another push for this bill is mid-flight and a
+              // follow-up is queued, so the save still reaches Xero. Saying
+              // "sync failed" here would be untrue and would invite a retry
+              // that is exactly what caused the duplicate in the first place.
+              toast({
+                title: "Bill saved",
+                description: errData.message || "Already sending to Xero — your changes will follow automatically.",
+              });
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              return;
             }
             if (errData.error === "INVOICE_LOCKED") {
               // Paid invoices are locked in Xero — the local edit is saved, it
@@ -1611,6 +1642,8 @@ export default function BillDetail() {
             variant: "destructive",
           });
           return; // don't navigate away so they can see the error
+        } finally {
+          setIsSyncingToXero(false);
         }
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
@@ -4325,12 +4358,15 @@ export default function BillDetail() {
                       disabled={
                         createMutation.isPending ||
                         updateMutation.isPending ||
+                        isSyncingToXero ||
                         ocrMutation.isPending ||
                         isUploadingAttachment
                       }
                       data-testid="button-save"
                     >
-                      {createMutation.isPending || updateMutation.isPending
+                      {isSyncingToXero
+                        ? "Sending to Xero..."
+                        : createMutation.isPending || updateMutation.isPending
                         ? "Saving..."
                         : ocrMutation.isPending
                         ? "Processing invoice..."

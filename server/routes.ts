@@ -564,7 +564,53 @@ export function explainXeroValidation(raw: string, billType?: string | null): st
   return msg;
 }
 
+/**
+ * Push a bill to Xero, at most once at a time.
+ *
+ * Saving a bill fires TWO pushes: the save handler schedules an auto-push on a
+ * 2s debounce, and the client then calls /api/xero/push-bill itself. Usually
+ * the explicit one stores xero_invoice_id before the auto-push reads the bill,
+ * so the second updates. But the push makes several Xero round trips before it
+ * creates anything, so when it runs slow the auto-push still sees no link and
+ * CREATES — and the supplier's invoice exists twice in the customer's accounts.
+ *
+ * The claim is a conditional UPDATE on the bill row, so it holds across
+ * processes, not just within one. A caller that cannot get it does not push:
+ * the work is already happening, and the queued safety net covers any state
+ * that arrived after the running push read the bill.
+ */
 export async function pushBillToXeroInternal(
+  billId: string,
+  companyId: string,
+  overrideXeroContactId?: string,
+): Promise<PushBillResult> {
+  const claimed = await storage.claimXeroPush(billId).catch(() => true);
+  if (!claimed) {
+    console.warn(JSON.stringify({
+      event: "xero.bill.push.skipped",
+      billId, companyId,
+      reason: "ALREADY_IN_FLIGHT",
+      message: "Another push for this bill is still running; queued a follow-up instead of creating a second Xero bill.",
+      ts: new Date().toISOString(),
+    }));
+    // Whatever changed since the running push read the bill still needs to
+    // land, so leave a job behind rather than dropping the intent.
+    await enqueueXeroPush(companyId, billId, 15_000).catch(() => {});
+    return {
+      ok: false,
+      status: 409,
+      error: "PUSH_IN_FLIGHT",
+      message: "This bill is already being sent to Xero. The latest changes will follow automatically.",
+    };
+  }
+  try {
+    return await pushBillToXeroUnguarded(billId, companyId, overrideXeroContactId);
+  } finally {
+    await storage.releaseXeroPush(billId);
+  }
+}
+
+async function pushBillToXeroUnguarded(
   billId: string,
   companyId: string,
   overrideXeroContactId?: string,
@@ -1015,10 +1061,47 @@ export async function pushBillToXeroInternal(
     };
 
     let xeroBill: any;
-    if (bill.xeroInvoiceId) {
+    // Re-read the link immediately before deciding create-vs-update. The bill
+    // object was loaded at the top of this function, and another push (or a
+    // sync) may have linked it since — acting on the stale copy is what makes a
+    // second Xero bill.
+    const freshLink = (await storage.getBillById(billId).catch(() => null))?.xeroInvoiceId
+      || bill.xeroInvoiceId;
+
+    // Not linked? It may still already BE in Xero — from a push that timed out
+    // after Xero had created the bill, or a concurrent one. Ask before creating.
+    let adoptedXeroId: string | null = null;
+    if (!freshLink && !isCredit) {
+      try {
+        const existing = await xeroService.findBillsByReference(connection.id, {
+          invoiceNumber: bill.billReference || null,
+          reference: bill.billNumber || null,
+          contactId: supplierXeroContactId || null,
+        });
+        if (existing.length > 0) {
+          adoptedXeroId = existing[0].InvoiceID;
+          console.warn(JSON.stringify({
+            event: "xero.bill.push.adopted",
+            billId, companyId,
+            xeroInvoiceId: adoptedXeroId,
+            matched: existing.length,
+            message: "Found this bill already in Xero — linking to it instead of creating a second copy.",
+            ts: new Date().toISOString(),
+          }));
+          await storage.updateBill(billId, { xeroInvoiceId: adoptedXeroId, sendToXero: true } as any);
+        }
+      } catch (e: any) {
+        // A lookup failure must not block the push; worst case we are back to
+        // the old behaviour for this one attempt.
+        console.warn("[pushBillToXeroInternal] duplicate pre-check failed:", e?.message || e);
+      }
+    }
+
+    const linkedId = freshLink || adoptedXeroId;
+    if (linkedId) {
       xeroBill = isCredit
-        ? await xeroService.updateCreditNote(connection.id, bill.xeroInvoiceId, billPayload)
-        : await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
+        ? await xeroService.updateCreditNote(connection.id, linkedId, billPayload)
+        : await xeroService.updateBill(connection.id, linkedId, billPayload);
     } else {
       xeroBill = isCredit
         ? await xeroService.createCreditNote(connection.id, billPayload)
