@@ -1019,6 +1019,9 @@ export default function SelectionDetail() {
   // it after them crashed the page on any cold/direct load ("Rendered more
   // hooks than during the previous render").
   const canApproveSelections = usePermission("projects.selections", "approve");
+  const canEditSelectionsPerm = usePermission("projects.selections", "edit");
+  const canDeleteSelectionsPerm = usePermission("projects.selections", "delete");
+  const canAddSelectionsPerm = usePermission("projects.selections", "add");
 
   if (isLoading) {
     return (
@@ -1069,6 +1072,18 @@ export default function SelectionDetail() {
   const allowanceAmount = Number(selection.allowance) || 0;
 
   const isAdminUser = !!user?.isAdminLike;
+
+  // Editing an option, deleting one, saving one to the Product Library and
+  // deleting a comment used to be gated on `isAdminUser` alone — which is a
+  // BUILT-IN role whose name contains admin/owner/general manager. A custom
+  // role can never satisfy that, so on a company that runs its own roles (a
+  // Design Manager, say) these were unreachable and no amount of ticking boxes
+  // helped. `projects.selections` already declares add/edit/delete/approve;
+  // they just were not wired to anything. Admin keeps its bypass, so nothing an
+  // owner could do before is lost.
+  const canEditOptions = isAdminUser || canEditSelectionsPerm;
+  const canDeleteOptions = isAdminUser || canDeleteSelectionsPerm;
+  const canSaveToLibrary = isAdminUser || canAddSelectionsPerm;
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
   const linkedAllowanceName = selection.estimateItemId
     ? (projectAllowances.find((a: any) => a.id === selection.estimateItemId)?.name ?? "Linked allowance")
@@ -2032,7 +2047,7 @@ export default function SelectionDetail() {
               /* Was `isAdminUser` alone, which hid the whole menu — and with it
                  the only Approve control in the DEFAULT view — from a site
                  manager who actually holds `projects.selections:approve`. */
-              if (!isAdminUser && !canApproveSelections) return null;
+              if (!canApproveSelections && !canEditOptions && !canDeleteOptions && !canSaveToLibrary) return null;
               return (
                 <AlertDialog>
                   <DropdownMenu>
@@ -2067,7 +2082,7 @@ export default function SelectionDetail() {
                           Approve
                         </DropdownMenuItem>
                       )}
-                      {isAdminUser && !isLocked && (
+                      {canEditOptions && !isLocked && (
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
                           <Edit3 className="w-4 h-4 mr-2" />
                           Edit
@@ -2081,17 +2096,20 @@ export default function SelectionDetail() {
                           </DropdownMenuItem>
                         </AlertDialogTrigger>
                       )}
-                      {/* Editing the catalogue and deleting an option are not
-                          approval rights — they stay on isAdminUser. */}
-                      {isAdminUser && (
+                      {/* Writing to the company catalogue is an "add", deleting
+                          an option is a "delete" — separate rights from approval,
+                          and now separately grantable. */}
+                      {canSaveToLibrary && (
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
+                          disabled={saveToLibraryMutation.isPending}
+                        >
+                          <BookMarked className="w-4 h-4 mr-2" />
+                          Save to Product Library
+                        </DropdownMenuItem>
+                      )}
+                      {canDeleteOptions && (
                         <>
-                          <DropdownMenuItem
-                            onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
-                            disabled={saveToLibraryMutation.isPending}
-                          >
-                            <BookMarked className="w-4 h-4 mr-2" />
-                            Save to Product Library
-                          </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
                             className="text-destructive"
@@ -2235,7 +2253,7 @@ export default function SelectionDetail() {
                             <span className="text-xs text-muted-foreground">
                               {format(new Date(comment.createdAt), "d MMM, h:mm a")}
                             </span>
-                            {isAdminUser && !comment.isClientComment && (
+                            {canDeleteOptions && !comment.isClientComment && (
                               <button
                                 onClick={() => deleteCommentMutation.mutate(comment.id)}
                                 className="h-4 w-4 flex items-center justify-center rounded hover:text-destructive"
