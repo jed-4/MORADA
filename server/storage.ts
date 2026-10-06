@@ -7241,6 +7241,46 @@ export class DbStorage implements IStorage {
           createdAt: now,
         });
         createdKeys.add(permData.key);
+        continue;
+      }
+
+      // Reconcile a permission that already exists.
+      //
+      // This used to be insert-only, so a permission seeded before an action
+      // was added to it never gained that action. `projects.selections` picked
+      // up "approve" long after it was first seeded: every database created
+      // before that kept four actions, the role editor renders one checkbox per
+      // stored action, and so there was no Approve box to tick — the permission
+      // existed in code and was ungrantable in the product. Found when a Design
+      // Manager could not be given selection approval no matter what was set.
+      //
+      // Only the catalogue is touched. What a role is GRANTED lives in
+      // role_permissions.allowedActions and is not read or written here, so
+      // widening the catalogue cannot hand anybody a new right — it only makes
+      // the right offerable.
+      const row = existing[0];
+      const storedActions = Array.isArray(row.actions) ? [...row.actions].sort() : [];
+      const wantedActions = [...permData.actions].sort();
+      const actionsDiffer = storedActions.join(",") !== wantedActions.join(",");
+      const metaDiffers =
+        row.name !== permData.name ||
+        row.description !== permData.description ||
+        row.category !== permData.category;
+
+      if (actionsDiffer || metaDiffers) {
+        await db.update(schema.permissions)
+          .set({
+            name: permData.name,
+            description: permData.description,
+            category: permData.category,
+            actions: permData.actions as PermissionAction[],
+          })
+          .where(eq(schema.permissions.id, row.id));
+        if (actionsDiffer) {
+          console.log(
+            `[permissions] ${permData.key}: actions ${JSON.stringify(storedActions)} -> ${JSON.stringify(wantedActions)}`,
+          );
+        }
       }
     }
 
