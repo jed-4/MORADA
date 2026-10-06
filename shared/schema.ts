@@ -2115,6 +2115,12 @@ export const bills = pgTable("bills", {
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
   xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
   xeroPaidStatus: text("xero_paid_status"), // Synced from Xero
+  // Held for the duration of a push to Xero so two concurrent pushes of the
+  // same bill cannot both reach the create and make two Xero bills
+  // (migration 0102). Claimed and released by storage.claimXeroPush /
+  // releaseXeroPush; a claim older than the stale timeout is reclaimable so a
+  // crash mid-push cannot wedge the bill forever.
+  xeroPushInFlightAt: timestamp("xero_push_in_flight_at"),
   xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
   xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'failed'
   xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
