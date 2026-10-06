@@ -65,7 +65,7 @@ import { CSS } from "@dnd-kit/utilities";
 interface Reminder {
   id: string;
   title: string;
-  triggerAt: string;
+  dueAt: string;
   status: string;
 }
 

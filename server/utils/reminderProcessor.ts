@@ -2,6 +2,12 @@ import { storage } from "../storage";
 import { sendReminderEmail } from "./email";
 import { addDays, addWeeks, addMonths, differenceInMinutes, differenceInHours, startOfDay, format } from "date-fns";
 import { emitNotification } from "../socketManager";
+import {
+  zonedNow,
+  businessReminderDue,
+  resolveBusinessRecipients,
+  nextPersonalDueAt,
+} from "@shared/reminderSchedule";
 
 let isProcessorRunning = false;
 let lastInsuranceCheckDate: string | null = null;
@@ -28,132 +34,150 @@ export async function processReminders() {
   try {
     const now = new Date();
     
+    // Reminders are scheduled against the configured wall clock, not the
+    // server's. The processor used to compare `new Date().toTimeString()` — the
+    // server's local time — so on a UTC host a 16:30 Australian reminder fired
+    // at 03:30 the next morning. Read once per tick; it is a single global row.
+    let timeZone = "Australia/Sydney";
+    try {
+      const cfg = await storage.getSystemConfiguration();
+      if (cfg?.timezone) timeZone = cfg.timezone;
+    } catch {
+      // Fall back to the default rather than skip every reminder this tick.
+    }
+
     const dueReminders = await storage.getDueReminders(now);
     console.log(`[ReminderProcessor] Found ${dueReminders.length} due reminders`);
-    
+
     for (const reminder of dueReminders) {
       try {
-        await storage.updateReminder(reminder.id, reminder.companyId, {
-          status: "processing",
-        });
-        
-        await storage.createReminderNotification({
-          reminderId: reminder.id,
-          userId: reminder.userId,
-          scheduledFor: new Date(),
-          status: "pending",
-          deliveryMethod: "in_app",
-          title: `Reminder: ${reminder.title}`,
-          body: reminder.description || undefined,
-        });
-        
-        // Reminders are displayed in the Reminders tab of the notification bell via the
-        // reminders table (status = "sent"). No need to also create a duplicate entry in
-        // the notifications table, which would cause them to appear in the Notifications tab.
-        
-        const user = await storage.getUser(reminder.userId);
-        if (user?.email) {
-          try {
-            await sendReminderEmail({
-              to: user.email,
-              recipientName: user.firstName || user.email.split('@')[0],
-              reminderTitle: reminder.title,
-              reminderDescription: reminder.description || undefined,
-              linkedItemType: reminder.linkedItemType || undefined,
-              priority: reminder.priority || undefined,
-              companyId: user.companyId ?? null,
-            });
-            
-            await storage.createReminderNotification({
-              reminderId: reminder.id,
-              userId: reminder.userId,
-              scheduledFor: new Date(),
-              status: "delivered",
-              deliveryMethod: "email",
-              title: `Reminder: ${reminder.title}`,
-              body: reminder.description || undefined,
-            });
-          } catch (emailError) {
-            console.error(`[ReminderProcessor] Failed to send email for reminder ${reminder.id}:`, emailError);
-          }
-        }
-        
-        const recurrence = reminder.recurrencePattern as any;
-        if (recurrence && recurrence.frequency !== "once") {
-          const nextDueAt = calculateNextOccurrence(reminder.dueAt!, recurrence);
-          
-          if (nextDueAt && (!recurrence.endDate || nextDueAt <= new Date(recurrence.endDate))) {
-            await storage.updateReminder(reminder.id, reminder.companyId, {
-              dueAt: nextDueAt,
-              status: "active",
-            });
-          } else {
-            await storage.updateReminder(reminder.id, reminder.companyId, {
-              status: "completed",
-            });
-          }
-        } else {
-          await storage.updateReminder(reminder.id, reminder.companyId, {
-            status: "completed",
-          });
-        }
-        
-        console.log(`[ReminderProcessor] Processed reminder ${reminder.id}: ${reminder.title}`);
-      } catch (err) {
-        console.error(`[ReminderProcessor] Error processing reminder ${reminder.id}:`, err);
-        await storage.updateReminder(reminder.id, reminder.companyId, {
-          status: "active",
-        });
-      }
-    }
-    
-    const nowTime = now.toTimeString().slice(0, 5);
-    const dayOfWeek = now.getDay();
-    
-    const businessReminders = await storage.getActiveBusinessRemindersForTime(nowTime, dayOfWeek);
-    console.log(`[ReminderProcessor] Found ${businessReminders.length} business reminders for ${nowTime}`);
-    
-    for (const businessReminder of businessReminders) {
-      try {
-        if (businessReminder.lastTriggeredAt) {
-          const lastTriggered = new Date(businessReminder.lastTriggeredAt);
-          const minutesSinceLastTrigger = differenceInMinutes(now, lastTriggered);
-          
-          if (minutesSinceLastTrigger < 60) {
-            console.log(`[ReminderProcessor] Skipping business reminder ${businessReminder.id} - already triggered ${minutesSinceLastTrigger} minutes ago`);
-            continue;
-          }
-        }
-        
-        await storage.updateBusinessReminder(businessReminder.id, businessReminder.companyId, {
-          lastTriggeredAt: now,
-        });
-        
-        const users = await storage.getUsersByCompany(businessReminder.companyId);
-        const deliverySettings = businessReminder.deliverySettings as any || {};
-        
-        for (const user of users) {
+        // Who the reminder is FOR. It used to notify `userId` — whoever created
+        // it — so a reminder set for someone else went to the wrong person.
+        const recipientId = (reminder as any).targetUserId || reminder.userId;
+
+        await storage.updateReminder(reminder.id, reminder.companyId, { status: "processing" });
+
+        if (reminder.sendInApp !== false) {
           await storage.createReminderNotification({
-            businessReminderId: businessReminder.id,
-            userId: user.id,
+            reminderId: reminder.id,
+            userId: recipientId,
             scheduledFor: new Date(),
             status: "pending",
             deliveryMethod: "in_app",
-            title: businessReminder.title,
-            body: businessReminder.message || undefined,
+            title: `Reminder: ${reminder.title}`,
+            body: reminder.description || undefined,
           });
-          
-          if (deliverySettings.email !== false && user.email) {
+        }
+
+        // Reminders are displayed in the Reminders tab of the notification bell via the
+        // reminders table. No need to also create a duplicate entry in the
+        // notifications table, which would put them in the Notifications tab too.
+
+        if (reminder.sendEmail) {
+          const user = await storage.getUser(recipientId);
+          if (user?.email) {
             try {
               await sendReminderEmail({
                 to: user.email,
-                recipientName: user.firstName || user.email.split('@')[0],
-                reminderTitle: businessReminder.title,
-                reminderDescription: businessReminder.message || undefined,
-                linkedItemType: businessReminder.reminderType || undefined,
+                recipientName: user.firstName || user.email.split("@")[0],
+                reminderTitle: reminder.title,
+                reminderDescription: reminder.description || undefined,
+                linkedItemType: reminder.linkedItemType || undefined,
                 companyId: user.companyId ?? null,
               });
-              
+              await storage.createReminderNotification({
+                reminderId: reminder.id,
+                userId: recipientId,
+                scheduledFor: new Date(),
+                status: "delivered",
+                deliveryMethod: "email",
+                title: `Reminder: ${reminder.title}`,
+                body: reminder.description || undefined,
+              });
+            } catch (emailError) {
+              console.error(`[ReminderProcessor] Failed to email reminder ${reminder.id}:`, emailError);
+            }
+          }
+        }
+
+        // Recurrence. The old code looked for a `recurrencePattern` column that
+        // does not exist, so every reminder — recurring or not — was completed
+        // after one fire. These are the real columns.
+        const nextDueAt = reminder.dueAt
+          ? nextPersonalDueAt(
+              {
+                reminderType: reminder.reminderType,
+                schedulePattern: (reminder as any).schedulePattern,
+                scheduleDays: (reminder as any).scheduleDays,
+                scheduleTime: (reminder as any).scheduleTime,
+              },
+              reminder.dueAt,
+              timeZone,
+            )
+          : null;
+
+        await storage.updateReminder(reminder.id, reminder.companyId,
+          nextDueAt ? { dueAt: nextDueAt, status: "active" } : { status: "completed" });
+
+        console.log(`[ReminderProcessor] Processed reminder ${reminder.id}: ${reminder.title}`);
+      } catch (err) {
+        console.error(`[ReminderProcessor] Error processing reminder ${reminder.id}:`, err);
+        await storage.updateReminder(reminder.id, reminder.companyId, { status: "active" });
+      }
+    }
+
+    // ── Business reminders ────────────────────────────────────────────────
+    const activeBusinessReminders = await storage.getActiveBusinessReminders();
+
+    for (const businessReminder of activeBusinessReminders) {
+      try {
+        const zoned = zonedNow(now, timeZone);
+
+        // Once per company-local day. Asking the notification rows rather than
+        // a column keeps this true across restarts.
+        const startOfCompanyDay = new Date(now.getTime() - zoned.minutes * 60 * 1000);
+        const firedToday = await storage.hasBusinessReminderFiredSince(businessReminder.id, startOfCompanyDay);
+
+        if (!businessReminderDue(businessReminder, zoned, firedToday)) continue;
+
+        const companyUsers = await storage.getUsersByCompany(businessReminder.companyId);
+        const { recipients, unresolvedTarget } = resolveBusinessRecipients(businessReminder, companyUsers as any);
+
+        if (unresolvedTarget) {
+          console.warn(
+            `[ReminderProcessor] Business reminder ${businessReminder.id} targets "${unresolvedTarget}", ` +
+            `which nothing on a user or role records — sending to everyone in the company. ` +
+            `Re-target it at specific people or roles.`,
+          );
+        }
+        if (recipients.length === 0) {
+          console.warn(`[ReminderProcessor] Business reminder ${businessReminder.id} resolved to nobody — skipped.`);
+          continue;
+        }
+
+        for (const user of recipients as any[]) {
+          if (businessReminder.sendInApp !== false) {
+            await storage.createReminderNotification({
+              businessReminderId: businessReminder.id,
+              userId: user.id,
+              scheduledFor: new Date(),
+              status: "pending",
+              deliveryMethod: "in_app",
+              title: businessReminder.title,
+              body: businessReminder.description || undefined,
+            });
+          }
+
+          if (businessReminder.sendEmail && user.email) {
+            try {
+              await sendReminderEmail({
+                to: user.email,
+                recipientName: user.firstName || user.email.split("@")[0],
+                reminderTitle: businessReminder.title,
+                reminderDescription: businessReminder.description || undefined,
+                linkedItemType: businessReminder.targetType || undefined,
+                companyId: user.companyId ?? null,
+              });
               await storage.createReminderNotification({
                 businessReminderId: businessReminder.id,
                 userId: user.id,
@@ -161,20 +185,23 @@ export async function processReminders() {
                 status: "delivered",
                 deliveryMethod: "email",
                 title: businessReminder.title,
-                body: businessReminder.message || undefined,
+                body: businessReminder.description || undefined,
               });
             } catch (emailError) {
-              console.error(`[ReminderProcessor] Failed to send email for business reminder ${businessReminder.id} to ${user.email}:`, emailError);
+              console.error(`[ReminderProcessor] Failed to email business reminder ${businessReminder.id} to ${user.email}:`, emailError);
             }
           }
         }
-        
-        console.log(`[ReminderProcessor] Processed business reminder ${businessReminder.id}: ${businessReminder.title}`);
+
+        console.log(
+          `[ReminderProcessor] Processed business reminder ${businessReminder.id}: ` +
+          `${businessReminder.title} -> ${recipients.length} recipient(s)`,
+        );
       } catch (err) {
         console.error(`[ReminderProcessor] Error processing business reminder ${businessReminder.id}:`, err);
       }
     }
-    
+
     console.log("[ReminderProcessor] Reminder processing completed");
     
     await processInsuranceExpiryReminders();

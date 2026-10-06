@@ -6723,8 +6723,12 @@ export const reminders = pgTable("reminders", {
   sendEmail: boolean("send_email").notNull().default(false),
   sendPush: boolean("send_push").notNull().default(true),
   
-  // Status
-  status: text("status").notNull().default("active"), // "active" | "snoozed" | "completed" | "cancelled"
+  // "low" | "normal" | "high" — collected by both reminder forms and used to
+  // colour the row in User Workspace (migration 0101).
+  priority: text("priority").notNull().default("normal"),
+
+  // Status. The processor also uses "processing" while a tick is mid-flight.
+  status: text("status").notNull().default("active"), // "active" | "processing" | "snoozed" | "completed" | "cancelled"
   snoozedUntil: timestamp("snoozed_until"),
   completedAt: timestamp("completed_at"),
   

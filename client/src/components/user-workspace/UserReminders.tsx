@@ -246,7 +246,8 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
 
   const handleEdit = (reminder: Reminder) => {
     setEditingReminder(reminder);
-    const triggerDate = reminder.triggerAt ? new Date(reminder.triggerAt) : new Date();
+    // The API returns dueAt; `triggerAt` below is this form's own field name.
+    const triggerDate = reminder.dueAt ? new Date(reminder.dueAt) : new Date();
     form.reset({
       title: reminder.title,
       description: reminder.description || "",
@@ -277,14 +278,14 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
     if (filterStatus === "dismissed") return r.status === "dismissed";
     return true;
   }).sort((a, b) => {
-    const aTime = a.triggerAt ? new Date(a.triggerAt).getTime() : 0;
-    const bTime = b.triggerAt ? new Date(b.triggerAt).getTime() : 0;
+    const aTime = a.dueAt ? new Date(a.dueAt).getTime() : 0;
+    const bTime = b.dueAt ? new Date(b.dueAt).getTime() : 0;
     return aTime - bTime;
   });
 
   const getReminderTimeStatus = (reminder: Reminder) => {
-    if (!reminder.triggerAt) return { label: "No date", color: "text-muted-foreground" };
-    const triggerDate = new Date(reminder.triggerAt);
+    if (!reminder.dueAt) return { label: "No date", color: "text-muted-foreground" };
+    const triggerDate = new Date(reminder.dueAt);
     
     if (reminder.status === "snoozed" && reminder.snoozedUntil) {
       return { 
@@ -488,7 +489,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                   {/* Time info */}
                   <div className="text-xs text-muted-foreground mb-1">
                     <Clock className="h-3 w-3 inline mr-1" />
-                    {reminder.triggerAt && formatDateTimeInTimezone(new Date(reminder.triggerAt), effectiveTimezone)}
+                    {reminder.dueAt && formatDateTimeInTimezone(new Date(reminder.dueAt), effectiveTimezone)}
                     <span className={`ml-1 ${timeStatus.color}`}>
                       ({timeStatus.label})
                     </span>
