@@ -136,6 +136,11 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
         reminderType: "one_time",
         dueAt: new Date(data.triggerAt).toISOString(),
         targetUserId: user.id,
+        // The form has always collected a priority and this list colours its
+        // rows by it, but the payload never carried it — so every reminder came
+        // back "normal" no matter what was chosen. Adding the column
+        // (migration 0101) was necessary and not sufficient.
+        priority: data.priority,
       });
     },
     onSuccess: () => {
@@ -165,6 +170,9 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
       }
       if (data.triggerAt) {
         payload.dueAt = new Date(data.triggerAt).toISOString();
+      }
+      if (data.priority) {
+        payload.priority = data.priority;
       }
       return apiRequest(`/api/reminders/${id}`, "PATCH", payload);
     },
