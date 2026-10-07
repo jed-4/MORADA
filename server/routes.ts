@@ -227,6 +227,7 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
 import { buildRoundingLine } from "./services/xeroBillRounding";
+import { isLockedInXero } from "./services/xeroLockedBill";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import {
@@ -1170,17 +1171,24 @@ async function pushBillToXeroUnguarded(
       // Pulling is the right response to all of these states, not just paid:
       // syncBillFromXeroInternal maps VOIDED/DELETED to draft with a note, and
       // PAID to paid.
-      const invoiceLocked = error.validationErrors.some((v) =>
-        /LineItemID|payments or credit notes|has payments|not of valid status/i.test(v?.message || ""),
-      );
-      if (invoiceLocked) {
-        const lockedBill = await storage.getBillById(billId).catch(() => null);
-        if (lockedBill?.xeroInvoiceId) {
-          // Pull AmountPaid/status so Paid/Due reflect reality going forward.
-          await syncBillFromXeroInternal(billId, companyId).catch((e) => {
-            console.error("[pushBillToXeroInternal] self-heal sync failed:", e);
-          });
-        }
+
+      // Only a bill that IS in Xero can be locked by Xero.
+      //
+      // This branch used to run on the message text alone, so an unlinked bill
+      // whose CREATE was rejected for some unrelated reason — any Xero message
+      // containing "not of valid status", say — was reported as "already
+      // settled in Xero… pulled back from Xero". Nothing had been pushed,
+      // nothing was pulled, and there was no such bill in Xero: the guard below
+      // skipped the self-heal for want of an id but returned the message
+      // anyway. Worse, the real validation error was swallowed, so the one
+      // thing that would explain the failure never reached the user.
+      // Reproduced live on BILL-1746, which had no Xero link at all.
+      const lockedBill = await storage.getBillById(billId).catch(() => null);
+      if (isLockedInXero(error.validationErrors, lockedBill?.xeroInvoiceId)) {
+        // Pull AmountPaid/status so Paid/Due reflect reality going forward.
+        await syncBillFromXeroInternal(billId, companyId).catch((e) => {
+          console.error("[pushBillToXeroInternal] self-heal sync failed:", e);
+        });
         const lockedMsg =
           "This bill is already settled in Xero, so Xero won't accept changes to it. Your edit was saved in Morada, and its status has been pulled back from Xero.";
         try {
