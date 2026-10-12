@@ -11,7 +11,7 @@ import { WidgetError } from "@/components/ui/WidgetError";
 
 export default function BusinessTimesheetsWidget({}: WidgetProps) {
   const timesheetsQ = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
-  const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users?status=all"] }); // names only, so include archived
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   if (timesheetsQ.isLoading) return <WidgetSkeleton rows={4} />;

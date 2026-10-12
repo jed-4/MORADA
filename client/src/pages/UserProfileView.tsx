@@ -50,8 +50,8 @@ import {
   Shield,
   Briefcase,
   ChevronLeft,
-  Trash2,
-  AlertTriangle,
+  Archive,
+  ArchiveRestore,
   Loader2,
   Pencil,
   KeyRound,
@@ -69,7 +69,6 @@ const userEditSchema = z.object({
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
   roleId: z.string().optional(),
-  isActive: z.boolean().optional(),
 });
 
 type UserEditFormValues = z.infer<typeof userEditSchema>;
@@ -79,8 +78,7 @@ export default function UserProfileView() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
-  const [showDisableDialog, setShowDisableDialog] = useState(false);
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [subcontractorHourlyRate, setSubcontractorHourlyRate] = useState("");
   const [subcontractorChargeRate, setSubcontractorChargeRate] = useState("");
@@ -94,7 +92,6 @@ export default function UserProfileView() {
       email: "",
       phone: "",
       roleId: "",
-      isActive: true,
     },
   });
 
@@ -152,48 +149,33 @@ export default function UserProfileView() {
     },
   });
 
-  // Disable user mutation
-  const disableUserMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/users/${userId}`, "PATCH", { isActive: false });
+  // Archive / restore mutation. Archiving blocks access and hides them from
+  // the team list and employee dropdowns; their timesheets etc. are untouched.
+  const archiveUserMutation = useMutation({
+    mutationFn: async (archive: boolean) => {
+      return await apiRequest(`/api/users/${userId}/${archive ? "archive" : "unarchive"}`, "POST");
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
+    onSuccess: (_data, archive) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setShowDisableDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/users?status=archived"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?status=all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/assignable"] });
+      setShowArchiveDialog(false);
       toast({
-        title: "User disabled",
-        description: "User has been disabled successfully.",
+        title: archive ? "Team member archived" : "Team member restored",
+        description: archive
+          ? "They can no longer sign in. Their timesheets and history are kept."
+          : "They can sign in again and appear in the team list.",
       });
-      navigate("/business-team");
+      if (archive) navigate("/business-team");
     },
-    onError: () => {
+    onError: (error: any, archive) => {
+      const limitReached = error?.payload?.error === "user_limit_reached";
       toast({
-        title: "Error",
-        description: "Failed to disable user.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Remove user mutation
-  const removeUserMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/users/${userId}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setShowRemoveDialog(false);
-      toast({
-        title: "User removed",
-        description: "User has been permanently removed.",
-      });
-      navigate("/business-team");
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to remove user.",
+        title: archive ? "Couldn't archive team member" : "Couldn't restore team member",
+        description: limitReached
+          ? "Your plan's user limit has been reached. Archive someone else or upgrade first."
+          : String(error?.message || "").replace(/^\d+:\s*/, "") || undefined,
         variant: "destructive",
       });
     },
@@ -323,7 +305,6 @@ export default function UserProfileView() {
         email: user.email || "",
         phone: user.phone || "",
         roleId: user.roleId || "",
-        isActive: user.isActive !== false,
       });
       setIsEditDialogOpen(true);
     }
@@ -734,33 +715,42 @@ export default function UserProfileView() {
 
               <Separator />
 
-              {/* Dangerous Actions */}
+              {/* Archive / restore */}
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-destructive flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Dangerous Actions
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Archive className="h-4 w-4" />
+                  {user.isActive ? "Archive" : "Archived"}
                 </h3>
                 <div className="flex flex-wrap gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowDisableDialog(true)}
-                    disabled={!user.isActive}
-                    data-testid="button-disable-user"
-                  >
-                    Disable User
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setShowRemoveDialog(true)}
-                    data-testid="button-remove-user"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Remove User
-                  </Button>
+                  {user.isActive ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowArchiveDialog(true)}
+                      data-testid="button-archive-user"
+                    >
+                      <Archive className="h-4 w-4 mr-2" />
+                      Archive Team Member
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => archiveUserMutation.mutate(false)}
+                      disabled={archiveUserMutation.isPending}
+                      data-testid="button-unarchive-user"
+                    >
+                      {archiveUserMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArchiveRestore className="h-4 w-4 mr-2" />
+                      )}
+                      Restore Team Member
+                    </Button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Disabling a user will block their access while preserving their data.
-                  Removing a user will permanently delete their account.
+                  {user.isActive
+                    ? "Archiving blocks their access and removes them from the team list and employee dropdowns. Their timesheets and history are kept, and you can restore them at any time."
+                    : "This team member is archived: they can't sign in and don't appear in employee dropdowns. Restoring gives their access back."}
                 </p>
               </div>
             </CardContent>
@@ -768,62 +758,31 @@ export default function UserProfileView() {
         )}
       </div>
 
-      {/* Disable User Dialog */}
-      <AlertDialog open={showDisableDialog} onOpenChange={setShowDisableDialog}>
+      {/* Archive Dialog */}
+      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Disable User</AlertDialogTitle>
+            <AlertDialogTitle>Archive {getUserDisplayName(user)}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to disable {getUserDisplayName(user)}? They will no
-              longer be able to access the system, but their data will be preserved.
+              They will be signed out and won't be able to access the app, and they'll no
+              longer appear in the team list or employee dropdowns. Their timesheets and
+              history stay exactly as they are. You can restore them from the Archived list.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-disable">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-archive">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => disableUserMutation.mutate()}
-              disabled={disableUserMutation.isPending}
-              data-testid="button-confirm-disable"
+              onClick={(e) => { e.preventDefault(); archiveUserMutation.mutate(true); }}
+              disabled={archiveUserMutation.isPending}
+              data-testid="button-confirm-archive"
             >
-              {disableUserMutation.isPending ? (
+              {archiveUserMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Disabling...
+                  Archiving...
                 </>
               ) : (
-                "Disable User"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Remove User Dialog */}
-      <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove User Permanently</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete {getUserDisplayName(user)}'s 
-              account and remove all their data from the system. All items
-              assigned to this user will be reassigned to the general admin.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-remove">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => removeUserMutation.mutate()}
-              disabled={removeUserMutation.isPending}
-              className="bg-destructive hover:bg-destructive/90"
-              data-testid="button-confirm-remove"
-            >
-              {removeUserMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Removing...
-                </>
-              ) : (
-                "Remove Permanently"
+                "Archive"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -923,27 +882,6 @@ export default function UserProfileView() {
                       </Select>
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={editForm.control}
-                name="isActive"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>Active Status</FormLabel>
-                      <div className="text-xs text-muted-foreground">
-                        Inactive users cannot log in
-                      </div>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        data-testid="switch-user-active"
-                      />
-                    </FormControl>
                   </FormItem>
                 )}
               />
