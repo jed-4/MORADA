@@ -23,7 +23,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
-import { exGstFromInc, incGstFromEx } from "@shared/money";
+import { optionClientPriceCents } from "@shared/selectionPricing";
 
 // `./db` and `./middleware/auth` are imported lazily inside
 // computeSelectionViewer. Both open a database pool at module load, and the
@@ -49,8 +49,36 @@ export interface SelectionViewer {
 const FULL_ACCESS: SelectionViewer = { isClient: false, canSeePending: true, canSeePricing: true };
 const SPEC_ONLY: SelectionViewer = { isClient: false, canSeePending: false, canSeePricing: false };
 
-/** Cost fields on an option that only a pricing-permitted viewer may see. */
-const OPTION_MONEY_FIELDS = ["unitCost", "unitTax", "markupPercent", "totalCost", "gstInclusive"] as const;
+/**
+ * Money fields on an option that only a pricing-permitted TEAM viewer may see.
+ * `unitCharge` is the client's price, but it sits here too: beside a markup it
+ * gives the cost away, and a trade without pricing access gets no money at all.
+ *
+ * 🚨 Adding a column to selection_options? It must be listed here or in
+ * OPTION_NON_MONEY_FIELDS — selection-visibility.test.ts fails otherwise.
+ */
+export const OPTION_MONEY_FIELDS = ["unitCost", "unitTax", "markupPercent", "unitCharge", "totalCost", "gstInclusive"] as const;
+
+/** Every other selection_options column: safe for a team member without pricing access. */
+export const OPTION_NON_MONEY_FIELDS = [
+  "id", "selectionId", "name", "description", "sku", "brand", "category", "subcategory",
+  "quantity", "unitType", "url", "visibleToClient", "isSelectedByClient", "sortOrder",
+  "approvedAt", "approvedById", "approvedBy", "lockedAt", "productId", "specifications",
+  "notes", "createdAt", "updatedAt",
+] as const;
+
+/**
+ * The ONLY option fields a client is ever sent — an allow-list, so a column
+ * added later stays private until someone deliberately lists it here. No cost,
+ * no markup, no internal notes. A price, when the client may see one, is
+ * written into `totalCost` by clientOptionView().
+ */
+export const CLIENT_OPTION_FIELDS = [
+  "id", "selectionId", "name", "description", "sku", "brand", "category", "subcategory",
+  "quantity", "unitType", "url", "visibleToClient", "isSelectedByClient", "sortOrder",
+  "approvedAt", "approvedBy", "lockedAt", "specifications", "createdAt", "updatedAt",
+  "attachments",
+] as const;
 
 /**
  * Resolve what the caller is allowed to see. Cached on the request — a single
@@ -177,17 +205,18 @@ function stripOptionMoney(option: any): any {
 }
 
 /**
- * The price a client may be shown: cost × qty × markup, inc GST — the same
- * figure the selection portal quotes. Never the raw cost or the markup itself.
+ * The option as a client sees it. `totalCost` carries the client's price for
+ * the line (what they pay, inc GST) when they may see one, and is otherwise
+ * absent. Never the cost, the markup or the per-unit charge.
  */
-function clientPriceCents(option: any): number | null {
-  const rawUnit = option?.unitCost;
-  if (rawUnit == null) return null;
-  const qty = Number(option.quantity) || 1;
-  const markup = Number(option.markupPercent) || 0;
-  const unitEx = option.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
-  const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
-  return incGstFromEx(totalEx);
+function clientOptionView(option: any, showPrice: boolean): any {
+  const out: any = {};
+  for (const field of CLIENT_OPTION_FIELDS) {
+    if (option[field] !== undefined) out[field] = option[field];
+  }
+  const price = showPrice ? optionClientPriceCents(option) : null;
+  if (price !== null) out.totalCost = price;
+  return out;
 }
 
 /** Options the builder has hidden from the client never reach them. */
@@ -208,14 +237,30 @@ function redactForClient(selection: any, rolePricing: boolean): any {
   delete out.portalToken;
   if (!showPrice) delete out.allowance;
   if (options) {
-    out.options = options.map((option: any) => {
-      const price = showPrice ? clientPriceCents(option) : null;
-      const stripped = stripNotes(stripOptionMoney(option));
-      if (price !== null) stripped.totalCost = price;
-      return stripped;
-    });
+    out.options = options.map((option: any) => clientOptionView(option, showPrice));
   }
   return out;
+}
+
+/**
+ * A single option row as `viewer` may see it — for write responses (create,
+ * update), which otherwise hand the saved row, cost and all, straight back.
+ * A client gets no price here; they read prices from the GET routes.
+ */
+export function redactOptionForViewer(option: any, viewer: SelectionViewer): any {
+  if (!option) return option;
+  if (viewer.isClient) return clientOptionView(option, false);
+  return viewer.canSeePricing ? option : stripOptionMoney(option);
+}
+
+/** Product Library money: cost, markup and charge are for pricing-permitted team only. */
+export const PRODUCT_MONEY_FIELDS = ["defaultUnitCost", "defaultMarkupPercent", "defaultUnitCharge", "gstInclusive"] as const;
+
+export function redactProductForViewer<T extends Record<string, any>>(product: T, viewer: SelectionViewer): T {
+  if (!product || (!viewer.isClient && viewer.canSeePricing)) return product;
+  const copy: any = { ...product };
+  for (const field of PRODUCT_MONEY_FIELDS) delete copy[field];
+  return copy;
 }
 
 /**
@@ -291,12 +336,7 @@ export function applyOptionVisibility(
 
   if (viewer.isClient) {
     const showPrice = viewer.canSeePricing && parentSelection?.clientCanSeePrice === true;
-    return clientVisibleOptions(options).map((option) => {
-      const price = showPrice ? clientPriceCents(option) : null;
-      const stripped = stripNotes(stripOptionMoney(option));
-      if (price !== null) stripped.totalCost = price;
-      return stripped;
-    });
+    return clientVisibleOptions(options).map((option) => clientOptionView(option, showPrice));
   }
 
   let out = options;

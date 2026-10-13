@@ -1657,7 +1657,11 @@ export const selectionOptions = pgTable("selection_options", {
   unitCost: integer("unit_cost"), // Cost in cents
   unitTax: integer("unit_tax"), // Tax in cents
   gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether unit cost includes GST
-  markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
+  markupPercent: doublePrecision("markup_percent"), // Markup on COST, percent (e.g. 7.5). Never margin.
+  // What the client pays per unit, cents INC GST. Authoritative when set; null
+  // on options priced before it existed (see shared/selectionPricing.ts).
+  // 🚨 unitCost and markupPercent must never reach a client.
+  unitCharge: integer("unit_charge"),
   totalCost: integer("total_cost"), // Final cost in cents
   quantity: integer("quantity").notNull().default(1),
   unitType: text("unit_type").notNull().default("ea"), // "m2", "linear_m", "ea", etc.
@@ -8614,7 +8618,13 @@ export const products = pgTable("products", {
   // emptied the Product Library.
   source:            text("source").notNull().default("library"),
   supplierContactId: varchar("supplier_contact_id").references(() => contacts.id),
-  defaultUnitCost:   integer("default_unit_cost"),   // cents
+  defaultUnitCost:   integer("default_unit_cost"),   // cents; inc GST when gstInclusive, else ex GST (legacy rows)
+  gstInclusive:      boolean("gst_inclusive").notNull().default(false),
+  // Markup on cost (percent) and what the client pays per unit (cents INC GST).
+  // Copied onto a selection option when the product is picked; the option can
+  // then be re-priced for that job without touching the library.
+  defaultMarkupPercent: doublePrecision("default_markup_percent"),
+  defaultUnitCharge: integer("default_unit_charge"),
   unitType:          text("unit_type"),
   url:               text("url"),
   notes:             text("notes"),

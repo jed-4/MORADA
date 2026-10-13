@@ -10,6 +10,7 @@
  * could not hold an image, which is thin for the record a client selection
  * points at.
  */
+import { costIncGstCents } from "@shared/selectionPricing";
 import { CroppedImage } from "@/components/CroppedImage";
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
@@ -53,6 +54,8 @@ interface Product {
   subcategory: string | null;
   description: string | null;
   defaultUnitCost: number | null;
+  defaultMarkupPercent?: number | null;
+  defaultUnitCharge?: number | null;
   unitType: string | null;
   url: string | null;
   groupId: string | null;
@@ -72,6 +75,8 @@ const GRID_COLUMNS = [
   { key: "tags",        label: "Tags",     defaultWidth: 160 },
   { key: "unit",        label: "Unit",     defaultWidth: 70 },
   { key: "cost",        label: "Cost",     defaultWidth: 110, align: "right" as const },
+  { key: "markup",      label: "Markup",   defaultWidth: 80,  align: "right" as const },
+  { key: "charge",      label: "Charge",   defaultWidth: 110, align: "right" as const },
 ];
 
 const UNGROUPED = "__ungrouped__";
@@ -281,7 +286,21 @@ export default function ProductLibrary() {
       case "cost":
         return (
           <span className="text-xs text-right tabular-nums block">
-            {p.defaultUnitCost != null ? formatCents(p.defaultUnitCost) : "—"}
+            {p.defaultUnitCost != null ? formatCents(costIncGstCents(p.defaultUnitCost, (p as any).gstInclusive === true)!) : "—"}
+          </span>
+        );
+      // Cost, markup and charge are per unit, inc GST, and only sent to roles
+      // with selections pricing access — everyone else sees a dash.
+      case "markup":
+        return (
+          <span className="text-xs text-right tabular-nums block text-muted-foreground">
+            {p.defaultMarkupPercent != null ? `${Math.round(p.defaultMarkupPercent * 100) / 100}%` : "—"}
+          </span>
+        );
+      case "charge":
+        return (
+          <span className="text-xs text-right tabular-nums block font-medium">
+            {p.defaultUnitCharge != null ? formatCents(p.defaultUnitCharge) : "—"}
           </span>
         );
       default:

@@ -29611,6 +29611,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Migration 0104. A missing column fails every selections / products read,
+  // so the columns are also ensured at boot (additive, idempotent).
+  async ensureSelectionPricingColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE selection_options ADD COLUMN IF NOT EXISTS unit_charge integer`);
+      await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS default_unit_charge integer`);
+      await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS default_markup_percent double precision`);
+      await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS gst_inclusive boolean NOT NULL DEFAULT false`);
+    } catch (error) {
+      console.error("Failed to ensure selection pricing columns:", error);
+    }
+  }
+
   async ensureFocalPointColumns(): Promise<void> {
     try {
       const tables = [
