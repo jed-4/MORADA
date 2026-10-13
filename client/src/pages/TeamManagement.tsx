@@ -16,6 +16,7 @@ import {
   Send,
   XCircle,
   HardHat,
+  ArchiveRestore,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -32,8 +33,41 @@ export default function TeamManagement() {
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
 
-  const { data: allUsers = [], isLoading: usersLoading } = useQuery({
+  const [showArchived, setShowArchived] = useState(false);
+
+  const { data: activeUsers = [], isLoading: activeLoading } = useQuery<any[]>({
     queryKey: ["/api/users"],
+  });
+
+  // Fetched up front so the Archived tab can show its count.
+  const { data: archivedUsers = [], isLoading: archivedLoading } = useQuery<any[]>({
+    queryKey: ["/api/users?status=archived"],
+  });
+
+  const allUsers = showArchived ? archivedUsers : activeUsers;
+  const usersLoading = showArchived ? archivedLoading : activeLoading;
+  const archivedCount = archivedUsers.filter((u: any) => u.userCategory === "team").length;
+
+  const unarchiveMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest(`/api/users/${userId}/unarchive`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?status=archived"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?status=all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/assignable"] });
+      toast({ title: "Team member restored", description: "They can sign in again and appear in the team list." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't restore team member",
+        description: error?.payload?.error === "user_limit_reached"
+          ? "Your plan's user limit has been reached. Archive someone else or upgrade first."
+          : undefined,
+        variant: "destructive",
+      });
+    },
   });
 
   const { data: pendingInvitations = [], isLoading: invitationsLoading } = useQuery<UserInvitation[]>({
@@ -71,7 +105,11 @@ export default function TeamManagement() {
     },
   });
 
-  const users = allUsers.filter((user: any) => user.firstName || user.lastName || user.email);
+  const users = allUsers.filter((user: any) =>
+    (user.firstName || user.lastName || user.email) &&
+    // Revoked client-portal users are inactive too; they're managed from Contacts.
+    (!showArchived || user.userCategory === "team")
+  );
 
   const filteredUsers = users.filter((user: any) => {
     if (!searchQuery) return true;
@@ -100,6 +138,23 @@ export default function TeamManagement() {
               data-testid="input-search"
             />
           </div>
+
+          <div className="flex items-center border rounded-md overflow-hidden h-6 text-xs">
+            <button
+              onClick={() => setShowArchived(false)}
+              className={`px-2 h-full ${!showArchived ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"}`}
+              data-testid="button-show-active"
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setShowArchived(true)}
+              className={`px-2 h-full border-l ${showArchived ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"}`}
+              data-testid="button-show-archived"
+            >
+              Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -120,18 +175,22 @@ export default function TeamManagement() {
           <div className="flex items-center justify-center h-full text-muted-foreground">
             Loading...
           </div>
-        ) : filteredUsers.length === 0 && pendingInvitations.length === 0 ? (
+        ) : filteredUsers.length === 0 && (showArchived || pendingInvitations.length === 0) ? (
           <div className="flex flex-col items-center justify-center h-full">
             <Users className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No team members found</h3>
+            <h3 className="text-lg font-semibold mb-2">{showArchived ? "No archived team members" : "No team members found"}</h3>
             <p className="text-muted-foreground text-sm">
-              {searchQuery ? "Try adjusting your search" : "Get started by inviting your first team member"}
+              {searchQuery
+                ? "Try adjusting your search"
+                : showArchived
+                  ? "Archive someone from their profile and they'll appear here"
+                  : "Get started by inviting your first team member"}
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             {/* Pending Invitations Section */}
-            {pendingInvitations.length > 0 && (
+            {!showArchived && pendingInvitations.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" />
@@ -163,7 +222,7 @@ export default function TeamManagement() {
             {/* Team Members Section */}
             {filteredUsers.length > 0 && (
               <div className="space-y-2">
-                {pendingInvitations.length > 0 && (
+                {!showArchived && pendingInvitations.length > 0 && (
                   <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5" />
                     Active Members ({filteredUsers.length})
@@ -175,6 +234,8 @@ export default function TeamManagement() {
                       key={user.id}
                       user={user}
                       onView={(id) => navigate(`/business-team/${id}`)}
+                      onRestore={showArchived ? (id) => unarchiveMutation.mutate(id) : undefined}
+                      isRestoring={unarchiveMutation.isPending}
                     />
                   ))}
                 </div>
@@ -207,10 +268,14 @@ export default function TeamManagement() {
 
 function TeamMemberCard({ 
   user,
-  onView
+  onView,
+  onRestore,
+  isRestoring,
 }: {
   user: any;
   onView: (id: string) => void;
+  onRestore?: (id: string) => void;
+  isRestoring?: boolean;
 }) {
   const getInitials = (firstName?: string | null, lastName?: string | null, email?: string | null) => {
     if (firstName && lastName) {
@@ -231,7 +296,7 @@ function TeamMemberCard({
     return user.email || "Unknown";
   };
 
-  const userStatus = !user.isActive ? "Disabled" : user.isInvitePending ? "Pending" : "Active";
+  const userStatus = !user.isActive ? "Archived" : user.isInvitePending ? "Pending" : "Active";
 
   return (
     <Card
@@ -283,11 +348,25 @@ function TeamMemberCard({
             
             <StatusBadge
               status={userStatus}
-              tone={!user.isActive ? "danger" : undefined}
+              tone={!user.isActive ? "neutral" : undefined}
               className="shrink-0"
             />
           </div>
         </div>
+
+        {onRestore && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs shrink-0"
+            disabled={isRestoring}
+            onClick={(e) => { e.stopPropagation(); onRestore(user.id); }}
+            data-testid={`button-restore-${user.id}`}
+          >
+            <ArchiveRestore className="w-3 h-3 mr-1" />
+            Restore
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
