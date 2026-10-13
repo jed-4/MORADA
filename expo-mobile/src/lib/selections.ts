@@ -18,6 +18,8 @@ export interface OptionAttachment {
   fileType: string;
   thumbnailX?: number | null;
   thumbnailY?: number | null;
+  /** Percent of "cover": 100 fills the frame, lower fits more in, higher crops. */
+  thumbnailZoom?: number | null;
 }
 
 export interface SelectionOption {
@@ -40,6 +42,9 @@ export interface SelectionOption {
   totalCost?: number | null;
   unitCost?: number | null;
   markupPercent?: number | null;
+  /** What the client pays per unit, cents inc GST. */
+  unitCharge?: number | null;
+  gstInclusive?: boolean | null;
 }
 
 export interface Selection {
@@ -165,6 +170,33 @@ export function prettifySpecKey(key: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * What the client pays for the whole line, cents INC GST. A stored charge is
+ * the answer; older options fall back to cost × qty × markup.
+ *
+ * A copy of `optionClientPriceCents` in shared/selectionPricing.ts — the phone
+ * can't import from `shared/`, so keep the two in step. Returns null when no
+ * money arrived, which is every viewer without pricing access (the server
+ * strips it).
+ */
+export function clientPriceCents(option?: SelectionOption): number | null {
+  if (!option) return null;
+  const qty = Number(option.quantity) || 1;
+  if (option.unitCharge != null) return Math.round(option.unitCharge * qty);
+  const rawUnit = option.unitCost;
+  if (rawUnit == null) return null;
+  const markup = Number(option.markupPercent) || 0;
+  const unitEx = option.gstInclusive ? Math.round(rawUnit / 1.1) : rawUnit;
+  const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
+  return Math.round(totalEx * 1.1);
+}
+
+/** "$1,250.00" — money a client is charged is shown to the cent. */
+export function formatMoney(cents?: number | null): string {
+  if (cents === null || cents === undefined) return '—';
+  return `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatCents(cents?: number | null): string {
