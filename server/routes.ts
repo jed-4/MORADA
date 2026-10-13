@@ -12458,8 +12458,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const { category } = req.query;
+      // Archived team members are hidden unless asked for: ?status=archived
+      // feeds the Team page's archived list, ?status=all is for resolving names
+      // on historical records (timesheets etc.).
+      const status = req.query.status === 'archived' || req.query.status === 'all' ? req.query.status : 'active';
       // SECURITY: Filter users by company to prevent cross-tenant data leak
-      const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId, category as any);
+      const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId, category as any, status);
       // Use safe user helper to remove passwords
       const safeUsers = users.map(user => toSafeUser(user));
       res.json(safeUsers);
@@ -12685,7 +12689,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const user = await storage.updateUser(req.params.id, validationResult.data);
+      // Archiving goes through /archive and /unarchive so its guards (not
+      // yourself, not the last Owner, seat limit) can't be bypassed here.
+      const updateData = { ...validationResult.data };
+      delete (updateData as any).isActive;
+
+      const user = await storage.updateUser(req.params.id, updateData);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -12693,6 +12702,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(toSafeUser(user));
     } catch (error) {
       res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  // Archive a team member: blocks their access and drops them from the team
+  // list and employee dropdowns. Nothing they own (timesheets, tasks, notes)
+  // is touched, and /unarchive reverses it.
+  app.post("/api/users/:id/archive", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUserWithRole(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId || target.userCategory !== "team") {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (String(target.id) === String((req.user as any)?.id)) {
+        return res.status(400).json({ error: "You can't archive your own account." });
+      }
+      if (!target.isActive) {
+        return res.json(toSafeUser(target));
+      }
+      if (target.role?.isBuiltIn && target.role.name === "Owner") {
+        const teamUsers = await storage.getUsersByCompanyWithRoles(callerCompanyId, "team");
+        const otherOwners = teamUsers.filter(u => u.id !== target.id && u.role?.isBuiltIn && u.role.name === "Owner");
+        if (otherOwners.length === 0) {
+          return res.status(400).json({ error: "You can't archive the only Owner. Make someone else an Owner first." });
+        }
+      }
+
+      const user = await storage.updateUser(target.id, { isActive: false });
+      // requireAuth rejects an archived user on their next request anyway;
+      // this just clears the dead sessions.
+      await storage.deleteSessionsForUser(target.id);
+      res.json(toSafeUser(user!));
+    } catch (error) {
+      console.error("Error archiving user:", error);
+      res.status(500).json({ error: "Failed to archive user" });
+    }
+  });
+
+  app.post("/api/users/:id/unarchive", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUserWithRole(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId || target.userCategory !== "team") {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (target.isActive) {
+        return res.json(toSafeUser(target));
+      }
+
+      // Same Full User seat rule as inviting — restoring someone takes a seat.
+      if (isStripeConfigured() && !(target.role as any)?.isMobileOnly) {
+        const company = await storage.getCompany(callerCompanyId);
+        const planKey = (isPlanKey((company as any)?.plan) ? (company as any).plan : 'builder') as PlanKey;
+        const limit = getPlan(planKey).limits.fullUsers;
+        if (limit !== -1) {
+          const { rows: activeRows } = await pool.query(
+            `SELECT COUNT(*)::int AS c FROM users u
+               LEFT JOIN user_roles r ON r.id = u.role_id
+              WHERE u.company_id = $1 AND u.is_active = true
+                AND u.user_category = 'team' AND COALESCE(r.is_mobile_only, false) = false`,
+            [callerCompanyId],
+          );
+          const { rows: pendingRows } = await pool.query(
+            `SELECT COUNT(*)::int AS c FROM user_invitations i
+               LEFT JOIN user_roles r ON r.id = i.role_id
+              WHERE i.company_id = $1 AND i.status = 'pending'
+                AND i.user_category = 'team' AND COALESCE(r.is_mobile_only, false) = false`,
+            [callerCompanyId],
+          );
+          const current = (activeRows[0]?.c ?? 0) + (pendingRows[0]?.c ?? 0);
+          if (current >= limit) {
+            return res.status(403).json({ error: 'user_limit_reached', limit, current });
+          }
+        }
+      }
+
+      const user = await storage.updateUser(target.id, { isActive: true });
+      res.json(toSafeUser(user!));
+    } catch (error) {
+      console.error("Error unarchiving user:", error);
+      res.status(500).json({ error: "Failed to unarchive user" });
     }
   });
 
@@ -16687,6 +16777,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimeType: att.mimeType ?? undefined,
           fileSize: att.fileSize ?? undefined,
           sortOrder: att.sortOrder,
+          thumbnailX: att.thumbnailX,
+          thumbnailY: att.thumbnailY,
+          thumbnailZoom: att.thumbnailZoom,
         });
       }
       // Link the option back to the product
@@ -16738,6 +16831,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           fileSize: img.fileSize ?? undefined,
           mimeType: img.mimeType ?? undefined,
           sortOrder: img.sortOrder ?? 0,
+          thumbnailX: (img as any).thumbnailX ?? 50,
+          thumbnailY: (img as any).thumbnailY ?? 50,
+          thumbnailZoom: (img as any).thumbnailZoom ?? 100,
         });
       }
       res.status(201).json(newOption);
@@ -46899,7 +46995,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     "purchase_order_attachments",
     "enote_attachments",
     "task_template_attachments",
+    "product_images",
   ]);
+  // Tables that also store thumbnail_zoom.
+  const FOCAL_ZOOM_TABLES = new Set(["option_attachments", "product_images"]);
 
   app.patch("/api/attachments/:table/:id/focal-point", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -46912,9 +47011,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
         return res.status(400).json({ error: "thumbnailX and thumbnailY must be integers 0–100" });
       }
-      // Zoom is only stored for selection images (option_attachments).
+      // Zoom is only stored for selection and Product Library images.
       let zoom: number | undefined;
-      if (table === "option_attachments" && req.body.thumbnailZoom !== undefined) {
+      if (FOCAL_ZOOM_TABLES.has(table) && req.body.thumbnailZoom !== undefined) {
         zoom = Math.round(Number(req.body.thumbnailZoom));
         if (!Number.isFinite(zoom) || zoom < 10 || zoom > 400) {
           return res.status(400).json({ error: "thumbnailZoom must be an integer 10–400" });
@@ -46963,6 +47062,16 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             SELECT tta.id FROM task_template_attachments tta
             WHERE tta.id = ${id} AND tta.company_id = ${companyId}`;
           break;
+        case "product_images": {
+          // Serial id, unlike the uuid tables — reject anything non-numeric
+          // before it reaches the integer comparison.
+          if (!/^\d+$/.test(id)) return res.status(404).json({ error: "Attachment not found" });
+          ownershipQuery = sqlHelper`
+            SELECT pi.id FROM product_images pi
+            JOIN products p ON p.id = pi.product_id
+            WHERE pi.id = ${Number(id)} AND p.company_id = ${companyId}`;
+          break;
+        }
         default:
           return res.status(400).json({ error: "Unsupported attachment table" });
       }
@@ -46973,7 +47082,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
 
       if (zoom !== undefined) {
-        await db.execute(sqlHelper`UPDATE option_attachments SET thumbnail_x = ${x}, thumbnail_y = ${y}, thumbnail_zoom = ${zoom} WHERE id = ${id}`);
+        await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y}, thumbnail_zoom = ${zoom} WHERE id = ${id}`);
       } else {
         await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
       }

@@ -252,7 +252,8 @@ export interface IStorage {
   linkGoogleAccount(userId: string, googleId: string): Promise<User | undefined>;
   updateUserLastLogin(userId: string): Promise<void>;
   getUsers(category?: UserCategory): Promise<UserWithRole[]>;
-  getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]>;
+  // status: 'active' (default) hides archived team members; 'archived' / 'all' are for the Team page and name lookups.
+  getUsersByCompanyWithRoles(companyId: string, category?: UserCategory, status?: 'active' | 'archived' | 'all'): Promise<UserWithRole[]>;
 
   // User column preferences
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -2866,11 +2867,12 @@ export class MemStorage implements IStorage {
     }));
   }
 
-  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]> {
+  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory, status: 'active' | 'archived' | 'all' = 'active'): Promise<UserWithRole[]> {
     const allUsers = Array.from(this.users.values());
     const filteredUsers = allUsers.filter(user => {
       if (user.companyId !== companyId) return false;
-      if (!user.isActive) return false;
+      if (status === 'active' && !user.isActive) return false;
+      if (status === 'archived' && user.isActive) return false;
       if (category && user.userCategory !== category) return false;
       return true;
     });
@@ -8685,11 +8687,13 @@ export class DbStorage implements IStorage {
     }));
   }
 
-  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]> {
+  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory, status: 'active' | 'archived' | 'all' = 'active'): Promise<UserWithRole[]> {
     const baseConditions = [
       eq(schema.users.companyId, companyId),
-      eq(schema.users.isActive, true)
     ];
+    if (status !== 'all') {
+      baseConditions.push(eq(schema.users.isActive, status === 'active'));
+    }
     
     if (category) {
       baseConditions.push(eq(schema.users.userCategory, category));
@@ -29622,6 +29626,10 @@ export class DbStorage implements IStorage {
       }
       // Selection images also store a zoom (migration 0103).
       await db.execute(sql`ALTER TABLE option_attachments ADD COLUMN IF NOT EXISTS thumbnail_zoom integer NOT NULL DEFAULT 100`);
+      // Product Library images carry the full crop (migration 0105).
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_x integer NOT NULL DEFAULT 50`);
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_y integer NOT NULL DEFAULT 50`);
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_zoom integer NOT NULL DEFAULT 100`);
     } catch (error) {
       console.error("Failed to ensure focal point columns:", error);
     }
