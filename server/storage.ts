@@ -29624,6 +29624,12 @@ export class DbStorage implements IStorage {
         await db.execute(sql`ALTER TABLE ${sql.raw(table)} ADD COLUMN IF NOT EXISTS thumbnail_x integer NOT NULL DEFAULT 50`);
         await db.execute(sql`ALTER TABLE ${sql.raw(table)} ADD COLUMN IF NOT EXISTS thumbnail_y integer NOT NULL DEFAULT 50`);
       }
+      // Selection images also store a zoom (migration 0103).
+      await db.execute(sql`ALTER TABLE option_attachments ADD COLUMN IF NOT EXISTS thumbnail_zoom integer NOT NULL DEFAULT 100`);
+      // Product Library images carry the full crop (migration 0105).
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_x integer NOT NULL DEFAULT 50`);
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_y integer NOT NULL DEFAULT 50`);
+      await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_zoom integer NOT NULL DEFAULT 100`);
     } catch (error) {
       console.error("Failed to ensure focal point columns:", error);
     }

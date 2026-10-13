@@ -1,3 +1,4 @@
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState } from "react";
 import { Check, Download, ExternalLink, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -90,12 +91,9 @@ export function ClientOptionDialog({
               {/* Capped, not a fixed ratio: at 4/3 the photo alone filled a
                   laptop-height dialog and pushed the specs, documents and the
                   Choose button below the fold. */}
-              <img
-                src={hero?.filePath ?? ""}
-                alt=""
-                className="w-full rounded-md border object-cover bg-muted aspect-square max-h-[42vh]"
-                style={{ objectPosition: `${hero?.thumbnailX ?? 50}% ${hero?.thumbnailY ?? 50}%` }}
-              />
+              <div className="w-full rounded-md border overflow-hidden bg-muted aspect-square max-h-[42vh]">
+                <CroppedImage src={hero?.filePath ?? ""} x={hero?.thumbnailX} y={hero?.thumbnailY} zoom={(hero as any)?.thumbnailZoom} />
+              </div>
               {images.length > 1 && (
                 <div className="flex gap-2 flex-wrap">
                   {images.map((image, i) => (

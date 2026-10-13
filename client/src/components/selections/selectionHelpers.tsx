@@ -2,6 +2,7 @@
 // (list rows, gallery cards, quick-view drawer). Extracted from
 // pages/Selections.tsx so the page owns data/orchestration only.
 
+import { CroppedImage } from "@/components/CroppedImage";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -205,12 +206,7 @@ export function SelectionThumbnail({
           <Lock className="text-muted-foreground/70" style={{ width: size * 0.36, height: size * 0.36 }} />
         </div>
       ) : isImage && attachment?.filePath ? (
-        <img
-          src={attachment.filePath}
-          alt=""
-          className="w-full h-full object-cover"
-          style={{ objectPosition: `${attachment.thumbnailX ?? 50}% ${attachment.thumbnailY ?? 50}%` }}
-        />
+        <CroppedImage src={attachment.filePath} x={attachment.thumbnailX} y={attachment.thumbnailY} zoom={attachment.thumbnailZoom} />
       ) : (
         <ImageIcon className="text-muted-foreground/60" style={{ width: size * 0.4, height: size * 0.4 }} />
       )}
@@ -248,12 +244,7 @@ export function OptionThumbStack({ selection, size = 48 }: { selection: Selectio
           className="absolute top-0 rounded-md overflow-hidden ring-2 ring-background"
           style={{ left: i * offset, zIndex: imgs.length - i, width: size, height: size }}
         >
-          <img
-            src={att.filePath}
-            alt=""
-            className="w-full h-full object-cover"
-            style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
-          />
+          <CroppedImage src={att.filePath} x={att.thumbnailX} y={att.thumbnailY} zoom={att.thumbnailZoom} />
         </div>
       ))}
     </div>

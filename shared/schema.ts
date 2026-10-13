@@ -1698,6 +1698,9 @@ export const optionAttachments = pgTable("option_attachments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   thumbnailX: integer("thumbnail_x").notNull().default(50),
   thumbnailY: integer("thumbnail_y").notNull().default(50),
+  // Percent of "cover": 100 fills the square with the image's short side,
+  // below 100 fits more of the image in, above 100 crops tighter.
+  thumbnailZoom: integer("thumbnail_zoom").notNull().default(100),
 });
 
 export const insertOptionAttachmentSchema = createInsertSchema(optionAttachments).omit({
@@ -8644,6 +8647,11 @@ export const productImages = pgTable("product_images", {
   fileSize:  integer("file_size"),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
+  // Thumbnail crop, same meaning as on option_attachments. Copied both ways
+  // when a product is picked into a selection or saved back to the library.
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+  thumbnailZoom: integer("thumbnail_zoom").notNull().default(100),
 });
 
 export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });

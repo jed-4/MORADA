@@ -34,6 +34,7 @@
  * Money is cents throughout, matching selection_options.unit_cost. The template
  * blob stores cents too, so no conversion happens at the boundary.
  */
+import { CroppedImage } from "@/components/CroppedImage";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Camera, EyeOff, Eye, Lock, CheckCircle, ExternalLink,
@@ -77,6 +78,10 @@ export interface OptionView {
   lockedAt?: string | Date | null;
   /** Already resolved to a URL by the adapter; the views never dig for an image. */
   heroUrl?: string | null;
+  /** Saved thumbnail crop of the hero image (focal point + zoom). */
+  heroX?: number | null;
+  heroY?: number | null;
+  heroZoom?: number | null;
   /** "Matte · 600x600" — the template grid's specs line. Absent on a project. */
   specsLine?: string | null;
 }
@@ -160,12 +165,14 @@ export function OptionGrid({
             onClick={() => onOpen(option)}
             data-testid={`card-option-${option.id}`}
           >
-            <div className="h-40 bg-muted flex items-center justify-center relative overflow-hidden">
+            <div className="aspect-square bg-muted flex items-center justify-center relative overflow-hidden">
               {option.heroUrl ? (
-                <img
+                <CroppedImage
                   src={option.heroUrl}
                   alt={option.name}
-                  className="w-full h-full object-cover"
+                  x={option.heroX}
+                  y={option.heroY}
+                  zoom={option.heroZoom}
                   // A template image is a URL stored in a JSON blob and can rot.
                   // Hiding the broken <img> falls through to the muted panel
                   // rather than a browser's broken-image glyph.
@@ -275,10 +282,12 @@ export function OptionTable({
             cell: (o) => (
               <div className="w-10 h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
                 {o.heroUrl ? (
-                  <img
+                  <CroppedImage
                     src={o.heroUrl}
                     alt={o.name}
-                    className="w-full h-full object-cover"
+                    x={o.heroX}
+                    y={o.heroY}
+                    zoom={o.heroZoom}
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                 ) : (

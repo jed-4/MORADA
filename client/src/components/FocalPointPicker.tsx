@@ -2,19 +2,23 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut, Move } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2 } from "lucide-react";
+import { CroppedImage, cropLayout, containZoom } from "@/components/CroppedImage";
 
 /**
  * FocalPointPicker — pure UI component.
  *
- * Shows a draggable square over the image that represents the exact area
- * that will appear in square-cropped thumbnails. Supports pinch/zoom.
+ * A fixed square frame with the image underneath it: drag the image to
+ * position it, zoom in to crop tighter or out to fit more of it in. The frame
+ * is exactly what square thumbnails show (same maths as CroppedImage).
  *
  * Props:
- *  - imageUrl      URL of the image to set the focal point on
- *  - initialX/Y    Starting position in 0–100 percent (default 50)
- *  - onSave(x, y)  Called with the chosen position; caller handles persistence
- *  - isSaving      When true, the Save button shows a loading state
+ *  - imageUrl            URL of the image to crop
+ *  - initialX/Y          Starting position in 0–100 percent (default 50)
+ *  - initialZoom         Starting zoom, percent of cover (default 100)
+ *  - allowZoom           Offer zoom. Leave off for tables that don't store one.
+ *  - onSave(x, y, zoom)  Called with the chosen crop; caller handles persistence
+ *  - isSaving            When true, the Save button shows a loading state
  *
  * The caller owns the API mutation and query invalidation.
  */
@@ -24,13 +28,14 @@ interface FocalPointPickerProps {
   imageUrl: string;
   initialX?: number;
   initialY?: number;
-  onSave: (x: number, y: number) => void;
+  initialZoom?: number;
+  allowZoom?: boolean;
+  onSave: (x: number, y: number, zoom: number) => void;
   isSaving?: boolean;
 }
 
-const CONTAINER_H = 380;
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 4;
+const FRAME = 380;
+export const MAX_THUMBNAIL_ZOOM = 400;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -42,212 +47,80 @@ export function FocalPointPicker({
   imageUrl,
   initialX = 50,
   initialY = 50,
+  initialZoom = 100,
+  allowZoom = false,
   onSave,
   isSaving = false,
 }: FocalPointPickerProps) {
   const [pos, setPos] = useState({ x: initialX, y: initialY });
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [natSize, setNatSize] = useState({ w: 0, h: 0 });
-  const [containerW, setContainerW] = useState(0);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const interactionRef = useRef<{
-    mode: "square" | "pan" | null;
-    startMouse: { x: number; y: number };
-    startPan: { x: number; y: number };
-    startPos: { x: number; y: number };
-    imgLeft: number;
-    imgTop: number;
-    renderedW: number;
-    renderedH: number;
-    squareSize: number;
-  }>({ mode: null, startMouse: { x: 0, y: 0 }, startPan: { x: 0, y: 0 }, startPos: { x: 0, y: 0 }, imgLeft: 0, imgTop: 0, renderedW: 0, renderedH: 0, squareSize: 0 });
+  const [zoom, setZoom] = useState(initialZoom);
+  const [aspect, setAspect] = useState<number | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; left: number; top: number } | null>(null);
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
       setPos({ x: initialX, y: initialY });
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
+      setZoom(allowZoom ? initialZoom : 100);
     }
-  }, [open, initialX, initialY]);
+  }, [open, initialX, initialY, initialZoom, allowZoom]);
 
-  // Measure container width
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      setContainerW(entries[0].contentRect.width);
-    });
-    ro.observe(el);
-    setContainerW(el.clientWidth);
-    return () => ro.disconnect();
-  }, [open]);
-
-  const handleImgLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    setNatSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
+  // Ref + onLoad, not onLoad alone: an already-cached image can finish loading
+  // before React attaches the handler, which left the frame blank.
+  const measure = useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth && img.naturalHeight) {
+      setAspect(img.naturalWidth / img.naturalHeight);
+    }
   }, []);
 
-  // Derived layout calculations
-  const getLayout = useCallback(() => {
-    const cW = containerW || 600;
-    const cH = CONTAINER_H;
-    const { w: natW, h: natH } = natSize;
-    if (!natW || !natH) return null;
+  const minZoom = aspect ? Math.min(100, containZoom(aspect)) : 100;
+  const box = aspect ? cropLayout(aspect, pos.x, pos.y, zoom) : null;
 
-    const baseScale = Math.min(cW / natW, cH / natH);
-    const renderedW = natW * baseScale * zoom;
-    const renderedH = natH * baseScale * zoom;
+  const changeZoom = useCallback((next: number) => {
+    setZoom(clamp(Math.round(next), minZoom, MAX_THUMBNAIL_ZOOM));
+  }, [minZoom]);
 
-    // Clamp pan so image always covers as much of the container as possible
-    const maxPanX = Math.max(0, (renderedW - cW) / 2);
-    const maxPanY = Math.max(0, (renderedH - cH) / 2);
-    const clampedPanX = clamp(pan.x, -maxPanX, maxPanX);
-    const clampedPanY = clamp(pan.y, -maxPanY, maxPanY);
-
-    const imgLeft = cW / 2 - renderedW / 2 + clampedPanX;
-    const imgTop = cH / 2 - renderedH / 2 + clampedPanY;
-
-    // Square size = min(natW, natH) mapped to screen
-    const squareSize = Math.min(natW, natH) * baseScale * zoom;
-
-    // Focal point constraints (keep square within image bounds)
-    const halfFracX = (squareSize / 2) / renderedW * 100;
-    const halfFracY = (squareSize / 2) / renderedH * 100;
-
-    return { cW, cH, renderedW, renderedH, imgLeft, imgTop, squareSize, halfFracX, halfFracY };
-  }, [containerW, natSize, zoom, pan]);
-
-  const getClampedPos = useCallback((x: number, y: number, layout: ReturnType<typeof getLayout>) => {
-    if (!layout) return { x, y };
-    return {
-      x: clamp(x, layout.halfFracX, 100 - layout.halfFracX),
-      y: clamp(y, layout.halfFracY, 100 - layout.halfFracY),
-    };
-  }, []);
-
-  const getClientCoords = (e: MouseEvent | TouchEvent) => {
-    if ("touches" in e && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    if ("clientX" in e) return { x: e.clientX, y: e.clientY };
-    return null;
-  };
-
-  const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!box) return;
     e.preventDefault();
-    const layout = getLayout();
-    if (!layout) return;
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const client = "touches" in e
-      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-      : { x: e.clientX, y: e.clientY };
-
-    const mouseX = client.x - rect.left;
-    const mouseY = client.y - rect.top;
-
-    // Is the mouse inside the square?
-    const { imgLeft, imgTop, renderedW, renderedH, squareSize } = layout;
-    const focalScreenX = imgLeft + (pos.x / 100) * renderedW;
-    const focalScreenY = imgTop + (pos.y / 100) * renderedH;
-    const sqLeft = focalScreenX - squareSize / 2;
-    const sqTop = focalScreenY - squareSize / 2;
-
-    const inSquare =
-      mouseX >= sqLeft && mouseX <= sqLeft + squareSize &&
-      mouseY >= sqTop && mouseY <= sqTop + squareSize;
-
-    interactionRef.current = {
-      mode: inSquare ? "square" : "pan",
-      startMouse: { x: mouseX, y: mouseY },
-      startPan: { ...pan },
-      startPos: { ...pos },
-      imgLeft, imgTop, renderedW, renderedH, squareSize,
-    };
-  }, [getLayout, pos, pan]);
-
-  useEffect(() => {
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      const ref = interactionRef.current;
-      if (!ref.mode) return;
-      e.preventDefault();
-
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const coords = getClientCoords(e);
-      if (!coords) return;
-
-      const mouseX = coords.x - rect.left;
-      const mouseY = coords.y - rect.top;
-      const dx = mouseX - ref.startMouse.x;
-      const dy = mouseY - ref.startMouse.y;
-
-      if (ref.mode === "square") {
-        // Move focal point
-        const newFocalScreenX = ref.imgLeft + (ref.startPos.x / 100) * ref.renderedW + dx;
-        const newFocalScreenY = ref.imgTop + (ref.startPos.y / 100) * ref.renderedH + dy;
-        const newX = (newFocalScreenX - ref.imgLeft) / ref.renderedW * 100;
-        const newY = (newFocalScreenY - ref.imgTop) / ref.renderedH * 100;
-        const layout = getLayout();
-        setPos(getClampedPos(newX, newY, layout));
-      } else {
-        // Pan the image
-        setPan(prev => {
-          const layout = getLayout();
-          if (!layout) return prev;
-          const maxPanX = Math.max(0, (layout.renderedW - layout.cW) / 2);
-          const maxPanY = Math.max(0, (layout.renderedH - layout.cH) / 2);
-          return {
-            x: clamp(ref.startPan.x + dx, -maxPanX, maxPanX),
-            y: clamp(ref.startPan.y + dy, -maxPanY, maxPanY),
-          };
-        });
-      }
-    };
-
-    const handleUp = () => {
-      interactionRef.current.mode = null;
-    };
-
-    window.addEventListener("mousemove", handleMove, { passive: false });
-    window.addEventListener("mouseup", handleUp);
-    window.addEventListener("touchmove", handleMove, { passive: false });
-    window.addEventListener("touchend", handleUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-      window.removeEventListener("touchmove", handleMove);
-      window.removeEventListener("touchend", handleUp);
-    };
-  }, [getLayout, getClampedPos]);
-
-  const handleZoomChange = (newZoom: number) => {
-    setZoom(newZoom);
-    // Keep pan within bounds for new zoom
-    setPan({ x: 0, y: 0 });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, left: box.left, top: box.top };
   };
 
-  // Render
-  const layout = getLayout();
-  let squareStyle: React.CSSProperties = { display: "none" };
-  let cursor = "grab";
-  if (layout) {
-    const { imgLeft, imgTop, renderedW, renderedH, squareSize } = layout;
-    const focalScreenX = imgLeft + (pos.x / 100) * renderedW;
-    const focalScreenY = imgTop + (pos.y / 100) * renderedH;
-    const sqLeft = focalScreenX - squareSize / 2;
-    const sqTop = focalScreenY - squareSize / 2;
-    squareStyle = {
-      position: "absolute",
-      left: sqLeft,
-      top: sqTop,
-      width: squareSize,
-      height: squareSize,
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || !box) return;
+    const side = frameRef.current?.clientWidth || FRAME;
+    // Invert cropLayout: left = (1 - width) * x/100. When the image exactly
+    // spans the frame on an axis there is no slack, so that axis can't move.
+    const slackX = 1 - box.width;
+    const slackY = 1 - box.height;
+    const left = drag.left + (e.clientX - drag.startX) / side;
+    const top = drag.top + (e.clientY - drag.startY) / side;
+    setPos((prev) => ({
+      x: Math.abs(slackX) < 0.001 ? prev.x : clamp((left / slackX) * 100, 0, 100),
+      y: Math.abs(slackY) < 0.001 ? prev.y : clamp((top / slackY) * 100, 0, 100),
+    }));
+  };
+
+  const handlePointerUp = () => { dragRef.current = null; };
+
+  // Wheel / trackpad pinch zooms. Bound natively: React's onWheel is passive,
+  // so it can't stop the dialog scrolling underneath.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || !allowZoom || !open) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => clamp(Math.round(z * (e.deltaY < 0 ? 1.06 : 1 / 1.06)), minZoom, MAX_THUMBNAIL_ZOOM));
     };
-    cursor = zoom > 1 ? "grab" : "default";
-  }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [allowZoom, open, minZoom, aspect]);
+
+  const x = Math.round(pos.x);
+  const y = Math.round(pos.y);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -257,191 +130,126 @@ export function FocalPointPicker({
             Set thumbnail crop
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Drag the square to choose which part of the image appears in thumbnails. Zoom in for precise positioning.
+            {allowZoom
+              ? "The square is what shows in thumbnails. Drag the image to position it, and zoom in or out to fit."
+              : "The square is what shows in thumbnails. Drag the image to position it."}
           </p>
         </DialogHeader>
 
         <div className="flex gap-0">
-          {/* Main picker area */}
-          <div
-            ref={containerRef}
-            className="relative flex-1 overflow-hidden bg-black/80 select-none"
-            style={{ height: CONTAINER_H, cursor }}
-            onMouseDown={handlePointerDown}
-            onTouchStart={handlePointerDown}
-          >
-            {/* Image */}
-            {layout && (
+          {/* Crop frame */}
+          <div className="flex-1 flex items-center justify-center bg-muted/60 p-4">
+            <div
+              ref={frameRef}
+              className="relative overflow-hidden bg-white select-none touch-none rounded-sm ring-1 ring-border"
+              style={{ width: FRAME, height: FRAME, maxWidth: "100%", aspectRatio: "1 / 1", cursor: box ? "grab" : "default" }}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              data-testid="focal-frame"
+            >
               <img
+                key={imageUrl}
+                ref={measure}
                 src={imageUrl}
-                alt="Focal point picker"
-                onLoad={handleImgLoad}
-                className="pointer-events-none absolute"
+                alt="Thumbnail crop"
+                onLoad={(e) => measure(e.currentTarget)}
+                className="pointer-events-none absolute max-w-none"
                 draggable={false}
-                style={{
-                  left: layout.imgLeft,
-                  top: layout.imgTop,
-                  width: layout.renderedW,
-                  height: layout.renderedH,
-                }}
+                style={
+                  box
+                    ? { left: `${box.left * 100}%`, top: `${box.top * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }
+                    : { opacity: 0 }
+                }
               />
-            )}
-            {!natSize.w && (
-              <img
-                src={imageUrl}
-                alt=""
-                onLoad={handleImgLoad}
-                className="opacity-0 pointer-events-none absolute"
-                draggable={false}
-              />
-            )}
+              {/* Rule-of-thirds guides */}
+              {[1, 2].map((i) => (
+                <div key={`v${i}`} className="absolute top-0 bottom-0 pointer-events-none" style={{ left: `${(i / 3) * 100}%`, width: 1, background: "rgba(255,255,255,0.35)", mixBlendMode: "difference" }} />
+              ))}
+              {[1, 2].map((i) => (
+                <div key={`h${i}`} className="absolute left-0 right-0 pointer-events-none" style={{ top: `${(i / 3) * 100}%`, height: 1, background: "rgba(255,255,255,0.35)", mixBlendMode: "difference" }} />
+              ))}
+            </div>
+          </div>
 
-            {/* Darkened overlay outside the square */}
-            {layout && (
-              <div className="absolute inset-0 pointer-events-none" style={{ mixBlendMode: "normal" }}>
-                <svg
-                  className="absolute inset-0"
-                  width="100%"
-                  height="100%"
-                  style={{ position: "absolute", top: 0, left: 0 }}
-                >
-                  <defs>
-                    <mask id="focal-mask">
-                      <rect width="100%" height="100%" fill="white" />
-                      <rect
-                        x={squareStyle.left as number}
-                        y={squareStyle.top as number}
-                        width={squareStyle.width as number}
-                        height={squareStyle.height as number}
-                        fill="black"
-                      />
-                    </mask>
-                  </defs>
-                  <rect width="100%" height="100%" fill="rgba(0,0,0,0.45)" mask="url(#focal-mask)" />
-                </svg>
+          {/* Right panel: preview + zoom */}
+          <div className="flex flex-col gap-3 px-4 py-4 border-l border-border bg-background" style={{ width: 172 }}>
+            <div className="flex flex-col gap-1 items-center">
+              <p className="text-[11px] text-muted-foreground font-medium">Preview</p>
+              <div className="w-24 h-24 rounded-md overflow-hidden border border-border bg-muted shrink-0">
+                <CroppedImage src={imageUrl} x={x} y={y} zoom={zoom} />
               </div>
-            )}
+              <div className="w-12 h-12 rounded-md overflow-hidden border border-border bg-muted shrink-0 mt-1">
+                <CroppedImage src={imageUrl} x={x} y={y} zoom={zoom} />
+              </div>
+            </div>
 
-            {/* Draggable crop square */}
-            {layout && (
-              <div
-                className="absolute pointer-events-none"
-                style={squareStyle}
-              >
-                {/* Outer border */}
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    border: "2px solid rgba(255,255,255,0.9)",
-                    boxShadow: "0 0 0 1px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.2)",
-                    borderRadius: 2,
-                  }}
-                />
-                {/* Rule-of-thirds grid lines */}
-                {[1, 2].map(i => (
-                  <div key={`v${i}`} className="absolute top-0 bottom-0" style={{ left: `${(i / 3) * 100}%`, width: 1, background: "rgba(255,255,255,0.3)" }} />
-                ))}
-                {[1, 2].map(i => (
-                  <div key={`h${i}`} className="absolute left-0 right-0" style={{ top: `${(i / 3) * 100}%`, height: 1, background: "rgba(255,255,255,0.3)" }} />
-                ))}
-                {/* Corner handles */}
-                {[
-                  { top: -4, left: -4 }, { top: -4, right: -4 },
-                  { bottom: -4, left: -4 }, { bottom: -4, right: -4 },
-                ].map((style, i) => (
-                  <div
-                    key={i}
-                    className="absolute"
-                    style={{
-                      ...style,
-                      width: 10,
-                      height: 10,
-                      background: "white",
-                      border: "1.5px solid rgba(0,0,0,0.4)",
-                      borderRadius: 2,
-                    }}
-                  />
-                ))}
-                {/* Center drag indicator */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: "2px 4px" }}>
-                    <Move className="w-4 h-4 text-white/80" />
+            {allowZoom && (
+              <div className="flex flex-col gap-2 mt-auto">
+                <p className="text-[11px] text-muted-foreground font-medium text-center">Zoom</p>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-1.5 w-full">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => changeZoom(zoom - 10)}
+                      disabled={zoom <= minZoom}
+                      aria-label="Zoom out"
+                      data-testid="button-zoom-out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </Button>
+                    <Slider
+                      min={minZoom}
+                      max={MAX_THUMBNAIL_ZOOM}
+                      step={1}
+                      value={[zoom]}
+                      onValueChange={([v]) => changeZoom(v)}
+                      className="flex-1"
+                    />
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => changeZoom(zoom + 10)}
+                      disabled={zoom >= MAX_THUMBNAIL_ZOOM}
+                      aria-label="Zoom in"
+                      data-testid="button-zoom-in"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground" data-testid="text-zoom">{zoom}%</p>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px]"
+                      onClick={() => { changeZoom(minZoom); setPos({ x: 50, y: 50 }); }}
+                      disabled={minZoom >= 100}
+                      title="Show the whole image"
+                      data-testid="button-zoom-fit"
+                    >
+                      <Minimize2 className="w-3 h-3 mr-0.5" />
+                      Fit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px]"
+                      onClick={() => changeZoom(100)}
+                      title="Fill the square"
+                      data-testid="button-zoom-fill"
+                    >
+                      <Maximize2 className="w-3 h-3 mr-0.5" />
+                      Fill
+                    </Button>
                   </div>
                 </div>
               </div>
             )}
-
-            {/* Pan hint when zoomed */}
-            {zoom > 1 && (
-              <div className="absolute bottom-2 left-2 text-[10px] text-white/60 pointer-events-none select-none">
-                Drag outside square to pan
-              </div>
-            )}
-          </div>
-
-          {/* Right panel: preview + zoom */}
-          <div className="flex flex-col gap-3 px-4 py-4 border-l border-border bg-background" style={{ width: 140 }}>
-            <div className="flex flex-col gap-1 items-center">
-              <p className="text-[11px] text-muted-foreground font-medium">Preview</p>
-              <div className="w-24 h-24 rounded-md overflow-hidden border border-border bg-muted shrink-0">
-                <img
-                  src={imageUrl}
-                  alt="Preview large"
-                  className="w-full h-full object-cover pointer-events-none"
-                  style={{ objectPosition: `${pos.x}% ${pos.y}%` }}
-                  draggable={false}
-                />
-              </div>
-              <div className="w-12 h-12 rounded-md overflow-hidden border border-border bg-muted shrink-0 mt-1">
-                <img
-                  src={imageUrl}
-                  alt="Preview small"
-                  className="w-full h-full object-cover pointer-events-none"
-                  style={{ objectPosition: `${pos.x}% ${pos.y}%` }}
-                  draggable={false}
-                />
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                {Math.round(pos.x)}% / {Math.round(pos.y)}%
-              </p>
-            </div>
-
-            {/* Zoom controls */}
-            <div className="flex flex-col gap-2 mt-auto">
-              <p className="text-[11px] text-muted-foreground font-medium text-center">Zoom</p>
-              <div className="flex flex-col items-center gap-2">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7"
-                  onClick={() => handleZoomChange(Math.min(MAX_ZOOM, parseFloat((zoom + 0.5).toFixed(1))))}
-                  disabled={zoom >= MAX_ZOOM}
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </Button>
-                <div className="h-20 flex items-center justify-center">
-                  <Slider
-                    orientation="vertical"
-                    min={MIN_ZOOM}
-                    max={MAX_ZOOM}
-                    step={0.1}
-                    value={[zoom]}
-                    onValueChange={([v]) => handleZoomChange(v)}
-                    className="h-full"
-                  />
-                </div>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7"
-                  onClick={() => handleZoomChange(Math.max(MIN_ZOOM, parseFloat((zoom - 0.5).toFixed(1))))}
-                  disabled={zoom <= MIN_ZOOM}
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </Button>
-                <p className="text-[10px] text-muted-foreground">{Math.round(zoom * 100)}%</p>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -449,7 +257,7 @@ export function FocalPointPicker({
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => onSave(Math.round(pos.x), Math.round(pos.y))} disabled={isSaving}>
+          <Button size="sm" onClick={() => onSave(x, y, zoom)} disabled={isSaving} data-testid="button-save-crop">
             {isSaving ? "Saving…" : "Save crop"}
           </Button>
         </DialogFooter>
@@ -461,17 +269,19 @@ export function FocalPointPicker({
 /**
  * saveFocalPoint — shared helper for any caller to persist a focal point.
  * Callers import this alongside FocalPointPicker and handle query invalidation.
+ * `zoom` is only stored for tables that have a thumbnail_zoom column.
  */
 export async function saveFocalPoint(
   table: string,
   id: string,
   x: number,
   y: number,
+  zoom?: number,
 ): Promise<void> {
   const { apiRequest } = await import("@/lib/queryClient");
   await apiRequest(
     `/api/attachments/${table}/${id}/focal-point`,
     "PATCH",
-    { thumbnailX: x, thumbnailY: y },
+    { thumbnailX: x, thumbnailY: y, ...(zoom !== undefined ? { thumbnailZoom: zoom } : {}) },
   );
 }

@@ -1,3 +1,4 @@
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ interface PortalAttachment {
   filePath: string;
   thumbnailX?: number;
   thumbnailY?: number;
+  thumbnailZoom?: number;
 }
 
 interface PortalOption {
@@ -229,18 +231,12 @@ export default function SelectionPortal() {
                     {/* Hero image */}
                     <button
                       type="button"
-                      className="relative block w-full aspect-[4/3] bg-muted overflow-hidden"
+                      className="relative block w-full aspect-square bg-muted overflow-hidden"
                       onClick={() => hero && setLightboxImage(hero)}
                       aria-label={hero ? `View ${option.name} image` : undefined}
                     >
                       {hero ? (
-                        <img
-                          src={hero.filePath}
-                          alt={option.name}
-                          className="w-full h-full object-cover"
-                          style={{ objectPosition: `${hero.thumbnailX ?? 50}% ${hero.thumbnailY ?? 50}%` }}
-                          loading="lazy"
-                        />
+                        <CroppedImage src={hero.filePath} alt={option.name} x={hero.thumbnailX} y={hero.thumbnailY} zoom={hero.thumbnailZoom} loading="lazy" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <Package className="w-10 h-10 text-muted-foreground opacity-30" />
@@ -315,12 +311,11 @@ export default function SelectionPortal() {
                         <td key={o.id} className="p-2 align-top" style={{ width: `${100 / selection.options.length}%` }}>
                           <button
                             type="button"
-                            className="block w-full aspect-[4/3] bg-muted rounded-lg overflow-hidden"
+                            className="block w-full aspect-square bg-muted rounded-lg overflow-hidden"
                             onClick={() => hero && setLightboxImage(hero)}
                           >
                             {hero ? (
-                              <img src={hero.filePath} alt={o.name} className="w-full h-full object-cover"
-                                style={{ objectPosition: `${hero.thumbnailX ?? 50}% ${hero.thumbnailY ?? 50}%` }} loading="lazy" />
+                              <CroppedImage src={hero.filePath} alt={o.name} x={hero.thumbnailX} y={hero.thumbnailY} zoom={hero.thumbnailZoom} loading="lazy" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
                                 <Package className="w-8 h-8 text-muted-foreground opacity-30" />

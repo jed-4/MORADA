@@ -3,6 +3,7 @@
 // (a "still browsing" signal); once chosen, the chosen option's photo IS the
 // card. Card click opens the full selection; quick view is the corner button.
 
+import { CroppedImage } from "@/components/CroppedImage";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -58,7 +59,8 @@ export function SelectionCard({
       data-testid={`card-selection-${selection.id}`}
     >
       {/* Image area */}
-      <div className="relative h-36 bg-muted/60 overflow-hidden">
+      {/* Square, matching the client portal and the shape photos are cropped to. */}
+      <div className="relative aspect-square bg-muted/60 overflow-hidden">
         {restricted ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-muted/70">
             <Lock className="w-6 h-6 text-muted-foreground/60" />
@@ -72,22 +74,16 @@ export function SelectionCard({
             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
           </div>
         ) : images.length === 1 ? (
-          <img
-            src={images[0].filePath}
-            alt=""
-            className="w-full h-full object-cover"
-            style={{ objectPosition: `${images[0].thumbnailX ?? 50}% ${images[0].thumbnailY ?? 50}%` }}
-            loading="lazy"
-          />
+          <CroppedImage src={images[0].filePath} x={images[0].thumbnailX} y={images[0].thumbnailY} zoom={images[0].thumbnailZoom} loading="lazy" />
         ) : (
           <div className="grid grid-cols-3 gap-px h-full">
             {images.map((att, i) => (
-              <img
+              <CroppedImage
                 key={att.id}
                 src={att.filePath}
-                alt=""
-                className={cn("w-full h-full object-cover", i === 0 && images.length === 2 && "col-span-2")}
-                style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+                x={att.thumbnailX}
+                y={att.thumbnailY}
+                className={cn(i === 0 && images.length === 2 && "col-span-2")}
                 loading="lazy"
               />
             ))}
