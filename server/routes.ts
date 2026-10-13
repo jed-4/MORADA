@@ -16861,6 +16861,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Replace the site link. Every printed QR code and shared link for this
+  // project stops working — the way to switch off a code that got out.
+  app.post("/api/projects/:id/trades-portal-token/regenerate", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+      const token = randomBytes(24).toString("hex");
+      await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to regenerate link" });
+    }
+  });
+
   // QR code for project trades portal
   app.get("/api/projects/:id/trades-qr", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -16874,7 +16888,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
       const url = `${host}/portal/project/${token}/trades`;
-      const buffer = await QRCode.toBuffer(url, { width: 400, margin: 2 });
+      // Large enough to print at A4 and stay sharp.
+      const buffer = await QRCode.toBuffer(url, { width: 1000, margin: 2 });
+      res.set("Cache-Control", "private, no-store");
       res.set("Content-Type", "image/png");
       res.send(buffer);
     } catch (error) {
@@ -19603,8 +19619,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const selectionsWithOptions = await storage.getSelectionsWithOptions(project.id);
 
-      // Public payload — trades need product/spec/image data, never the
-      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost).
+      // Public payload, built field by field. This link is printed as a QR
+      // code and put up on site, so treat the reader as ANYONE — trades, the
+      // client, a visitor. That means: no money of any kind (cost, markup,
+      // charge, allowance), no internal notes, and no option the builder has
+      // hidden from the client.
+      const company = (project as any).companyId ? await storage.getCompany((project as any).companyId) : undefined;
       const urlPrefix = `/api/portal/project/${token}/trades`;
       const safeSelections = selectionsWithOptions
         .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
@@ -19616,8 +19636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: s.description,
           status: s.status,
           deadline: s.deadline,
-          notes: s.notes,
-          options: (s.options ?? []).map((o: any) => ({
+          options: (s.options ?? []).filter((o: any) => o.visibleToClient !== false).map((o: any) => ({
             id: o.id,
             selectionId: o.selectionId,
             name: o.name,
@@ -19630,7 +19649,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             unitType: o.unitType,
             url: o.url,
             specifications: o.specifications,
-            notes: o.notes,
             isSelectedByClient: o.isSelectedByClient,
             approvedAt: o.approvedAt,
             sortOrder: o.sortOrder,
@@ -19640,6 +19658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         project: { id: project.id, name: (project as any).name, address: (project as any).address },
+        companyName: (company as any)?.nickname || company?.name || null,
         selections: safeSelections,
       });
     } catch (error) {
@@ -19663,7 +19682,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!attachment) return res.status(404).json({ error: "Not found" });
       const option = await storage.getSelectionOption(attachment.optionId);
       const selection = option ? await storage.getSelection(option.selectionId) : undefined;
-      if (!selection || selection.projectId !== project.id) {
+      // Same rule as the payload: a hidden option's files are not served.
+      if (!selection || selection.projectId !== project.id || option?.visibleToClient === false) {
         return res.status(404).json({ error: "Not found" });
       }
 

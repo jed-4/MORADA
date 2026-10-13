@@ -43,7 +43,6 @@
     "server/routes.ts GET /api/messages/:id",
     "server/routes.ts GET /api/permissions",
     "server/routes.ts GET /api/permissions/:id",
-    "server/routes.ts GET /api/portal/project/:token/trades",
     "server/routes.ts GET /api/portal/project/:token/trades/attachments/:attachmentId",
     "server/routes.ts GET /api/portal/rfq/:token",
     "server/routes.ts GET /api/portal/selections/:token",

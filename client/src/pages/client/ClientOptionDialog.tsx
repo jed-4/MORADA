@@ -1,3 +1,4 @@
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { CroppedImage } from "@/components/CroppedImage";
 import { useState } from "react";
 import { Check, Download, ExternalLink, Image as ImageIcon, Loader2 } from "lucide-react";
@@ -56,6 +57,7 @@ export function ClientOptionDialog({
   onChoose: () => void;
 }) {
   const [activeImage, setActiveImage] = useState(0);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   if (!option) return null;
 
   const attachments = (option.attachments ?? []) as Attachment[];
@@ -91,9 +93,20 @@ export function ClientOptionDialog({
               {/* Capped, not a fixed ratio: at 4/3 the photo alone filled a
                   laptop-height dialog and pushed the specs, documents and the
                   Choose button below the fold. */}
-              <div className="w-full rounded-md border overflow-hidden bg-muted aspect-square max-h-[42vh]">
+              <button
+                type="button"
+                className="block mx-auto rounded-md border overflow-hidden bg-muted aspect-square h-[42vh] max-w-full cursor-zoom-in"
+                onClick={() => setViewerIndex(Math.min(activeImage, images.length - 1))}
+                aria-label="View photo full size"
+                data-testid="button-option-enlarge"
+              >
                 <CroppedImage src={hero?.filePath ?? ""} x={hero?.thumbnailX} y={hero?.thumbnailY} zoom={(hero as any)?.thumbnailZoom} />
-              </div>
+              </button>
+              <ImageLightbox
+                images={images.map((img) => ({ src: img.filePath ?? "", alt: option.name }))}
+                index={viewerIndex}
+                onIndexChange={setViewerIndex}
+              />
               {images.length > 1 && (
                 <div className="flex gap-2 flex-wrap">
                   {images.map((image, i) => (
