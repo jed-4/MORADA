@@ -34,10 +34,13 @@
  * Money is cents throughout, matching selection_options.unit_cost. The template
  * blob stores cents too, so no conversion happens at the boundary.
  */
+import { ImageLightbox } from "@/components/ImageLightbox";
+import { CroppedImage } from "@/components/CroppedImage";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Camera, EyeOff, Eye, Lock, CheckCircle, ExternalLink,
   Package, LayoutGrid, LayoutList, Search, X,
+  Maximize2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -77,6 +80,12 @@ export interface OptionView {
   lockedAt?: string | Date | null;
   /** Already resolved to a URL by the adapter; the views never dig for an image. */
   heroUrl?: string | null;
+  /** Saved thumbnail crop of the hero image (focal point + zoom). */
+  heroX?: number | null;
+  heroY?: number | null;
+  heroZoom?: number | null;
+  /** Every photo of the option, hero first — what the full-size viewer steps through. */
+  imageUrls?: string[];
   /** "Matte · 600x600" — the template grid's specs line. Absent on a project. */
   specsLine?: string | null;
 }
@@ -138,8 +147,14 @@ export function OptionGrid({
   allowanceCents = null,
   hasDecision = false,
 }: OptionViewProps) {
+  const [viewer, setViewer] = useState<{ urls: string[]; index: number | null }>({ urls: [], index: null });
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <ImageLightbox
+        images={viewer.urls.map((src) => ({ src }))}
+        index={viewer.index}
+        onIndexChange={(index) => setViewer((v) => ({ ...v, index }))}
+      />
       {options.map((option) => {
         const isApproved = isApprovedOf(option);
         const isLocked = isLockedOf(option);
@@ -160,12 +175,14 @@ export function OptionGrid({
             onClick={() => onOpen(option)}
             data-testid={`card-option-${option.id}`}
           >
-            <div className="h-40 bg-muted flex items-center justify-center relative overflow-hidden">
+            <div className="aspect-square bg-muted flex items-center justify-center relative overflow-hidden">
               {option.heroUrl ? (
-                <img
+                <CroppedImage
                   src={option.heroUrl}
                   alt={option.name}
-                  className="w-full h-full object-cover"
+                  x={option.heroX}
+                  y={option.heroY}
+                  zoom={option.heroZoom}
                   // A template image is a URL stored in a JSON blob and can rot.
                   // Hiding the broken <img> falls through to the muted panel
                   // rather than a browser's broken-image glyph.
@@ -173,6 +190,21 @@ export function OptionGrid({
                 />
               ) : (
                 <Camera className="w-10 h-10 text-muted-foreground/30" />
+              )}
+              {option.heroUrl && (
+                <button
+                  type="button"
+                  className="absolute bottom-2 right-2 w-7 h-7 rounded-md bg-black/55 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewer({ urls: option.imageUrls?.length ? option.imageUrls : [option.heroUrl!], index: 0 });
+                  }}
+                  aria-label={`View ${option.name} photo full size`}
+                  title="View full size"
+                  data-testid={`button-enlarge-${option.id}`}
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
               )}
               <div className="absolute top-2 left-2 flex flex-col gap-1">
                 {option.visibleToClient === false && (
@@ -275,10 +307,12 @@ export function OptionTable({
             cell: (o) => (
               <div className="w-10 h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
                 {o.heroUrl ? (
-                  <img
+                  <CroppedImage
                     src={o.heroUrl}
                     alt={o.name}
-                    className="w-full h-full object-cover"
+                    x={o.heroX}
+                    y={o.heroY}
+                    zoom={o.heroZoom}
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                 ) : (

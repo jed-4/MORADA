@@ -75,7 +75,7 @@ import {
   ShoppingCart,
   ExternalLink,
   Loader2,
-  HardHat,
+  QrCode,
   FileText,
   Copy,
   GripVertical,
@@ -106,6 +106,7 @@ import {
   type SelectionColumnVisibility,
 } from "@/components/selections/SelectionRow";
 import { SelectionCard } from "@/components/selections/SelectionCard";
+import { SiteQrDialog } from "@/components/selections/SiteQrDialog";
 import { SelectionDrawer } from "@/components/selections/SelectionDrawer";
 
 // ───────────────────────────────────────────────────────────────────────
@@ -255,6 +256,7 @@ export default function Selections() {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [templateSearch, setTemplateSearch] = useState("");
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [showSiteQr, setShowSiteQr] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateCategory, setSaveTemplateCategory] = useState("");
   const [, setLocation] = useLocation();
@@ -1032,21 +1034,9 @@ export default function Selections() {
                 </DropdownMenuCheckboxItem>
                 {projectId && (
                   <>
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        try {
-                          // Route is registered app.get — a POST misses it and falls
-                          // through to the SPA catch-all, which returns HTML.
-                          const { url } = await apiRequest(`/api/projects/${projectId}/trades-portal-token`, "GET");
-                          await navigator.clipboard.writeText(url);
-                          toast({ title: "Trades portal link copied!", description: "Share this link with your trades." });
-                        } catch {
-                          toast({ title: "Failed to copy link", variant: "destructive" });
-                        }
-                      }}
-                    >
-                      <HardHat className="w-3.5 h-3.5 mr-2" />
-                      Copy Trades View Link
+                    <DropdownMenuItem onClick={() => setShowSiteQr(true)} data-testid="option-site-qr">
+                      <QrCode className="w-3.5 h-3.5 mr-2" />
+                      Site QR code & link
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={(e) => e.preventDefault()}
@@ -1375,6 +1365,8 @@ export default function Selections() {
       </Dialog>
 
       {/* Save as Template Dialog */}
+      {projectId && <SiteQrDialog projectId={projectId} open={showSiteQr} onOpenChange={setShowSiteQr} />}
+
       <Dialog open={showSaveTemplateDialog} onOpenChange={(open) => { if (!open) { setShowSaveTemplateDialog(false); setSaveTemplateName(""); setSaveTemplateCategory(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

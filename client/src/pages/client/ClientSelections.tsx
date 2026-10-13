@@ -1,3 +1,4 @@
+import { CroppedImage } from "@/components/CroppedImage";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
@@ -40,7 +41,7 @@ export interface ClientSelectionOption {
   totalCost?: number | null;
   isSelectedByClient?: boolean | null;
   approvedAt?: string | null;
-  attachments?: Array<{ id: string; filePath?: string | null; fileType?: string | null; thumbnailX?: number | null; thumbnailY?: number | null }>;
+  attachments?: Array<{ id: string; filePath?: string | null; fileType?: string | null; thumbnailX?: number | null; thumbnailY?: number | null; thumbnailZoom?: number | null }>;
 }
 
 export interface ClientSelection {
@@ -85,7 +86,7 @@ function ClientSelectionCard({
   const chosen = options.find((o) => o.approvedAt) ?? options.find((o) => o.isSelectedByClient);
   const images = (chosen ? [firstImage(chosen as any)] : options.map((o) => firstImage(o as any)))
     .filter(Boolean)
-    .slice(0, 3) as Array<{ id: string; filePath?: string | null; thumbnailX?: number | null; thumbnailY?: number | null }>;
+    .slice(0, 3) as Array<{ id: string; filePath?: string | null; thumbnailX?: number | null; thumbnailY?: number | null; thumbnailZoom?: number | null }>;
 
   return (
     <div
@@ -107,13 +108,7 @@ function ClientSelectionCard({
             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
           </div>
         ) : images.length === 1 ? (
-          <img
-            src={images[0].filePath ?? ""}
-            alt=""
-            loading="lazy"
-            className="w-full h-full object-cover"
-            style={{ objectPosition: `${images[0].thumbnailX ?? 50}% ${images[0].thumbnailY ?? 50}%` }}
-          />
+          <CroppedImage src={images[0].filePath ?? ""} x={images[0].thumbnailX} y={images[0].thumbnailY} zoom={images[0].thumbnailZoom} loading="lazy" />
         ) : (
           <div className="grid grid-cols-3 gap-px h-full">
             {images.map((att, i) => (

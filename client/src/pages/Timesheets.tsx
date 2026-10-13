@@ -262,6 +262,12 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     queryKey: ["/api/users"],
   });
 
+  // Archived team members are left out of `users` (filters, pickers), but their
+  // past timesheets still need a name.
+  const { data: allUsersInclArchived = [] } = useQuery<UserType[]>({
+    queryKey: ["/api/users?status=all"],
+  });
+
   // Fetch cost codes for display
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -651,7 +657,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   };
 
   const getUserName = (userId: string) => {
-    const u = users.find((usr) => usr.id === userId);
+    const u = users.find((usr) => usr.id === userId) ?? allUsersInclArchived.find((usr) => usr.id === userId);
     return u ? `${u.firstName} ${u.lastName}`.trim() || u.username : "Unknown User";
   };
 
@@ -2702,7 +2708,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         onOpenChange={setIsRapidApprovalOpen}
         pendingTimesheets={pendingTimesheets}
         projects={projects}
-        users={users}
+        users={allUsersInclArchived.length ? allUsersInclArchived : users}
         costCodes={costCodes}
       />
 

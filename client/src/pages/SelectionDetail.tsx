@@ -1,4 +1,6 @@
 import { optionClientPriceCents } from "@shared/selectionPricing";
+import { ImageLightbox } from "@/components/ImageLightbox";
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState, useEffect, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -27,6 +29,7 @@ import {
   getDerivedStatus,
   isDecided,
   isRestricted,
+  firstImage,
 } from "@/components/selections/selectionHelpers";
 import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
@@ -122,6 +125,7 @@ import {
   File as FileIcon,
   BookMarked,
   Crosshair,
+  Maximize2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
@@ -136,6 +140,7 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
   const { toast } = useToast();
   const [focalOpen, setFocalOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [isSavingFocal, setIsSavingFocal] = useState(false);
   const isImage = att.fileType?.toLowerCase() === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(att.filePath || "");
   const style = {
@@ -145,14 +150,14 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
     zIndex: isDragging ? 10 : undefined,
   };
 
-  const handleSaveFocal = async (x: number, y: number) => {
+  const handleSaveFocal = async (x: number, y: number, zoom: number) => {
     setIsSavingFocal(true);
     try {
-      await saveFocalPoint("option_attachments", att.id, x, y);
+      await saveFocalPoint("option_attachments", att.id, x, y, zoom);
       queryClient.invalidateQueries({ queryKey: ["/api/selections", selectionId] });
       // The list renders this attachment as the row thumbnail.
       queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
-      toast({ title: "Focal point saved" });
+      toast({ title: "Thumbnail crop saved" });
       setFocalOpen(false);
     } catch {
       toast({ title: "Failed to save focal point", variant: "destructive" });
@@ -164,12 +169,7 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
   return (
     <>
       <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
-        <img
-          src={att.filePath}
-          alt={att.fileName || "attachment"}
-          className="w-full h-full object-cover"
-          style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
-        />
+        <CroppedImage src={att.filePath} alt={att.fileName || "attachment"} x={att.thumbnailX} y={att.thumbnailY} zoom={att.thumbnailZoom} />
         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <button
             type="button"
@@ -185,9 +185,20 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
             <button
               type="button"
               className="text-white p-1"
+              onClick={(e) => { e.stopPropagation(); setViewerIndex(0); }}
+              aria-label="View full size"
+              title="View full size"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
+          {isImage && (
+            <button
+              type="button"
+              className="text-white p-1"
               onClick={(e) => { e.stopPropagation(); setFocalOpen(true); }}
-              aria-label="Set thumbnail focal point"
-              title="Set focal point"
+              aria-label="Set thumbnail crop"
+              title="Set thumbnail crop (position and zoom)"
             >
               <Crosshair className="w-4 h-4" />
             </button>
@@ -203,12 +214,17 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
         </div>
       </div>
       {isImage && (
+        <ImageLightbox images={[{ src: att.filePath, alt: att.fileName }]} index={viewerIndex} onIndexChange={setViewerIndex} />
+      )}
+      {isImage && (
         <FocalPointPicker
           open={focalOpen}
           onOpenChange={setFocalOpen}
           imageUrl={att.filePath}
           initialX={att.thumbnailX ?? 50}
           initialY={att.thumbnailY ?? 50}
+          initialZoom={att.thumbnailZoom ?? 100}
+          allowZoom
           onSave={handleSaveFocal}
           isSaving={isSavingFocal}
         />
@@ -963,7 +979,14 @@ export default function SelectionDetail() {
     approvedAt: o.approvedAt as any,
     approvedBy: o.approvedBy,
     lockedAt: o.lockedAt as any,
-    heroUrl: o.attachments?.[0]?.filePath ?? null,
+    // First IMAGE, not first attachment — a spec PDF sorted first isn't a hero.
+    heroUrl: firstImage(o)?.filePath ?? null,
+    heroX: firstImage(o)?.thumbnailX,
+    heroY: firstImage(o)?.thumbnailY,
+    heroZoom: firstImage(o)?.thumbnailZoom,
+    imageUrls: ((o.attachments ?? []) as OptionAttachment[])
+      .filter((a) => a.fileType?.toLowerCase() === "image")
+      .map((a) => a.filePath),
   }));
 
   /** OptionsSection hands back an OptionView; the handlers want the real row. */
@@ -2415,7 +2438,9 @@ export default function SelectionDetail() {
                   data-testid={`library-product-${product.id}`}
                 >
                   {product.images?.[0]?.filePath ? (
-                    <img src={product.images[0].filePath} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                    <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0">
+                      <CroppedImage src={product.images[0].filePath} alt={product.name} x={product.images[0].thumbnailX} y={product.images[0].thumbnailY} zoom={product.images[0].thumbnailZoom} />
+                    </div>
                   ) : (
                     <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
                       <Package className="h-4 w-4 text-muted-foreground" />
