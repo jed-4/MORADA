@@ -1,3 +1,4 @@
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { CroppedImage } from "@/components/CroppedImage";
 import { useState, useEffect, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -123,6 +124,7 @@ import {
   File as FileIcon,
   BookMarked,
   Crosshair,
+  Maximize2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
@@ -137,6 +139,7 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
   const { toast } = useToast();
   const [focalOpen, setFocalOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [isSavingFocal, setIsSavingFocal] = useState(false);
   const isImage = att.fileType?.toLowerCase() === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(att.filePath || "");
   const style = {
@@ -181,6 +184,17 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
             <button
               type="button"
               className="text-white p-1"
+              onClick={(e) => { e.stopPropagation(); setViewerIndex(0); }}
+              aria-label="View full size"
+              title="View full size"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
+          {isImage && (
+            <button
+              type="button"
+              className="text-white p-1"
               onClick={(e) => { e.stopPropagation(); setFocalOpen(true); }}
               aria-label="Set thumbnail crop"
               title="Set thumbnail crop (position and zoom)"
@@ -198,6 +212,9 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
           </button>
         </div>
       </div>
+      {isImage && (
+        <ImageLightbox images={[{ src: att.filePath, alt: att.fileName }]} index={viewerIndex} onIndexChange={setViewerIndex} />
+      )}
       {isImage && (
         <FocalPointPicker
           open={focalOpen}
@@ -961,6 +978,9 @@ export default function SelectionDetail() {
     heroX: firstImage(o)?.thumbnailX,
     heroY: firstImage(o)?.thumbnailY,
     heroZoom: firstImage(o)?.thumbnailZoom,
+    imageUrls: ((o.attachments ?? []) as OptionAttachment[])
+      .filter((a) => a.fileType?.toLowerCase() === "image")
+      .map((a) => a.filePath),
   }));
 
   /** OptionsSection hands back an OptionView; the handlers want the real row. */
