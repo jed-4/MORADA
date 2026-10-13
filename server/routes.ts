@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
+import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -286,6 +287,8 @@ import {
   applySelectionVisibility,
   applySelectionVisibilityToOne,
   applyOptionVisibility,
+  redactOptionForViewer,
+  redactProductForViewer,
 } from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
@@ -1986,13 +1989,9 @@ export type { ReconcileReport };
 // is unreliable (see syncSelectionCostingToAllowance). Returns null when the
 // option has no cost entered.
 function selectionOptionClientPriceCents(opt: any): number | null {
-  const rawUnit = opt?.unitCost;
-  if (rawUnit == null) return null;
-  const qty = Number(opt.quantity) || 1;
-  const markup = Number(opt.markupPercent) || 0;
-  const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
-  const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
-  return incGstFromEx(totalEx);
+  // One implementation, shared with the logged-in client view and the forms:
+  // a stored unitCharge wins, else the legacy cost × qty × markup.
+  return optionClientPriceCents(opt);
 }
 
 // Inline an object-storage image as a data URI so it renders inside
@@ -15792,6 +15791,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // When an option carries a charge, the line total IS charge × quantity —
+  // worked out here rather than trusted from the browser, so the figure that
+  // gets invoiced can never disagree with the charge the client was shown.
+  function withOptionLineTotal<T extends Record<string, any>>(data: T, existing?: any): T {
+    const charge = "unitCharge" in data ? data.unitCharge : existing?.unitCharge;
+    const touched = "unitCharge" in data || "quantity" in data;
+    if (touched && charge != null) {
+      const qty = Number(data.quantity ?? existing?.quantity) || 1;
+      (data as any).totalCost = Math.round(charge * qty);
+    }
+    return data;
+  }
+
   app.post("/api/selections/:selectionId/options", async (req, res) => {
     try {
       const validationResult = insertSelectionOptionSchema.safeParse({
@@ -15810,8 +15822,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
 
-      const option = await storage.createSelectionOption(validationResult.data);
-      res.status(201).json(option);
+      const option = await storage.createSelectionOption(withOptionLineTotal(validationResult.data));
+      res.status(201).json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to create selection option" });
     }
@@ -15831,7 +15843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = { ...validationResult.data };
+      const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = withOptionLineTotal({ ...validationResult.data } as Partial<InsertSelectionOption>, existing);
       if (validationResult.data.isSelectedByClient === true && !existing.lockedAt) {
         updateData.lockedAt = new Date();
       }
@@ -15839,7 +15851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!option) {
         return res.status(404).json({ error: "Selection option not found" });
       }
-      res.json(option);
+      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to update selection option" });
     }
@@ -16474,8 +16486,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const img of images) {
         if (!firstByProduct.has(img.productId)) firstByProduct.set(img.productId, img);
       }
+      // Cost, markup and charge only for roles with selections pricing access.
+      const viewer = await resolveSelectionViewer(req);
       res.json(products.map((p) => ({
-        ...p,
+        ...redactProductForViewer(p, viewer),
         images: firstByProduct.has(p.id) ? [firstByProduct.get(p.id)] : [],
         tagIds: tagIdsByProduct.get(p.id) ?? [],
       })));
@@ -16498,7 +16512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       const product = await storage.createProduct({ ...parsed.data, companyId });
-      res.status(201).json(product);
+      res.status(201).json(redactProductForViewer(product, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to create product" });
     }
@@ -16523,7 +16537,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProductImages(product.id),
         storage.getTagIdsByProduct([product.id]),
       ]);
-      res.json({ ...product, images, tagIds: tagIdsByProduct.get(product.id) ?? [] });
+      const viewer = await resolveSelectionViewer(req);
+      res.json({ ...redactProductForViewer(product, viewer), images, tagIds: tagIdsByProduct.get(product.id) ?? [] });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch product" });
     }
@@ -16543,7 +16558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const product = await storage.updateProduct(Number(req.params.id), parsed.data);
       if (!product) return res.status(404).json({ error: "Product not found" });
-      res.json(product);
+      res.json(redactProductForViewer(product, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to update product" });
     }
@@ -16673,10 +16688,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: option.category ?? undefined,
         subcategory: option.subcategory ?? undefined,
         defaultUnitCost: option.unitCost ?? undefined,
+        // Cost keeps the option's GST basis, and the markup and charge come too.
+        gstInclusive: option.gstInclusive,
+        defaultMarkupPercent: option.markupPercent ?? undefined,
+        defaultUnitCharge: option.unitCharge ?? undefined,
         unitType: option.unitType,
         url: option.url ?? undefined,
         isActive: true,
-      });
+      } as any);
       // Copy option attachments as product images
       const attachments = await storage.getOptionAttachments(req.params.id);
       for (const att of attachments) {
@@ -16697,6 +16716,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The library's cost, markup and charge, carried onto a new option. A markup
+  // passed by the caller overrides the library's, and re-derives the charge.
+  function fromProductPricing(product: any, qty: number, markupOverride?: number | null) {
+    const costInc = costIncGstCents(product.defaultUnitCost, product.gstInclusive === true);
+    let markup: number | null = product.defaultMarkupPercent ?? null;
+    let charge: number | null = product.defaultUnitCharge ?? null;
+    if (markupOverride != null) {
+      markup = Number(markupOverride);
+      charge = solvePricing({ costCents: costInc, chargeCents: null, markupPercent: markup }, "markup").chargeCents;
+    } else if (charge == null && markup != null && costInc != null) {
+      charge = solvePricing({ costCents: costInc, chargeCents: null, markupPercent: markup }, "markup").chargeCents;
+    }
+    return {
+      markupPercent: markup ?? undefined,
+      unitCharge: charge ?? undefined,
+      // No charge: the old "final cost" in the cost's own GST basis, as before.
+      totalCost: charge != null
+        ? Math.round(charge * qty)
+        : product.defaultUnitCost != null
+          ? Math.round(product.defaultUnitCost * qty * (1 + (markup ?? 0) / 100))
+          : undefined,
+    };
+  }
+
   // Add a product from library to a selection as a new option
   app.post("/api/selections/:id/options/from-product", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -16716,13 +16759,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: product.category ?? undefined,
         subcategory: product.subcategory ?? undefined,
         unitCost: product.defaultUnitCost ?? undefined,
+        gstInclusive: (product as any).gstInclusive === true,
         quantity: quantity ?? 1,
         unitType: product.unitType ?? "ea",
         url: product.url ?? undefined,
-        markupPercent: markupPercent ?? undefined,
-        totalCost: product.defaultUnitCost != null
-          ? Math.round(product.defaultUnitCost * (quantity ?? 1) * (1 + (markupPercent ?? 0) / 100))
-          : undefined,
+        ...fromProductPricing(product, quantity ?? 1, markupPercent),
         visibleToClient: visibleToClient !== false,
         sortOrder: allOptions.length,
         productId: product.id,

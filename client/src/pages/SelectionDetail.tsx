@@ -1,3 +1,4 @@
+import { optionClientPriceCents } from "@shared/selectionPricing";
 import { useState, useEffect, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -579,6 +580,9 @@ export default function SelectionDetail() {
         sku: option.sku ?? null,
         description: option.description ?? null,
         defaultUnitCost: option.unitCost ?? null,
+        gstInclusive: option.gstInclusive === true,
+        defaultMarkupPercent: option.markupPercent ?? null,
+        defaultUnitCharge: (option as any).unitCharge ?? null,
         unitType: option.unitType ?? "ea",
         url: option.url ?? null,
         isActive: true,
@@ -950,7 +954,9 @@ export default function SelectionDetail() {
     quantity: o.quantity,
     unitType: o.unitType,
     unitCost: o.unitCost,
-    totalCost: o.totalCost,
+    // What the client pays for the line, inc GST — the same figure the client
+    // portal and the PDF show, not the raw stored total.
+    totalCost: optionClientPriceCents(o as any) ?? o.totalCost,
     markupPercent: o.markupPercent,
     visibleToClient: o.visibleToClient,
     isSelectedByClient: o.isSelectedByClient,
@@ -1062,13 +1068,7 @@ export default function SelectionDetail() {
 
   // Calculate selected price from options (ensure we have valid numbers)
   const selectedOption = selection.options?.find(opt => opt.isSelectedByClient);
-  const selectedPrice = selectedOption
-    ? (selectedOption.totalCost != null
-        ? selectedOption.totalCost
-        : selectedOption.unitCost != null
-          ? Math.round(selectedOption.unitCost * (selectedOption.quantity || 1) * (1 + (selectedOption.markupPercent || 0) / 100))
-          : 0)
-    : 0;
+  const selectedPrice = selectedOption ? (optionClientPriceCents(selectedOption as any) ?? 0) : 0;
   const allowanceAmount = Number(selection.allowance) || 0;
 
   const isAdminUser = !!user?.isAdminLike;
@@ -2357,6 +2357,7 @@ export default function SelectionDetail() {
           unitTax: editingOption.unitTax,
           totalCost: editingOption.totalCost,
           markupPercent: editingOption.markupPercent,
+          unitCharge: (editingOption as any).unitCharge,
           gstInclusive: editingOption.gstInclusive,
           visibleToClient: editingOption.visibleToClient,
         } : prefillValues}
@@ -2365,6 +2366,7 @@ export default function SelectionDetail() {
           : prefillSpecifications}
         onPaste={(files) => stageOrUploadImageFiles(files)}
         onSubmit={onOptionSubmit}
+        chargePricing
         mediaPane={optionMediaPane}
       />
 

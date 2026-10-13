@@ -9,6 +9,8 @@
  * Layout and tokens follow the price list pages: page header at px-4 pt-3 pb-2,
  * cards as bg-card rounded-md border with --shadow-card, 6px controls.
  */
+import { PricingFields } from "@/components/selections/PricingFields";
+import { costIncGstCents, type PricingTriple } from "@shared/selectionPricing";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -51,6 +53,9 @@ interface Product {
   subcategory: string | null;
   supplierContactId: string | null;
   defaultUnitCost: number | null;
+  gstInclusive?: boolean | null;
+  defaultMarkupPercent?: number | null;
+  defaultUnitCharge?: number | null;
   unitType: string | null;
   url: string | null;
   notes: string | null;
@@ -63,12 +68,12 @@ interface Product {
 /** Matches the units a selection option offers, so a product drops straight in. */
 const UNIT_TYPES = ["ea", "m", "m2", "m3", "lm", "kg", "tonne", "litre", "hour", "day", "pack", "set", "pair", "lot"];
 
-/** Cents in the database, dollars in the field. */
-const centsToInput = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
-const inputToCents = (v: string) => {
-  const n = parseFloat(v);
-  return v.trim() === "" || Number.isNaN(n) ? null : Math.round(n * 100);
-};
+/** The product's stored pricing as an inc-GST triple for the form. */
+const pricingOf = (p: Partial<Product>): PricingTriple => ({
+  costCents: costIncGstCents(p.defaultUnitCost, p.gstInclusive === true),
+  markupPercent: p.defaultMarkupPercent ?? null,
+  chargeCents: p.defaultUnitCharge ?? null,
+});
 
 type SpecRow = { key: string; value: string };
 
@@ -109,7 +114,15 @@ export default function ProductDetail() {
     return parent ? `${parent.name} › ${g.name}` : g.name;
   };
 
-  const [form, setForm] = useState<Partial<Product> & { unitCostInput?: string }>({});
+  const [form, setForm] = useState<Partial<Product>>({});
+  const [pricing, setPricing] = useState<PricingTriple>({ costCents: null, markupPercent: null, chargeCents: null });
+  // Bumped with setPricing, not keyed on product.id: the fields' own effect runs
+  // before this component's, so keying on the id reloaded them from stale state.
+  const [pricingResetKey, setPricingResetKey] = useState(0);
+  // Roles without selections pricing access are not sent cost, markup or
+  // charge. Hide the fields AND leave them out of the save, or saving any
+  // other change would blank the prices.
+  const canSeePricing = !!product && "defaultUnitCost" in product;
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [taxonomyOpen, setTaxonomyOpen] = useState<false | "groups" | "tags">(false);
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
@@ -119,14 +132,16 @@ export default function ProductDetail() {
   // refetch would throw away whatever is half-typed.
   useEffect(() => {
     if (!product) return;
-    setForm({ ...product, unitCostInput: centsToInput(product.defaultUnitCost) });
+    setForm({ ...product });
+    setPricing(pricingOf(product));
+    setPricingResetKey((k) => k + 1);
     setTagIds(product.tagIds ?? []);
     setSpecRows(specsToRows(product.specifications));
     setDirty(false);
     setHeroIdx(0);
   }, [product?.id]);
 
-  const set = <K extends keyof (Product & { unitCostInput: string })>(key: K, value: any) => {
+  const set = <K extends keyof Product>(key: K, value: any) => {
     setForm((f) => ({ ...f, [key]: value }));
     setDirty(true);
   };
@@ -143,7 +158,15 @@ export default function ProductDetail() {
         unitType: form.unitType || null,
         url: form.url || null,
         notes: form.notes || null,
-        defaultUnitCost: inputToCents(form.unitCostInput ?? ""),
+        ...(canSeePricing
+          ? {
+              // Stored including GST from here on; older products were ex GST.
+              defaultUnitCost: pricing.costCents,
+              gstInclusive: true,
+              defaultMarkupPercent: pricing.markupPercent,
+              defaultUnitCharge: pricing.chargeCents,
+            }
+          : {}),
         specifications: rowsToSpecs(specRows),
         groupId: form.groupId ?? null,
       };
@@ -499,18 +522,6 @@ export default function ProductDetail() {
                     </div>
                   )}
                 </Field>
-                <Field label="Unit cost" hint="ex GST">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={form.unitCostInput ?? ""}
-                    onChange={(e) => set("unitCostInput" as any, e.target.value)}
-                    className="h-7 text-xs text-right tabular-nums"
-                    placeholder="0.00"
-                    data-testid="input-unit-cost"
-                  />
-                </Field>
                 <Field label="Unit">
                   <Select value={form.unitType ?? ""} onValueChange={(v) => set("unitType", v)}>
                     <SelectTrigger className="h-7 text-xs" data-testid="select-unit-type">
@@ -521,6 +532,16 @@ export default function ProductDetail() {
                     </SelectContent>
                   </Select>
                 </Field>
+                {canSeePricing && (
+                  <div className="sm:col-span-2" data-testid="product-pricing">
+                    <PricingFields
+                      size="sm"
+                      value={pricing}
+                      resetKey={pricingResetKey}
+                      onChange={(next) => { setPricing(next); setDirty(true); }}
+                    />
+                  </div>
+                )}
                 <Field label="Product link" className="sm:col-span-2">
                   <div className="flex items-center gap-1.5">
                     <Input value={form.url ?? ""} onChange={(e) => set("url", e.target.value)} className="h-7 text-xs" placeholder="https://…" data-testid="input-url" />

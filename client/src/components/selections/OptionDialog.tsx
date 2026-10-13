@@ -33,6 +33,9 @@
  * template blob stores cents as well. The display strings are dollars and are
  * converted at the field edge, never in the form value.
  */
+import { formatCents } from "@shared/money";
+import { PricingFields } from "@/components/selections/PricingFields";
+import { costIncGstCents, optionUnitChargeCents, type PricingTriple } from "@shared/selectionPricing";
 import { useEffect, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -83,6 +86,8 @@ export const optionDialogSchema = z.object({
   /** Cents. */
   totalCost: z.coerce.number().nullish(),
   markupPercent: z.coerce.number().nullish(),
+  /** Cents INC GST, per unit — what the client pays. Projects only. */
+  unitCharge: z.coerce.number().nullish(),
   gstInclusive: z.boolean().nullish(),
   visibleToClient: z.boolean().nullish(),
 });
@@ -104,6 +109,7 @@ const EMPTY: OptionDialogValues = {
   unitTax: undefined,
   totalCost: undefined,
   markupPercent: undefined,
+  unitCharge: undefined,
   gstInclusive: false,
   visibleToClient: true,
 };
@@ -130,6 +136,12 @@ export interface OptionDialogProps {
   showNotes?: boolean;
   /** Wording. A project calls an option a Product; a template calls it an Option. */
   nounSingular?: string;
+  /**
+   * Price with cost / markup / charge, all inc GST, where any two give the
+   * third and the charge is stored. On for project options. A template option
+   * has no charge column, so it keeps the cost + markup inputs.
+   */
+  chargePricing?: boolean;
 }
 
 /** GST at 10%, from a cents figure that either includes it or does not. */
@@ -151,6 +163,7 @@ export function OptionDialog({
   onPaste,
   showNotes = true,
   nounSingular = "Product",
+  chargePricing = false,
 }: OptionDialogProps) {
   const form = useForm<OptionDialogValues>({
     resolver: zodResolver(optionDialogSchema),
@@ -169,6 +182,8 @@ export function OptionDialog({
   const [unitCostDisplayStr, setUnitCostDisplayStr] = useState("");
   const [totalCostDisplayStr, setTotalCostDisplayStr] = useState("");
   const [markupDisplayStr, setMarkupDisplayStr] = useState("");
+  const [pricing, setPricing] = useState<PricingTriple>({ costCents: null, markupPercent: null, chargeCents: null });
+  const [pricingResetKey, setPricingResetKey] = useState(0);
 
   /** Fill the form when the dialog opens, and clear it when it closes. */
   useEffect(() => {
@@ -184,6 +199,19 @@ export function OptionDialog({
     setDescOpen(!!v.description);
     setNotesOpen(!!v.notes);
     setSpecPickerOpen(false);
+    if (chargePricing) {
+      // Shown including GST whichever way the cost was stored. An option priced
+      // before the charge existed shows the charge its cost and markup imply.
+      const costCents = costIncGstCents(v.unitCost, !!v.gstInclusive);
+      setPricing({
+        costCents,
+        markupPercent: v.markupPercent ?? null,
+        chargeCents: v.unitCharge ?? (costCents != null && v.markupPercent != null
+          ? optionUnitChargeCents({ unitCost: v.unitCost, gstInclusive: v.gstInclusive, markupPercent: v.markupPercent })
+          : null),
+      });
+      setPricingResetKey((k) => k + 1);
+    }
     // initialValues is a fresh object each render, so it is deliberately not a
     // dependency — only opening the dialog should reset the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,11 +222,26 @@ export function OptionDialog({
   const watchedMarkupPercent = form.watch("markupPercent");
 
   useEffect(() => {
+    if (chargePricing) return; // the line total comes from the charge instead
     if (!watchedUnitCost) return;
     const total = Math.round(watchedUnitCost * (watchedQuantity || 1) * (1 + (watchedMarkupPercent || 0) / 100));
     form.setValue("totalCost", total, { shouldDirty: true });
     setTotalCostDisplayStr((total / 100).toFixed(2));
   }, [watchedUnitCost, watchedQuantity, watchedMarkupPercent]);
+
+  /** Cost / markup / charge changed: write all of it into the form, inc GST. */
+  const applyPricing = (next: PricingTriple) => {
+    setPricing(next);
+    const qty = form.getValues("quantity") || 1;
+    const dirty = { shouldDirty: true };
+    form.setValue("unitCost", next.costCents ?? undefined, dirty);
+    form.setValue("gstInclusive", true, dirty);
+    form.setValue("unitTax", next.costCents != null ? calculateGst(next.costCents, true) : undefined, dirty);
+    form.setValue("markupPercent", next.markupPercent ?? undefined, dirty);
+    form.setValue("unitCharge", next.chargeCents ?? undefined, dirty);
+    // The server recomputes this from the charge; set here for the cards.
+    form.setValue("totalCost", next.chargeCents != null ? Math.round(next.chargeCents * qty) : undefined, dirty);
+  };
 
   const handleGstChange = (inclusive: boolean) => {
     setGstInclusive(inclusive);
@@ -216,7 +259,19 @@ export function OptionDialog({
   };
 
   const submit = (values: OptionDialogValues) => {
-    onSubmit(values, Object.keys(specs).length > 0 ? specs : null);
+    // A cleared field must be sent as null, or the old figure survives the save.
+    const priced = chargePricing
+      ? {
+          ...values,
+          unitCost: pricing.costCents,
+          gstInclusive: true,
+          unitTax: pricing.costCents != null ? calculateGst(pricing.costCents, true) : null,
+          markupPercent: pricing.markupPercent,
+          unitCharge: pricing.chargeCents,
+          totalCost: pricing.chargeCents != null ? Math.round(pricing.chargeCents * (values.quantity || 1)) : null,
+        }
+      : values;
+    onSubmit(priced, Object.keys(specs).length > 0 ? specs : null);
   };
 
   return (
@@ -408,6 +463,7 @@ export function OptionDialog({
                   )}
                 />
 
+                {!chargePricing && (
                 <FormField
                   control={form.control}
                   name="unitCost"
@@ -438,9 +494,23 @@ export function OptionDialog({
                     </FormItem>
                   )}
                 />
+                )}
               </div>
 
-              {/* GST toggle + Markup + Total */}
+              {chargePricing ? (
+                <div className="space-y-3" data-testid="option-pricing">
+                  <PricingFields value={pricing} resetKey={pricingResetKey} onChange={applyPricing} />
+                  <div className="rounded-md bg-muted/50 border border-border px-4 py-3 flex items-baseline justify-between gap-2" data-testid="display-option-total-cost">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Client pays{(watchedQuantity || 1) !== 1 ? ` (× ${watchedQuantity})` : ""}
+                    </span>
+                    <span className="text-lg font-semibold tabular-nums">
+                      {pricing.chargeCents != null ? formatCents(Math.round(pricing.chargeCents * (watchedQuantity || 1))) : "—"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+              /* GST toggle + Markup + Total */
               <div className="space-y-4">
                 {/* GST pill toggle */}
                 <div className="flex items-center justify-between">
@@ -540,6 +610,7 @@ export function OptionDialog({
                   }}
                 />
               </div>
+              )}
 
               <Separator />
 

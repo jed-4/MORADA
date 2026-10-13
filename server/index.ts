@@ -436,6 +436,12 @@ app.use((req, res, next) => {
       console.error('Failed to ensure focal point columns:', error);
     }
 
+    try {
+      await (storage as any).ensureSelectionPricingColumns?.();
+    } catch (error) {
+      console.error('Failed to ensure selection pricing columns:', error);
+    }
+
     // Auto-seed missing built-in field categories (for production databases)
     try {
       const seedResult = await storage.seedMissingBuiltInCategories();

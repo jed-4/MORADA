@@ -12,8 +12,14 @@ import {
   applySelectionVisibility,
   applySelectionVisibilityToOne,
   applyOptionVisibility,
+  OPTION_MONEY_FIELDS,
+  OPTION_NON_MONEY_FIELDS,
+  CLIENT_OPTION_FIELDS,
   type SelectionViewer,
 } from "../selectionVisibility";
+import { getTableColumns } from "drizzle-orm";
+import { selectionOptions } from "@shared/schema";
+import { solvePricing, optionClientPriceCents } from "@shared/selectionPricing";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -262,6 +268,93 @@ check("redaction never mutates the caller's rows", () => {
   assert.equal(input.allowance, 200_000, "input was mutated");
   assert.equal(input.options.length, 2, "input options were mutated");
   assert.equal(input.options[0].unitCost, 100_000);
+});
+
+// ── Guard rails: a new column can never slip out by default ───────────────
+check("every selection_options column is classified money or non-money", () => {
+  const columns = Object.keys(getTableColumns(selectionOptions));
+  const classified = new Set<string>([...OPTION_MONEY_FIELDS, ...OPTION_NON_MONEY_FIELDS]);
+  const unclassified = columns.filter((c) => !classified.has(c));
+  assert.deepEqual(unclassified, [], `classify these in selectionVisibility.ts: ${unclassified.join(", ")}`);
+  const stale = [...classified].filter((c) => !columns.includes(c));
+  assert.deepEqual(stale, [], `listed but not a column: ${stale.join(", ")}`);
+});
+
+check("the client allow-list contains no money, no notes and no staff ids", () => {
+  const forbidden = [...OPTION_MONEY_FIELDS.filter((f) => f !== "totalCost"), "totalCost", "notes", "approvedById", "productId"];
+  for (const field of forbidden) {
+    assert.ok(!(CLIENT_OPTION_FIELDS as readonly string[]).includes(field), `${field} is on the client allow-list`);
+  }
+});
+
+check("a client is sent ONLY allow-listed option fields — unknown columns stay private", () => {
+  const sel = { ...approvedSelection(), clientCanSeePrice: true };
+  sel.options = sel.options.map((o: any) => ({
+    ...o,
+    unitCharge: 150_00,
+    someFutureCostColumn: 99_99,
+    notes: "internal",
+    approvedById: "user-1",
+    productId: 7,
+  }));
+  for (const viewer of [CLIENT, CLIENT_WITH_PRICES]) {
+    const out = applySelectionVisibilityToOne(sel, viewer);
+    const viaOptions = applyOptionVisibility(sel.options, sel, viewer);
+    for (const opt of [...out.options, ...viaOptions]) {
+      const extra = Object.keys(opt).filter((k) => k !== "totalCost" && !(CLIENT_OPTION_FIELDS as readonly string[]).includes(k));
+      assert.deepEqual(extra, [], `client received: ${extra.join(", ")}`);
+      assert.equal(opt.unitCost, undefined);
+      assert.equal(opt.markupPercent, undefined);
+      assert.equal(opt.unitCharge, undefined);
+      assert.equal(opt.someFutureCostColumn, undefined);
+    }
+  }
+});
+
+check("a stored charge is the client's price: charge × qty, no cost, no markup", () => {
+  const sel = { ...approvedSelection(), clientCanSeePrice: true };
+  // $100 cost, $150 charge (50%), qty 2 → the client is shown $300.
+  sel.options = sel.options.map((o: any) => ({ ...o, unitCost: 100_00, gstInclusive: true, markupPercent: 50, unitCharge: 150_00, quantity: 2 }));
+  const out = applySelectionVisibilityToOne(sel, CLIENT_WITH_PRICES);
+  for (const opt of out.options) {
+    assert.equal(opt.totalCost, 300_00);
+    assert.ok(!JSON.stringify(opt).includes("10000"), "the cost figure appears in the client payload");
+  }
+});
+
+check("a trade without pricing access gets no charge either", () => {
+  const sel = approvedSelection();
+  sel.options = sel.options.map((o: any) => ({ ...o, unitCharge: 150_00 }));
+  const out = applySelectionVisibilityToOne(sel, TRADE);
+  for (const opt of out.options) assert.equal(opt.unitCharge, undefined);
+});
+
+// ── Cost / charge / markup solver ─────────────────────────────────────────
+check("any two of cost / charge / markup give the third", () => {
+  assert.deepEqual(solvePricing({ costCents: 100_00, chargeCents: null, markupPercent: 50 }, "markup"), { costCents: 100_00, chargeCents: 150_00, markupPercent: 50 });
+  assert.deepEqual(solvePricing({ costCents: 100_00, chargeCents: 150_00, markupPercent: null }, "charge"), { costCents: 100_00, chargeCents: 150_00, markupPercent: 50 });
+  assert.deepEqual(solvePricing({ costCents: null, chargeCents: 150_00, markupPercent: 50 }, "markup"), { costCents: 100_00, chargeCents: 150_00, markupPercent: 50 });
+});
+
+check("editing cost keeps the markup; editing charge keeps the cost and moves the markup", () => {
+  const all = { costCents: 100_00, chargeCents: 150_00, markupPercent: 50 };
+  assert.deepEqual(solvePricing({ ...all, costCents: 120_00 }, "cost"), { costCents: 120_00, chargeCents: 180_00, markupPercent: 50 });
+  assert.deepEqual(solvePricing({ ...all, chargeCents: 149_00 }, "charge"), { costCents: 100_00, chargeCents: 149_00, markupPercent: 49 });
+  assert.deepEqual(solvePricing({ ...all, markupPercent: 7.5 }, "markup"), { costCents: 100_00, chargeCents: 107_50, markupPercent: 7.5 });
+});
+
+check("markup is on cost, never margin, and a typed charge is never altered", () => {
+  // $100 → $150 is 50% markup (it would be 33.33% margin).
+  assert.equal(solvePricing({ costCents: 100_00, chargeCents: 150_00, markupPercent: null }, "charge").markupPercent, 50);
+  const odd = solvePricing({ costCents: 33_33, chargeCents: 49_99, markupPercent: 12 }, "charge");
+  assert.equal(odd.chargeCents, 49_99);
+  assert.equal(odd.costCents, 33_33);
+});
+
+check("options priced before the charge existed keep their exact old price", () => {
+  // 100000c ex × 2 × 1.10 = 220000 ex → 242000 inc GST, as before.
+  assert.equal(optionClientPriceCents({ unitCost: 100_000, gstInclusive: false, markupPercent: 10, quantity: 2 }), 242_000);
+  assert.equal(optionClientPriceCents({ unitCost: null, unitCharge: null }), null);
 });
 
 console.log(`\n${passed} passed\n`);

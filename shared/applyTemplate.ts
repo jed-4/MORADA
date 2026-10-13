@@ -199,6 +199,8 @@ export interface ProductSpec {
   category: string | null;
   subcategory: string | null;
   defaultUnitCost: number | null;
+  /** Whether defaultUnitCost includes GST. Absent/false on template-minted rows. */
+  gstInclusive?: boolean | null;
   unitType: string | null;
   url: string | null;
   specifications: Record<string, any> | null;
@@ -253,7 +255,13 @@ export function optionFromRows(
     markupPercent: orUndefined(use.markupPercent),
     totalCost: orUndefined(use.totalCost),
     visibleToClient: orUndefined(use.visibleToClient),
-    gstInclusive: orUndefined(use.gstInclusive),
+    // The GST basis belongs to whichever cost was used. A library product
+    // priced including GST, used at its own cost, must stay inc GST — reading
+    // it with the template row's (ex GST) flag would add GST twice.
+    gstInclusive:
+      use.unitCostOverride == null && product.defaultUnitCost != null && product.gstInclusive === true
+        ? true
+        : orUndefined(use.gstInclusive),
     sortOrder: orUndefined(use.sortOrder),
     imageUrls,
   };

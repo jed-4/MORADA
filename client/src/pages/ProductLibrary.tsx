@@ -10,6 +10,7 @@
  * could not hold an image, which is thin for the record a client selection
  * points at.
  */
+import { costIncGstCents } from "@shared/selectionPricing";
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -280,7 +281,7 @@ export default function ProductLibrary() {
       case "cost":
         return (
           <span className="text-xs text-right tabular-nums block">
-            {p.defaultUnitCost != null ? formatCents(p.defaultUnitCost) : "—"}
+            {p.defaultUnitCost != null ? formatCents(costIncGstCents(p.defaultUnitCost, (p as any).gstInclusive === true)!) : "—"}
           </span>
         );
       default:
