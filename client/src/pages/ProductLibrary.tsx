@@ -10,6 +10,7 @@
  * could not hold an image, which is thin for the record a client selection
  * points at.
  */
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -226,7 +227,7 @@ export default function ProductLibrary() {
           <div className="flex items-center gap-2 min-w-0">
             <div className="h-6 w-6 rounded border border-border bg-muted/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
               {p.images?.[0] ? (
-                <img src={p.images[0].filePath} alt="" className="h-full w-full object-cover" />
+                <CroppedImage src={p.images[0].filePath} x={(p.images[0] as any).thumbnailX} y={(p.images[0] as any).thumbnailY} zoom={(p.images[0] as any).thumbnailZoom} loading="lazy" />
               ) : (
                 <Package className="h-3 w-3 text-muted-foreground/50" />
               )}

@@ -2416,7 +2416,9 @@ export default function SelectionDetail() {
                   data-testid={`library-product-${product.id}`}
                 >
                   {product.images?.[0]?.filePath ? (
-                    <img src={product.images[0].filePath} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                    <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0">
+                      <CroppedImage src={product.images[0].filePath} alt={product.name} x={product.images[0].thumbnailX} y={product.images[0].thumbnailY} zoom={product.images[0].thumbnailZoom} />
+                    </div>
                   ) : (
                     <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
                       <Package className="h-4 w-4 text-muted-foreground" />

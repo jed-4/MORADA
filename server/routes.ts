@@ -16687,6 +16687,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimeType: att.mimeType ?? undefined,
           fileSize: att.fileSize ?? undefined,
           sortOrder: att.sortOrder,
+          thumbnailX: att.thumbnailX,
+          thumbnailY: att.thumbnailY,
+          thumbnailZoom: att.thumbnailZoom,
         });
       }
       // Link the option back to the product
@@ -16738,6 +16741,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           fileSize: img.fileSize ?? undefined,
           mimeType: img.mimeType ?? undefined,
           sortOrder: img.sortOrder ?? 0,
+          thumbnailX: (img as any).thumbnailX ?? 50,
+          thumbnailY: (img as any).thumbnailY ?? 50,
+          thumbnailZoom: (img as any).thumbnailZoom ?? 100,
         });
       }
       res.status(201).json(newOption);
@@ -46879,7 +46885,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     "purchase_order_attachments",
     "enote_attachments",
     "task_template_attachments",
+    "product_images",
   ]);
+  // Tables that also store thumbnail_zoom.
+  const FOCAL_ZOOM_TABLES = new Set(["option_attachments", "product_images"]);
 
   app.patch("/api/attachments/:table/:id/focal-point", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -46892,9 +46901,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
         return res.status(400).json({ error: "thumbnailX and thumbnailY must be integers 0–100" });
       }
-      // Zoom is only stored for selection images (option_attachments).
+      // Zoom is only stored for selection and Product Library images.
       let zoom: number | undefined;
-      if (table === "option_attachments" && req.body.thumbnailZoom !== undefined) {
+      if (FOCAL_ZOOM_TABLES.has(table) && req.body.thumbnailZoom !== undefined) {
         zoom = Math.round(Number(req.body.thumbnailZoom));
         if (!Number.isFinite(zoom) || zoom < 10 || zoom > 400) {
           return res.status(400).json({ error: "thumbnailZoom must be an integer 10–400" });
@@ -46943,6 +46952,16 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             SELECT tta.id FROM task_template_attachments tta
             WHERE tta.id = ${id} AND tta.company_id = ${companyId}`;
           break;
+        case "product_images": {
+          // Serial id, unlike the uuid tables — reject anything non-numeric
+          // before it reaches the integer comparison.
+          if (!/^\d+$/.test(id)) return res.status(404).json({ error: "Attachment not found" });
+          ownershipQuery = sqlHelper`
+            SELECT pi.id FROM product_images pi
+            JOIN products p ON p.id = pi.product_id
+            WHERE pi.id = ${Number(id)} AND p.company_id = ${companyId}`;
+          break;
+        }
         default:
           return res.status(400).json({ error: "Unsupported attachment table" });
       }
@@ -46953,7 +46972,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
 
       if (zoom !== undefined) {
-        await db.execute(sqlHelper`UPDATE option_attachments SET thumbnail_x = ${x}, thumbnail_y = ${y}, thumbnail_zoom = ${zoom} WHERE id = ${id}`);
+        await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y}, thumbnail_zoom = ${zoom} WHERE id = ${id}`);
       } else {
         await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
       }

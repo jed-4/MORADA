@@ -9,13 +9,15 @@
  * Layout and tokens follow the price list pages: page header at px-4 pt-3 pb-2,
  * cards as bg-card rounded-md border with --shadow-card, 6px controls.
  */
+import { CroppedImage } from "@/components/CroppedImage";
+import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ChevronLeft, Package, Trash2, Loader2, ImagePlus, X, Star, MoreVertical, Plus,
+  ChevronLeft, Package, Trash2, Loader2, ImagePlus, X, Star, MoreVertical, Plus, Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +38,9 @@ interface ProductImage {
   filePath: string;
   fileName: string | null;
   sortOrder: number | null;
+  thumbnailX?: number | null;
+  thumbnailY?: number | null;
+  thumbnailZoom?: number | null;
 }
 
 interface ProductGroup { id: string; parentId: string | null; name: string }
@@ -94,6 +99,8 @@ export default function ProductDetail() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [heroIdx, setHeroIdx] = useState(0);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [savingCrop, setSavingCrop] = useState(false);
 
   const { data: product, isLoading, isError } = useQuery<Product>({
     queryKey: ["/api/products", id],
@@ -323,14 +330,21 @@ export default function ProductDetail() {
             </div>
 
             <div className="p-3 space-y-2">
-              <div className="aspect-square w-full rounded-md border border-border bg-muted/30 overflow-hidden flex items-center justify-center">
+              <div className="group relative aspect-square w-full rounded-md border border-border bg-muted/30 overflow-hidden flex items-center justify-center" data-testid="img-product-hero">
                 {hero ? (
-                  <img
-                    src={hero.filePath}
-                    alt={hero.fileName ?? product.name}
-                    className="h-full w-full object-cover"
-                    data-testid="img-product-hero"
-                  />
+                  <>
+                    <CroppedImage src={hero.filePath} alt={hero.fileName ?? product.name} x={hero.thumbnailX} y={hero.thumbnailY} zoom={hero.thumbnailZoom} />
+                    <button
+                      type="button"
+                      onClick={() => setCropOpen(true)}
+                      className="absolute bottom-2 right-2 h-7 px-2 rounded-md bg-black/60 text-white text-[11px] flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                      title="Set thumbnail crop (position and zoom)"
+                      data-testid="button-crop-product-image"
+                    >
+                      <Crosshair className="h-3 w-3" />
+                      Crop
+                    </button>
+                  </>
                 ) : (
                   <div className="text-center px-4">
                     <Package className="h-7 w-7 mx-auto text-muted-foreground/50" />
@@ -353,7 +367,7 @@ export default function ProductDetail() {
                       data-testid={`button-thumb-${img.id}`}
                       aria-label={`Show image ${i + 1}`}
                     >
-                      <img src={img.filePath} alt="" className="h-full w-full object-cover" />
+                      <CroppedImage src={img.filePath} x={img.thumbnailX} y={img.thumbnailY} zoom={img.thumbnailZoom} />
                       {i === 0 && (
                         <Star className="absolute top-0.5 left-0.5 h-2.5 w-2.5 fill-primary text-primary" />
                       )}
@@ -613,6 +627,33 @@ export default function ProductDetail() {
           </div>
         </div>
       </div>
+
+      {hero && (
+        <FocalPointPicker
+          open={cropOpen}
+          onOpenChange={setCropOpen}
+          imageUrl={hero.filePath}
+          initialX={hero.thumbnailX ?? 50}
+          initialY={hero.thumbnailY ?? 50}
+          initialZoom={hero.thumbnailZoom ?? 100}
+          allowZoom
+          isSaving={savingCrop}
+          onSave={async (x, y, zoom) => {
+            setSavingCrop(true);
+            try {
+              await saveFocalPoint("product_images", String(hero.id), x, y, zoom);
+              queryClient.invalidateQueries({ queryKey: ["/api/products", id] });
+              queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+              toast({ title: "Thumbnail crop saved" });
+              setCropOpen(false);
+            } catch {
+              toast({ title: "Failed to save crop", variant: "destructive" });
+            } finally {
+              setSavingCrop(false);
+            }
+          }}
+        />
+      )}
 
       <ProductTaxonomyDialog
         open={taxonomyOpen !== false}
