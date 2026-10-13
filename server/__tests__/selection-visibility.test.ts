@@ -20,6 +20,7 @@ import {
 import { getTableColumns } from "drizzle-orm";
 import { selectionOptions } from "@shared/schema";
 import { solvePricing, optionClientPriceCents } from "@shared/selectionPricing";
+import { optionFromRows } from "@shared/applyTemplate";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -355,6 +356,47 @@ check("options priced before the charge existed keep their exact old price", () 
   // 100000c ex × 2 × 1.10 = 220000 ex → 242000 inc GST, as before.
   assert.equal(optionClientPriceCents({ unitCost: 100_000, gstInclusive: false, markupPercent: 10, quantity: 2 }), 242_000);
   assert.equal(optionClientPriceCents({ unitCost: null, unitCharge: null }), null);
+});
+
+// ── Templates using a library product ─────────────────────────────────────
+const libraryProduct = {
+  name: "Mixer", brand: null, sku: null, description: null, category: null, subcategory: null,
+  unitType: "ea", url: null, specifications: null,
+  defaultUnitCost: 100_00, gstInclusive: true, defaultMarkupPercent: 50, defaultUnitCharge: 150_00,
+};
+const use = (over: Record<string, any> = {}) => ({
+  quantity: 2, unitCostOverride: null, markupPercent: null, totalCost: null,
+  visibleToClient: null, gstInclusive: null, sortOrder: null, optionCategory: null, ...over,
+});
+
+check("a template using a library product as priced inherits its markup and charge", () => {
+  const opt = optionFromRows(libraryProduct, use() as any, []);
+  assert.equal(opt.unitCost, 100_00);
+  assert.equal(opt.gstInclusive, true);
+  assert.equal(opt.markupPercent, 50);
+  assert.equal(opt.unitCharge, 150_00);
+  assert.equal(opt.totalCost, 300_00);
+  assert.equal(optionClientPriceCents(opt), 300_00);
+});
+
+check("a template's own markup or cost wins over the library's charge", () => {
+  const ownMarkup = optionFromRows(libraryProduct, use({ markupPercent: 20 }) as any, []);
+  assert.equal(ownMarkup.unitCharge, undefined);
+  assert.equal(ownMarkup.markupPercent, 20);
+  assert.equal(optionClientPriceCents(ownMarkup), 240_00); // $100 inc × 2 × 1.2
+  const ownCost = optionFromRows(libraryProduct, use({ unitCostOverride: 80_00, gstInclusive: false }) as any, []);
+  assert.equal(ownCost.unitCharge, undefined);
+  assert.equal(ownCost.unitCost, 80_00);
+  assert.equal(ownCost.gstInclusive, false);
+});
+
+check("a product with no library pricing applies exactly as before", () => {
+  const plain = { ...libraryProduct, gstInclusive: false, defaultMarkupPercent: null, defaultUnitCharge: null };
+  const opt = optionFromRows(plain, use({ totalCost: 200_00 }) as any, []);
+  assert.equal("unitCharge" in opt, false);
+  assert.equal(opt.markupPercent, undefined);
+  assert.equal(opt.totalCost, 200_00);
+  assert.equal(opt.gstInclusive, undefined);
 });
 
 console.log(`\n${passed} passed\n`);

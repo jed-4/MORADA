@@ -90,6 +90,8 @@ function buildOption(opt: any, selectionId: string, optionId: string, sortOrder:
     quantity: opt.quantity ?? null,
     unitType: opt.unitType || null,
     markupPercent: opt.markupPercent ?? null,
+    // Only present when the library priced it; absent keeps older rows identical.
+    ...(opt.unitCharge != null ? { unitCharge: opt.unitCharge } : {}),
     totalCost: opt.totalCost ?? null,
     url: opt.url || null,
     visibleToClient: opt.visibleToClient ?? true,
@@ -201,6 +203,9 @@ export interface ProductSpec {
   defaultUnitCost: number | null;
   /** Whether defaultUnitCost includes GST. Absent/false on template-minted rows. */
   gstInclusive?: boolean | null;
+  /** The library's own markup (% on cost) and charge per unit (cents inc GST). */
+  defaultMarkupPercent?: number | null;
+  defaultUnitCharge?: number | null;
   unitType: string | null;
   url: string | null;
   specifications: Record<string, any> | null;
@@ -234,6 +239,13 @@ export function optionFromRows(
   imageUrls: string[],
 ): any {
   const orUndefined = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
+  // A template that neither overrides the cost nor sets its own markup is
+  // using the product as the library prices it — so the library's markup and
+  // charge come too, exactly as when the product is picked straight into a
+  // selection. Any template-level cost or markup wins and the charge is left
+  // to be derived from those.
+  const pricedByLibrary = use.unitCostOverride == null && use.markupPercent == null;
+  const libraryCharge = pricedByLibrary ? product.defaultUnitCharge ?? null : null;
   return {
     name: product.name,
     brand: orUndefined(product.brand),
@@ -252,8 +264,11 @@ export function optionFromRows(
     // product. Absent override = use the product's own default.
     unitCost: orUndefined(use.unitCostOverride ?? product.defaultUnitCost),
     quantity: orUndefined(use.quantity),
-    markupPercent: orUndefined(use.markupPercent),
-    totalCost: orUndefined(use.totalCost),
+    markupPercent: orUndefined(use.markupPercent ?? (pricedByLibrary ? product.defaultMarkupPercent ?? null : null)),
+    ...(libraryCharge != null ? { unitCharge: libraryCharge } : {}),
+    totalCost: libraryCharge != null
+      ? Math.round(libraryCharge * (use.quantity ?? 1))
+      : orUndefined(use.totalCost),
     visibleToClient: orUndefined(use.visibleToClient),
     // The GST basis belongs to whichever cost was used. A library product
     // priced including GST, used at its own cost, must stay inc GST — reading
