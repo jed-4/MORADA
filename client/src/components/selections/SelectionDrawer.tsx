@@ -2,6 +2,7 @@
 // the remaining options collapse under a small header. Replaces the old
 // inline expand panel.
 
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -212,14 +213,9 @@ export function SelectionDrawer({
           {/* Chosen option — hero */}
           {chosen && (
             <div className="rounded-xl border border-[hsl(var(--sage))]/50 overflow-hidden bg-[hsl(var(--sage))]/5">
-              <div className="h-36 bg-muted/60">
+              <div className="aspect-square bg-muted/60">
                 {chosenImg ? (
-                  <img
-                    src={chosenImg.filePath}
-                    alt={chosen.name}
-                    className="w-full h-full object-cover"
-                    style={{ objectPosition: `${chosenImg.thumbnailX ?? 50}% ${chosenImg.thumbnailY ?? 50}%` }}
-                  />
+                  <CroppedImage src={chosenImg.filePath} alt={chosen.name} x={chosenImg.thumbnailX} y={chosenImg.thumbnailY} zoom={chosenImg.thumbnailZoom} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <ImageIcon className="w-8 h-8 text-muted-foreground/30" />

@@ -1,3 +1,4 @@
+import { CroppedImage } from "@/components/CroppedImage";
 import { useState, useEffect, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -26,6 +27,7 @@ import {
   getDerivedStatus,
   isDecided,
   isRestricted,
+  firstImage,
 } from "@/components/selections/selectionHelpers";
 import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import { OptionsSection, type OptionView } from "@/components/selections/OptionViews";
@@ -144,14 +146,14 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
     zIndex: isDragging ? 10 : undefined,
   };
 
-  const handleSaveFocal = async (x: number, y: number) => {
+  const handleSaveFocal = async (x: number, y: number, zoom: number) => {
     setIsSavingFocal(true);
     try {
-      await saveFocalPoint("option_attachments", att.id, x, y);
+      await saveFocalPoint("option_attachments", att.id, x, y, zoom);
       queryClient.invalidateQueries({ queryKey: ["/api/selections", selectionId] });
       // The list renders this attachment as the row thumbnail.
       queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
-      toast({ title: "Focal point saved" });
+      toast({ title: "Thumbnail crop saved" });
       setFocalOpen(false);
     } catch {
       toast({ title: "Failed to save focal point", variant: "destructive" });
@@ -163,12 +165,7 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
   return (
     <>
       <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
-        <img
-          src={att.filePath}
-          alt={att.fileName || "attachment"}
-          className="w-full h-full object-cover"
-          style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
-        />
+        <CroppedImage src={att.filePath} alt={att.fileName || "attachment"} x={att.thumbnailX} y={att.thumbnailY} zoom={att.thumbnailZoom} />
         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <button
             type="button"
@@ -185,8 +182,8 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
               type="button"
               className="text-white p-1"
               onClick={(e) => { e.stopPropagation(); setFocalOpen(true); }}
-              aria-label="Set thumbnail focal point"
-              title="Set focal point"
+              aria-label="Set thumbnail crop"
+              title="Set thumbnail crop (position and zoom)"
             >
               <Crosshair className="w-4 h-4" />
             </button>
@@ -208,6 +205,8 @@ function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAt
           imageUrl={att.filePath}
           initialX={att.thumbnailX ?? 50}
           initialY={att.thumbnailY ?? 50}
+          initialZoom={att.thumbnailZoom ?? 100}
+          allowZoom
           onSave={handleSaveFocal}
           isSaving={isSavingFocal}
         />
@@ -957,7 +956,11 @@ export default function SelectionDetail() {
     approvedAt: o.approvedAt as any,
     approvedBy: o.approvedBy,
     lockedAt: o.lockedAt as any,
-    heroUrl: o.attachments?.[0]?.filePath ?? null,
+    // First IMAGE, not first attachment — a spec PDF sorted first isn't a hero.
+    heroUrl: firstImage(o)?.filePath ?? null,
+    heroX: firstImage(o)?.thumbnailX,
+    heroY: firstImage(o)?.thumbnailY,
+    heroZoom: firstImage(o)?.thumbnailZoom,
   }));
 
   /** OptionsSection hands back an OptionView; the handlers want the real row. */

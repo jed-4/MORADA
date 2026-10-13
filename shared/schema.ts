@@ -1698,6 +1698,9 @@ export const optionAttachments = pgTable("option_attachments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   thumbnailX: integer("thumbnail_x").notNull().default(50),
   thumbnailY: integer("thumbnail_y").notNull().default(50),
+  // Percent of "cover": 100 fills the square with the image's short side,
+  // below 100 fits more of the image in, above 100 crops tighter.
+  thumbnailZoom: integer("thumbnail_zoom").notNull().default(100),
 });
 
 export const insertOptionAttachmentSchema = createInsertSchema(optionAttachments).omit({

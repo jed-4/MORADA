@@ -19029,6 +19029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       sortOrder: att.sortOrder,
       thumbnailX: att.thumbnailX,
       thumbnailY: att.thumbnailY,
+      thumbnailZoom: att.thumbnailZoom,
       filePath: `${urlPrefix}/attachments/${att.id}`,
     };
   }
@@ -46891,6 +46892,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
         return res.status(400).json({ error: "thumbnailX and thumbnailY must be integers 0–100" });
       }
+      // Zoom is only stored for selection images (option_attachments).
+      let zoom: number | undefined;
+      if (table === "option_attachments" && req.body.thumbnailZoom !== undefined) {
+        zoom = Math.round(Number(req.body.thumbnailZoom));
+        if (!Number.isFinite(zoom) || zoom < 10 || zoom > 400) {
+          return res.status(400).json({ error: "thumbnailZoom must be an integer 10–400" });
+        }
+      }
       const user = req.user as Express.User & { companyId?: string };
       const companyId = user?.companyId;
       if (!companyId) return res.status(403).json({ error: "Forbidden" });
@@ -46943,8 +46952,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(404).json({ error: "Attachment not found" });
       }
 
-      await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
-      res.json({ id, thumbnailX: x, thumbnailY: y });
+      if (zoom !== undefined) {
+        await db.execute(sqlHelper`UPDATE option_attachments SET thumbnail_x = ${x}, thumbnail_y = ${y}, thumbnail_zoom = ${zoom} WHERE id = ${id}`);
+      } else {
+        await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
+      }
+      res.json({ id, thumbnailX: x, thumbnailY: y, ...(zoom !== undefined ? { thumbnailZoom: zoom } : {}) });
     } catch (err: any) {
       console.error("[PATCH /api/attachments/:table/:id/focal-point] error:", err);
       res.status(500).json({ error: "Failed to update focal point" });
