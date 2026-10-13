@@ -26,13 +26,15 @@ import { useTheme, fontSize, fontWeight, radius } from '../theme';
 import { haptic } from '../lib/haptics';
 import { useToast } from '../components/ui/Toast';
 import StatusPill from '../components/selections/StatusPill';
+import CroppedImage from '../components/selections/CroppedImage';
 import {
+  clientPriceCents,
+  formatMoney,
   formatQuantity,
   getChosenOption,
   getSelectionState,
   isSettled,
   prettifySpecKey,
-  type OptionAttachment,
   type Selection,
 } from '../lib/selections';
 
@@ -74,7 +76,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [comments, setComments] = useState<SelectionComment[]>([]);
@@ -82,7 +84,9 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [posting, setPosting] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [zoomed, setZoomed] = useState<OptionAttachment | null>(null);
+  // Index of the photo open full screen, or null when the viewer is closed.
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerPage, setViewerPage] = useState(0);
 
   // Comments are requireTeamMember on the server, and channels are team-or-
   // client — a subcontractor account gets a 403 on both. Rather than show
@@ -139,6 +143,8 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
     () => (chosen?.attachments ?? []).filter((a) => a.fileType?.toLowerCase() === 'image'),
     [chosen],
   );
+
+  const price = useMemo(() => clientPriceCents(chosen), [chosen]);
 
   const specRows = useMemo(() => {
     if (!chosen) return [] as { label: string; value: string; copyable?: boolean }[];
@@ -236,12 +242,18 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                 setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))
               }
             >
-              {photos.map((photo) => (
-                <Pressable key={photo.id} onPress={() => setZoomed(photo)}>
-                  <Image
-                    source={getAuthedImageSource(photo.filePath)}
+              {photos.map((photo, i) => (
+                <Pressable
+                  key={photo.id}
+                  onPress={() => { setViewerPage(i); setViewerIndex(i); }}
+                  accessibilityLabel="View photo full screen"
+                >
+                  <CroppedImage
+                    filePath={photo.filePath}
+                    x={photo.thumbnailX}
+                    y={photo.thumbnailY}
+                    zoom={photo.thumbnailZoom}
                     style={{ width, height: heroHeight }}
-                    resizeMode="cover"
                   />
                 </Pressable>
               ))}
@@ -319,6 +331,24 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                   </Text>
                 </Pressable>
               ))}
+            </View>
+          )}
+
+          {/* Money only arrives for roles with selections pricing access — the
+              server strips it for everyone else, so this simply doesn't render.
+              It is the CLIENT'S price; cost and markup are never shown here. */}
+          {price !== null && (
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.specRow, selection.allowance != null && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
+                <Text style={[styles.specLabel, { color: theme.textMuted }]}>Client price</Text>
+                <Text style={[styles.specValue, { color: theme.textPrimary }]}>{formatMoney(price)}</Text>
+              </View>
+              {selection.allowance != null && (
+                <View style={styles.specRow}>
+                  <Text style={[styles.specLabel, { color: theme.textMuted }]}>Allowance</Text>
+                  <Text style={[styles.specValue, { color: theme.textPrimary }]}>{formatMoney(selection.allowance)}</Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -411,16 +441,57 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
         </View>
       )}
 
-      <Modal visible={!!zoomed} transparent animationType="fade" onRequestClose={() => setZoomed(null)}>
-        <Pressable style={styles.zoomBackdrop} onPress={() => setZoomed(null)}>
-          {zoomed && (
-            <Image
-              source={getAuthedImageSource(zoomed.filePath)}
-              style={styles.zoomImage}
-              resizeMode="contain"
-            />
+      {/* Full-screen photos: swipe between them, pinch to zoom (iOS), and a
+          close button — the whole photo, not the cropped thumbnail. */}
+      <Modal
+        visible={viewerIndex !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerIndex(null)}
+      >
+        <View style={styles.zoomBackdrop}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            contentOffset={{ x: (viewerIndex ?? 0) * width, y: 0 }}
+            onMomentumScrollEnd={(e) => setViewerPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+          >
+            {photos.map((photo) => (
+              <ScrollView
+                key={photo.id}
+                style={{ width }}
+                contentContainerStyle={styles.zoomPage}
+                maximumZoomScale={4}
+                minimumZoomScale={1}
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+                centerContent
+              >
+                <Image
+                  source={getAuthedImageSource(photo.filePath)}
+                  style={{ width, height: height * 0.8 }}
+                  resizeMode="contain"
+                />
+              </ScrollView>
+            ))}
+          </ScrollView>
+
+          <TouchableOpacity
+            onPress={() => setViewerIndex(null)}
+            hitSlop={12}
+            style={[styles.zoomClose, { top: insets.top + 8 }]}
+            accessibilityLabel="Close photo"
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {photos.length > 1 && (
+            <View style={[styles.zoomCount, { bottom: insets.bottom + 16 }]}>
+              <Text style={styles.zoomCountText}>{viewerPage + 1} / {photos.length}</Text>
+            </View>
           )}
-        </Pressable>
+        </View>
       </Modal>
     </View>
   );
@@ -554,11 +625,25 @@ const styles = StyleSheet.create({
   },
   actionText: { color: '#FFFFFF', fontSize: fontSize.sm, fontWeight: fontWeight.bold },
 
-  zoomBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+  zoomBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  zoomPage: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
+  zoomClose: {
+    position: 'absolute',
+    right: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  zoomImage: { width: '100%', height: '80%' },
+  zoomCount: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  zoomCountText: { color: '#FFFFFF', fontSize: fontSize.data, fontWeight: fontWeight.semibold },
 });

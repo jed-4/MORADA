@@ -1,8 +1,8 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
-import { getAuthedImageSource } from '../../services/api';
 import { PressableScale } from '../ui/PressableScale';
+import CroppedImage from './CroppedImage';
 import StatusPill from './StatusPill';
 import {
   firstImage,
@@ -57,10 +57,12 @@ export default function SpecRow({
     >
       <View style={[styles.thumb, { backgroundColor: theme.subtle }]}>
         {image ? (
-          <Image
-            source={getAuthedImageSource(image.filePath)}
+          <CroppedImage
+            filePath={image.filePath}
+            x={image.thumbnailX}
+            y={image.thumbnailY}
+            zoom={image.thumbnailZoom}
             style={styles.thumbImage}
-            resizeMode="cover"
           />
         ) : (
           <Ionicons name="image-outline" size={20} color={theme.textMuted} />

@@ -6,6 +6,8 @@
  */
 import assert from 'node:assert';
 import {
+  clientPriceCents,
+  formatMoney,
   formatQuantity,
   getChosenOption,
   getSelectionState,
@@ -172,6 +174,25 @@ check('search covers the product a trade would look up, not just the slot', () =
 
 check('search does not crash on a restricted stub', () => {
   assert.equal(matchesSearch(selection({ restricted: true, options: [] }), 'zellige'), false);
+});
+
+check('a stored charge is the client price: charge × quantity', () => {
+  assert.equal(clientPriceCents(option({ unitCharge: 150_00, unitCost: 100_00, markupPercent: 50, gstInclusive: true, quantity: 2 })), 300_00);
+});
+
+check('an option without a stored charge uses cost × qty × markup, inc GST', () => {
+  // Matches shared/selectionPricing.ts: 100000c ex × 2 × 1.10 = 220000 ex → 242000 inc.
+  assert.equal(clientPriceCents(option({ unitCost: 100_000, gstInclusive: false, markupPercent: 10, quantity: 2 })), 242_000);
+});
+
+check('no money arrived (no pricing access) means no price, not $0', () => {
+  assert.equal(clientPriceCents(option({ unitCost: undefined, unitCharge: undefined })), null);
+  assert.equal(clientPriceCents(undefined), null);
+});
+
+check('client money is shown to the cent', () => {
+  assert.equal(formatMoney(149_99), '$149.99');
+  assert.equal(formatMoney(null), '—');
 });
 
 console.log(`\n${passed} passed\n`);
