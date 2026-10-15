@@ -216,6 +216,8 @@ export interface TemplateOptionUse {
   quantity: number | null;
   unitCostOverride: number | null;
   markupPercent: number | null;
+  /** The template's own client charge per unit (cents inc GST), if it set one. */
+  unitCharge?: number | null;
   totalCost: number | null;
   visibleToClient: boolean | null;
   gstInclusive: boolean | null;
@@ -244,8 +246,10 @@ export function optionFromRows(
   // charge come too, exactly as when the product is picked straight into a
   // selection. Any template-level cost or markup wins and the charge is left
   // to be derived from those.
-  const pricedByLibrary = use.unitCostOverride == null && use.markupPercent == null;
-  const libraryCharge = pricedByLibrary ? product.defaultUnitCharge ?? null : null;
+  const pricedByLibrary = use.unitCostOverride == null && use.markupPercent == null && use.unitCharge == null;
+  // The template's own charge wins; failing that, the library's when the
+  // template prices nothing itself.
+  const libraryCharge = use.unitCharge ?? (pricedByLibrary ? product.defaultUnitCharge ?? null : null);
   return {
     name: product.name,
     brand: orUndefined(product.brand),

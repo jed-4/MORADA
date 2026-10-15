@@ -54,6 +54,8 @@ export interface TemplateOption {
   // apply on the way out — never invent a value here.
   quantity: number | null;
   markupPercent: number | null;
+  /** Client charge per unit, cents inc GST. Null when the option has none. */
+  unitCharge: number | null;
   totalCost: number | null;
   visibleToClient: boolean | null;
   gstInclusive: boolean | null;
@@ -180,6 +182,8 @@ function readOption(
     imageUrls: imagesOf(opt),
     quantity: num(opt?.quantity),
     markupPercent: num(opt?.markupPercent),
+    // Cents, like unitCost; a fractional value means dollars were written.
+    unitCharge: Number.isInteger(opt?.unitCharge) ? opt.unitCharge : null,
     totalCost: num(opt?.totalCost),
     visibleToClient: bool(opt?.visibleToClient),
     gstInclusive: bool(opt?.gstInclusive),

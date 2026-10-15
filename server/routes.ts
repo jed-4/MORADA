@@ -289,6 +289,7 @@ import {
   applyOptionVisibility,
   redactOptionForViewer,
   redactProductForViewer,
+  redactDecisionLogPrices,
 } from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
@@ -1994,215 +1995,16 @@ function selectionOptionClientPriceCents(opt: any): number | null {
   return optionClientPriceCents(opt);
 }
 
-// Inline an object-storage image as a data URI so it renders inside
-// Puppeteer's about:blank page (relative /objects paths never resolved there,
-// so PDFs have historically been image-less). Cached per render; oversized or
-// missing files degrade to no image.
-async function objectPathToDataUri(
-  filePath: string | null | undefined,
-  cache: Map<string, string | null>,
-): Promise<string | null> {
-  if (!filePath) return null;
-  if (cache.has(filePath)) return cache.get(filePath)!;
-  let result: string | null = null;
-  try {
-    const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
-    const svc = new ObjectStorageService();
-    const normalised = filePath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
-    const file = await svc.getObjectEntityFile(normalised);
-    const [meta] = await file.getMetadata();
-    const size = Number(meta.size || 0);
-    if (size > 0 && size <= 4 * 1024 * 1024) {
-      const [buf] = await file.download();
-      result = `data:${meta.contentType || "image/jpeg"};base64,${buf.toString("base64")}`;
-    }
-  } catch {
-    result = null;
-  }
-  cache.set(filePath, result);
-  return result;
-}
-
 function escapeHtml(s: unknown): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-// ── PDF helper — branded, image-forward Selections Schedule via puppeteer ────
-// Morada design tokens: lavender #A890D4 accent, ink #2C2825, sage #82C8A2
-// (under allowance / selected), coral #DA988A (over allowance).
-async function generateSelectionPdf(
-  selections: any[],
-  opts: { projectName?: string; companyName?: string; companyLogoDataUri?: string | null } = {},
-): Promise<Buffer> {
-  const puppeteer = await import("puppeteer");
-  const fmt = (c: number | null | undefined) =>
-    c == null ? "—" : `$${(c / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
-  const imageCache = new Map<string, string | null>();
-
-  // Group by room, preserving incoming order
-  const rooms = new Map<string, any[]>();
-  for (const sel of selections) {
-    const room = sel.room?.trim() || "General";
-    if (!rooms.has(room)) rooms.set(room, []);
-    rooms.get(room)!.push(sel);
-  }
-
-  // Budget summary across selections that carry an allowance
-  let totalAllowance = 0, totalSelected = 0;
-  for (const sel of selections) {
-    const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
-    const price = chosen ? selectionOptionClientPriceCents(chosen) : null;
-    if (sel.allowance) {
-      totalAllowance += sel.allowance;
-      if (price != null) totalSelected += price;
-    }
-  }
-  const totalVariance = totalSelected - totalAllowance;
-
-  const roomBlocks: string[] = [];
-  for (const [room, roomSelections] of Array.from(rooms.entries())) {
-    const selectionBlocks: string[] = [];
-    for (const sel of roomSelections) {
-      const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
-      const chosenPrice = chosen ? selectionOptionClientPriceCents(chosen) : null;
-      const varianceCents = sel.allowance && chosenPrice != null ? chosenPrice - sel.allowance : null;
-
-      const optionCards: string[] = [];
-      for (const o of sel.options || []) {
-        const price = selectionOptionClientPriceCents(o);
-        const isSelected = !!o.isSelectedByClient;
-        const isApproved = !!o.approvedAt;
-        const firstImage = (o.attachments || []).find((a: any) =>
-          a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || ""));
-        const imgUri = await objectPathToDataUri(firstImage?.filePath, imageCache);
-        const focal = firstImage ? `${firstImage.thumbnailX ?? 50}% ${firstImage.thumbnailY ?? 50}%` : "50% 50%";
-        optionCards.push(`
-          <td style="width:${Math.max(25, Math.floor(100 / Math.max(sel.options.length, 1)))}%;vertical-align:top;padding:0 6px 0 0">
-            <div style="border:1.5px solid ${isSelected ? "#82C8A2" : "#EAEAE8"};border-radius:8px;overflow:hidden;background:${isSelected ? "#F4FBF7" : "#fff"}">
-              <div style="height:96px;background:#F5F4F0;text-align:center;overflow:hidden">
-                ${imgUri
-                  ? `<img src="${imgUri}" style="width:100%;height:96px;object-fit:cover;object-position:${focal}"/>`
-                  : `<div style="padding-top:40px;color:#B9B4AE;font-size:10px">no image</div>`}
-              </div>
-              <div style="padding:7px 8px 8px">
-                <div style="font-size:10.5px;font-weight:700;color:#2C2825;line-height:1.25">${escapeHtml(o.name)}</div>
-                ${o.brand || o.sku ? `<div style="font-size:9px;color:#6B6560;margin-top:1px">${escapeHtml([o.brand, o.sku].filter(Boolean).join(" · "))}</div>` : ""}
-                <div style="margin-top:5px;font-size:10px">
-                  ${price != null ? `<b>${fmt(price)}</b> <span style="color:#6B6560;font-size:8.5px">inc GST</span>` : `<span style="color:#6B6560">POA</span>`}
-                </div>
-                ${isApproved
-                  ? `<div style="display:inline-block;margin-top:4px;background:#E0F5E9;color:#3E7A58;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">APPROVED</div>`
-                  : isSelected
-                    ? `<div style="display:inline-block;margin-top:4px;background:#F2EEF9;color:#7A5FA8;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">CLIENT CHOICE</div>`
-                    : ""}
-              </div>
-            </div>
-          </td>`);
-      }
-
-      const approvedRow = sel.options?.find((o: any) => o.approvedAt);
-      selectionBlocks.push(`
-        <div style="page-break-inside:avoid;margin:0 0 18px;border:1px solid #EAEAE8;border-left:3px solid #A890D4;border-radius:8px;padding:12px 14px;background:#fff">
-          <table style="width:100%;border-collapse:collapse"><tr>
-            <td style="vertical-align:top">
-              <div style="font-size:13px;font-weight:700;color:#2C2825">${escapeHtml(sel.name)}</div>
-              <div style="font-size:9.5px;color:#6B6560;margin-top:1px">
-                ${escapeHtml([sel.category, sel.deadline ? `Due ${new Date(sel.deadline).toLocaleDateString("en-AU")}` : null].filter(Boolean).join(" · "))}
-              </div>
-            </td>
-            <td style="vertical-align:top;text-align:right;font-size:9.5px;color:#6B6560;white-space:nowrap">
-              ${sel.allowance ? `Allowance <b style="color:#2C2825">${fmt(sel.allowance)}</b>` : ""}
-              ${chosenPrice != null ? ` &nbsp; Selected <b style="color:#2C2825">${fmt(chosenPrice)}</b>` : ""}
-              ${varianceCents != null ? ` &nbsp; <b style="color:${varianceCents > 0 ? "#B4685A" : "#3E7A58"}">${varianceCents > 0 ? "+" : ""}${fmt(varianceCents)}</b>` : ""}
-            </td>
-          </tr></table>
-          <table style="width:100%;border-collapse:collapse;margin-top:9px"><tr>${optionCards.join("")}</tr></table>
-          ${approvedRow ? `<div style="font-size:9px;color:#6B6560;margin-top:7px">Approved by ${escapeHtml(approvedRow.approvedBy || "Admin")} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}</div>` : ""}
-        </div>`);
-    }
-    roomBlocks.push(`
-      <div style="margin-bottom:6px">
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7A5FA8;margin:14px 0 8px">${escapeHtml(room)}</div>
-        ${selectionBlocks.join("")}
-      </div>`);
-  }
-
-  const hasBudget = totalAllowance > 0;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-    <style>
-      body{font-family:Helvetica,Arial,sans-serif;color:#2C2825;margin:0;padding:26px 30px;background:#FAFAF8}
-      *{box-sizing:border-box}
-    </style>
-  </head><body>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:4px"><tr>
-      <td style="vertical-align:middle">
-        <div style="font-size:21px;font-weight:800;color:#2C2825">Selections Schedule</div>
-        ${opts.projectName ? `<div style="font-size:12px;color:#6B6560;margin-top:2px">${escapeHtml(opts.projectName)}</div>` : ""}
-      </td>
-      <td style="vertical-align:middle;text-align:right">
-        ${opts.companyLogoDataUri
-          ? `<img src="${opts.companyLogoDataUri}" style="max-height:44px;max-width:170px;object-fit:contain"/>`
-          : opts.companyName ? `<div style="font-size:14px;font-weight:700;color:#7A5FA8">${escapeHtml(opts.companyName)}</div>` : ""}
-      </td>
-    </tr></table>
-    <div style="font-size:9.5px;color:#6B6560;margin-bottom:14px">
-      Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection${selections.length === 1 ? "" : "s"} · All prices inc GST
-    </div>
-    ${hasBudget ? `
-    <table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 8px"><tr>
-      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
-        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total allowance</div>
-        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalAllowance)}</div>
-      </td>
-      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
-        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total selected</div>
-        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalSelected)}</div>
-      </td>
-      <td style="width:33%;background:${totalVariance > 0 ? "#F7E5E2" : "#E0F5E9"};border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
-        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Variance</div>
-        <div style="font-size:15px;font-weight:800;margin-top:1px;color:${totalVariance > 0 ? "#B4685A" : "#3E7A58"}">${totalVariance > 0 ? "+" : ""}${fmt(totalVariance)}</div>
-      </td>
-    </tr></table>` : ""}
-    ${roomBlocks.join("")}
-  </body></html>`;
-
-  const browser = await puppeteer.default.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    headless: true,
-  });
-  try {
-    const page = await browser.newPage();
-    // Images are inlined data URIs, so "load" is sufficient (and
-    // "networkidle0" isn't in this puppeteer version's setContent types)
-    await page.setContent(html, { waitUntil: "load" });
-    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "12mm", bottom: "14mm", left: "10mm", right: "10mm" } });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
-  }
-}
-
-// Both PDF routes swallow their errors to return a clean 500, so nothing ever
-// reached the error middleware that reports to Sentry — a 100%-failing export
-// stayed invisible. Report explicitly. `scope` carries the identifiers needed
-// to tell a missing-browser failure apart from a bad-data one.
-function reportPdfFailure(
-  error: unknown,
-  req: any,
-  scope: { route: string; selectionId?: string; projectId?: string },
-): void {
-  console.error(`PDF generation error (${scope.route}):`, error);
-  if (!sentryEnabled) return;
-  Sentry.withScope((s) => {
-    s.setTag("feature", "selections_pdf");
-    s.setTag("route", scope.route);
-    if (req?.user?.companyId) s.setTag("company_id", req.user.companyId);
-    s.setContext("pdf_export", scope);
-    Sentry.captureException(error instanceof Error ? error : new Error(String(error)));
-  });
-}
+// The Selections Schedule PDF is rendered in the browser now
+// (client/src/components/selections/useSelectionPdfExport.ts). It was built
+// here with puppeteer, which needs a Chromium the deployment doesn't have, so
+// every export failed in production.
 
 // ── Morada AI ─────────────────────────────────────────
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -16106,6 +15908,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const option = await assertOptionAccess(req, res, req.params.id);
       if (!option) return;
+      // Same visibility as the selection itself: an option hidden from the
+      // client, or one a spec-only trade isn't allowed to see yet, doesn't
+      // become visible just because someone knows its id. Re-uses the read
+      // routes' rules rather than restating them.
+      const viewer = await resolveSelectionViewer(req);
+      if (viewer.isClient || !viewer.canSeePending) {
+        const parent = await storage.getSelectionWithOptions(option.selectionId);
+        const visible = parent ? applySelectionVisibilityToOne(parent, viewer) : null;
+        if (!visible?.options?.some((o: any) => o.id === option.id)) {
+          return res.status(404).json({ error: "Selection option not found" });
+        }
+      }
       const attachments = await storage.getOptionAttachments(req.params.id);
       res.json(attachments);
     } catch (error) {
@@ -16233,7 +16047,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!selection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const comments = await storage.getSelectionComments(req.params.id);
-      res.json(comments);
+      // A team role without selections pricing gets no money anywhere,
+      // including the price a decision-log entry names.
+      const viewer = await resolveSelectionViewer(req);
+      res.json(redactDecisionLogPrices(comments, viewer.canSeePricing));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch comments" });
     }
@@ -16939,59 +16756,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── PDF Export Routes ─────────────────────────────────────────────────────
-  app.get("/api/selections/:id/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
-    try {
-      const selection = await storage.getSelectionWithOptions(req.params.id);
-      if (!selection) return res.status(404).json({ error: "Selection not found" });
-      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
-      const [project, company] = await Promise.all([
-        storage.getProject(selection.projectId),
-        storage.getCompany(req.user!.companyId!),
-      ]);
-      const pdfBuffer = await generateSelectionPdf([selection], {
-        projectName: project?.name,
-        companyName: company?.name,
-        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
-      });
-      res.set("Content-Type", "application/pdf");
-      res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
-      res.send(pdfBuffer);
-    } catch (error) {
-      reportPdfFailure(error, req, {
-        route: "GET /api/selections/:id/pdf",
-        selectionId: req.params.id,
-      });
-      res.status(500).json({ error: "Failed to generate PDF" });
-    }
-  });
-
-  app.get("/api/selections/project/:projectId/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
-    try {
-      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
-      const selections = (await storage.getSelectionsWithOptions(req.params.projectId))
-        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
-      const [project, company] = await Promise.all([
-        storage.getProject(req.params.projectId),
-        storage.getCompany(req.user!.companyId!),
-      ]);
-      const pdfBuffer = await generateSelectionPdf(selections, {
-        projectName: project?.name,
-        companyName: company?.name,
-        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
-      });
-      res.set("Content-Type", "application/pdf");
-      const fname = (project?.name ?? "selections").replace(/[^a-z0-9]/gi, "_");
-      res.set("Content-Disposition", `attachment; filename="${fname}_schedule.pdf"`);
-      res.send(pdfBuffer);
-    } catch (error) {
-      reportPdfFailure(error, req, {
-        route: "GET /api/selections/project/:projectId/pdf",
-        projectId: req.params.projectId,
-      });
-      res.status(500).json({ error: "Failed to generate PDF" });
-    }
-  });
 
   // Suppliers API Routes
   app.get("/api/suppliers", requireAuth, requireTeamMember, async (req, res) => {
@@ -19244,7 +19008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         options: safeOptions,
       };
 
-      res.json({ selection: safeSelection, clientSelection, comments });
+      res.json({ selection: safeSelection, clientSelection, comments: redactDecisionLogPrices(comments, clientCanSeePrice) });
     } catch (error) {
       console.error("Portal selection error:", error);
       res.status(500).json({ error: "Failed to load selection" });
@@ -19602,7 +19366,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
         return res.status(404).json({ error: "Selection not found" });
       }
-      res.json(await storage.getSelectionComments(sel.id));
+      // The decision log may name a price. A client sees it only when their
+      // role has portal.selections.pricing AND the selection shows prices.
+      const viewer = await resolveSelectionViewer(req);
+      const showPrice = viewer.canSeePricing && (sel as any).clientCanSeePrice === true;
+      res.json(redactDecisionLogPrices(await storage.getSelectionComments(sel.id), showPrice));
     } catch (error) {
       console.error("Client selection comments error:", error);
       res.status(500).json({ error: "Failed to load comments" });
@@ -38649,7 +38417,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 description: opt.description, category: opt.category,
                 subcategory: opt.subcategory, unitCost: opt.unitCost,
                 quantity: opt.quantity, unitType: opt.unitType,
-                markupPercent: opt.markupPercent, totalCost: opt.totalCost,
+                markupPercent: opt.markupPercent, unitCharge: opt.unitCharge ?? undefined,
+                totalCost: opt.totalCost,
                 url: opt.url, visibleToClient: opt.visibleToClient,
                 gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
                 imageUrls: (opt.attachments || []).map((a: any) => a.filePath),

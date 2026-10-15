@@ -176,7 +176,7 @@ export function SelectionDrawer({
             </button>
             <button
               className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover-elevate flex items-center gap-1.5 disabled:opacity-50"
-              onClick={() => exportPdf(`/api/selections/${selection.id}/pdf`, `${selection.name}.pdf`)}
+              onClick={() => exportPdf({ selectionId: selection.id, filename: `${selection.name}.pdf` })}
               disabled={isExporting}
             >
               {isExporting ? (

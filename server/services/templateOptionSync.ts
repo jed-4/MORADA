@@ -98,6 +98,7 @@ export async function syncTemplateOptions(
       companyId,
       quantity: o.quantity,
       markupPercent: o.markupPercent,
+      unitCharge: o.unitCharge,
       totalCost: o.totalCost,
       visibleToClient: o.visibleToClient,
       gstInclusive: o.gstInclusive,

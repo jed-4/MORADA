@@ -8778,6 +8778,9 @@ export const selectionTemplateOptions = pgTable("selection_template_options", {
   quantity:        integer("quantity"),
   unitCostOverride: integer("unit_cost_override"),  // cents; null = use the product's defaultUnitCost
   markupPercent:   doublePrecision("markup_percent"),
+  // Client charge per unit, cents INC GST. Authoritative when set, exactly as
+  // on selection_options.unit_charge.
+  unitCharge:      integer("unit_charge"),
   totalCost:       integer("total_cost"),           // cents
   visibleToClient: boolean("visible_to_client"),
   gstInclusive:    boolean("gst_inclusive"),
