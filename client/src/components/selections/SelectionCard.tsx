@@ -83,6 +83,9 @@ export function SelectionCard({
                 src={att.filePath}
                 x={att.thumbnailX}
                 y={att.thumbnailY}
+                zoom={att.thumbnailZoom}
+                // Tiles are a third (or, the first of two, two thirds) of a square card.
+                frameAspect={i === 0 && images.length === 2 ? 2 / 3 : 1 / 3}
                 className={cn(i === 0 && images.length === 2 && "col-span-2")}
                 loading="lazy"
               />

@@ -275,8 +275,29 @@ export function redactDecisionLogPrices<T extends { createdByName?: string | nul
   );
 }
 
+/**
+ * Money a caller may WRITE. A team role without selections pricing can't see
+ * cost, markup or charge, so it must not set them either — and its forms,
+ * which never received the figures, would otherwise save them back as blanks
+ * and wipe the real ones. Clients never reach these routes.
+ */
+export function stripOptionMoneyForWrite<T extends Record<string, any>>(data: T, viewer: SelectionViewer): T {
+  if (viewer.canSeePricing && !viewer.isClient) return data;
+  const copy: any = { ...data };
+  for (const field of OPTION_MONEY_FIELDS) delete copy[field];
+  return copy;
+}
+
 /** Product Library money: cost, markup and charge are for pricing-permitted team only. */
 export const PRODUCT_MONEY_FIELDS = ["defaultUnitCost", "defaultMarkupPercent", "defaultUnitCharge", "gstInclusive"] as const;
+
+/** As stripOptionMoneyForWrite, for Product Library writes. */
+export function stripProductMoneyForWrite<T extends Record<string, any>>(data: T, viewer: SelectionViewer): T {
+  if (viewer.canSeePricing && !viewer.isClient) return data;
+  const copy: any = { ...data };
+  for (const field of PRODUCT_MONEY_FIELDS) delete copy[field];
+  return copy;
+}
 
 export function redactProductForViewer<T extends Record<string, any>>(product: T, viewer: SelectionViewer): T {
   if (!product || (!viewer.isClient && viewer.canSeePricing)) return product;

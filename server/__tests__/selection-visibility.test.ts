@@ -16,12 +16,16 @@ import {
   OPTION_NON_MONEY_FIELDS,
   CLIENT_OPTION_FIELDS,
   redactDecisionLogPrices,
+  stripOptionMoneyForWrite,
+  stripProductMoneyForWrite,
   type SelectionViewer,
 } from "../selectionVisibility";
 import { getTableColumns } from "drizzle-orm";
 import { selectionOptions } from "@shared/schema";
 import { solvePricing, optionClientPriceCents } from "@shared/selectionPricing";
-import { optionFromRows } from "@shared/applyTemplate";
+import { optionFromRows, buildFlatApplyRows } from "@shared/applyTemplate";
+import { cropsOf } from "@shared/templateOptions";
+import { cropLayout } from "../../client/src/components/CroppedImage";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -427,6 +431,57 @@ check("a client sees that an option is their suggestion, and still no money", ()
   assert.equal(out.options[0].clientSuggested, true);
   assert.equal(out.options[0].suggestedBy, "Linda");
   assert.equal(out.options[0].unitCost, undefined);
+});
+
+// ── Writes: no pricing access, no price changes ───────────────────────────
+check("a role without pricing access cannot write cost, markup or charge", () => {
+  const body = { name: "Mixer", unitCost: 1, markupPercent: 0, unitCharge: null, totalCost: 0, gstInclusive: true, unitTax: 0 };
+  for (const viewer of [TRADE, FOREMAN]) {
+    assert.deepEqual(stripOptionMoneyForWrite(body, viewer), { name: "Mixer" });
+    assert.deepEqual(stripProductMoneyForWrite({ name: "Mixer", defaultUnitCost: 1, defaultMarkupPercent: 2, defaultUnitCharge: 3, gstInclusive: true }, viewer), { name: "Mixer" });
+  }
+  assert.strictEqual(stripOptionMoneyForWrite(body, PM), body);
+});
+
+// ── Crop maths ────────────────────────────────────────────────────────────
+check("a square frame lays out exactly as before", () => {
+  // 2:1 image, centred, at cover and zoomed out to fit.
+  assert.deepEqual(cropLayout(2, 50, 50, 100), { width: 2, height: 1, left: -0.5, top: 0 });
+  assert.deepEqual(cropLayout(2, 50, 50, 50), { width: 1, height: 0.5, left: 0, top: 0.25 });
+});
+
+check("a tall mosaic tile covers its own frame, not a square one", () => {
+  // Square image in a 1:3 tile at cover: fills the height, overflows sideways.
+  const box = cropLayout(1, 50, 50, 100, 1 / 3);
+  assert.equal(box.height, 1);
+  assert.ok(Math.abs(box.width - 3) < 1e-9);
+  assert.ok(Math.abs(box.left - -1) < 1e-9);
+  // Zoomed out to 1/3: the whole square fits the tile's width, letterboxed.
+  const fit = cropLayout(1, 50, 50, 100 / 3, 1 / 3);
+  assert.ok(Math.abs(fit.width - 1) < 1e-9 && Math.abs(fit.height - 1 / 3) < 1e-9);
+});
+
+// ── Template image crops ──────────────────────────────────────────────────
+check("a template image's crop lands on the job's photo; an uncropped one is unchanged", () => {
+  const ids = ["sel", "opt"];
+  const rows = buildFlatApplyRows(
+    { name: "Tapware", category: null },
+    [{ name: "Mixer", imageUrls: ["/a.jpg", "/b.jpg"], imageCrops: { "/a.jpg": { x: 20, y: 40, zoom: 60 } } }],
+    0,
+    { projectId: "p", selectionType: "selection", newId: () => ids.shift() ?? "x" },
+  );
+  assert.deepEqual(
+    [rows.attachments[0].thumbnailX, rows.attachments[0].thumbnailY, rows.attachments[0].thumbnailZoom],
+    [20, 40, 60],
+  );
+  assert.equal("thumbnailX" in rows.attachments[1], false);
+});
+
+check("malformed template crops are ignored rather than applied", () => {
+  assert.deepEqual(cropsOf({ "/a.jpg": { x: 10, y: 10, zoom: 150 }, "/b.jpg": { x: 500, y: 0 }, "/c.jpg": "nope" }), {
+    "/a.jpg": { x: 10, y: 10, zoom: 150 },
+  });
+  assert.equal(cropsOf(null), null);
 });
 
 console.log(`\n${passed} passed\n`);

@@ -271,6 +271,8 @@ function SortableImageGrid({
 }
 
 export default function SelectionDetail() {
+  // Roles without selections pricing are never sent cost, markup or charge.
+  const canSeeSelectionPricing = usePermission("projects.selections.pricing");
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
@@ -618,10 +620,21 @@ export default function SelectionDetail() {
     queryKey: ["/api/selection-options", editingOption?.id, "attachments"],
     queryFn: async () => {
       if (!editingOption?.id) return [];
-      const res = await fetch(`/api/selection-options/${editingOption.id}/attachments`);
+      const res = await fetch(`/api/selection-options/${editingOption.id}/attachments`, { credentials: "include" });
+      // An error body is not a list of attachments.
+      if (!res.ok) throw new Error(`Failed to load attachments (${res.status})`);
       return res.json();
     },
     enabled: !!editingOption?.id,
+    // The selection payload already carries this option's attachments, so
+    // show those immediately. The dialog used to say "No images yet" for an
+    // option WITH photos while this request was still in flight.
+    placeholderData: () => (editingOption as any)?.attachments as OptionAttachment[] | undefined,
+    // The app default is staleTime Infinity: an option opened once with no
+    // photos kept showing none after photos were added elsewhere (the phone,
+    // another tab) until a reload. Always refetch when the dialog opens.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const deleteAttachmentMutation = useMutation({
@@ -2392,6 +2405,7 @@ export default function SelectionDetail() {
         onPaste={(files) => stageOrUploadImageFiles(files)}
         onSubmit={onOptionSubmit}
         chargePricing
+        hidePricing={!canSeeSelectionPricing}
         mediaPane={optionMediaPane}
       />
 
