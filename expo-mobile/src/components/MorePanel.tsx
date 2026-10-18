@@ -10,6 +10,7 @@ import { Sheet, SheetTextInput, type SheetRef } from './ui/Sheet';
 import { useToast } from './ui/Toast';
 import { SectionHeader } from './ui/SectionHeader';
 import { PressableScale } from './ui/PressableScale';
+import { usePermission } from '../lib/usePermission';
 import {
   workspaceItems,
   createItems,
@@ -82,6 +83,8 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
   const theme = useTheme();
   const toast = useToast();
   const { user } = useAuth();
+  // The Selections tile is only offered to roles that can view selections.
+  const canViewSelections = usePermission('projects.selections');
 
   const sheetRef = useRef<SheetRef>(null);
   const taskSheetRef = useRef<SheetRef>(null);
@@ -195,7 +198,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
         <Animated.View entering={FadeInDown.duration(300).delay(60)} style={styles.section}>
           <SectionHeader title="Workspace" />
           <View style={styles.grid}>
-            {workspaceItems.map((tile) => (
+            {workspaceItems.filter((tile) => tile.id !== 'selections' || canViewSelections).map((tile) => (
               <Tile
                 key={tile.id}
                 tile={tile}

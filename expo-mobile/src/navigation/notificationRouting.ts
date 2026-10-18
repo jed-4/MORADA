@@ -31,6 +31,14 @@ function parseProjectId(link?: string | null): string | null {
   return m ? m[1] : null;
 }
 
+// Pull project and selection ids out of a web link like
+// `/projects/<id>/selections/<selectionId>`.
+function parseSelectionLink(link?: string | null): { projectId: string; selectionId: string } | null {
+  if (!link) return null;
+  const m = link.match(/\/projects\/([^/?#]+)\/selections\/([^/?#]+)/);
+  return m ? { projectId: m[1], selectionId: m[2] } : null;
+}
+
 // Pull the channel id out of a web link like `/messages?channel=<id>`.
 function parseChannelId(link?: string | null): string | null {
   if (!link) return null;
@@ -83,6 +91,18 @@ export function resolveNotificationTarget(
     type.startsWith('checklist')
   ) {
     return { tab: 'More', screen: 'Tasks' };
+  }
+
+  // Selections (a client's choice or comment, a builder comment) -> that
+  // selection, not just its project. The screen loads by id; the project id
+  // seeds its offline cache.
+  const selectionLink = parseSelectionLink(link);
+  if (selectionLink) {
+    return {
+      tab: 'Projects',
+      screen: 'SelectionDetail',
+      params: { selectionId: selectionLink.selectionId, projectId: selectionLink.projectId },
+    };
   }
 
   // Anything that points at a project (project assignment, a bill on a project,

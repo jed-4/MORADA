@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
+  TextInput,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,14 +18,16 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, getAuthedImageSource } from '../services/api';
-import { readCachedSelections } from '../services/selectionsOffline';
+import { apiFetch, apiRequest } from '../services/api';
+import { readCachedSelections, selectionPhotoSource } from '../services/selectionsOffline';
+import { usePermission } from '../lib/usePermission';
 import { useTheme, fontSize, fontWeight, radius } from '../theme';
 import { haptic } from '../lib/haptics';
 import { useToast } from '../components/ui/Toast';
@@ -31,11 +37,15 @@ import {
   clientPriceCents,
   formatMoney,
   formatQuantity,
+  firstImage,
   getChosenOption,
+  specLine,
   getSelectionState,
   isSettled,
   prettifySpecKey,
+  type OptionAttachment,
   type Selection,
+  type SelectionOption,
 } from '../lib/selections';
 
 type Props = {
@@ -84,9 +94,20 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [posting, setPosting] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  // Index of the photo open full screen, or null when the viewer is closed.
+  // The photos open full screen (the chosen product's, or one option's), and
+  // which one; null when the viewer is closed.
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [viewerPage, setViewerPage] = useState(0);
+  const [viewerPhotos, setViewerPhotos] = useState<OptionAttachment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [sendingComment, setSendingComment] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // What this person may DO here. The server enforces the same rules; these
+  // only decide which controls are offered.
+  const canApprove = usePermission('projects.selections', 'approve');
+  const canEdit = usePermission('projects.selections', 'edit');
 
   // Comments are requireTeamMember on the server, and channels are team-or-
   // client — a subcontractor account gets a 403 on both. Rather than show
@@ -170,6 +191,114 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
     toast.success('Copied');
   };
 
+  const openViewer = (list: OptionAttachment[], index: number) => {
+    setViewerPhotos(list);
+    setViewerPage(index);
+    setViewerIndex(index);
+  };
+
+  /** Approving an option makes it THE choice and locks it — same as the web. */
+  const approve = (option: SelectionOption) => {
+    Alert.alert(
+      'Approve this option?',
+      `${option.name} becomes the approved choice for ${selection?.name ?? 'this selection'} and is locked in.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve',
+          onPress: async () => {
+            setApprovingId(option.id);
+            try {
+              await apiRequest(`/api/selection-options/${option.id}/approve`, 'PATCH');
+              haptic.success();
+              toast.success('Approved');
+              await load();
+            } catch (err: any) {
+              toast.error(err?.message || 'Could not approve it.');
+            } finally {
+              setApprovingId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const sendComment = async () => {
+    const content = commentText.trim();
+    if (!content || sendingComment) return;
+    setSendingComment(true);
+    try {
+      await apiRequest(`/api/selections/${selectionId}/comments`, 'POST', { content });
+      setCommentText('');
+      haptic.light();
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not post the comment.');
+    } finally {
+      setSendingComment(false);
+    }
+  };
+
+  /** A photo from site (camera or library) onto the chosen product. */
+  const addPhoto = () => {
+    if (!chosen) return;
+    const upload = async (assets: ImagePicker.ImagePickerAsset[]) => {
+      setUploading(true);
+      try {
+        for (const asset of assets) {
+          if (!asset.base64) continue;
+          const mime = asset.mimeType || 'image/jpeg';
+          await apiRequest(`/api/selection-options/${chosen.id}/attachments`, 'POST', {
+            fileName: asset.fileName || `site-photo-${Date.now()}.jpg`,
+            fileType: 'image',
+            mimeType: mime,
+            fileData: `data:${mime};base64,${asset.base64}`,
+          });
+        }
+        toast.success(assets.length > 1 ? 'Photos added' : 'Photo added');
+        await load();
+      } catch (err: any) {
+        toast.error(err?.message || 'Could not upload the photo.');
+      } finally {
+        setUploading(false);
+      }
+    };
+    Alert.alert('Add photo', `To ${chosen.name}`, [
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Camera access is needed to take photos.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6, base64: true });
+          if (!result.canceled && result.assets.length) upload(result.assets);
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Photo library access is needed.');
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            quality: 0.6,
+            base64: true,
+            allowsMultipleSelection: true,
+            selectionLimit: 5,
+          });
+          if (!result.canceled && result.assets.length) upload(result.assets);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const postToChat = async () => {
     if (!selection || posting) return;
     setPosting(true);
@@ -224,8 +353,12 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const heroHeight = 250;
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.screen, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: insets.bottom + (isTeam ? 96 : 32) }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
@@ -245,7 +378,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
               {photos.map((photo, i) => (
                 <Pressable
                   key={photo.id}
-                  onPress={() => { setViewerPage(i); setViewerIndex(i); }}
+                  onPress={() => openViewer(photos, i)}
                   accessibilityLabel="View photo full screen"
                 >
                   <CroppedImage
@@ -334,6 +467,83 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
+          {/* A client's pick waiting on sign-off: approve it from site. */}
+          {chosen && !chosen.approvedAt && canApprove && (
+            <TouchableOpacity
+              onPress={() => approve(chosen)}
+              disabled={approvingId !== null}
+              style={[styles.approveBtn, { backgroundColor: theme.statusSuccess, opacity: approvingId ? 0.6 : 1 }]}
+              accessibilityLabel={`Approve ${chosen.name}`}
+            >
+              {approvingId === chosen.id ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={17} color="#FFFFFF" />
+                  <Text style={styles.actionText}>Approve this choice</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Nothing chosen yet: the options on offer. These only arrive for
+              roles allowed to see undecided selections — a trade gets a stub
+              and never sees this list. */}
+          {!chosen && (selection.options?.length ?? 0) > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Options to choose from</Text>
+              {(selection.options ?? []).map((option) => {
+                const img = firstImage(option);
+                const optionPhotos = (option.attachments ?? []).filter((a) => a.fileType?.toLowerCase() === 'image');
+                const optionPrice = clientPriceCents(option);
+                return (
+                  <View key={option.id} style={[styles.optionRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Pressable
+                      onPress={() => optionPhotos.length > 0 && openViewer(optionPhotos, 0)}
+                      style={[styles.optionThumb, { backgroundColor: theme.subtle }]}
+                      accessibilityLabel={`View ${option.name} photos`}
+                    >
+                      {img ? (
+                        <CroppedImage
+                          filePath={img.filePath}
+                          x={img.thumbnailX}
+                          y={img.thumbnailY}
+                          zoom={img.thumbnailZoom}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      ) : (
+                        <Ionicons name="image-outline" size={18} color={theme.textMuted} />
+                      )}
+                    </Pressable>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.optionName, { color: theme.textPrimary }]} numberOfLines={2}>{option.name}</Text>
+                      {!!specLine(option) && (
+                        <Text style={[styles.optionMeta, { color: theme.textSecondary }]} numberOfLines={1}>{specLine(option)}</Text>
+                      )}
+                      {optionPrice !== null && (
+                        <Text style={[styles.optionMeta, { color: theme.textPrimary }]}>{formatMoney(optionPrice)}</Text>
+                      )}
+                    </View>
+                    {canApprove && (
+                      <TouchableOpacity
+                        onPress={() => approve(option)}
+                        disabled={approvingId !== null}
+                        style={[styles.optionApprove, { borderColor: theme.statusSuccess, opacity: approvingId && approvingId !== option.id ? 0.5 : 1 }]}
+                        accessibilityLabel={`Approve ${option.name}`}
+                      >
+                        {approvingId === option.id ? (
+                          <ActivityIndicator size="small" color={theme.statusSuccess} />
+                        ) : (
+                          <Text style={[styles.optionApproveText, { color: theme.statusSuccess }]}>Approve</Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {/* Money only arrives for roles with selections pricing access — the
               server strips it for everyone else, so this simply doesn't render.
               It is the CLIENT'S price; cost and markup are never shown here. */}
@@ -386,9 +596,30 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           )}
 
-          {isTeam && comments.length > 0 && (
+          {chosen && canEdit && (
+            <TouchableOpacity
+              onPress={addPhoto}
+              disabled={uploading}
+              style={[styles.linkRow, { backgroundColor: theme.card, borderColor: theme.border, opacity: uploading ? 0.6 : 1 }]}
+              accessibilityLabel="Add a photo"
+            >
+              {uploading ? (
+                <ActivityIndicator size="small" color={theme.primary} />
+              ) : (
+                <Ionicons name="camera-outline" size={16} color={theme.primary} />
+              )}
+              <Text style={[styles.linkText, { color: theme.primary }]}>
+                {uploading ? 'Uploading…' : 'Add a photo'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {isTeam && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Conversation</Text>
+              {comments.length === 0 && (
+                <Text style={[styles.optionMeta, { color: theme.textMuted }]}>No comments yet.</Text>
+              )}
               {comments.map((comment) => (
                 <View
                   key={comment.id}
@@ -408,6 +639,30 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
               ))}
+              <View style={[styles.composer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <TextInput
+                  value={commentText}
+                  onChangeText={setCommentText}
+                  placeholder="Add a comment for the team"
+                  placeholderTextColor={theme.textMuted}
+                  multiline
+                  style={[styles.composerInput, { color: theme.textPrimary }]}
+                  accessibilityLabel="Comment"
+                />
+                <TouchableOpacity
+                  onPress={sendComment}
+                  disabled={!commentText.trim() || sendingComment}
+                  hitSlop={8}
+                  accessibilityLabel="Send comment"
+                  style={{ opacity: !commentText.trim() || sendingComment ? 0.4 : 1 }}
+                >
+                  {sendingComment ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Ionicons name="send" size={18} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -457,7 +712,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             contentOffset={{ x: (viewerIndex ?? 0) * width, y: 0 }}
             onMomentumScrollEnd={(e) => setViewerPage(Math.round(e.nativeEvent.contentOffset.x / width))}
           >
-            {photos.map((photo) => (
+            {viewerPhotos.map((photo) => (
               <ScrollView
                 key={photo.id}
                 style={{ width }}
@@ -469,7 +724,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                 centerContent
               >
                 <Image
-                  source={getAuthedImageSource(photo.filePath)}
+                  source={selectionPhotoSource(photo.filePath)}
                   style={{ width, height: height * 0.8 }}
                   resizeMode="contain"
                 />
@@ -486,14 +741,14 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             <Ionicons name="close" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
-          {photos.length > 1 && (
+          {viewerPhotos.length > 1 && (
             <View style={[styles.zoomCount, { bottom: insets.bottom + 16 }]}>
-              <Text style={styles.zoomCountText}>{viewerPage + 1} / {photos.length}</Text>
+              <Text style={styles.zoomCountText}>{viewerPage + 1} / {viewerPhotos.length}</Text>
             </View>
           )}
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -626,6 +881,52 @@ const styles = StyleSheet.create({
   actionText: { color: '#FFFFFF', fontSize: fontSize.sm, fontWeight: fontWeight.bold },
 
   zoomBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  approveBtn: {
+    height: 44,
+    borderRadius: radius.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    padding: 8,
+  },
+  optionThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionName: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  optionMeta: { fontSize: fontSize.xs, marginTop: 1 },
+  optionApprove: {
+    borderWidth: 1.5,
+    borderRadius: radius.lg,
+    paddingHorizontal: 10,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 76,
+  },
+  optionApproveText: { fontSize: fontSize.xs, fontWeight: fontWeight.bold },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  composerInput: { flex: 1, fontSize: fontSize.bodySm, maxHeight: 120, paddingVertical: 2 },
   zoomPage: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
   zoomClose: {
     position: 'absolute',
