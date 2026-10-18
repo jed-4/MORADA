@@ -63,6 +63,9 @@ function imageUrlsOf(opt: any): string[] {
 
 function buildAttachments(opt: any, optionId: string, attachments: any[]): void {
   imageUrlsOf(opt).forEach((filePath: string, idx: number) => {
+    // The template's thumbnail crop for this image, when it has one. Absent
+    // keys keep an un-cropped image's row identical to before.
+    const crop = opt.imageCrops?.[filePath];
     attachments.push({
       optionId,
       fileName: filePath.split("/").pop() || "image.jpg",
@@ -72,6 +75,7 @@ function buildAttachments(opt: any, optionId: string, attachments: any[]): void 
       // actually is. A .png lands labelled image/jpeg.
       mimeType: "image/jpeg",
       sortOrder: idx,
+      ...(crop ? { thumbnailX: crop.x, thumbnailY: crop.y, thumbnailZoom: crop.zoom } : {}),
     });
   });
 }
@@ -239,6 +243,7 @@ export function optionFromRows(
   product: ProductSpec,
   use: TemplateOptionUse,
   imageUrls: string[],
+  imageCrops?: Record<string, { x: number; y: number; zoom: number }> | null,
 ): any {
   const orUndefined = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
   // A template that neither overrides the cost nor sets its own markup is
@@ -283,5 +288,6 @@ export function optionFromRows(
         : orUndefined(use.gstInclusive),
     sortOrder: orUndefined(use.sortOrder),
     imageUrls,
+    ...(imageCrops && Object.keys(imageCrops).length ? { imageCrops } : {}),
   };
 }

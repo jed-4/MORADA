@@ -11,15 +11,21 @@ import { cn } from "@/lib/utils";
  * `x`/`y` are 0–100 and follow CSS object-position: x% of the image sits at x%
  * of the frame, so 0 pins the left edges together and 100 the right.
  */
-export function cropLayout(aspect: number, x: number, y: number, zoom: number) {
+export function cropLayout(aspect: number, x: number, y: number, zoom: number, frameAspect = 1) {
   const z = zoom / 100;
-  const width = (aspect >= 1 ? aspect : 1) * z;
-  const height = (aspect >= 1 ? 1 : 1 / aspect) * z;
+  // Work in units of the frame's HEIGHT, so the frame is frameAspect × 1.
+  // Cover: the image's tighter side meets the frame, then zoom scales it.
+  const coverW = aspect >= frameAspect ? aspect : frameAspect;
+  const coverH = aspect >= frameAspect ? 1 : frameAspect / aspect;
+  const w = coverW * z;
+  const h = coverH * z;
+  // Back to fractions of the frame. For a square frame (frameAspect 1) this is
+  // exactly the square-only maths the editor and the PDF use.
   return {
-    width,
-    height,
-    left: (1 - width) * (x / 100),
-    top: (1 - height) * (y / 100),
+    width: w / frameAspect,
+    height: h,
+    left: ((frameAspect - w) * (x / 100)) / frameAspect,
+    top: (1 - h) * (y / 100),
   };
 }
 
@@ -36,6 +42,11 @@ interface CroppedImageProps {
   y?: number | null;
   /** Percent of cover. Stored as thumbnailZoom; 100 (the default) is a plain cover crop. */
   zoom?: number | null;
+  /**
+   * Width ÷ height of the frame, when it isn't square — the tiles of a 2–3
+   * photo mosaic. Only matters when zoom ≠ 100; defaults to square.
+   */
+  frameAspect?: number;
   className?: string;
   loading?: "lazy" | "eager";
   onError?: React.ReactEventHandler<HTMLImageElement>;
@@ -45,7 +56,7 @@ interface CroppedImageProps {
  * An image cropped to its frame by a saved focal point and zoom. Fills its
  * parent; the parent sets the size and shape (square for selections).
  */
-export function CroppedImage({ src, alt = "", x, y, zoom, className, loading, onError }: CroppedImageProps) {
+export function CroppedImage({ src, alt = "", x, y, zoom, frameAspect = 1, className, loading, onError }: CroppedImageProps) {
   const fx = x ?? 50;
   const fy = y ?? 50;
   const fz = zoom ?? 100;
@@ -73,7 +84,7 @@ export function CroppedImage({ src, alt = "", x, y, zoom, className, loading, on
     );
   }
 
-  const box = aspect ? cropLayout(aspect, fx, fy, fz) : null;
+  const box = aspect ? cropLayout(aspect, fx, fy, fz, frameAspect) : null;
   return (
     <div className={cn("relative w-full h-full overflow-hidden", fz < 100 && "bg-white", className)}>
       <img

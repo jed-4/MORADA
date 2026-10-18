@@ -273,6 +273,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { buildLegacyApplyRows, buildFlatApplyRows, optionFromRows } from "@shared/applyTemplate";
 import { syncTemplateOptions } from "./services/templateOptionSync";
+import { extractTemplateOptions } from "@shared/templateOptions";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists, arrayContains } from "drizzle-orm";
 import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateSchedule, getTemplateSchedule, templateCompanyId } from "./services/scheduleTemplates";
 import { PasswordUtils } from "./utils/auth";
@@ -292,6 +293,8 @@ import {
   redactOptionForViewer,
   redactProductForViewer,
   redactDecisionLogPrices,
+  stripOptionMoneyForWrite,
+  stripProductMoneyForWrite,
 } from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
@@ -15740,8 +15743,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
 
-      const option = await storage.createSelectionOption(withOptionLineTotal(validationResult.data));
-      res.status(201).json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
+      const viewer = await resolveSelectionViewer(req);
+      const option = await storage.createSelectionOption(withOptionLineTotal(stripOptionMoneyForWrite(validationResult.data, viewer)));
+      res.status(201).json(redactOptionForViewer(option, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to create selection option" });
     }
@@ -15761,7 +15765,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = withOptionLineTotal({ ...validationResult.data } as Partial<InsertSelectionOption>, existing);
+      const viewer = await resolveSelectionViewer(req);
+      const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = withOptionLineTotal(
+        stripOptionMoneyForWrite({ ...validationResult.data } as Partial<InsertSelectionOption>, viewer),
+        existing,
+      );
       if (validationResult.data.isSelectedByClient === true && !existing.lockedAt) {
         updateData.lockedAt = new Date();
       }
@@ -15769,7 +15777,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!option) {
         return res.status(404).json({ error: "Selection option not found" });
       }
-      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
+      res.json(redactOptionForViewer(option, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to update selection option" });
     }
@@ -16446,8 +16454,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(parsed.error).toString()
         });
       }
-      const product = await storage.createProduct({ ...parsed.data, companyId });
-      res.status(201).json(redactProductForViewer(product, await resolveSelectionViewer(req)));
+      const viewer = await resolveSelectionViewer(req);
+      const product = await storage.createProduct({ ...stripProductMoneyForWrite(parsed.data, viewer), companyId });
+      res.status(201).json(redactProductForViewer(product, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to create product" });
     }
@@ -16491,9 +16500,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(parsed.error).toString()
         });
       }
-      const product = await storage.updateProduct(Number(req.params.id), parsed.data);
+      const viewer = await resolveSelectionViewer(req);
+      const product = await storage.updateProduct(Number(req.params.id), stripProductMoneyForWrite(parsed.data, viewer));
       if (!product) return res.status(404).json({ error: "Product not found" });
-      res.json(redactProductForViewer(product, await resolveSelectionViewer(req)));
+      res.json(redactProductForViewer(product, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to update product" });
     }
@@ -38340,7 +38350,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * Equivalence between the two paths is proved by the ROUND-TRIP CHECK in
    * scripts/apply-template-fingerprint.ts.
    */
-  async function loadTemplateOptionRows(templateId: string, companyId: string) {
+  /**
+   * The template's own images per option (and their crops), keyed like the
+   * rows. Applying a template read images ONLY from the linked product's
+   * product_images — but the template sync never writes those, so a photo
+   * added in the template editor never reached the job. The blob's images now
+   * win when it has any; the product's are the fallback.
+   */
+  function templateBlobImages(template: any): Map<string, { urls: string[]; crops: Record<string, any> | null }> {
+    const map = new Map<string, { urls: string[]; crops: Record<string, any> | null }>();
+    try {
+      for (const o of extractTemplateOptions(template).options) {
+        if (o.imageUrls.length > 0) map.set(o.templateOptionId, { urls: o.imageUrls, crops: o.imageCrops });
+      }
+    } catch {
+      // A malformed blob just means product images, as before.
+    }
+    return map;
+  }
+
+  async function loadTemplateOptionRows(
+    templateId: string,
+    companyId: string,
+    blobImages?: Map<string, { urls: string[]; crops: Record<string, any> | null }>,
+  ) {
     const rows = await db
       .select({ link: schema.selectionTemplateOptions, product: schema.products })
       .from(schema.selectionTemplateOptions)
@@ -38356,9 +38389,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .where(inArray(schema.productImages.productId, rows.map((r) => r.product.id)))
       .orderBy(asc(schema.productImages.sortOrder));
     const byProduct = new Map<number, string[]>();
+    const cropsByProduct = new Map<number, Record<string, { x: number; y: number; zoom: number }>>();
     for (const img of images) {
       if (!byProduct.has(img.productId)) byProduct.set(img.productId, []);
       byProduct.get(img.productId)!.push(img.filePath);
+      const x = (img as any).thumbnailX ?? 50, y = (img as any).thumbnailY ?? 50, zoom = (img as any).thumbnailZoom ?? 100;
+      if (x !== 50 || y !== 50 || zoom !== 100) {
+        if (!cropsByProduct.has(img.productId)) cropsByProduct.set(img.productId, {});
+        cropsByProduct.get(img.productId)![img.filePath] = { x, y, zoom };
+      }
     }
 
     // Stable order: the stored sortOrder where there is one, then the
@@ -38374,7 +38413,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     return ordered.map(({ link, product }) => ({
       legacyItemIndex: link.legacyItemIndex,
-      option: optionFromRows(product as any, link as any, byProduct.get(product.id) ?? []),
+      option: (() => {
+        const own = link.templateOptionId ? blobImages?.get(link.templateOptionId) : undefined;
+        return own
+          ? optionFromRows(product as any, link as any, own.urls, own.crops)
+          : optionFromRows(product as any, link as any, byProduct.get(product.id) ?? [], cropsByProduct.get(product.id) ?? null);
+      })(),
     }));
   }
 
@@ -38396,7 +38440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // item is a selection with no table of its own, so its name, category,
       // room, budget and deadline still come from the blob until those items are
       // promoted to real templates.
-      const optionRowsFromDb = await loadTemplateOptionRows(template.id, user.companyId);
+      const optionRowsFromDb = await loadTemplateOptionRows(template.id, user.companyId, templateBlobImages(template));
       const usingRows = optionRowsFromDb.length > 0;
 
       if (isOldFormat) {
@@ -38488,6 +38532,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 url: opt.url, visibleToClient: opt.visibleToClient,
                 gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
                 imageUrls: (opt.attachments || []).map((a: any) => a.filePath),
+                // Keep each photo's thumbnail crop, so the template applies it back.
+                imageCrops: Object.fromEntries((opt.attachments || [])
+                  .filter((a: any) => (a.thumbnailX ?? 50) !== 50 || (a.thumbnailY ?? 50) !== 50 || (a.thumbnailZoom ?? 100) !== 100)
+                  .map((a: any) => [a.filePath, { x: a.thumbnailX ?? 50, y: a.thumbnailY ?? 50, zoom: a.thumbnailZoom ?? 100 }])),
           }));
           return {
             id: crypto.randomUUID(),
