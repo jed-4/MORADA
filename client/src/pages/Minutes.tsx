@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { useProject } from "@/contexts/ProjectContext";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,25 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { format } from "date-fns";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
+
+/** A Date as the value a <input type="datetime-local"> expects, in LOCAL time. */
+function toLocalDateTimeInput(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 import { z } from "zod";
 
 export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
   const { id: projectId } = useParams();
+  // Cards used to navigate with window.location.href, which reloads the whole
+  // SPA — about 25 seconds on this app before anything appears. It reads as
+  // "the minute won't open". Client-side routing is instant.
+  const [, navigate] = useLocation();
   const { currentProject } = useProject();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMinute, setEditingMinute] = useState<Minute | null>(null);
@@ -78,7 +93,7 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
   });
 
   // Fetch all projects for display
-  const { data: allProjects = [] } = useQuery({
+  const { data: allProjects = [] } = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/projects"],
   });
 
@@ -217,75 +232,80 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
           <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Minutes</span>
         </div>
       )}
-      {/* Single h-9 Header Row */}
-      <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: Title + Count */}
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">{pageTitle}</h2>
-          <Badge variant="secondary" className="text-xs">
-            {filteredMinutes.length} {filteredMinutes.length === 1 ? 'minute' : 'minutes'}
-          </Badge>
+      {/* One toolbar row, matching Bills and the other list pages: search on the
+          left, actions on the right. The page title used to be repeated here as
+          an <h2> showing usePageTitle's "All Projects · Minutes", directly under
+          the breadcrumb that already said the same thing — so the page read
+          "All Projects / Minutes" and then "All Projects · Minutes" again. */}
+      <div className="h-9 bg-background flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
+        <div className="relative flex-shrink-0">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <Input
+            placeholder="Search minutes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-7 pr-2 py-0 h-6 text-xs w-44 border border-border/50"
+            data-testid="input-search"
+          />
         </div>
+        <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0">
+          {filteredMinutes.length} {filteredMinutes.length === 1 ? 'minute' : 'minutes'}
+        </span>
 
-        {/* Right: Search + Add Button */}
-        <div className="flex items-center gap-1.5">
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-            <Input
-              placeholder="Search minutes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-6 pl-7 text-xs border rounded-md"
-              data-testid="input-search"
-            />
-          </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <div className="flex-1" />
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button 
+              <button
                 onClick={() => { setEditingMinute(null); form.reset(); }}
-                size="sm"
-                className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-0.5"
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
                 data-testid="button-create-minute"
               >
                 <Plus className="w-3 h-3" />
-                <span>Add Minutes</span>
-              </Button>
+                <span>New Minutes</span>
+              </button>
             </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-xl">
             <DialogHeader>
-              <DialogTitle>{editingMinute ? "Edit Meeting Minutes" : "New Meeting Minutes"}</DialogTitle>
+              <DialogTitle>{editingMinute ? "Edit meeting details" : "New meeting minutes"}</DialogTitle>
               <DialogDescription>
-                Record the details of your meeting. You can add an AI summary later from the detail view.
+                {editingMinute
+                  ? "The notes themselves are written in the minutes — save this and open it."
+                  : "Set the meeting up here, then open it to write the notes."}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3">
                 <FormField
                   control={form.control}
                   name="title"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Meeting Title</FormLabel>
+                      <FormLabel className="text-xs">Meeting title</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Weekly Site Meeting" {...field} data-testid="input-title" />
+                        <Input placeholder="e.g. Weekly site meeting" className="h-8 text-sm" {...field} data-testid="input-title" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <FormField
                     control={form.control}
                     name="meetingDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Meeting Date</FormLabel>
+                        <FormLabel className="text-xs">Date and time</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="datetime-local" 
-                            {...field} 
-                            value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
-                            onChange={(e) => field.onChange(new Date(e.target.value))}
+                          {/* Formatted in LOCAL time. This used to render with
+                              toISOString(), which is UTC — so an Australian
+                              meeting showed 11 hours out and saving it moved
+                              the meeting. */}
+                          <Input
+                            type="datetime-local"
+                            className="h-8 text-sm"
+                            value={toLocalDateTimeInput(field.value as any)}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
                             data-testid="input-meeting-date"
                           />
                         </FormControl>
@@ -298,70 +318,73 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
                     name="location"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Location</FormLabel>
+                        <FormLabel className="text-xs">Location</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., Site Office" {...field} value={field.value || ""} data-testid="input-location" />
+                          <Input placeholder="Site office, Zoom…" className="h-8 text-sm" {...field} value={field.value || ""} data-testid="input-location" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
+
+                {/* Which job these belong to. There was no way to set this at
+                    all: minutes silently took whatever page you happened to be
+                    on, and could never be moved afterwards. */}
+                <FormField
+                  control={form.control}
+                  name="projectId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Project</FormLabel>
+                      <FormControl>
+                        <ProjectSelect
+                          value={field.value || undefined}
+                          onValueChange={(v) => field.onChange(v || null)}
+                          placeholder="Business (no project)"
+                          allowNone
+                          className="h-8 text-sm"
+                          data-testid="select-project"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="attendees"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Attendees</FormLabel>
+                      <FormLabel className="text-xs">Attendees</FormLabel>
                       <FormControl>
-                        <Input 
-                          placeholder="Comma-separated names" 
-                          {...field}
-                          value={Array.isArray(field.value) ? field.value.join(", ") : ""}
-                          onChange={(e) => field.onChange(e.target.value.split(",").map((s: string) => s.trim()).filter((s: string) => s))}
-                          data-testid="input-attendees"
+                        {/* The same selector the minutes themselves use, so a
+                            name typed here can be a real contact instead of a
+                            string in a comma-separated list. */}
+                        <HybridAttendeeSelector
+                          value={(field.value as Attendee[]) || []}
+                          onChange={(next) => field.onChange(next)}
+                          projectId={(form.watch("projectId") as string) || undefined}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="contentText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Meeting Notes</FormLabel>
-                      <FormControl>
-                        <textarea 
-                          className="w-full min-h-[200px] p-3 border rounded-md" 
-                          placeholder="Enter meeting notes and discussion points..."
-                          {...field}
-                          value={field.value || ""}
-                          onChange={(e) => {
-                            field.onChange(e.target.value);
-                            form.setValue("contentHtml", `<p>${e.target.value}</p>`);
-                          }}
-                          data-testid="input-content"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-submit">
-                    {editingMinute ? "Update" : "Create"} Minutes
+                  <Button type="submit" size="sm" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-submit">
+                    {editingMinute ? "Save" : "Create minutes"}
                   </Button>
                 </div>
               </form>
             </Form>
           </DialogContent>
         </Dialog>
-        </div>
       </div>
 
       {/* Content Area - Card Grid */}
@@ -383,6 +406,7 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
               <MinuteCard
                 key={minute.id}
                 minute={minute}
+                navigate={navigate}
                 getProjectName={getProjectName}
                 contextProjectId={contextProjectId}
                 handleEdit={handleEdit}
@@ -412,13 +436,15 @@ function MinuteCard({
   getProjectName, 
   contextProjectId, 
   handleEdit, 
-  handleDelete 
+  handleDelete,
+  navigate,
 }: {
   minute: Minute;
   getProjectName: (projectId: string | null) => string;
   contextProjectId: string | null;
   handleEdit: (minute: Minute) => void;
   handleDelete: (id: string) => void;
+  navigate: (to: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const attendees = (minute.attendees as string[]) || [];
@@ -428,7 +454,7 @@ function MinuteCard({
       className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
         isHovered ? 'shadow-xl scale-[1.01]' : 'shadow-sm'
       }`}
-      onClick={() => window.location.href = `/minutes/${minute.id}`}
+      onClick={() => navigate(`/minutes/${minute.id}`)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`minute-card-${minute.id}`}
