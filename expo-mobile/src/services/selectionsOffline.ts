@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Selection } from '../lib/selections';
+import * as FileSystem from 'expo-file-system/legacy';
+import { getChosenOption, type Selection } from '../lib/selections';
+import { getAuthedImageSource } from './api';
 
 /**
  * Per-project cache of the selections payload, persisted to disk.
@@ -66,6 +68,94 @@ export async function clearCachedSelections(): Promise<void> {
     const keys = await AsyncStorage.getAllKeys();
     const ours = keys.filter((k) => k.startsWith(KEY_PREFIX));
     if (ours.length > 0) await AsyncStorage.multiRemove(ours);
+  } catch {
+    // Best-effort.
+  }
+  photoIndex.clear();
+  try {
+    if (PHOTO_DIR) await FileSystem.deleteAsync(PHOTO_DIR, { idempotent: true });
+  } catch {
+    // Best-effort.
+  }
+}
+
+// ── Photos ────────────────────────────────────────────────────────────────
+//
+// The JSON above survives a basement; the photos didn't — they were remote
+// URLs, so offline the spec sheet showed grey boxes. The photos of each
+// selection's CHOSEN option (the ones a trade builds to) are now downloaded to
+// the app's cache directory when the list loads, and served from disk from
+// then on. Uploads are immutable (a new photo gets a new path), so a cached
+// file never goes stale.
+
+const PHOTO_DIR = FileSystem.cacheDirectory ? `${FileSystem.cacheDirectory}selection-photos/` : null;
+const PHOTO_INDEX_KEY = `${KEY_PREFIX}:photos`;
+/** Plenty for a job's chosen products; keeps the cache from growing forever. */
+const MAX_CACHED_PHOTOS = 200;
+const PHOTOS_PER_OPTION = 4;
+
+const photoIndex = new Map<string, string>();
+let indexLoaded: Promise<void> | null = null;
+
+function loadPhotoIndex(): Promise<void> {
+  if (!indexLoaded) {
+    indexLoaded = (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PHOTO_INDEX_KEY);
+        const entries = raw ? (JSON.parse(raw) as [string, string][]) : [];
+        for (const [path, uri] of entries) photoIndex.set(path, uri);
+      } catch {
+        // Start empty.
+      }
+    })();
+  }
+  return indexLoaded;
+}
+// Warm the index at startup so the first render can already use local files.
+loadPhotoIndex();
+
+/** A local copy of this photo if one has been downloaded, else the remote source. */
+export function selectionPhotoSource(filePath: string): { uri: string; headers?: Record<string, string> } {
+  const local = photoIndex.get(filePath);
+  return local ? { uri: local } : getAuthedImageSource(filePath);
+}
+
+/** Download the chosen options' photos for offline use. Never throws. */
+export async function cacheSelectionPhotos(selections: Selection[]): Promise<void> {
+  if (!PHOTO_DIR) return;
+  try {
+    await loadPhotoIndex();
+    await FileSystem.makeDirectoryAsync(PHOTO_DIR, { intermediates: true }).catch(() => {});
+    const wanted: string[] = [];
+    for (const selection of selections) {
+      const chosen = getChosenOption(selection);
+      const photos = (chosen?.attachments ?? []).filter((a) => a.fileType?.toLowerCase() === 'image');
+      for (const photo of photos.slice(0, PHOTOS_PER_OPTION)) {
+        if (!photoIndex.has(photo.filePath)) wanted.push(photo.filePath);
+      }
+    }
+    if (wanted.length === 0) return;
+
+    let changed = false;
+    for (const filePath of wanted) {
+      if (photoIndex.size >= MAX_CACHED_PHOTOS) break;
+      const source = getAuthedImageSource(filePath);
+      const name = filePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-120);
+      try {
+        const result = await FileSystem.downloadAsync(source.uri, `${PHOTO_DIR}${name}`, {
+          headers: source.headers,
+        });
+        if (result.status >= 200 && result.status < 300) {
+          photoIndex.set(filePath, result.uri);
+          changed = true;
+        }
+      } catch {
+        // No signal or a missing file: try again next time the list loads.
+      }
+    }
+    if (changed) {
+      await AsyncStorage.setItem(PHOTO_INDEX_KEY, JSON.stringify(Array.from(photoIndex.entries())));
+    }
   } catch {
     // Best-effort.
   }

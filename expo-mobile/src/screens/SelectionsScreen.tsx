@@ -16,7 +16,7 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
-import { readCachedSelections, writeCachedSelections, describeAge } from '../services/selectionsOffline';
+import { readCachedSelections, writeCachedSelections, describeAge, cacheSelectionPhotos } from '../services/selectionsOffline';
 import { useTheme, fontSize, fontWeight, radius } from '../theme';
 import { haptic } from '../lib/haptics';
 import { PressableScale } from '../components/ui/PressableScale';
@@ -74,6 +74,8 @@ export default function SelectionsScreen({ navigation, route }: Props) {
         setSelections(rows);
         setStaleSince(null);
         writeCachedSelections(user?.id, projectId, rows);
+        // In the background: the chosen products' photos, for the basement.
+        cacheSelectionPhotos(rows);
       } catch (err) {
         // No signal is the normal case on site, not an error state: fall back
         // to the last payload written to disk and say how old it is.

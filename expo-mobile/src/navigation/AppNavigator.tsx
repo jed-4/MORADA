@@ -33,6 +33,7 @@ import ChecklistsScreen from '../screens/ChecklistsScreen';
 import ScopeScreen from '../screens/ScopeScreen';
 import SelectionsScreen from '../screens/SelectionsScreen';
 import SelectionDetailScreen from '../screens/SelectionDetailScreen';
+import SelectionsProjectsScreen from '../screens/SelectionsProjectsScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -181,6 +182,7 @@ function MoreStack() {
       <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="SelectionsProjects" component={SelectionsProjectsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );

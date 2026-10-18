@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { getAuthedImageSource } from '../../services/api';
+import { selectionPhotoSource } from '../../services/selectionsOffline';
 
 /**
  * A selection photo cropped the way the office set it up on the web: a focal
@@ -34,7 +34,8 @@ export default function CroppedImage({
   const fy = y ?? 50;
   const fz = (zoom ?? 100) / 100;
   const untouched = fx === 50 && fy === 50 && fz === 1;
-  const source = getAuthedImageSource(filePath);
+  // A downloaded copy when there is one, so it shows with no signal.
+  const source = selectionPhotoSource(filePath);
 
   let placed: { left: number; top: number; width: number; height: number } | null = null;
   if (!untouched && frame && natural && natural.w > 0 && natural.h > 0) {
