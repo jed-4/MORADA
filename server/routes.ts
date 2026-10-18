@@ -20031,36 +20031,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Is this supplier invoice number already on another bill?
+   *
+   * Two things were wrong with the old version. It `innerJoin`ed projects, so
+   * every bill with no project was invisible to it — and a receipt that arrives
+   * through bills@ is exactly that shape, which is how 7377/90275519 ended up
+   * on both BILL-1746 and BILL-1782 with nobody warned. And it matched the
+   * reference alone, so two different suppliers using the same invoice number
+   * raised a duplicate that was not one.
+   *
+   * Scoped by the bill's own companyId OR its project's, because companyId is
+   * nullable and older rows may only have the project.
+   */
   app.get("/api/bills/check-reference", requireAuth, async (req, res) => {
     try {
-      const { reference, excludeBillId } = req.query;
+      const { reference, excludeBillId, supplierId } = req.query;
       const companyId = (req.user as any)?.companyId;
-      if (!reference || !companyId) {
-        return res.json({ exists: false });
+      const ref = String(reference ?? "").trim();
+      if (!ref || !companyId) {
+        return res.json({ exists: false, match: null });
       }
-      // Scope duplicate check to current company by joining bills -> projects
+
       const conditions = [
-        eq(billsTable.billReference, String(reference)),
-        eq(projectsTable.companyId, companyId),
+        sql`lower(trim(${billsTable.billReference})) = lower(${ref})`,
+        or(
+          eq(billsTable.companyId, companyId),
+          sql`${billsTable.projectId} in (select id from ${projectsTable} where ${projectsTable.companyId} = ${companyId})`,
+        ),
       ];
-      if (excludeBillId) {
-        const { ne } = await import("drizzle-orm");
-        conditions.push(ne(billsTable.id, String(excludeBillId)));
-      }
+      if (excludeBillId) conditions.push(ne(billsTable.id, String(excludeBillId)));
+
       const rows = await db
-        .select({ id: billsTable.id, billNumber: billsTable.billNumber })
+        .select({
+          id: billsTable.id,
+          billNumber: billsTable.billNumber,
+          status: billsTable.status,
+          supplierId: billsTable.supplierId,
+          supplierName: contacts.name,
+        })
         .from(billsTable)
-        .innerJoin(projectsTable, eq(billsTable.projectId, projectsTable.id))
+        .leftJoin(contacts, eq(billsTable.supplierId, contacts.id))
         .where(and(...conditions))
-        .limit(1);
-      const duplicate = rows[0];
+        .limit(10);
+
+      // Same supplier AND same number is a duplicate worth stopping for. The
+      // same number against a different supplier usually is not, so it is
+      // reported as the weaker signal rather than suppressed entirely.
+      const wantSupplier = supplierId ? String(supplierId) : null;
+      const sameSupplier = wantSupplier ? rows.filter(r => r.supplierId === wantSupplier) : [];
+      const best = sameSupplier[0] ?? (wantSupplier ? null : rows[0]) ?? rows[0] ?? null;
+
       res.json({
-        exists: !!duplicate,
-        existingBillNumber: duplicate?.billNumber || null,
+        exists: !!best,
+        existingBillNumber: best?.billNumber ?? null,
+        match: best
+          ? {
+              billId: best.id,
+              billNumber: best.billNumber,
+              status: best.status,
+              supplierName: best.supplierName ?? null,
+              matchedOn: sameSupplier.length > 0 ? "supplier+reference" : "reference",
+            }
+          : null,
       });
     } catch (error) {
-      console.error("check-reference error:", error);
-      res.status(500).json({ error: "Failed to check reference" });
+      console.error("[check-reference] error:", error);
+      // A failed duplicate check must never block a save.
+      res.json({ exists: false, match: null });
     }
   });
 
