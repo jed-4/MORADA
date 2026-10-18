@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,6 +10,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
+import { DetailLayout } from "@/components/detail/DetailLayout";
+import { DocumentSection } from "@/components/detail/DocumentSection";
 import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
 import type { Minute } from "@shared/schema";
 import {
@@ -20,12 +23,30 @@ import {
   Save,
   Sparkles,
   Loader2,
-  Edit3,
-  Check,
-  X,
+  ChevronRight,
   Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
+
+
+/** Compare notes by their TEXT, not their HTML. The editor normalises markup it
+ *  is given (`<li>x</li>` becomes `<li><p>x</p></li>`), so an HTML comparison
+ *  reports a change the moment the page loads — which is how Save came to be lit
+ *  permanently, telling the user nothing. The words are what changed or did not. */
+function normaliseText(value: string | null | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
+/** A Date as <input type="datetime-local"> wants it, in LOCAL time. Using
+ *  toISOString() here showed an Australian meeting 11 hours out, and saving
+ *  that value moved the meeting. */
+function toLocalDateTimeInput(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function MinuteDetail() {
   const { id } = useParams();
@@ -33,12 +54,18 @@ export default function MinuteDetail() {
   const { toast } = useToast();
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const [editedDate, setEditedDate] = useState("");
   const [editedLocation, setEditedLocation] = useState("");
   const [editedRecordingUrl, setEditedRecordingUrl] = useState("");
   const [editedAttendees, setEditedAttendees] = useState<Attendee[]>([]);
+  // RichTextEditor captures its content ONCE, at mount (initialContentRef), and
+  // this page fills its state from a useEffect that runs after that first
+  // render — so a minute that already had notes showed an empty editor and the
+  // notes looked lost. Flipping this remounts the editor once, with the content
+  // present. Local to this page: the editor is shared, and changing when it
+  // adopts a new `content` would reach every screen that uses it.
+  const [hydrated, setHydrated] = useState(false);
 
   // Fetch minute
   const { data: minute, isLoading } = useQuery<Minute>({
@@ -57,12 +84,22 @@ export default function MinuteDetail() {
       setContentHtml(minute.contentHtml || "");
       setContentText(minute.contentText || "");
       setEditedTitle(minute.title);
-      setEditedDate(new Date(minute.meetingDate).toISOString().slice(0, 16));
+      setEditedDate(toLocalDateTimeInput(minute.meetingDate));
       setEditedLocation(minute.location || "");
       setEditedRecordingUrl(minute.recordingUrl || "");
       setEditedAttendees((minute.attendees as Attendee[]) || []);
+      setHydrated(true);
     }
   }, [minute]);
+
+  // The project's name for the breadcrumb, so a project-scoped minute reads the
+  // same as every other page in that project rather than always "All Projects".
+  const { data: projects = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/projects"],
+  });
+  const projectName = minute?.projectId
+    ? (projects.find(p => p.id === minute.projectId)?.name ?? null)
+    : null;
 
   // Update mutation
   const updateMutation = useMutation({
@@ -72,7 +109,7 @@ export default function MinuteDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });
-      toast({ title: "Meeting minutes updated successfully" });
+      toast({ title: "Minutes saved" });
     },
     onError: () => {
       toast({ title: "Failed to update meeting minutes", variant: "destructive" });
@@ -102,38 +139,32 @@ export default function MinuteDetail() {
     setContentText(text);
   };
 
+  // Everything the page can change, saved by the one Save button. There used to
+  // be two: "Save Content" for the notes and a separate Edit Details mode for
+  // the rest, so a user who changed the location and the notes had to find both.
   const handleSave = () => {
     if (!minute) return;
-    
-    updateMutation.mutate({
-      contentHtml,
-      contentText,
-    });
-  };
-
-  const handleSaveMetadata = () => {
-    if (!minute) return;
-
     updateMutation.mutate({
       title: editedTitle,
       meetingDate: new Date(editedDate),
       location: editedLocation,
       recordingUrl: editedRecordingUrl,
-      attendees: editedAttendees,
-    });
-    setIsEditing(false);
+      attendees: editedAttendees as any,
+      contentHtml,
+      contentText,
+    } as any);
   };
 
-  const handleCancelEdit = () => {
-    if (minute) {
-      setEditedTitle(minute.title);
-      setEditedDate(new Date(minute.meetingDate).toISOString().slice(0, 16));
-      setEditedLocation(minute.location || "");
-      setEditedRecordingUrl(minute.recordingUrl || "");
-      setEditedAttendees((minute.attendees as Attendee[]) || []);
-    }
-    setIsEditing(false);
-  };
+  // Drives whether Save is shown at all. The old button was lit from the moment
+  // the page loaded, so it never told you anything.
+  const isDirty = !!minute && (
+    editedTitle !== minute.title ||
+    editedDate !== toLocalDateTimeInput(minute.meetingDate) ||
+    editedLocation !== (minute.location || "") ||
+    editedRecordingUrl !== (minute.recordingUrl || "") ||
+    normaliseText(contentText) !== normaliseText(minute.contentText) ||
+    JSON.stringify(editedAttendees) !== JSON.stringify((minute.attendees as Attendee[]) || [])
+  );
 
   const handleGenerateSummary = () => {
     if (!contentText.trim()) {
@@ -149,17 +180,17 @@ export default function MinuteDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (!minute) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <h2 className="text-2xl font-bold">Meeting minutes not found</h2>
-        <Button onClick={() => navigate("/minutes")} data-testid="button-back">
+      <div className="flex flex-col items-center justify-center h-full gap-3">
+        <p className="text-sm text-muted-foreground">These meeting minutes could not be found.</p>
+        <Button size="sm" variant="outline" onClick={() => navigate("/minutes")} data-testid="button-back">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Minutes
         </Button>
@@ -167,186 +198,174 @@ export default function MinuteDetail() {
     );
   }
 
+  const meetingDate = new Date(minute.meetingDate);
+
   return (
-    <div className="space-y-6 p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={() => navigate("/minutes")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Minutes
-        </Button>
-        <div className="flex gap-2">
-          {!isEditing && (
-            <Button variant="outline" onClick={() => setIsEditing(true)} data-testid="button-edit-metadata">
-              <Edit3 className="h-4 w-4 mr-2" />
-              Edit Details
-            </Button>
-          )}
-          <Button 
-            onClick={handleSave} 
-            disabled={updateMutation.isPending}
-            data-testid="button-save"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            Save Content
-          </Button>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* The same breadcrumb row every other page has. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {projectName ?? "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <button
+          onClick={() => navigate(minute.projectId ? `/projects/${minute.projectId}/minutes` : "/minutes")}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Minutes
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground truncate" data-testid="text-page-title">
+          {minute.title}
+        </span>
       </div>
 
-      <Card>
-        <CardHeader>
-          {isEditing ? (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Meeting Title</label>
-                <Input 
-                  value={editedTitle}
-                  onChange={(e) => setEditedTitle(e.target.value)}
-                  data-testid="input-edit-title"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Meeting Date</label>
-                  <Input 
-                    type="datetime-local"
-                    value={editedDate}
-                    onChange={(e) => setEditedDate(e.target.value)}
-                    data-testid="input-edit-date"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Location</label>
-                  <Input 
-                    value={editedLocation}
-                    onChange={(e) => setEditedLocation(e.target.value)}
-                    data-testid="input-edit-location"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Attendees</label>
-                <HybridAttendeeSelector
-                  value={editedAttendees}
-                  onChange={setEditedAttendees}
-                  projectId={minute.projectId || undefined}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Recording Link (Optional)</label>
-                <Input 
-                  type="url"
-                  placeholder="https://zoom.us/rec/... or https://meet.google.com/..."
-                  value={editedRecordingUrl}
-                  onChange={(e) => setEditedRecordingUrl(e.target.value)}
-                  data-testid="input-edit-recording-url"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={handleSaveMetadata} size="sm" data-testid="button-save-metadata">
-                  <Check className="h-4 w-4 mr-2" />
-                  Save
-                </Button>
-                <Button onClick={handleCancelEdit} variant="outline" size="sm" data-testid="button-cancel-edit">
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <CardTitle className="text-3xl" data-testid="text-title">{minute.title}</CardTitle>
-              <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  <span data-testid="text-date">{format(new Date(minute.meetingDate), "PPpp")}</span>
-                </div>
-                {minute.location && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    <span data-testid="text-location">{minute.location}</span>
-                  </div>
-                )}
-                {((minute.attendees as Attendee[]) || []).length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    <span data-testid="text-attendees">
-                      {((minute.attendees as Attendee[]) || []).map((attendee, idx) => (
-                        typeof attendee === "string" ? attendee : attendee.name
-                      )).join(", ")}
-                    </span>
-                  </div>
-                )}
-                {minute.recordingUrl && (
-                  <div className="flex items-center gap-2">
-                    <LinkIcon className="h-4 w-4" />
-                    <a href={minute.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" data-testid="link-recording">
-                      Recording Link
-                    </a>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <Separator />
+      {/* The shared detail header. Replaces three floating buttons, a separate
+          "Edit Details" mode and a Save that was lit whether or not anything
+          had changed. Everything is editable in place; Save appears when it
+          has something to do, the way Variations and RFQs already work. */}
+      <DetailPageHeader
+        backTo="/minutes"
+        projectId={minute.projectId}
+        title={editedTitle}
+        onTitleChange={setEditedTitle}
+        titlePlaceholder="Meeting title"
+        titleClassName="w-[320px]"
+        badges={
+          <Badge variant="outline" className="text-xs flex-shrink-0">
+            {format(meetingDate, "d MMM yyyy")}
+          </Badge>
+        }
+        dirty={isDirty}
+        saving={updateMutation.isPending}
+        onSave={handleSave}
+      />
 
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Meeting Notes</h3>
+      <DetailLayout
+        sidebar={
+          <>
+            {/* The meeting's facts. These used to be one cramped line of icons
+                under the title, with nowhere for attendees to grow. */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Date and time</label>
+              <Input
+                type="datetime-local"
+                className="h-8 text-sm"
+                value={editedDate}
+                onChange={(e) => setEditedDate(e.target.value)}
+                data-testid="input-edit-date"
+              />
             </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Location</label>
+              <Input
+                className="h-8 text-sm"
+                placeholder="Site office, Zoom…"
+                value={editedLocation}
+                onChange={(e) => setEditedLocation(e.target.value)}
+                data-testid="input-edit-location"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Attendees</label>
+              <HybridAttendeeSelector
+                value={editedAttendees}
+                onChange={setEditedAttendees}
+                projectId={minute.projectId ?? undefined}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Recording link</label>
+              <Input
+                className="h-8 text-sm"
+                placeholder="https://…"
+                value={editedRecordingUrl}
+                onChange={(e) => setEditedRecordingUrl(e.target.value)}
+                data-testid="input-edit-recording-url"
+              />
+              {minute.recordingUrl && (
+                <a
+                  href={minute.recordingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  data-testid="link-recording"
+                >
+                  <LinkIcon className="h-3 w-3" />
+                  Open recording
+                </a>
+              )}
+            </div>
+
+            <div className="pt-1 border-t space-y-1 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <Users className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">Taken by {minute.ownerName || "—"}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3 flex-shrink-0" />
+                <span>{format(meetingDate, "EEEE d MMMM yyyy, h:mm a")}</span>
+              </div>
+            </div>
+          </>
+        }
+      >
+        <DocumentSection
+          title="Notes"
+          role="manual"
+          collapsible={false}
+          divider={false}
+          data-testid="section-notes"
+        >
+          <div className="px-3.5 py-3">
             <RichTextEditor
+              key={`${minute.id}:${hydrated ? "ready" : "loading"}`}
               content={contentHtml}
               onChange={handleContentChange}
-              placeholder="Enter meeting notes, discussion points, action items..."
+              placeholder="Discussion, decisions, who is doing what…"
               data-testid="editor-content"
             />
           </div>
+        </DocumentSection>
 
-          <Separator />
-
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">AI Summary</h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGenerateSummary}
-                disabled={generateSummaryMutation.isPending || !contentText.trim()}
-                data-testid="button-generate-summary"
-              >
-                {generateSummaryMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Generate AI Summary
-                  </>
-                )}
-              </Button>
-            </div>
+        <DocumentSection
+          title="AI summary"
+          role="meta"
+          divider={false}
+          isEmpty={!minute.aiSummary}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={handleGenerateSummary}
+              disabled={generateSummaryMutation.isPending || !contentText.trim()}
+              data-testid="button-generate-summary"
+            >
+              {generateSummaryMutation.isPending ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-1" />
+              )}
+              {minute.aiSummary ? "Regenerate" : "Generate"}
+            </Button>
+          }
+          data-testid="section-ai-summary"
+        >
+          <div className="px-3.5 py-3">
             {minute.aiSummary ? (
-              <Card className="bg-muted/50">
-                <CardContent className="pt-6">
-                  <p className="whitespace-pre-wrap text-sm" data-testid="text-ai-summary">
-                    {minute.aiSummary}
-                  </p>
-                </CardContent>
-              </Card>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{minute.aiSummary}</p>
             ) : (
-              <EmptyState
-                variant="inline"
-                title="No AI summary generated yet"
-                description="Click the button above to generate one."
-                className="py-8"
-              />
+              <p className="text-sm text-muted-foreground">
+                Write the notes, then generate a summary of the decisions and actions.
+              </p>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </DocumentSection>
+      </DetailLayout>
     </div>
   );
 }
