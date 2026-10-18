@@ -19016,6 +19016,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isSelectedByClient: o.isSelectedByClient,
           sortOrder: o.sortOrder,
           approvedAt: o.approvedAt,
+          clientSuggested: !!o.clientSuggested,
+          suggestedBy: o.clientSuggested ? o.suggestedBy ?? null : null,
           clientPrice: clientCanSeePrice ? selectionOptionClientPriceCents(o) : null,
           attachments: ((o as any).attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
         }))
@@ -19030,6 +19032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: (sel as any).status,
         deadline: (sel as any).deadline,
         clientCanChange: (sel as any).clientCanChange,
+        clientCanAddOption: !!(sel as any).clientCanAddOption,
         clientCanSeePrice,
         allowance: clientCanSeePrice ? (sel as any).allowance : null,
         locked: isSelectionLockedForClient(sel, options),
@@ -19225,6 +19228,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   /** Comment from the client — shared by the emailed link and the portal. */
+  /**
+   * A client suggests an option (a product they found) on a selection where the
+   * builder has switched on "Allow Client Suggestions" (clientCanAddOption).
+   * Shared by the logged-in client portal and the public selection link.
+   *
+   * The option is visible to the client, carries NO price (cost, markup and
+   * charge are the builder's to add), is marked clientSuggested, and is not
+   * chosen — suggesting is not choosing. The builder is notified.
+   */
+  const addClientSuggestedOption = async (
+    sel: any,
+    body: any,
+    clientName: string,
+    companyId: string | null,
+  ): Promise<{ status: number; body: any }> => {
+    if (!sel?.clientCanAddOption) {
+      return { status: 403, body: { error: "Suggestions aren't switched on for this selection." } };
+    }
+    const options = await storage.getSelectionOptions(sel.id);
+    if (isSelectionLockedForClient(sel, options)) {
+      return { status: 409, body: { error: "This selection is already confirmed." } };
+    }
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!name) return { status: 400, body: { error: "Give the option a name." } };
+    if (name.length > 200) return { status: 400, body: { error: "That name is too long." } };
+    const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
+    if (rawUrl && (!/^https?:\/\//i.test(rawUrl) || rawUrl.length > 2000)) {
+      return { status: 400, body: { error: "The link must start with http:// or https://" } };
+    }
+    const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
+
+    // Optional photo, as a data URL. Images only, up to 10 MB.
+    let photo: { buffer: Buffer; mime: string; fileName: string } | null = null;
+    if (typeof body?.photo === "string" && body.photo) {
+      const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(body.photo);
+      if (!m) return { status: 400, body: { error: "The photo must be an image." } };
+      const buffer = Buffer.from(m[2], "base64");
+      if (buffer.length > 10 * 1024 * 1024) return { status: 400, body: { error: "That photo is over 10 MB." } };
+      const fileName = typeof body?.photoName === "string" && body.photoName.trim()
+        ? body.photoName.trim().slice(0, 200) : `suggestion-${Date.now()}.jpg`;
+      photo = { buffer, mime: m[1].toLowerCase(), fileName };
+    }
+
+    const option = await storage.createSelectionOption({
+      selectionId: sel.id,
+      name,
+      url: rawUrl || undefined,
+      description: description || undefined,
+      visibleToClient: true,
+      isSelectedByClient: false,
+      sortOrder: options.length,
+      clientSuggested: true,
+      suggestedBy: clientName.slice(0, 100),
+    } as any);
+
+    // The company id is baked into the served path; without one the photo
+    // could never be served, so it is skipped rather than stored broken.
+    if (photo && companyId) {
+      try {
+        const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+        const objectPath = await new ObjectStorageService().uploadObjectEntity(photo.buffer, photo.mime, companyId);
+        await storage.createOptionAttachment({
+          optionId: option.id,
+          fileName: photo.fileName,
+          filePath: objectPath,
+          fileType: "image",
+          fileSize: photo.buffer.length,
+          mimeType: photo.mime,
+          sortOrder: 0,
+        });
+      } catch (err) {
+        // The suggestion stands without its photo rather than failing outright.
+        console.error("Client suggestion photo upload failed:", err);
+      }
+    }
+
+    try {
+      if (sel.createdBy) {
+        const notification = await storage.createNotification({
+          userId: sel.createdBy,
+          companyId: companyId!,
+          type: "selection_client_suggestion",
+          title: "Client suggested an option",
+          message: `${clientName} suggested “${name}” for ${sel.name}`,
+          link: `/projects/${sel.projectId}/selections/${sel.id}`,
+          entityType: "selection",
+          entityId: sel.id,
+          isRead: false,
+          createdByUserId: null,
+        });
+        emitNotification(sel.createdBy, notification);
+      }
+    } catch {
+      // Non-fatal.
+    }
+
+    return { status: 201, body: { id: option.id, name: option.name } };
+  };
+
   const addClientSelectionComment = async (
     sel: any,
     content: string,
@@ -19405,6 +19507,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /** Signed-in client suggests an option. */
+  app.post("/api/selections/:id/client-options", requireAuth, async (req, res) => {
+    try {
+      const client = getClientUser(req);
+      if (!client) return res.status(403).json({ error: "not_available_for_client" });
+      const sel = await storage.getSelection(req.params.id);
+      if (!sel || !(await clientOwnsProject(sel.projectId, client.companyId))) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      const project = await storage.getProject(sel.projectId);
+      const result = await addClientSuggestedOption(sel, req.body, clientDisplayName(client), project?.companyId ?? null);
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error("Client suggestion error:", error);
+      res.status(500).json({ error: "Failed to save your suggestion" });
+    }
+  });
+
   /** Signed-in client posts a comment on a selection. */
   app.post("/api/selections/:id/client-comments", requireAuth, async (req, res) => {
     try {
@@ -19419,6 +19539,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Client selection comment error:", error);
       res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
+  app.post("/api/portal/selections/:token/options", async (req, res) => {
+    try {
+      // Token-authorised, like the comment and choose routes: the token
+      // resolves to exactly one selection.
+      const { eq: eqFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, req.params.token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+      const clientName = typeof req.body?.clientName === "string" && req.body.clientName.trim()
+        ? req.body.clientName.trim().slice(0, 100) : "Client";
+      const project = await storage.getProject((sel as any).projectId);
+      const result = await addClientSuggestedOption(sel, req.body, clientName, project?.companyId ?? null);
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error("Portal suggestion error:", error);
+      res.status(500).json({ error: "Failed to save your suggestion" });
     }
   });
 

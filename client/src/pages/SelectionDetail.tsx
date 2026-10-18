@@ -984,6 +984,8 @@ export default function SelectionDetail() {
     heroX: firstImage(o)?.thumbnailX,
     heroY: firstImage(o)?.thumbnailY,
     heroZoom: firstImage(o)?.thumbnailZoom,
+    clientSuggested: (o as any).clientSuggested,
+    suggestedBy: (o as any).suggestedBy,
     imageUrls: ((o.attachments ?? []) as OptionAttachment[])
       .filter((a) => a.fileType?.toLowerCase() === "image")
       .map((a) => a.filePath),

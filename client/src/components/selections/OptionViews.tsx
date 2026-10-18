@@ -41,6 +41,7 @@ import {
   Camera, EyeOff, Eye, Lock, CheckCircle, ExternalLink,
   Package, LayoutGrid, LayoutList, Search, X,
   Maximize2,
+  Lightbulb,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -86,6 +87,9 @@ export interface OptionView {
   heroZoom?: number | null;
   /** Every photo of the option, hero first — what the full-size viewer steps through. */
   imageUrls?: string[];
+  /** A client suggested this option (and who). */
+  clientSuggested?: boolean | null;
+  suggestedBy?: string | null;
   /** "Matte · 600x600" — the template grid's specs line. Absent on a project. */
   specsLine?: string | null;
 }
@@ -207,6 +211,12 @@ export function OptionGrid({
                 </button>
               )}
               <div className="absolute top-2 left-2 flex flex-col gap-1">
+                {option.clientSuggested && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5" data-testid={`badge-suggested-${option.id}`}>
+                    <Lightbulb className="w-3 h-3 mr-1" />
+                    {option.suggestedBy ? `Suggested by ${option.suggestedBy}` : "Client suggestion"}
+                  </Badge>
+                )}
                 {option.visibleToClient === false && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
                     <EyeOff className="w-3 h-3 mr-1" />

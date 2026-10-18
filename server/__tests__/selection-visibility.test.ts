@@ -419,4 +419,14 @@ check("the decision log loses its price for readers who may not see prices", () 
   assert.strictEqual(redactDecisionLogPrices(log, true), log);
 });
 
+// ── Client suggestions ────────────────────────────────────────────────────
+check("a client sees that an option is their suggestion, and still no money", () => {
+  const sel = { ...pendingSelection(), clientCanSeePrice: false };
+  sel.options = sel.options.map((o: any, i: number) => (i === 0 ? { ...o, clientSuggested: true, suggestedBy: "Linda" } : o));
+  const out = applySelectionVisibilityToOne(sel, CLIENT);
+  assert.equal(out.options[0].clientSuggested, true);
+  assert.equal(out.options[0].suggestedBy, "Linda");
+  assert.equal(out.options[0].unitCost, undefined);
+});
+
 console.log(`\n${passed} passed\n`);

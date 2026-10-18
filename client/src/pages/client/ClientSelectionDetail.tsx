@@ -1,8 +1,9 @@
+import { SuggestOptionDialog, type SuggestedOption } from "@/components/selections/SuggestOptionDialog";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { format } from "date-fns";
-import { CalendarIcon, ChevronLeft, Loader2, MapPin, MessageSquare } from "lucide-react";
+import { CalendarIcon, ChevronLeft, Loader2, MapPin, MessageSquare, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,6 +52,11 @@ const toOptionView = (option: ClientSelectionOption): OptionView => ({
   isSelectedByClient: option.isSelectedByClient,
   approvedAt: option.approvedAt,
   heroUrl: firstImage(option as any)?.filePath ?? null,
+  heroX: (firstImage(option as any) as any)?.thumbnailX,
+  heroY: (firstImage(option as any) as any)?.thumbnailY,
+  heroZoom: (firstImage(option as any) as any)?.thumbnailZoom,
+  clientSuggested: option.clientSuggested,
+  suggestedBy: option.suggestedBy,
 });
 
 interface SelectionComment {
@@ -70,6 +76,7 @@ export default function ClientSelectionDetail() {
   const canComment = hasPermission(PORTAL_KEYS.selections, "add");
   const [draft, setDraft] = useState("");
   const [openOptionId, setOpenOptionId] = useState<string | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   const { data: selection, isLoading, isError } = useQuery<ClientSelection>({
     queryKey: [`/api/selections/${id}`],
@@ -100,6 +107,23 @@ export default function ClientSelectionDetail() {
       toast({
         title: "We couldn't save that",
         description: error?.message || "Please try again, or contact your builder.",
+        variant: "destructive",
+      }),
+  });
+
+  const suggest = useMutation({
+    mutationFn: (value: SuggestedOption) => apiRequest(`/api/selections/${id}/client-options`, "POST", value),
+    onSuccess: () => {
+      setSuggestOpen(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/selections/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/selections/${id}/options`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/selections/with-options?projectId=${projectId}`] });
+      toast({ title: "Suggestion sent", description: "Your builder will take a look." });
+    },
+    onError: (error: any) =>
+      toast({
+        title: "We couldn't send that",
+        description: String(error?.message || "").replace(/^\d+:\s*/, "") || "Please try again.",
         variant: "destructive",
       }),
   });
@@ -218,6 +242,23 @@ export default function ClientSelectionDetail() {
           Open an option to see the photos and the details, then choose the one you'd like.
         </p>
       )}
+
+      {!confirmed && canChoose && selection.clientCanAddOption && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3">
+          <p className="text-sm text-muted-foreground">Seen something you'd prefer? Suggest it and your builder will price it.</p>
+          <Button variant="outline" size="sm" onClick={() => setSuggestOpen(true)} data-testid="button-suggest-option">
+            <Lightbulb className="w-4 h-4 mr-1.5" />
+            Suggest an option
+          </Button>
+        </div>
+      )}
+
+      <SuggestOptionDialog
+        open={suggestOpen}
+        onOpenChange={setSuggestOpen}
+        submitting={suggest.isPending}
+        onSubmit={(value) => suggest.mutate(value)}
+      />
 
       {/* The builder's own options block. No kebab, no Add, no Approve — a
           client's one action is opening a card, which is where they choose. */}
