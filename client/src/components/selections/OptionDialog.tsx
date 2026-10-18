@@ -142,6 +142,12 @@ export interface OptionDialogProps {
    * has no charge column, so it keeps the cost + markup inputs.
    */
   chargePricing?: boolean;
+  /**
+   * The viewer has no selections pricing access: they were never sent cost,
+   * markup or charge, so show none of it and send none back — saving blanks
+   * would wipe the real figures (the server strips them too).
+   */
+  hidePricing?: boolean;
 }
 
 /** GST at 10%, from a cents figure that either includes it or does not. */
@@ -164,6 +170,7 @@ export function OptionDialog({
   showNotes = true,
   nounSingular = "Product",
   chargePricing = false,
+  hidePricing = false,
 }: OptionDialogProps) {
   const form = useForm<OptionDialogValues>({
     resolver: zodResolver(optionDialogSchema),
@@ -260,6 +267,11 @@ export function OptionDialog({
 
   const submit = (values: OptionDialogValues) => {
     // A cleared field must be sent as null, or the old figure survives the save.
+    if (hidePricing) {
+      const { unitCost, unitTax, totalCost, markupPercent, unitCharge, gstInclusive, ...rest } = values;
+      onSubmit(rest as OptionDialogValues, Object.keys(specs).length > 0 ? specs : null);
+      return;
+    }
     const priced = chargePricing
       ? {
           ...values,
@@ -463,7 +475,7 @@ export function OptionDialog({
                   )}
                 />
 
-                {!chargePricing && (
+                {!chargePricing && !hidePricing && (
                 <FormField
                   control={form.control}
                   name="unitCost"
@@ -497,7 +509,7 @@ export function OptionDialog({
                 )}
               </div>
 
-              {chargePricing ? (
+              {hidePricing ? null : chargePricing ? (
                 <div className="space-y-3" data-testid="option-pricing">
                   <PricingFields value={pricing} resetKey={pricingResetKey} onChange={applyPricing} />
                   <div className="rounded-md bg-muted/50 border border-border px-4 py-3 flex items-baseline justify-between gap-2" data-testid="display-option-total-cost">

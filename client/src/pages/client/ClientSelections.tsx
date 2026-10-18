@@ -112,13 +112,15 @@ function ClientSelectionCard({
         ) : (
           <div className="grid grid-cols-3 gap-px h-full">
             {images.map((att, i) => (
-              <img
+              <CroppedImage
                 key={att.id}
                 src={att.filePath ?? ""}
-                alt=""
+                x={att.thumbnailX}
+                y={att.thumbnailY}
+                zoom={att.thumbnailZoom}
+                frameAspect={i === 0 && images.length === 2 ? 2 / 3 : 1 / 3}
                 loading="lazy"
-                className={cn("w-full h-full object-cover", i === 0 && images.length === 2 && "col-span-2")}
-                style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+                className={cn(i === 0 && images.length === 2 && "col-span-2")}
               />
             ))}
           </div>

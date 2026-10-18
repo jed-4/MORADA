@@ -1,3 +1,6 @@
+import { CroppedImage } from "@/components/CroppedImage";
+import { FocalPointPicker } from "@/components/FocalPointPicker";
+import { usePermission } from "@/hooks/use-permission";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -53,6 +56,7 @@ import {
   MapPin,
   Settings,
   Tags,
+  Crosshair,
 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCents } from "@shared/money";
@@ -84,6 +88,8 @@ interface SelectionOption {
   url?: string;
   imageUrl?: string;
   imageUrls?: string[];
+  /** Thumbnail crop per image URL; applied to the job's photos on apply. */
+  imageCrops?: Record<string, { x: number; y: number; zoom: number }>;
   visibleToClient?: boolean;
   isSelectedByClient?: boolean;
   sortOrder: number;
@@ -119,6 +125,8 @@ function formatSpecsOneLiner(specs: Record<string, any> | undefined): string {
 }
 
 export default function SelectionTemplateDetail() {
+  // Roles without selections pricing are never sent cost, markup or charge.
+  const canSeeSelectionPricing = usePermission("projects.selections.pricing");
   const params = useParams<{ templateId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -132,6 +140,8 @@ export default function SelectionTemplateDetail() {
   const [pickerTag, setPickerTag] = useState<string>("all");
   const [productSearch, setProductSearch] = useState("");
 
+  // The template image whose thumbnail crop is being edited, if any.
+  const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [optionForm, setOptionForm] = useState<Partial<SelectionOption>>({
     name: "",
     description: "",
@@ -225,6 +235,10 @@ export default function SelectionTemplateDetail() {
     const imageUrls = (product.images || [])
       .map((img: any) => (typeof img === "string" ? img : img?.filePath))
       .filter((u: any): u is string => typeof u === "string" && u.length > 0);
+    const imageCrops = Object.fromEntries((product.images || [])
+      .filter((img: any) => img && typeof img === "object" && img.filePath
+        && ((img.thumbnailX ?? 50) !== 50 || (img.thumbnailY ?? 50) !== 50 || (img.thumbnailZoom ?? 100) !== 100))
+      .map((img: any) => [img.filePath, { x: img.thumbnailX ?? 50, y: img.thumbnailY ?? 50, zoom: img.thumbnailZoom ?? 100 }]));
     return {
       id: crypto.randomUUID(),
       productId: product.id,
@@ -241,6 +255,7 @@ export default function SelectionTemplateDetail() {
       unitType: product.unitType || "ea",
       url: product.url || undefined,
       imageUrls,
+      imageCrops,
       visibleToClient: true,
       isSelectedByClient: false,
       specifications: product.specifications || undefined,
@@ -415,6 +430,10 @@ export default function SelectionTemplateDetail() {
     const imageUrls = (product.images || [])
       .map((img: any) => (typeof img === "string" ? img : img?.filePath))
       .filter((u: any): u is string => typeof u === "string" && u.length > 0);
+    const imageCrops = Object.fromEntries((product.images || [])
+      .filter((img: any) => img && typeof img === "object" && img.filePath
+        && ((img.thumbnailX ?? 50) !== 50 || (img.thumbnailY ?? 50) !== 50 || (img.thumbnailZoom ?? 100) !== 100))
+      .map((img: any) => [img.filePath, { x: img.thumbnailX ?? 50, y: img.thumbnailY ?? 50, zoom: img.thumbnailZoom ?? 100 }]));
     setOptionForm({
       // The point of picking from the library is to REFERENCE the product, not
       // copy it. Without this the write-through sees an unlinked option and
@@ -434,6 +453,7 @@ export default function SelectionTemplateDetail() {
       unitType: product.unitType || "ea",
       url: product.url || "",
       imageUrls,
+      imageCrops,
       visibleToClient: true,
       isSelectedByClient: false,
       specifications: product.specifications || {},
@@ -459,6 +479,7 @@ export default function SelectionTemplateDetail() {
       unitType: option.unitType || "ea",
       url: option.url || "",
       imageUrls,
+      imageCrops: option.imageCrops,
       visibleToClient: option.visibleToClient ?? true,
       isSelectedByClient: option.isSelectedByClient || false,
       markupPercent: option.markupPercent,
@@ -486,20 +507,28 @@ export default function SelectionTemplateDetail() {
       brand: values.brand?.trim() || undefined,
       category: values.category?.trim() || undefined,
       // Already cents — the dialog works in the same unit templateData stores.
-      unitCost: values.unitCost ?? undefined,
-      gstInclusive: values.gstInclusive ?? false,
+      // Without pricing access the dialog shows no prices and sends none, so
+      // keep what the option already had rather than blanking it.
+      unitCost: canSeeSelectionPricing ? values.unitCost ?? undefined : (base as any).unitCost,
+      gstInclusive: canSeeSelectionPricing ? values.gstInclusive ?? false : (base as any).gstInclusive,
       quantity: values.quantity || 1,
       unitType: values.unitType || "ea",
       url: values.url?.trim() || undefined,
       // Images are this page's, not the dialog's.
       imageUrls: (optionForm.imageUrls || []).filter(Boolean),
+      // Only crops for images still on the option.
+      imageCrops: (() => {
+        const keep = new Set((optionForm.imageUrls || []).filter(Boolean));
+        const entries = Object.entries(optionForm.imageCrops || {}).filter(([url]) => keep.has(url));
+        return entries.length ? Object.fromEntries(entries) : undefined;
+      })(),
       imageUrl: undefined,
       visibleToClient: values.visibleToClient ?? true,
       // Not a dialog field: "set as default" is a menu action on the card.
       isSelectedByClient: (base as any).isSelectedByClient || false,
-      markupPercent: values.markupPercent ?? undefined,
-      unitCharge: values.unitCharge ?? undefined,
-      totalCost: values.totalCost ?? undefined,
+      markupPercent: canSeeSelectionPricing ? values.markupPercent ?? undefined : (base as any).markupPercent,
+      unitCharge: canSeeSelectionPricing ? values.unitCharge ?? undefined : (base as any).unitCharge,
+      totalCost: canSeeSelectionPricing ? values.totalCost ?? undefined : (base as any).totalCost,
       specifications: specifications ?? undefined,
     });
 
@@ -571,6 +600,9 @@ export default function SelectionTemplateDetail() {
     visibleToClient: o.visibleToClient,
     isSelectedByClient: o.isSelectedByClient,
     heroUrl: o.imageUrls?.[0] || o.imageUrl || null,
+    heroX: o.imageCrops?.[o.imageUrls?.[0] ?? ""]?.x,
+    heroY: o.imageCrops?.[o.imageUrls?.[0] ?? ""]?.y,
+    heroZoom: o.imageCrops?.[o.imageUrls?.[0] ?? ""]?.zoom,
     specsLine: formatSpecsOneLiner(o.specifications) || null,
   }));
 
@@ -640,23 +672,38 @@ export default function SelectionTemplateDetail() {
           <div className="flex flex-wrap gap-2">
             {(optionForm.imageUrls || []).map((url, idx) => (
               <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted flex-shrink-0">
-                <img
+                <CroppedImage
                   src={url}
                   alt={`Image ${idx + 1}`}
-                  className="w-full h-full object-cover"
+                  x={optionForm.imageCrops?.[url]?.x}
+                  y={optionForm.imageCrops?.[url]?.y}
+                  zoom={optionForm.imageCrops?.[url]?.zoom}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
-                <button
-                  type="button"
-                  className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  onClick={() => {
-                    const urls = [...(optionForm.imageUrls || [])];
-                    urls.splice(idx, 1);
-                    setOptionForm({ ...optionForm, imageUrls: urls });
-                  }}
-                >
-                  <X className="h-4 w-4 text-white" />
-                </button>
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                  <button
+                    type="button"
+                    className="text-white p-0.5"
+                    title="Set thumbnail crop (position and zoom)"
+                    aria-label="Set thumbnail crop"
+                    onClick={() => setCropUrl(url)}
+                    data-testid={`button-template-crop-${idx}`}
+                  >
+                    <Crosshair className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="text-white p-0.5"
+                    aria-label="Remove image"
+                    onClick={() => {
+                      const urls = [...(optionForm.imageUrls || [])];
+                      urls.splice(idx, 1);
+                      setOptionForm({ ...optionForm, imageUrls: urls });
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
                 {idx === 0 && (
                   <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5">
                     Hero
@@ -682,6 +729,22 @@ export default function SelectionTemplateDetail() {
           </div>
           <p className="text-[10px] text-muted-foreground">First image is used as the hero on the card.</p>
         </div>
+      {cropUrl && (
+          <FocalPointPicker
+            open
+            onOpenChange={(o) => { if (!o) setCropUrl(null); }}
+            imageUrl={cropUrl}
+            initialX={optionForm.imageCrops?.[cropUrl]?.x ?? 50}
+            initialY={optionForm.imageCrops?.[cropUrl]?.y ?? 50}
+            initialZoom={optionForm.imageCrops?.[cropUrl]?.zoom ?? 100}
+            allowZoom
+            // Saved with the option (Update Option), like everything else here.
+            onSave={(x, y, zoom) => {
+              setOptionForm((f) => ({ ...f, imageCrops: { ...(f.imageCrops || {}), [cropUrl]: { x, y, zoom } } }));
+              setCropUrl(null);
+            }}
+          />
+        )}
     </>
   );
 
@@ -1178,6 +1241,7 @@ export default function SelectionTemplateDetail() {
         initialSpecifications={optionForm.specifications ?? null}
         onSubmit={handleSaveOption}
         chargePricing
+        hidePricing={!canSeeSelectionPricing}
         mediaPane={optionMediaPane}
       />
 

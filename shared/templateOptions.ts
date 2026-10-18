@@ -46,6 +46,8 @@ export interface TemplateOption {
   specifications: Record<string, any> | null;
   /** imageUrl and imageUrls merged, de-duplicated, order preserved. */
   imageUrls: string[];
+  /** Thumbnail crop per image URL (focal point + zoom). Null when none set. */
+  imageCrops: Record<string, ImageCrop> | null;
 
   // ── How THIS template uses the product ─────────────────────────────────────
   // Not spec. These go on selection_template_options, because the same product
@@ -116,6 +118,25 @@ const str = (v: unknown): string | null => {
   return t === "" ? null : t;
 };
 
+export interface ImageCrop {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/** Keeps only well-formed crops; anything else is treated as "no crop". */
+export function cropsOf(raw: unknown): Record<string, ImageCrop> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const out: Record<string, ImageCrop> = {};
+  for (const [url, c] of Object.entries(raw as Record<string, any>)) {
+    const x = Number(c?.x), y = Number(c?.y), zoom = Number(c?.zoom ?? 100);
+    if ([x, y, zoom].every(Number.isFinite) && x >= 0 && x <= 100 && y >= 0 && y <= 100 && zoom >= 10 && zoom <= 400) {
+      out[url] = { x: Math.round(x), y: Math.round(y), zoom: Math.round(zoom) };
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function imagesOf(opt: any): string[] {
   const out: string[] = [];
   const push = (u: unknown) => {
@@ -180,6 +201,7 @@ function readOption(
     url: str(opt?.url),
     specifications: opt?.specifications && typeof opt.specifications === "object" ? opt.specifications : null,
     imageUrls: imagesOf(opt),
+    imageCrops: cropsOf(opt?.imageCrops),
     quantity: num(opt?.quantity),
     markupPercent: num(opt?.markupPercent),
     // Cents, like unitCost; a fractional value means dollars were written.
