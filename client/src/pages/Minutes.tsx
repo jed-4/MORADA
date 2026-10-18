@@ -71,8 +71,6 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
       meetingDate: new Date(),
       location: "",
       attendees: [],
-      contentHtml: "",
-      contentText: "",
       projectId: contextProjectId || undefined,
     },
   });
@@ -180,8 +178,6 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
       meetingDate: new Date(minute.meetingDate),
       location: minute.location || "",
       attendees: (minute.attendees as string[]) || [],
-      contentHtml: minute.contentHtml || "",
-      contentText: minute.contentText || "",
       projectId: minute.projectId || undefined,
     });
     setIsDialogOpen(true);
@@ -326,29 +322,18 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="contentText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Meeting Notes</FormLabel>
-                      <FormControl>
-                        <textarea 
-                          className="w-full min-h-[200px] p-3 border rounded-md" 
-                          placeholder="Enter meeting notes and discussion points..."
-                          {...field}
-                          value={field.value || ""}
-                          onChange={(e) => {
-                            field.onChange(e.target.value);
-                            form.setValue("contentHtml", `<p>${e.target.value}</p>`);
-                          }}
-                          data-testid="input-content"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* The notes are written in the detail view, which has the real
+                    editor. This box used to be a plain textarea that rewrote
+                    contentHtml as `<p>${text}</p>` on every keystroke — so
+                    opening a formatted minute here and touching one character
+                    flattened it to a single paragraph, and any & or < in the
+                    text produced broken markup. Nothing is gained by having a
+                    second, worse editor for the same field. */}
+                {editingMinute ? (
+                  <p className="text-xs text-muted-foreground">
+                    Notes are edited in the minutes themselves — save this and open it to write them up.
+                  </p>
+                ) : null}
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
                     Cancel
