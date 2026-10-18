@@ -15,6 +15,7 @@ import {
   OPTION_MONEY_FIELDS,
   OPTION_NON_MONEY_FIELDS,
   CLIENT_OPTION_FIELDS,
+  redactDecisionLogPrices,
   type SelectionViewer,
 } from "../selectionVisibility";
 import { getTableColumns } from "drizzle-orm";
@@ -397,6 +398,25 @@ check("a product with no library pricing applies exactly as before", () => {
   assert.equal(opt.markupPercent, undefined);
   assert.equal(opt.totalCost, 200_00);
   assert.equal(opt.gstInclusive, undefined);
+});
+
+check("a template's own charge is kept to the cent when applied", () => {
+  const opt = optionFromRows({ ...libraryProduct, defaultUnitCharge: null, defaultMarkupPercent: null }, use({ unitCostOverride: 100_00, gstInclusive: true, markupPercent: 49.99, unitCharge: 149_99, quantity: 3 }) as any, []);
+  assert.equal(opt.unitCharge, 149_99);
+  assert.equal(opt.totalCost, 449_97);
+  assert.equal(optionClientPriceCents(opt), 449_97);
+});
+
+// ── Decision log prices ───────────────────────────────────────────────────
+check("the decision log loses its price for readers who may not see prices", () => {
+  const log = [
+    { createdByName: "Decision log", content: "Jane chose “Zellige Lily” ($1,250.00 inc GST) — changed from “Subway”" },
+    { createdByName: "Jane", content: "Can we do it for ($1,250.00 inc GST)?" },
+  ];
+  const hidden = redactDecisionLogPrices(log, false);
+  assert.equal(hidden[0].content, "Jane chose “Zellige Lily” — changed from “Subway”");
+  assert.equal(hidden[1].content, log[1].content, "a person's own words are never edited");
+  assert.strictEqual(redactDecisionLogPrices(log, true), log);
 });
 
 console.log(`\n${passed} passed\n`);

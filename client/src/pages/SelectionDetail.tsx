@@ -1422,7 +1422,7 @@ export default function SelectionDetail() {
                 <DropdownMenuItem
                   onSelect={(e) => e.preventDefault()}
                   disabled={isExportingPdf}
-                  onClick={() => exportPdf(`/api/selections/${id}/pdf`, "selection.pdf")}
+                  onClick={() => exportPdf({ selectionId: id!, filename: `${selection?.name || "selection"}.pdf` })}
                 >
                   {isExportingPdf ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

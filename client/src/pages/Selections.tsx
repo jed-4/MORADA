@@ -1041,7 +1041,7 @@ export default function Selections() {
                     <DropdownMenuItem
                       onSelect={(e) => e.preventDefault()}
                       disabled={isExportingPdf}
-                      onClick={() => exportPdf(`/api/selections/project/${projectId}/pdf`, "selections_schedule.pdf")}
+                      onClick={() => exportPdf({ projectId, filename: "selections_schedule.pdf" })}
                     >
                       {isExportingPdf ? (
                         <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />

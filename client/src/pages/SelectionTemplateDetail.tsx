@@ -76,6 +76,8 @@ interface SelectionOption {
   unitTax?: number;
   gstInclusive?: boolean;
   markupPercent?: number;
+  /** Client charge per unit, cents inc GST. */
+  unitCharge?: number;
   totalCost?: number;
   quantity?: number;
   unitType?: string;
@@ -234,6 +236,7 @@ export default function SelectionTemplateDetail() {
       unitCost: product.defaultUnitCost ?? undefined,
       gstInclusive: (product as any).gstInclusive === true,
       markupPercent: (product as any).defaultMarkupPercent ?? undefined,
+      unitCharge: (product as any).defaultUnitCharge ?? undefined,
       quantity: 1,
       unitType: product.unitType || "ea",
       url: product.url || undefined,
@@ -426,6 +429,7 @@ export default function SelectionTemplateDetail() {
       unitCost: product.defaultUnitCost ? product.defaultUnitCost / 100 : undefined,
       gstInclusive: (product as any).gstInclusive === true,
       markupPercent: (product as any).defaultMarkupPercent ?? undefined,
+      unitCharge: (product as any).defaultUnitCharge ?? undefined,
       quantity: 1,
       unitType: product.unitType || "ea",
       url: product.url || "",
@@ -458,6 +462,7 @@ export default function SelectionTemplateDetail() {
       visibleToClient: option.visibleToClient ?? true,
       isSelectedByClient: option.isSelectedByClient || false,
       markupPercent: option.markupPercent,
+      unitCharge: option.unitCharge,
       specifications: option.specifications || {},
     });
     setOptionDialogOpen(true);
@@ -493,6 +498,7 @@ export default function SelectionTemplateDetail() {
       // Not a dialog field: "set as default" is a menu action on the card.
       isSelectedByClient: (base as any).isSelectedByClient || false,
       markupPercent: values.markupPercent ?? undefined,
+      unitCharge: values.unitCharge ?? undefined,
       totalCost: values.totalCost ?? undefined,
       specifications: specifications ?? undefined,
     });
@@ -615,6 +621,7 @@ export default function SelectionTemplateDetail() {
     unitType: optionForm.unitType ?? "ea",
     unitCost: optionForm.unitCost != null ? Math.round(optionForm.unitCost * 100) : undefined,
     markupPercent: optionForm.markupPercent,
+    unitCharge: optionForm.unitCharge,
     gstInclusive,
     visibleToClient: optionForm.visibleToClient ?? true,
   };
@@ -1170,6 +1177,7 @@ export default function SelectionTemplateDetail() {
         initialValues={optionDialogValues}
         initialSpecifications={optionForm.specifications ?? null}
         onSubmit={handleSaveOption}
+        chargePricing
         mediaPane={optionMediaPane}
       />
 

@@ -253,6 +253,28 @@ export function redactOptionForViewer(option: any, viewer: SelectionViewer): any
   return viewer.canSeePricing ? option : stripOptionMoney(option);
 }
 
+/**
+ * The decision log ("Jane chose “X” ($1,250.00 inc GST)") is written once, as
+ * text, when the choice is made — but read later by people with different
+ * rights, and a selection's "show prices" setting can be switched off after
+ * the fact. So the price is taken out on READ for anyone who may not see it.
+ * Only the system's "Decision log" entries are touched; a person's own comment
+ * is left exactly as they wrote it.
+ */
+const DECISION_LOG_PRICE = / \(\$[\d,]+(?:\.\d{1,2})? inc GST\)/g;
+
+export function redactDecisionLogPrices<T extends { createdByName?: string | null; content?: string | null }>(
+  comments: T[],
+  showPrice: boolean,
+): T[] {
+  if (showPrice || !Array.isArray(comments)) return comments;
+  return comments.map((c) =>
+    c?.createdByName === "Decision log" && typeof c.content === "string"
+      ? { ...c, content: c.content.replace(DECISION_LOG_PRICE, "") }
+      : c,
+  );
+}
+
 /** Product Library money: cost, markup and charge are for pricing-permitted team only. */
 export const PRODUCT_MONEY_FIELDS = ["defaultUnitCost", "defaultMarkupPercent", "defaultUnitCharge", "gstInclusive"] as const;
 
