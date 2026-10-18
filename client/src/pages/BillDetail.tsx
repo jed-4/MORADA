@@ -369,7 +369,15 @@ export default function BillDetail() {
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
   const [modalPreviewFile, setModalPreviewFile] = useState<PreviewFile | null>(null);
-  const [duplicateWarning, setDuplicateWarning] = useState<{ existingBillNumber: string; reference: string } | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    existingBillNumber: string;
+    reference: string;
+    supplierName?: string | null;
+    status?: string | null;
+    // "supplier+reference" is a near-certain duplicate; "reference" alone is
+    // weaker, because two suppliers can use the same invoice number.
+    matchedOn?: "supplier+reference" | "reference";
+  } | null>(null);
   const pendingSubmitDataRef = useRef<BillFormData | null>(null);
   const [unmatchedSupplierDialogOpen, setUnmatchedSupplierDialogOpen] = useState(false);
   const [ocrSupplierData, setOcrSupplierData] = useState<{ name: string; email?: string; phone?: string } | null>(null);
@@ -2243,13 +2251,21 @@ export default function BillDetail() {
   const onSubmit = async (data: BillFormData) => {
     if (data.billReference) {
       try {
-        const checkRes = await fetch(`/api/bills/check-reference?reference=${encodeURIComponent(data.billReference)}${isEditMode ? `&excludeBillId=${id}` : ''}`, { credentials: "include" });
+        // Send the supplier too: same supplier AND same invoice number is a
+        // near-certain duplicate, where the number alone is a weak signal.
+        const params = new URLSearchParams({ reference: data.billReference });
+        if (isEditMode && id) params.set("excludeBillId", id);
+        if (data.supplierId) params.set("supplierId", String(data.supplierId));
+        const checkRes = await fetch(`/api/bills/check-reference?${params}`, { credentials: "include" });
         const checkData = await checkRes.json();
         if (checkData.exists) {
           pendingSubmitDataRef.current = data;
           setDuplicateWarning({
             existingBillNumber: checkData.existingBillNumber || "",
             reference: data.billReference,
+            supplierName: checkData.match?.supplierName ?? null,
+            status: checkData.match?.status ?? null,
+            matchedOn: checkData.match?.matchedOn,
           });
           return;
         }
@@ -5077,12 +5093,19 @@ export default function BillDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Possible duplicate bill</AlertDialogTitle>
             <AlertDialogDescription>
-              A bill with reference{" "}
+              Invoice number{" "}
               <span className="font-medium">"{duplicateWarning?.reference}"</span>
-              {duplicateWarning?.existingBillNumber
-                ? <> already exists ({duplicateWarning.existingBillNumber}).</>
-                : <> already exists.</>}
-              {" "}This is likely a duplicate. Do you still want to save it?
+              {" "}is already on{" "}
+              <span className="font-medium">{duplicateWarning?.existingBillNumber || "another bill"}</span>
+              {duplicateWarning?.supplierName ? <> ({duplicateWarning.supplierName}</> : null}
+              {duplicateWarning?.supplierName && duplicateWarning?.status
+                ? <>, {String(duplicateWarning.status).replace(/_/g, " ")}</>
+                : null}
+              {duplicateWarning?.supplierName ? <>)</> : null}.
+              {duplicateWarning?.matchedOn === "reference"
+                ? " That bill is for a different supplier, so this may be fine — two suppliers can use the same invoice number."
+                : " Saving this will put the same supplier invoice in twice."}
+              {" "}Save it anyway?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
