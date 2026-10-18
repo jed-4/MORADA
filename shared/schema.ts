@@ -1676,6 +1676,9 @@ export const selectionOptions = pgTable("selection_options", {
   productId: integer("product_id"), // Link to product library entry (set via save-to-library or add-from-library)
   specifications: json("specifications").$type<Record<string, any>>(), // Structured product specs (dimensions, finish, material, etc.)
   notes: text("notes"), // Internal notes for trades team
+  // Suggested by the client (selections.clientCanAddOption), and who by.
+  clientSuggested: boolean("client_suggested").notNull().default(false),
+  suggestedBy: text("suggested_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

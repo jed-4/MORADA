@@ -1,8 +1,9 @@
+import { SuggestOptionDialog, type SuggestedOption } from "@/components/selections/SuggestOptionDialog";
 import { CroppedImage } from "@/components/CroppedImage";
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp, LayoutGrid, Columns3, X, Images } from "lucide-react";
+import { Loader2, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp, LayoutGrid, Columns3, X, Images, Lightbulb } from "lucide-react";
 import { PortalLayout } from "@/components/portal/PortalLayout";
 import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,8 @@ interface PortalOption {
   approvedAt?: string | null;
   isSelectedByClient?: boolean;
   clientPrice?: number | null; // cents inc GST; null when hidden or not costed
+  clientSuggested?: boolean;
+  suggestedBy?: string | null;
   attachments?: PortalAttachment[];
 }
 
@@ -47,6 +50,7 @@ interface PortalData {
     allowance?: number | null; // cents; null when price hidden
     clientCanSeePrice?: boolean;
     clientCanChange?: boolean;
+    clientCanAddOption?: boolean;
     locked?: boolean;
     options: PortalOption[];
   };
@@ -90,6 +94,27 @@ export default function SelectionPortal() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/portal/selections", token] });
+    },
+  });
+
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const suggestMutation = useMutation({
+    mutationFn: async (value: SuggestedOption) => {
+      const res = await fetch(`/api/portal/selections/${token}/options`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...value, clientName: value.clientName || clientName.trim() || "Client" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "We couldn't send your suggestion");
+      }
+      return res.json();
+    },
+    onSuccess: (_d, value) => {
+      if (value.clientName) setClientName(value.clientName);
+      setSuggestOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/portal/selections", token] });
     },
   });
@@ -201,6 +226,32 @@ export default function SelectionPortal() {
             )}
           </div>
 
+          {selection.clientCanAddOption && !isLocked && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed bg-card p-3">
+              <p className="text-sm text-muted-foreground">Seen something you'd prefer? Suggest it and your builder will price it.</p>
+              <button
+                type="button"
+                onClick={() => setSuggestOpen(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md border px-3 h-8 text-sm hover-elevate"
+                data-testid="button-portal-suggest"
+              >
+                <Lightbulb className="w-4 h-4" />
+                Suggest an option
+              </button>
+            </div>
+          )}
+          {suggestMutation.isError && (
+            <p className="text-sm text-destructive px-1">{(suggestMutation.error as Error)?.message}</p>
+          )}
+          <SuggestOptionDialog
+            open={suggestOpen}
+            onOpenChange={setSuggestOpen}
+            submitting={suggestMutation.isPending}
+            askName
+            defaultName={clientName}
+            onSubmit={(value) => suggestMutation.mutate(value)}
+          />
+
           {selection.options.length === 0 && (
             <div className="bg-card rounded-xl p-8 text-center">
               <Package className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-50" />
@@ -260,6 +311,12 @@ export default function SelectionPortal() {
                     {/* Body */}
                     <div className="p-3.5 flex flex-col flex-1">
                       <div className="font-medium text-sm leading-snug">{option.name}</div>
+                      {option.clientSuggested && (
+                        <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Lightbulb className="w-3 h-3" />
+                          {option.suggestedBy ? `Suggested by ${option.suggestedBy}` : "Client suggestion"}
+                        </div>
+                      )}
                       {(option.brand || option.sku) && (
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {[option.brand, option.sku].filter(Boolean).join(" · ")}

@@ -29621,6 +29621,9 @@ export class DbStorage implements IStorage {
       await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS gst_inclusive boolean NOT NULL DEFAULT false`);
       // Migration 0106.
       await db.execute(sql`ALTER TABLE selection_template_options ADD COLUMN IF NOT EXISTS unit_charge integer`);
+      // Migration 0107.
+      await db.execute(sql`ALTER TABLE selection_options ADD COLUMN IF NOT EXISTS client_suggested boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`ALTER TABLE selection_options ADD COLUMN IF NOT EXISTS suggested_by text`);
     } catch (error) {
       console.error("Failed to ensure selection pricing columns:", error);
     }

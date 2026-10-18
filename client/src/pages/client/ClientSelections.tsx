@@ -40,6 +40,9 @@ export interface ClientSelectionOption {
   unitType?: string | null;
   totalCost?: number | null;
   isSelectedByClient?: boolean | null;
+  /** Suggested by the client, and who by. */
+  clientSuggested?: boolean | null;
+  suggestedBy?: string | null;
   approvedAt?: string | null;
   attachments?: Array<{ id: string; filePath?: string | null; fileType?: string | null; thumbnailX?: number | null; thumbnailY?: number | null; thumbnailZoom?: number | null }>;
 }
@@ -53,6 +56,8 @@ export interface ClientSelection {
   deadline?: string | null;
   clientCanSeePrice?: boolean | null;
   clientCanChange?: boolean | null;
+  /** The builder allows the client to suggest options here. */
+  clientCanAddOption?: boolean | null;
   options?: ClientSelectionOption[];
 }
 

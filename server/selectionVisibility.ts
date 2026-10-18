@@ -64,7 +64,7 @@ export const OPTION_NON_MONEY_FIELDS = [
   "id", "selectionId", "name", "description", "sku", "brand", "category", "subcategory",
   "quantity", "unitType", "url", "visibleToClient", "isSelectedByClient", "sortOrder",
   "approvedAt", "approvedById", "approvedBy", "lockedAt", "productId", "specifications",
-  "notes", "createdAt", "updatedAt",
+  "notes", "clientSuggested", "suggestedBy", "createdAt", "updatedAt",
 ] as const;
 
 /**
@@ -76,8 +76,8 @@ export const OPTION_NON_MONEY_FIELDS = [
 export const CLIENT_OPTION_FIELDS = [
   "id", "selectionId", "name", "description", "sku", "brand", "category", "subcategory",
   "quantity", "unitType", "url", "visibleToClient", "isSelectedByClient", "sortOrder",
-  "approvedAt", "approvedBy", "lockedAt", "specifications", "createdAt", "updatedAt",
-  "attachments",
+  "approvedAt", "approvedBy", "lockedAt", "specifications", "clientSuggested", "suggestedBy",
+  "createdAt", "updatedAt", "attachments",
 ] as const;
 
 /**

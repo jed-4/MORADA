@@ -402,6 +402,14 @@ const ALLOW_RULES: AllowRule[] = [
     permission: [PORTAL_KEYS.selections, "edit"],
     project: projectViaSelection,
   },
+  // Suggest an option — only on selections where the builder allows it
+  // (clientCanAddOption); the route checks that, and that it isn't locked.
+  {
+    methods: ["POST"],
+    pattern: /^\/selections\/[^/]+\/client-options$/,
+    permission: [PORTAL_KEYS.selections, "edit"],
+    project: projectViaSelection,
+  },
   {
     methods: ["GET"],
     pattern: /^\/selections\/[^/]+\/client-comments$/,
