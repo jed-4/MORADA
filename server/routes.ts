@@ -229,6 +229,7 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
 import { buildRoundingLine } from "./services/xeroBillRounding";
 import { isLockedInXero } from "./services/xeroLockedBill";
+import { deriveBillStatusFromXero, isDeadInXero } from "./services/xeroBillStatus";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import {
@@ -1189,9 +1190,22 @@ async function pushBillToXeroUnguarded(
       const lockedBill = await storage.getBillById(billId).catch(() => null);
       if (isLockedInXero(error.validationErrors, lockedBill?.xeroInvoiceId)) {
         // Pull AmountPaid/status so Paid/Due reflect reality going forward.
-        await syncBillFromXeroInternal(billId, companyId).catch((e) => {
+        const healed: any = await syncBillFromXeroInternal(billId, companyId).catch((e) => {
           console.error("[pushBillToXeroInternal] self-heal sync failed:", e);
+          return null;
         });
+        // Voided is not settled. Xero refuses both with the same text, but they
+        // call for opposite things from the user: a settled bill is finished,
+        // a voided one needs unlinking before it can go again. Saying "already
+        // settled" about a bill somebody deliberately voided is what left the
+        // re-entered Bunnings bills looking stuck with nowhere to go.
+        if (healed?.voided) {
+          const voidedMsg =
+            "The Xero bill this is linked to has been voided or deleted, so Xero won't accept changes to it. " +
+            "Nothing in Morada was changed. Unlink it from the Xero review queue to send it to Xero as a new bill.";
+          logOutcome({ ok: false, reason: "XERO_VOIDED", message: voidedMsg, xeroInvoiceId: lockedBill?.xeroInvoiceId ?? undefined });
+          return { ok: false, status: 409, error: "XERO_VOIDED", message: voidedMsg };
+        }
         const lockedMsg =
           "This bill is already settled in Xero, so Xero won't accept changes to it. Your edit was saved in Morada, and its status has been pulled back from Xero.";
         try {
@@ -1340,26 +1354,6 @@ const XERO_PAYMENT_METHOD = "Xero";
  * Shared by the full sync and the safe-half sync so the two can never drift
  * apart on what a Xero status means.
  */
-function deriveBillStatusFromXero(
-  localStatus: string,
-  xeroStatus: string,
-  amountPaidCents: number,
-  totalCents: number,
-): { status: string; voidNote?: string } {
-  if (xeroStatus === "PAID") return { status: "paid" };
-  if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-    return {
-      status: "draft",
-      voidNote: `Voided/Deleted in Xero on ${new Date().toISOString().slice(0, 10)}`,
-    };
-  }
-  // Don't demote a locally-paid bill on a non-PAID Xero update.
-  if (localStatus === "paid") return { status: "paid" };
-  if (amountPaidCents > 0 && amountPaidCents < totalCents) return { status: "awaiting_payment" };
-  if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") return { status: "awaiting_payment" };
-  if (amountPaidCents === 0 && xeroStatus === "SUBMITTED") return { status: "awaiting_approval" };
-  return { status: localStatus };
-}
 
 /**
  * Mirror the payments Xero holds against an invoice into `bill_payments`.
@@ -1528,6 +1522,30 @@ async function syncBillFromXeroInternal(
     const taxCents = Math.round((invoice.TotalTax || 0) * 100);
     const totalCents = Math.round((invoice.Total || 0) * 100);
     const xeroStatus = invoice.Status as string;
+
+    // A voided or deleted Xero invoice is not a source of truth about anything.
+    // Its AmountPaid is zero and its totals are whatever they were when it was
+    // killed, so writing them over the Morada bill wipes a real payment and a
+    // real total on the strength of a document somebody deliberately threw
+    // away. Flag it for review and leave every figure alone — the review queue
+    // already offers Unlink, which is the decision a human has to make.
+    const xeroIsDead = isDeadInXero(xeroStatus);
+    if (xeroIsDead) {
+      await storage.updateBill(bill.id, {
+        xeroPaidStatus: xeroStatus,
+        xeroVoidedAt: new Date(),
+        xeroReviewReason: "voided_in_xero",
+        xeroReviewDetectedAt: new Date(),
+        xeroLastSyncAt: new Date(),
+        xeroLastSyncStatus: "success",
+        xeroLastSyncError: null,
+      } as any);
+      return {
+        ok: true,
+        voided: true,
+        message: "This bill is voided or deleted in Xero. Nothing was changed in Morada — unlink it from the Xero review queue if it should be sent again.",
+      } as any;
+    }
 
     const { status: newStatus, voidNote: extraNotes } =
       deriveBillStatusFromXero(bill.status, xeroStatus, amountPaidCents, totalCents);

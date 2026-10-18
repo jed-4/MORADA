@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { selectAdoptableBills } from "./xeroBillStatus";
 import type { XeroConnection } from "@shared/schema";
 import { encryptToken, decryptToken } from "../utils/encryption";
 import { parseBankSummaryBalances } from "./xeroBankSummary";
@@ -1603,10 +1604,7 @@ export class XeroService {
         continue;
       }
       const data = (await response.json()) as any;
-      for (const inv of data.Invoices || []) {
-        const status = String(inv.Status || "").toUpperCase();
-        if (status === "VOIDED" || status === "DELETED") continue;
-        if (opts.contactId && inv.Contact?.ContactID && inv.Contact.ContactID !== opts.contactId) continue;
+      for (const inv of selectAdoptableBills(data.Invoices || [], opts.contactId)) {
         if (inv.InvoiceID && !seen.has(inv.InvoiceID)) {
           seen.add(inv.InvoiceID);
           found.push(inv);
