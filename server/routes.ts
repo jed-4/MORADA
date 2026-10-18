@@ -15866,8 +15866,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const markup = Number(chosen.markupPercent) || 0;
       const rawUnit = chosen.unitCost ?? 0;
       const unitCostExTaxCents = chosen.gstInclusive ? Math.round(rawUnit / 1.1) : rawUnit;
-      const totalExGst = Math.round(unitCostExTaxCents * qty * (1 + markup / 100));
-      const totalIncGst = Math.round(totalExGst * 1.1);
+      // What the client is charged: the stored charge × qty when there is one
+      // (the figure they were shown), else cost × qty × markup as before.
+      const totalIncGst = optionClientPriceCents(chosen)
+        ?? Math.round(Math.round(unitCostExTaxCents * qty * (1 + markup / 100)) * 1.1);
       const unitPriceIncGst = qty > 0 ? Math.round(totalIncGst / qty) : totalIncGst;
 
       const payload = {
