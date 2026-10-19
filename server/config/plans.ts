@@ -32,6 +32,8 @@ export interface PlanLimits {
 export interface PlanDefinition {
   key: PlanKey;
   name: string;
+  /** One-line positioning copy shown on the pricing cards (landing + onboarding). */
+  tagline: string;
   /** Monthly price in AUD (whole dollars). */
   monthlyPrice: number;
   /** Annual price in AUD (whole dollars) — equivalent to ~10 months (2 free). */
@@ -100,6 +102,7 @@ export const PLANS: Record<PlanKey, PlanDefinition> = {
   subbie: {
     key: "subbie",
     name: "Subbie",
+    tagline: "For solo trades getting started",
     monthlyPrice: 35,
     annualPrice: 350,
     monthlyPriceId: priceId("SUBBIE", "MONTHLY", "price_subbie_monthly"),
@@ -126,6 +129,7 @@ export const PLANS: Record<PlanKey, PlanDefinition> = {
   solo: {
     key: "solo",
     name: "Solo",
+    tagline: "For small teams running a few jobs",
     monthlyPrice: 149,
     annualPrice: 1490,
     monthlyPriceId: priceId("SOLO", "MONTHLY", "price_solo_monthly"),
@@ -152,6 +156,7 @@ export const PLANS: Record<PlanKey, PlanDefinition> = {
   builder: {
     key: "builder",
     name: "Builder",
+    tagline: "For growing residential builders",
     monthlyPrice: 249,
     annualPrice: 2490,
     monthlyPriceId: priceId("BUILDER", "MONTHLY", "price_builder_monthly"),
@@ -168,6 +173,7 @@ export const PLANS: Record<PlanKey, PlanDefinition> = {
   studio: {
     key: "studio",
     name: "Studio",
+    tagline: "For established multi-project builders",
     monthlyPrice: 349,
     annualPrice: 3490,
     monthlyPriceId: priceId("STUDIO", "MONTHLY", "price_studio_monthly"),
