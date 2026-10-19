@@ -104,7 +104,6 @@
     "server/routes.ts POST /api/favorite-suppliers/reorder",
     "server/routes.ts POST /api/field-categories/seed-missing",
     "server/routes.ts POST /api/labour-estimates/:id/categories",
-    "server/routes.ts POST /api/minutes",
     "server/routes.ts POST /api/notifications/:id/dismiss",
     "server/routes.ts POST /api/notifications/read-all",
     "server/routes.ts POST /api/notifications/unregister-device",

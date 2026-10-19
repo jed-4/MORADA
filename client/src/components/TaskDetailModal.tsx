@@ -35,11 +35,13 @@ import {
   CircleCheck,
   AlertTriangle,
   CalendarPlus,
+  ClipboardList,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getPriorityStyle } from "@/lib/priorityConfig";
 import type { CalendarEvent } from "./EnhancedCalendar";
 import type { Task, Project } from "@shared/schema";
+import { MINUTE_ACTION_REFERENCE } from "@shared/minuteActionItems";
 
 type ChecklistItem = { id?: string; text: string; completed: boolean };
 
@@ -104,6 +106,19 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     queryKey: ["/api/schedule-items", bookedAgainstId],
     queryFn: () => apiRequest(`/api/schedule-items/${bookedAgainstId}`, "GET").catch(() => null),
     enabled: open && !!bookedAgainstId,
+  });
+
+  // When the open task came out of a meeting, the minutes it was agreed in.
+  // The link was one-directional until now: you could see a meeting's actions
+  // from the minutes, but a task sitting in someone's To-Dos gave no clue where
+  // it came from — and "who asked for this, and when?" is the first question
+  // anyone asks about work they did not write down themselves.
+  const fromMinuteId =
+    taskDetails?.referenceType === MINUTE_ACTION_REFERENCE ? taskDetails?.referenceId : null;
+  const { data: fromMinute } = useQuery<any>({
+    queryKey: ["/api/minutes", fromMinuteId],
+    queryFn: () => apiRequest(`/api/minutes/${fromMinuteId}`, "GET").catch(() => null),
+    enabled: open && !!fromMinuteId,
   });
 
   // Fetch project details - use taskDetails.projectId when opened via taskId
@@ -616,6 +631,34 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
                       </span>
                     </div>
                   ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* This task is an action item agreed in a meeting */}
+          {fromMinute && (
+            <>
+              <Separator />
+              <div className="flex items-start gap-2">
+                <ClipboardList className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Agreed in</div>
+                  <button
+                    className="text-sm font-medium hover:underline text-left truncate"
+                    onClick={() => {
+                      navigate(`/minutes/${fromMinute.id}`);
+                      onOpenChange(false);
+                    }}
+                    data-testid="from-minute-link"
+                  >
+                    {fromMinute.title}
+                  </button>
+                  {fromMinute.meetingDate && (
+                    <div className="text-xs text-muted-foreground">
+                      {format(new Date(fromMinute.meetingDate), "d MMM yyyy")}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

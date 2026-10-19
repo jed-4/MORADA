@@ -14,6 +14,13 @@ import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
 import { DetailLayout } from "@/components/detail/DetailLayout";
 import { DocumentSection } from "@/components/detail/DocumentSection";
 import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
+import TaskEditModal from "@/components/TaskEditModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Minute } from "@shared/schema";
 import {
   ArrowLeft,
@@ -24,7 +31,11 @@ import {
   Sparkles,
   Loader2,
   ChevronRight,
+  Check,
   Link as LinkIcon,
+  MoreHorizontal,
+  ListPlus,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -46,6 +57,110 @@ function toLocalDateTimeInput(value: Date | string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+
+/** One action item. Completing it here is the same write the To-Dos list makes,
+ *  because it is the same task — there is no second copy to keep in step. */
+/** The three-dot menu each action item carries. Kept in one place so a tracked
+ *  item and one still sitting in the old notes list look identical until you
+ *  open it — the difference is what the menu offers, not how the row reads. */
+function RowMenu({ children, testId }: { children: React.ReactNode; testId: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+          aria-label="Action item options"
+          data-testid={testId}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ActionRow({ task, onToggle, carried, onOpenTask }: { task: any; onToggle: () => void; carried?: boolean; onOpenTask?: (id: string) => void }) {
+  const done = task.status === "done" || !!task.completedAt;
+  const names: string[] = Array.isArray(task.assigneeNames) ? task.assigneeNames : [];
+  return (
+    <div className="flex items-start gap-2 group" data-testid={`action-item-${task.id}`}>
+      <button
+        onClick={onToggle}
+        className="mt-0.5 h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 hover-elevate"
+        aria-label={done ? "Mark as not done" : "Mark as done"}
+        data-testid={`toggle-action-${task.id}`}
+      >
+        {done && <Check className="h-3 w-3" />}
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm leading-5 ${done ? "line-through text-muted-foreground" : ""}`}>
+          {task.title}
+        </p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {names.length > 0 && <span className="truncate">{names.join(", ")}</span>}
+          {task.dueDate && <span>due {format(new Date(task.dueDate), "d MMM")}</span>}
+          {carried && <span className="italic">from an earlier meeting</span>}
+        </div>
+      </div>
+      {onOpenTask && (
+        <RowMenu testId={`menu-action-${task.id}`}>
+          <DropdownMenuItem onClick={() => onOpenTask(task.id)} data-testid={`menu-open-task-${task.id}`}>
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Open task
+          </DropdownMenuItem>
+        </RowMenu>
+      )}
+    </div>
+  );
+}
+
+/** An action item recorded before they became tasks: free text, a typed name
+ *  instead of a person, and no presence in anyone's To-Dos. Every minute taken
+ *  until now has these, so they are shown rather than hidden — with the one
+ *  thing they are missing offered on the menu. */
+function LegacyActionRow({
+  item,
+  index,
+  onPromote,
+  promoting,
+}: {
+  item: any;
+  index: number;
+  onPromote: () => void;
+  promoting: boolean;
+}) {
+  const done = item.completed === true;
+  return (
+    <div className="flex items-start gap-2 group" data-testid={`legacy-action-item-${index}`}>
+      <div
+        className="mt-0.5 h-4 w-4 rounded border border-dashed flex items-center justify-center flex-shrink-0 text-muted-foreground"
+        title="Not a task yet"
+      >
+        {done && <Check className="h-3 w-3" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm leading-5 ${done ? "line-through text-muted-foreground" : ""}`}>
+          {item.description}
+        </p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {item.assignee && <span className="truncate">{item.assignee}</span>}
+          {item.dueDate && <span>due {format(new Date(item.dueDate), "d MMM")}</span>}
+          <span className="italic">not a task</span>
+        </div>
+      </div>
+      <RowMenu testId={`menu-legacy-action-${index}`}>
+        <DropdownMenuItem onClick={onPromote} disabled={promoting} data-testid={`menu-create-task-${index}`}>
+          <ListPlus className="h-4 w-4 mr-2" />
+          Create task
+        </DropdownMenuItem>
+      </RowMenu>
+    </div>
+  );
 }
 
 export default function MinuteDetail() {
@@ -88,6 +203,7 @@ export default function MinuteDetail() {
       setEditedLocation(minute.location || "");
       setEditedRecordingUrl(minute.recordingUrl || "");
       setEditedAttendees((minute.attendees as Attendee[]) || []);
+      notesBaselineRef.current = null;
       setHydrated(true);
     }
   }, [minute]);
@@ -116,6 +232,79 @@ export default function MinuteDetail() {
     },
   });
 
+  // Action items are tasks (notes with type "task") linked back to this minute,
+  // so they appear in To-Dos and are completed from either place — see
+  // shared/minuteActionItems.ts.
+  const { data: actions = { items: [], carriedForward: [] } } = useQuery<{ items: any[]; carriedForward: any[] }>({
+    queryKey: ["/api/minutes", id, "action-items"],
+    queryFn: async () => {
+      const r = await fetch(`/api/minutes/${id}/action-items`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch action items");
+      return r.json();
+    },
+    enabled: !!id,
+  });
+
+  // Carried on the minute itself, from before action items were tasks. These
+  // were not rendered anywhere, so every action item recorded until now was
+  // invisible on this page.
+  const legacyActions: any[] = Array.isArray((minute as any)?.actionItems)
+    ? (minute as any).actionItems
+    : [];
+
+  const [newAction, setNewAction] = useState("");
+  const addActionMutation = useMutation({
+    mutationFn: async (title: string) => apiRequest(`/api/minutes/${id}/action-items`, "POST", { title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id, "action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      setNewAction("");
+    },
+    onError: () => toast({ title: "Could not add the action item", variant: "destructive" }),
+  });
+
+  const toggleActionMutation = useMutation({
+    mutationFn: async (task: any) =>
+      apiRequest(`/api/notes/${task.id}`, "PATCH", {
+        status: task.status === "done" ? "todo" : "done",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id, "action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+    },
+    onError: () => toast({ title: "Could not update the action item", variant: "destructive" }),
+  });
+
+  // Opening the task itself is where assigning and due dates already live, so
+  // the menu reuses it rather than growing a second set of pickers here.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  const promoteMutation = useMutation({
+    mutationFn: async (args: { index: number; description: string }) =>
+      apiRequest(`/api/minutes/${id}/action-items/promote`, "POST", args),
+    onSuccess: (res: any) => {
+      // The minute itself changed too — the item moved out of its notes list.
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id, "action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      // Say so when the recorded name is not someone in Morada, rather than
+      // creating an unassigned task and letting them find out later.
+      toast({
+        title: "Task created",
+        description: res?.unmatchedAssignee
+          ? `No Morada user matches "${res.unmatchedAssignee}", so it is unassigned.`
+          : undefined,
+      });
+    },
+    onError: (e: any) =>
+      toast({
+        title: "Could not create the task",
+        description: e?.message,
+        variant: "destructive",
+      }),
+  });
+
   // Generate AI summary mutation
   const generateSummaryMutation = useMutation({
     mutationFn: async () => {
@@ -134,7 +323,17 @@ export default function MinuteDetail() {
     },
   });
 
+  // The editor's own reading of the notes, captured the first time it reports
+  // one. Comparing against the stored contentText instead looks like an edit
+  // whenever the two were never written together — which is true of every
+  // minute whose text was imported or seeded rather than typed here. That lit
+  // Save permanently, the exact thing the one-button rewrite set out to stop.
+  // The baseline is what the editor itself started from, so "dirty" means the
+  // words changed, whatever shape the stored copy is in.
+  const notesBaselineRef = useRef<string | null>(null);
+
   const handleContentChange = (html: string, text: string) => {
+    if (notesBaselineRef.current === null) notesBaselineRef.current = normaliseText(text);
     setContentHtml(html);
     setContentText(text);
   };
@@ -162,7 +361,7 @@ export default function MinuteDetail() {
     editedDate !== toLocalDateTimeInput(minute.meetingDate) ||
     editedLocation !== (minute.location || "") ||
     editedRecordingUrl !== (minute.recordingUrl || "") ||
-    normaliseText(contentText) !== normaliseText(minute.contentText) ||
+    normaliseText(contentText) !== (notesBaselineRef.current ?? normaliseText(minute.contentText)) ||
     JSON.stringify(editedAttendees) !== JSON.stringify((minute.attendees as Attendee[]) || [])
   );
 
@@ -332,6 +531,107 @@ export default function MinuteDetail() {
         </DocumentSection>
 
         <DocumentSection
+          title="Action items"
+          role="manual"
+          count={actions.items.length + legacyActions.length}
+          divider={false}
+          isEmpty={
+            actions.items.length === 0 &&
+            actions.carriedForward.length === 0 &&
+            legacyActions.length === 0
+          }
+          data-testid="section-action-items"
+        >
+          <div className="px-3.5 py-3 space-y-3">
+            <div className="space-y-1">
+              {actions.items.map((t: any) => (
+                <ActionRow
+                  key={t.id}
+                  task={t}
+                  onToggle={() => toggleActionMutation.mutate(t)}
+                  onOpenTask={setOpenTaskId}
+                />
+              ))}
+              {actions.items.length === 0 && legacyActions.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Nothing assigned yet. Anything added here becomes a task, so it shows up in the
+                  assignee's To&nbsp;Dos.
+                </p>
+              )}
+            </div>
+
+            {/* Recorded before action items were tasks. Shown as they are, with
+                "Create task" on the menu, because quietly converting someone's
+                historical minutes is not ours to do — and silently hiding them
+                is worse. */}
+            {legacyActions.length > 0 && (
+              <div className="space-y-1 pt-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Recorded in this meeting, not yet tasks
+                </p>
+                {legacyActions.map((item: any, i: number) => (
+                  <LegacyActionRow
+                    key={`${i}-${item?.description ?? ""}`}
+                    item={item}
+                    index={i}
+                    promoting={promoteMutation.isPending}
+                    onPromote={() =>
+                      promoteMutation.mutate({ index: i, description: String(item?.description ?? "") })
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Input
+                className="h-8 text-sm"
+                placeholder="Who is doing what…"
+                value={newAction}
+                onChange={(e) => setNewAction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newAction.trim()) {
+                    e.preventDefault();
+                    addActionMutation.mutate(newAction.trim());
+                  }
+                }}
+                data-testid="input-new-action-item"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs flex-shrink-0"
+                disabled={!newAction.trim() || addActionMutation.isPending}
+                onClick={() => addActionMutation.mutate(newAction.trim())}
+                data-testid="button-add-action-item"
+              >
+                Add
+              </Button>
+            </div>
+
+            {/* What the last meetings agreed and nobody has finished. A meeting
+                that never revisits its own actions is how they stop meaning
+                anything. */}
+            {actions.carriedForward.length > 0 && (
+              <div className="pt-2 border-t space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Still open from earlier meetings
+                </p>
+                {actions.carriedForward.map((t: any) => (
+                  <ActionRow
+                    key={t.id}
+                    task={t}
+                    onToggle={() => toggleActionMutation.mutate(t)}
+                    onOpenTask={setOpenTaskId}
+                    carried
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </DocumentSection>
+
+        <DocumentSection
           title="AI summary"
           role="meta"
           divider={false}
@@ -366,6 +666,16 @@ export default function MinuteDetail() {
           </div>
         </DocumentSection>
       </DetailLayout>
+
+      {/* Opening the task in place: assigning it and giving it a date already
+          live there, so the minute does not need its own pickers. */}
+      {openTaskId && (
+        <TaskEditModal
+          taskId={openTaskId}
+          open={!!openTaskId}
+          onOpenChange={(o) => !o && setOpenTaskId(null)}
+        />
+      )}
     </div>
   );
 }
