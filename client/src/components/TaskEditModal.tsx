@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import TaskComments from "@/components/TaskComments";
 import { type Task, type FieldCategoryWithOptions, type Project, type Reminder } from "@shared/schema";
+import { MINUTE_ACTION_REFERENCE } from "@shared/minuteActionItems";
 import { z } from "zod";
 import { format, addDays } from "date-fns";
 import {
@@ -365,6 +367,21 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const { toast } = useToast();
   const { user } = useAuth();
   const businessLabel = (user as any)?.companyNickname || "Business";
+  const [, navigate] = useLocation();
+
+  // When this task was an action item agreed in a meeting, the minutes it came
+  // from. Without this the task is context-free in someone's To-Dos: the first
+  // question about work you did not write down yourself is who asked for it.
+  const fromMinuteId =
+    task?.referenceType === MINUTE_ACTION_REFERENCE ? task?.referenceId : null;
+  const { data: fromMinute } = useQuery<any>({
+    queryKey: ["/api/minutes", fromMinuteId],
+    queryFn: () =>
+      fetch(`/api/minutes/${fromMinuteId}`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    enabled: open && !!fromMinuteId,
+  });
 
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
@@ -1141,6 +1158,33 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             </DropdownMenu>
           </div>
         </div>
+
+        {/* Origin of this task, when it came from somewhere else in Morada */}
+        {fromMinute && (
+          <div className="flex items-center gap-2 px-6 py-2 border-b bg-muted/10 text-sm">
+            <ClipboardList className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-muted-foreground flex-shrink-0">Agreed in</span>
+            <button
+              type="button"
+              className="font-medium hover:underline truncate text-left"
+              onClick={() => {
+                // Close before the route change: navigating first unmounts this
+                // modal's parent mid-exit and leaves the dialog stranded over
+                // the destination page.
+                onOpenChange(false);
+                setTimeout(() => navigate(`/minutes/${fromMinute.id}`), 0);
+              }}
+              data-testid="link-from-minute"
+            >
+              {fromMinute.title}
+            </button>
+            {fromMinute.meetingDate && (
+              <span className="text-muted-foreground flex-shrink-0">
+                · {format(new Date(fromMinute.meetingDate), "d MMM yyyy")}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Main Content - Two Columns */}
         <div className="flex flex-1 overflow-hidden">
