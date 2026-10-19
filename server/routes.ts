@@ -222,6 +222,7 @@ import {
 // existing routes already referenced `schema.` without this import and threw
 // a ReferenceError at runtime (every selections-portal request 500ed).
 import * as schema from "@shared/schema";
+import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems } from "@shared/minuteActionItems";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -4072,6 +4073,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete minute" });
+    }
+  });
+
+  /**
+   * Action items on a minute, and what is still open from earlier meetings.
+   *
+   * These are tasks (`notes` rows with type "task") carrying
+   * referenceType = "minute_action_item", not rows in a table of their own —
+   * see shared/minuteActionItems.ts for why. Completing, reassigning or
+   * rescheduling one goes through the normal task endpoints; there is only one
+   * row, so it cannot drift from the To-Do the person actually works off.
+   */
+  app.get("/api/minutes/:id/action-items", requireAuth, requirePermission("projects.minutes", "view"), async (req, res) => {
+    try {
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
+      const companyId = (req.user as any)?.companyId;
+
+      const all = await db.select().from(schema.notes).where(
+        and(
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.referenceType, MINUTE_ACTION_REFERENCE),
+          isNull(schema.notes.archivedAt),
+        ),
+      );
+
+      const mine = all.filter((t: any) => t.referenceId === req.params.id);
+      // Carried forward: still-open items from this project's EARLIER minutes.
+      // Earlier by meeting date, not merely "some other meeting" — opening a
+      // minute from March should not show it carrying work forward out of May.
+      // Business-level minutes carry nothing forward: there is no series to
+      // carry them within.
+      const siblingIds = minute.projectId
+        ? new Set(
+            (await db.select({ id: schema.minutes.id, meetingDate: schema.minutes.meetingDate })
+              .from(schema.minutes)
+              .where(eq(schema.minutes.projectId, minute.projectId)))
+              .filter((m: any) =>
+                m.id !== minute.id &&
+                new Date(m.meetingDate).getTime() < new Date(minute.meetingDate).getTime())
+              .map((m: any) => m.id),
+          )
+        : new Set<string>();
+      const earlier = carriedForward(
+        all.filter((t: any) => t.referenceId && siblingIds.has(t.referenceId)) as any,
+        req.params.id,
+      );
+
+      res.json({ items: sortActionItems(mine as any), carriedForward: sortActionItems(earlier as any) });
+    } catch (error: any) {
+      console.error("[minutes/action-items] list:", error);
+      res.status(500).json({ error: "Failed to fetch action items" });
+    }
+  });
+
+  app.post("/api/minutes/:id/action-items", requireAuth, requirePermission("projects.minutes", "edit"), async (req, res) => {
+    try {
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
+      const user = req.user as any;
+      const companyId = user?.companyId;
+
+      const title = String(req.body?.title ?? "").trim();
+      if (!title) return res.status(400).json({ error: "An action item needs a description" });
+
+      const assigneeIds: string[] = Array.isArray(req.body?.assigneeIds)
+        ? req.body.assigneeIds.filter((v: any) => typeof v === "string" && v)
+        : [];
+      const dueDate = req.body?.dueDate ? new Date(req.body.dueDate) : null;
+
+      const actorName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Unknown User";
+      const note = await storage.createNote({
+        companyId,
+        title,
+        content: "",
+        type: "task",
+        status: "todo",
+        scope: minute.projectId ? "project" : "personal",
+        projectId: minute.projectId ?? null,
+        taskContextType: minute.projectId ? "project" : "business",
+        taskContextId: minute.projectId ?? companyId,
+        assigneeIds,
+        dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null,
+        // The link back to the meeting it came out of.
+        referenceType: MINUTE_ACTION_REFERENCE,
+        referenceId: minute.id,
+        ownerId: user?.id,
+        ownerName: actorName,
+        author: actorName,
+      } as any);
+
+      // Same notification path as a task created anywhere else: being assigned
+      // work in a meeting you were not at is exactly when you need telling.
+      try {
+        await notifyNoteAssignmentAndMentions({ note, actorUserId: user?.id, companyId, actorName });
+      } catch (e) {
+        console.error("[minutes/action-items] notify failed:", e);
+      }
+
+      res.status(201).json(note);
+    } catch (error: any) {
+      console.error("[minutes/action-items] create:", error);
+      res.status(500).json({ error: "Failed to create action item" });
     }
   });
 

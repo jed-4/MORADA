@@ -24,6 +24,7 @@ import {
   Sparkles,
   Loader2,
   ChevronRight,
+  Check,
   Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -46,6 +47,36 @@ function toLocalDateTimeInput(value: Date | string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+
+/** One action item. Completing it here is the same write the To-Dos list makes,
+ *  because it is the same task — there is no second copy to keep in step. */
+function ActionRow({ task, onToggle, carried }: { task: any; onToggle: () => void; carried?: boolean }) {
+  const done = task.status === "done" || !!task.completedAt;
+  const names: string[] = Array.isArray(task.assigneeNames) ? task.assigneeNames : [];
+  return (
+    <div className="flex items-start gap-2 group" data-testid={`action-item-${task.id}`}>
+      <button
+        onClick={onToggle}
+        className="mt-0.5 h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 hover-elevate"
+        aria-label={done ? "Mark as not done" : "Mark as done"}
+        data-testid={`toggle-action-${task.id}`}
+      >
+        {done && <Check className="h-3 w-3" />}
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm leading-5 ${done ? "line-through text-muted-foreground" : ""}`}>
+          {task.title}
+        </p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {names.length > 0 && <span className="truncate">{names.join(", ")}</span>}
+          {task.dueDate && <span>due {format(new Date(task.dueDate), "d MMM")}</span>}
+          {carried && <span className="italic">from an earlier meeting</span>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function MinuteDetail() {
@@ -114,6 +145,42 @@ export default function MinuteDetail() {
     onError: () => {
       toast({ title: "Failed to update meeting minutes", variant: "destructive" });
     },
+  });
+
+  // Action items are tasks (notes with type "task") linked back to this minute,
+  // so they appear in To-Dos and are completed from either place — see
+  // shared/minuteActionItems.ts.
+  const { data: actions = { items: [], carriedForward: [] } } = useQuery<{ items: any[]; carriedForward: any[] }>({
+    queryKey: ["/api/minutes", id, "action-items"],
+    queryFn: async () => {
+      const r = await fetch(`/api/minutes/${id}/action-items`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch action items");
+      return r.json();
+    },
+    enabled: !!id,
+  });
+
+  const [newAction, setNewAction] = useState("");
+  const addActionMutation = useMutation({
+    mutationFn: async (title: string) => apiRequest(`/api/minutes/${id}/action-items`, "POST", { title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id, "action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      setNewAction("");
+    },
+    onError: () => toast({ title: "Could not add the action item", variant: "destructive" }),
+  });
+
+  const toggleActionMutation = useMutation({
+    mutationFn: async (task: any) =>
+      apiRequest(`/api/notes/${task.id}`, "PATCH", {
+        status: task.status === "done" ? "todo" : "done",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id, "action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+    },
+    onError: () => toast({ title: "Could not update the action item", variant: "destructive" }),
   });
 
   // Generate AI summary mutation
@@ -328,6 +395,69 @@ export default function MinuteDetail() {
               placeholder="Discussion, decisions, who is doing what…"
               data-testid="editor-content"
             />
+          </div>
+        </DocumentSection>
+
+        <DocumentSection
+          title="Action items"
+          role="manual"
+          count={actions.items.length}
+          divider={false}
+          isEmpty={actions.items.length === 0 && actions.carriedForward.length === 0}
+          data-testid="section-action-items"
+        >
+          <div className="px-3.5 py-3 space-y-3">
+            <div className="space-y-1">
+              {actions.items.map((t: any) => (
+                <ActionRow key={t.id} task={t} onToggle={() => toggleActionMutation.mutate(t)} />
+              ))}
+              {actions.items.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Nothing assigned yet. Anything added here becomes a task, so it shows up in the
+                  assignee's To&nbsp;Dos.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input
+                className="h-8 text-sm"
+                placeholder="Who is doing what…"
+                value={newAction}
+                onChange={(e) => setNewAction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newAction.trim()) {
+                    e.preventDefault();
+                    addActionMutation.mutate(newAction.trim());
+                  }
+                }}
+                data-testid="input-new-action-item"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs flex-shrink-0"
+                disabled={!newAction.trim() || addActionMutation.isPending}
+                onClick={() => addActionMutation.mutate(newAction.trim())}
+                data-testid="button-add-action-item"
+              >
+                Add
+              </Button>
+            </div>
+
+            {/* What the last meetings agreed and nobody has finished. A meeting
+                that never revisits its own actions is how they stop meaning
+                anything. */}
+            {actions.carriedForward.length > 0 && (
+              <div className="pt-2 border-t space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Still open from earlier meetings
+                </p>
+                {actions.carriedForward.map((t: any) => (
+                  <ActionRow key={t.id} task={t} onToggle={() => toggleActionMutation.mutate(t)} carried />
+                ))}
+              </div>
+            )}
           </div>
         </DocumentSection>
 
