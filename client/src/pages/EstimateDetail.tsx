@@ -743,6 +743,10 @@ export default function EstimateDetail() {
   });
 
   const getRevLabel = (v: number) => "Rev " + String.fromCharCode(64 + v);
+  const latestRevisionNumber = estimateVersions.reduce(
+    (max, v) => Math.max(max, v.version ?? 1),
+    1,
+  );
 
   // Fetch PO links for estimate items (which items have linked purchase orders)
   interface POLink {
@@ -4923,6 +4927,27 @@ export default function EstimateDetail() {
             <ArrowLeft className="w-3 h-3" />
           </Button>
           {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
+          {/* Which revision this is. Only shown once more than one exists —
+              on a single-revision estimate "Rev A" is noise. The case that
+              matters is being sat on an old revision without noticing, so the
+              superseded ones are marked rather than just the newest. */}
+          {estimate && estimateVersions.length > 1 && (
+            <Badge
+              variant="outline"
+              className="h-[18px] px-1.5 text-label flex-shrink-0 font-medium"
+              title={
+                estimate.version === latestRevisionNumber
+                  ? "Latest revision"
+                  : `Superseded — Rev ${String.fromCharCode(64 + latestRevisionNumber)} is the latest`
+              }
+              data-testid="badge-revision"
+            >
+              {getRevLabel(estimate.version)}
+              {estimate.version !== latestRevisionNumber && (
+                <span className="ml-1 text-muted-foreground">· superseded</span>
+              )}
+            </Badge>
+          )}
         </div>
 
         {/* Right: Notes + Collapse summary + Options popover */}
