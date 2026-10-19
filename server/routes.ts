@@ -3986,7 +3986,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/minutes", async (req, res) => {
+  /**
+   * Create meeting minutes.
+   *
+   * This had no auth and no ownership check at all: `projectId` and `ownerId`
+   * came straight off the body, so minutes could be attached to another
+   * company's project, or created with neither — and a minute with no project
+   * and no owner in this company is invisible to `getMinutes` (which resolves
+   * tenancy through one or the other), so it could not be read or deleted by
+   * anyone afterwards.
+   *
+   * Minutes carry no companyId of their own; they are anchored either by their
+   * project or by their owner. Both anchors are now set here, from the session,
+   * never from the caller.
+   */
+  app.post("/api/minutes", requireAuth, async (req, res) => {
     try {
       const validationResult = insertMinuteSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -3996,7 +4010,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const minute = await storage.createMinute(validationResult.data);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+
+      const data = { ...validationResult.data } as any;
+      if (data.projectId && !(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+
+      // The owner is whoever is signed in. It is half the tenancy anchor, so it
+      // is not something a request gets to choose.
+      data.ownerId = user.id;
+      data.ownerName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || null;
+
+      const minute = await storage.createMinute(data);
       res.status(201).json(minute);
     } catch (error) {
       res.status(500).json({ error: "Failed to create minute" });
@@ -4016,7 +4042,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedMinute(req, res, req.params.id);
       if (!owned) return;
-      const minute = await storage.updateMinute(req.params.id, validationResult.data);
+
+      const data = { ...validationResult.data } as any;
+      // Moving minutes to a different project is allowed; moving them to
+      // another company's project is not. Same check the create does, because
+      // otherwise the create guard is just a detour.
+      if (data.projectId && data.projectId !== (owned as any).projectId) {
+        if (!(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+      }
+      // Re-owning a minute would move the tenancy anchor out from under it.
+      delete data.ownerId;
+      delete data.ownerName;
+
+      const minute = await storage.updateMinute(req.params.id, data);
       if (!minute) {
         return res.status(404).json({ error: "Minute not found" });
       }
