@@ -1021,6 +1021,7 @@
     "server/routes.ts POST /api/messages/:id/reactions",
     "server/routes.ts POST /api/minutes",
     "server/routes.ts POST /api/minutes/:id/action-items",
+    "server/routes.ts POST /api/minutes/:id/action-items/promote",
     "server/routes.ts POST /api/minutes/:id/summarize",
     "server/routes.ts POST /api/note-groups",
     "server/routes.ts POST /api/note-groups/reorder",

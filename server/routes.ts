@@ -4179,6 +4179,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Minutes written before action items became tasks carry them in a jsonb
+  // column: free text, a name rather than a user, and no presence in anyone's
+  // To-Dos. This promotes one of those into a real task.
+  //
+  // It MOVES the item rather than copying it — the same rule bills and
+  // timesheets follow. Leaving the original behind would show the same action
+  // twice, once tracked and once not, and the untracked copy is exactly the one
+  // that gets forgotten.
+  app.post("/api/minutes/:id/action-items/promote", requireAuth, requirePermission("projects.minutes", "edit"), async (req, res) => {
+    try {
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
+      const user = req.user as any;
+      const companyId = user?.companyId;
+
+      const index = Number(req.body?.index);
+      const legacy: any[] = Array.isArray((minute as any).actionItems) ? [...(minute as any).actionItems] : [];
+      if (!Number.isInteger(index) || index < 0 || index >= legacy.length) {
+        return res.status(400).json({ error: "That action item is no longer there" });
+      }
+
+      const item = legacy[index] ?? {};
+      const description = String(item.description ?? "").trim();
+
+      // The client sends back the description it displayed. If the list shifted
+      // underneath it — someone else promoting at the same time — the index now
+      // points at a different line, and promoting the wrong one is silent.
+      const expected = typeof req.body?.description === "string" ? req.body.description.trim() : null;
+      if (expected !== null && expected !== description) {
+        return res.status(409).json({ error: "This list changed while you were looking at it. Reload and try again." });
+      }
+      if (!description) return res.status(400).json({ error: "An action item needs a description" });
+
+      // The legacy assignee is a typed name, not a user. Match it to someone
+      // real where we can; where we cannot, the task is still created and the
+      // response says the name went unmatched, so the caller can say so rather
+      // than quietly dropping who it was for.
+      let assigneeIds: string[] = [];
+      let unmatchedAssignee: string | null = null;
+      const rawAssignee = String(item.assignee ?? "").trim();
+      if (rawAssignee) {
+        // Active users only: assigning a meeting action to an archived
+        // account would land it where nobody is looking.
+        const candidates = await storage.getUsersByCompanyWithRoles(companyId);
+        const wanted = rawAssignee.toLowerCase();
+        const hit = (candidates || []).find((u: any) => {
+          const full = [u.firstName, u.lastName].filter(Boolean).join(" ").toLowerCase();
+          return full === wanted || String(u.email ?? "").toLowerCase() === wanted;
+        });
+        if (hit) assigneeIds = [hit.id];
+        else unmatchedAssignee = rawAssignee;
+      }
+
+      const due = item.dueDate ? new Date(item.dueDate) : null;
+      const wasCompleted = item.completed === true;
+      const actorName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Unknown User";
+
+      const note = await storage.createNote({
+        companyId,
+        title: description,
+        content: "",
+        type: "task",
+        // A historical item that was already ticked stays ticked; re-opening
+        // finished work because it changed storage would be its own bug.
+        status: wasCompleted ? "done" : "todo",
+        completedAt: wasCompleted ? new Date() : null,
+        scope: minute.projectId ? "project" : "personal",
+        projectId: minute.projectId ?? null,
+        taskContextType: minute.projectId ? "project" : "business",
+        taskContextId: minute.projectId ?? companyId,
+        assigneeIds,
+        dueDate: due && !Number.isNaN(due.getTime()) ? due : null,
+        referenceType: MINUTE_ACTION_REFERENCE,
+        referenceId: minute.id,
+        ownerId: user?.id,
+        ownerName: actorName,
+        author: actorName,
+      } as any);
+
+      // Only once the task exists, so a failure above cannot lose the item.
+      legacy.splice(index, 1);
+      await storage.updateMinute(minute.id, { actionItems: legacy } as any);
+
+      if (!wasCompleted) {
+        try {
+          await notifyNoteAssignmentAndMentions({ note, actorUserId: user?.id, companyId, actorName });
+        } catch (e) {
+          console.error("[minutes/action-items] promote notify failed:", e);
+        }
+      }
+
+      res.status(201).json({ task: note, unmatchedAssignee });
+    } catch (error: any) {
+      console.error("[minutes/action-items] promote:", error);
+      res.status(500).json({ error: "Failed to turn that into a task" });
+    }
+  });
+
   // AI Summary endpoint for minutes
   app.post("/api/minutes/:id/summarize", requireAuth, requirePermission("projects.minutes", "edit"), async (req, res) => {
     try {

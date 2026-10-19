@@ -102,7 +102,6 @@ export function DetailPageHeader({
         {dirty && onSave && (
           <Button
             size="sm"
-            variant="outline"
             onClick={onSave}
             disabled={saving}
             className="h-7 text-xs"
