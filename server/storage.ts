@@ -13670,6 +13670,43 @@ export class DbStorage implements IStorage {
       });
     }
 
+    // Clone the Details page (e-notes) and the files pinned to it.
+    //
+    // These were not copied, and the omission hid itself: a revision with no
+    // e-notes seeds the default category list the first time the page opens,
+    // so Rev B looked like a normal, populated Details page while every
+    // estimator note, custom column value, RFI/RFQ flag and status from Rev A
+    // was gone — along with any custom rows that were added by hand, which the
+    // seed does not recreate at all. A revision is meant to start as a copy of
+    // the one before it, the way the items and groups already do.
+    const enotes = await db.select().from(schema.estimateEnotes)
+      .where(eq(schema.estimateEnotes.estimateId, estimateId));
+    if (enotes.length > 0) {
+      const enoteMapping = new Map<string, string>();
+      for (const enote of enotes) enoteMapping.set(enote.id, randomUUID());
+      await db.insert(schema.estimateEnotes).values(
+        enotes.map((enote) => ({
+          ...enote,
+          id: enoteMapping.get(enote.id)!,
+          estimateId: newId,
+        })),
+      );
+
+      // Attachment rows are copied, not the stored files: both revisions point
+      // at the same upload. Deleting one revision takes only its own rows.
+      const attachments = await db.select().from(schema.enoteAttachments)
+        .where(inArray(schema.enoteAttachments.enoteId, Array.from(enoteMapping.keys())));
+      if (attachments.length > 0) {
+        await db.insert(schema.enoteAttachments).values(
+          attachments.map((a) => ({
+            ...a,
+            id: randomUUID(),
+            enoteId: enoteMapping.get(a.enoteId)!,
+          })),
+        );
+      }
+    }
+
     return newVersion;
   }
 
