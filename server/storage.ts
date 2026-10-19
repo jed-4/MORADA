@@ -1956,6 +1956,7 @@ export class MemStorage implements IStorage {
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7167,6 +7168,7 @@ export class DbStorage implements IStorage {
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7288,6 +7290,7 @@ export class DbStorage implements IStorage {
 
     await this.backfillSelectionVisibilityGrants(createdKeys);
     await this.backfillClientPortalGrants(createdKeys);
+    await this.backfillMinutesGrants(createdKeys);
   }
 
   /**
@@ -7360,6 +7363,69 @@ export class DbStorage implements IStorage {
    * point of the change. Admin/Owner/GM roles bypass permission checks entirely
    * and so need no row.
    */
+  /**
+   * Give `projects.minutes` to the roles that already read project notes.
+   *
+   * Minutes had no permission of their own, so everyone with a login could read
+   * every minute in the company — including whatever commercial discussion was
+   * recorded in them. Adding a key fixes that, but a brand new key starts
+   * granted to nobody, and a deploy that silently takes minutes away from the
+   * people who use them is its own kind of broken.
+   *
+   * `projects.notes` ("project notes and memos") is the same audience reading
+   * the same kind of internal record, and every company has already decided who
+   * holds it. Mirroring that decision preserves whatever office/trade split is
+   * actually in place, rather than guessing from role names — which cannot work
+   * anyway, because companies rename and invent their own roles.
+   *
+   * Client roles are excluded outright. Minutes are internal, and that is not a
+   * default anyone should be able to arrive at by ticking one box.
+   *
+   * Runs only on the boot that first creates the key, like the other backfills,
+   * so an admin who later unticks it is never silently re-granted.
+   */
+  private async backfillMinutesGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("projects.minutes")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const minutesId = allPermissions.find((p) => p.key === "projects.minutes")?.id;
+      const notesId = allPermissions.find((p) => p.key === "projects.notes")?.id;
+      if (!minutesId || !notesId) return;
+
+      const notesGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, notesId));
+      if (notesGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, notesGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      let granted = 0;
+      for (const grant of notesGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        const actions = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        if (actions.length === 0) continue;
+        try {
+          await db.insert(schema.rolePermissions).values({
+            roleId: grant.roleId,
+            permissionId: minutesId,
+            allowedActions: actions as any,
+          });
+          granted++;
+        } catch (e: any) {
+          // 23505: the role already holds it — nothing to do.
+          if (e?.code !== "23505") throw e;
+        }
+      }
+      if (granted > 0) {
+        console.log(`[permissions] projects.minutes granted to ${granted} role(s), mirroring projects.notes`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillMinutesGrants:", error);
+    }
+  }
+
   private async backfillSelectionVisibilityGrants(createdKeys: Set<string>): Promise<void> {
     const newKeys = ['projects.selections.pending', 'projects.selections.pricing']
       .filter((k) => createdKeys.has(k));

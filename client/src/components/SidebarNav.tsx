@@ -449,7 +449,15 @@ export function SidebarNav() {
   const { isClient, canSeeSidebarItem } = useClientPortal();
   // Client invoices follow "Progress Claims" for the team too (admins pass).
   const canViewInvoices = usePermission("projects.invoices", "view");
-  const teamCanSee = (title: string) => isClient || title !== "Client Invoices" || canViewInvoices;
+  // Minutes are internal and often commercial. Until projects.minutes existed,
+  // anyone with a login could read every one of them.
+  const canViewMinutes = usePermission("projects.minutes", "view");
+  const teamCanSee = (title: string) => {
+    if (isClient) return true;
+    if (title === "Client Invoices") return canViewInvoices;
+    if (title === "Minutes") return canViewMinutes;
+    return true;
+  };
   // Clients get no company-wide "Resources" library — only their project.
   const visibleSectionOrder = useMemo(
     () => (isClient ? sectionOrder.filter((s) => s === "projects") : sectionOrder),

@@ -3961,7 +3961,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Minutes API Routes
-  app.get("/api/minutes", async (req, res) => {
+  app.get("/api/minutes", requireAuth, requirePermission("projects.minutes", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(403).json({ error: "No company context" });
@@ -3976,7 +3976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/minutes/:id", async (req, res) => {
+  app.get("/api/minutes/:id", requireAuth, requirePermission("projects.minutes", "view"), async (req, res) => {
     try {
       const minute = await getOwnedMinute(req, res, req.params.id);
       if (!minute) return;
@@ -4000,7 +4000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * project or by their owner. Both anchors are now set here, from the session,
    * never from the caller.
    */
-  app.post("/api/minutes", requireAuth, async (req, res) => {
+  app.post("/api/minutes", requireAuth, requirePermission("projects.minutes", "add"), async (req, res) => {
     try {
       const validationResult = insertMinuteSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -4029,7 +4029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/minutes/:id", async (req, res) => {
+  app.patch("/api/minutes/:id", requireAuth, requirePermission("projects.minutes", "edit"), async (req, res) => {
     try {
       const updateSchema = insertMinuteSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
@@ -4064,7 +4064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/minutes/:id", async (req, res) => {
+  app.delete("/api/minutes/:id", requireAuth, requirePermission("projects.minutes", "delete"), async (req, res) => {
     try {
       const owned = await getOwnedMinute(req, res, req.params.id);
       if (!owned) return;
@@ -4076,7 +4076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI Summary endpoint for minutes
-  app.post("/api/minutes/:id/summarize", async (req, res) => {
+  app.post("/api/minutes/:id/summarize", requireAuth, requirePermission("projects.minutes", "edit"), async (req, res) => {
     try {
       const minute = await getOwnedMinute(req, res, req.params.id);
       if (!minute) return;
