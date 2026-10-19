@@ -5404,33 +5404,51 @@ export class MemStorage implements IStorage {
       updatedAt: now,
     };
 
-    // Clone all items and groups for the new version
+    // Clone all items and groups for the new version.
+    //
+    // Kept in step with DbStorage.createEstimateVersion, which is the one that
+    // actually runs — `storage` is bound to DbStorage unconditionally and this
+    // class is only built in tests. Divergence between the two is still worth
+    // avoiding: the next person to read them will assume they agree.
+    //
+    // There is no e-notes clone here because this class has no e-notes store at
+    // all — the Details tab exists only in DbStorage. That is an absence, not an
+    // omission to fix.
     const currentItems = await this.getEstimateItems(estimateId);
     const currentGroups = await this.getEstimateGroups(estimateId);
 
-    // Create group mapping for new version
+    // Build the FULL old→new id maps before writing anything, so a parent that
+    // happens to be listed after its child still remaps. Without that, a cloned
+    // subgroup or sub-item points back at the PREVIOUS revision's row.
     const groupMapping: Map<string, string> = new Map();
+    for (const group of currentGroups) groupMapping.set(group.id, randomUUID());
+    const itemMapping: Map<string, string> = new Map();
+    for (const item of currentItems) itemMapping.set(item.id, randomUUID());
+
     for (const group of currentGroups) {
-      const newGroupId = randomUUID();
-      groupMapping.set(group.id, newGroupId);
+      const newGroupId = groupMapping.get(group.id)!;
       const newGroup: EstimateGroup = {
         ...group,
         id: newGroupId,
         estimateId: newId,
+        parentGroupId: group.parentGroupId ? (groupMapping.get(group.parentGroupId) ?? null) : null,
         createdAt: now,
         updatedAt: now,
       };
       this.estimateGroups.set(newGroupId, newGroup);
     }
 
-    // Clone items with updated group references
     for (const item of currentItems) {
-      const newItemId = randomUUID();
+      const newItemId = itemMapping.get(item.id)!;
       const newItem: EstimateItem = {
         ...item,
         id: newItemId,
         estimateId: newId,
-        groupId: item.groupId ? groupMapping.get(item.groupId) || null : null,
+        groupId: item.groupId ? (groupMapping.get(item.groupId) ?? null) : null,
+        parentItemId: item.parentItemId ? (itemMapping.get(item.parentItemId) ?? null) : null,
+        // A copy keeps the NUMBER but not the link to the take-off, same as
+        // DbStorage: the new revision is its own document.
+        quantityFormula: null,
         createdAt: now,
         updatedAt: now,
       };
