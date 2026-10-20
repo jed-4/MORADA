@@ -107,7 +107,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [selection, setSelection] = useState<{ id: string; index: number; x: number; y: number } | null>(null);
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
   /* One mark picked out of the list — hovering "Page 1 · 24.13 m²" in the panel
      points at the shape it came from. */
@@ -592,27 +592,39 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     return `${quantity} ${unit}`;
   };
 
-  // Hit-testing for the Select tool. Returns the topmost measurement under p (px).
-  const hitTest = (p: Point): TakeoffMeasurement | null => {
+  /**
+   * Hit-testing for the Select tool. Returns the topmost mark under p (px) —
+   * BOTH the measurement it belongs to and which of its marks it is.
+   *
+   * It used to return only the measurement and throw the index away, which is
+   * why the toolbar's delete took the whole item: by the time it ran, nothing
+   * remembered which shape had been clicked.
+   *
+   * The index counts into the measurement's FULL geometry, not the marks on
+   * this page, because that is what a delete rewrites. Filtering to the page
+   * first renumbers them, and on page two that silently deletes the wrong mark.
+   */
+  const hitTest = (p: Point): { measurement: TakeoffMeasurement; index: number } | null => {
     const tolerance = 8;
+    const pageId = currentPageData?.id;
+    if (!pageId) return null;
     for (let i = planMeasurements.length - 1; i >= 0; i--) {
       const m = planMeasurements[i];
       if (!m.isVisible) continue;
-      const here = entriesForPage(normalizeEntries(m.geometry, m.pageId), currentPageData?.id);
-      if (here.length === 0) continue;
-      if (m.measurementType === "count") {
-        for (const entry of here) {
+      const all = normalizeEntries(m.geometry, m.pageId);
+      for (let index = 0; index < all.length; index++) {
+        const entry = all[index];
+        if (entry.pageId !== pageId) continue;
+        if (m.measurementType === "count") {
           for (const pp of entry.points) {
             const px = { x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight };
-            if (Math.hypot(px.x - p.x, px.y - p.y) <= 8) return m;
+            if (Math.hypot(px.x - p.x, px.y - p.y) <= 8) return { measurement: m, index };
           }
+          continue;
         }
-        continue;
-      }
-      for (const entry of here) {
         const pts = entry.points.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
-        if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return m;
-        if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return m;
+        if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return { measurement: m, index };
+        if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return { measurement: m, index };
       }
     }
     return null;
@@ -624,11 +636,15 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const hit = hitTest(p);
     if (hit) {
-      setSelection({ id: hit.id, x: e.clientX, y: e.clientY });
-      setHighlightedId(hit.id);
+      setSelection({ id: hit.measurement.id, index: hit.index, x: e.clientX, y: e.clientY });
+      setHighlightedId(hit.measurement.id);
+      // Highlight the mark that was clicked, not every mark on the item, so
+      // what the toolbar is about to act on is the thing lit up.
+      setHighlightedShape({ measurementId: hit.measurement.id, index: hit.index });
       setSelectedMarkupId(null);
     } else {
       setSelection(null);
+      setHighlightedShape(null);
       setSelectedMarkupId(null);
     }
   };
@@ -1110,9 +1126,17 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               x={selection.x}
               y={selection.y}
               measurement={selectedMeasurement}
-              onClose={() => setSelection(null)}
+              markCount={normalizeEntries(selectedMeasurement.geometry, selectedMeasurement.pageId).length}
+              onClose={() => { setSelection(null); setHighlightedShape(null); }}
               onChange={(data) => updateMeasurement.mutate({ id: selectedMeasurement.id, data })}
-              onDelete={() => deleteMeasurement.mutate(selectedMeasurement.id)}
+              onDeleteMark={() => {
+                handleDeleteShape(selectedMeasurement, selection.index);
+                setSelection(null);
+              }}
+              onDeleteItem={() => {
+                deleteMeasurement.mutate(selectedMeasurement.id);
+                setSelection(null);
+              }}
             />
           )}
 
@@ -1231,13 +1255,16 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
 }
 
 function SelectionToolbar({
-  x, y, measurement, onClose, onChange, onDelete,
+  x, y, measurement, markCount, onClose, onChange, onDeleteMark, onDeleteItem,
 }: {
   x: number; y: number;
   measurement: TakeoffMeasurement;
+  /** How many marks the item has in total, across every page. */
+  markCount: number;
   onClose: () => void;
   onChange: (data: Partial<TakeoffMeasurement>) => void;
-  onDelete: () => void;
+  onDeleteMark: () => void;
+  onDeleteItem: () => void;
 }) {
   const [name, setName] = useState(measurement.name);
   return (
@@ -1260,9 +1287,33 @@ function SelectionToolbar({
       <span className="text-xs text-muted-foreground tabular-nums">
         {Math.round((measurement.quantity ?? 0) * 100) / 100} {measurement.unit}
       </span>
-      <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Delete">
+      {/* Deletes the mark that was clicked. This button used to delete the whole
+          item — every mark on it, on every page — which is not what clicking
+          one shape and pressing a bin asks for. Removing the item outright is
+          still here, said out loud, and only offered when there is more than
+          one mark to distinguish it from. */}
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={onDeleteMark}
+        aria-label={markCount > 1 ? "Delete this mark" : "Delete this mark (the item's last one)"}
+        title={markCount > 1 ? `Delete this mark — ${markCount - 1} would be left` : "Delete this mark — it is the item's last one"}
+        data-testid="selection-delete-mark"
+      >
         <Trash2 className="h-4 w-4 text-destructive" />
       </Button>
+      {markCount > 1 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onDeleteItem}
+          className="h-7 px-2 text-xs text-destructive"
+          title={`Delete ${measurement.name} and all ${markCount} of its marks`}
+          data-testid="selection-delete-item"
+        >
+          All {markCount}
+        </Button>
+      )}
       <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
         <X className="h-4 w-4" />
       </Button>
