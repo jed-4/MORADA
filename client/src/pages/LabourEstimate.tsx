@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -37,7 +37,10 @@ import {
   LayoutTemplate,
   MoreVertical,
   Copy,
+  Columns3,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -410,6 +413,33 @@ const LABOUR_COLUMN_LABELS: Record<string, string> = {
   totalHours: "Total Hrs",
 };
 
+/**
+ * Showing and hiding columns, the last of the three estimate grids to get it.
+ *
+ * Description is not in here on purpose. It is the flexible column that soaks
+ * up the leftover width and it is the only thing identifying the row — hiding
+ * it would leave a sheet of numbers against nothing, the same reason Item
+ * cannot be hidden on the Details grid.
+ */
+const LABOUR_HIDEABLE = ["numMen", "hoursPerMan", "totalHours"] as const;
+const LABOUR_VISIBILITY_KEY = "labour-column-visibility";
+
+function readLabourVisibility(): Record<string, boolean> {
+  const merged: Record<string, boolean> = {};
+  for (const c of LABOUR_COLUMNS) merged[c.key] = true;
+  try {
+    const raw = localStorage.getItem(LABOUR_VISIBILITY_KEY);
+    if (!raw) return merged;
+    const saved = JSON.parse(raw) as Record<string, boolean>;
+    for (const key of LABOUR_HIDEABLE) {
+      if (typeof saved[key] === "boolean") merged[key] = saved[key];
+    }
+  } catch {
+    // A private window, or something else wrote nonsense there. Defaults.
+  }
+  return merged;
+}
+
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const mode = 'project' as const;
@@ -452,7 +482,27 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     onError: () => toast({ title: "Failed to import template", variant: "destructive" }),
   });
 
-  const taskCols = useResizableColumns("labour-tasks", LABOUR_COLUMNS, 32, { reorderable: true });
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(readLabourVisibility);
+
+  const toggleLabourColumn = useCallback((key: string) => {
+    setColumnVisibility(prev => {
+      const next = { ...prev, [key]: prev[key] === false };
+      try { localStorage.setItem(LABOUR_VISIBILITY_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Filtered before the hook sees them, the way the template grid does it, so a
+  // hidden column takes no track in the grid and its cells are never rendered.
+  const taskCols = useResizableColumns(
+    "labour-tasks",
+    useMemo(
+      () => LABOUR_COLUMNS.filter(c => columnVisibility[c.key] !== false),
+      [columnVisibility],
+    ),
+    32,
+    { reorderable: true },
+  );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -1188,6 +1238,44 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                     })()}
                   </button>
                 )}
+                {/* The last of the three estimate grids to offer this. Resize
+                    and reorder were already here; showing and hiding was not. */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="flex items-center gap-1.5 text-xs border rounded-md px-2 h-6 hover-elevate active-elevate-2"
+                      title="Show or hide columns"
+                      data-testid="button-labour-columns"
+                    >
+                      <Columns3 className="w-3 h-3" />
+                      <span>Columns</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-56 p-2" data-testid="popover-labour-columns">
+                    <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
+                    <p className="px-1.5 pb-2 text-xs text-muted-foreground">
+                      Drag a heading to reorder · toggle to show or hide.
+                    </p>
+                    <div className="space-y-0.5">
+                      {LABOUR_HIDEABLE.map(key => (
+                        <label
+                          key={key}
+                          className="flex items-center gap-2 px-1.5 py-1 rounded-sm hover-elevate cursor-pointer text-sm"
+                          data-testid={`labour-column-toggle-${key}`}
+                        >
+                          <Checkbox
+                            checked={columnVisibility[key] !== false}
+                            onCheckedChange={() => toggleLabourColumn(key)}
+                          />
+                          <span className="truncate">{LABOUR_COLUMN_LABELS[key]}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="px-1.5 pt-2 text-xs text-muted-foreground">
+                      Description always shows — it is what names the row.
+                    </p>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           )}
