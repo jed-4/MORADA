@@ -230,7 +230,7 @@ import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
 import { buildRoundingLine } from "./services/xeroBillRounding";
 import { isLockedInXero, messageLooksLocked } from "./services/xeroLockedBill";
-import { pushToXeroTarget, xeroStatusForPush } from "./services/xeroPushTarget";
+import { findDuplicateBlocker, pushToXeroTarget, xeroStatusForPush } from "./services/xeroPushTarget";
 import { deriveBillStatusFromXero, isDeadInXero } from "./services/xeroBillStatus";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
@@ -590,6 +590,41 @@ export function explainXeroValidation(raw: string, billType?: string | null): st
  * the work is already happening, and the queued safety net covers any state
  * that arrived after the running push read the bill.
  */
+const XERO_VOIDED_MESSAGE =
+  "The Xero bill this is linked to has been voided or deleted, so nothing was sent. " +
+  "It's in the Xero review queue: use Re-create in Xero there to send it as a new bill.";
+
+/** Another Morada bill for the same supplier invoice that blocks this one. */
+async function findDuplicateBillBlocker(bill: any, companyId: string) {
+  const ref = String(bill.billReference ?? "").trim();
+  if (!ref || !bill.supplierId) return null;
+  const others = await db
+    .select({
+      id: billsTable.id,
+      billNumber: billsTable.billNumber,
+      billType: billsTable.billType,
+      supplierId: billsTable.supplierId,
+      billReference: billsTable.billReference,
+      createdAt: billsTable.createdAt,
+      xeroInvoiceId: billsTable.xeroInvoiceId,
+      xeroVoidedAt: billsTable.xeroVoidedAt,
+    })
+    .from(billsTable)
+    .where(and(
+      ne(billsTable.id, bill.id),
+      eq(billsTable.supplierId, bill.supplierId),
+      sql`lower(trim(${billsTable.billReference})) = lower(${ref})`,
+      or(
+        eq(billsTable.companyId, companyId),
+        sql`${billsTable.projectId} in (select id from ${projectsTable} where ${projectsTable.companyId} = ${companyId})`,
+      ),
+    ))
+    .limit(20);
+  // A supplier credit can carry its bill's number; it is a different document.
+  const sameKind = others.filter((o) => isVendorCredit(o.billType) === isVendorCredit(bill.billType));
+  return findDuplicateBlocker(bill, sameKind);
+}
+
 export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
@@ -701,6 +736,26 @@ async function pushBillToXeroUnguarded(
     // exactly like a bill's.
     const isCredit = isVendorCredit((bill as any).billType);
     billTypeForErrors = (bill as any).billType ?? null;
+
+    // Same supplier + same invoice number already on another Morada bill: a
+    // second push is a second payable for one invoice (7377/90275519 was on
+    // BILL-1746 AND BILL-1782..1803). The earliest copy — or the one Xero
+    // already holds — stays pushable; every other copy is refused here, before
+    // anything is sent.
+    const blocker = await findDuplicateBillBlocker(bill, companyId).catch((e) => {
+      // A failed lookup must not silently let a duplicate through either; but
+      // nor should it wedge every push. Log loudly and carry on.
+      console.error("[pushBillToXeroInternal] duplicate guard failed:", e);
+      return null;
+    });
+    if (blocker) {
+      const msg =
+        `Not sent to Xero: ${blocker.billNumber || "another bill"} is the same supplier invoice ` +
+        `(${(bill.billReference || "").trim()}). Delete or correct the duplicate, then sync again.`;
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "DUPLICATE_BILL", message: msg });
+      return { ok: false, status: 409, error: "DUPLICATE_BILL", message: msg };
+    }
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
     // change to its line items or status ("To update fields on a paid invoice
@@ -1043,11 +1098,9 @@ async function pushBillToXeroUnguarded(
     //     "Invoice already exists" duplicate check on the Xero side).
     //   - BuildPro's internal bill number → Xero Reference (for cross-system
     //     traceability).
-    // Xero status for this push: see xeroStatusForPush. A create is always
-    // SUBMITTED ("Awaiting Approval") — Morada never approves a bill in Xero by
-    // creating it. An update keeps the systems in step:
-    //   awaiting_approval → SUBMITTED, awaiting_payment / paid → AUTHORISED.
-    // draft / needs_review never reach this function.
+    // Xero status: see xeroStatusForPush. A create is SUBMITTED ("Awaiting
+    // Approval"); an update sends no status at all, so an edit can never
+    // approve (or un-approve) a bill in Xero. Approving happens in Xero.
     const buildPayload = (isCreate: boolean) => ({
       supplierName,
       supplierXeroContactId,
@@ -1061,7 +1114,7 @@ async function pushBillToXeroUnguarded(
         | "inclusive"
         | "exclusive",
       lineItems: xeroLineItems,
-      xeroStatus: xeroStatusForPush(bill.status, isCreate),
+      xeroStatus: xeroStatusForPush(isCreate),
     });
 
     // Re-read the link immediately before deciding create-vs-update. The bill
@@ -1125,13 +1178,10 @@ async function pushBillToXeroUnguarded(
       return created;
     };
 
-    // A stored link to a VOIDED/DELETED Xero document used to need a human to
-    // press Unlink in the review queue before the bill could go again; until
-    // then every push was refused ("Invoice not of valid status for
-    // modification"). The dead link is now released here and the bill takes
-    // the unlinked path above — which adopts a live same-numbered Xero bill
-    // before creating, so a copy voided because it was a duplicate re-links to
-    // the original instead of making a third.
+    // A stored link to a VOIDED/DELETED Xero document is never re-created
+    // from here: a bill voided on purpose must not come back by itself. It is
+    // flagged in the Xero review queue, whose "Re-create in Xero" action is the
+    // only thing that sends it again.
     const target = await pushToXeroTarget(
       { xeroId: freshLink || null, knownDead: !!(freshBill as any)?.xeroVoidedAt },
       {
@@ -1143,33 +1193,21 @@ async function pushBillToXeroUnguarded(
             : await xeroService.getInvoice(connection.id, xeroId);
           return doc?.Status ?? null;
         },
-        unlink: async (deadXeroId) => {
-          console.warn(JSON.stringify({
-            event: "xero.bill.push.dead_link_released",
-            billId, companyId,
-            xeroInvoiceId: deadXeroId,
-            message: "Linked Xero bill is voided/deleted — unlinking and sending as a new bill.",
-            ts: new Date().toISOString(),
-          }));
-          // Same columns the review queue's Unlink clears, minus sendToXero:
-          // this bill is about to be sent.
-          await storage.updateBill(billId, {
-            xeroInvoiceId: null,
-            xeroPaidStatus: null,
-            xeroReviewReason: null,
-            xeroReviewChanges: null,
-            xeroReviewFingerprint: null,
-            xeroReviewAckFingerprint: null,
-            xeroReviewDetectedAt: null,
-            xeroReviewResolvedAt: new Date(),
-            xeroVoidedAt: null,
-          } as any);
-        },
         isLockedError: (err) =>
           err instanceof XeroValidationError &&
           err.validationErrors.some((v) => messageLooksLocked(v?.message)),
       },
     );
+    if (target.kind === "dead") {
+      // The sync flags it voided_in_xero (review queue) without touching any
+      // figures; then record why this push did nothing.
+      await syncBillFromXeroInternal(billId, companyId).catch((e) => {
+        console.error("[pushBillToXeroInternal] voided flag sync failed:", e);
+      });
+      await writeSyncStatus("failed", XERO_VOIDED_MESSAGE);
+      logOutcome({ ok: false, reason: "XERO_VOIDED", message: XERO_VOIDED_MESSAGE, xeroInvoiceId: target.deadXeroId });
+      return { ok: false, status: 409, error: "XERO_VOIDED", message: XERO_VOIDED_MESSAGE };
+    }
     const xeroBill: any = target.result;
 
     // Best-effort: push BuildPro attachments to Xero. Failures here must not
@@ -1250,11 +1288,9 @@ async function pushBillToXeroUnguarded(
         // settled" about a bill somebody deliberately voided is what left the
         // re-entered Bunnings bills looking stuck with nowhere to go.
         if (healed?.voided) {
-          const voidedMsg =
-            "The Xero bill this is linked to has been voided or deleted, so Xero won't accept changes to it. " +
-            "Nothing in Morada was changed. Unlink it from the Xero review queue to send it to Xero as a new bill.";
-          logOutcome({ ok: false, reason: "XERO_VOIDED", message: voidedMsg, xeroInvoiceId: lockedBill?.xeroInvoiceId ?? undefined });
-          return { ok: false, status: 409, error: "XERO_VOIDED", message: voidedMsg };
+          await writeSyncStatus("failed", XERO_VOIDED_MESSAGE);
+          logOutcome({ ok: false, reason: "XERO_VOIDED", message: XERO_VOIDED_MESSAGE, xeroInvoiceId: lockedBill?.xeroInvoiceId ?? undefined });
+          return { ok: false, status: 409, error: "XERO_VOIDED", message: XERO_VOIDED_MESSAGE };
         }
         const lockedMsg =
           "This bill is already settled in Xero, so Xero won't accept changes to it. Your edit was saved in Morada, and its status has been pulled back from Xero.";
@@ -44650,9 +44686,16 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           supplierName: contactsTbl.name,
         })
         .from(billsTbl)
-        .innerJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
+        // leftJoin, not innerJoin: a bill with no project (a bills@ receipt —
+        // the Bunnings shape) was invisible to the queue, so a voided one could
+        // never be resolved from here. Scoped by the bill's own companyId OR
+        // its project's, as check-reference is.
+        .leftJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
         .leftJoin(contactsTbl, eq(billsTbl.supplierId, contactsTbl.id))
-        .where(and(eq(projectsTbl.companyId, companyId), isNotNull(billsTbl.xeroReviewReason)))
+        .where(and(
+          or(eq(billsTbl.companyId, companyId), eq(projectsTbl.companyId, companyId)),
+          isNotNull(billsTbl.xeroReviewReason),
+        ))
         .orderBy(desc(billsTbl.xeroReviewDetectedAt));
 
       res.json({ count: rows.length, bills: rows });
@@ -44726,6 +44769,98 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("[xero-review/unlink] error:", error);
       res.status(500).json({ error: error.message || "Failed to unlink" });
+    }
+  });
+
+  // Re-create in Xero: the ONLY way a bill whose Xero copy was voided goes to
+  // Xero again. A push never does it by itself — a bill voided on purpose must
+  // not reappear (Jed, 20 Oct). Confirms the linked copy really is dead, clears
+  // the link, then pushes; the push still adopts a live same-numbered Xero bill
+  // before creating and still refuses a Morada duplicate.
+  async function recreateVoidedBillInXero(billId: string, companyId: string) {
+    const bill = await storage.getBillById(billId);
+    if (!bill) return { billId, ok: false, error: "NOT_FOUND", message: "Bill not found" };
+    const linked = (bill as any).xeroInvoiceId as string | null;
+    if (linked) {
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return { billId, ok: false, error: "NO_CONNECTION", message: "Xero is not connected" };
+      const doc = isVendorCredit((bill as any).billType)
+        ? await xeroService.getCreditNote(connection.id, linked)
+        : await xeroService.getInvoice(connection.id, linked);
+      if (!isDeadInXero(doc?.Status)) {
+        return {
+          billId, ok: false, error: "NOT_VOIDED",
+          message: `${bill.billNumber}'s Xero bill is ${String(doc?.Status || "unknown").toLowerCase()}, not voided — nothing re-created.`,
+        };
+      }
+    }
+    // Check for a Morada duplicate BEFORE releasing the link, so a refused
+    // re-create leaves the bill exactly as it was, still in the queue.
+    const blocker = await findDuplicateBillBlocker(bill, companyId);
+    if (blocker) {
+      return {
+        billId, ok: false, status: 409, error: "DUPLICATE_BILL",
+        message: `${bill.billNumber} not re-created: ${blocker.billNumber || "another bill"} is the same supplier invoice.`,
+      };
+    }
+    // Same columns the queue's Unlink clears, but sendToXero stays on: this
+    // bill is about to be sent.
+    await storage.updateBill(billId, {
+      xeroInvoiceId: null,
+      sendToXero: true,
+      xeroPaidStatus: null,
+      xeroReviewReason: null,
+      xeroReviewChanges: null,
+      xeroReviewFingerprint: null,
+      xeroReviewAckFingerprint: null,
+      xeroReviewDetectedAt: null,
+      xeroReviewResolvedAt: new Date(),
+      xeroVoidedAt: null,
+    } as any);
+    const result = await pushBillToXeroInternal(billId, companyId);
+    return { billId, billNumber: bill.billNumber, ...result };
+  }
+
+  app.post("/api/bills/:id/xero-review/recreate", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+      const r = await recreateVoidedBillInXero(bill.id, companyId);
+      res.status(r.ok ? 200 : (r as any).status || 400).json(r);
+    } catch (error: any) {
+      console.error("[xero-review/recreate] error:", error);
+      res.status(500).json({ error: error.message || "Failed to re-create in Xero" });
+    }
+  });
+
+  // Bulk: one at a time, not in parallel — Xero rate-limits per tenant and each
+  // push is several round trips.
+  app.post("/api/xero/bills/review/recreate", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const ids: string[] = Array.isArray(req.body?.billIds) ? req.body.billIds.map(String).slice(0, 100) : [];
+      if (ids.length === 0) return res.status(400).json({ error: "billIds is required" });
+      const results: any[] = [];
+      for (const id of ids) {
+        const bill = await storage.getBillById(id);
+        const owned = bill && (bill.projectId
+          ? (await storage.getProject(bill.projectId))?.companyId === companyId
+          : (bill as any).companyId === companyId);
+        if (!owned) {
+          results.push({ billId: id, ok: false, error: "NOT_FOUND", message: "Bill not found" });
+          continue;
+        }
+        results.push(await recreateVoidedBillInXero(id, companyId).catch((e: any) => ({
+          billId: id, ok: false, error: "ERROR", message: e?.message || "Failed",
+        })));
+      }
+      res.json({ sent: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results });
+    } catch (error: any) {
+      console.error("[xero/bills/review/recreate] error:", error);
+      res.status(500).json({ error: error.message || "Failed to re-create in Xero" });
     }
   });
 

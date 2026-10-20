@@ -115,7 +115,8 @@ export interface XeroBillData {
   // Xero invoice status: "DRAFT" | "SUBMITTED" | "AUTHORISED".
   //   - SUBMITTED   → "Awaiting Approval" in the Xero UI
   //   - AUTHORISED  → "Awaiting Payment" in the Xero UI (approved)
-  // Defaults to AUTHORISED for backward compatibility.
+  // Create defaults to SUBMITTED; an update omits Status entirely when unset,
+  // so Xero keeps whatever status the bill has there.
   xeroStatus?: "DRAFT" | "SUBMITTED" | "AUTHORISED";
 }
 
@@ -880,7 +881,8 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // Morada never approves a bill in Xero; Jed approves there.
+      Status: billData.xeroStatus || "SUBMITTED",
     };
 
     if (billData.dueDate) {
@@ -952,7 +954,9 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // No Status unless the caller sets one: an edit must never change a
+      // bill's status in Xero.
+      ...(billData.xeroStatus ? { Status: billData.xeroStatus } : {}),
     };
 
     if (billData.dueDate) invoicePayload.DueDate = billData.dueDate;
@@ -1018,7 +1022,8 @@ export class XeroService {
         return lineItem;
       }),
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // Create passes SUBMITTED; update passes nothing so Xero keeps its status.
+      ...(billData.xeroStatus ? { Status: billData.xeroStatus } : {}),
     };
     // The supplier's own credit note number, mirroring how billReference maps
     // to InvoiceNumber on a bill.
