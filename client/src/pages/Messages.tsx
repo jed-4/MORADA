@@ -1,5 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { renderTextWithLinks } from "@/lib/linkify";
+import { setActiveChannel } from "@/lib/activeChannel";
+import { stripMentionMarkup } from "@/lib/messageText";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages, useReactionUpdated, useMessageUpdated } from "@/lib/socket";
@@ -166,11 +168,6 @@ const TASK_LINK_REGEX = /\/tasks\/([a-zA-Z0-9_-]{8,})/;
 function extractTaskLink(content: string): string | null {
   const m = content.match(TASK_LINK_REGEX);
   return m ? m[1] : null;
-}
-
-// Strip @[Name](userId:xxx) markup to plain text for pre-filling the task title
-function stripMentionMarkup(content: string): string {
-  return content.replace(/@\[([^\]]+)\]\(userId:[^)]+\)/g, "@$1");
 }
 
 // Compact task preview card rendered below messages containing /tasks/UUID links
@@ -1177,35 +1174,29 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   // as well would give one number two owners, and the page would only be one of
   // them while it happened to be open.
 
+  /**
+   * Tell the app-wide notifier which conversation is on screen, so it does not
+   * interrupt about a message being read as it arrives.
+   */
+  useEffect(() => {
+    setActiveChannel(selectedChannelId);
+    return () => setActiveChannel(null);
+  }, [selectedChannelId]);
+
+  /**
+   * This page's own business when a message lands: refresh the counts and mark
+   * it as newly arrived so the row highlights.
+   *
+   * Showing the notification is NOT here any more. It was in both this handler
+   * and the global one, each with its own rules — this one skipped a focused,
+   * open channel, the global one skipped the whole page — so the behaviour
+   * depended on which happened to be mounted. Two owners of one decision is
+   * also how the tab badge came to be wrong. The global notifier owns it now.
+   */
   useAllNewMessages((message: Message) => {
     queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
-    
     if (message.userId === user?.id) return;
-    // Skip notification only when the user is actively viewing this exact channel (window focused)
-    if (document.hasFocus() && selectedChannelId === message.channelId) return;
-    
-    const channel = channels.find(c => c.id === message.channelId);
-    if (!channel) return;
-    
     setNewMessageIds(prev => new Set(prev).add(message.id));
-    
-    const mentions = Array.isArray(message.mentions) ? message.mentions : [];
-    const isMention = mentions.includes(user?.id || "");
-    
-    const senderName = message.userFirstName && message.userLastName
-      ? `${message.userFirstName} ${message.userLastName}`
-      : message.userEmail || "Someone";
-    
-    showMessageNotification({
-      channelName: channel.name,
-      senderName,
-      messageContent: message.content,
-      isMention,
-      onClickChannel: () => {
-        setSelectedChannelId(channel.id);
-        window.focus();
-      },
-    });
   });
 
   const handleRequestNotificationPermission = async () => {
