@@ -26079,6 +26079,40 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * The newest message in each channel this person is in — one row per
+   * conversation.
+   *
+   * The header panel lists conversations and shows the latest message under
+   * each. Taking "the most recent N messages" and grouping them client-side
+   * does not give that: one busy chat fills the whole window and every other
+   * conversation comes back with no preview at all. DISTINCT ON asks the
+   * database for exactly one row per channel, so every conversation gets its
+   * line whatever the traffic looks like.
+   */
+  async getLatestMessagePerChannel(userId: string, companyId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT DISTINCT ON (m.channel_id)
+          m.id, m.channel_id AS "channelId", m.user_id AS "userId",
+          m.content, m.created_at AS "createdAt", m.is_bot AS "isBot",
+          c.name AS "channelName", c.type AS "channelType",
+          c.dm_participants AS "dmParticipants"
+        FROM messages m
+        JOIN channels c ON c.id = m.channel_id
+        JOIN channel_members cm ON cm.channel_id = m.channel_id AND cm.user_id = ${userId}
+        WHERE c.company_id = ${companyId}
+          AND m.is_deleted = false
+          AND m.thread_parent_id IS NULL
+        ORDER BY m.channel_id, m.created_at DESC
+      `);
+      return ((result as any).rows ?? result) as any[];
+    } catch (error) {
+      console.error("Database error in getLatestMessagePerChannel:", error);
+      return [];
+    }
+  }
+
   async getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>> {
     try {
       // Get all channels for the company where user is a member

@@ -128,7 +128,7 @@ export function MessagesDropdown() {
   const { data: recent = [] } = useQuery<any[]>({
     queryKey: ["/api/messages/recent"],
     queryFn: () =>
-      fetch("/api/messages/recent?limit=25", { credentials: "include" })
+      fetch("/api/messages/recent?perChannel=1", { credentials: "include" })
         .then((r) => (r.ok ? r.json() : []))
         .catch(() => []),
     enabled: open,
@@ -268,52 +268,65 @@ export function MessagesDropdown() {
             </div>
 
             <ScrollArea className="max-h-[400px]">
-              {recent.length === 0 ? (
+              {sortedChannels.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
-                  {sortedChannels.length === 0 ? "No conversations yet" : "Nothing said yet"}
+                  No conversations yet
                 </div>
               ) : (
                 <div className="p-1">
-                  {recent.map((msg: any) => {
-                    const channel = channels.find((c) => c.id === msg.channelId);
-                    const isDm = (msg.channelType ?? channel?.type) === "dm";
-                    const where = isDm
-                      ? (channel ? getDmDisplayName(channel) : "Direct message")
-                      : `#${msg.channelName ?? channel?.name ?? ""}`;
-                    const sender = allUsers.find((u) => u.id === msg.userId);
-                    const senderName = msg.isBot ? "Morada" : sender ? resolveDisplayName(sender) : "Someone";
-                    const unread = unreadCounts[msg.channelId] || 0;
+                  {/* One row per CONVERSATION, newest first — not one row per
+                      message. A flat feed of messages reads as an alert list:
+                      one busy chat fills the whole panel, the same name repeats
+                      six times, and there is no sense of who you are talking
+                      to. The conversation is the unit; the latest message is
+                      the preview under it, which is what the old list was
+                      missing. */}
+                  {sortedChannels.map((channel) => {
+                    const isDm = channel.type === "dm";
+                    const displayName = isDm ? getDmDisplayName(channel) : `#${channel.name}`;
+                    const unread = unreadCounts[channel.id] || 0;
+                    const latest = recent.find((m: any) => m.channelId === channel.id);
+                    const sender = latest ? allUsers.find((u) => u.id === latest.userId) : undefined;
+                    const senderName = latest?.isBot
+                      ? "Morada"
+                      : sender
+                        ? resolveDisplayName(sender)
+                        : null;
+                    const when = latest?.createdAt ?? channel.lastMessageAt;
 
                     return (
                       <button
-                        key={msg.id}
+                        key={channel.id}
                         className="w-full flex items-start gap-2.5 px-2 py-2 rounded-md hover-elevate text-left"
-                        onClick={() => handleOpenChat(msg.channelId)}
-                        data-testid={`recent-message-${msg.id}`}
+                        onClick={() => handleOpenChat(channel.id)}
+                        data-testid={`channel-row-${channel.id}`}
                       >
                         <Avatar className="h-7 w-7 shrink-0 mt-0.5">
                           <AvatarFallback className="text-table">
-                            {isDm ? (channel ? getDmInitials(channel) : "·") : <Hash className="h-3 w-3" />}
+                            {isDm ? getDmInitials(channel) : <Hash className="h-3 w-3" />}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-1.5 min-w-0">
                             <span className={`text-sm truncate ${unread > 0 ? "font-semibold" : "font-medium"}`}>
-                              {senderName}
+                              {displayName}
                             </span>
-                            <span className="text-table text-muted-foreground truncate min-w-0">{where}</span>
-                            {msg.createdAt && (
+                            {when && (
                               <span className="text-table text-muted-foreground ml-auto shrink-0">
-                                {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
+                                {formatDistanceToNow(new Date(when), { addSuffix: true })}
                               </span>
                             )}
                           </div>
-                          {/* The thing you came here to read. Mentions are
-                              stripped to their names — the raw markup is
-                              noise at a glance. */}
-                          <p className="text-table text-muted-foreground line-clamp-2 break-words">
-                            {stripMentionMarkup(msg.content || "")}
-                          </p>
+                          {latest ? (
+                            <p className="text-table text-muted-foreground truncate">
+                              {/* Who said it, only where it is not obvious: in a
+                                  DM the row is already their name. */}
+                              {!isDm && senderName ? `${senderName}: ` : ""}
+                              {stripMentionMarkup(latest.content || "")}
+                            </p>
+                          ) : (
+                            <p className="text-table text-muted-foreground/70 italic">No messages yet</p>
+                          )}
                         </div>
                         {unread > 0 && (
                           <Badge

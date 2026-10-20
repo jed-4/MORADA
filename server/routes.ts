@@ -40690,6 +40690,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = user?.id;
       const companyId = user?.companyId;
       if (!userId || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      // `?perChannel=1` returns the newest message in each conversation, which
+      // is what the header panel needs: a flat "most recent N" lets one busy
+      // chat crowd every other conversation out of the list entirely.
+      if (String(req.query.perChannel) === "1") {
+        return res.json(await storage.getLatestMessagePerChannel(userId, companyId));
+      }
       const requested = Number(req.query.limit);
       const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 25;
       res.json(await storage.getRecentMessagesForUser(userId, companyId, limit));
