@@ -356,26 +356,42 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
       });
     }
 
-    const hasRevisions = filteredProposals.some(
-      (p) => (p.version ?? 1) > 1 || (historyByProposalId.get(p.id)?.length ?? 0) > 0,
-    );
-    if (hasRevisions) {
-      cols.push({
-        id: "version",
-        header: "Rev",
-        accessorFn: (p) => p.version ?? 1,
-        cell: ({ row }) => {
-          const v = row.original.version ?? 1;
-          return (
-            <Badge variant="outline" className="text-xs" data-testid={`badge-version-${row.original.id}`}>
-              {revisionLabel(v)}
-            </Badge>
-          );
-        },
-        size: 72,
-        meta: { defaultWidth: 72, headerLabel: "Revision" } satisfies DataTableColumnMeta,
-      });
-    }
+    // Always a column, not only once something has been revised.
+    //
+    // It used to appear the moment any proposal in the filtered list had a
+    // revision and vanish again when the filter changed, so the one question it
+    // answers — which revision is this, and has it moved on — could only be
+    // asked when the answer was already obvious from the list. A column that
+    // comes and goes is also a column nobody learns to look for.
+    //
+    // A revised row says how many there have been, because "Rev C" alone does
+    // not tell you whether C is the end of it.
+    cols.push({
+      id: "version",
+      header: "Rev",
+      accessorFn: (p) => p.version ?? 1,
+      cell: ({ row }) => {
+        const v = row.original.version ?? 1;
+        const siblings = historyByProposalId.get(row.original.id)?.length ?? 0;
+        const revised = v > 1 || siblings > 0;
+        return (
+          <Badge
+            variant="outline"
+            className={`text-xs ${revised ? "" : "text-muted-foreground"}`}
+            title={
+              revised
+                ? `Revision ${revisionLabel(v).replace(/^Rev\s*/, "")} — ${siblings + 1} in total`
+                : "The original — not revised"
+            }
+            data-testid={`badge-version-${row.original.id}`}
+          >
+            {revisionLabel(v)}
+          </Badge>
+        );
+      },
+      size: 72,
+      meta: { defaultWidth: 72, headerLabel: "Revision" } satisfies DataTableColumnMeta,
+    });
 
     cols.push(
       {
@@ -508,11 +524,35 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
         id: "totalAmount",
         header: "Total",
         accessorFn: (p) => p.totalAmount,
-        cell: ({ row }) => (
-          <span className="text-xs font-semibold tabular-nums" data-testid={`text-proposal-amount-${row.original.id}`}>
-            {formatCurrency(row.original.totalAmount)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          // proposals.totalAmount is only computed when the proposal is sent
+          // (recomputeProposalTotals, from the linked estimate), so a draft —
+          // or anything with no estimate linked — still carries the 0 it was
+          // created with. Printing "$0.00" states a price of nothing, which is
+          // never true and reads as the column being broken. Say there is no
+          // figure yet instead, and why.
+          const cents = Number(row.original.totalAmount ?? 0);
+          if (!cents) {
+            return (
+              <span
+                className="text-xs text-muted-foreground"
+                title={
+                  row.original.estimateId
+                    ? "Priced when the proposal is sent"
+                    : "No estimate linked, so there is nothing to price it from"
+                }
+                data-testid={`text-proposal-amount-${row.original.id}`}
+              >
+                —
+              </span>
+            );
+          }
+          return (
+            <span className="text-xs font-semibold tabular-nums" data-testid={`text-proposal-amount-${row.original.id}`}>
+              {formatCurrency(cents)}
+            </span>
+          );
+        },
         size: 120,
         meta: { defaultWidth: 120, align: "right", headerLabel: "Total" } satisfies DataTableColumnMeta,
       },
