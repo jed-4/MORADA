@@ -719,7 +719,9 @@ function SortableRow({
           ? <ChevronDown className="h-3.5 w-3.5" />
           : <ChevronRight className="h-3.5 w-3.5" />}
       </button>
-      <TakeoffColorPicker color={m.color} onChange={onColor} testId={`color-${m.id}`} />
+      <span title={`${m.measurementType} measurement`} className="flex-shrink-0 flex items-center">
+        <TakeoffColorPicker color={m.color} onChange={onColor} testId={`color-${m.id}`} />
+      </span>
       <div className="flex-1 min-w-0">
         {editing ? (
           <Input
@@ -746,21 +748,20 @@ function SortableRow({
             <span className="truncate">{m.name}</span>
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-          <span>{m.measurementType}</span>
-          {heightMm ? <span className="normal-case">· {heightMm / 1000} m high</span> : null}
-          {usedBy.length > 0 && (
-            <span
-              className="normal-case text-primary"
-              title={`Used by ${usedBy.map((u) => `${u.itemName} — ${u.estimateName}`).join(", ")}`}
-              data-testid={`row-used-by-${m.id}`}
-            >
-              · used by {usedBy.length}
-            </span>
-          )}
+        {/* The second line is for things you glance at, not read. It never
+            wraps: it used to, and each extra line squeezed the name above it
+            until "Bath 1 Floor Tiling" showed as "Bath 1 F...".
+            The measurement type is gone from here — the unit beside the
+            quantity already says m², lm or each, so printing AREA as well was
+            saying it twice. It is on the colour swatch's tooltip instead.
+            Pages are counted rather than listed for the same reason: the list
+            grew without limit, and the marks it refers to are one click away
+            on the expander, which names each page anyway. */}
+        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 whitespace-nowrap overflow-hidden">
+          {heightMm ? <span>{heightMm / 1000} m high</span> : null}
           {pageNumbers.length > 0 && (
             <span
-              className={`normal-case ${onThisPage ? "text-foreground/70" : ""}`}
+              className={onThisPage ? "text-foreground/70" : ""}
               title={
                 pageNumbers.length > 1
                   ? `Marked up on pages ${pageNumbers.join(", ")} — the quantity is all of them`
@@ -768,7 +769,18 @@ function SortableRow({
               }
               data-testid={`row-pages-${m.id}`}
             >
-              · {pageNumbers.length > 1 ? "pp" : "p"} {pageNumbers.join(", ")}
+              {pageNumbers.length > 1
+                ? `${pageNumbers.length} pages`
+                : `p${pageNumbers[0]}`}
+            </span>
+          )}
+          {usedBy.length > 0 && (
+            <span
+              className="text-primary truncate"
+              title={`Used by ${usedBy.map((u) => `${u.itemName} — ${u.estimateName}`).join(", ")}`}
+              data-testid={`row-used-by-${m.id}`}
+            >
+              {pageNumbers.length > 0 ? "· " : ""}used {usedBy.length}×
             </span>
           )}
         </div>
@@ -794,7 +806,7 @@ function SortableRow({
         />
       ) : (
         <div
-          className={`text-sm tabular-nums w-20 text-right ${
+          className={`text-sm tabular-nums w-16 text-right flex-shrink-0 ${
             m.measurementType === "manual" ? "cursor-text hover-elevate rounded-sm" : ""
           }`}
           title={m.measurementType === "manual" ? "Click to type the quantity" : undefined}
@@ -812,6 +824,7 @@ function SortableRow({
       <Button
         size="icon"
         variant="ghost"
+        className="h-7 w-7 flex-shrink-0"
         onClick={(e) => { e.stopPropagation(); onToggleVisible(); }}
         data-testid={`button-toggle-visible-${m.id}`}
         title={m.isVisible ? "Hide on plan" : "Show on plan"}
@@ -823,6 +836,7 @@ function SortableRow({
           <Button
             size="icon"
             variant="ghost"
+            className="h-7 w-7 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
             aria-label="Measurement options"
             data-testid={`button-row-menu-${m.id}`}
