@@ -7843,15 +7843,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project || project.companyId !== companyId) {
         return res.status(404).json({ error: "Estimate not found" });
       }
-      // A locked estimate still takes a cost code. It says which bucket a line
-      // reports under, not what it is worth — the same exemption the single-cell
-      // /items/cost-code route makes, for the same reason. Any other field, or a
-      // cost code mixed WITH another field, is still refused: this is for
+      // A locked estimate still takes a cost code and an allowance designation.
+      // Both say how a line is CATEGORISED — which bucket it reports under, and
+      // whether it is tracked as PC/PS — not what it is worth; shared/pricing.ts
+      // reads neither. Same exemption the single-cell /items/cost-code and
+      // /items/allowance routes make, for the same reason. Any other field, or
+      // one of these mixed WITH another field, is still refused: this is for
       // categorising a contracted job, not a side door into its prices.
+      const LOCKED_EDITABLE = new Set(["costCode", "allowance"]);
       if (estimate.isLocked) {
         const keys = Object.keys(parsed.data);
-        const costCodeOnly = keys.length > 0 && keys.every((k) => k === "costCode");
-        if (!costCodeOnly) {
+        const categorisationOnly = keys.length > 0 && keys.every((k) => LOCKED_EDITABLE.has(k));
+        if (!categorisationOnly) {
           return res.status(409).json({ error: "Cannot modify items in a locked estimate" });
         }
       }
@@ -7860,14 +7863,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
       }
 
-      // Locked means cost-code-only by the guard above, and storage
+      // Locked means categorisation-only by the guard above, and storage
       // .updateEstimateItem refuses a locked estimate outright — so write the
-      // one allowed column directly, exactly as /items/cost-code does, and
+      // allowed columns directly, exactly as /items/cost-code does, and
       // skip the pricing loop entirely. Nothing here can touch a price.
       if (estimate.isLocked) {
         const { estimateItems: lockedItemsTbl } = await import("@shared/schema");
+        // Only the keys actually sent, so setting an allowance does not clear a
+        // cost code (and the reverse) by writing a column that was never asked for.
+        const lockedPatch: Record<string, any> = { updatedAt: new Date() };
+        if ("costCode" in parsed.data) lockedPatch.costCode = (parsed.data.costCode as string | null) ?? null;
+        if ("allowance" in parsed.data) lockedPatch.allowance = parsed.data.allowance;
         const rows = await db.update(lockedItemsTbl)
-          .set({ costCode: (parsed.data.costCode as string | null) ?? null, updatedAt: new Date() })
+          .set(lockedPatch)
           .where(and(
             inArray(lockedItemsTbl.id, itemIds as string[]),
             eq(lockedItemsTbl.estimateId, estimateId),
@@ -8260,6 +8268,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error setting estimate item cost codes:", error);
       res.status(500).json({ error: "Failed to set the cost code" });
+    }
+  });
+
+  /**
+   * Mark estimate lines as Prime Cost / Provisional Sum — including on a
+   * CONTRACTED estimate.
+   *
+   * Outside the locked-estimate guard for exactly the reason the cost-code
+   * route above is: an allowance designation says how a line is TRACKED, not
+   * what it is worth. shared/pricing.ts states it outright ("Cost code, status,
+   * allowance and proposalVisible NEVER affect price") and
+   * resolveEstimateStoredPrice takes no allowance input, so flipping this
+   * cannot move the line total, the estimate total, or the frozen contract sum.
+   *
+   * Same trap as cost codes: an estimator who signs the contract before marking
+   * the PC/PS lines can never mark them, because Revert to Approved is refused
+   * once a claim is approved (CONTRACT_HAS_INVOICES). The job then runs its
+   * whole life with its allowances invisible to allowance tracking.
+   *
+   * Note what is NOT opened up: pcMarkupPercent stays locked, because a PC
+   * markup does feed the client price.
+   *
+   * Takes a list so a whole estimate can be marked in one request.
+   */
+  app.patch("/api/estimates/:estimateId/items/allowance", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(403).json({ error: "Forbidden" });
+      const { estimateId } = req.params;
+      const { itemIds, allowance } = req.body as { itemIds?: unknown; allowance?: unknown };
+
+      if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds must be a non-empty array" });
+      }
+      const ALLOWED = ["None", "Prime Cost", "Provisional Sum"];
+      if (typeof allowance !== "string" || !ALLOWED.includes(allowance)) {
+        return res.status(400).json({ error: `allowance must be one of: ${ALLOWED.join(", ")}` });
+      }
+
+      // Same ownership checks as the cost-code route, minus the isLocked refusal.
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      const project = await storage.getProject(estimate.projectId);
+      if (!project || project.companyId !== companyId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      const ownership = await storage.verifyEstimateItemsOwnership(itemIds as string[], companyId);
+      if (!ownership.authorized) {
+        return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
+      }
+
+      const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
+      const result = await db.update(estimateItemsTbl)
+        .set({ allowance, updatedAt: new Date() })
+        .where(and(
+          inArray(estimateItemsTbl.id, itemIds as string[]),
+          eq(estimateItemsTbl.estimateId, estimateId),
+        ))
+        .returning({ id: estimateItemsTbl.id });
+
+      res.json({ updated: result.length });
+    } catch (error) {
+      console.error("Error setting estimate item allowances:", error);
+      res.status(500).json({ error: "Failed to set the allowance" });
     }
   });
 

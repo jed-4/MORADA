@@ -258,6 +258,7 @@ export interface EstimateGridCtx {
    * item update there.
    */
   costCodeMutation?: { mutate: (vars: { itemIds: string[]; costCode: string | null }) => void };
+  allowanceMutation?: { mutate: (vars: { itemIds: string[]; allowance: string }) => void };
   costCategories: CostCategory[];
   priceListItemMap: Map<string, any>;
   poLinkMap: Map<string, { poNumber: string }[]>;
@@ -308,7 +309,7 @@ export interface EstimateGridCtx {
 
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, allowanceMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -779,15 +780,21 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <CellChip
-              disabled={isLocked}
               className={allowanceFade}
-              title={isLocked ? undefined : `Allowance: ${allowanceType}. Click to change.`}
+              title={`Allowance: ${allowanceType}. Click to change.`}
               testId={`button-toggle-allowance-${item.id}`}
               onClick={() => {
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
                 const nextAllowance = 
                   item.allowance === 'None' ? 'Prime Cost' :
                   item.allowance === 'Prime Cost' ? 'Provisional Sum' : 'None';
+                // Stays editable on a CONTRACTED estimate — the designation says
+                // how a line is tracked, not what it costs. On a locked estimate
+                // updateItemMutation would 409, so use the dedicated writer.
+                if (isLocked) {
+                  allowanceMutation?.mutate({ itemIds: [item.id], allowance: nextAllowance });
+                  return;
+                }
                 updateItemMutation.mutate({
                   itemId: item.id,
                   data: { allowance: nextAllowance }

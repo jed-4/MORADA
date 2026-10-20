@@ -708,6 +708,7 @@
     "server/routes.ts PATCH /api/estimate-items/:id/allowance-status",
     "server/routes.ts PATCH /api/estimate-items/reorder",
     "server/routes.ts PATCH /api/estimate-templates/:id",
+    "server/routes.ts PATCH /api/estimates/:estimateId/items/allowance",
     "server/routes.ts PATCH /api/estimates/:estimateId/items/bulk-markup",
     "server/routes.ts PATCH /api/estimates/:estimateId/items/bulk-update",
     "server/routes.ts PATCH /api/estimates/:estimateId/items/cost-code",

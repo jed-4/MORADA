@@ -72,7 +72,8 @@ interface Props {
    * a line is reported rather than what it costs. Disabling the whole menu left
    * a contracted job with no way to be coded except one cell at a time.
    */
-  lockedToCostCode?: boolean;
+  /** On a CONTRACTED estimate, offer only the fields that move no money. */
+  lockedToCategorisation?: boolean;
   onComplete: () => void;
 }
 
@@ -80,7 +81,7 @@ export function BulkEditDropdown({
   estimateId,
   selectedItemIds,
   groups,
-  lockedToCostCode,
+  lockedToCategorisation,
   unitOptions,
   statusOptions,
   taxRate,
@@ -154,8 +155,10 @@ export function BulkEditDropdown({
     { key: "isSelection", label: "Is Selection", kind: "switch" },
   ];
 
-  // On a contract, offer only what the lock lets through.
-  const offered = lockedToCostCode ? fields.filter((f) => f.key === "costCode") : fields;
+  // On a contract, offer only what the lock lets through: the two fields that
+  // categorise a line rather than price it. See the bulk-update route.
+  const LOCKED_EDITABLE = new Set(["costCode", "allowance"]);
+  const offered = lockedToCategorisation ? fields.filter((f) => LOCKED_EDITABLE.has(f.key)) : fields;
 
   const currentField = openField ? fields.find((f) => f.key === openField) : null;
 
