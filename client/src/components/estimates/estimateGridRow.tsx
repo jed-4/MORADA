@@ -874,7 +874,23 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                  quantity and no unit cost; its amount is in Builder Cost.
                  An EMPTY line is not a lump sum — it has no amount either —
                  and dashing it out took away the cell people type into. */
-              <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
+              /* A lump sum has no quantity, so a dash is right. But a lump sum
+                 whose quantity is ZERO is the shape a priced line takes when
+                 its unit cost gets cleared: the amount is preserved on
+                 purpose, the quantity stops being consulted, and the row then
+                 reads as empty while still being charged for. Mark that one —
+                 it is almost always meant to be nothing. */
+              <span
+                className={(Number(item.quantity) || 0) === 0 ? "text-amber font-medium" : "text-muted-foreground"}
+                title={
+                  (Number(item.quantity) || 0) === 0
+                    ? "No quantity, but this line still carries an amount in Builder Cost. If it is meant to cost nothing, clear the amount there."
+                    : "A lump sum — its amount is in Builder Cost"
+                }
+                data-testid={`lump-sum-qty-${item.id}`}
+              >
+                {(Number(item.quantity) || 0) === 0 ? "0 — priced" : "—"}
+              </span>
             ) : null}
             {formulaWords && (
               <Ruler
@@ -1011,7 +1027,21 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             data-testid={`cell-unitCostExTax-${item.id}`}
           >
             {isLumpSumLine(item.unitCostExTax, item.priceIncTax)
-              ? <span className="text-muted-foreground" title="Fixed amount — set it in Builder Cost">—</span>
+              ? (
+                /* "Lump sum", not a dash.
+                   A dash here and a dash in Quantity read as an empty line,
+                   so a line still carrying an amount looked like it carried
+                   nothing — the money was only visible in Builder Cost, three
+                   columns away. Saying what the line IS costs no space and
+                   explains the figure. */
+                <span
+                  className="text-muted-foreground italic"
+                  title="A lump sum: no quantity and no unit cost. Its amount is in Builder Cost."
+                  data-testid={`lump-sum-unit-${item.id}`}
+                >
+                  Lump sum
+                </span>
+              )
               : formatCurrency(item.unitCostExTax)}
           </div>
         );
