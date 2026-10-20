@@ -58,9 +58,17 @@ const PUSH_GROUPS: PushGroup[] = [
     icon: 'calendar-outline',
   },
   {
-    key: 'timesheets',
-    label: 'Timesheets',
-    description: 'Timesheet approvals, rejections, and overtime reminders.',
+    // Split on the web in the same change — the keys here must match
+    // shared/notificationGroups.ts or a toggle silences nothing.
+    key: 'timesheetsToApprove',
+    label: 'Timesheets to approve',
+    description: 'When someone submits a timesheet and you are able to approve it.',
+    icon: 'time-outline',
+  },
+  {
+    key: 'timesheetsMine',
+    label: 'Your timesheets',
+    description: 'When your own timesheet is approved or rejected, and overtime reminders.',
     icon: 'time-outline',
   },
   {

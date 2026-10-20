@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import type { Notification as InAppNotification } from "@shared/schema";
-import { getPushGroupForType, PUSH_PREFS_VIEW_KEY } from "@shared/notificationGroups";
+import { getPushGroupForType, expandGroupKeys, PUSH_PREFS_VIEW_KEY } from "@shared/notificationGroups";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const EXPO_RECEIPT_URL = "https://exp.host/--/api/v2/push/getReceipts";
@@ -85,8 +85,8 @@ export async function sendPushForNotification(notification: InAppNotification): 
     const group = getPushGroupForType(notification.type);
     if (group) {
       const prefRow = await storage.getUserViewPreferences(notification.userId, PUSH_PREFS_VIEW_KEY);
-      const muted = (prefRow?.preferences as any)?.mutedGroups;
-      if (Array.isArray(muted) && muted.includes(group)) {
+      const muted = expandGroupKeys((prefRow?.preferences as any)?.mutedGroups);
+      if (muted.includes(group)) {
         console.log(
           `[Push] Skipped notification ${notification.id} for user ${notification.userId}: group "${group}" is muted`,
         );

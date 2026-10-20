@@ -11,7 +11,8 @@ export type PushNotificationGroupKey =
   | "messages"
   | "notes"
   | "schedule"
-  | "timesheets"
+  | "timesheetsToApprove"
+  | "timesheetsMine"
   | "payments"
   | "projects"
   | "reminders";
@@ -68,11 +69,20 @@ export const PUSH_NOTIFICATION_GROUPS: PushNotificationGroup[] = [
     types: ["schedule_assigned", "schedule_changed"],
   },
   {
-    key: "timesheets",
-    label: "Timesheets",
-    description: "Timesheet approvals, rejections, and overtime reminders.",
+    // Split from a single "Timesheets" toggle. Everyone who can approve gets a
+    // notification every time anyone submits, so on a busy week that is the
+    // bulk of the traffic — and turning it off used to take "your timesheet was
+    // approved" with it, which is the one you actually want.
+    key: "timesheetsToApprove",
+    label: "Timesheets to approve",
+    description: "When someone submits a timesheet and you are able to approve it.",
+    types: ["timesheet_submitted"],
+  },
+  {
+    key: "timesheetsMine",
+    label: "Your timesheets",
+    description: "When your own timesheet is approved or rejected, and overtime reminders.",
     types: [
-      "timesheet_submitted",
       "timesheet_approved",
       "timesheet_rejected",
       "timesheet_overtime",
@@ -123,6 +133,27 @@ export function getPushGroupForType(
   return TYPE_TO_GROUP[type] ?? null;
 }
 
+/**
+ * Saved preferences can still name the old combined "timesheets" group, from
+ * before it was split into "to approve" and "mine". Someone who muted it
+ * wanted both halves silent, so it keeps meaning that rather than quietly
+ * switching their notifications back on.
+ */
+const LEGACY_GROUP_ALIASES: Record<string, PushNotificationGroupKey[]> = {
+  timesheets: ["timesheetsToApprove", "timesheetsMine"],
+};
+
+/** Expand saved group keys, so a retired key still covers what it replaced. */
+export function expandGroupKeys(keys: string[] | null | undefined): string[] {
+  if (!Array.isArray(keys)) return [];
+  const out: string[] = [];
+  for (const key of keys) {
+    out.push(key);
+    for (const alias of LEGACY_GROUP_ALIASES[key] ?? []) out.push(alias);
+  }
+  return out;
+}
+
 // viewKey used in the shared user_view_preferences store to persist a user's
 // muted push groups: { mutedGroups: PushNotificationGroupKey[] }.
 export const PUSH_PREFS_VIEW_KEY = "push-notification-prefs";
@@ -164,6 +195,6 @@ export function shouldEmailForType(
   // An ungrouped type has no toggle in the notification centre, so emailing
   // for it would be an email nobody can turn off.
   if (!group) return false;
-  const chosen = Array.isArray(emailGroups) ? emailGroups : DEFAULT_EMAIL_GROUPS;
+  const chosen = Array.isArray(emailGroups) ? expandGroupKeys(emailGroups) : DEFAULT_EMAIL_GROUPS;
   return chosen.includes(group);
 }
