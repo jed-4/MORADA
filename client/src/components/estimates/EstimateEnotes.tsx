@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
+import { useResizableColumns } from "@/components/useResizableColumns";
 import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -118,19 +119,32 @@ const DEFAULT_COLUMNS: ColDef[] = [
   { id: "completed",      label: "Done",             defaultWidth: 52,  minWidth: 44,  visible: true },
 ];
 
-type ColPrefs = { order: string[]; hidden: string[]; widths: Record<string, number> };
+/**
+ * Which Details columns are hidden.
+ *
+ * Widths and order are no longer kept here — they come from
+ * useResizableColumns, the same mechanism the template grid, the labour sheet,
+ * the price list and the allowance tables already use. This screen had its own
+ * private copy of all three, which is how it ended up the only grid that
+ * reorders with buttons instead of by dragging a header, and how it got a
+ * width map that did not include the company's own columns (#282).
+ *
+ * Kept global rather than per estimate, matching those other grids: a column
+ * layout is something about the person reading it, not about the job.
+ */
+const HIDDEN_KEY = "enotes_hidden_columns";
 
-function loadColPrefs(estimateId: string): ColPrefs {
+function loadHidden(): string[] {
   try {
-    const raw = localStorage.getItem(`enotes_columns_${estimateId}`);
-    if (raw) return JSON.parse(raw) as ColPrefs;
+    const raw = localStorage.getItem(HIDDEN_KEY);
+    if (raw) return JSON.parse(raw) as string[];
   } catch (_) {}
-  return { order: DEFAULT_COLUMNS.map(c => c.id), hidden: [], widths: {} };
+  return [];
 }
 
-function saveColPrefs(estimateId: string, prefs: ColPrefs) {
+function saveHidden(hidden: string[]) {
   try {
-    localStorage.setItem(`enotes_columns_${estimateId}`, JSON.stringify(prefs));
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
   } catch (_) {}
 }
 
@@ -634,16 +648,8 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const [selectedTemplateSetId, setSelectedTemplateSetId] = useState<string>("");
   const [applyReplaceExisting, setApplyReplaceExisting] = useState<"replace" | "merge">("replace");
 
-  // ── Column preferences (visibility, order, widths) ────────────────────────
-  const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(estimateId));
-
-  const updateColPrefs = useCallback((updater: (prev: ColPrefs) => ColPrefs) => {
-    setColPrefs(prev => {
-      const next = updater(prev);
-      saveColPrefs(estimateId, next);
-      return next;
-    });
-  }, [estimateId]);
+  // ── Which columns are hidden (widths and order live in the shared hook) ───
+  const [hidden, setHidden] = useState<string[]>(() => loadHidden());
 
   /**
    * The company's own Details columns, which sit alongside the built-in ones.
@@ -690,122 +696,90 @@ export default function EstimateEnotes({ estimateId }: Props) {
     [fieldDefs],
   );
 
-  // Ordered + annotated column list (built-ins plus the company's own,
-  // reordered by colPrefs.order)
-  const orderedCols = useMemo<ColDef[]>(() => {
-    const all = [...DEFAULT_COLUMNS, ...customCols];
-    const byId = Object.fromEntries(all.map(c => [c.id, c]));
-    const result: ColDef[] = [];
-    for (const id of colPrefs.order) {
-      if (byId[id]) result.push(byId[id]);
-    }
-    // add any new columns not yet in prefs — this is also how a column added
-    // today appears on an estimate whose preferences were saved yesterday.
-    for (const col of all) {
-      if (!result.find(c => c.id === col.id)) result.push(col);
-    }
-    return result;
-  }, [colPrefs.order, customCols]);
-
-  const visibleCols = useMemo(
-    () => orderedCols.filter(c => !colPrefs.hidden.includes(c.id)),
-    [orderedCols, colPrefs.hidden]
-  );
+  /**
+   * Every column this grid can draw — the built-ins plus the company's own.
+   * Order and widths are decided by the shared hook below, not here.
+   */
+  const allCols = useMemo<ColDef[]>(() => [...DEFAULT_COLUMNS, ...customCols], [customCols]);
 
   /**
-   * A width for EVERY column the grid draws — the company's own as well as the
-   * built-in ones.
+   * Widths and order, from the same mechanism every other bespoke grid uses.
    *
-   * This looped DEFAULT_COLUMNS only, while the grid renders
-   * [...DEFAULT_COLUMNS, ...customCols]. So a custom column had no width, and
-   * the template below interpolated it as the string "undefinedpx". One
-   * invalid track makes the whole grid-template-columns declaration invalid,
-   * the browser throws all of it away, and the grid falls back to a single
-   * column — every header and every cell stacked on top of each other.
+   * `item` is first, fixed and flexible: it never moves and soaks up the
+   * leftover width, which is what the hard-coded `1fr` used to do. The 52px
+   * actions column is the trailing track.
    *
-   * It only took one custom column to do it, so adding the first one broke the
-   * page that was meant to show it.
+   * Hidden columns are filtered out before the hook sees them, the way the
+   * template grid does it, so a hidden column takes no track.
    */
-  const colWidths = useMemo<Record<string, number>>(() => {
-    const out: Record<string, number> = {};
-    for (const col of [...DEFAULT_COLUMNS, ...customCols]) {
-      out[col.id] = colPrefs.widths[col.id] ?? col.defaultWidth;
-    }
-    return out;
-  }, [colPrefs.widths, customCols]);
+  const shownCols = useMemo(
+    () => allCols.filter(c => !hidden.includes(c.id)),
+    [allCols, hidden],
+  );
 
-  // Grid template: fixed "Item" column (1fr) + visible cols + fixed actions column (52px)
-  const gridTemplate = useMemo(() => {
-    // Guarded: one unusable width must never be able to take the whole
-    // declaration down with it again, whatever a future column forgets to set.
-    const mid = visibleCols
-      .map(c => `${Number(colWidths[c.id]) > 0 ? colWidths[c.id] : FALLBACK_COL_WIDTH}px`)
-      .join(" ");
-    return `1fr ${mid} 52px`;
-  }, [visibleCols, colWidths]);
+  const detailCols = useResizableColumns(
+    "estimate-details",
+    useMemo(
+      () => [
+        { key: "item", defaultWidth: 240, flex: true, fixed: true },
+        ...shownCols.map(c => ({ key: c.id, defaultWidth: c.defaultWidth })),
+      ],
+      [shownCols],
+    ),
+    52,
+    { reorderable: true },
+  );
 
-  // ── Column resize ─────────────────────────────────────────────────────────
-  const resizingRef = useRef<{ colId: string; startX: number; startWidth: number } | null>(null);
+  /** The visible columns in the order the hook decided, `item` excluded. */
+  const visibleCols = useMemo<ColDef[]>(() => {
+    const byId = Object.fromEntries(allCols.map(c => [c.id, c]));
+    return detailCols.cols
+      .filter((c: { key: string }) => c.key !== "item")
+      .map((c: { key: string }) => byId[c.key])
+      .filter(Boolean) as ColDef[];
+  }, [detailCols.cols, allCols]);
 
+  /** For the Columns popover, which lists hidden ones too. */
+  const orderedCols = useMemo<ColDef[]>(() => {
+    const rest = allCols.filter(c => !visibleCols.find(v => v.id === c.id));
+    return [...visibleCols, ...rest];
+  }, [allCols, visibleCols]);
+
+  const gridTemplate = detailCols.gridTemplate;
+
+  /** Resize, through the shared hook. Its own minimum applies. */
   const startResize = useCallback((colId: string, e: React.MouseEvent) => {
     e.preventDefault();
-    const startWidth = colWidths[colId];
-    resizingRef.current = { colId, startX: e.clientX, startWidth };
-
-    const onMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const { colId: id, startX, startWidth: sw } = resizingRef.current;
-      // Across every column, not just the built-ins: dragging a custom
-      // column's edge otherwise fell back to a generic minimum.
-      const col = [...DEFAULT_COLUMNS, ...customCols].find(c => c.id === id);
-      const minW = col?.minWidth ?? 40;
-      const newW = Math.max(minW, sw + ev.clientX - startX);
-      updateColPrefs(prev => ({
-        ...prev,
-        widths: { ...prev.widths, [id]: newW },
-      }));
-    };
-
-    const onUp = () => {
-      resizingRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [colWidths, updateColPrefs]);
+    const current = detailCols.cols.find((c: { key: string }) => c.key === colId);
+    detailCols.startResize(colId, e.clientX, current?.width ?? FALLBACK_COL_WIDTH);
+  }, [detailCols]);
 
   // ── Toggle column visibility ──────────────────────────────────────────────
   const toggleCol = useCallback((id: string) => {
-    updateColPrefs(prev => {
-      const hidden = prev.hidden.includes(id)
-        ? prev.hidden.filter(h => h !== id)
-        : [...prev.hidden, id];
-      return { ...prev, hidden };
+    setHidden(prev => {
+      const next = prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id];
+      saveHidden(next);
+      return next;
     });
-  }, [updateColPrefs]);
+  }, []);
 
-  // ── Move column up/down ───────────────────────────────────────────────────
+  /**
+   * Up and down still move a column, now through the hook's own order, so the
+   * buttons and dragging a header agree. Kept alongside dragging rather than
+   * replaced by it: the popover is where you go when you know which column you
+   * want and it is off the side of the screen.
+   */
   const moveColUp = useCallback((id: string) => {
-    updateColPrefs(prev => {
-      const order = [...prev.order];
-      const idx = order.indexOf(id);
-      if (idx <= 0) return prev;
-      [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
-      return { ...prev, order };
-    });
-  }, [updateColPrefs]);
+    const idx = visibleCols.findIndex(c => c.id === id);
+    if (idx <= 0) return;
+    detailCols.moveColumn(id, visibleCols[idx - 1].id);
+  }, [visibleCols, detailCols]);
 
   const moveColDown = useCallback((id: string) => {
-    updateColPrefs(prev => {
-      const order = [...prev.order];
-      const idx = order.indexOf(id);
-      if (idx < 0 || idx >= order.length - 1) return prev;
-      [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
-      return { ...prev, order };
-    });
-  }, [updateColPrefs]);
+    const idx = visibleCols.findIndex(c => c.id === id);
+    if (idx < 0 || idx >= visibleCols.length - 1) return;
+    detailCols.moveColumn(id, visibleCols[idx + 1].id);
+  }, [visibleCols, detailCols]);
 
   // ── Data queries ──────────────────────────────────────────────────────────
   const { data: enotes = [], isLoading } = useQuery<EnoteRow[]>({
@@ -1238,7 +1212,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
                 <ColumnsDropdown
                   columns={orderedCols}
-                  hidden={colPrefs.hidden}
+                  hidden={hidden}
                   onToggle={toggleCol}
                   onMoveUp={moveColUp}
                   onMoveDown={moveColDown}
@@ -1290,7 +1264,14 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   {visibleCols.map((col, idx) => {
                     const isCenter = ["required", "rfi", "rfq", "labour", "completed"].includes(col.id);
                     return (
-                      <div key={col.id} className="relative flex items-center">
+                      // Drag the header to move the column, the way the template
+                      // grid and the labour sheet already work. The up/down
+                      // buttons in the Columns popover move the same order.
+                      <div
+                        key={col.id}
+                        className="relative flex items-center cursor-grab data-[dragging=true]:opacity-40"
+                        {...detailCols.headerDragProps(col.id)}
+                      >
                         <span className={`flex-1 truncate ${isCenter ? "text-center" : "pl-1"}`}>
                           {col.label}
                         </span>
