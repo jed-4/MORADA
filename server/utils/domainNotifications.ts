@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { getPushGroupForType, expandGroupKeys, PUSH_PREFS_VIEW_KEY } from "@shared/notificationGroups";
 import { emitNotification } from "../socketManager";
 import { parseMentionUserIds, buildContentPreview } from "./mentions";
 
@@ -23,6 +24,26 @@ async function safeCreate(notification: {
   createdByUserId?: string | null;
 }): Promise<void> {
   try {
+    // A muted category is muted everywhere.
+    //
+    // The toggles only ever stopped PUSH — the notification was still created,
+    // so the bell filled up with the very thing you had just turned off and
+    // the switch looked broken. Checking it here means "Notify me about" means
+    // what it says.
+    //
+    // A lookup failure must never swallow a notification: on error it is
+    // created, the same way a push-preference failure still sends.
+    try {
+      const group = getPushGroupForType(notification.type);
+      if (group) {
+        const prefRow = await storage.getUserViewPreferences(notification.userId, PUSH_PREFS_VIEW_KEY);
+        const muted = expandGroupKeys((prefRow?.preferences as any)?.mutedGroups);
+        if (muted.includes(group)) return;
+      }
+    } catch (err) {
+      console.error("[Notify] Could not read notification preferences (creating anyway):", err);
+    }
+
     const created = await storage.createNotification({
       isRead: false,
       ...notification,

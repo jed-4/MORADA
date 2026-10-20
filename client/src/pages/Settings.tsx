@@ -1,4 +1,5 @@
 import { MORADA_PALETTE_HEXES } from '@/lib/colors';
+import { NotificationSettings } from "@/components/NotificationSettings";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +119,17 @@ const SETTINGS_CATEGORIES = [
     description: "User roles and permission management",
     group: "general",
     navigateTo: "/roles-permissions"
+  },
+  {
+    // Your own notification settings, not the company's — but this is where
+    // people come looking for settings, and the only other way in was a gear
+    // tucked inside the notification bell.
+    id: "my-notifications",
+    label: "My Notifications",
+    icon: Bell,
+    description: "Choose which notifications you get, and which also email you",
+    group: "general",
+    opensNotificationSettings: true,
   },
   // Field Settings section - matches sidebar order
   {
@@ -248,6 +260,7 @@ export default function Settings() {
   const urlParams = new URLSearchParams(window.location.search);
   const tabParam = urlParams.get("tab");
   const [activeSection, setActiveSection] = useState(tabParam || "branding");
+  const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [documentStyle, setDocumentStyle] = useState<"style1" | "style2">("style1");
   const { toast } = useToast();
@@ -2058,7 +2071,9 @@ export default function Settings() {
                       <button
                         key={category.id}
                         onClick={() => {
-                          if (category.navigateTo) {
+                          if ((category as any).opensNotificationSettings) {
+                            setNotificationSettingsOpen(true);
+                          } else if (category.navigateTo) {
                             navigate(category.navigateTo);
                           } else {
                             setActiveSection(category.id);
@@ -2159,6 +2174,11 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <NotificationSettings
+        open={notificationSettingsOpen}
+        onOpenChange={setNotificationSettingsOpen}
+      />
     </div>
   );
 }
