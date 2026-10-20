@@ -91,6 +91,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
   const [pageWidthMm, setPageWidthMm] = useState<number>(420);
   const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
   const [renderWidth, setRenderWidth] = useState(900);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [markupMode, setMarkupMode] = useState<MarkupMode>(null);
@@ -115,6 +117,68 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     useState<{ measurementId: string; index: number } | null>(null);
   const deletingShapeRef = useRef(false);
   const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  /** A drag that pans regardless of the tool in hand — Cmd-drag or middle button. */
+  const forcePanRef = useRef(false);
+
+  /**
+   * Cmd or Ctrl with the wheel zooms the plan, at the cursor.
+   *
+   * It has to be a native listener: React's onWheel is registered passively, so
+   * preventDefault there is ignored and the browser zooms the whole page
+   * instead of the plan. A trackpad pinch arrives as a wheel event with
+   * ctrlKey set, so pinching works through the same path without extra code.
+   *
+   * A plain wheel is left alone — scrolling a long plan is the other thing
+   * people do constantly, and taking it over would be worse than the problem.
+   */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      // Trackpads report small, frequent deltas; a mouse wheel reports ~100 at
+      // a time. Scaling by the delta keeps both feeling proportional.
+      const factor = Math.exp(-e.deltaY / 300);
+      zoomAround(zoomRef.current * factor, e.clientX, e.clientY);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 4;
+
+  /**
+   * Zoom while keeping one point still.
+   *
+   * The plan is sized by multiplying its width by the zoom, so without this the
+   * content grows from its top-left corner and whatever you were looking at
+   * slides away — on a big plan, off the screen. Holding the point under the
+   * cursor is what makes a wheel zoom feel like it is magnifying rather than
+   * scrolling. The buttons use the middle of the viewport for the same reason.
+   */
+  const zoomAround = (next: number, clientX?: number, clientY?: number) => {
+    const el = containerRef.current;
+    const target = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(next.toFixed(4))));
+    if (!el) { setZoom(target); return; }
+    const rect = el.getBoundingClientRect();
+    const ax = clientX === undefined ? rect.width / 2 : clientX - rect.left;
+    const ay = clientY === undefined ? rect.height / 2 : clientY - rect.top;
+    const prev = zoomRef.current;
+    if (target === prev) return;
+    const contentX = el.scrollLeft + ax;
+    const contentY = el.scrollTop + ay;
+    const k = target / prev;
+    setZoom(target);
+    // After the re-render has resized the plan, not before.
+    requestAnimationFrame(() => {
+      const again = containerRef.current;
+      if (!again) return;
+      again.scrollLeft = contentX * k - ax;
+      again.scrollTop = contentY * k - ay;
+    });
+  };
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
   const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
@@ -902,14 +966,31 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           </PopoverContent>
         </Popover>
         <div className="flex-1" />
-        <Button size="icon" variant="ghost" onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))} data-testid="button-zoom-out">
+        <Button size="icon" variant="ghost" onClick={() => zoomAround(zoom - 0.25)} data-testid="button-zoom-out" title="Zoom out — or hold ⌘ and scroll">
           <ZoomOut className="h-4 w-4" />
         </Button>
         <span className="text-xs tabular-nums w-12 text-center">{Math.round(zoom * 100)}%</span>
-        <Button size="icon" variant="ghost" onClick={() => setZoom((z) => Math.min(4, z + 0.25))} data-testid="button-zoom-in">
+        <Button size="icon" variant="ghost" onClick={() => zoomAround(zoom + 0.25)} data-testid="button-zoom-in" title="Zoom in — or hold ⌘ and scroll">
           <ZoomIn className="h-4 w-4" />
         </Button>
-        <Button size="icon" variant="ghost" onClick={() => setZoom(1)} data-testid="button-fit">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => {
+            // Fit the page to the space, rather than jumping to 100% — on a
+            // large sheet 100% is not a useful place to land.
+            const el = containerRef.current;
+            if (!el || renderWidth <= 0) { zoomAround(1); return; }
+            const usable = el.clientWidth - 24; // the container's own padding
+            zoomAround(usable / renderWidth);
+            requestAnimationFrame(() => {
+              const again = containerRef.current;
+              if (again) { again.scrollLeft = 0; again.scrollTop = 0; }
+            });
+          }}
+          data-testid="button-fit"
+          title="Fit the page to the window"
+        >
           <Maximize2 className="h-4 w-4" />
         </Button>
         <Button
@@ -927,21 +1008,28 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           className="flex-1 overflow-auto bg-muted/30 relative p-3"
           style={{ cursor: drawMode === "pan" ? (panState.current ? "grabbing" : "grab") : undefined }}
           onMouseDown={(e) => {
-            if (drawMode !== "pan" || !containerRef.current) return;
+            if (!containerRef.current) return;
+            // Cmd (or Ctrl) and the middle button pan whatever tool is in hand,
+            // so moving around the plan no longer means putting the pen down,
+            // switching to Pan, and switching back to carry on drawing.
+            const forced = e.metaKey || e.ctrlKey || e.button === 1;
+            if (!forced && drawMode !== "pan") return;
             e.preventDefault();
+            forcePanRef.current = forced;
             panState.current = {
               x: e.clientX, y: e.clientY,
               left: containerRef.current.scrollLeft, top: containerRef.current.scrollTop,
             };
           }}
           onMouseMove={(e) => {
-            if (drawMode !== "pan" || !panState.current || !containerRef.current) return;
+            if (!panState.current || !containerRef.current) return;
+            if (!forcePanRef.current && drawMode !== "pan") return;
             const s = panState.current;
             containerRef.current.scrollLeft = s.left - (e.clientX - s.x);
             containerRef.current.scrollTop = s.top - (e.clientY - s.y);
           }}
-          onMouseUp={() => { panState.current = null; }}
-          onMouseLeave={() => { panState.current = null; }}
+          onMouseUp={() => { panState.current = null; forcePanRef.current = false; }}
+          onMouseLeave={() => { panState.current = null; forcePanRef.current = false; }}
         >
           {!isScaled && (
             <div
