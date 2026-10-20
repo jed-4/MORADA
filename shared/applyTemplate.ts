@@ -41,6 +41,8 @@
  *     from a PC template was indistinguishable from a PS one. Needs migration
  *     0078, which adds selections.allowance_type.
  *  b. `?? null` on the allowance, per 3 above.
+ *  c. A blank option name takes the selection's name (`optionNameOrFallback`)
+ *     instead of being written as "". A named option passes through untouched.
  */
 
 export interface ApplyContext {
@@ -80,11 +82,28 @@ function buildAttachments(opt: any, optionId: string, attachments: any[]): void 
   });
 }
 
-function buildOption(opt: any, selectionId: string, optionId: string, sortOrder: number): any {
+/**
+ * A template option with no name of its own takes the selection's name.
+ *
+ * Before 2026-09-13 the template's option dialog had no validation, so options
+ * were saved blank — usually because the template's own name already said what
+ * the product was ("Paint - General Dulux Berkshire"). The write-through to
+ * `products` skips a blank name, so a template whose only option is blank has
+ * no rows and /apply falls back to the blob, copying "" straight into
+ * selection_options.name (NOT NULL, but "" passes). The job then showed an
+ * option card with no name and an Edit dialog with an empty Option Name.
+ */
+export function optionNameOrFallback(name: unknown, fallback: string | null | undefined): string {
+  if (typeof name === "string" && name.trim()) return name;
+  const fb = typeof fallback === "string" ? fallback.trim() : "";
+  return fb || "Untitled option";
+}
+
+function buildOption(opt: any, selectionId: string, optionId: string, sortOrder: number, fallbackName: string | null): any {
   return {
     id: optionId,
     selectionId,
-    name: opt.name,
+    name: optionNameOrFallback(opt.name, fallbackName),
     brand: opt.brand || null,
     sku: opt.sku || null,
     description: opt.description || null,
@@ -133,7 +152,7 @@ export function buildLegacyApplyRows(items: any[], ctx: ApplyContext): ApplyRows
   items.forEach((item, i) => {
     for (const opt of (item.options || [])) {
       const optionId = ctx.newId();
-      options.push(buildOption(opt, selections[i].id, optionId, opt.sortOrder ?? 0));
+      options.push(buildOption(opt, selections[i].id, optionId, opt.sortOrder ?? 0, item.itemName ?? null));
       buildAttachments(opt, optionId, attachments);
     }
   });
@@ -178,7 +197,7 @@ export function buildFlatApplyRows(
   const attachments: any[] = [];
   options_.forEach((opt: any, idx: number) => {
     const optionId = ctx.newId();
-    options.push(buildOption(opt, selectionId, optionId, opt.sortOrder ?? idx));
+    options.push(buildOption(opt, selectionId, optionId, opt.sortOrder ?? idx, template.name ?? null));
     buildAttachments(opt, optionId, attachments);
   });
 

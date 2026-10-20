@@ -16058,6 +16058,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      // The column is NOT NULL but "" passes it, and a nameless option renders
+      // as just its brand. The dialog requires a name; the API now agrees.
+      if (!validationResult.data.name?.trim()) {
+        return res.status(400).json({ error: "An option needs a name" });
+      }
 
       // Ownership: selection → project → company.
       const parentSelection = await storage.getSelection(req.params.selectionId);
@@ -16085,6 +16090,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
+      }
+      if (validationResult.data.name !== undefined && !validationResult.data.name?.trim()) {
+        return res.status(400).json({ error: "An option needs a name" });
       }
       const viewer = await resolveSelectionViewer(req);
       const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = withOptionLineTotal(
