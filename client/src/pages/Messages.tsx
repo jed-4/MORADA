@@ -1629,16 +1629,22 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   // Get DM display name - shows other participant's name
   const getDmDisplayName = (channel: Channel) => {
     if (channel.type !== "dm" || !channel.dmParticipants) return channel.name;
-    
+
+    // A DM's stored name is generated — "dm-<uuid>-<uuid>" — so it is never
+    // something to show anyone. When the other person cannot be resolved,
+    // which happens once they are archived and drop out of the user list, say
+    // so plainly rather than falling back to the id.
+    const unnamed = "Direct message";
+
     const otherUserId = (channel.dmParticipants as string[]).find(id => id !== user?.id);
-    if (!otherUserId) return channel.name;
-    
+    if (!otherUserId) return unnamed;
+
     const otherUser = allUsers.find((u: any) => u.id === otherUserId);
-    if (!otherUser) return channel.name;
-    
+    if (!otherUser) return unnamed;
+
     return otherUser.firstName && otherUser.lastName 
       ? `${otherUser.firstName} ${otherUser.lastName}` 
-      : otherUser.email || channel.name;
+      : otherUser.email || unnamed;
   };
 
   useEffect(() => {
@@ -1813,16 +1819,44 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               >
                 <Sparkles className="h-3.5 w-3.5" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0"
-                onClick={() => channelTypeFilter === "dm" ? setIsCreateDmOpen(true) : setIsCreateChannelOpen(true)}
-                data-testid="button-new-channel"
-                title={channelTypeFilter === "dm" ? "Start DM" : "Create Channel"}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
+              {/* Both ways in, said out loud.
+                  This button used to create a channel, UNLESS the list filter
+                  happened to be set to "dm" — in which case the same button
+                  started a direct message instead. The filter lives inside a
+                  popover, so anyone who had not found it had no way to start a
+                  DM at all, and nothing on screen suggested one existed. One
+                  control with two meanings, and the meaning hidden behind a
+                  setting you had to go looking for. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0"
+                    data-testid="button-new-channel"
+                    title="New conversation"
+                    aria-label="New conversation"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => setIsCreateDmOpen(true)}
+                    data-testid="menu-new-dm"
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    New direct message
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setIsCreateChannelOpen(true)}
+                    data-testid="menu-new-channel"
+                  >
+                    <Hash className="h-4 w-4 mr-2" />
+                    New channel
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -1916,8 +1950,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               {/* Channel Header - aligned with conversation panel */}
               <div className="shrink-0 h-11 px-4 flex items-center justify-between border-b bg-background">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Hash className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-base font-semibold truncate">{selectedChannel.name}</span>
+                  {/* A direct message is a person, not a channel. The sidebar
+                      already resolved the name; the header did not, so opening
+                      a DM put its generated id — "dm-<uuid>-<uuid>" — across
+                      the top of the conversation, and a hash in front of it. */}
+                  {selectedChannel.type === "dm"
+                    ? <User className="h-4 w-4 text-primary shrink-0" />
+                    : <Hash className="h-4 w-4 text-primary shrink-0" />}
+                  <span className="text-base font-semibold truncate">{getDmDisplayName(selectedChannel)}</span>
                   {selectedChannel.isClientFacing && (
                     <Badge variant="secondary" className="h-5 text-data shrink-0">
                       <Eye className="h-3 w-3 mr-1" />
@@ -3139,7 +3179,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
           <SheetHeader className="px-5 pt-5 pb-4 border-b shrink-0">
             <SheetTitle className="text-base">
               {selectedChannel?.type === "dm"
-                ? "Conversation"
+                ? getDmDisplayName(selectedChannel)
                 : `#${selectedChannel?.name}`}
             </SheetTitle>
           </SheetHeader>

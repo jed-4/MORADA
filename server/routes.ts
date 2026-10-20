@@ -40244,6 +40244,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // One conversation per set of people.
+      //
+      // Nothing checked, so starting a DM with someone you already had one with
+      // made a SECOND channel — same generated name, same two members — and the
+      // history was then split across both with no way to tell which was which.
+      // Returning the existing one is what "start a DM" means every time after
+      // the first.
+      if (validationResult.data.type === 'dm' && Array.isArray(validationResult.data.dmParticipants)) {
+        const uniqueSorted = (ids: string[]) =>
+          ids.filter((id, i) => !!id && ids.indexOf(id) === i).sort();
+        const wanted = uniqueSorted(validationResult.data.dmParticipants as string[]);
+        if (wanted.length > 0) {
+          const existingDms = await storage.getChannels(companyId, userId, { type: 'dm' });
+          const already = existingDms.find((c) => {
+            const have = Array.isArray(c.dmParticipants)
+              ? uniqueSorted(c.dmParticipants as string[])
+              : [];
+            return have.length === wanted.length && have.every((id, i) => id === wanted[i]);
+          });
+          if (already) return res.status(200).json(already);
+        }
+      }
+
       const channel = await storage.createChannel({
         ...validationResult.data,
         companyId,
