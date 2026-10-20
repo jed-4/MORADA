@@ -109,6 +109,33 @@ export default function QuantityFormulaEditor({
     };
   }, []);
 
+  /**
+   * Take the caret, and select what is there.
+   *
+   * `autoFocus` could never work: the card is portalled and stays
+   * `display:none` until the layout effect above has measured where to put it,
+   * and focusing a hidden element does nothing. Nothing re-focused it once it
+   * appeared, so the cell opened with focus still on the grid — typing went
+   * nowhere, Tab fell through to the page's tab order, and Enter did nothing.
+   * None of the grid's keyboard handling was broken; it simply never received
+   * the keys.
+   *
+   * Selecting the value is what makes click-then-type replace it, rather than
+   * appending to a number you meant to overwrite.
+   *
+   * Once only: the anchor is re-measured on a timer, and re-selecting on every
+   * tick would eat the caret while you type.
+   */
+  const tookFocus = useRef(false);
+  useEffect(() => {
+    if (!anchor || tookFocus.current) return;
+    const el = inputRef.current;
+    if (!el) return;
+    tookFocus.current = true;
+    el.focus();
+    el.select();
+  }, [anchor]);
+
   // Whatever sits after an unclosed `{` in the cell. Null when there is no
   // open brace, which is also how "the ruler button opened this" looks.
   const braceText = useMemo(() => {
@@ -200,21 +227,67 @@ export default function QuantityFormulaEditor({
   const insert = (m: TakeoffMeasurement) => {
     onPick(m.name, m.id);
     const ref = `{${m.name}}`;
-    const open = value.lastIndexOf("{");
-    const inBrace = open >= 0 && !value.slice(open).includes("}");
-    const next = inBrace
-      ? `${value.slice(0, open)}${ref}`
-      : !value.trim() || isPlainNumber(value)
-        ? ref
-        : `${value}${ref}`;
-    onChange(next);
+    const el = inputRef.current;
+    const start = el?.selectionStart ?? value.length;
+
+    // A half-typed `{wal` is a search, not text to keep: the reference replaces
+    // it, from the brace up to the caret.
+    const open = value.lastIndexOf("{", Math.max(0, start - 1));
+    const inBrace = open >= 0 && !value.slice(open, start).includes("}");
+
+    if (inBrace) {
+      const caret = open + ref.length;
+      onChange(value.slice(0, open) + ref + value.slice(start));
+      requestAnimationFrame(() => {
+        const again = inputRef.current;
+        if (!again) return;
+        again.focus();
+        again.setSelectionRange(caret, caret);
+      });
+    } else if (!value.trim() || isPlainNumber(value)) {
+      // A bare number — almost always the untouched default of 1 — is a
+      // placeholder rather than something to build on; appending to it gave
+      // `1{Wall linings}`, which is not an expression.
+      onChange(ref);
+      requestAnimationFrame(() => {
+        const again = inputRef.current;
+        if (!again) return;
+        again.focus();
+        again.setSelectionRange(ref.length, ref.length);
+      });
+    } else {
+      insertAtCaret(ref);
+    }
     closePicker();
   };
 
-  const append = (text: string) => {
-    onChange(value + text);
-    inputRef.current?.focus();
+  /**
+   * Put `text` where the caret is, not on the end.
+   *
+   * Everything here used to concatenate: clicking ROUND or a take-off item with
+   * the caret halfway through `2 * 3` gave `2 * 3ROUND(`, so the only way to
+   * build an expression was to type it in the order it reads. Replacing the
+   * selection as well means a highlighted stretch is swapped out, the way any
+   * text field behaves.
+   *
+   * React resets the caret to the end when the value prop changes, so it is put
+   * back on the next frame — after the re-render that the onChange causes.
+   */
+  const insertAtCaret = (text: string) => {
+    const el = inputRef.current;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const caret = start + text.length;
+    onChange(value.slice(0, start) + text + value.slice(end));
+    requestAnimationFrame(() => {
+      const again = inputRef.current;
+      if (!again) return;
+      again.focus();
+      again.setSelectionRange(caret, caret);
+    });
   };
+
+  const append = insertAtCaret;
 
   // Keep the caret in the cell: a blur commits, and a popover click must not.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
@@ -280,31 +353,6 @@ export default function QuantityFormulaEditor({
           }}
           data-testid={`editor-card-${testId}`}
         >
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && (pickerOpen || keypadOpen)) {
-            // Close the helper, keep the formula — Escape a second time is what
-            // discards the edit, which is what the grid does everywhere else.
-            e.stopPropagation();
-            setPickerOpen(false);
-            setQuery("");
-            setKeypadOpen(false);
-            return;
-          }
-          onKeyDown(e);
-        }}
-        onBlur={closeAndBlur}
-        onFocus={onFocus}
-        onDoubleClick={(e) => e.stopPropagation()}
-        className="h-7 flex-1 min-w-0 bg-transparent border-0 shadow-none px-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        autoFocus
-        placeholder="12  ·  {Wall tiles} * 1.1"
-        data-testid={testId}
-      />
-
       {/* What the expression comes to, or why it cannot be worked out. A plain
           number says nothing — repeating "12" back beside "12" is noise. */}
       {(preview.text || preview.error) && (
@@ -341,6 +389,35 @@ export default function QuantityFormulaEditor({
       >
         <Calculator className="h-3.5 w-3.5" />
       </button>
+
+      {/* Last, and right-aligned, so the figure you are editing lands exactly
+          where the figure you clicked was drawn. The card itself is anchored by
+          its right edge to the cell's, so the number does not move at all when
+          the editor opens — the helpers extend to the left, into the space the
+          card was already using. */}
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && (pickerOpen || keypadOpen)) {
+            // Close the helper, keep the formula — Escape a second time is what
+            // discards the edit, which is what the grid does everywhere else.
+            e.stopPropagation();
+            setPickerOpen(false);
+            setQuery("");
+            setKeypadOpen(false);
+            return;
+          }
+          onKeyDown(e);
+        }}
+        onBlur={closeAndBlur}
+        onFocus={onFocus}
+        onDoubleClick={(e) => e.stopPropagation()}
+        className="h-7 flex-1 min-w-0 bg-transparent border-0 shadow-none px-1 text-sm text-right focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        placeholder="12  ·  {Wall tiles} * 1.1"
+        data-testid={testId}
+      />
         </div>,
         document.body,
       )}
