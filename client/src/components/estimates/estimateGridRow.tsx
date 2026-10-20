@@ -79,6 +79,8 @@ function CellChip({
   onClick,
   onPickFromList,
   disabled,
+  lockedReason,
+  onBlocked,
   className,
   title,
   testId,
@@ -88,25 +90,45 @@ function CellChip({
   /** Right-click: jump straight to a value instead of cycling to it. */
   onPickFromList?: () => void;
   disabled?: boolean;
+  /**
+   * Why this chip can't be used right now. Set it instead of `disabled` when
+   * the answer is a RULE the estimator should hear rather than a momentary
+   * unavailability: the chip stays hoverable, focusable and clickable, shows
+   * this as its tooltip, and reports it through onBlocked when clicked.
+   *
+   * `disabled` can't do that job — it carries `pointer-events-none`, so a
+   * disabled chip swallows the hover and the click and explains nothing. On a
+   * contracted estimate that reads as a broken cell, which is exactly how it
+   * was reported.
+   */
+  lockedReason?: string;
+  onBlocked?: (reason: string) => void;
   className?: string;
   title?: string;
   testId: string;
   children: React.ReactNode;
 }) {
+  const blocked = !!lockedReason;
   return (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (blocked) { onBlocked?.(lockedReason!); return; }
+        if (!disabled) onClick();
+      }}
       onDoubleClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => {
+        if (blocked) { e.preventDefault(); e.stopPropagation(); onBlocked?.(lockedReason!); return; }
         if (!onPickFromList || disabled) return;
         e.preventDefault();
         e.stopPropagation();
         onPickFromList();
       }}
       disabled={disabled}
-      title={title}
-      className={`inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className || ''}`}
+      aria-disabled={blocked || undefined}
+      title={lockedReason ?? title}
+      className={`inline-flex rounded-[9px] disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${blocked ? 'opacity-60 cursor-not-allowed' : 'hover-elevate active-elevate-2'} ${className || ''}`}
       data-testid={testId}
     >
       {children}
@@ -316,6 +338,19 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
     const isCursor =
       !isEditing && activeCell?.itemId === item.id && activeCell?.field === cursorField;
     const isLocked = estimate?.isLocked;
+    // What a locked control says when you reach for it. A contracted estimate
+    // is frozen deliberately, but it used to say so by going inert, which reads
+    // as a broken cell rather than a rule — that is how this came in as a bug.
+    // Allowances get their own line because the designation is a CONTRACT TERM
+    // (it is what says a line is reconciled later at actual cost), so the way
+    // to change one is a variation, not an edit.
+    const LOCKED_MSG = "Locked — this estimate is a contract.";
+    const LOCKED_ALLOWANCE_MSG =
+      "Allowances are locked once the estimate is a contract. Raise a variation to change what's included.";
+    const lockedReason = isLocked ? LOCKED_MSG : undefined;
+    const notifyLocked = (reason: string) => {
+      toast({ title: "Locked by the contract", description: reason });
+    };
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
@@ -647,15 +682,11 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className={`h-6 w-6 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (isLocked) {
-                  toast({
-                    title: "Cannot Edit",
-                    description: "This estimate is locked and cannot be modified.",
-                    variant: "destructive",
-                  });
+                  notifyLocked(LOCKED_MSG);
                   return;
                 }
                 updateItemMutation.mutate({
@@ -664,7 +695,11 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 });
               }}
               onDoubleClick={(e) => e.stopPropagation()}
-              disabled={isLocked}
+              // Deliberately NOT `disabled`: that carries pointer-events-none,
+              // which swallowed the click and left the toast above as dead code
+              // for as long as it has existed. Blocked, but it says so.
+              aria-disabled={isLocked || undefined}
+              title={isLocked ? LOCKED_MSG : undefined}
               data-testid={`button-toggle-proposalVisible-${item.id}`}
             >
               {item.proposalVisible ? <Eye className="w-4 h-4" /> : <Eye className="w-4 h-4 opacity-30" />}
@@ -700,8 +735,9 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
             <CellChip
-              disabled={isLocked}
-              title={isLocked ? undefined : 'Click to change how this line is shown'}
+              lockedReason={lockedReason}
+              onBlocked={notifyLocked}
+              title={'Click to change how this line is shown'}
               testId={`button-toggle-shownAs-${item.id}`}
               onClick={() => {
                 const nextIndex = (validIndex + 1) % shownAsOptions.length;
@@ -734,8 +770,9 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
             <CellChip
-              disabled={isLocked}
-              title={isLocked ? undefined : 'Click to change status'}
+              lockedReason={lockedReason}
+              onBlocked={notifyLocked}
+              title={'Click to change status'}
               testId={`button-toggle-status-${item.id}`}
               onClick={() => {
                 const next = nextStatusKey(currentStatus, statusOptions);
@@ -779,9 +816,10 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <CellChip
-              disabled={isLocked}
+              lockedReason={isLocked ? LOCKED_ALLOWANCE_MSG : undefined}
+              onBlocked={notifyLocked}
               className={allowanceFade}
-              title={isLocked ? undefined : `Allowance: ${allowanceType}. Click to change.`}
+              title={`Allowance: ${allowanceType}. Click to change.`}
               testId={`button-toggle-allowance-${item.id}`}
               onClick={() => {
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
@@ -1219,7 +1257,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                       variant="ghost"
                       size="icon"
                       className={`h-6 w-6 ${item.notes ? 'text-primary' : 'text-muted-foreground/30'}`}
-                      disabled={isLocked}
+                      title={isLocked ? 'Notes (read-only — this estimate is a contract)' : undefined}
                       data-testid={`button-notes-${item.id}`}
                     >
                       <FileText className="w-4 h-4" />
@@ -1237,6 +1275,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                   <h4 className="font-medium text-sm">Notes - {item.name}</h4>
                   <form onSubmit={(e) => {
                     e.preventDefault();
+                    if (isLocked) return;
                     const formData = new FormData(e.currentTarget);
                     const notes = formData.get('notes') as string;
                     updateItemMutation.mutate({
@@ -1247,19 +1286,24 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                     <Textarea
                       name="notes"
                       defaultValue={item.notes || ''}
-                      placeholder="Enter notes..."
+                      placeholder={isLocked ? 'No notes on this line.' : 'Enter notes...'}
                       rows={6}
+                      readOnly={isLocked}
                       data-testid={`textarea-notes-${item.id}`}
                     />
-                    <div className="flex justify-end space-x-2 mt-3">
-                      <Button
-                        type="submit"
-                        size="sm"
-                        data-testid={`button-save-notes-${item.id}`}
-                      >
-                        Save
-                      </Button>
-                    </div>
+                    {isLocked ? (
+                      <p className="text-xs text-muted-foreground mt-3">{LOCKED_MSG} Notes are read-only.</p>
+                    ) : (
+                      <div className="flex justify-end space-x-2 mt-3">
+                        <Button
+                          type="submit"
+                          size="sm"
+                          data-testid={`button-save-notes-${item.id}`}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    )}
                   </form>
                 </div>
               </PopoverContent>

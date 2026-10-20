@@ -196,6 +196,14 @@ interface EstimateDetailParams {
 // already totals all of them and they were a third of the grid's width. Every
 // one is a tick away in the column picker, and saved layouts are untouched;
 // this only changes where a new company begins.
+/**
+ * What the estimate page says when you reach for something the contract has
+ * frozen. It names the rule and the way around it, because "cannot be
+ * modified" told an estimator neither.
+ */
+const LOCKED_EDIT_HINT =
+  "This estimate is a contract, so its scope and prices are fixed. Raise a variation to change the work.";
+
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   // Item leads. The leftmost column is the most valuable space on the row and
   // it was holding a cost code that is often blank; the thing that identifies
@@ -2643,9 +2651,8 @@ export default function EstimateDetail() {
   const handleNameEdit = () => {
     if (estimate?.isLocked) {
       toast({
-        title: "Cannot Edit",
-        description: "This estimate is locked and cannot be modified.",
-        variant: "destructive",
+        title: "Locked by the contract",
+        description: LOCKED_EDIT_HINT,
       });
       return;
     }
@@ -2760,9 +2767,8 @@ export default function EstimateDetail() {
   const handleMarkupEdit = () => {
     if (estimate?.isLocked) {
       toast({
-        title: "Cannot Edit",
-        description: "This estimate is locked and cannot be modified.",
-        variant: "destructive",
+        title: "Locked by the contract",
+        description: LOCKED_EDIT_HINT,
       });
       return;
     }
@@ -2836,9 +2842,8 @@ export default function EstimateDetail() {
     // Everything that moves money stays locked. See the /items/cost-code route.
     if (estimate?.isLocked && field !== "costCode") {
       toast({
-        title: "Cannot Edit",
-        description: "This estimate is locked and cannot be modified.",
-        variant: "destructive",
+        title: "Locked by the contract",
+        description: LOCKED_EDIT_HINT,
       });
       return;
     }
@@ -3413,9 +3418,8 @@ export default function EstimateDetail() {
   const handleAddItem = () => {
     if (estimate?.isLocked) {
       toast({
-        title: "Cannot Add Item",
-        description: "This estimate is locked and cannot be modified.",
-        variant: "destructive",
+        title: "Locked by the contract",
+        description: `New items can't be added once the estimate is a contract. Raise a variation for work outside the signed scope.`,
       });
       return;
     }
@@ -3446,9 +3450,8 @@ export default function EstimateDetail() {
   const handleAddGroup = () => {
     if (estimate?.isLocked) {
       toast({
-        title: "Cannot Add Group",
-        description: "This estimate is locked and cannot be modified.",
-        variant: "destructive",
+        title: "Locked by the contract",
+        description: `New sections can't be added once the estimate is a contract. Raise a variation for work outside the signed scope.`,
       });
       return;
     }
