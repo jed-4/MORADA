@@ -2186,41 +2186,6 @@ export default function EstimateDetail() {
     },
   });
 
-  /**
-   * Allowances have their own writer for the same reason cost codes do: the
-   * PC/PS designation stays editable on a CONTRACTED estimate, and going
-   * through updateItemMutation would hit the locked-estimate guard and 409.
-   * Nothing in shared/pricing.ts reads `allowance`, so this moves no money.
-   */
-  const allowanceMutation = useMutation({
-    mutationFn: async ({ itemIds, allowance }: { itemIds: string[]; allowance: string }) => {
-      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/allowance`, "PATCH", { itemIds, allowance });
-    },
-    onMutate: async ({ itemIds, allowance }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
-      const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
-      const ids = new Set(itemIds);
-      queryClient.setQueryData<EstimateItem[]>(
-        ["/api/estimates", effectiveEstimateId, "items"],
-        (old) => old?.map((i) => (ids.has(i.id) ? { ...i, allowance } as EstimateItem : i)),
-      );
-      return { previousItems };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
-    },
-    onError: (error: any, _vars, context: any) => {
-      if (context?.previousItems) {
-        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
-      }
-      toast({
-        title: "Couldn't set the allowance",
-        description: error?.message || "Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
   const bulkMarkupMutation = useMutation({
     mutationFn: async ({ itemIds, markupPercent }: { itemIds: string[]; markupPercent: number }) => {
       return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/bulk-markup`, "PATCH", { itemIds, markupPercent });
@@ -4747,7 +4712,7 @@ export default function EstimateDetail() {
     calculatePricingValues, formatCurrency, getSubItems,
     selectedItems, handleToggleSelection, collapsedItems, handleToggleItemCollapse,
     dropTarget, activeId,
-    updateItemMutation, costCodeMutation, allowanceMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
+    updateItemMutation, costCodeMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
     form, setEditingItemId, setIsEditDialogOpen, setIsAddItemOpen,
     setItemToDelete, setIsDeleteDialogOpen, setLocation, toast,
     takeoff: {
@@ -7834,7 +7799,7 @@ export default function EstimateDetail() {
               taxRate={Number(estimate?.taxRate ?? 10)}
               // Not disabled on a contract any more: it drops to cost code
               // only, which is the one field a locked estimate accepts.
-              lockedToCategorisation={!!estimate?.isLocked}
+              lockedToCostCode={!!estimate?.isLocked}
               onComplete={() => setSelectedItems(new Set())}
             />
           )}
