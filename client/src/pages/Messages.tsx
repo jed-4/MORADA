@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } from "react";
+import { renderTextWithLinks } from "@/lib/linkify";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages, useReactionUpdated, useMessageUpdated } from "@/lib/socket";
@@ -103,7 +104,7 @@ function renderTextWithBroadcasts(text: string, keyPrefix: string): (string | JS
   let last = 0;
   let bm;
   while ((bm = broadcastRegex.exec(text)) !== null) {
-    if (bm.index > last) result.push(text.substring(last, bm.index));
+    if (bm.index > last) result.push(...renderTextWithLinks(text.substring(last, bm.index), `${keyPrefix}-${last}`));
     result.push(
       <span
         key={`${keyPrefix}-bc-${bm.index}`}
@@ -114,7 +115,7 @@ function renderTextWithBroadcasts(text: string, keyPrefix: string): (string | JS
     );
     last = bm.index + bm[0].length;
   }
-  if (last < text.length) result.push(text.substring(last));
+  if (last < text.length) result.push(...renderTextWithLinks(text.substring(last), `${keyPrefix}-${last}`));
   return result;
 }
 
@@ -1154,10 +1155,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   }, []);
 
-  useEffect(() => {
-    const totalUnread = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
-    updateFaviconBadge(totalUnread);
-  }, [unreadCounts]);
+  // The tab badge is written by GlobalMessageNotifier, which is mounted for the
+  // whole app and reads the same unread query this page does. Writing it here
+  // as well would give one number two owners, and the page would only be one of
+  // them while it happened to be open.
 
   useAllNewMessages((message: Message) => {
     queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });

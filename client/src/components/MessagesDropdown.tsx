@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { renderTextWithLinks } from "@/lib/linkify";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -53,7 +54,7 @@ function renderDropdownMessageContent(content: string, currentUserId?: string): 
     let last = 0;
     let bm;
     while ((bm = broadcastRegex.exec(text)) !== null) {
-      if (bm.index > last) result.push(text.substring(last, bm.index));
+      if (bm.index > last) result.push(...renderTextWithLinks(text.substring(last, bm.index), `${keyPrefix}-${last}`));
       result.push(
         <span key={`${keyPrefix}-bc-${bm.index}`} className="inline-flex items-center px-1 py-0.5 rounded text-table font-medium bg-muted/60 text-foreground">
           @{bm[1]}
@@ -61,7 +62,7 @@ function renderDropdownMessageContent(content: string, currentUserId?: string): 
       );
       last = bm.index + bm[0].length;
     }
-    if (last < text.length) result.push(text.substring(last));
+    if (last < text.length) result.push(...renderTextWithLinks(text.substring(last), `${keyPrefix}-${last}`));
     return result;
   };
 
