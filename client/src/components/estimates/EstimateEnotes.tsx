@@ -102,6 +102,9 @@ interface ColDef {
   visible: boolean;
 }
 
+/** Used when a column has no usable width, so the grid cannot collapse. */
+const FALLBACK_COL_WIDTH = 120;
+
 const DEFAULT_COLUMNS: ColDef[] = [
   { id: "required",       label: "Req?",            defaultWidth: 56,  minWidth: 44,  visible: true },
   { id: "brainstorm",     label: "Brainstorm Notes", defaultWidth: 180, minWidth: 80,  visible: true },
@@ -663,17 +666,35 @@ export default function EstimateEnotes({ estimateId }: Props) {
     [orderedCols, colPrefs.hidden]
   );
 
+  /**
+   * A width for EVERY column the grid draws — the company's own as well as the
+   * built-in ones.
+   *
+   * This looped DEFAULT_COLUMNS only, while the grid renders
+   * [...DEFAULT_COLUMNS, ...customCols]. So a custom column had no width, and
+   * the template below interpolated it as the string "undefinedpx". One
+   * invalid track makes the whole grid-template-columns declaration invalid,
+   * the browser throws all of it away, and the grid falls back to a single
+   * column — every header and every cell stacked on top of each other.
+   *
+   * It only took one custom column to do it, so adding the first one broke the
+   * page that was meant to show it.
+   */
   const colWidths = useMemo<Record<string, number>>(() => {
     const out: Record<string, number> = {};
-    for (const col of DEFAULT_COLUMNS) {
+    for (const col of [...DEFAULT_COLUMNS, ...customCols]) {
       out[col.id] = colPrefs.widths[col.id] ?? col.defaultWidth;
     }
     return out;
-  }, [colPrefs.widths]);
+  }, [colPrefs.widths, customCols]);
 
   // Grid template: fixed "Item" column (1fr) + visible cols + fixed actions column (52px)
   const gridTemplate = useMemo(() => {
-    const mid = visibleCols.map(c => `${colWidths[c.id]}px`).join(" ");
+    // Guarded: one unusable width must never be able to take the whole
+    // declaration down with it again, whatever a future column forgets to set.
+    const mid = visibleCols
+      .map(c => `${Number(colWidths[c.id]) > 0 ? colWidths[c.id] : FALLBACK_COL_WIDTH}px`)
+      .join(" ");
     return `1fr ${mid} 52px`;
   }, [visibleCols, colWidths]);
 
@@ -688,7 +709,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
     const onMove = (ev: MouseEvent) => {
       if (!resizingRef.current) return;
       const { colId: id, startX, startWidth: sw } = resizingRef.current;
-      const col = DEFAULT_COLUMNS.find(c => c.id === id);
+      // Across every column, not just the built-ins: dragging a custom
+      // column's edge otherwise fell back to a generic minimum.
+      const col = [...DEFAULT_COLUMNS, ...customCols].find(c => c.id === id);
       const minW = col?.minWidth ?? 40;
       const newW = Math.max(minW, sw + ev.clientX - startX);
       updateColPrefs(prev => ({
