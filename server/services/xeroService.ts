@@ -893,8 +893,13 @@ export class XeroService {
       invoicePayload.InvoiceNumber = billData.invoiceNumber;
     }
 
+    // PUT, not POST. Xero documents POST /Invoices as "Updates or creates" and
+    // matches on InvoiceNumber, so a re-entered supplier invoice whose earlier
+    // copy had been voided was sent as an EDIT to the voided bill and refused
+    // with "Invoice not of valid status for modification" (BILL-1805). PUT is
+    // create-only.
     const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices`, {
-      method: "POST",
+      method: "PUT",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -1031,8 +1036,10 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
+    // Create is PUT (create-only); POST is Xero's "updates or creates" and
+    // would match an existing credit note by number — see createBill.
     const response = await xeroFetchWithRetry(`${XERO_API_BASE}${path}`, {
-      method: "POST",
+      method: label === "createCreditNote" ? "PUT" : "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
