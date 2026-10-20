@@ -40673,37 +40673,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get recent messages across all channels
+  /**
+   * Recent messages across every channel the caller is in.
+   *
+   * This existed and nothing called it — the header panel listed channels
+   * instead. It read five messages per channel and then one user per message,
+   * each a separate round trip, so somebody in twenty channels paid over a
+   * hundred of them to fill one small panel. It is one query now, and the
+   * caller already has the users it needs to put names to ids.
+   */
   app.get("/api/messages/recent", requireAuth, async (req, res) => {
     try {
-      const userId = req.user!.id;
-      const companyId = req.user!.companyId!;
-      
-      // Get all user's channels
-      const channels = await storage.getChannels(companyId, userId);
-      
-      // Get recent messages from each channel
-      const allMessages: any[] = [];
-      for (const channel of channels) {
-        const messages = await storage.getMessages(channel.id, 5); // Get 5 most recent per channel
-        
-        // Add channel name and sender name to each message
-        for (const msg of messages) {
-          const sender = await storage.getUser(msg.userId);
-          allMessages.push({
-            ...msg,
-            channelName: channel.name,
-            senderName: sender ? `${sender.firstName || ''} ${sender.lastName || ''}`.trim() || sender.email : 'Unknown'
-          });
-        }
-      }
-      
-      // Sort by most recent first and limit to 20
-      const recentMessages = allMessages
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 20);
-      
-      res.json(recentMessages);
+      // `req.user as any`: @types/passport declares an empty Express.User, so
+      // the typed accessors do not resolve here.
+      const user = req.user as any;
+      const userId = user?.id;
+      const companyId = user?.companyId;
+      if (!userId || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const requested = Number(req.query.limit);
+      const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 25;
+      res.json(await storage.getRecentMessagesForUser(userId, companyId, limit));
     } catch (error) {
       console.error("Failed to get recent messages:", error);
       res.status(500).json({ error: "Failed to get recent messages" });

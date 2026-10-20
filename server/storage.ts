@@ -26030,6 +26030,55 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * The latest messages across every channel this person is in.
+   *
+   * The header's Messages panel listed CHANNELS — names and "4 minutes ago" —
+   * so a panel called Messages never showed a message, and finding out what
+   * anyone had actually said meant clicking into each conversation in turn.
+   * This is the one query behind showing them instead.
+   *
+   * Thread replies are left out: the feed is for the shape of the
+   * conversation, and a reply out of its thread reads as a non-sequitur.
+   */
+  async getRecentMessagesForUser(userId: string, companyId: string, limit: number): Promise<any[]> {
+    try {
+      return await db
+        .select({
+          id: schema.messages.id,
+          channelId: schema.messages.channelId,
+          userId: schema.messages.userId,
+          content: schema.messages.content,
+          createdAt: schema.messages.createdAt,
+          isBot: schema.messages.isBot,
+          channelName: schema.channels.name,
+          channelType: schema.channels.type,
+          dmParticipants: schema.channels.dmParticipants,
+        })
+        .from(schema.messages)
+        .innerJoin(schema.channels, eq(schema.channels.id, schema.messages.channelId))
+        .innerJoin(
+          schema.channelMembers,
+          and(
+            eq(schema.channelMembers.channelId, schema.messages.channelId),
+            eq(schema.channelMembers.userId, userId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.channels.companyId, companyId),
+            eq(schema.messages.isDeleted, false),
+            isNull(schema.messages.threadParentId),
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(limit);
+    } catch (error) {
+      console.error("Database error in getRecentMessagesForUser:", error);
+      return [];
+    }
+  }
+
   async getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>> {
     try {
       // Get all channels for the company where user is a member

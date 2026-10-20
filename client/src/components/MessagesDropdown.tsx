@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { renderTextWithLinks } from "@/lib/linkify";
+import { stripMentionMarkup } from "@/lib/messageText";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -114,6 +115,22 @@ export function MessagesDropdown() {
 
   const { data: channels = [] } = useQuery<ChannelWithMeta[]>({
     queryKey: ["/api/channels"],
+    enabled: open,
+  });
+
+  /**
+   * The most recent messages across every conversation.
+   *
+   * The panel used to list CHANNELS — a name and "4 minutes ago" — so a panel
+   * called Messages showed no messages, and finding out what anyone had said
+   * meant opening each conversation in turn. This is what it shows now.
+   */
+  const { data: recent = [] } = useQuery<any[]>({
+    queryKey: ["/api/messages/recent"],
+    queryFn: () =>
+      fetch("/api/messages/recent?limit=25", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []),
     enabled: open,
   });
 
@@ -251,44 +268,57 @@ export function MessagesDropdown() {
             </div>
 
             <ScrollArea className="max-h-[400px]">
-              {sortedChannels.length === 0 ? (
+              {recent.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
-                  No conversations yet
+                  {sortedChannels.length === 0 ? "No conversations yet" : "Nothing said yet"}
                 </div>
               ) : (
                 <div className="p-1">
-                  {sortedChannels.map(channel => {
-                    const isDm = channel.type === "dm";
-                    const displayName = isDm ? getDmDisplayName(channel) : channel.name;
-                    const initials = isDm ? getDmInitials(channel) : null;
-                    const unread = unreadCounts[channel.id] || 0;
+                  {recent.map((msg: any) => {
+                    const channel = channels.find((c) => c.id === msg.channelId);
+                    const isDm = (msg.channelType ?? channel?.type) === "dm";
+                    const where = isDm
+                      ? (channel ? getDmDisplayName(channel) : "Direct message")
+                      : `#${msg.channelName ?? channel?.name ?? ""}`;
+                    const sender = allUsers.find((u) => u.id === msg.userId);
+                    const senderName = msg.isBot ? "Morada" : sender ? resolveDisplayName(sender) : "Someone";
+                    const unread = unreadCounts[msg.channelId] || 0;
 
                     return (
                       <button
-                        key={channel.id}
-                        className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover-elevate text-left"
-                        onClick={() => handleOpenChat(channel.id)}
-                        data-testid={`channel-row-${channel.id}`}
+                        key={msg.id}
+                        className="w-full flex items-start gap-2.5 px-2 py-2 rounded-md hover-elevate text-left"
+                        onClick={() => handleOpenChat(msg.channelId)}
+                        data-testid={`recent-message-${msg.id}`}
                       >
-                        <Avatar className="h-7 w-7 shrink-0">
+                        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
                           <AvatarFallback className="text-table">
-                            {isDm ? initials : <Hash className="h-3 w-3" />}
+                            {isDm ? (channel ? getDmInitials(channel) : "·") : <Hash className="h-3 w-3" />}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <span className={`text-sm truncate block ${unread > 0 ? "font-semibold" : "font-medium"}`}>
-                            {isDm ? displayName : `#${displayName}`}
-                          </span>
-                          {channel.lastMessageAt && (
-                            <span className="text-table text-muted-foreground">
-                              {formatDistanceToNow(new Date(channel.lastMessageAt), { addSuffix: true })}
+                          <div className="flex items-baseline gap-1.5 min-w-0">
+                            <span className={`text-sm truncate ${unread > 0 ? "font-semibold" : "font-medium"}`}>
+                              {senderName}
                             </span>
-                          )}
+                            <span className="text-table text-muted-foreground truncate min-w-0">{where}</span>
+                            {msg.createdAt && (
+                              <span className="text-table text-muted-foreground ml-auto shrink-0">
+                                {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
+                              </span>
+                            )}
+                          </div>
+                          {/* The thing you came here to read. Mentions are
+                              stripped to their names — the raw markup is
+                              noise at a glance. */}
+                          <p className="text-table text-muted-foreground line-clamp-2 break-words">
+                            {stripMentionMarkup(msg.content || "")}
+                          </p>
                         </div>
                         {unread > 0 && (
                           <Badge
                             variant="destructive"
-                            className="shrink-0 text-data h-5 min-w-[1.25rem] flex items-center justify-center px-1"
+                            className="shrink-0 text-data h-5 min-w-[1.25rem] flex items-center justify-center px-1 mt-0.5"
                           >
                             {unread > 99 ? "99+" : unread}
                           </Badge>

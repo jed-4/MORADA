@@ -5355,7 +5355,10 @@ export const messages = pgTable("messages", {
   // Message content
   content: text("content").notNull(),
   
-  // Threading support (for future feature)
+  // Threading. In use: a reply carries threadParentId, createMessage bumps the
+  // parent's threadCount, and the channel view hides replies from the main
+  // list and shows them under their parent. The comment here used to say
+  // "for future feature", which reads as dead schema it is safe to drop.
   threadParentId: varchar("thread_parent_id").references(() => messages.id, { onDelete: "cascade" }),
   threadCount: integer("thread_count").notNull().default(0),
   

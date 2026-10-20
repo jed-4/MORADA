@@ -3,11 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useAllNewMessages } from "@/lib/socket";
 import { showMessageNotification, initFavicon, updateFaviconBadge } from "@/lib/notifications";
+import { getActiveChannel } from "@/lib/activeChannel";
 import type { Message } from "@shared/schema";
 
 interface ChannelBasic {
   id: string;
   name: string;
+  type?: string;
+  dmParticipants?: unknown;
 }
 
 export function GlobalMessageNotifier() {
@@ -38,6 +41,13 @@ export function GlobalMessageNotifier() {
     enabled: !!user,
   });
 
+  // Only to put a person's name on a DM notification.
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
   useEffect(() => { if (user) initFavicon(); }, [user]);
 
   const totalUnread = Object.values(unreadCounts).reduce((sum, n) => sum + (Number(n) || 0), 0);
@@ -49,15 +59,27 @@ export function GlobalMessageNotifier() {
     return () => updateFaviconBadge(0);
   }, [totalUnread, user]);
 
+  /**
+   * The one place a message notification is decided, and the one place the tab
+   * badge is refreshed.
+   *
+   * Notifications used to bail out entirely on /messages and hand over to that
+   * page's own handler, which had different rules — so whether you were
+   * interrupted depended on which component happened to be mounted, and a
+   * change to one never reached the other.
+   *
+   * The rule is the same everywhere now: not your own message, and not the
+   * conversation you are sitting in front of.
+   */
   useAllNewMessages((rawMessage: Message) => {
     // The count behind the tab badge, wherever you are. The messages page
     // invalidates this too; a second invalidation is a no-op.
     queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
 
-    // Delegate to Messages.tsx handler when user is actively on that page
-    if (window.location.pathname === "/messages") return;
-    // Never notify for own messages
     if (rawMessage.userId === user?.id) return;
+
+    // Reading it as it arrives is not something to be told about.
+    if (document.hasFocus() && getActiveChannel() === rawMessage.channelId) return;
 
     const channel = channels.find(c => c.id === rawMessage.channelId);
     if (!channel) return;
@@ -70,8 +92,22 @@ export function GlobalMessageNotifier() {
         ? `${(rawMessage as any).userFirstName} ${(rawMessage as any).userLastName}`
         : (rawMessage as any).userEmail || "Someone";
 
+    // A DM's stored name is generated — "dm-<uuid>-<uuid>" — so notifications
+    // for one were titled with a pair of uuids. Name it after the person, the
+    // way the conversation itself is named.
+    let channelName = channel.name;
+    if (channel.type === "dm") {
+      const otherId = Array.isArray(channel.dmParticipants)
+        ? (channel.dmParticipants as string[]).find((id) => id !== user?.id)
+        : undefined;
+      const other = otherId ? users.find((u: any) => u.id === otherId) : undefined;
+      channelName = other
+        ? (other.firstName && other.lastName ? `${other.firstName} ${other.lastName}` : other.email || "Direct message")
+        : "Direct message";
+    }
+
     showMessageNotification({
-      channelName: channel.name,
+      channelName,
       senderName,
       messageContent: rawMessage.content,
       isMention,
