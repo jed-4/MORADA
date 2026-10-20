@@ -54,6 +54,13 @@ async function drainOnce(): Promise<void> {
         await markPushDone(job.id);
         continue;
       }
+      // Waiting on a human, not on Xero: a voided link is re-created only from
+      // the review queue, and a duplicate only goes once the copy is resolved.
+      // Retrying would just repeat the same refusal.
+      if (result.error === "XERO_VOIDED" || result.error === "DUPLICATE_BILL") {
+        await markPushDone(job.id);
+        continue;
+      }
       const reason = result.message || result.error || "Push failed";
       await markPushRetry(job, reason, !isRetryable(result.status));
     } catch (e: any) {

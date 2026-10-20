@@ -23,7 +23,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { CheckCircle2, Loader2, RefreshCw, Unlink, Trash2, ExternalLink, Ban } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Unlink, Trash2, ExternalLink, Ban, Send } from "lucide-react";
 import { SiXero } from "react-icons/si";
 
 // The nightly Xero reconcile auto-applies safe drift (payments, status) but
@@ -60,8 +60,8 @@ const REASON_META: Record<XeroReviewReason, { label: string; blurb: string; tone
     tone: "amber",
   },
   voided_in_xero: {
-    label: "Voided in Xero",
-    blurb: "This invoice was voided or deleted in Xero, but the bill still exists here.",
+    label: "Xero copy voided",
+    blurb: "The Xero copy of this bill was voided or deleted. Nothing is sent to Xero until you re-create it.",
     tone: "coral",
   },
   missing_in_xero: {
@@ -82,6 +82,7 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
   // Which bill has an action in flight — keeps spinners on the right row.
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<XeroReviewBill | null>(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
 
   const { data, isLoading } = useQuery<XeroReviewResponse>({
     queryKey: XERO_REVIEW_QUERY_KEY,
@@ -89,6 +90,7 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
   });
 
   const bills = data?.bills ?? [];
+  const voided = bills.filter((b) => b.reason === "voided_in_xero");
 
   const settle = (title: string, description?: string) => {
     queryClient.invalidateQueries({ queryKey: XERO_REVIEW_QUERY_KEY });
@@ -124,6 +126,35 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
     onSuccess: () => settle("Unlinked from Xero", "The bill stays here but is no longer synced."),
     onError: fail,
     onSettled: () => setBusyId(null),
+  });
+
+  // The only way a bill whose Xero copy was voided goes to Xero again — a
+  // save never re-creates it. Lands in Xero as Awaiting Approval.
+  const recreate = useMutation({
+    mutationFn: async (billId: string) => apiRequest(`/api/bills/${billId}/xero-review/recreate`, "POST", {}),
+    onSuccess: () => settle("Re-created in Xero", "Sent as a new bill, Awaiting Approval."),
+    onError: fail,
+    onSettled: () => setBusyId(null),
+  });
+
+  const recreateAll = useMutation({
+    mutationFn: async (billIds: string[]) =>
+      apiRequest("/api/xero/bills/review/recreate", "POST", { billIds }) as Promise<{
+        sent: number;
+        failed: number;
+        results: Array<{ ok: boolean; billNumber?: string; message?: string }>;
+      }>,
+    onSuccess: (r) => {
+      const firstFail = r.results.find((x) => !x.ok);
+      queryClient.invalidateQueries({ queryKey: XERO_REVIEW_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({
+        title: `${r.sent} re-created in Xero${r.failed ? `, ${r.failed} not sent` : ""}`,
+        description: firstFail?.message,
+        variant: r.failed ? "destructive" : undefined,
+      });
+    },
+    onError: fail,
   });
 
   const remove = useMutation({
@@ -253,6 +284,21 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
                       </Button>
                       {b.reason === "voided_in_xero" && (
                         <Button
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          style={{ backgroundColor: "hsl(var(--primary))", color: "white" }}
+                          disabled={busy || recreateAll.isPending}
+                          onClick={() => run(recreate, b.billId)}
+                          data-testid={`button-recreate-${b.billId}`}
+                        >
+                          {busy && recreate.isPending
+                            ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            : <Send className="w-3 h-3 mr-1" />}
+                          Re-create in Xero
+                        </Button>
+                      )}
+                      {b.reason === "voided_in_xero" && (
+                        <Button
                           variant="outline"
                           size="sm"
                           className="h-7 px-2 text-xs"
@@ -291,10 +337,48 @@ export function XeroReviewDialog({ open, onOpenChange, onOpenBill }: Props) {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Checking Xero…</>
                 : <><RefreshCw className="w-4 h-4 mr-2" />Re-check now</>}
             </Button>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+            <div className="flex items-center gap-2">
+              {voided.length > 1 && (
+                <Button
+                  variant="outline"
+                  disabled={recreateAll.isPending || !!busyId}
+                  onClick={() => setConfirmBulk(true)}
+                  data-testid="button-recreate-all"
+                >
+                  {recreateAll.isPending
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Re-creating…</>
+                    : <><Send className="w-4 h-4 mr-2" />Re-create {voided.length} in Xero</>}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmBulk} onOpenChange={setConfirmBulk}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-create {voided.length} bills in Xero?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Each one whose Xero copy was voided is sent to Xero as a new bill, Awaiting Approval.
+              Any bill that duplicates another Morada bill for the same supplier invoice is skipped.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                recreateAll.mutate(voided.map((b) => b.billId));
+                setConfirmBulk(false);
+              }}
+              data-testid="button-confirm-recreate-all"
+            >
+              Re-create in Xero
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

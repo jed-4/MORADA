@@ -115,7 +115,8 @@ export interface XeroBillData {
   // Xero invoice status: "DRAFT" | "SUBMITTED" | "AUTHORISED".
   //   - SUBMITTED   → "Awaiting Approval" in the Xero UI
   //   - AUTHORISED  → "Awaiting Payment" in the Xero UI (approved)
-  // Defaults to AUTHORISED for backward compatibility.
+  // Create defaults to SUBMITTED; an update omits Status entirely when unset,
+  // so Xero keeps whatever status the bill has there.
   xeroStatus?: "DRAFT" | "SUBMITTED" | "AUTHORISED";
 }
 
@@ -880,7 +881,8 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // Morada never approves a bill in Xero; Jed approves there.
+      Status: billData.xeroStatus || "SUBMITTED",
     };
 
     if (billData.dueDate) {
@@ -893,8 +895,13 @@ export class XeroService {
       invoicePayload.InvoiceNumber = billData.invoiceNumber;
     }
 
+    // PUT, not POST. Xero documents POST /Invoices as "Updates or creates" and
+    // matches on InvoiceNumber, so a re-entered supplier invoice whose earlier
+    // copy had been voided was sent as an EDIT to the voided bill and refused
+    // with "Invoice not of valid status for modification" (BILL-1805). PUT is
+    // create-only.
     const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices`, {
-      method: "POST",
+      method: "PUT",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -947,7 +954,9 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // No Status unless the caller sets one: an edit must never change a
+      // bill's status in Xero.
+      ...(billData.xeroStatus ? { Status: billData.xeroStatus } : {}),
     };
 
     if (billData.dueDate) invoicePayload.DueDate = billData.dueDate;
@@ -1013,7 +1022,8 @@ export class XeroService {
         return lineItem;
       }),
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: billData.xeroStatus || "AUTHORISED",
+      // Create passes SUBMITTED; update passes nothing so Xero keeps its status.
+      ...(billData.xeroStatus ? { Status: billData.xeroStatus } : {}),
     };
     // The supplier's own credit note number, mirroring how billReference maps
     // to InvoiceNumber on a bill.
@@ -1031,8 +1041,10 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
+    // Create is PUT (create-only); POST is Xero's "updates or creates" and
+    // would match an existing credit note by number — see createBill.
     const response = await xeroFetchWithRetry(`${XERO_API_BASE}${path}`, {
-      method: "POST",
+      method: label === "createCreditNote" ? "PUT" : "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
