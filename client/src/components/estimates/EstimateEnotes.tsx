@@ -43,6 +43,7 @@ import {
   StickyNote,
   EyeOff,
   Columns3,
+  Pencil,
   ChevronUp,
   ChevronDown,
   Paperclip,
@@ -246,8 +247,10 @@ function ColumnsDropdown({
   onMoveUp,
   onMoveDown,
   customIds,
+  customDefs,
   onAddColumn,
   onRemoveColumn,
+  onEditColumn,
 }: {
   columns: ColDef[];
   hidden: string[];
@@ -256,9 +259,15 @@ function ColumnsDropdown({
   onMoveDown: (id: string) => void;
   /** Ids of the company's own columns — the only ones that can be removed. */
   customIds: Set<string>;
+  /** The company's own column definitions, so one can be opened for editing. */
+  customDefs: { id: string; label: string; type: string; options?: unknown }[];
   onAddColumn: (label: string, type: string, options: string[]) => void;
   onRemoveColumn: (id: string) => void;
+  onEditColumn: (id: string, label: string, type: string, options: string[]) => void;
 }) {
+  // Which of the company's own columns is open for editing, if any.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingDef = customDefs.find(d => d.id === editingId) ?? null;
   return (
     // A Popover rather than a DropdownMenu: this holds a form, and a menu's
     // keyboard handling (typeahead, arrow keys, Escape) is built for items.
@@ -272,7 +281,7 @@ function ColumnsDropdown({
           Columns
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-52 p-1" onOpenAutoFocus={e => e.preventDefault()}>
+      <PopoverContent align="start" className="w-64 p-1" onOpenAutoFocus={e => e.preventDefault()}>
         {columns.map((col, idx) => {
           const isHidden = hidden.includes(col.id);
           const isFirst = idx === 0;
@@ -313,23 +322,54 @@ function ColumnsDropdown({
                 </button>
               </div>
               {customIds.has(col.id) && (
-                <button
-                  className="text-muted-foreground/50 hover:text-destructive flex-shrink-0"
-                  onClick={() => onRemoveColumn(col.id)}
-                  title="Remove this column"
-                  data-testid={`remove-detail-column-${col.id}`}
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                <>
+                  {/* Renaming one of your own columns had no way in at all:
+                      the server has accepted a change since the feature
+                      shipped, and the only options on screen were add and
+                      remove — so a typo in a column name meant deleting it
+                      and losing every value recorded against it. */}
+                  <button
+                    className="text-muted-foreground/50 hover:text-foreground flex-shrink-0"
+                    onClick={() => setEditingId(editingId === col.id ? null : col.id)}
+                    title="Edit this column"
+                    data-testid={`edit-detail-column-${col.id}`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button
+                    className="text-muted-foreground/50 hover:text-destructive flex-shrink-0"
+                    onClick={() => onRemoveColumn(col.id)}
+                    title="Remove this column"
+                    data-testid={`remove-detail-column-${col.id}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </>
               )}
             </div>
           );
         })}
 
-        {/* Your own columns. Added here rather than in Settings because this is
-            where you are when you notice one is missing. */}
+        {/* Your own columns. Managed here rather than in Settings because this
+            is where you are when you notice one is wrong. */}
         <div className="mt-1 border-t border-border pt-2 px-2 pb-1">
-          <DetailColumnsForm onAdd={onAddColumn} />
+          {editingDef ? (
+            <DetailColumnsForm
+              key={editingDef.id}
+              initial={{
+                label: editingDef.label,
+                type: editingDef.type,
+                options: Array.isArray(editingDef.options) ? (editingDef.options as string[]) : [],
+              }}
+              onSave={(label, type, options) => {
+                onEditColumn(editingDef.id, label, type, options);
+                setEditingId(null);
+              }}
+              onCancel={() => setEditingId(null)}
+            />
+          ) : (
+            <DetailColumnsForm onAdd={onAddColumn} />
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -634,6 +674,12 @@ export default function EstimateEnotes({ estimateId }: Props) {
    * Retires the column rather than deleting it: the values already recorded
    * against it stay in each row, so adding it back brings them with it.
    */
+  const updateFieldDef = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; label: string; type: string; options: string[] }) =>
+      apiRequest(`/api/detail-field-defs/${id}`, "PATCH", body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
+  });
+
   const removeFieldDef = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/detail-field-defs/${id}`, "DELETE"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/detail-field-defs"] }),
@@ -1197,8 +1243,10 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   onMoveUp={moveColUp}
                   onMoveDown={moveColDown}
                   customIds={new Set(fieldDefs.map(d => d.id))}
+                  customDefs={fieldDefs}
                   onAddColumn={(label, type, options) => addFieldDef.mutate({ label, type, options })}
                   onRemoveColumn={id => removeFieldDef.mutate(id)}
+                  onEditColumn={(id, label, type, options) => updateFieldDef.mutate({ id, label, type, options })}
                 />
 
                 <div className="flex-1" />
