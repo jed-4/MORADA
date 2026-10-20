@@ -370,7 +370,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isClientFacing, setIsClientFacing] = useState(false);
   
   const [isCreateDmOpen, setIsCreateDmOpen] = useState(false);
-  const [selectedDmUserId, setSelectedDmUserId] = useState<string>("");
+  const [selectedDmUserIds, setSelectedDmUserIds] = useState<string[]>([]);
+  const [dmSearch, setDmSearch] = useState("");
   
   const [isChannelPanelOpen, setIsChannelPanelOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -1104,6 +1105,22 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   }, [reactionsMap, user]);
 
+  /**
+   * How many messages were unread at the moment this channel was opened.
+   *
+   * Opening a channel marks it read, so the count is gone a beat later — it
+   * has to be taken first and kept. Without it there was nothing in the
+   * conversation to say where you had got up to: the unread badge told you
+   * there were nine, then you opened it and landed at the bottom with no idea
+   * which nine.
+   */
+  const [unreadOnOpen, setUnreadOnOpen] = useState(0);
+  const unreadCountsRef = useRef<Record<string, number>>({});
+  unreadCountsRef.current = unreadCounts;
+  useEffect(() => {
+    setUnreadOnOpen(selectedChannelId ? (unreadCountsRef.current[selectedChannelId] || 0) : 0);
+  }, [selectedChannelId]);
+
   useEffect(() => {
     if (!selectedChannelId || !socket) return;
 
@@ -1217,11 +1234,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   const createDmMutation = useMutation({
-    mutationFn: async (otherUserId: string) => {
+    mutationFn: async (otherUserIds: string[]) => {
       if (!user?.id) throw new Error("User not found");
-      
-      // Generate DM name from user IDs (sorted for consistency)
-      const userIds = [user.id, otherUserId].sort();
+
+      // Sorted and de-duplicated, so the same set of people always produces
+      // the same name — which is what lets the server recognise a conversation
+      // that already exists instead of starting a second one.
+      const all = [user.id, ...otherUserIds];
+      const userIds = all.filter((id, i) => !!id && all.indexOf(id) === i).sort();
       const dmName = `dm-${userIds.join('-')}`;
       
       const response = await fetch("/api/channels", {
@@ -1671,6 +1691,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     return fullName.includes(mentionSearch) || (u.email || '').toLowerCase().includes(mentionSearch);
   }), [allUsers, mentionSearch]);
 
+  /** Everyone you could start a conversation with, narrowed by the search box. */
+  const dmCandidates = useMemo(() => {
+    const term = dmSearch.trim().toLowerCase();
+    return allUsers.filter((u: any) => {
+      if (u.id === user?.id) return false;
+      if (!term) return true;
+      const name = `${u.firstName || ""} ${u.lastName || ""}`.trim().toLowerCase();
+      return name.includes(term) || (u.email || "").toLowerCase().includes(term);
+    });
+  }, [allUsers, dmSearch, user?.id]);
+
   // Broadcast mention options (@channel / @here) that appear above users in the picker
   const broadcastMentionOptions = useMemo(() => {
     const all = [
@@ -1808,17 +1839,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   </div>
                 </PopoverContent>
               </Popover>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0"
-                onClick={() => seedSampleDataMutation.mutate()}
-                disabled={seedSampleDataMutation.isPending || channels.length > 0}
-                title="Load sample channels"
-                data-testid="button-seed-sample"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-              </Button>
               {/* Both ways in, said out loud.
                   This button used to create a channel, UNLESS the list filter
                   happened to be set to "dm" — in which case the same button
@@ -1867,13 +1887,36 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredChannels.length === 0 ? (
-                <EmptyState
-                  variant="inline"
-                  title={channels.length > 0
-                    ? "All channels are hidden by filters"
-                    : channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
-                  className="p-4"
-                />
+                <div className="p-4 space-y-3">
+                  <EmptyState
+                    variant="inline"
+                    title={channels.length > 0
+                      ? "All channels are hidden by filters"
+                      : channelTypeFilter === "dm" ? "No direct messages yet" : "No channels yet"}
+                    className="p-0"
+                  />
+                  {/* Loading sample channels belongs here, where there is
+                      nothing yet, rather than as a permanent button in the
+                      header beside the real controls — where it sat greyed out
+                      for everyone who already had channels, which is everyone,
+                      forever. */}
+                  {channels.length === 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full h-8 text-xs"
+                      onClick={() => seedSampleDataMutation.mutate()}
+                      disabled={seedSampleDataMutation.isPending}
+                      data-testid="button-seed-sample"
+                    >
+                      {seedSampleDataMutation.isPending ? (
+                        <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Loading…</>
+                      ) : (
+                        <><Sparkles className="h-3.5 w-3.5 mr-1.5" />Load sample channels</>
+                      )}
+                    </Button>
+                  )}
+                </div>
               ) : (
                 filteredChannels.map((channel) => {
                   const unreadCount = unreadCounts[channel.id] || 0;
@@ -2009,6 +2052,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       const threadOpen = openThreads.has(message.id);
                       const threadCount = message.threadCount || 0;
 
+                      // Where the unread run begins. The list is in order and
+                      // the count is of the newest messages, so the run is the
+                      // last N — no extra request to find the boundary.
+                      const firstUnreadIdx =
+                        unreadOnOpen > 0 && unreadOnOpen <= arr.length ? arr.length - unreadOnOpen : -1;
+                      const showUnreadMarker = idx === firstUnreadIdx;
+
                       // Day divider + grouping rules
                       const prev = idx > 0 ? arr[idx - 1] : null;
                       const showDayDivider = shouldShowDayDivider(message.createdAt, prev?.createdAt);
@@ -2044,6 +2094,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
                       return (
                         <Fragment key={message.id}>
+                          {showUnreadMarker && (
+                            <div
+                              className="flex items-center gap-3 py-1"
+                              data-testid="unread-marker"
+                            >
+                              <div className="flex-1 h-px bg-destructive/50" />
+                              <span className="text-xs font-medium text-destructive px-2">
+                                {unreadOnOpen} new {unreadOnOpen === 1 ? "message" : "messages"}
+                              </span>
+                              <div className="flex-1 h-px bg-destructive/50" />
+                            </div>
+                          )}
                           {showDayDivider && (
                             <div
                               className="flex items-center gap-3 py-1"
@@ -2993,24 +3055,60 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* A searchable list, and more than one person.
+                It was a plain <select>: fine with three people on the team,
+                unusable at thirty, since the only way through is to scroll a
+                native dropdown. It also took exactly one person, although a
+                channel's dmParticipants has always been a list — so a group
+                conversation was modelled and unreachable. */}
             <div className="space-y-2">
-              <Label htmlFor="dm-user">Select User *</Label>
-              <select
-                id="dm-user"
-                value={selectedDmUserId}
-                onChange={(e) => setSelectedDmUserId(e.target.value)}
-                className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
-                data-testid="select-dm-user"
-              >
-                <option value="">Choose a user...</option>
-                {allUsers
-                  .filter((u: any) => u.id !== user?.id)
-                  .map((u: any) => (
-                    <option key={u.id} value={u.id}>
-                      {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
-                    </option>
-                  ))}
-              </select>
+              <Label htmlFor="dm-search">Who do you want to talk to?</Label>
+              <Input
+                id="dm-search"
+                autoFocus
+                value={dmSearch}
+                onChange={(e) => setDmSearch(e.target.value)}
+                placeholder="Search by name or email"
+                data-testid="input-dm-search"
+              />
+              <div className="max-h-64 overflow-auto rounded-md border border-border divide-y divide-border">
+                {dmCandidates.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">
+                    {dmSearch ? `Nobody matches "${dmSearch}"` : "There is nobody else on the team yet"}
+                  </p>
+                ) : (
+                  dmCandidates.map((u: any) => {
+                    const name = u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email;
+                    const picked = selectedDmUserIds.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover-elevate ${picked ? "bg-primary/10" : ""}`}
+                        onClick={() =>
+                          setSelectedDmUserIds((prev) =>
+                            prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id],
+                          )
+                        }
+                        data-testid={`dm-candidate-${u.id}`}
+                      >
+                        <span className={`h-4 w-4 rounded-sm border flex items-center justify-center flex-shrink-0 ${picked ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+                          {picked && <Check className="h-3 w-3 text-primary-foreground" />}
+                        </span>
+                        <span className="min-w-0 truncate">{name}</span>
+                        {u.email && name !== u.email && (
+                          <span className="ml-auto text-xs text-muted-foreground truncate">{u.email}</span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              {selectedDmUserIds.length > 1 && (
+                <p className="text-xs text-muted-foreground">
+                  A group conversation with {selectedDmUserIds.length} people.
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -3018,7 +3116,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               variant="ghost"
               onClick={() => {
                 setIsCreateDmOpen(false);
-                setSelectedDmUserId("");
+                setSelectedDmUserIds([]);
+                setDmSearch("");
               }}
               data-testid="button-cancel-dm"
             >
@@ -3026,13 +3125,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             </Button>
             <Button
               onClick={() => {
-                if (selectedDmUserId) {
-                  createDmMutation.mutate(selectedDmUserId);
+                if (selectedDmUserIds.length > 0) {
+                  createDmMutation.mutate(selectedDmUserIds);
                   setIsCreateDmOpen(false);
-                  setSelectedDmUserId("");
+                  setSelectedDmUserIds([]);
+                  setDmSearch("");
                 }
               }}
-              disabled={!selectedDmUserId || createDmMutation.isPending}
+              disabled={selectedDmUserIds.length === 0 || createDmMutation.isPending}
               data-testid="button-start-dm"
             >
               {createDmMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</>) : "Start Conversation"}
