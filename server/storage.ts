@@ -26047,27 +26047,47 @@ export class DbStorage implements IStorage {
           )
         );
 
-      // For each channel, count messages newer than lastReadAt
+      // Count every channel's unread in ONE query.
+      //
+      // This used to run a count per channel in a loop. Each one is a round
+      // trip to a database on the other side of the Pacific, so a person in
+      // twenty channels paid twenty of them every time the counts refreshed —
+      // which is on every new message, anywhere.
+      //
+      // It also counted YOUR OWN messages as unread to you: there was no
+      // filter on the sender, so sending a message to a channel you were not
+      // looking at gave yourself a badge for it.
       const unreadCounts: Record<string, number> = {};
-      
-      for (const { channelId, lastReadAt } of channelsWithMembers) {
-        // Build the where conditions
-        const conditions = [
-          eq(schema.messages.channelId, channelId),
-          eq(schema.messages.isDeleted, false)
-        ];
+      for (const { channelId } of channelsWithMembers) unreadCounts[channelId] = 0;
 
-        // If there's a lastReadAt, only count messages after that time
-        if (lastReadAt) {
-          conditions.push(gt(schema.messages.createdAt, lastReadAt));
-        }
-
-        const result = await db
-          .select({ count: sql<number>`count(*)` })
+      if (channelsWithMembers.length > 0) {
+        const rows = await db
+          .select({
+            channelId: schema.messages.channelId,
+            count: sql<number>`count(*)`,
+          })
           .from(schema.messages)
-          .where(and(...conditions));
+          .innerJoin(
+            schema.channelMembers,
+            and(
+              eq(schema.channelMembers.channelId, schema.messages.channelId),
+              eq(schema.channelMembers.userId, userId),
+            ),
+          )
+          .where(
+            and(
+              inArray(schema.messages.channelId, channelsWithMembers.map((c) => c.channelId)),
+              eq(schema.messages.isDeleted, false),
+              ne(schema.messages.userId, userId),
+              or(
+                isNull(schema.channelMembers.lastReadAt),
+                gt(schema.messages.createdAt, schema.channelMembers.lastReadAt),
+              ),
+            ),
+          )
+          .groupBy(schema.messages.channelId);
 
-        unreadCounts[channelId] = Number(result[0]?.count || 0);
+        for (const row of rows) unreadCounts[row.channelId] = Number(row.count || 0);
       }
 
       return unreadCounts;
