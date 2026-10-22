@@ -136,6 +136,7 @@ import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTota
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import { defaultRevisionLabel } from "@shared/reviewCostImpact";
 import {
+  CLIENT_PORTAL_ACCESS_KEY,
   CLIENT_PORTAL_CATEGORY,
   CLIENT_PORTAL_PERMISSIONS,
   DEFAULT_CLIENT_PORTAL_GRANTS,
@@ -993,6 +994,11 @@ export interface IStorage {
 
   getReviewRevisions(reviewItemId: string): Promise<ReviewRevision[]>;
   getReviewRevision(id: string): Promise<ReviewRevision | undefined>;
+  /**
+   * Rev A, unissued, created with the item so documents have somewhere to go
+   * while the review is still a draft. Issuing stamps this row.
+   */
+  createDraftReviewRevision(reviewItemId: string): Promise<ReviewRevision>;
   /** Issues the next revision, supersedes the previous, repoints the item. */
   issueReviewRevision(
     reviewItemId: string,
@@ -1759,7 +1765,7 @@ function getDefaultActionsForRole(
       'financial.estimate', 'financial.purchase_orders', 'financial.bills',
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
-      'sales.client', 'sales.proposals', 'sales.leads',
+      'sales.client', CLIENT_PORTAL_ACCESS_KEY, 'sales.proposals', 'sales.leads',
       'files.manage', 'timesheets.manage', 'timesheets.rates', 'calendar.manage', 'messages.team', 'leave.manage',
       'dashboard.overview', 'dashboard.financial', 'dashboard.project_health', 'dashboard.team_performance',
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
@@ -1977,6 +1983,7 @@ export class MemStorage implements IStorage {
 
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: CLIENT_PORTAL_ACCESS_KEY, name: "Client portal access", description: "Invite clients to the client portal, and resend or revoke their access", category: "sales", actions: ["view", "add", "edit"], isBuiltIn: true },
       { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
 
@@ -7207,6 +7214,7 @@ export class DbStorage implements IStorage {
 
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: CLIENT_PORTAL_ACCESS_KEY, name: "Client portal access", description: "Invite clients to the client portal, and resend or revoke their access", category: "sales", actions: ["view", "add", "edit"], isBuiltIn: true },
       { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
 
@@ -7309,6 +7317,62 @@ export class DbStorage implements IStorage {
     await this.backfillSelectionVisibilityGrants(createdKeys);
     await this.backfillClientPortalGrants(createdKeys);
     await this.backfillMinutesGrants(createdKeys);
+    await this.backfillClientPortalAccessGrants(createdKeys);
+  }
+
+  /**
+   * Give the new client-portal-access permission to every team role that
+   * could already give portal access — i.e. held admin.users, which the
+   * routes used to check — so nobody loses the ability on deploy. Runs only on
+   * the boot that creates the key, so a later untick is never re-granted.
+   * Admin-like roles bypass permission checks and need nothing.
+   */
+  private async backfillClientPortalAccessGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has(CLIENT_PORTAL_ACCESS_KEY)) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const accessId = allPermissions.find((p) => p.key === CLIENT_PORTAL_ACCESS_KEY)?.id;
+      const usersId = allPermissions.find((p) => p.key === "admin.users")?.id;
+      if (!accessId || !usersId) return;
+
+      const usersGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, usersId));
+      if (usersGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, usersGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      // role_permissions has no unique (role_id, permission_id) constraint, so
+      // an insert cannot be relied on to refuse a duplicate — check first.
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, accessId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of usersGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        // admin.users view/add/edit gated exactly these routes; delete did not.
+        const actions = ["view", "add", "edit"].filter((a) => held.includes(a));
+        if (actions.length === 0) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: accessId,
+          allowedActions: actions as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] ${CLIENT_PORTAL_ACCESS_KEY} granted to ${granted} role(s), mirroring admin.users`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillClientPortalAccessGrants:", error);
+    }
   }
 
   /**
@@ -18939,6 +19003,38 @@ export class DbStorage implements IStorage {
    * two concurrent issues race, and the loser gets a constraint violation
    * rather than a duplicate label.
    */
+  async createDraftReviewRevision(reviewItemId: string): Promise<ReviewRevision> {
+    try {
+      return await db.transaction(async (tx) => {
+        const existing = await tx.select({ revisionNumber: schema.reviewRevisions.revisionNumber })
+          .from(schema.reviewRevisions)
+          .where(eq(schema.reviewRevisions.reviewItemId, reviewItemId))
+          .orderBy(desc(schema.reviewRevisions.revisionNumber))
+          .limit(1);
+        const nextNumber = (existing[0]?.revisionNumber ?? 0) + 1;
+
+        const [revision] = await tx.insert(schema.reviewRevisions).values({
+          reviewItemId,
+          revisionNumber: nextNumber,
+          revisionLabel: defaultRevisionLabel(nextNumber),
+          issuedAt: null,
+          issuedById: null,
+        } as any).returning();
+
+        // Point the item at it so the documents route has a target. The item's
+        // own status stays `draft` — this changes nothing the client can see.
+        await tx.update(schema.reviewItems)
+          .set({ currentRevisionId: revision.id })
+          .where(eq(schema.reviewItems.id, reviewItemId));
+
+        return revision;
+      });
+    } catch (error) {
+      console.error("Database error in createDraftReviewRevision:", error);
+      throw error;
+    }
+  }
+
   async issueReviewRevision(
     reviewItemId: string,
     input: { notes?: string | null; issuedById?: string | null; revisionLabel?: string | null },
@@ -18953,6 +19049,47 @@ export class DbStorage implements IStorage {
 
         const nextNumber = (existing[0]?.revisionNumber ?? 0) + 1;
         const now = new Date();
+
+        // Rev A is created unissued with the item so documents have something
+        // to hang off while it is still a draft. Issuing then STAMPS that
+        // revision rather than inserting a second one beside it — otherwise
+        // the drawings the builder already attached would be left behind on an
+        // orphan revision the client never sees.
+        const [pending] = await tx.select()
+          .from(schema.reviewRevisions)
+          .where(and(
+            eq(schema.reviewRevisions.reviewItemId, reviewItemId),
+            isNull(schema.reviewRevisions.issuedAt),
+          ))
+          .orderBy(desc(schema.reviewRevisions.revisionNumber))
+          .limit(1);
+
+        if (pending) {
+          const [stamped] = await tx.update(schema.reviewRevisions)
+            .set({
+              issuedAt: now,
+              issuedById: input.issuedById ?? null,
+              ...(input.notes != null ? { notes: input.notes } : {}),
+              ...((input.revisionLabel || "").trim() ? { revisionLabel: input.revisionLabel!.trim() } : {}),
+            } as any)
+            .where(eq(schema.reviewRevisions.id, pending.id))
+            .returning();
+
+          // Supersede every ISSUED predecessor — not the row just stamped.
+          await tx.update(schema.reviewRevisions)
+            .set({ supersededAt: now })
+            .where(and(
+              eq(schema.reviewRevisions.reviewItemId, reviewItemId),
+              isNull(schema.reviewRevisions.supersededAt),
+              ne(schema.reviewRevisions.id, pending.id),
+            ));
+
+          await tx.update(schema.reviewItems)
+            .set({ currentRevisionId: stamped.id, status: "awaiting_review", updatedAt: now })
+            .where(eq(schema.reviewItems.id, reviewItemId));
+
+          return stamped;
+        }
 
         if (existing.length > 0) {
           await tx.update(schema.reviewRevisions)
@@ -25041,10 +25178,18 @@ export class DbStorage implements IStorage {
         let assignees: typeof allUsers = [];
         const templateData = template as any;
         
-        if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
-          // Direct user assignment - find the specific user
-          const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
-          if (singleUser) assignees = [singleUser];
+        if (templateData.assigneeType === 'user') {
+          // Named users. assigneeUserIds is the current field; assigneeUserId
+          // is the legacy single-user one, read as a one-element fallback so a
+          // template saved before the column existed still generates.
+          const named = Array.isArray(templateData.assigneeUserIds) && templateData.assigneeUserIds.length
+            ? templateData.assigneeUserIds
+            : (templateData.assigneeUserId ? [templateData.assigneeUserId] : []);
+          // Resolved through allUsers, which is already company-scoped, so an
+          // id that no longer belongs to this company simply drops out.
+          assignees = named
+            .map((id: string) => allUsers.find(user => user.id === id))
+            .filter(Boolean) as typeof allUsers;
         } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
           // Role-based assignment: find all users with this role
           assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
@@ -25204,10 +25349,15 @@ export class DbStorage implements IStorage {
       let assignees: typeof allUsers = [];
       const templateData = template as any;
       
-      if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
-        // Direct user assignment - find the specific user
-        const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
-        if (singleUser) assignees = [singleUser];
+      if (templateData.assigneeType === 'user') {
+        // Named users, with the legacy single id as a one-element fallback.
+        // Same resolution as the other generator above — keep them in step.
+        const named = Array.isArray(templateData.assigneeUserIds) && templateData.assigneeUserIds.length
+          ? templateData.assigneeUserIds
+          : (templateData.assigneeUserId ? [templateData.assigneeUserId] : []);
+        assignees = named
+          .map((id: string) => allUsers.find(user => user.id === id))
+          .filter(Boolean) as typeof allUsers;
       } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
         // Role-based assignment: find all users with this role
         assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
@@ -25351,9 +25501,13 @@ export class DbStorage implements IStorage {
       let newAssigneeId: string | null = null;
       let newAssigneeName: string | null = null;
       
-      if (template.assigneeType === 'user' && template.assigneeUserId) {
-        newAssigneeId = template.assigneeUserId;
-        const user = allUsers.find(u => u.id === template.assigneeUserId);
+      const namedIds: string[] = Array.isArray((template as any).assigneeUserIds) && (template as any).assigneeUserIds.length
+        ? (template as any).assigneeUserIds
+        : (template.assigneeUserId ? [template.assigneeUserId] : []);
+
+      if (template.assigneeType === 'user' && namedIds.length === 1) {
+        newAssigneeId = namedIds[0];
+        const user = allUsers.find(u => u.id === namedIds[0]);
         if (user) {
           newAssigneeName = `${user.firstName} ${user.lastName}`;
         }
@@ -25367,9 +25521,13 @@ export class DbStorage implements IStorage {
         updatedAt: new Date(),
       };
 
-      // Only update assignee if template uses direct user assignment (not role-based)
-      // Role-based assignments should preserve the per-user task assignment
-      if (template.assigneeType === 'user') {
+      // Only move the assignee when the template names exactly ONE person.
+      //
+      // A role, or several named users, generates one task PER user — so
+      // stamping a single assignee across all of them would hand everyone's
+      // task to the same person and wipe the fan-out. The existing comment
+      // said this about roles; several named users are the same case.
+      if (template.assigneeType === 'user' && namedIds.length === 1) {
         updateData.assigneeId = newAssigneeId;
         updateData.assigneeName = newAssigneeName;
       }

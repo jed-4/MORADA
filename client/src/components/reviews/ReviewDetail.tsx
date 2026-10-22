@@ -15,7 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { SectionCard } from "@/components/detail/SectionCard";
+import { DocumentSection } from "@/components/detail/DocumentSection";
 import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +26,7 @@ import { IssueRevisionDialog } from "./IssueRevisionDialog";
 import { SendReviewLinkDialog } from "./SendReviewLinkDialog";
 import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCostImpact";
 import { useClientPortal } from "@/hooks/use-client-portal";
+import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { ReviewDecisionPanel } from "./ReviewDecisionPanel";
 
 /**
@@ -47,7 +48,7 @@ interface ReviewDoc {
 }
 interface ReviewRev {
   id: string; revisionNumber: number; revisionLabel: string; notes: string | null;
-  issuedAt: string; supersededAt: string | null; documents: ReviewDoc[];
+  issuedAt: string | null; supersededAt: string | null; documents: ReviewDoc[];
 }
 interface ReviewCmt {
   id: string; content: string; authorType: string; createdByName: string;
@@ -78,7 +79,12 @@ const fmtBytes = (n: number | null) =>
 
 export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: () => void }) {
   const { toast } = useToast();
-  const { isClient } = useClientPortal();
+  const { isClient, hasPermission } = useClientPortal();
+  // Same keys clientAccessGate enforces: posting a comment needs reviews:add,
+  // recording a decision reviews:approve. Without them the box and the panel
+  // were shown anyway and failed with a 403 on submit.
+  const canComment = !isClient || hasPermission(PORTAL_KEYS.reviews, "add");
+  const canDecide = isClient && hasPermission(PORTAL_KEYS.reviews, "approve");
   const [comment, setComment] = useState("");
   const [internal, setInternal] = useState(true);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -293,13 +299,15 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         <div className="px-4 py-4 space-y-4 max-w-4xl">
           <ReviewInformationCard data={data} isClient={isClient} />
 
-          {isClient && data.status === "awaiting_review" && (
+          {canDecide && data.status === "awaiting_review" && (
             <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
           )}
 
-        <SectionCard
+        <DocumentSection
           title="Documents"
-          variant="editorial"
+          role="client"
+          defaultOpen
+          bodyClassName="px-3.5 pb-3"
           count={data.revisions.reduce((n, r) => n + r.documents.length, 0)}
           actions={ isClient ? null : (
             <>
@@ -319,7 +327,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 variant="outline"
                 onClick={() => fileRef.current?.click()}
                 disabled={!current || attachMutation.isPending}
-                title={!current ? "Issue a revision before attaching documents" : undefined}
+                title={!current ? "This review has no revision to attach to" : undefined}
                 data-testid="button-attach-document"
               >
                 {attachMutation.isPending
@@ -344,15 +352,17 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             />
           ) : (
             <p className="text-sm text-muted-foreground py-2">
-              {current ? "No documents on this revision yet." : "Issue Rev A, then attach the drawings."}
+              {current ? "No documents on this revision yet." : "No revision to attach to yet."}
             </p>
           )}
-        </SectionCard>
+        </DocumentSection>
 
 
-        <SectionCard
+        <DocumentSection
           title="Comments"
-          variant="editorial"
+          role="meta"
+          defaultOpen
+          bodyClassName="px-3.5 pb-3"
           count={visibleComments.length}
           actions={
             visibleComments.length > 3 ? (
@@ -410,6 +420,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
             </div>
 
+            {canComment && (
             <div className="space-y-2 pt-1 border-t border-border">
               <Textarea
                 value={comment}
@@ -438,11 +449,18 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 </Button>
               </div>
             </div>
+            )}
           </div>
-        </SectionCard>
+        </DocumentSection>
 
         {data.approvals.length > 0 && (
-          <SectionCard title="Decisions" variant="editorial" count={data.approvals.length}>
+          <DocumentSection
+            title="Decisions"
+            role={data.approvals.some((a) => a.decision === "rejected") ? "exception" : "client"}
+            defaultOpen
+            bodyClassName="px-3.5 pb-3"
+            count={data.approvals.length}
+          >
             <ul className="space-y-3">
               {data.approvals.map((a) => (
                 <li key={a.id} className="space-y-1">
@@ -491,12 +509,14 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 </li>
               ))}
             </ul>
-          </SectionCard>
+          </DocumentSection>
         )}
 
-        <SectionCard
+        <DocumentSection
           title="Revision history"
-          variant="editorial"
+          role="meta"
+          divider={false}
+          bodyClassName="px-3.5 pb-3"
           count={data.revisions.length}
         >
           {data.revisions.length === 0 ? (
@@ -513,7 +533,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                       {r.notes || <span className="text-muted-foreground">No note</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Issued {format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}
+                      {r.issuedAt ? `Issued ${format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}` : "Not issued yet"}
                       {r.supersededAt && " · superseded"}
                       {r.documents.length > 0 && ` · ${r.documents.length} document${r.documents.length === 1 ? "" : "s"}`}
                     </p>
@@ -522,7 +542,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
               ))}
             </ul>
           )}
-        </SectionCard>
+        </DocumentSection>
         </div>
       </div>
 
@@ -584,7 +604,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {current
-                ? `${current.revisionLabel} · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}`
+                ? `${current.revisionLabel}${current.issuedAt ? ` · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}` : " · not issued yet"}`
                 : "No revision issued yet"}
             </p>
           </div>
@@ -612,7 +632,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
               <span className="flex items-center gap-1.5">
                 <Badge variant="secondary" className="font-mono text-xs">{current.revisionLabel}</Badge>
                 <span className="text-xs text-muted-foreground">
-                  {format(new Date(current.issuedAt), "d MMM yyyy")}
+                  {current.issuedAt ? format(new Date(current.issuedAt), "d MMM yyyy") : "Not issued"}
                 </span>
               </span>
             ) : (

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { useAllNewMessages } from "@/lib/socket";
 import { showMessageNotification, initFavicon, updateFaviconBadge } from "@/lib/notifications";
 import { getActiveChannel } from "@/lib/activeChannel";
@@ -15,6 +16,7 @@ interface ChannelBasic {
 
 export function GlobalMessageNotifier() {
   const { user } = useAuth();
+  const { isClient } = useClientPortal();
   const queryClient = useQueryClient();
 
   const { data: channels = [] } = useQuery<ChannelBasic[]>({
@@ -41,10 +43,11 @@ export function GlobalMessageNotifier() {
     enabled: !!user,
   });
 
-  // Only to put a person's name on a DM notification.
+  // Only to put a person's name on a DM notification. Needs admin.users:view,
+  // which a client never has — skip it rather than 403 every minute.
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
-    enabled: !!user,
+    enabled: !!user && !isClient,
     staleTime: 60_000,
   });
 

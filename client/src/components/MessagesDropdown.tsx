@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { MessageSquare, ArrowLeft, ExternalLink, Send, Loader2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import type { Channel, Message, User } from "@shared/schema";
 interface ChannelWithMeta extends Channel {
   isPinned?: boolean;
   lastMessageAt?: Date | string | null;
+  lastMessageSender?: string | null;
   messageCount?: number;
 }
 
@@ -101,6 +103,7 @@ function renderDropdownMessageContent(content: string, currentUserId?: string): 
 export function MessagesDropdown() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { isClient } = useClientPortal();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"list" | "chat">("list");
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
@@ -135,9 +138,12 @@ export function MessagesDropdown() {
     enabled: open,
   });
 
+  // The team list needs admin.users:view, which a client never has, so for a
+  // client every name below falls back to what the message rows carry
+  // (lastMessageSender / the cached userFirstName on each message).
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
-    enabled: open,
+    enabled: open && !isClient,
   });
 
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
@@ -292,7 +298,7 @@ export function MessagesDropdown() {
                       ? "Morada"
                       : sender
                         ? resolveDisplayName(sender)
-                        : null;
+                        : channel.lastMessageSender ?? null;
                     const when = latest?.createdAt ?? channel.lastMessageAt;
 
                     return (
@@ -387,7 +393,11 @@ export function MessagesDropdown() {
                   messages.slice(-20).map(msg => {
                     const isOwn = msg.userId === user?.id;
                     const sender = allUsers.find(u => u.id === msg.userId);
-                    const senderName = sender ? resolveDisplayName(sender) : "Unknown";
+                    const senderName = sender
+                      ? resolveDisplayName(sender)
+                      : [msg.userFirstName, msg.userLastName].filter(Boolean).join(" ") ||
+                        msg.userEmail ||
+                        "Unknown";
 
                     return (
                       <div
@@ -397,7 +407,11 @@ export function MessagesDropdown() {
                         {!isOwn && (
                           <Avatar className="h-6 w-6 shrink-0 mt-0.5">
                             <AvatarFallback className="text-data">
-                              {getInitials(sender?.firstName, sender?.lastName, sender?.email)}
+                              {getInitials(
+                                sender?.firstName ?? msg.userFirstName,
+                                sender?.lastName ?? msg.userLastName,
+                                sender?.email ?? msg.userEmail,
+                              )}
                             </AvatarFallback>
                           </Avatar>
                         )}

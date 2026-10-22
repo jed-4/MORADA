@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { Sparkles, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +32,9 @@ interface DemoStatus {
  */
 export function DemoDataBanner() {
   const { toast } = useToast();
+  // The builder's onboarding notice; a client can neither read its status nor
+  // clear the data.
+  const { isClient } = useClientPortal();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISS_KEY) === "1",
   );
@@ -39,7 +43,7 @@ export function DemoDataBanner() {
   const { data: status } = useQuery<DemoStatus>({
     queryKey: ["/api/demo-data/status"],
     staleTime: 5 * 60 * 1000,
-    enabled: !dismissed,
+    enabled: !dismissed && !isClient,
   });
 
   const clearMutation = useMutation({
@@ -65,7 +69,7 @@ export function DemoDataBanner() {
     },
   });
 
-  if (dismissed || !status?.seeded) return null;
+  if (isClient || dismissed || !status?.seeded) return null;
 
   return (
     <>

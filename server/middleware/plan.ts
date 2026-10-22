@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { isStripeConfigured } from "../stripe";
+import { isPublicProposalShareRoute } from "./publicProposalRoutes";
 
 // Paths under /api that must never be blocked by trial enforcement — auth,
 // public/token-gated portals, and the billing/stripe endpoints themselves.
@@ -13,7 +14,7 @@ function isExemptPath(method: string, path: string): boolean {
   if (path.startsWith("/portal/")) return true;
   if (/^\/invitations\/by-token\/[^/]+$/.test(path)) return true;
   if (/^\/invitations\/[^/]+\/accept$/.test(path)) return true;
-  if (/^\/proposals\/[^/]+\/(client-view|view|acceptances)$/.test(path)) return true;
+  if (isPublicProposalShareRoute(method, path)) return true;
   return false;
 }
 

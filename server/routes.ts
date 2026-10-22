@@ -1,4 +1,8 @@
 import type { Express, Request, Response } from "express";
+import {
+  applyXeroClientInvoiceState as applyXeroClientInvoiceStateImpl,
+  type ApplyArgs as ApplyXeroClientInvoiceArgs,
+} from "./services/xeroClientInvoiceState";
 import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
@@ -243,7 +247,7 @@ import {
   projectClientVariation,
   projectClientVariationItems,
 } from "./clientProjections";
-import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
+import { isPortalPermissionKey, CLIENT_PORTAL_ACCESS_KEY } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -281,8 +285,9 @@ import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateS
 import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
+import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
@@ -2178,14 +2183,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
-    // Public proposal client portal endpoints (token-gated inside the route handlers).
-    // Method-scoped: only the specific methods that perform their own shareToken
-    // validation are bypassed. GET /acceptances is NOT public — it returns acceptance
-    // history and stays behind auth.
-    if (req.method === "GET" && /^\/proposals\/[^/]+\/client-view$/.test(path)) {
-      return next();
-    }
-    if (req.method === "POST" && /^\/proposals\/[^/]+\/(view|acceptances)$/.test(path)) {
+    // Public proposal client portal endpoints (token-gated inside the route
+    // handlers). See publicProposalRoutes.ts for the list and why it is shared.
+    if (isPublicProposalShareRoute(req.method, path)) {
       return next();
     }
 
@@ -12033,7 +12033,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/uploads/file",
     requireAuth,
-    requireTeamMember,
+    // Clients attach files to messages too; clientAccessGate decides whether a
+    // given client may (projects.messages:send).
+    requireTeamMemberOrClient,
     messageFileUpload.single("file"),
     async (req: any, res) => {
       try {
@@ -17791,7 +17793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // userInvitations.contactId). Status is always derived, never stored:
   // linked user → active/revoked; else pending invitation → invited; else none.
 
-  app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "view"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -17831,7 +17833,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/invite", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/invite", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "add"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       const companyId = currentUser.companyId;
@@ -17928,7 +17930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/resend", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/resend", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -17977,7 +17979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/revoke", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/revoke", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -18006,7 +18008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/restore", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/restore", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -28324,7 +28326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }
@@ -28348,7 +28350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       console.error("Error updating company:", error);
       res.status(500).json({ error: "Failed to update company" });
@@ -28362,7 +28364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user?.companyId;
       if (!companyId) return res.json({});
       const company = await storage.getCompany(companyId);
-      res.json(company || {});
+      res.json(company ? toSafeCompany(company) : {});
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }
@@ -37113,16 +37115,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const createdItems = [];
       const today = new Date();
-      
+
+      // The Category/Stage column becomes real nesting.
+      //
+      // It used to be written as `category`, which schedule_items has no column
+      // for — in the schema or the database. Drizzle drops unknown keys without
+      // complaining, so the mapping previewed correctly and was then thrown
+      // away: every import landed as a flat list with no stages at all.
+      //
+      // Two shapes have to work, and a file often mixes them:
+      //   1. The stage is its own row AND is named by its children (how most
+      //      exports, including Buildern's, write it). Nest under that row —
+      //      never create a second one beside it.
+      //   2. The stage only exists as text in the column. Create a row for it,
+      //      positioned just before the first child that asks for it.
+      const stageNameOf = (it: any): string =>
+        it?.category ? String(it.category).trim() : "";
+
+      // Every name used as a parent by some row.
+      const stageNames = new Set<string>();
+      for (const it of items) {
+        const s = stageNameOf(it);
+        if (s) stageNames.add(s);
+      }
+
+      // Build the final order in one pass: a stage, then the rows under it.
+      // A row whose own name is used as a stage IS that stage — it must not
+      // also be laid out as a task, or the phase gets a duplicate bar that
+      // consumes a slot on the timeline.
+      type Planned = { item: any; isStage: boolean; stage: string };
+      const planned: Planned[] = [];
+      const emittedStages = new Set<string>();
+      for (const item of items) {
+        const ownName = String(item?.name ?? "").trim();
+        const stage = stageNameOf(item);
+        if (ownName && stageNames.has(ownName)) {
+          planned.push({ item, isStage: true, stage: "" });
+          emittedStages.add(ownName);
+          continue;
+        }
+        // A stage with no row of its own is created the moment it is first asked for.
+        if (stage && stage !== ownName && !emittedStages.has(stage)) {
+          planned.push({ item: { name: stage, type: "task" }, isStage: true, stage: "" });
+          emittedStages.add(stage);
+        }
+        planned.push({ item, isStage: false, stage: stage === ownName ? "" : stage });
+      }
+
+      // Stages first, so a child has a parent id to point at. They are given
+      // placeholder dates and re-spanned over their children below.
+      const stageIdByName = new Map<string, string>();
+      const stageRowIndex = new Map<string, number>();
+      for (let i = 0; i < planned.length; i++) {
+        const p = planned[i];
+        if (!p.isStage) continue;
+        const name = String(p.item.name ?? "").trim();
+        const row = await storage.createScheduleItem({
+          scheduleId,
+          name: p.item.name,
+          description: p.item.description || null,
+          startDate: new Date(today),
+          endDate: new Date(today),
+          type: p.item.type || "task",
+          status: "not_started",
+          priority: "low",
+          sortOrder: sortOrderOffset + i,
+        } as any);
+        stageIdByName.set(name, row.id);
+        stageRowIndex.set(name, createdItems.length);
+        createdItems.push(row);
+      }
+
+      // Only real tasks consume the timeline — a stage spans its children and
+      // must not push them along.
+      const childSpan = new Map<string, { start: Date; end: Date }>();
       let currentStart = new Date(today);
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
+      for (let i = 0; i < planned.length; i++) {
+        const p = planned[i];
+        if (p.isStage) continue;
+        const item = p.item;
         const duration = typeof item.duration === 'number' && item.duration >= 1 ? item.duration : 1;
-        
+
         const startDate = new Date(currentStart);
         const endDate = duration <= 1 ? new Date(startDate) : addWorkingDaysBulk(startDate, duration - 1);
-        
+
         currentStart = addWorkingDaysBulk(endDate, 1);
+
+        const parentId = p.stage ? stageIdByName.get(p.stage) : undefined;
 
         const scheduleItem = await storage.createScheduleItem({
           scheduleId,
@@ -37133,11 +37212,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
           type: item.type || "task",
           status: "not_started",
           priority: "low",
-          category: item.category || null,
+          parentItemId: parentId ?? null,
+          groupName: parentId ? p.stage : null,
           sortOrder: sortOrderOffset + i,
-        });
-        
+        } as any);
+
+        if (parentId && p.stage) {
+          const span = childSpan.get(p.stage);
+          if (!span) childSpan.set(p.stage, { start: startDate, end: endDate });
+          else {
+            if (startDate < span.start) span.start = startDate;
+            if (endDate > span.end) span.end = endDate;
+          }
+        }
+
         createdItems.push(scheduleItem);
+      }
+
+      // A stage bar is drawn from its children (getEffectiveDates), so leaving
+      // the stored row on the placeholder would put the row and the bar at
+      // different dates from the first render.
+      for (const [name, span] of Array.from(childSpan.entries())) {
+        const id = stageIdByName.get(name);
+        if (!id) continue;
+        const updated = await storage.updateScheduleItem(id, {
+          startDate: span.start,
+          endDate: span.end,
+        } as any);
+        const idx = stageRowIndex.get(name);
+        if (updated && idx !== undefined) createdItems[idx] = updated;
       }
 
       // Log activity
@@ -44300,6 +44403,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Pull client invoice state from Xero (status, paid amount, balance)
+  /**
+   * Binds the shared writer to this app's storage. The logic lives in
+   * server/services/xeroClientInvoiceState.ts so it can be tested without a
+   * Xero connection — see server/__tests__/xero-client-invoice-state.test.ts.
+   */
+  const applyXeroClientInvoiceState = (args: ApplyXeroClientInvoiceArgs) =>
+    applyXeroClientInvoiceStateImpl(storage as any, args);
+
   app.post("/api/xero/pull-client-invoice/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
@@ -44323,43 +44434,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
 
       const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-      const xeroStatus: string = xeroInvoice.Status;
-      const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
-
-      // Xero keeps "sent" off the status axis entirely — it is a SentToContact
-      // flag on the invoice. Mirror it so an invoice sent from inside Xero
-      // still reads as sent here. Never walk backwards over a payment state.
-      if (xeroInvoice.SentToContact && (invoice.status === "approved" || invoice.status === "draft")) {
-        await storage.updateClientInvoice(invoice.id, { status: "sent" } as any);
-      }
-
-      // Record the Xero-side payment increase as a payment row, then let
-      // syncClientInvoicePaidStatus recompute paid/balance/status from the
-      // rows — the single writer for paid state. (Previously this route
-      // OVERWROTE paidAmount with Xero's absolute figure, silently clobbering
-      // payments recorded in Morada that Xero doesn't know about.)
-      if (amountPaidCents > (invoice.paidAmount || 0)) {
-        const diff = amountPaidCents - (invoice.paidAmount || 0);
-        await storage.createClientInvoicePayment({
-          invoiceId: invoice.id,
-          amount: diff,
-          paymentDate: new Date(),
-          paymentMethod: "Xero Sync",
-          reference: "Synced from Xero",
-          notes: null,
-          isVoided: false,
-          recordedBy: user?.id || null,
-        } as any);
-        // createClientInvoicePayment already ran the sync.
-      } else {
-        await storage.syncClientInvoicePaidStatus(invoice.id);
-      }
-
-      // VOIDED in Xero is a document-state change, not a payment change —
-      // reflect it explicitly (payments sync above never sets "draft").
-      if (xeroStatus === "VOIDED") {
-        await storage.updateClientInvoice(invoice.id, { status: "draft" } as any);
-      }
+      const { xeroStatus, amountDueCents } = await applyXeroClientInvoiceState({
+        invoice,
+        xeroInvoice,
+        recordedBy: user?.id || null,
+        source: "manual",
+      });
 
       const updated = await storage.getClientInvoice(invoice.id);
       res.json({
@@ -44554,35 +44634,21 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
           if (!xeroInvoice) continue;
 
-          const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-          const xeroStatus: string = xeroInvoice.Status;
-
-          // Record the Xero-side payment increase as a payment row; paid/
-          // balance/status recompute from the rows inside
-          // createClientInvoicePayment (single writer — never overwrite
-          // paidAmount with Xero's absolute figure, which clobbers payments
-          // recorded only in Morada).
-          if (amountPaidCents > (localInvoice.paidAmount || 0)) {
-            const diff = amountPaidCents - (localInvoice.paidAmount || 0);
-            await storage.createClientInvoicePayment({
-              invoiceId: localInvoice.id,
-              amount: diff,
-              paymentDate: new Date(),
-              paymentMethod: "Xero Webhook",
-              reference: `Xero webhook: ${event.eventType || "updated"}`,
-              notes: null,
-              isVoided: false,
-              recordedBy: null,
-            } as any);
-          }
-
-          // Document-state change (not derivable from payments): voided or
-          // deleted in Xero reverts the local invoice to draft.
-          if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-            await storage.updateClientInvoice(localInvoice.id, { status: "draft" } as any);
-          }
+          // Same single writer the Sync button uses. Previously this branch
+          // had its own copy that omitted SentToContact and the no-payment
+          // recompute, so the webhook silently did less than the button.
+          const applied = await applyXeroClientInvoiceState({
+            invoice: localInvoice,
+            xeroInvoice,
+            recordedBy: null,
+            source: "webhook",
+            reference: `Xero webhook: ${event.eventType || "updated"}`,
+          });
 
           processed++;
+          console.log(
+            `[xero-webhook] INVOICE event synced client invoice ${localInvoice.invoiceNumber ?? localInvoice.id} — Xero status ${applied.xeroStatus}`,
+          );
         } catch (err) {
           console.error(`[Xero Webhook] Failed to process invoice ${xeroInvoiceId}:`, err);
         }
@@ -47822,6 +47888,17 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         createdById: req.user!.id,
       } as any);
 
+      // Rev A exists from the start, unissued. Documents hang off a revision,
+      // so without this a draft had nothing to attach to and the builder had
+      // to issue the review to the client before adding the drawings.
+      // Non-fatal: the item is already created, and the builder can still
+      // issue, which creates the revision the old way.
+      try {
+        await storage.createDraftReviewRevision(item.id);
+      } catch (revErr) {
+        console.error("Failed to open a draft revision for review", item.id, revErr);
+      }
+
       res.status(201).json(item);
     } catch (error) {
       console.error("Error creating review:", error);
@@ -47962,7 +48039,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       // to this item, or a caller could staple a file onto another's history.
       const targetRevisionId = revisionId || item.currentRevisionId;
       if (!targetRevisionId) {
-        return res.status(400).json({ error: "Issue a revision before attaching documents" });
+        return res.status(400).json({ error: "This review has no revision to attach to" });
       }
       const revision = await storage.getReviewRevision(targetRevisionId);
       if (!revision || revision.reviewItemId !== item.id) {
@@ -48438,12 +48515,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (item.status === "draft") return res.status(404).json({ error: "Invalid link" });
 
       const urlPrefix = `/api/portal/reviews/${req.params.token}`;
-      const [revisions, documents, comments, approvals] = await Promise.all([
+      const [allRevisions, allDocuments, comments, approvals] = await Promise.all([
         storage.getReviewRevisions(item.id),
         storage.getReviewDocuments(item.id),
         storage.getReviewComments(item.id, false), // never internal notes
         storage.getReviewApprovals(item.id),
       ]);
+
+      // 🚨 An unissued revision is work in progress. The item being issued says
+      // nothing about the NEXT revision: a builder preparing Rev B attaches its
+      // drawings to an unissued row while Rev A is still the one with the
+      // client. Serving every revision would hand those over early. Filter the
+      // revisions, then filter documents to what survives — never the reverse,
+      // or a document on a hidden revision still slips through.
+      const revisions = allRevisions.filter((r) => r.issuedAt != null);
+      const visibleRevisionIds = new Set(revisions.map((r) => r.id));
+      const documents = allDocuments.filter((d) => visibleRevisionIds.has(d.revisionId));
 
       const byRevision = new Map<string, any[]>();
       for (const doc of documents) {
