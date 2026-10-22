@@ -49,7 +49,13 @@ export function PortalLayout({
   footerNote,
   children,
 }: PortalLayoutProps) {
+  // A signed-in visitor (a portal client, or staff opening the client's link)
+  // gets these routes inside the app shell, whose <main> is a fixed-height
+  // flex column with overflow:hidden — so the portal must scroll itself or
+  // everything below the fold is unreachable. Signed out, the shell is absent,
+  // flex-1/min-h-0 do nothing and the body scrolls as before.
   return (
+    <div className="flex-1 min-h-0 overflow-y-auto">
     <div className="min-h-screen bg-muted/30 flex flex-col">
       <header className="border-b border-border bg-card">
         <div
@@ -94,6 +100,7 @@ export function PortalLayout({
           {footerNote && <p>{footerNote}</p>}
         </div>
       </footer>
+    </div>
     </div>
   );
 }
