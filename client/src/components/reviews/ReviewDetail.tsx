@@ -26,6 +26,7 @@ import { IssueRevisionDialog } from "./IssueRevisionDialog";
 import { SendReviewLinkDialog } from "./SendReviewLinkDialog";
 import { isOverdue, daysOverdue, isTerminalReviewStatus } from "@shared/reviewCostImpact";
 import { useClientPortal } from "@/hooks/use-client-portal";
+import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
 import { ReviewDecisionPanel } from "./ReviewDecisionPanel";
 
 /**
@@ -78,7 +79,12 @@ const fmtBytes = (n: number | null) =>
 
 export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: () => void }) {
   const { toast } = useToast();
-  const { isClient } = useClientPortal();
+  const { isClient, hasPermission } = useClientPortal();
+  // Same keys clientAccessGate enforces: posting a comment needs reviews:add,
+  // recording a decision reviews:approve. Without them the box and the panel
+  // were shown anyway and failed with a 403 on submit.
+  const canComment = !isClient || hasPermission(PORTAL_KEYS.reviews, "add");
+  const canDecide = isClient && hasPermission(PORTAL_KEYS.reviews, "approve");
   const [comment, setComment] = useState("");
   const [internal, setInternal] = useState(true);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -293,7 +299,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
         <div className="px-4 py-4 space-y-4 max-w-4xl">
           <ReviewInformationCard data={data} isClient={isClient} />
 
-          {isClient && data.status === "awaiting_review" && (
+          {canDecide && data.status === "awaiting_review" && (
             <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
           )}
 
@@ -410,6 +416,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
 
             </div>
 
+            {canComment && (
             <div className="space-y-2 pt-1 border-t border-border">
               <Textarea
                 value={comment}
@@ -438,6 +445,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 </Button>
               </div>
             </div>
+            )}
           </div>
         </SectionCard>
 

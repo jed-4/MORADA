@@ -6,6 +6,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages, useReactionUpdated, useMessageUpdated } from "@/lib/socket";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -316,6 +317,10 @@ function shouldShowTimestamp(
 
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
+  // A client can read, reply, react and attach (clientAccessGate allows those),
+  // but not create, rename, delete or re-member conversations, pin, or turn a
+  // message into a task — every one of those 403s, so they are not shown.
+  const { isClient } = useClientPortal();
   const { toast } = useToast();
   const { socket, isConnected, isReconnecting, joinChannel, leaveChannel, startTyping, stopTyping, markAsRead } = useSocket();
 
@@ -1839,6 +1844,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   DM at all, and nothing on screen suggested one existed. One
                   control with two meanings, and the meaning hidden behind a
                   setting you had to go looking for. */}
+              {!isClient && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -1869,6 +1875,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </div>
           </div>
 
@@ -1892,7 +1899,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       header beside the real controls — where it sat greyed out
                       for everyone who already had channels, which is everyone,
                       forever. */}
-                  {channels.length === 0 && (
+                  {channels.length === 0 && !isClient && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1948,6 +1955,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             {unreadCount}
                           </Badge>
                         )}
+                        {!isClient && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1969,6 +1977,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             <Pin className="h-3.5 w-3.5" />
                           )}
                         </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2005,6 +2014,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-sage' : isReconnecting ? 'bg-amber animate-pulse' : 'bg-muted-foreground/40'}`} />
                     <span>{isConnected ? 'Connected' : isReconnecting ? 'Reconnecting…' : 'Disconnected'}</span>
                   </div>
+                  {!isClient && (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -2017,6 +2027,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   >
                     <Settings className="h-4 w-4" />
                   </Button>
+                  )}
                 </div>
               </div>
               {/* Messages Area */}
@@ -2277,6 +2288,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 >
                                   <MessageSquare className="h-3.5 w-3.5" />
                                 </button>
+                                {!isClient && (<>
                                 <div className="w-px h-4 bg-border mx-0.5" />
                                 <button
                                   type="button"
@@ -2311,6 +2323,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                     : <Pin className="h-3.5 w-3.5" />
                                   }
                                 </button>
+                                </>)}
                               </div>
                               )}
                             </div>
@@ -2886,7 +2899,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         }
                         // Shift+Enter inserts newline (default textarea behaviour — no override needed)
                       }}
-                      placeholder="Type a message... (@ to mention, /task to create task)"
+                      placeholder={isClient ? "Type a message... (@ to mention)" : "Type a message... (@ to mention, /task to create task)"}
                       rows={1}
                       className="flex-1 min-h-[36px] max-h-[120px] resize-none overflow-y-auto py-2 text-sm leading-5"
                       style={{ height: "auto" }}
@@ -3318,7 +3331,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             const snippet = pm.content.length > 80
                               ? pm.content.substring(0, 80) + "…"
                               : pm.content;
-                            const canUnpin = amChannelOwner || pm.pinnedByUserId === user?.id;
+                            const canUnpin = !isClient && (amChannelOwner || pm.pinnedByUserId === user?.id);
                             return (
                               <div
                                 key={pm.id}

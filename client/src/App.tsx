@@ -417,7 +417,8 @@ function AuthWrapper() {
   // Fetch user's dashboard theme for page background color
   const { data: userTheme } = useQuery<DashboardTheme | null>({
     queryKey: ["/api/dashboard-themes/user"],
-    enabled: isAuthenticated && !!user?.companyId,
+    // Themes are a team feature; a client session is refused the route.
+    enabled: isAuthenticated && !!user?.companyId && (user as any)?.userCategory !== "client",
   });
 
   // Stamp Sentry error reports with the signed-in user + company so we can see

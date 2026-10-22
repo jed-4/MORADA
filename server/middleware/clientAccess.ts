@@ -338,6 +338,12 @@ export function getClientUser(req: Request): User | null {
   return ((req as any).__clientUser as User | undefined) ?? null;
 }
 
+const shapeSystemConfigForClient: ResponseShaper = async (body) => {
+  if (!body || typeof body !== "object") return body;
+  const { language, measurementSystem, currency, currencySymbol, timezone, temperatureFormat, dateFormat, timeFormat } = body;
+  return { language, measurementSystem, currency, currencySymbol, timezone, temperatureFormat, dateFormat, timeFormat };
+};
+
 /** The builder as a client may see them: what is on their letterhead. */
 const shapeCompanyForClient: ResponseShaper = async (body) => {
   if (!body || typeof body !== "object") return body;
@@ -393,6 +399,14 @@ const ALLOW_RULES: AllowRule[] = [
     methods: ["GET"],
     pattern: /^\/companies\/[^/]+$/,
     shape: shapeCompanyForClient,
+  },
+  // Locale only: useTimezone reads the builder's timezone from here, so a
+  // client's dates were falling back to Sydney time. The row also holds
+  // document numbering; the shaper drops it.
+  {
+    methods: ["GET"],
+    pattern: /^\/system-configuration$/,
+    shape: shapeSystemConfigForClient,
   },
   // Self only — each route takes the user from the session, never the body.
   // /profile writes firstName, lastName and phone and nothing else.

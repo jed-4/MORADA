@@ -233,14 +233,17 @@ export default function CustomizableProjectOverview() {
       if (!r.ok) throw new Error(`Failed to fetch contract metrics (${r.status})`);
       return r.json();
     }),
-    enabled: !!currentProject?.id && !!currentProject?.selectedEstimateId,
+    // Contract money is the builder's; refused for a client session. Each
+    // `!isClient` below is the same: a request clientAccessGate refuses, fired
+    // on every project page a client opened.
+    enabled: !!currentProject?.id && !!currentProject?.selectedEstimateId && !isClient,
   });
 
   // Resolve the project's client contact so the header chip can open the
   // existing contact details dialog. Only fetch when a client is assigned.
   const { data: contacts = [] } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
-    enabled: !!currentProject?.clientId,
+    enabled: !!currentProject?.clientId && !isClient,
   });
   const clientContact = currentProject?.clientId
     ? contacts.find((c) => c.id === currentProject.clientId) ?? null
@@ -319,26 +322,27 @@ export default function CustomizableProjectOverview() {
   // Fetch roles for visibility selection
   const { data: roles = [], isLoading: isLoadingRoles } = useQuery<UserRole[]>({
     queryKey: ["/api/user-roles"],
-    enabled: !!user?.companyId,
+    enabled: !!user?.companyId && !isClient,
     retry: 1,
   });
 
   // Fetch users for visibility selection
   const { data: companyUsers = [], isLoading: isLoadingUsers } = useQuery<any[]>({
     queryKey: ["/api/users"],
-    enabled: !!user?.companyId,
+    enabled: !!user?.companyId && !isClient,
     retry: 1,
   });
 
   // Fetch field categories for phase colors
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
+    enabled: !isClient,
   });
 
   // Fetch project dashboard theme
   const { data: theme } = useQuery<DashboardTheme | null>({
     queryKey: ["/api/dashboard-themes/project", currentProject?.id],
-    enabled: !!currentProject?.id,
+    enabled: !!currentProject?.id && !isClient,
   });
 
   // Create view mutation
@@ -1243,7 +1247,7 @@ export default function CustomizableProjectOverview() {
             <User className="h-3 w-3 shrink-0" />
             <span className="truncate">{currentProject.clientName}</span>
           </Badge>
-        ) : (
+        ) : isClient ? null : (
           <Badge
             variant="outline"
             className="text-xs gap-1 cursor-pointer text-muted-foreground"
@@ -1255,6 +1259,8 @@ export default function CustomizableProjectOverview() {
           </Badge>
         )}
       </div>
+      {/* Project settings is not a client page (ClientRouteGuard denies it). */}
+      {!isClient && (
       <div className="flex items-center pl-1 pr-1 self-stretch">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1272,6 +1278,7 @@ export default function CustomizableProjectOverview() {
           <TooltipContent side="bottom">Project settings</TooltipContent>
         </Tooltip>
       </div>
+      )}
     </div>
   );
 
