@@ -119,7 +119,7 @@ export function contrastRatio(a: Rgb, b: Rgb): number {
  *
  * The hue is what carries the meaning — "the blue one", "the green one" — so the
  * hue is preserved exactly and only saturation and lightness move. The fill is a
- * pale wash of that hue; the label is the same hue darkened until it clears
+ * wash of that hue; the label is the same hue darkened until it clears
  * MIN_CONTRAST against that wash.
  *
  * Returns null for an unparseable colour, or for the rare hue that cannot reach
@@ -135,7 +135,16 @@ export function deriveChipPaint(hex: string | null | undefined): ChipPaint | nul
   // through to the neutral tone rather than inventing a tint.
   if (s < 0.08) return null;
 
-  const backgroundRgb = hslToRgb({ h, s: Math.min(s, 0.55), l: 0.94 });
+  // 0.80, not the 0.94 this used to be. A 94%-lightness wash is a tint of the
+  // page, not a colour: configured statuses (TO DO / DONE / NONE) came out so
+  // pale they read as grey, which is what made the estimate grid look washed
+  // out. This is the same 77–82% band the --status-*-bg tokens now sit in, so
+  // a configured chip and a tone chip finally carry the same weight.
+  //
+  // The label below is derived, not fixed, so it follows the fill down on its
+  // own — swept across 360 hues x 4 saturations, every combination still
+  // clears MIN_CONTRAST with room to spare (darkest label lands at l=0.20).
+  const backgroundRgb = hslToRgb({ h, s: Math.min(s, 0.70), l: 0.80 });
 
   // Walk the label down in lightness until it clears the threshold. 2% steps
   // keep the result close to the configured colour rather than jumping to black.
