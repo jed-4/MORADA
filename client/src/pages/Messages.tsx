@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } from "react";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { renderTextWithLinks } from "@/lib/linkify";
 import { setActiveChannel } from "@/lib/activeChannel";
 import { stripMentionMarkup } from "@/lib/messageText";
@@ -2856,7 +2857,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     >
                       <Paperclip className="h-4 w-4" />
                     </Button>
-                    <Textarea
+                    {/* Was a hand-rolled scrollHeight handler — one of the
+                        five AutoTextarea was written to replace. Same
+                        behaviour: one line, grows to five, then scrolls. */}
+                    <AutoTextarea
                       ref={inputRef}
                       value={messageInput}
                       onChange={handleMessageInputChange}
@@ -2887,14 +2891,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         // Shift+Enter inserts newline (default textarea behaviour — no override needed)
                       }}
                       placeholder="Type a message... (@ to mention, /task to create task)"
-                      rows={1}
-                      className="flex-1 min-h-[36px] max-h-[120px] resize-none overflow-y-auto py-2 text-sm leading-5"
-                      style={{ height: "auto" }}
-                      onInput={(e) => {
-                        const el = e.currentTarget;
-                        el.style.height = "auto";
-                        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-                      }}
+                      minRows={1}
+                      maxRows={5}
+                      className="flex-1 min-w-0 py-2 text-sm leading-5"
                       data-testid="input-message"
                     />
                     {/* Schedule popover */}
