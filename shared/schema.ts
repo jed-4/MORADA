@@ -9042,7 +9042,12 @@ export const reviewRevisions = pgTable("review_revisions", {
   notes: text("notes"),
 
   issuedById: varchar("issued_by_id").references(() => users.id, { onDelete: "set null" }),
-  issuedAt: timestamp("issued_at").notNull().defaultNow(),
+  // Null until the builder issues it. A revision is created unissued with the
+  // review item so drawings can be attached while it is still a draft —
+  // documents hang off a revision, so without one there was nothing to attach
+  // to and the builder had to issue to the client before adding the files.
+  // 🚨 Anything client-facing must filter these out: see the portal route.
+  issuedAt: timestamp("issued_at"),
   supersededAt: timestamp("superseded_at"), // set when the next revision is issued
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

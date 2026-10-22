@@ -994,6 +994,11 @@ export interface IStorage {
 
   getReviewRevisions(reviewItemId: string): Promise<ReviewRevision[]>;
   getReviewRevision(id: string): Promise<ReviewRevision | undefined>;
+  /**
+   * Rev A, unissued, created with the item so documents have somewhere to go
+   * while the review is still a draft. Issuing stamps this row.
+   */
+  createDraftReviewRevision(reviewItemId: string): Promise<ReviewRevision>;
   /** Issues the next revision, supersedes the previous, repoints the item. */
   issueReviewRevision(
     reviewItemId: string,
@@ -18998,6 +19003,38 @@ export class DbStorage implements IStorage {
    * two concurrent issues race, and the loser gets a constraint violation
    * rather than a duplicate label.
    */
+  async createDraftReviewRevision(reviewItemId: string): Promise<ReviewRevision> {
+    try {
+      return await db.transaction(async (tx) => {
+        const existing = await tx.select({ revisionNumber: schema.reviewRevisions.revisionNumber })
+          .from(schema.reviewRevisions)
+          .where(eq(schema.reviewRevisions.reviewItemId, reviewItemId))
+          .orderBy(desc(schema.reviewRevisions.revisionNumber))
+          .limit(1);
+        const nextNumber = (existing[0]?.revisionNumber ?? 0) + 1;
+
+        const [revision] = await tx.insert(schema.reviewRevisions).values({
+          reviewItemId,
+          revisionNumber: nextNumber,
+          revisionLabel: defaultRevisionLabel(nextNumber),
+          issuedAt: null,
+          issuedById: null,
+        } as any).returning();
+
+        // Point the item at it so the documents route has a target. The item's
+        // own status stays `draft` — this changes nothing the client can see.
+        await tx.update(schema.reviewItems)
+          .set({ currentRevisionId: revision.id })
+          .where(eq(schema.reviewItems.id, reviewItemId));
+
+        return revision;
+      });
+    } catch (error) {
+      console.error("Database error in createDraftReviewRevision:", error);
+      throw error;
+    }
+  }
+
   async issueReviewRevision(
     reviewItemId: string,
     input: { notes?: string | null; issuedById?: string | null; revisionLabel?: string | null },
@@ -19012,6 +19049,47 @@ export class DbStorage implements IStorage {
 
         const nextNumber = (existing[0]?.revisionNumber ?? 0) + 1;
         const now = new Date();
+
+        // Rev A is created unissued with the item so documents have something
+        // to hang off while it is still a draft. Issuing then STAMPS that
+        // revision rather than inserting a second one beside it — otherwise
+        // the drawings the builder already attached would be left behind on an
+        // orphan revision the client never sees.
+        const [pending] = await tx.select()
+          .from(schema.reviewRevisions)
+          .where(and(
+            eq(schema.reviewRevisions.reviewItemId, reviewItemId),
+            isNull(schema.reviewRevisions.issuedAt),
+          ))
+          .orderBy(desc(schema.reviewRevisions.revisionNumber))
+          .limit(1);
+
+        if (pending) {
+          const [stamped] = await tx.update(schema.reviewRevisions)
+            .set({
+              issuedAt: now,
+              issuedById: input.issuedById ?? null,
+              ...(input.notes != null ? { notes: input.notes } : {}),
+              ...((input.revisionLabel || "").trim() ? { revisionLabel: input.revisionLabel!.trim() } : {}),
+            } as any)
+            .where(eq(schema.reviewRevisions.id, pending.id))
+            .returning();
+
+          // Supersede every ISSUED predecessor — not the row just stamped.
+          await tx.update(schema.reviewRevisions)
+            .set({ supersededAt: now })
+            .where(and(
+              eq(schema.reviewRevisions.reviewItemId, reviewItemId),
+              isNull(schema.reviewRevisions.supersededAt),
+              ne(schema.reviewRevisions.id, pending.id),
+            ));
+
+          await tx.update(schema.reviewItems)
+            .set({ currentRevisionId: stamped.id, status: "awaiting_review", updatedAt: now })
+            .where(eq(schema.reviewItems.id, reviewItemId));
+
+          return stamped;
+        }
 
         if (existing.length > 0) {
           await tx.update(schema.reviewRevisions)

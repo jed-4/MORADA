@@ -48,7 +48,7 @@ interface ReviewDoc {
 }
 interface ReviewRev {
   id: string; revisionNumber: number; revisionLabel: string; notes: string | null;
-  issuedAt: string; supersededAt: string | null; documents: ReviewDoc[];
+  issuedAt: string | null; supersededAt: string | null; documents: ReviewDoc[];
 }
 interface ReviewCmt {
   id: string; content: string; authorType: string; createdByName: string;
@@ -325,7 +325,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 variant="outline"
                 onClick={() => fileRef.current?.click()}
                 disabled={!current || attachMutation.isPending}
-                title={!current ? "Issue a revision before attaching documents" : undefined}
+                title={!current ? "This review has no revision to attach to" : undefined}
                 data-testid="button-attach-document"
               >
                 {attachMutation.isPending
@@ -350,7 +350,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             />
           ) : (
             <p className="text-sm text-muted-foreground py-2">
-              {current ? "No documents on this revision yet." : "Issue Rev A, then attach the drawings."}
+              {current ? "No documents on this revision yet." : "No revision to attach to yet."}
             </p>
           )}
         </SectionCard>
@@ -521,7 +521,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                       {r.notes || <span className="text-muted-foreground">No note</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Issued {format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}
+                      {r.issuedAt ? `Issued ${format(new Date(r.issuedAt), "d MMM yyyy, h:mma")}` : "Not issued yet"}
                       {r.supersededAt && " · superseded"}
                       {r.documents.length > 0 && ` · ${r.documents.length} document${r.documents.length === 1 ? "" : "s"}`}
                     </p>
@@ -592,7 +592,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {current
-                ? `${current.revisionLabel} · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}`
+                ? `${current.revisionLabel}${current.issuedAt ? ` · issued ${format(new Date(current.issuedAt), "d MMM yyyy")}` : " · not issued yet"}`
                 : "No revision issued yet"}
             </p>
           </div>
@@ -620,7 +620,7 @@ function ReviewInformationCard({ data, isClient }: { data: ReviewDetailData; isC
               <span className="flex items-center gap-1.5">
                 <Badge variant="secondary" className="font-mono text-xs">{current.revisionLabel}</Badge>
                 <span className="text-xs text-muted-foreground">
-                  {format(new Date(current.issuedAt), "d MMM yyyy")}
+                  {current.issuedAt ? format(new Date(current.issuedAt), "d MMM yyyy") : "Not issued"}
                 </span>
               </span>
             ) : (
