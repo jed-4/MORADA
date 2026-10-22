@@ -47822,6 +47822,17 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         createdById: req.user!.id,
       } as any);
 
+      // Rev A exists from the start, unissued. Documents hang off a revision,
+      // so without this a draft had nothing to attach to and the builder had
+      // to issue the review to the client before adding the drawings.
+      // Non-fatal: the item is already created, and the builder can still
+      // issue, which creates the revision the old way.
+      try {
+        await storage.createDraftReviewRevision(item.id);
+      } catch (revErr) {
+        console.error("Failed to open a draft revision for review", item.id, revErr);
+      }
+
       res.status(201).json(item);
     } catch (error) {
       console.error("Error creating review:", error);
@@ -47962,7 +47973,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       // to this item, or a caller could staple a file onto another's history.
       const targetRevisionId = revisionId || item.currentRevisionId;
       if (!targetRevisionId) {
-        return res.status(400).json({ error: "Issue a revision before attaching documents" });
+        return res.status(400).json({ error: "This review has no revision to attach to" });
       }
       const revision = await storage.getReviewRevision(targetRevisionId);
       if (!revision || revision.reviewItemId !== item.id) {
@@ -48438,12 +48449,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (item.status === "draft") return res.status(404).json({ error: "Invalid link" });
 
       const urlPrefix = `/api/portal/reviews/${req.params.token}`;
-      const [revisions, documents, comments, approvals] = await Promise.all([
+      const [allRevisions, allDocuments, comments, approvals] = await Promise.all([
         storage.getReviewRevisions(item.id),
         storage.getReviewDocuments(item.id),
         storage.getReviewComments(item.id, false), // never internal notes
         storage.getReviewApprovals(item.id),
       ]);
+
+      // 🚨 An unissued revision is work in progress. The item being issued says
+      // nothing about the NEXT revision: a builder preparing Rev B attaches its
+      // drawings to an unissued row while Rev A is still the one with the
+      // client. Serving every revision would hand those over early. Filter the
+      // revisions, then filter documents to what survives — never the reverse,
+      // or a document on a hidden revision still slips through.
+      const revisions = allRevisions.filter((r) => r.issuedAt != null);
+      const visibleRevisionIds = new Set(revisions.map((r) => r.id));
+      const documents = allDocuments.filter((d) => visibleRevisionIds.has(d.revisionId));
 
       const byRevision = new Map<string, any[]>();
       for (const doc of documents) {
