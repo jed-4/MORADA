@@ -4999,10 +4999,18 @@ export const taskTemplates = pgTable("task_templates", {
   defaultRoleId: varchar("default_role_id").references(() => userRoles.id), // Default role to assign
   defaultRoleName: text("default_role_name"), // Cached for performance
   
-  // Assignee - can be either role or specific user
+  // Assignee - either a role, or one or more specific users
   assigneeType: text("assignee_type").default("role"), // "role" | "user"
-  assigneeUserId: varchar("assignee_user_id").references(() => users.id), // Specific user assignment
-  assigneeUserName: text("assignee_user_name"), // Cached user name for performance
+  // Named users this template is assigned to. The generator already fans a
+  // role out to every user who holds it, one task each; this gives the "user"
+  // branch the same reach instead of a single name.
+  //
+  // assigneeUserId/Name below are the legacy single-user pair, still read as a
+  // one-element fallback when this array is empty — no backfill needed, and a
+  // template saved by an older client keeps working.
+  assigneeUserIds: text("assignee_user_ids").array().default([]),
+  assigneeUserId: varchar("assignee_user_id").references(() => users.id), // Legacy single-user assignment
+  assigneeUserName: text("assignee_user_name"), // Legacy cached name
   
   // Scheduling
   frequency: text("frequency"), // "daily" | "weekly" | "monthly" | "yearly" | "once"
@@ -5068,6 +5076,7 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   scope: z.enum(["business", "project"]).optional(),
   projectId: z.string().nullable().optional(),
   assigneeType: z.enum(["role", "user"]).optional(),
+  assigneeUserIds: z.array(z.string()).optional(),
   assigneeUserId: z.string().nullable().optional(),
   goal: z.string().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),

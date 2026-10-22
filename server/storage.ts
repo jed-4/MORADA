@@ -25041,10 +25041,18 @@ export class DbStorage implements IStorage {
         let assignees: typeof allUsers = [];
         const templateData = template as any;
         
-        if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
-          // Direct user assignment - find the specific user
-          const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
-          if (singleUser) assignees = [singleUser];
+        if (templateData.assigneeType === 'user') {
+          // Named users. assigneeUserIds is the current field; assigneeUserId
+          // is the legacy single-user one, read as a one-element fallback so a
+          // template saved before the column existed still generates.
+          const named = Array.isArray(templateData.assigneeUserIds) && templateData.assigneeUserIds.length
+            ? templateData.assigneeUserIds
+            : (templateData.assigneeUserId ? [templateData.assigneeUserId] : []);
+          // Resolved through allUsers, which is already company-scoped, so an
+          // id that no longer belongs to this company simply drops out.
+          assignees = named
+            .map((id: string) => allUsers.find(user => user.id === id))
+            .filter(Boolean) as typeof allUsers;
         } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
           // Role-based assignment: find all users with this role
           assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
@@ -25204,10 +25212,15 @@ export class DbStorage implements IStorage {
       let assignees: typeof allUsers = [];
       const templateData = template as any;
       
-      if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
-        // Direct user assignment - find the specific user
-        const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
-        if (singleUser) assignees = [singleUser];
+      if (templateData.assigneeType === 'user') {
+        // Named users, with the legacy single id as a one-element fallback.
+        // Same resolution as the other generator above — keep them in step.
+        const named = Array.isArray(templateData.assigneeUserIds) && templateData.assigneeUserIds.length
+          ? templateData.assigneeUserIds
+          : (templateData.assigneeUserId ? [templateData.assigneeUserId] : []);
+        assignees = named
+          .map((id: string) => allUsers.find(user => user.id === id))
+          .filter(Boolean) as typeof allUsers;
       } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
         // Role-based assignment: find all users with this role
         assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
@@ -25351,9 +25364,13 @@ export class DbStorage implements IStorage {
       let newAssigneeId: string | null = null;
       let newAssigneeName: string | null = null;
       
-      if (template.assigneeType === 'user' && template.assigneeUserId) {
-        newAssigneeId = template.assigneeUserId;
-        const user = allUsers.find(u => u.id === template.assigneeUserId);
+      const namedIds: string[] = Array.isArray((template as any).assigneeUserIds) && (template as any).assigneeUserIds.length
+        ? (template as any).assigneeUserIds
+        : (template.assigneeUserId ? [template.assigneeUserId] : []);
+
+      if (template.assigneeType === 'user' && namedIds.length === 1) {
+        newAssigneeId = namedIds[0];
+        const user = allUsers.find(u => u.id === namedIds[0]);
         if (user) {
           newAssigneeName = `${user.firstName} ${user.lastName}`;
         }
@@ -25367,9 +25384,13 @@ export class DbStorage implements IStorage {
         updatedAt: new Date(),
       };
 
-      // Only update assignee if template uses direct user assignment (not role-based)
-      // Role-based assignments should preserve the per-user task assignment
-      if (template.assigneeType === 'user') {
+      // Only move the assignee when the template names exactly ONE person.
+      //
+      // A role, or several named users, generates one task PER user — so
+      // stamping a single assignee across all of them would hand everyone's
+      // task to the same person and wipe the fan-out. The existing comment
+      // said this about roles; several named users are the same case.
+      if (template.assigneeType === 'user' && namedIds.length === 1) {
         updateData.assigneeId = newAssigneeId;
         updateData.assigneeName = newAssigneeName;
       }
