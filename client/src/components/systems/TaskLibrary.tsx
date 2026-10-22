@@ -175,7 +175,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     description: "",
     defaultRoleId: "",
     assigneeType: "role" as "role" | "user",
-    assigneeUserId: "",
+    assigneeUserIds: [] as string[],
     frequency: "once",
     category: "",
     estimatedDuration: 0,
@@ -395,7 +395,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       description: "",
       defaultRoleId: "",
       assigneeType: "role",
-      assigneeUserId: "",
+      assigneeUserIds: [],
       frequency: "once",
       category: "",
       estimatedDuration: 0,
@@ -429,7 +429,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       description: template.description || "",
       defaultRoleId: template.defaultRoleId || "",
       assigneeType: (template.assigneeType as "role" | "user") || "role",
-      assigneeUserId: template.assigneeUserId || "",
+      assigneeUserIds: (template as any).assigneeUserIds?.length
+        ? (template as any).assigneeUserIds
+        : (template.assigneeUserId ? [template.assigneeUserId] : []),
       frequency: template.frequency || "once",
       category: template.category || "",
       estimatedDuration: template.estimatedDuration || 0,
@@ -512,7 +514,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
-      assigneeUserId: templateForm.assigneeType === 'user' ? (templateForm.assigneeUserId || null) : null,
+      assigneeUserIds: templateForm.assigneeType === 'user' ? templateForm.assigneeUserIds : [],
+      // Legacy single field kept in step so an older client, and the list's
+      // cached name, still read correctly for the one-user case.
+      assigneeUserId: templateForm.assigneeType === 'user' && templateForm.assigneeUserIds.length === 1
+        ? templateForm.assigneeUserIds[0]
+        : null,
       // Scope fields - include companyId for business scope, projectId for project scope
       scope: templateForm.scope,
       projectId: templateForm.scope === 'project' ? (templateForm.projectId || null) : null,
@@ -998,13 +1005,22 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
                   {/* Assignee */}
                   <div className="text-xs text-muted-foreground truncate">
-                    {template.assigneeType === 'user' ? (
-                      template.assigneeUserName ? (
-                        <span className="text-foreground">{template.assigneeUserName}</span>
-                      ) : (
-                        <span>-</span>
-                      )
-                    ) : (
+                    {template.assigneeType === 'user' ? (() => {
+                      // Names are resolved from the users already loaded for the
+                      // picker rather than cached on the row — one cache to go
+                      // stale is enough, and assigneeUserName only ever held one.
+                      const ids: string[] = (template as any).assigneeUserIds?.length
+                        ? (template as any).assigneeUserIds
+                        : (template.assigneeUserId ? [template.assigneeUserId] : []);
+                      const names = ids
+                        .map((id) => {
+                          const u = users.find((x: any) => x.id === id);
+                          return u ? ([u.firstName, u.lastName].filter(Boolean).join(" ") || u.email) : null;
+                        })
+                        .filter(Boolean);
+                      if (!names.length) return <span>{template.assigneeUserName || '-'}</span>;
+                      return <span className="text-foreground">{names.join(", ")}</span>;
+                    })() : (
                       <span>
                         {template.defaultRoleId ? getRoleName(template.defaultRoleId) : '-'}
                       </span>
@@ -1321,13 +1337,40 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       </SelectContent>
                     </Select>
                   ) : (
-                    <UserSelect
-                      value={templateForm.assigneeUserId}
-                      onValueChange={(value) => setTemplateForm({ ...templateForm, assigneeUserId: value })}
-                      placeholder="Select a user"
-                      allowNone={false}
+                    <div
+                      className="max-h-40 overflow-y-auto rounded-md border border-border divide-y divide-border"
                       data-testid="select-assignee-user"
-                    />
+                    >
+                      {users.length === 0 ? (
+                        <p className="text-data text-muted-foreground px-2 py-2">No users to assign.</p>
+                      ) : (
+                        users.map((u: any) => {
+                          const checked = templateForm.assigneeUserIds.includes(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover-elevate"
+                              data-testid={`assignee-option-${u.id}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(next) =>
+                                  setTemplateForm({
+                                    ...templateForm,
+                                    assigneeUserIds: next
+                                      ? [...templateForm.assigneeUserIds, u.id]
+                                      : templateForm.assigneeUserIds.filter((id) => id !== u.id),
+                                  })
+                                }
+                              />
+                              <span className="text-table truncate">
+                                {[u.firstName, u.lastName].filter(Boolean).join(" ") || u.email}
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
                   )}
                 </div>
 
