@@ -26,6 +26,16 @@ import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
 import { NotificationBell } from "./NotificationBell";
 import { MoradaAI } from "./MoradaAI";
+
+/**
+ * The Morada AI button is hidden from the global header. The assistant does not
+ * work yet, and an inert control sitting among the ones people use all day is
+ * worse than no control at all.
+ *
+ * Nothing else is removed — MoradaAI.tsx and the routes behind it are untouched
+ * — so bringing it back is this one flag.
+ */
+const SHOW_MORADA_AI = false;
 import { GlobalSearch } from "./GlobalSearch";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useToast } from "@/hooks/use-toast";
@@ -286,10 +296,12 @@ export default function Header() {
         {/* Messages Dropdown */}
         <MessagesDropdown />
 
-        {/* Morada AI (hidden on mobile to reduce crowding) */}
-        <div className="hidden md:flex items-center">
-          <MoradaAI />
-        </div>
+        {/* Morada AI — see SHOW_MORADA_AI above. */}
+        {SHOW_MORADA_AI && (
+          <div className="hidden md:flex items-center">
+            <MoradaAI />
+          </div>
+        )}
 
         {/* Notifications Bell */}
         <NotificationBell />
