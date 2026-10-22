@@ -1193,6 +1193,38 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     onSettled: () => settleBatchWriteRef.current(),
   });
 
+  /**
+   * Dragging a STAGE bar moves the whole phase — every descendant by the same
+   * amount — and that has to land as ONE write.
+   *
+   * A stage bar is derived: getEffectiveDates ignores a parent's own dates and
+   * spans its children instead, and the server rolls a parent up from its
+   * children on every child write. So the single-item path, which PATCHes only
+   * the dragged row, wrote a value nothing reads — the bar sprang straight back.
+   *
+   * This goes through /schedule-items/bulk rather than N PATCHes because that
+   * endpoint writes without running the per-item dependency cascade. The
+   * descendants keep their spacing (one shared shift), so no cascade is wanted
+   * between them, and a link that leaves the phase is resolved once on the
+   * client and sent in the same payload. N PATCHes would instead have the
+   * server re-cascade each child onto the children already being moved — the
+   * double-write that has bitten this drag twice before.
+   */
+  const phaseMoveMutation = useMutation({
+    mutationFn: async ({ items }: { items: Array<{ id: string; updates: { startDate: string; endDate: string } }> }) => {
+      return apiRequest(`/api/schedule-items/bulk`, "POST", { items });
+    },
+    onMutate: async () => {
+      const key = scheduleIdRef.current
+        ? `/api/schedules/${scheduleIdRef.current}/items`
+        : `/api/projects/${projectIdRef.current}/schedule-items`;
+      await queryClient.cancelQueries({ queryKey: [key] });
+    },
+    // Counted into the drag batch like every other write, so the refetch waits
+    // for it instead of racing it.
+    onSettled: () => settleBatchWriteRef.current(),
+  });
+
   const createDependencyMutation = useMutation({
     mutationFn: async ({ itemId, predecessorId, type }: { itemId: string; predecessorId: string; type: string }) => {
       return apiRequest(`/api/schedule-items/${itemId}/dependencies`, "POST", { predecessorId, type });
@@ -1596,6 +1628,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   addWorkingDaysRef.current = addWorkingDays;
   const updateItemMutationRef = useRef(updateItemMutation);
   updateItemMutationRef.current = updateItemMutation;
+  const phaseMoveMutationRef = useRef(phaseMoveMutation);
+  phaseMoveMutationRef.current = phaseMoveMutation;
   const createDependencyMutationRef = useRef(createDependencyMutation);
   createDependencyMutationRef.current = createDependencyMutation;
 
@@ -1901,6 +1935,101 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       try {
       if (drag.type === 'move') {
         if (deltaDays !== 0) {
+          // Everything under the dragged bar, taken from the live snapshot —
+          // the component-scope helper is captured at mount and would be stale.
+          const phaseChildren: ScheduleItem[] = (() => {
+            const out: ScheduleItem[] = [];
+            const seen = new Set<string>([String(drag.id)]);
+            const walk = (parentId: string) => {
+              for (const c of currentItems) {
+                if (String(c.parentItemId ?? '') !== parentId) continue;
+                if (seen.has(String(c.id))) continue;
+                seen.add(String(c.id));
+                out.push(c);
+                walk(String(c.id));
+              }
+            };
+            walk(String(drag.id));
+            return out;
+          })();
+
+          if (phaseChildren.length > 0) {
+            // ── Phase move ──────────────────────────────────────────────────
+            // drag.originalStart/End are already the DERIVED span (set at
+            // mousedown via getEffectiveDates), so the delta is measured
+            // against the bar the user actually grabbed.
+            let phaseStart = addDays(drag.originalStart, deltaDays);
+            phaseStart = snap(phaseStart, deltaDays > 0 ? 'forward' : 'backward');
+            const shift = differenceInDays(phaseStart, drag.originalStart);
+
+            if (shift !== 0) {
+              const dir = shift > 0 ? 'forward' : 'backward';
+              const writes: Array<{ id: string; updates: { startDate: string; endDate: string } }> = [];
+
+              // One shared shift keeps the phase's internal shape, so links
+              // BETWEEN these items stay satisfied and need no cascade. Each
+              // start still snaps off a weekend, and each keeps its own
+              // working-day length rather than a raw calendar span.
+              let minStart: Date | null = null;
+              let maxEnd: Date | null = null;
+              for (const child of phaseChildren) {
+                const oldStart = parseLocalMidnight(child.startDate as any);
+                const oldEnd = parseLocalMidnight(child.endDate as any);
+                const childWD = countWD(oldStart, oldEnd);
+                const childStart = snap(addDays(oldStart, shift), dir);
+                const childEnd = addWD(childStart, childWD);
+
+                updateCacheOptimistically(child.id, childStart, childEnd);
+                writes.push({
+                  id: String(child.id),
+                  updates: {
+                    startDate: format(childStart, 'yyyy-MM-dd'),
+                    endDate: format(childEnd, 'yyyy-MM-dd'),
+                  },
+                });
+                if (!minStart || childStart < minStart) minStart = childStart;
+                if (!maxEnd || childEnd > maxEnd) maxEnd = childEnd;
+              }
+
+              // The stage's own row is stored as well as derived. The bulk
+              // endpoint does not roll parents up (that lives in the
+              // single-item PATCH), so write the span here or the row drifts
+              // away from the bar — which is the original defect.
+              const stageStart = minStart ?? phaseStart;
+              const stageEnd = maxEnd ?? phaseStart;
+              updateCacheOptimistically(drag.id, stageStart, stageEnd);
+              writes.unshift({
+                id: String(drag.id),
+                updates: {
+                  startDate: format(stageStart, 'yyyy-MM-dd'),
+                  endDate: format(stageEnd, 'yyyy-MM-dd'),
+                },
+              });
+
+              // Links that LEAVE the phase still have to pull. Resolved once
+              // from the stage's old span to its new one; anything the cascade
+              // reports that is already in the payload is dropped, so no row is
+              // written twice with two different answers.
+              const inPhase = new Set<string>(writes.map(w => w.id));
+              const outward = computeMoveCascade({
+                movedItemId: drag.id,
+                originalStart: drag.originalStart,
+                originalEnd: drag.originalEnd,
+                newStart: stageStart,
+                newEnd: stageEnd,
+                allItems: currentItems,
+                isNonWorking: isNonWorkingDayRef.current,
+              }).filter(u => !inPhase.has(String(u.id)));
+
+              for (const u of outward) {
+                updateCacheOptimistically(u.id, parseLocalMidnight(u.startDate), parseLocalMidnight(u.endDate));
+                writes.push({ id: String(u.id), updates: { startDate: u.startDate, endDate: u.endDate } });
+              }
+
+              pendingMutationCountRef.current++;
+              batchPromises.push(phaseMoveMutationRef.current.mutateAsync({ items: writes }));
+            }
+          } else {
           const workingDuration = countWD(drag.originalStart, drag.originalEnd);
 
           let newStart = addDays(drag.originalStart, deltaDays);
@@ -1937,6 +2066,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
           batchPromises.push(...recalcLagForItem(drag.id, newStart, currentItems));
           batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
+          }
         }
       } else if (drag.type === 'resize-left') {
         if (deltaDays !== 0) {
