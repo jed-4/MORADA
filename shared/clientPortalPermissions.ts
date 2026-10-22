@@ -197,3 +197,14 @@ export const CLIENT_PORTAL_SECTIONS: PortalSection[] = [
     extras: [],
   },
 ];
+
+/**
+ * The TEAM permission for giving a client portal access (invite, resend,
+ * revoke, restore) — not a portal.* key; clients never hold it.
+ *
+ * The portal-access routes used to borrow admin.users ("User (team)"), so the
+ * only way to let a building employee invite a homeowner was to also let them
+ * invite, edit and re-role staff. `view` = see a contact's portal status,
+ * `add` = send the first invite, `edit` = resend / revoke / restore.
+ */
+export const CLIENT_PORTAL_ACCESS_KEY = "sales.client_portal";
