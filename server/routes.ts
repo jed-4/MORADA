@@ -1,4 +1,8 @@
 import type { Express, Request, Response } from "express";
+import {
+  applyXeroClientInvoiceState as applyXeroClientInvoiceStateImpl,
+  type ApplyArgs as ApplyXeroClientInvoiceArgs,
+} from "./services/xeroClientInvoiceState";
 import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
@@ -44300,6 +44304,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Pull client invoice state from Xero (status, paid amount, balance)
+  /**
+   * Binds the shared writer to this app's storage. The logic lives in
+   * server/services/xeroClientInvoiceState.ts so it can be tested without a
+   * Xero connection — see server/__tests__/xero-client-invoice-state.test.ts.
+   */
+  const applyXeroClientInvoiceState = (args: ApplyXeroClientInvoiceArgs) =>
+    applyXeroClientInvoiceStateImpl(storage as any, args);
+
   app.post("/api/xero/pull-client-invoice/:id", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
@@ -44323,43 +44335,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
 
       const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-      const xeroStatus: string = xeroInvoice.Status;
-      const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
-
-      // Xero keeps "sent" off the status axis entirely — it is a SentToContact
-      // flag on the invoice. Mirror it so an invoice sent from inside Xero
-      // still reads as sent here. Never walk backwards over a payment state.
-      if (xeroInvoice.SentToContact && (invoice.status === "approved" || invoice.status === "draft")) {
-        await storage.updateClientInvoice(invoice.id, { status: "sent" } as any);
-      }
-
-      // Record the Xero-side payment increase as a payment row, then let
-      // syncClientInvoicePaidStatus recompute paid/balance/status from the
-      // rows — the single writer for paid state. (Previously this route
-      // OVERWROTE paidAmount with Xero's absolute figure, silently clobbering
-      // payments recorded in Morada that Xero doesn't know about.)
-      if (amountPaidCents > (invoice.paidAmount || 0)) {
-        const diff = amountPaidCents - (invoice.paidAmount || 0);
-        await storage.createClientInvoicePayment({
-          invoiceId: invoice.id,
-          amount: diff,
-          paymentDate: new Date(),
-          paymentMethod: "Xero Sync",
-          reference: "Synced from Xero",
-          notes: null,
-          isVoided: false,
-          recordedBy: user?.id || null,
-        } as any);
-        // createClientInvoicePayment already ran the sync.
-      } else {
-        await storage.syncClientInvoicePaidStatus(invoice.id);
-      }
-
-      // VOIDED in Xero is a document-state change, not a payment change —
-      // reflect it explicitly (payments sync above never sets "draft").
-      if (xeroStatus === "VOIDED") {
-        await storage.updateClientInvoice(invoice.id, { status: "draft" } as any);
-      }
+      const { xeroStatus, amountDueCents } = await applyXeroClientInvoiceState({
+        invoice,
+        xeroInvoice,
+        recordedBy: user?.id || null,
+        source: "manual",
+      });
 
       const updated = await storage.getClientInvoice(invoice.id);
       res.json({
@@ -44554,35 +44535,21 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
           if (!xeroInvoice) continue;
 
-          const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-          const xeroStatus: string = xeroInvoice.Status;
-
-          // Record the Xero-side payment increase as a payment row; paid/
-          // balance/status recompute from the rows inside
-          // createClientInvoicePayment (single writer — never overwrite
-          // paidAmount with Xero's absolute figure, which clobbers payments
-          // recorded only in Morada).
-          if (amountPaidCents > (localInvoice.paidAmount || 0)) {
-            const diff = amountPaidCents - (localInvoice.paidAmount || 0);
-            await storage.createClientInvoicePayment({
-              invoiceId: localInvoice.id,
-              amount: diff,
-              paymentDate: new Date(),
-              paymentMethod: "Xero Webhook",
-              reference: `Xero webhook: ${event.eventType || "updated"}`,
-              notes: null,
-              isVoided: false,
-              recordedBy: null,
-            } as any);
-          }
-
-          // Document-state change (not derivable from payments): voided or
-          // deleted in Xero reverts the local invoice to draft.
-          if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-            await storage.updateClientInvoice(localInvoice.id, { status: "draft" } as any);
-          }
+          // Same single writer the Sync button uses. Previously this branch
+          // had its own copy that omitted SentToContact and the no-payment
+          // recompute, so the webhook silently did less than the button.
+          const applied = await applyXeroClientInvoiceState({
+            invoice: localInvoice,
+            xeroInvoice,
+            recordedBy: null,
+            source: "webhook",
+            reference: `Xero webhook: ${event.eventType || "updated"}`,
+          });
 
           processed++;
+          console.log(
+            `[xero-webhook] INVOICE event synced client invoice ${localInvoice.invoiceNumber ?? localInvoice.id} — Xero status ${applied.xeroStatus}`,
+          );
         } catch (err) {
           console.error(`[Xero Webhook] Failed to process invoice ${xeroInvoiceId}:`, err);
         }
