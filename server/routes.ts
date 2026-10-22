@@ -243,7 +243,7 @@ import {
   projectClientVariation,
   projectClientVariationItems,
 } from "./clientProjections";
-import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
+import { isPortalPermissionKey, CLIENT_PORTAL_ACCESS_KEY } from "@shared/clientPortalPermissions";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -17789,7 +17789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // userInvitations.contactId). Status is always derived, never stored:
   // linked user → active/revoked; else pending invitation → invited; else none.
 
-  app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "view"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -17829,7 +17829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/invite", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/invite", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "add"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       const companyId = currentUser.companyId;
@@ -17926,7 +17926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/resend", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/resend", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -17975,7 +17975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/revoke", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/revoke", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);
@@ -18004,7 +18004,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/portal-access/restore", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/contacts/:id/portal-access/restore", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "edit"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;
       const contact = await storage.getContact(req.params.id, companyId);

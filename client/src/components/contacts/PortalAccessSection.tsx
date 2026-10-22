@@ -17,6 +17,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Contact } from "@shared/schema";
+import { usePermission } from "@/hooks/use-permission";
+import { CLIENT_PORTAL_ACCESS_KEY } from "@shared/clientPortalPermissions";
 import { GivePortalAccessDialog } from "./GivePortalAccessDialog";
 
 type PortalAccessInfo = {
@@ -36,9 +38,15 @@ export function PortalAccessSection({ contact }: { contact: Contact }) {
 
   const portalAccessKey = ["/api/contacts", contact.id, "portal-access"];
 
+  // Roles & Permissions → Sales & CRM → "Client portal access". Without these
+  // the section used to offer "Give portal access" anyway and fail on click.
+  const canView = usePermission(CLIENT_PORTAL_ACCESS_KEY, "view");
+  const canInvite = usePermission(CLIENT_PORTAL_ACCESS_KEY, "add");
+  const canManage = usePermission(CLIENT_PORTAL_ACCESS_KEY, "edit");
+
   const { data: access, isLoading } = useQuery<PortalAccessInfo>({
     queryKey: portalAccessKey,
-    enabled: !!contact.id,
+    enabled: !!contact.id && canView,
   });
 
   const actionMutation = useMutation({
@@ -63,6 +71,22 @@ export function PortalAccessSection({ contact }: { contact: Contact }) {
 
   const status = access?.status ?? "none";
   const email = access?.email || contact.email;
+
+  if (!canView) {
+    return (
+      <div className="rounded-md border-2 border-input p-4 space-y-1" data-testid="section-portal-access">
+        <p className="text-base font-medium">Portal access</p>
+        <p className="text-sm text-muted-foreground" data-testid="text-portal-no-permission">
+          Your role can't give clients portal access. An admin can turn on
+          {" "}<span className="font-medium text-foreground">Client portal access</span>{" "}
+          for your role in Roles &amp; Permissions, under Sales &amp; CRM.
+        </p>
+      </div>
+    );
+  }
+
+  // The action this status offers, and whether this role may take it.
+  const allowedHere = status === "none" ? canInvite : canManage;
 
   return (
     <div className="rounded-md border-2 border-input p-4 space-y-3" data-testid="section-portal-access">
@@ -104,7 +128,15 @@ export function PortalAccessSection({ contact }: { contact: Contact }) {
         )}
       </div>
 
-      {!isLoading && (
+      {!isLoading && !allowedHere && (
+        <p className="text-xs text-muted-foreground text-right" data-testid="text-portal-no-action-permission">
+          {status === "none"
+            ? "Your role can see portal access but not send invites."
+            : "Your role can see portal access but not resend or revoke it."}
+        </p>
+      )}
+
+      {!isLoading && allowedHere && (
         <div className="flex justify-end gap-2">
           {status === "none" && (
             <Button
@@ -169,7 +201,7 @@ export function PortalAccessSection({ contact }: { contact: Contact }) {
           )}
         </div>
       )}
-      {status === "none" && !contact.email && !isLoading && (
+      {status === "none" && !contact.email && !isLoading && canInvite && (
         <p className="text-xs text-muted-foreground text-right">Add an email address first</p>
       )}
 

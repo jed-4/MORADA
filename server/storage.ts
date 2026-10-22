@@ -136,6 +136,7 @@ import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTota
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import { defaultRevisionLabel } from "@shared/reviewCostImpact";
 import {
+  CLIENT_PORTAL_ACCESS_KEY,
   CLIENT_PORTAL_CATEGORY,
   CLIENT_PORTAL_PERMISSIONS,
   DEFAULT_CLIENT_PORTAL_GRANTS,
@@ -1759,7 +1760,7 @@ function getDefaultActionsForRole(
       'financial.estimate', 'financial.purchase_orders', 'financial.bills',
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
-      'sales.client', 'sales.proposals', 'sales.leads',
+      'sales.client', CLIENT_PORTAL_ACCESS_KEY, 'sales.proposals', 'sales.leads',
       'files.manage', 'timesheets.manage', 'timesheets.rates', 'calendar.manage', 'messages.team', 'leave.manage',
       'dashboard.overview', 'dashboard.financial', 'dashboard.project_health', 'dashboard.team_performance',
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
@@ -1977,6 +1978,7 @@ export class MemStorage implements IStorage {
 
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: CLIENT_PORTAL_ACCESS_KEY, name: "Client portal access", description: "Invite clients to the client portal, and resend or revoke their access", category: "sales", actions: ["view", "add", "edit"], isBuiltIn: true },
       { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
 
@@ -7207,6 +7209,7 @@ export class DbStorage implements IStorage {
 
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: CLIENT_PORTAL_ACCESS_KEY, name: "Client portal access", description: "Invite clients to the client portal, and resend or revoke their access", category: "sales", actions: ["view", "add", "edit"], isBuiltIn: true },
       { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
 
@@ -7309,6 +7312,62 @@ export class DbStorage implements IStorage {
     await this.backfillSelectionVisibilityGrants(createdKeys);
     await this.backfillClientPortalGrants(createdKeys);
     await this.backfillMinutesGrants(createdKeys);
+    await this.backfillClientPortalAccessGrants(createdKeys);
+  }
+
+  /**
+   * Give the new client-portal-access permission to every team role that
+   * could already give portal access — i.e. held admin.users, which the
+   * routes used to check — so nobody loses the ability on deploy. Runs only on
+   * the boot that creates the key, so a later untick is never re-granted.
+   * Admin-like roles bypass permission checks and need nothing.
+   */
+  private async backfillClientPortalAccessGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has(CLIENT_PORTAL_ACCESS_KEY)) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const accessId = allPermissions.find((p) => p.key === CLIENT_PORTAL_ACCESS_KEY)?.id;
+      const usersId = allPermissions.find((p) => p.key === "admin.users")?.id;
+      if (!accessId || !usersId) return;
+
+      const usersGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, usersId));
+      if (usersGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, usersGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      // role_permissions has no unique (role_id, permission_id) constraint, so
+      // an insert cannot be relied on to refuse a duplicate — check first.
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, accessId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of usersGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        // admin.users view/add/edit gated exactly these routes; delete did not.
+        const actions = ["view", "add", "edit"].filter((a) => held.includes(a));
+        if (actions.length === 0) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: accessId,
+          allowedActions: actions as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] ${CLIENT_PORTAL_ACCESS_KEY} granted to ${granted} role(s), mirroring admin.users`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillClientPortalAccessGrants:", error);
+    }
   }
 
   /**
