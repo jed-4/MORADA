@@ -9,6 +9,7 @@ import { useClientPortal } from "@/hooks/use-client-portal";
 import { MessageSquare, ArrowLeft, ExternalLink, Send, Loader2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -442,17 +443,35 @@ export function MessagesDropdown() {
             </ScrollArea>
 
             <div className="p-2 border-t">
-              <form onSubmit={handleSend} className="flex gap-1.5">
-                <Input
+              {/* A single-line <input> scrolled sideways as you typed, so a
+                  sentence you were still writing slid out of view to the left.
+                  The composer grows from one line to four and then scrolls,
+                  which is what the full Messages page already does — via the
+                  shared primitive rather than another scrollHeight handler.
+                  `items-end` keeps Send on the bottom line as the box grows. */}
+              <form onSubmit={handleSend} className="flex gap-1.5 items-end">
+                <AutoTextarea
                   value={messageText}
                   onChange={e => setMessageText(e.target.value)}
+                  onKeyDown={e => {
+                    // Enter sends, Shift+Enter starts a new line. Without this a
+                    // textarea swallows Enter as a newline and the form — whose
+                    // only submit path is this button — never fires.
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend(e as unknown as React.FormEvent);
+                    }
+                  }}
+                  minRows={1}
+                  maxRows={4}
                   placeholder="Type a message..."
-                  className="h-8 text-sm flex-1"
+                  className="text-sm flex-1 min-w-0 py-1.5 leading-5"
                   data-testid="input-message"
                 />
                 <Button
                   type="submit"
                   size="icon"
+                  className="flex-shrink-0"
                   disabled={!messageText.trim() || sendMut.isPending}
                   data-testid="button-send"
                 >
