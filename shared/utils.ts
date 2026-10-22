@@ -1,5 +1,35 @@
 import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { extendTailwindMerge } from "tailwind-merge"
+
+/**
+ * tailwind-merge has to be told about our custom font scale, or it silently
+ * deletes colours.
+ *
+ * `text-data`, `text-table`, `text-label` … are fontSize entries we added in
+ * tailwind.config.ts. Stock tailwind-merge only knows its own size names, so it
+ * filed ours under `text-color` instead — and then, since a class can only hold
+ * one colour, dropped whichever real colour sat beside it. Last one in the
+ * string won.
+ *
+ * That is not theoretical. In badge.tsx the colour comes first, so every
+ * `<Badge variant="status-*">` lost `text-status-*` and inherited the page ink;
+ * the neutral badge has the order reversed, so it kept its colour and lost
+ * `text-data`, rendering 12px instead of 10px. No status chip in the app was
+ * rendering as designed, and the --status-*-fg half of the palette was dead.
+ *
+ * Registering the scale here fixes it everywhere at once: our sizes now
+ * conflict with other sizes (so the base `text-xs` gives way, as intended) and
+ * no longer conflict with colours.
+ *
+ * Keep this list in step with `fontSize` in tailwind.config.ts.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [{ text: ["2xs", "label", "data", "table", "body-sm", "body-lg"] }],
+    },
+  },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
