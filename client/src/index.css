@@ -151,18 +151,33 @@
    * Heavier fills so pills read clearly against the near-white page: same
    * Figma hues as before, deeper background + bolder foreground. Dark mode
    * (further down) keeps the softer translucent tint. */
-  --status-success-fg: 151 44% 30%;          /* #2B6E4C */
-  --status-success-bg: 149 42% 84%;          /* #C4E7D3 */
-  --status-warning-fg: 36 62% 34%;           /* #8C6320 */
-  --status-warning-bg: 39 72% 84%;           /* #F5E0BC */
-  --status-info-fg:    220 52% 46%;          /* #3B62B2 */
-  --status-info-bg:    221 62% 88%;          /* #C6D6F1 */
-  --status-caution-fg: 22 68% 36%;           /* #9B4E1D — between warning and danger */
-  --status-caution-bg: 25 78% 87%;           /* #FBDDC6 */
-  --status-danger-fg:  0 58% 41%;            /* #A63030 */
-  --status-danger-bg:  0 64% 89%;            /* #F5CFCF */
-  --status-action-fg:  270 24% 44%;          /* #6E578C plum */
-  --status-action-bg:  270 42% 89%;          /* #DDD0EE */
+  /* Fills sat at 84–89% lightness, which read as a tint of the page rather
+   * than a colour — a row of them looked washed out. Each fill now drops ~7
+   * points of lightness and gains a few of saturation, and each ink darkens
+   * to keep the pair above 4.5:1. The trailing numbers are the measured
+   * ratios: never strengthen a fill without re-darkening its ink, or the pill
+   * gets prettier and less readable.
+   *
+   * CAVEAT, true as of this change: the -fg half of each pair does not
+   * currently reach a <Badge variant="status-*">. `text-data` is a CUSTOM
+   * fontSize, so tailwind-merge does not recognise it as one, classifies it as
+   * a text-colour, and drops the `text-status-*` that precedes it in
+   * badge.tsx — the chip inherits the page ink instead. The ratios above are
+   * the contract for when that is fixed; what renders today is #2C2825 on the
+   * fill (8.3–10:1). Fixing it means teaching tailwind-merge the custom font
+   * scale in shared/utils.ts `cn`, which is app-wide — see the PR. */
+  --status-success-fg: 151 48% 27%;          /* #246646 on #A9DFC3 — 4.60:1 */
+  --status-success-bg: 149 46% 77%;          /* #A9DFC3 */
+  --status-warning-fg: 36 66% 29%;           /* #7B5419 on #F1D298 — 4.62:1 */
+  --status-warning-bg: 39 76% 77%;           /* #F1D298 */
+  --status-info-fg:    220 56% 37%;          /* #2A4D93 on #AFC3EF — 4.60:1 */
+  --status-info-bg:    221 66% 81%;          /* #AFC3EF */
+  --status-caution-fg: 22 72% 32%;           /* #8C4217 on #F5C5A3 — 4.61:1 — between warning and danger */
+  --status-caution-bg: 25 80% 80%;           /* #F5C5A3 */
+  --status-danger-fg:  0 62% 36%;            /* #952323 on #F0B2B2 — 4.62:1 */
+  --status-danger-bg:  0 68% 82%;            /* #F0B2B2 */
+  --status-action-fg:  270 28% 37%;          /* #5E4479 on #D1BCE6 — 4.67:1 plum */
+  --status-action-bg:  270 46% 82%;          /* #D1BCE6 */
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (light)
@@ -361,22 +376,25 @@
    * Dark-mode pills: the light-mode inks (#3C8160, #B03838 …) only reach
    * 1.7–2.4:1 on a dark card — far under the 4.5:1 minimum — and a 22% tint of
    * the ink lightens its own ground, capping contrast no matter how dark the
-   * text. So the text lightens to the same hue's pastel and the wash drops to
-   * 10%. Measured against --card (#3B3934): 4.5–5.1:1. The solid --success /
+   * text. So the text lightens to the same hue's pastel. The wash sat at 10%
+   * for that reason — but 10% was only the ceiling while the ink stayed put.
+   * Raising it to 18% AND lifting each ink ~7 points recovers the contrast and
+   * gives the pill an actual colour. Measured against --card (#3B3934):
+   * 4.61–4.66:1. The solid --success /
    * --warning / --destructive tokens above are unchanged — they carry white
    * text and are correct as-is. */
-  --status-success-fg: 147 39% 65%;          /* #82C8A2 — 4.87:1 */
-  --status-success-bg: 147 39% 65% / 0.10;
-  --status-warning-fg: 42 54% 64%;           /* #D4B670 — 4.81:1 */
-  --status-warning-bg: 42 54% 64% / 0.10;
-  --status-info-fg:    219 64% 79%;          /* #A8C0EC — 5.07:1 */
-  --status-info-bg:    219 64% 79% / 0.10;
-  --status-caution-fg: 24 78% 70%;           /* #F0A46E — between warning and danger */
-  --status-caution-bg: 24 78% 70% / 0.10;
-  --status-danger-fg:  5 72% 77%;            /* #EFA39C — 4.70:1 */
-  --status-danger-bg:  5 72% 77% / 0.10;
-  --status-action-fg:  264 47% 77%;          /* #BEA8E0 — 4.51:1 */
-  --status-action-bg:  264 47% 77% / 0.10;
+  --status-success-fg: 147 42% 72%;          /* #9AD6B5 — 4.61:1 */
+  --status-success-bg: 147 42% 72% / 0.18;
+  --status-warning-fg: 42 58% 71%;           /* #E0C68A — 4.61:1 */
+  --status-warning-bg: 42 58% 71% / 0.18;
+  --status-info-fg:    219 66% 83%;          /* #B7CBF0 — 4.66:1 */
+  --status-info-bg:    219 66% 83% / 0.18;
+  --status-caution-fg: 24 80% 78%;           /* #F4BE9A — 4.62:1 — between warning and danger */
+  --status-caution-bg: 24 80% 78% / 0.18;
+  --status-danger-fg:  5 74% 84%;            /* #F4BDB8 — 4.66:1 */
+  --status-danger-bg:  5 74% 84% / 0.18;
+  --status-action-fg:  264 50% 84%;          /* #D2C2EB — 4.61:1 */
+  --status-action-bg:  264 50% 84% / 0.18;
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (dark)
