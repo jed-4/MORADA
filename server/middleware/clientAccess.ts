@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import type { User } from "@shared/schema";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
+import { isPublicProposalShareRoute } from "./publicProposalRoutes";
 import {
   clientAllowanceEstimateIds,
   isSiteDiaryClientVisible,
@@ -661,7 +662,8 @@ export async function clientAccessGate(
   // exemption a client who follows an emailed link while signed in is refused
   // the very document that was addressed to them. Each portal route does its
   // own token lookup and projection.
-  if (path.startsWith("/portal/")) {
+  // The proposal share link is the same kind of endpoint under another prefix.
+  if (path.startsWith("/portal/") || isPublicProposalShareRoute(req.method, path)) {
     next();
     return;
   }
