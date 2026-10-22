@@ -37111,16 +37111,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const createdItems = [];
       const today = new Date();
-      
+
+      // The Category/Stage column becomes real nesting.
+      //
+      // It used to be written as `category`, which schedule_items has no column
+      // for — in the schema or the database. Drizzle drops unknown keys without
+      // complaining, so the mapping previewed correctly and was then thrown
+      // away: every import landed as a flat list with no stages at all.
+      //
+      // Two shapes have to work, and a file often mixes them:
+      //   1. The stage is its own row AND is named by its children (how most
+      //      exports, including Buildern's, write it). Nest under that row —
+      //      never create a second one beside it.
+      //   2. The stage only exists as text in the column. Create a row for it,
+      //      positioned just before the first child that asks for it.
+      const stageNameOf = (it: any): string =>
+        it?.category ? String(it.category).trim() : "";
+
+      // Every name used as a parent by some row.
+      const stageNames = new Set<string>();
+      for (const it of items) {
+        const s = stageNameOf(it);
+        if (s) stageNames.add(s);
+      }
+
+      // Build the final order in one pass: a stage, then the rows under it.
+      // A row whose own name is used as a stage IS that stage — it must not
+      // also be laid out as a task, or the phase gets a duplicate bar that
+      // consumes a slot on the timeline.
+      type Planned = { item: any; isStage: boolean; stage: string };
+      const planned: Planned[] = [];
+      const emittedStages = new Set<string>();
+      for (const item of items) {
+        const ownName = String(item?.name ?? "").trim();
+        const stage = stageNameOf(item);
+        if (ownName && stageNames.has(ownName)) {
+          planned.push({ item, isStage: true, stage: "" });
+          emittedStages.add(ownName);
+          continue;
+        }
+        // A stage with no row of its own is created the moment it is first asked for.
+        if (stage && stage !== ownName && !emittedStages.has(stage)) {
+          planned.push({ item: { name: stage, type: "task" }, isStage: true, stage: "" });
+          emittedStages.add(stage);
+        }
+        planned.push({ item, isStage: false, stage: stage === ownName ? "" : stage });
+      }
+
+      // Stages first, so a child has a parent id to point at. They are given
+      // placeholder dates and re-spanned over their children below.
+      const stageIdByName = new Map<string, string>();
+      const stageRowIndex = new Map<string, number>();
+      for (let i = 0; i < planned.length; i++) {
+        const p = planned[i];
+        if (!p.isStage) continue;
+        const name = String(p.item.name ?? "").trim();
+        const row = await storage.createScheduleItem({
+          scheduleId,
+          name: p.item.name,
+          description: p.item.description || null,
+          startDate: new Date(today),
+          endDate: new Date(today),
+          type: p.item.type || "task",
+          status: "not_started",
+          priority: "low",
+          sortOrder: sortOrderOffset + i,
+        } as any);
+        stageIdByName.set(name, row.id);
+        stageRowIndex.set(name, createdItems.length);
+        createdItems.push(row);
+      }
+
+      // Only real tasks consume the timeline — a stage spans its children and
+      // must not push them along.
+      const childSpan = new Map<string, { start: Date; end: Date }>();
       let currentStart = new Date(today);
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
+      for (let i = 0; i < planned.length; i++) {
+        const p = planned[i];
+        if (p.isStage) continue;
+        const item = p.item;
         const duration = typeof item.duration === 'number' && item.duration >= 1 ? item.duration : 1;
-        
+
         const startDate = new Date(currentStart);
         const endDate = duration <= 1 ? new Date(startDate) : addWorkingDaysBulk(startDate, duration - 1);
-        
+
         currentStart = addWorkingDaysBulk(endDate, 1);
+
+        const parentId = p.stage ? stageIdByName.get(p.stage) : undefined;
 
         const scheduleItem = await storage.createScheduleItem({
           scheduleId,
@@ -37131,11 +37208,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
           type: item.type || "task",
           status: "not_started",
           priority: "low",
-          category: item.category || null,
+          parentItemId: parentId ?? null,
+          groupName: parentId ? p.stage : null,
           sortOrder: sortOrderOffset + i,
-        });
-        
+        } as any);
+
+        if (parentId && p.stage) {
+          const span = childSpan.get(p.stage);
+          if (!span) childSpan.set(p.stage, { start: startDate, end: endDate });
+          else {
+            if (startDate < span.start) span.start = startDate;
+            if (endDate > span.end) span.end = endDate;
+          }
+        }
+
         createdItems.push(scheduleItem);
+      }
+
+      // A stage bar is drawn from its children (getEffectiveDates), so leaving
+      // the stored row on the placeholder would put the row and the bar at
+      // different dates from the first render.
+      for (const [name, span] of Array.from(childSpan.entries())) {
+        const id = stageIdByName.get(name);
+        if (!id) continue;
+        const updated = await storage.updateScheduleItem(id, {
+          startDate: span.start,
+          endDate: span.end,
+        } as any);
+        const idx = stageRowIndex.get(name);
+        if (updated && idx !== undefined) createdItems[idx] = updated;
       }
 
       // Log activity
