@@ -760,11 +760,20 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Column width state for resizable columns
+  // Bumped when the default proportions change in a way saved widths would
+  // otherwise swallow — see the preference loader below.
+  const LAYOUT_VERSION = 2;
+
+  // The name is the only thing that identifies a row, and it was getting the
+  // least room: 140px, minus the drag grip, the indent, the chevron slot and
+  // padding, left about 72px of actual text — nine characters. Two different
+  // stages both read "External …". Meanwhile Completion % held 90px to show
+  // "0%". Re-proportioned; the panel is no wider than it was.
   const [columnWidths, setColumnWidths] = useState({
-    taskName: 140,
+    taskName: 240,
     status: 70,
     notes: 32,
-    completion: 90,
+    completion: 56,
     assignee: 32,
     menu: 32,
   });
@@ -813,7 +822,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   useEffect(() => {
     if (viewPreferences && (viewPreferences as any).preferences) {
       const prefs = (viewPreferences as any).preferences;
-      if (prefs.columnWidths) setColumnWidths(prefs.columnWidths);
+      // Saved widths are a blanket replace, so a re-proportioned default would
+      // never reach anyone who has opened this page before — the exact trap
+      // that has defeated restyles elsewhere in the app. A layout version lets
+      // one deliberate change through, once. Everything else the user set
+      // (which columns, zoom, order, panel width) is kept.
+      if (prefs.columnWidths && (prefs.layoutVersion ?? 1) >= LAYOUT_VERSION) {
+        setColumnWidths(prefs.columnWidths);
+      }
       if (prefs.visibleColumns) setVisibleColumns(prefs.visibleColumns);
       if (prefs.zoomLevel) setZoomLevel(prefs.zoomLevel);
       if (prefs.leftPanelWidth !== undefined) setLeftPanelWidth(prefs.leftPanelWidth);
@@ -840,6 +856,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     if (preferencesLoaded) {
       const timer = setTimeout(() => {
         saveViewPreferencesMutation.mutate({
+          layoutVersion: LAYOUT_VERSION,
           columnWidths,
           visibleColumns,
           zoomLevel,
@@ -2954,7 +2971,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       const labels: Record<string, string> = {
                         status: 'Status',
                         notes: 'Notes',
-                        completion: 'Completion %',
+                        completion: 'Done',
                         assignee: 'Assignee',
                       };
                       return (
@@ -2986,7 +3003,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 completion: columnWidths.completion, assignee: columnWidths.assignee,
               };
               const colLabelMap: Record<string, string> = {
-                status: 'Status', notes: '', completion: 'Completion %', assignee: 'Assignee',
+                status: 'Status', notes: '', completion: 'Done', assignee: 'Assignee',
               };
               const orderedVisible = columnOrder.filter(id => visibleColumns[id as keyof typeof visibleColumns]);
               let co = columnWidths.taskName + 8;
@@ -3089,7 +3106,12 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         />
                       ) : (
                         <span
-                          className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}
+                          // A stage is bold because it is a heading; a task is
+                          // normal ink because it is the work. Tasks used to be
+                          // muted grey, which read as disabled and left a
+                          // nested schedule looking like a list of greyed-out
+                          // rows under a heading.
+                          className={`text-sm truncate ${hasChildren ? 'font-semibold' : ''} ${depth > 0 ? 'ml-1' : ''}`}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
                             if (schedule?.status === 'locked') return;
