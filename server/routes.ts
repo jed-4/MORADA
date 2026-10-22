@@ -12029,7 +12029,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/uploads/file",
     requireAuth,
-    requireTeamMember,
+    // Clients attach files to messages too; clientAccessGate decides whether a
+    // given client may (projects.messages:send).
+    requireTeamMemberOrClient,
     messageFileUpload.single("file"),
     async (req: any, res) => {
       try {

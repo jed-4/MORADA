@@ -187,6 +187,18 @@ const isChannelMember = async (req: Request, user: User): Promise<boolean> => {
   return members.some((member) => member.userId === user.id);
 };
 
+/** /messages/:id/... — the message's channel, then the same membership test. */
+const isMessageChannelMember = async (req: Request, user: User): Promise<boolean> => {
+  const m = req.path.match(/^\/messages\/([^/]+)/);
+  if (!m || !user.companyId) return false;
+  const message = await storage.getMessage(m[1]);
+  if (!message) return false;
+  const channel = await storage.getChannel(message.channelId, user.companyId);
+  if (!channel) return false;
+  const members = await storage.getChannelMembers(message.channelId);
+  return members.some((member) => member.userId === user.id);
+};
+
 // ── Response shapers ────────────────────────────────────────────────────────
 
 const variationIdFromPath = (path: string) => path.match(/^\/variations\/([^/]+)/)?.[1] ?? null;
@@ -331,6 +343,33 @@ const shapeCompanyForClient: ResponseShaper = async (body) => {
   if (!body || typeof body !== "object") return body;
   const { id, name, nickname, logo, abn, phone, email, website, address } = body;
   return { id, name, nickname, logo, abn, phone, email, website, address };
+};
+
+/**
+ * The Messages page loads /users/assignable for @mentions, DM names and member
+ * names. For the team it is every user in the company with phone, email, role
+ * and Xero contact. A client gets only the people they share a conversation
+ * with, and only what a name or avatar needs.
+ */
+const shapeAssignableUsersForClient: ResponseShaper = async (body, _req, user) => {
+  if (!Array.isArray(body) || !user.companyId) return [];
+  const channels = await storage.getChannels(user.companyId, user.id);
+  const coMembers = new Set<string>();
+  for (const channel of channels) {
+    for (const member of await storage.getChannelMembers(channel.id)) {
+      coMembers.add(member.userId);
+    }
+  }
+  return body
+    .filter((u: any) => coMembers.has(u.id))
+    .map((u: any) => ({
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      displayName: u.displayName,
+      profileImageUrl: u.profileImageUrl,
+      userCategory: u.userCategory,
+    }));
 };
 
 const ALLOW_RULES: AllowRule[] = [
@@ -622,9 +661,37 @@ const ALLOW_RULES: AllowRule[] = [
   },
   {
     methods: ["GET"],
-    pattern: /^\/channels\/[^/]+\/(messages|members)$/,
+    pattern: /^\/channels\/[^/]+\/(messages|members|reactions|pinned|scheduled)$/,
     permission: [PORTAL_KEYS.messages, "view"],
     check: isChannelMember,
+  },
+  // Thread replies and reactions on one message. Each route also checks
+  // membership itself (requireMessageChannelAccess).
+  {
+    methods: ["GET"],
+    pattern: /^\/messages\/[^/]+\/(replies|reactions)$/,
+    permission: [PORTAL_KEYS.messages, "view"],
+    check: isMessageChannelMember,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/messages\/[^/]+\/reactions$/,
+    permission: [PORTAL_KEYS.messages, "send"],
+    check: isMessageChannelMember,
+  },
+  // Attaching a file to a message. The upload lands in the builder's company
+  // storage (the client's companyId IS the builder's); the message that
+  // references it still goes through the channel-membership check above.
+  {
+    methods: ["POST"],
+    pattern: /^\/uploads\/file$/,
+    permission: [PORTAL_KEYS.messages, "send"],
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/users\/assignable$/,
+    permission: [PORTAL_KEYS.messages, "view"],
+    shape: shapeAssignableUsersForClient,
   },
   {
     methods: ["POST"],
