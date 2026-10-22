@@ -327,7 +327,14 @@ const ALLOW_RULES: AllowRule[] = [
   { methods: ["GET"], pattern: /^\/billing\/status$/ },
   { methods: ["GET"], pattern: /^\/company-settings$/ },
   { methods: ["GET"], pattern: /^\/notifications(\/.*)?$/ },
-  { methods: ["POST"], pattern: /^\/notifications\/[^/]+\/read$/ },
+  // The bell's own writes. Each route scopes to req.user.id, so a client can
+  // only ever touch their own rows. (This used to allow POST …/:id/read — a
+  // route that does not exist; the real one is PATCH — so a client could see
+  // notifications but never clear one: "All read" and click-to-read both 403'd.)
+  { methods: ["PATCH"], pattern: /^\/notifications\/[^/]+\/read$/ },
+  { methods: ["POST"], pattern: /^\/notifications\/(mark-all-read|read-all)$/ },
+  { methods: ["POST"], pattern: /^\/notifications\/[^/]+\/dismiss$/ },
+  { methods: ["DELETE"], pattern: /^\/notifications\/[^/]+$/ },
   // Self only — the route resolves the user from the session.
   { methods: ["GET"], pattern: /^\/users\/me$/ },
 
