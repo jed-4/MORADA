@@ -281,7 +281,7 @@ import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateS
 import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
 import { requireActivePlan } from "./middleware/plan";
@@ -28320,7 +28320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }
@@ -28344,7 +28344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       console.error("Error updating company:", error);
       res.status(500).json({ error: "Failed to update company" });
@@ -28358,7 +28358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user?.companyId;
       if (!companyId) return res.json({});
       const company = await storage.getCompany(companyId);
-      res.json(company || {});
+      res.json(company ? toSafeCompany(company) : {});
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }

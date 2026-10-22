@@ -90,6 +90,11 @@ interface AllowRule {
   check?: (req: Request, user: User) => Promise<boolean>;
   /** Projects the response body for a client. Omitted = sent as-is. */
   shape?: ResponseShaper;
+  /**
+   * Narrows the match beyond method + path (e.g. on the query string). A rule
+   * whose `when` is false is skipped and matching moves on to the next rule.
+   */
+  when?: (req: Request) => boolean;
 }
 
 // Paths are matched WITHOUT the /api prefix — this middleware is mounted with
@@ -321,6 +326,13 @@ export function getClientUser(req: Request): User | null {
   return ((req as any).__clientUser as User | undefined) ?? null;
 }
 
+/** The builder as a client may see them: what is on their letterhead. */
+const shapeCompanyForClient: ResponseShaper = async (body) => {
+  if (!body || typeof body !== "object") return body;
+  const { id, name, nickname, logo, abn, phone, email, website, address } = body;
+  return { id, name, nickname, logo, abn, phone, email, website, address };
+};
+
 const ALLOW_RULES: AllowRule[] = [
   // --- App shell essentials (no project, no permission) ---
   { methods: ["GET"], pattern: /^\/auth\/user$/ },
@@ -336,8 +348,19 @@ const ALLOW_RULES: AllowRule[] = [
   { methods: ["POST"], pattern: /^\/notifications\/(mark-all-read|read-all)$/ },
   { methods: ["POST"], pattern: /^\/notifications\/[^/]+\/dismiss$/ },
   { methods: ["DELETE"], pattern: /^\/notifications\/[^/]+$/ },
-  // Self only — the route resolves the user from the session.
-  { methods: ["GET"], pattern: /^\/users\/me$/ },
+  // The builder's name for the header. The route already refuses any id but
+  // the session's own company; the shaper cuts the row to letterhead fields.
+  {
+    methods: ["GET"],
+    pattern: /^\/companies\/[^/]+$/,
+    shape: shapeCompanyForClient,
+  },
+  // Self only — each route takes the user from the session, never the body.
+  // /profile writes firstName, lastName and phone and nothing else.
+  { methods: ["PATCH"], pattern: /^\/profile$/ },
+  // Notification settings (the bell's gear) store per-user view preferences.
+  { methods: ["GET"], pattern: /^\/user-view-preferences\/[^/]+$/ },
+  { methods: ["POST"], pattern: /^\/user-view-preferences$/ },
 
   // --- Projects (the list route scopes itself to userProjectAccess) ---
   // No permission key: being granted the project (userProjectAccess) is what
@@ -572,8 +595,25 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/channels$/,
+    when: (req) => !!req.query.projectId,
     permission: [PORTAL_KEYS.messages, "view"],
     project: projectFromQuery,
+  },
+  // No projectId: the header's messages dropdown and new-message notifier
+  // list every conversation the client is in. Both routes scope to channels
+  // the session user is a MEMBER of (getChannels with userId /
+  // getLatestMessagePerChannel join channel_members), which is the same test
+  // isChannelMember applies to reading a channel's messages below.
+  {
+    methods: ["GET"],
+    pattern: /^\/channels$/,
+    when: (req) => !req.query.projectId,
+    permission: [PORTAL_KEYS.messages, "view"],
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/messages\/recent$/,
+    permission: [PORTAL_KEYS.messages, "view"],
   },
   {
     methods: ["GET"],
@@ -621,9 +661,12 @@ async function resolveActingUser(req: Request): Promise<User | null> {
   return null;
 }
 
-function matchRule(method: string, path: string): AllowRule | undefined {
+function matchRule(method: string, path: string, req: Request): AllowRule | undefined {
   return ALLOW_RULES.find(
-    (rule) => rule.methods.includes(method) && rule.pattern.test(path),
+    (rule) =>
+      rule.methods.includes(method) &&
+      rule.pattern.test(path) &&
+      (!rule.when || rule.when(req)),
   );
 }
 
@@ -668,7 +711,7 @@ export async function clientAccessGate(
     return;
   }
   const method = req.method.toUpperCase();
-  const rule = matchRule(method, path);
+  const rule = matchRule(method, path, req);
 
   if (!rule) {
     deny(res, "route not on client allow-list", { method, path, userId: user.id });
