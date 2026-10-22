@@ -281,8 +281,9 @@ import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateS
 import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
+import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
@@ -2178,14 +2179,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
-    // Public proposal client portal endpoints (token-gated inside the route handlers).
-    // Method-scoped: only the specific methods that perform their own shareToken
-    // validation are bypassed. GET /acceptances is NOT public — it returns acceptance
-    // history and stays behind auth.
-    if (req.method === "GET" && /^\/proposals\/[^/]+\/client-view$/.test(path)) {
-      return next();
-    }
-    if (req.method === "POST" && /^\/proposals\/[^/]+\/(view|acceptances)$/.test(path)) {
+    // Public proposal client portal endpoints (token-gated inside the route
+    // handlers). See publicProposalRoutes.ts for the list and why it is shared.
+    if (isPublicProposalShareRoute(req.method, path)) {
       return next();
     }
 
@@ -12033,7 +12029,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/uploads/file",
     requireAuth,
-    requireTeamMember,
+    // Clients attach files to messages too; clientAccessGate decides whether a
+    // given client may (projects.messages:send).
+    requireTeamMemberOrClient,
     messageFileUpload.single("file"),
     async (req: any, res) => {
       try {
@@ -28324,7 +28322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }
@@ -28348,7 +28346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      res.json(company);
+      res.json(toSafeCompany(company));
     } catch (error) {
       console.error("Error updating company:", error);
       res.status(500).json({ error: "Failed to update company" });
@@ -28362,7 +28360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user?.companyId;
       if (!companyId) return res.json({});
       const company = await storage.getCompany(companyId);
-      res.json(company || {});
+      res.json(company ? toSafeCompany(company) : {});
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company" });
     }

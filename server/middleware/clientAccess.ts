@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import type { User } from "@shared/schema";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
+import { isPublicProposalShareRoute } from "./publicProposalRoutes";
 import {
   clientAllowanceEstimateIds,
   isSiteDiaryClientVisible,
@@ -89,6 +90,11 @@ interface AllowRule {
   check?: (req: Request, user: User) => Promise<boolean>;
   /** Projects the response body for a client. Omitted = sent as-is. */
   shape?: ResponseShaper;
+  /**
+   * Narrows the match beyond method + path (e.g. on the query string). A rule
+   * whose `when` is false is skipped and matching moves on to the next rule.
+   */
+  when?: (req: Request) => boolean;
 }
 
 // Paths are matched WITHOUT the /api prefix — this middleware is mounted with
@@ -178,6 +184,18 @@ const isChannelMember = async (req: Request, user: User): Promise<boolean> => {
   const channel = await storage.getChannel(m[1], user.companyId);
   if (!channel) return false;
   const members = await storage.getChannelMembers(m[1]);
+  return members.some((member) => member.userId === user.id);
+};
+
+/** /messages/:id/... — the message's channel, then the same membership test. */
+const isMessageChannelMember = async (req: Request, user: User): Promise<boolean> => {
+  const m = req.path.match(/^\/messages\/([^/]+)/);
+  if (!m || !user.companyId) return false;
+  const message = await storage.getMessage(m[1]);
+  if (!message) return false;
+  const channel = await storage.getChannel(message.channelId, user.companyId);
+  if (!channel) return false;
+  const members = await storage.getChannelMembers(message.channelId);
   return members.some((member) => member.userId === user.id);
 };
 
@@ -320,6 +338,46 @@ export function getClientUser(req: Request): User | null {
   return ((req as any).__clientUser as User | undefined) ?? null;
 }
 
+const shapeSystemConfigForClient: ResponseShaper = async (body) => {
+  if (!body || typeof body !== "object") return body;
+  const { language, measurementSystem, currency, currencySymbol, timezone, temperatureFormat, dateFormat, timeFormat } = body;
+  return { language, measurementSystem, currency, currencySymbol, timezone, temperatureFormat, dateFormat, timeFormat };
+};
+
+/** The builder as a client may see them: what is on their letterhead. */
+const shapeCompanyForClient: ResponseShaper = async (body) => {
+  if (!body || typeof body !== "object") return body;
+  const { id, name, nickname, logo, abn, phone, email, website, address } = body;
+  return { id, name, nickname, logo, abn, phone, email, website, address };
+};
+
+/**
+ * The Messages page loads /users/assignable for @mentions, DM names and member
+ * names. For the team it is every user in the company with phone, email, role
+ * and Xero contact. A client gets only the people they share a conversation
+ * with, and only what a name or avatar needs.
+ */
+const shapeAssignableUsersForClient: ResponseShaper = async (body, _req, user) => {
+  if (!Array.isArray(body) || !user.companyId) return [];
+  const channels = await storage.getChannels(user.companyId, user.id);
+  const coMembers = new Set<string>();
+  for (const channel of channels) {
+    for (const member of await storage.getChannelMembers(channel.id)) {
+      coMembers.add(member.userId);
+    }
+  }
+  return body
+    .filter((u: any) => coMembers.has(u.id))
+    .map((u: any) => ({
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      displayName: u.displayName,
+      profileImageUrl: u.profileImageUrl,
+      userCategory: u.userCategory,
+    }));
+};
+
 const ALLOW_RULES: AllowRule[] = [
   // --- App shell essentials (no project, no permission) ---
   { methods: ["GET"], pattern: /^\/auth\/user$/ },
@@ -327,9 +385,35 @@ const ALLOW_RULES: AllowRule[] = [
   { methods: ["GET"], pattern: /^\/billing\/status$/ },
   { methods: ["GET"], pattern: /^\/company-settings$/ },
   { methods: ["GET"], pattern: /^\/notifications(\/.*)?$/ },
-  { methods: ["POST"], pattern: /^\/notifications\/[^/]+\/read$/ },
-  // Self only — the route resolves the user from the session.
-  { methods: ["GET"], pattern: /^\/users\/me$/ },
+  // The bell's own writes. Each route scopes to req.user.id, so a client can
+  // only ever touch their own rows. (This used to allow POST …/:id/read — a
+  // route that does not exist; the real one is PATCH — so a client could see
+  // notifications but never clear one: "All read" and click-to-read both 403'd.)
+  { methods: ["PATCH"], pattern: /^\/notifications\/[^/]+\/read$/ },
+  { methods: ["POST"], pattern: /^\/notifications\/(mark-all-read|read-all)$/ },
+  { methods: ["POST"], pattern: /^\/notifications\/[^/]+\/dismiss$/ },
+  { methods: ["DELETE"], pattern: /^\/notifications\/[^/]+$/ },
+  // The builder's name for the header. The route already refuses any id but
+  // the session's own company; the shaper cuts the row to letterhead fields.
+  {
+    methods: ["GET"],
+    pattern: /^\/companies\/[^/]+$/,
+    shape: shapeCompanyForClient,
+  },
+  // Locale only: useTimezone reads the builder's timezone from here, so a
+  // client's dates were falling back to Sydney time. The row also holds
+  // document numbering; the shaper drops it.
+  {
+    methods: ["GET"],
+    pattern: /^\/system-configuration$/,
+    shape: shapeSystemConfigForClient,
+  },
+  // Self only — each route takes the user from the session, never the body.
+  // /profile writes firstName, lastName and phone and nothing else.
+  { methods: ["PATCH"], pattern: /^\/profile$/ },
+  // Notification settings (the bell's gear) store per-user view preferences.
+  { methods: ["GET"], pattern: /^\/user-view-preferences\/[^/]+$/ },
+  { methods: ["POST"], pattern: /^\/user-view-preferences$/ },
 
   // --- Projects (the list route scopes itself to userProjectAccess) ---
   // No permission key: being granted the project (userProjectAccess) is what
@@ -564,8 +648,25 @@ const ALLOW_RULES: AllowRule[] = [
   {
     methods: ["GET"],
     pattern: /^\/channels$/,
+    when: (req) => !!req.query.projectId,
     permission: [PORTAL_KEYS.messages, "view"],
     project: projectFromQuery,
+  },
+  // No projectId: the header's messages dropdown and new-message notifier
+  // list every conversation the client is in. Both routes scope to channels
+  // the session user is a MEMBER of (getChannels with userId /
+  // getLatestMessagePerChannel join channel_members), which is the same test
+  // isChannelMember applies to reading a channel's messages below.
+  {
+    methods: ["GET"],
+    pattern: /^\/channels$/,
+    when: (req) => !req.query.projectId,
+    permission: [PORTAL_KEYS.messages, "view"],
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/messages\/recent$/,
+    permission: [PORTAL_KEYS.messages, "view"],
   },
   {
     methods: ["GET"],
@@ -574,9 +675,37 @@ const ALLOW_RULES: AllowRule[] = [
   },
   {
     methods: ["GET"],
-    pattern: /^\/channels\/[^/]+\/(messages|members)$/,
+    pattern: /^\/channels\/[^/]+\/(messages|members|reactions|pinned|scheduled)$/,
     permission: [PORTAL_KEYS.messages, "view"],
     check: isChannelMember,
+  },
+  // Thread replies and reactions on one message. Each route also checks
+  // membership itself (requireMessageChannelAccess).
+  {
+    methods: ["GET"],
+    pattern: /^\/messages\/[^/]+\/(replies|reactions)$/,
+    permission: [PORTAL_KEYS.messages, "view"],
+    check: isMessageChannelMember,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/messages\/[^/]+\/reactions$/,
+    permission: [PORTAL_KEYS.messages, "send"],
+    check: isMessageChannelMember,
+  },
+  // Attaching a file to a message. The upload lands in the builder's company
+  // storage (the client's companyId IS the builder's); the message that
+  // references it still goes through the channel-membership check above.
+  {
+    methods: ["POST"],
+    pattern: /^\/uploads\/file$/,
+    permission: [PORTAL_KEYS.messages, "send"],
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/users\/assignable$/,
+    permission: [PORTAL_KEYS.messages, "view"],
+    shape: shapeAssignableUsersForClient,
   },
   {
     methods: ["POST"],
@@ -613,9 +742,12 @@ async function resolveActingUser(req: Request): Promise<User | null> {
   return null;
 }
 
-function matchRule(method: string, path: string): AllowRule | undefined {
+function matchRule(method: string, path: string, req: Request): AllowRule | undefined {
   return ALLOW_RULES.find(
-    (rule) => rule.methods.includes(method) && rule.pattern.test(path),
+    (rule) =>
+      rule.methods.includes(method) &&
+      rule.pattern.test(path) &&
+      (!rule.when || rule.when(req)),
   );
 }
 
@@ -654,12 +786,13 @@ export async function clientAccessGate(
   // exemption a client who follows an emailed link while signed in is refused
   // the very document that was addressed to them. Each portal route does its
   // own token lookup and projection.
-  if (path.startsWith("/portal/")) {
+  // The proposal share link is the same kind of endpoint under another prefix.
+  if (path.startsWith("/portal/") || isPublicProposalShareRoute(req.method, path)) {
     next();
     return;
   }
   const method = req.method.toUpperCase();
-  const rule = matchRule(method, path);
+  const rule = matchRule(method, path, req);
 
   if (!rule) {
     deny(res, "route not on client allow-list", { method, path, userId: user.id });

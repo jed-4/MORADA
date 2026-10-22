@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
-import { User } from '@shared/schema';
+import { User, Company } from '@shared/schema';
 
 // Extend Express Request and Session to include user
 declare global {
@@ -40,6 +40,26 @@ export function toSafeUser(user: User): SafeUser {
     ...safeUser
   } = user;
   return safeUser;
+}
+
+/**
+ * A company row minus its credentials. GET /api/companies/:id and /api/company
+ * used to send the raw row to every signed-in user, which included the Google
+ * Drive OAuth client secret and access/refresh tokens plus the Stripe ids.
+ * Nothing in the web or mobile client reads any of them.
+ */
+export function toSafeCompany<T extends Partial<Company>>(company: T) {
+  const {
+    googleDriveClientId: _gci,
+    googleDriveClientSecret: _gcs,
+    googleDriveAccessToken: _gat,
+    googleDriveRefreshToken: _grt,
+    googleDriveTokenExpiry: _gte,
+    stripeCustomerId: _sci,
+    stripeSubscriptionId: _ssi,
+    ...safe
+  } = company;
+  return safe;
 }
 
 /**

@@ -282,7 +282,11 @@ export default function Header() {
         </Button>
         )}
 
+        {/* Calendar, Morada AI, the time clock and the New menu are the
+            builder's tools: every request behind them is refused for a client
+            session (clientAccessGate), so a client is not shown them. */}
         {/* Calendar Button */}
+        {!isClient && (
         <Button
           variant="ghost"
           size="icon"
@@ -292,12 +296,14 @@ export default function Header() {
         >
           <Calendar className="h-3.5 w-3.5" />
         </Button>
+        )}
 
         {/* Messages Dropdown */}
         <MessagesDropdown />
 
-        {/* Morada AI — see SHOW_MORADA_AI above. */}
-        {SHOW_MORADA_AI && (
+        {/* Morada AI — see SHOW_MORADA_AI above. Never for a client: the
+            /api/ai/* routes are refused for a client session. */}
+        {SHOW_MORADA_AI && !isClient && (
           <div className="hidden md:flex items-center">
             <MoradaAI />
           </div>
@@ -307,9 +313,11 @@ export default function Header() {
         <NotificationBell />
 
         {/* Time Clock Widget (hidden on mobile to reduce crowding) */}
+        {!isClient && (
         <div className="hidden md:flex items-center">
           <TimeClockWidget />
         </div>
+        )}
 
         {/* Dark Mode Toggle (hidden on mobile to reduce crowding) */}
         <div className="hidden md:flex items-center">
@@ -317,6 +325,7 @@ export default function Header() {
         </div>
 
         {/* New Button with Dropdown */}
+        {!isClient && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -348,6 +357,7 @@ export default function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
         
         {/* User Menu */}
         <DropdownMenu>
@@ -366,10 +376,12 @@ export default function Header() {
               <User className="h-4 w-4 mr-2" />
               Profile
             </DropdownMenuItem>
+            {!isClient && (
             <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
               <Settings className="h-4 w-4 mr-2" />
               Settings
             </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={toggleToolbar} data-testid="menu-toggle-toolbar">
               <LayoutDashboard className="h-4 w-4 mr-2" />
@@ -383,6 +395,9 @@ export default function Header() {
                 Refer a Builder
               </DropdownMenuItem>
             )}
+            {/* Morada's own support and feedback channels are for the builder;
+                a homeowner's questions go to their builder via Messages. */}
+            {!isClient && (<>
             <DropdownMenuItem onSelect={handleChatWithSupport} data-testid="menu-chat-support">
               <LifeBuoy className="h-4 w-4 mr-2" />
               Chat with Support
@@ -396,6 +411,7 @@ export default function Header() {
               Report an Issue
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            </>)}
             <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
               <LogOut className="h-4 w-4 mr-2" />
               Log out
@@ -403,6 +419,9 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {/* None of these can be opened by a client (their triggers are hidden
+          above), and several fetch on mount — so they are not mounted. */}
+      {!isClient && (<>
       {/* Create Project Dialog */}
       <CreateProjectDialog 
         open={isCreateProjectOpen} 
@@ -429,6 +448,7 @@ export default function Header() {
       {/* Report an Issue Modal (controlled from the user menu) */}
       <ReportIssueModal open={reportIssueOpen} onOpenChange={setReportIssueOpen} />
       <ReferABuilderDialog open={referBuilderOpen} onOpenChange={setReferBuilderOpen} />
+      </>)}
     </header>
   );
 }

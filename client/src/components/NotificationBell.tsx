@@ -33,6 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useNotificationEvents } from "@/lib/socket";
 import type { Reminder, Notification } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 
 const REMINDER_TYPE_ICONS: Record<string, any> = {
   task: CheckSquare,
@@ -64,6 +65,9 @@ export function NotificationBell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const { user } = useAuth();
+  // Reminders are a team tool (the route and /users/:id/reminders are both
+  // refused for a client), so a client's bell is notifications only.
+  const { isClient } = useClientPortal();
   const { effectiveTimezone } = useTimezone();
 
   const handleOpenTask = useCallback((taskId: string) => {
@@ -111,7 +115,7 @@ export function NotificationBell() {
 
   const { data: reminders = [] } = useQuery<Reminder[]>({
     queryKey: ["/api/reminders/upcoming"],
-    enabled: isOpen && !!user,
+    enabled: isOpen && !!user && !isClient,
   });
 
   const handleNewNotification = useCallback(() => {
@@ -271,9 +275,11 @@ export function NotificationBell() {
               <TabsTrigger value="notifications" className="h-6 text-xs px-2">
                 Notifications {unreadCount.count > 0 && `(${unreadCount.count})`}
               </TabsTrigger>
+              {!isClient && (
               <TabsTrigger value="reminders" className="h-6 text-xs px-2">
                 Reminders {activeReminders.length > 0 && `(${activeReminders.length})`}
               </TabsTrigger>
+              )}
             </TabsList>
             <div className="flex items-center gap-1">
               {activeTab === "notifications" && unreadNotifications.length > 0 && (
