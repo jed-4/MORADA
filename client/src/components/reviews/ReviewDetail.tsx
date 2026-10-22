@@ -15,7 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { SectionCard } from "@/components/detail/SectionCard";
+import { DocumentSection } from "@/components/detail/DocumentSection";
 import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -303,9 +303,11 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             <ReviewDecisionPanel reviewId={reviewId} costImpact={data.costImpact} />
           )}
 
-        <SectionCard
+        <DocumentSection
           title="Documents"
-          variant="editorial"
+          role="client"
+          defaultOpen
+          bodyClassName="px-3.5 pb-3"
           count={data.revisions.reduce((n, r) => n + r.documents.length, 0)}
           actions={ isClient ? null : (
             <>
@@ -353,12 +355,14 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
               {current ? "No documents on this revision yet." : "No revision to attach to yet."}
             </p>
           )}
-        </SectionCard>
+        </DocumentSection>
 
 
-        <SectionCard
+        <DocumentSection
           title="Comments"
-          variant="editorial"
+          role="meta"
+          defaultOpen
+          bodyClassName="px-3.5 pb-3"
           count={visibleComments.length}
           actions={
             visibleComments.length > 3 ? (
@@ -447,10 +451,16 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
             </div>
             )}
           </div>
-        </SectionCard>
+        </DocumentSection>
 
         {data.approvals.length > 0 && (
-          <SectionCard title="Decisions" variant="editorial" count={data.approvals.length}>
+          <DocumentSection
+            title="Decisions"
+            role={data.approvals.some((a) => a.decision === "rejected") ? "exception" : "client"}
+            defaultOpen
+            bodyClassName="px-3.5 pb-3"
+            count={data.approvals.length}
+          >
             <ul className="space-y-3">
               {data.approvals.map((a) => (
                 <li key={a.id} className="space-y-1">
@@ -499,12 +509,14 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
                 </li>
               ))}
             </ul>
-          </SectionCard>
+          </DocumentSection>
         )}
 
-        <SectionCard
+        <DocumentSection
           title="Revision history"
-          variant="editorial"
+          role="meta"
+          divider={false}
+          bodyClassName="px-3.5 pb-3"
           count={data.revisions.length}
         >
           {data.revisions.length === 0 ? (
@@ -530,7 +542,7 @@ export function ReviewDetail({ reviewId, onBack }: { reviewId: string; onBack: (
               ))}
             </ul>
           )}
-        </SectionCard>
+        </DocumentSection>
         </div>
       </div>
 
