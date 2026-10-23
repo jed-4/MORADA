@@ -26,6 +26,22 @@ export type TemplateItem = {
   wastePercent: number;
   /** Wall height in mm for a linear item, or null/absent for a plain run. */
   heightMm?: number | null;
+  /**
+   * How the item is DRAWN. These were missing, so a template restored an item's
+   * colour but reset its fill, line style and line weight to the schema
+   * defaults — the template looked right in the list and wrong on the plan.
+   *
+   * Optional because templates saved before this carry none of them; absent
+   * means "the default", which is exactly what those templates produced.
+   */
+  fillPattern?: string;
+  lineType?: string;
+  lineSize?: number;
+  /**
+   * The unit as it was. Previously re-derived from measurementType on apply,
+   * which silently overwrote anything hand-set on the original item.
+   */
+  unit?: string;
 };
 export type Template = {
   id: string;
@@ -68,6 +84,11 @@ export function SaveTemplateModal({ open, onOpenChange, measurements, categories
           wastePercent: m.wastePercent ?? 0,
           // The height is part of what the item IS, so it travels with it.
           heightMm: (m as { heightMm?: number | null }).heightMm ?? null,
+          // So does how it looks on the plan.
+          fillPattern: m.fillPattern,
+          lineType: m.lineType,
+          lineSize: m.lineSize,
+          unit: m.unit,
         }));
       const newTemplate: Template = {
         id: crypto.randomUUID(),
@@ -210,14 +231,22 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
           color: item.color,
           geometry: [],
           quantity: 0,
+          // The saved unit wins; the derivation is the fallback for templates
+          // that predate it.
           unit:
-            item.measurementType === "area" || (item.measurementType === "linear" && item.heightMm)
+            item.unit ??
+            (item.measurementType === "area" || (item.measurementType === "linear" && item.heightMm)
               ? "m²"
               : item.measurementType === "linear" ? "lm"
-              : item.measurementType === "count" ? "each" : "",
+              : item.measurementType === "count" ? "each" : ""),
           heightMm: item.heightMm ?? null,
           multiplier: item.multiplier,
           wastePercent: item.wastePercent,
+          // Omitted on a template saved before these were captured; the server
+          // then applies the same defaults it always did.
+          ...(item.fillPattern ? { fillPattern: item.fillPattern } : {}),
+          ...(item.lineType ? { lineType: item.lineType } : {}),
+          ...(item.lineSize ? { lineSize: item.lineSize } : {}),
         });
       }
     },
