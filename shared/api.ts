@@ -31,7 +31,21 @@ async function throwIfResNotOk(res: Response) {
         : (payload && typeof payload === "object" && typeof payload.message === "string"
           ? payload.message
           : text);
-    const err = new Error(`${res.status}: ${messageFromBody}`) as Error & {
+    // A "Validation failed" body carries the actual reason in `details`, and
+    // every caller showed only the bare `error`, so the user saw
+    // "400: Validation failed" while the server was naming the offending
+    // field. Append it here so every form benefits. Limited to validation
+    // errors deliberately: `details` on a 500 is the raw exception message and
+    // does not belong in the UI.
+    const detailsFromBody =
+      payload &&
+      typeof payload === "object" &&
+      payload.error === "Validation failed" &&
+      typeof payload.details === "string" &&
+      payload.details.trim()
+        ? ` — ${payload.details.trim()}`
+        : "";
+    const err = new Error(`${res.status}: ${messageFromBody}${detailsFromBody}`) as Error & {
       status?: number;
       payload?: any;
       body?: string;

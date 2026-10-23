@@ -41363,7 +41363,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.id || !user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const validationResult = insertBusinessReminderSchema.safeParse(req.body);
+      // createdById is stamped from the session below, so the client never
+      // sends it — but it is notNull in the table, so the generated insert
+      // schema demanded it and EVERY create failed with
+      // `Required at "createdById"`. Omitted here rather than made optional in
+      // shared/schema.ts, so the storage type still requires it.
+      const validationResult = insertBusinessReminderSchema
+        .omit({ createdById: true })
+        .safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -41387,7 +41394,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const validationResult = insertBusinessReminderSchema.partial().safeParse(req.body);
+      // createdById omitted: the author is whoever created the reminder, and a
+      // client must not be able to rewrite it by sending the field.
+      const validationResult = insertBusinessReminderSchema
+        .omit({ createdById: true })
+        .partial()
+        .safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
