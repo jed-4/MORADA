@@ -12657,6 +12657,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isSubcontractor: !!user.isSubcontractor,
             isGstRegistered: user.isGstRegistered !== false,
             xeroContactId: user.xeroContactId || null,
+            // Projected because callers filter on it. Without it `u.isActive`
+            // is undefined, every user fails the test, and the picker renders
+            // "No users available" — which is what Business Reminders did.
+            // The status filter above is a different field and does not
+            // subsume this one: a user can be status "active" and isActive
+            // false.
+            isActive: user.isActive !== false,
           };
         });
       res.json(assignableUsers);
@@ -12682,6 +12689,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: role.id,
         name: role.name,
         description: role.description,
+        // Same reason as /api/users/assignable: callers filter on this, and
+        // this route does not filter inactive roles out itself, so without the
+        // field the role picker is empty and WITH it the filter is meaningful.
+        isActive: role.isActive !== false,
       }));
       res.json(assignableRoles);
     } catch (error) {
