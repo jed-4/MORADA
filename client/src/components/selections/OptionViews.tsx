@@ -256,11 +256,32 @@ export function OptionGrid({
               </div>
             </div>
             <CardContent className="px-3 pt-2 pb-2">
-              <div className="font-medium text-sm truncate">{option.name}</div>
+              {/* A blank name used to render nothing at all, so the brand looked
+                  like the name. Say so instead — it is fixable in Edit. */}
+              {option.name?.trim() ? (
+                <div className="font-medium text-sm truncate">{option.name}</div>
+              ) : (
+                <div className="text-sm italic text-muted-foreground truncate" data-testid={`option-unnamed-${option.id}`}>
+                  No name
+                </div>
+              )}
               {(option.brand || option.sku) && (
                 <div className="text-xs text-muted-foreground truncate">
                   {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
                 </div>
+              )}
+              {option.url && (
+                <a
+                  href={option.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1 max-w-full"
+                  data-testid={`option-url-${option.id}`}
+                >
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                  <span className="truncate">View product</span>
+                </a>
               )}
               {option.specsLine && (
                 <div className="text-[10px] text-muted-foreground/80 truncate">{option.specsLine}</div>

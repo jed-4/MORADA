@@ -56,7 +56,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ChevronDown, ChevronRight, Loader2, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -633,16 +633,39 @@ export function OptionDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Product URL</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="h-9"
-                        type="url"
-                        placeholder="https://..."
-                        {...field}
-                        value={field.value || ""}
-                        data-testid="input-option-url"
-                      />
-                    </FormControl>
+                    <div className="flex items-center gap-2">
+                      <FormControl>
+                        <Input
+                          className="h-9"
+                          type="url"
+                          placeholder="https://..."
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-option-url"
+                        />
+                      </FormControl>
+                      {/* A real link, not window.open, so middle-click and
+                          copy-link work too. Only for http(s) — anything else
+                          typed here is not a page to open. */}
+                      {/^https?:\/\//i.test(field.value?.trim() ?? "") ? (
+                        <Button asChild variant="outline" size="icon" className="h-9 w-9 shrink-0">
+                          <a
+                            href={field.value!.trim()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Open product page in a new tab"
+                            title="Open in a new tab"
+                            data-testid="link-option-url-open"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" disabled aria-label="Open product page in a new tab">
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
