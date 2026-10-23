@@ -1317,7 +1317,7 @@ export class XeroService {
    */
   async listBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; page?: number; statuses?: string[]; maxRetries?: number; since?: Date } = {}
+    opts: { modifiedSince?: Date; page?: number; statuses?: string[]; maxRetries?: number; since?: Date; type?: "ACCPAY" | "ACCREC" } = {}
   ): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
@@ -1329,7 +1329,10 @@ export class XeroService {
 
     // Build filter: Type=="ACCPAY" AND (Status=="AUTHORISED" OR ...)
     const statusClause = statuses.map(s => `Status=="${s}"`).join(" OR ");
-    const where = `Type=="ACCPAY" AND (${statusClause})${opts.since ? ` AND ${xeroDateFilter(opts.since)}` : ""}`;
+    // ACCPAY unless asked otherwise — the client-invoice sweep passes ACCREC
+    // so it gets this method's paging, pacing and 429 retry rather than a copy.
+    const invoiceType = opts.type ?? "ACCPAY";
+    const where = `Type=="${invoiceType}" AND (${statusClause})${opts.since ? ` AND ${xeroDateFilter(opts.since)}` : ""}`;
 
     const params = new URLSearchParams({
       where,
@@ -1370,7 +1373,7 @@ export class XeroService {
    */
   async listAllBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number; maxRetries?: number; since?: Date } = {}
+    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number; maxRetries?: number; since?: Date; type?: "ACCPAY" | "ACCREC" } = {}
   ): Promise<any[]> {
     const maxPages = opts.maxPages ?? 50;
     const all: any[] = [];
@@ -1385,6 +1388,7 @@ export class XeroService {
         page,
         maxRetries: opts.maxRetries,
         since: opts.since,
+        type: opts.type,
       });
       pagesFetched = page;
       all.push(...batch);

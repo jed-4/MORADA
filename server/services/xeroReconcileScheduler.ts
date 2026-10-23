@@ -3,6 +3,7 @@ import { xeroConnections } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { reconcileBillsWithXero } from "../routes";
+import { reconcileClientInvoicesWithXero } from "./reconcileClientInvoices";
 
 // Nightly reconciliation backstop for missed Xero webhooks. Safe drift (payments
 // / status toward paid) is auto-applied; "surprises" (total changed, voided, or
@@ -97,6 +98,26 @@ async function runDueConnections(): Promise<void> {
       }
     } catch (e) {
       console.error(`[xeroReconcile] sweep failed for company ${conn.companyId}:`, e);
+    }
+
+    // Client invoices, same pass. Separate try so a bills failure does not
+    // take the invoice sweep with it, and vice versa — they share nothing but
+    // the connection.
+    //
+    // Deliberately quieter than bills: this corrects payment state the client
+    // already caused in Xero, so there is nothing for anyone to review. Bills
+    // notify because a supplier bill changing underneath you is a surprise;
+    // an invoice being paid is not.
+    try {
+      const inv = await reconcileClientInvoicesWithXero(conn.companyId);
+      if (inv.connected && (inv.changed > 0 || inv.checked > 0)) {
+        console.log(
+          `[xeroReconcile] ${conn.companyId}: client invoices — ${inv.checked} checked, ` +
+          `${inv.changed} updated, ${inv.missingInXero} linked but not returned by Xero`,
+        );
+      }
+    } catch (e) {
+      console.error(`[xeroReconcile] client-invoice sweep failed for company ${conn.companyId}:`, e);
     }
   }
 }
