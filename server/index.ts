@@ -135,6 +135,28 @@ app.use('/api', (_req, res, next) => {
 // Serving now happens inside registerRoutes, after auth, with a per-file
 // ownership check. See server/middleware/uploadsAccess.ts.
 
+// The browser posts Sentry envelopes straight to the DSN's ingest host
+// (o<org>.ingest.us.sentry.io), a cross-origin request that connect-src must
+// name or the browser refuses it before it leaves — which is exactly what
+// happened from the day frontend Sentry was added (2026-06-22) until this was
+// fixed: every frontend error report was dropped, silently. The client DSN is
+// baked in at build time, but the frontend and backend DSNs belong to the same
+// Sentry org so they share one ingest host; either one gives us the exact
+// origin. If neither is in the RUNTIME env (a bundle can carry a DSN the server
+// process never saw), fall back to the region wildcard rather than block again.
+const SENTRY_INGEST_FALLBACK = 'https://*.ingest.us.sentry.io';
+function sentryIngestOrigin(): string {
+  const dsn = process.env.VITE_SENTRY_DSN || process.env.SENTRY_DSN;
+  if (!dsn) return ' ' + SENTRY_INGEST_FALLBACK;
+  try {
+    return ' ' + new URL(dsn).origin;
+  } catch {
+    console.warn('[csp] Sentry DSN is not a valid URL — allowing the ingest wildcard instead');
+    return ' ' + SENTRY_INGEST_FALLBACK;
+  }
+}
+const SENTRY_CONNECT_SRC = sentryIngestOrigin();
+
 // Set Content Security Policy — frame-ancestors * allows canvas/iframe embedding
 app.use((req, res, next) => {
   res.setHeader(
@@ -156,7 +178,7 @@ app.use((req, res, next) => {
     // through any connect-src. Every direct-to-storage upload therefore tests
     // clean locally and fails in production. If this list is ever tightened
     // again, check it against a REAL signed URL, not a dev one.
-    "connect-src 'self' ws: wss: blob: data: https://storage.googleapis.com https://client.crisp.chat wss://client.relay.crisp.chat; " +
+    "connect-src 'self' ws: wss: blob: data: https://storage.googleapis.com https://client.crisp.chat wss://client.relay.crisp.chat" + SENTRY_CONNECT_SRC + "; " +
     "frame-src 'self' blob: https://client.crisp.chat; " +
     "object-src 'self' blob:; " +
     "frame-ancestors *;"
