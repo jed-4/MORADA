@@ -349,7 +349,10 @@ export default function UserProfileView() {
   const isAdmin = adminRoleName.includes("admin") || adminRoleName.includes("general manage") || adminRoleName.includes("owner") || adminRoleName.includes("director");
 
   return (
-    <div className="p-6 space-y-6">
+    // The app's <main> is overflow-hidden, so every page scrolls itself. This
+    // one didn't, and on a laptop screen everything below the fold — Account
+    // Settings, including Archive — could not be reached.
+    <div className="h-full overflow-y-auto p-6 space-y-6" data-testid="user-profile-page">
       {/* Header with back button and edit */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
