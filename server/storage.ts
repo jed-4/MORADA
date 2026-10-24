@@ -7344,7 +7344,7 @@ export class DbStorage implements IStorage {
         .where(inArray(schema.userRoles.id, usersGrants.map((g) => g.roleId)));
       const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
 
-      // role_permissions has no unique (role_id, permission_id) constraint, so
+      // role_permissions had no unique (role_id, permission_id) until 0110, so
       // an insert cannot be relied on to refuse a duplicate — check first.
       const existing = await db.select({ roleId: schema.rolePermissions.roleId })
         .from(schema.rolePermissions)
@@ -7483,22 +7483,27 @@ export class DbStorage implements IStorage {
         .where(inArray(schema.userRoles.id, notesGrants.map((g) => g.roleId)));
       const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
 
+      // Check first. This used to insert and catch 23505, but role_permissions
+      // had no unique (role_id, permission_id) until 0110, so nothing was ever
+      // refused and a second run doubled every grant.
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, minutesId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
       let granted = 0;
       for (const grant of notesGrants) {
         if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
         const actions = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
         if (actions.length === 0) continue;
-        try {
-          await db.insert(schema.rolePermissions).values({
-            roleId: grant.roleId,
-            permissionId: minutesId,
-            allowedActions: actions as any,
-          });
-          granted++;
-        } catch (e: any) {
-          // 23505: the role already holds it — nothing to do.
-          if (e?.code !== "23505") throw e;
-        }
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: minutesId,
+          allowedActions: actions as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
       }
       if (granted > 0) {
         console.log(`[permissions] projects.minutes granted to ${granted} role(s), mirroring projects.notes`);
@@ -9671,6 +9676,16 @@ export class DbStorage implements IStorage {
         .where(and(eq(schema.userRoles.companyId, companyId), eq(schema.userRoles.isBuiltIn, true)));
 
       await db.transaction(async (tx) => {
+        // Serialise overlapping resets (and role saves) on the role rows. Two
+        // resets used to each delete and then each insert — doubling every
+        // grant before 0110, a 23505 and a failed reset after it.
+        if (builtInRoles.length > 0) {
+          await tx.select({ id: schema.userRoles.id })
+            .from(schema.userRoles)
+            .where(inArray(schema.userRoles.id, builtInRoles.map((r) => r.id)))
+            .for("update");
+        }
+
         for (const role of builtInRoles) {
           await tx.delete(schema.rolePermissions)
             .where(eq(schema.rolePermissions.roleId, role.id));
@@ -9825,19 +9840,46 @@ export class DbStorage implements IStorage {
 
   async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[], viewScope?: string, viewableRoleIds?: string[] }[]): Promise<void> {
     try {
-      await db.delete(schema.rolePermissions)
-        .where(eq(schema.rolePermissions.roleId, roleId));
-
-      if (permissions.length > 0) {
-        await db.insert(schema.rolePermissions)
-          .values(permissions.map(p => ({
-            roleId,
+      // One row per permission (0110 makes a second one a 23505). A payload
+      // naming a permission twice is merged — union, as requirePermission
+      // always read two rows — rather than failing the whole save.
+      const SCOPE_RANK: Record<string, number> = { own: 1, selected_roles: 2, all: 3 };
+      const byPermission = new Map<string, { permissionId: string; allowedActions: PermissionAction[]; viewScope: string; viewableRoleIds: string[] }>();
+      for (const p of permissions) {
+        const scope = p.viewScope || "own";
+        const prev = byPermission.get(p.permissionId);
+        if (!prev) {
+          byPermission.set(p.permissionId, {
             permissionId: p.permissionId,
-            allowedActions: p.allowedActions,
-            viewScope: p.viewScope || "own",
-            viewableRoleIds: p.viewableRoleIds || [],
-          })));
+            allowedActions: Array.from(new Set(p.allowedActions)),
+            viewScope: scope,
+            viewableRoleIds: Array.from(new Set(p.viewableRoleIds || [])),
+          });
+          continue;
+        }
+        prev.allowedActions = Array.from(new Set([...prev.allowedActions, ...p.allowedActions]));
+        prev.viewableRoleIds = Array.from(new Set([...prev.viewableRoleIds, ...(p.viewableRoleIds || [])]));
+        if ((SCOPE_RANK[scope] ?? 0) > (SCOPE_RANK[prev.viewScope] ?? 0)) prev.viewScope = scope;
       }
+
+      // Delete-then-insert in one transaction, serialised on the role row.
+      // It used to be two bare statements: a failed insert left the role with
+      // NO permissions, and two overlapping saves (a double-click) each deleted
+      // and then each inserted, doubling every grant.
+      await db.transaction(async (tx) => {
+        await tx.select({ id: schema.userRoles.id })
+          .from(schema.userRoles)
+          .where(eq(schema.userRoles.id, roleId))
+          .for("update");
+
+        await tx.delete(schema.rolePermissions)
+          .where(eq(schema.rolePermissions.roleId, roleId));
+
+        if (byPermission.size > 0) {
+          await tx.insert(schema.rolePermissions)
+            .values(Array.from(byPermission.values()).map(p => ({ roleId, ...p })));
+        }
+      });
     } catch (error) {
       console.error("Database error in setRolePermissions:", error);
       throw error;

@@ -187,7 +187,11 @@ export const rolePermissions = pgTable("role_permissions", {
   viewScope: text("view_scope").default("own"),
   viewableRoleIds: json("viewable_role_ids").default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // A role holds each permission at most once (0110). Readers disagreed on
+  // what two rows meant — see migrations/0110_role_permissions_unique.sql.
+  uniqueRolePermission: uniqueIndex("role_permissions_role_permission_unique").on(table.roleId, table.permissionId),
+}));
 
 // User project access control
 export const userProjectAccess = pgTable("user_project_access", {
