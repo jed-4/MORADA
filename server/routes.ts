@@ -291,6 +291,7 @@ import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
+import { clientObjectGate } from "./middleware/clientObjectAccess";
 import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
 import {
   resolveSelectionViewer,
@@ -2158,7 +2159,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // sees it. serveUpload then resolves the file's owning company from the
   // table that references it and 404s on any mismatch, unknown subtree, or
   // path that escapes the uploads root.
-  app.get('/uploads/*', requireAuth, serveUpload);
+  //
+  // clientObjectGate refuses every client session (nothing here is
+  // client-facing). serveUpload is wrapped, not passed bare: its third
+  // parameter is the owner resolver, and Express would hand it `next` — so
+  // the ownership lookup never ran and every request fell through to next()
+  // and then crashed with ERR_HTTP_HEADERS_SENT.
+  app.get('/uploads/*', requireAuth, clientObjectGate(), (req, res) => serveUpload(req, res));
 
   // put application routes here
   // prefix all routes with /api
@@ -12137,8 +12144,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Serve uploaded objects (authenticated, company-scoped)
-  app.get("/objects/company/:companyId/*", requireAuth, async (req: any, res) => {
+  // Serve uploaded objects (authenticated, company-scoped). Outside /api, so
+  // clientAccessGate never runs here — clientObjectGate is its counterpart and
+  // only serves a client a file referenced by a record they can already see.
+  app.get("/objects/company/:companyId/*", requireAuth, clientObjectGate(), async (req: any, res) => {
     try {
       const { companyId } = req.params;
 
