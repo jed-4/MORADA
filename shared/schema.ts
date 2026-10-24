@@ -417,6 +417,24 @@ export const insertUserSchema = createInsertSchema(users).omit({
   userCategory: z.enum(["team", "supplier", "client"]).default("team"),
 });
 
+/**
+ * Archiving and restoring team members (migration 0110): who, when, and what
+ * of theirs was reassigned. Read for the Team page's Archived tab.
+ */
+export const userArchiveEvents = pgTable("user_archive_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  action: text("action").notNull(), // "archived" | "restored"
+  byUserId: varchar("by_user_id"),
+  byName: text("by_name"),
+  reassignedToId: varchar("reassigned_to_id"),
+  reassignedToName: text("reassigned_to_name"),
+  summary: jsonb("summary").$type<Record<string, number>>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type UserArchiveEvent = typeof userArchiveEvents.$inferSelect;
+
 export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
   id: true,
   createdAt: true,

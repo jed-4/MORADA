@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -300,7 +301,7 @@ function TeamMemberCard({
 
   return (
     <Card
-      className="h-20 border-2 transition-all duration-200 cursor-pointer hover-elevate"
+      className="min-h-20 border-2 transition-all duration-200 cursor-pointer hover-elevate"
       onClick={() => onView(user.id)}
       data-testid={`team-member-card-${user.id}`}
     >
@@ -352,6 +353,13 @@ function TeamMemberCard({
               className="shrink-0"
             />
           </div>
+          {!user.isActive && user.archivedAt && (
+            <div className="text-data text-muted-foreground truncate" data-testid={`text-archived-on-${user.id}`}>
+              Archived {format(new Date(user.archivedAt), "d MMM yyyy")}
+              {user.archivedByName ? ` by ${user.archivedByName}` : ""}
+              {user.archivedReassignedToName ? ` · work handed to ${user.archivedReassignedToName}` : ""}
+            </div>
+          )}
         </div>
 
         {onRestore && (

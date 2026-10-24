@@ -1,3 +1,4 @@
+import { usePeople } from "@/hooks/use-people";
 import { useState, useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -390,6 +391,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
   });
+  const peopleIncludingArchived = usePeople();
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -997,8 +999,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   };
 
   const assigneeIds = form.watch("assigneeIds") || [];
-  const assignees = users.filter(u => assigneeIds.includes(u.id));
-  const assignee = users.find(u => u.id === form.watch("assigneeId")); // Legacy fallback
+  // Resolved against archived people too, so a task assigned to someone who has
+  // since left still shows their name rather than nobody.
+  const assignees = assigneeIds.map((id: string) => peopleIncludingArchived.byId.get(id)).filter(Boolean) as any[];
+  const legacyAssigneeId = form.watch("assigneeId");
+  const assignee = legacyAssigneeId ? peopleIncludingArchived.byId.get(legacyAssigneeId) : undefined; // Legacy fallback
   const selectedProject = projects.find(p => p.id === form.watch("projectId"));
   
   const getUserDisplayName = (user: { firstName?: string | null; lastName?: string | null; email?: string | null }) => {

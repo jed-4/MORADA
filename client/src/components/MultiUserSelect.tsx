@@ -1,6 +1,7 @@
+import { usePeople } from "@/hooks/use-people";
+import { personName, pickerLabel, type PersonLike } from "@/lib/people";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Check, X, Users, ChevronDown } from "lucide-react";
+import { Check, X, Users, ChevronDown, ChevronRight } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,26 +35,25 @@ export function MultiUserSelect({
 }: MultiUserSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  
-  const { data: users = [], isLoading } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
+  const [showArchived, setShowArchived] = useState(false);
 
-  const filteredUsers = useMemo(() => {
-    if (!search) return users;
+  // You first, then A–Z; no client logins; archived people collapsed below.
+  const { active: users, archived, byId, meId, isLoading } = usePeople<User & PersonLike>();
+
+  const matches = (user: User) => {
+    if (!search) return true;
     const lowerSearch = search.toLowerCase();
-    return users.filter(user => {
-      const name = user.firstName && user.lastName
-        ? `${user.firstName} ${user.lastName}`
-        : user.email || '';
-      return name.toLowerCase().includes(lowerSearch) || 
-             (user.email?.toLowerCase().includes(lowerSearch));
-    });
-  }, [users, search]);
+    return personName(user).toLowerCase().includes(lowerSearch) || !!user.email?.toLowerCase().includes(lowerSearch);
+  };
+  const filteredUsers = useMemo(() => users.filter(matches), [users, search]);
+  // A search reaches archived people too, without opening the section.
+  const filteredArchived = useMemo(() => archived.filter(matches), [archived, search]);
+  const archivedOpen = showArchived || !!search;
 
+  // Selected people keep their names even once archived.
   const selectedUsers = useMemo(() => {
-    return users.filter(user => value.includes(user.id));
-  }, [users, value]);
+    return value.map((id) => byId.get(id)).filter(Boolean) as User[];
+  }, [byId, value]);
 
   const toggleUser = (userId: string) => {
     if (value.includes(userId)) {
@@ -69,9 +69,7 @@ export function MultiUserSelect({
   };
 
   const getUserDisplay = (user: User) => {
-    const displayName = user.firstName && user.lastName
-      ? `${user.firstName} ${user.lastName}`
-      : user.email || 'Unknown';
+    const displayName = pickerLabel(user, meId);
     const initials = user.firstName && user.lastName
       ? `${user.firstName[0]}${user.lastName[0]}`
       : user.email?.[0]?.toUpperCase() || '?';
@@ -138,8 +136,8 @@ export function MultiUserSelect({
           className="h-7 text-xs mb-2"
           data-testid="input-search-assignees"
         />
-        <div className="max-h-[200px] overflow-y-auto space-y-0.5">
-          {filteredUsers.length === 0 ? (
+        <div className="max-h-[240px] overflow-y-auto space-y-0.5">
+          {filteredUsers.length === 0 && filteredArchived.length === 0 ? (
             <div className="text-xs text-muted-foreground text-center py-3">
               No users found
             </div>
@@ -174,6 +172,49 @@ export function MultiUserSelect({
                 </button>
               );
             })
+          )}
+          {archived.length > 0 && filteredArchived.length > 0 && (
+            <div className="pt-1 mt-1 border-t">
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                className="w-full flex items-center gap-1 px-2 py-1 text-data text-muted-foreground hover-elevate rounded-md"
+                data-testid="button-toggle-archived-people"
+              >
+                {archivedOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                Archived ({filteredArchived.length})
+              </button>
+              {archivedOpen && filteredArchived.map(user => {
+              const { displayName, initials } = getUserDisplay(user);
+              const isSelected = value.includes(user.id);
+              return (
+                <button
+                  key={user.id}
+                  onClick={() => toggleUser(user.id)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs",
+                    "hover-elevate active-elevate-2",
+                    isSelected && "bg-accent"
+                  )}
+                  data-testid={`button-toggle-user-${user.id}`}
+                >
+                  <Avatar className="h-5 w-5">
+                    <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
+                    <AvatarFallback className="text-label">{initials}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{displayName}</div>
+                    {user.email && (
+                      <div className="text-data text-muted-foreground truncate">{user.email}</div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  )}
+                </button>
+              );
+              })}
+            </div>
           )}
         </div>
       </PopoverContent>

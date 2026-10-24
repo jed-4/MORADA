@@ -6663,48 +6663,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   /**
-   * Validate a proposed set of group re-parentings before any of it is written.
-   *
-   * A single move cannot be judged on its own once a batch is in flight: two
-   * moves that are each acyclic can compose into a cycle (A under B, B under A),
-   * and a cycle makes the client's totals recursion non-terminating. So the
-   * whole batch is resolved against the estimate's current tree first, then
-   * every affected group is walked to its root.
-   *
-   * Returns an error string, or null when the batch is safe.
-   */
-  const checkGroupReparenting = async (
-    estimateId: string,
-    moves: Array<{ id: string; parentGroupId: string | null }>,
-  ): Promise<string | null> => {
-    if (moves.length === 0) return null;
-    const siblings = await storage.getEstimateGroups(estimateId);
-    const parentOf = new Map<string, string | null>(
-      siblings.map((g: any) => [g.id as string, (g.parentGroupId ?? null) as string | null]),
-    );
-    for (const { id, parentGroupId } of moves) {
-      if (!parentOf.has(id)) return "Estimate group not found";
-      if (parentGroupId === id) return "A group cannot be its own parent";
-      // A parent outside this estimate would splice two estimates' trees
-      // together — the group would vanish from both pages.
-      if (parentGroupId !== null && !parentOf.has(parentGroupId)) {
-        return "Parent group must belong to the same estimate";
-      }
-      parentOf.set(id, parentGroupId);
-    }
-    for (const { id } of moves) {
-      const seen = new Set<string>([id]);
-      let cursor = parentOf.get(id) ?? null;
-      while (cursor) {
-        if (seen.has(cursor)) return "That move would create a circular group nesting";
-        seen.add(cursor);
-        cursor = parentOf.get(cursor) ?? null;
-      }
-    }
-    return null;
-  };
-
-  /**
    * A schedule is owned through its project — or, for a schedule template's
    * schedule (projectId null, migration 0095), through its template.
    */
@@ -8473,6 +8431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/estimate-groups/reorder", async (req, res) => {
     try {
       const { groups } = req.body;
+      console.log('[REORDER] Received reorder request for groups:', JSON.stringify(groups, null, 2));
       
       if (!Array.isArray(groups)) {
         return res.status(400).json({ error: "Groups must be an array" });
@@ -8482,11 +8441,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const group of groups) {
         if (!group.id || typeof group.order !== 'number') {
           return res.status(400).json({ error: "Each group must have id and order" });
-        }
-        if ('parentGroupId' in group
-            && group.parentGroupId !== null
-            && typeof group.parentGroupId !== 'string') {
-          return res.status(400).json({ error: "parentGroupId must be a group id or null" });
         }
       }
 
@@ -8509,39 +8463,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Re-parenting arrives through this route too, so a drag that moves a
-      // group AND resequences its old and new siblings is one write rather
-      // than a reorder racing a separate PATCH. It is also what makes undo
-      // work: the undo snapshot has always carried parentGroupId, and this
-      // route used to drop it, so undoing a nest restored the ordering and
-      // left the group nested.
-      const moves = groups
-        .filter((g: any) => 'parentGroupId' in g)
-        .map((g: any) => ({ id: g.id as string, parentGroupId: (g.parentGroupId ?? null) as string | null }));
-      if (moves.length > 0) {
-        const estimateId = (await storage.getEstimateGroup(moves[0].id) as any)?.estimateId;
-        if (!estimateId) {
-          return res.status(404).json({ error: "Estimate group not found" });
-        }
-        const problem = await checkGroupReparenting(estimateId, moves);
-        if (problem) {
-          return res.status(400).json({ error: problem });
-        }
-      }
-
-      // Update each group's order (and parent, when the batch carries one).
+      // Update each group's order and verify success
       const results = await Promise.all(
-        groups.map(async ({ id, order, ...rest }: any) => {
-          const updates: { order: number; parentGroupId?: string | null } = { order };
-          if ('parentGroupId' in rest) updates.parentGroupId = rest.parentGroupId ?? null;
-          const updated = await storage.updateEstimateGroup(id, updates);
+        groups.map(async ({ id, order }) => {
+          console.log(`[REORDER] Updating group ${id} to order ${order}`);
+          const existingGroup = await storage.getEstimateGroup(id);
+          console.log(`[REORDER] Existing group ${id}:`, existingGroup ? 'found' : 'NOT FOUND');
+          
+          const updated = await storage.updateEstimateGroup(id, { order });
           if (!updated) {
+            console.log(`[REORDER] Failed to update group ${id}`);
             throw new Error(`Failed to update group ${id}`);
           }
+          console.log(`[REORDER] Successfully updated group ${id}`);
           return updated;
         })
       );
 
+      console.log('[REORDER] All groups updated successfully');
       res.json({ success: true, count: results.length });
     } catch (error: any) {
       console.error('[REORDER] Error:', error.message);
@@ -8572,15 +8511,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Guard re-parenting: the new parent must belong to the SAME estimate, and
       // must not make this group its own ancestor (a cycle would infinite-loop
       // the totals recursion). The client already prevents this, but a direct
-      // API call could otherwise corrupt the tree. Shared with the reorder
-      // route so both paths judge a move the same way.
-      if ('parentGroupId' in validationResult.data) {
-        const problem = await checkGroupReparenting((owned as any).estimateId, [{
-          id: req.params.id,
-          parentGroupId: (validationResult.data.parentGroupId ?? null) as string | null,
-        }]);
-        if (problem) {
-          return res.status(400).json({ error: problem });
+      // API call could otherwise corrupt the tree.
+      if ('parentGroupId' in validationResult.data && validationResult.data.parentGroupId) {
+        const newParentId = validationResult.data.parentGroupId as string;
+        if (newParentId === req.params.id) {
+          return res.status(400).json({ error: "A group cannot be its own parent" });
+        }
+        const parent = await storage.getEstimateGroup(newParentId);
+        if (!parent || parent.estimateId !== (owned as any).estimateId) {
+          return res.status(400).json({ error: "Parent group must belong to the same estimate" });
+        }
+        const seen = new Set<string>();
+        let cursor: string | null = newParentId;
+        while (cursor) {
+          if (cursor === req.params.id) {
+            return res.status(400).json({ error: "That move would create a circular group nesting" });
+          }
+          if (seen.has(cursor)) break; // pre-existing corrupt chain — stop walking
+          seen.add(cursor);
+          const ancestor = await storage.getEstimateGroup(cursor);
+          cursor = ancestor?.parentGroupId ?? null;
         }
       }
 
@@ -12668,7 +12618,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // SECURITY: Filter users by company to prevent cross-tenant data leak
       const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId, category as any, status);
       // Use safe user helper to remove passwords
-      const safeUsers = users.map(user => toSafeUser(user));
+      let safeUsers: any[] = users.map(user => toSafeUser(user));
+      // The archived list says when and by whom (user_archive_events, 0110).
+      if (status === "archived" && safeUsers.length > 0) {
+        try {
+          const events = await db.select().from(schema.userArchiveEvents)
+            .where(and(
+              eq(schema.userArchiveEvents.companyId, currentUser.companyId),
+              inArray(schema.userArchiveEvents.userId, safeUsers.map((u) => u.id)),
+              eq(schema.userArchiveEvents.action, "archived"),
+            ))
+            .orderBy(desc(schema.userArchiveEvents.createdAt));
+          const latest = new Map<string, any>();
+          for (const e of events) if (!latest.has(e.userId)) latest.set(e.userId, e);
+          safeUsers = safeUsers.map((u) => {
+            const e = latest.get(u.id);
+            return e ? { ...u, archivedAt: e.createdAt, archivedByName: e.byName, archivedReassignedToName: e.reassignedToName } : u;
+          });
+        } catch {
+          // Without migration 0110 the list still loads, just without the line.
+        }
+      }
       res.json(safeUsers);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -12688,8 +12658,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active users in the company with minimal info for assignment purposes
       const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId);
       // Return only necessary fields for assignment dropdowns
+      // People work is assigned to: staff, never client portal logins (and
+      // the query above already leaves out archived people).
       const assignableUsers = users
-        .filter((user: any) => user.status !== 'inactive')
+        .filter((user: any) => user.userCategory !== "client")
         .map((user: any) => {
           // Build displayName from firstName and lastName
           const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Unknown User';
@@ -12922,6 +12894,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Archive a team member: blocks their access and drops them from the team
   // list and employee dropdowns. Nothing they own (timesheets, tasks, notes)
   // is touched, and /unarchive reverses it.
+  /**
+   * What a team member still has open — the things that would sit with someone
+   * who can't sign in once they're archived. One round trip.
+   */
+  async function archiveImpact(userId: string, companyId: string): Promise<Record<string, number>> {
+    const r: any = await db.execute(sql`
+      SELECT
+        (SELECT count(*) FROM notes n
+          WHERE n.company_id = ${companyId} AND n.type = 'task' AND coalesce(n.status, 'todo') <> 'done'
+            AND (n.assignee_id = ${userId} OR ${userId} = ANY(coalesce(n.assignee_ids, '{}'::text[]))))::int AS tasks,
+        (SELECT count(*) FROM checklist_instance_items i
+          JOIN checklist_instances ci ON ci.id = i.instance_id
+          WHERE ci.company_id = ${companyId} AND i.assignee_id = ${userId} AND i.status = 'pending')::int AS "checklistItems",
+        (SELECT count(*) FROM estimates e JOIN projects p ON p.id = e.project_id
+          WHERE p.company_id = ${companyId} AND ${userId} = ANY(coalesce(e.assignee_ids, '{}'::text[])))::int AS estimates,
+        (SELECT count(*) FROM reminders rm
+          WHERE rm.company_id = ${companyId} AND rm.target_user_id = ${userId} AND rm.status IN ('active', 'snoozed'))::int AS reminders,
+        (SELECT count(*) FROM task_templates tt
+          WHERE tt.company_id = ${companyId}
+            AND (tt.assignee_user_id = ${userId} OR ${userId} = ANY(coalesce(tt.assignee_user_ids, '{}'::text[]))))::int AS "taskTemplates",
+        (SELECT count(*) FROM user_project_access a JOIN projects p ON p.id = a.project_id
+          WHERE a.user_id = ${userId} AND p.company_id = ${companyId} AND NOT p.is_archived)::int AS projects
+    `);
+    const row = (r.rows ?? r)[0] ?? {};
+    return {
+      tasks: Number(row.tasks) || 0,
+      checklistItems: Number(row.checklistItems) || 0,
+      estimates: Number(row.estimates) || 0,
+      reminders: Number(row.reminders) || 0,
+      taskTemplates: Number(row.taskTemplates) || 0,
+      projects: Number(row.projects) || 0,
+    };
+  }
+
+  /**
+   * Hand a leaving team member's open work to someone else: open tasks,
+   * pending checklist items, estimates they're on, live reminders, the task
+   * templates that would keep generating work for them, and their place on
+   * active jobs (added for the new person; the old grant stays as history).
+   * Done work is left alone — it records who did it.
+   */
+  async function reassignOpenWork(fromId: string, toId: string, toName: string, companyId: string, byUserId: string | null) {
+    await db.execute(sql`
+      WITH moved AS (
+        SELECT n.id,
+          ARRAY(
+            SELECT uid FROM (
+              SELECT uid, min(ord) AS o
+              FROM unnest(array_replace(coalesce(n.assignee_ids, '{}'::text[]), ${fromId}, ${toId})) WITH ORDINALITY t(uid, ord)
+              GROUP BY uid
+            ) s ORDER BY o
+          ) AS ids
+        FROM notes n
+        WHERE n.company_id = ${companyId} AND n.type = 'task' AND coalesce(n.status, 'todo') <> 'done'
+          AND (n.assignee_id = ${fromId} OR ${fromId} = ANY(coalesce(n.assignee_ids, '{}'::text[])))
+      )
+      UPDATE notes n SET
+        assignee_ids = moved.ids,
+        assignee_names = (
+          SELECT coalesce(json_agg(trim(coalesce(u.first_name, '') || ' ' || coalesce(u.last_name, '')) ORDER BY t.ord), '[]'::json)
+          FROM unnest(moved.ids) WITH ORDINALITY t(uid, ord) JOIN users u ON u.id = t.uid
+        ),
+        assignee_id = CASE WHEN n.assignee_id = ${fromId} THEN ${toId} ELSE n.assignee_id END,
+        assignee_name = CASE WHEN n.assignee_id = ${fromId} THEN ${toName} ELSE n.assignee_name END
+      FROM moved WHERE n.id = moved.id`);
+    await db.execute(sql`
+      UPDATE checklist_instance_items i SET assignee_id = ${toId}, assignee_name = ${toName}
+      FROM checklist_instances ci
+      WHERE ci.id = i.instance_id AND ci.company_id = ${companyId} AND i.assignee_id = ${fromId} AND i.status = 'pending'`);
+    await db.execute(sql`
+      UPDATE estimates e SET assignee_ids = ARRAY(
+          SELECT DISTINCT unnest(array_replace(coalesce(e.assignee_ids, '{}'::text[]), ${fromId}, ${toId})))
+      FROM projects p
+      WHERE p.id = e.project_id AND p.company_id = ${companyId} AND ${fromId} = ANY(coalesce(e.assignee_ids, '{}'::text[]))`);
+    await db.execute(sql`
+      UPDATE reminders SET target_user_id = ${toId}
+      WHERE company_id = ${companyId} AND target_user_id = ${fromId} AND status IN ('active', 'snoozed')`);
+    await db.execute(sql`
+      UPDATE task_templates SET
+        assignee_user_ids = ARRAY(SELECT DISTINCT unnest(array_replace(coalesce(assignee_user_ids, '{}'::text[]), ${fromId}, ${toId}))),
+        assignee_user_id = CASE WHEN assignee_user_id = ${fromId} THEN ${toId} ELSE assignee_user_id END,
+        assignee_user_name = CASE WHEN assignee_user_id = ${fromId} THEN ${toName} ELSE assignee_user_name END
+      WHERE company_id = ${companyId}
+        AND (assignee_user_id = ${fromId} OR ${fromId} = ANY(coalesce(assignee_user_ids, '{}'::text[])))`);
+    await db.execute(sql`
+      INSERT INTO user_project_access (user_id, project_id, access_level, granted_by)
+      SELECT ${toId}, a.project_id, a.access_level, ${byUserId}
+      FROM user_project_access a JOIN projects p ON p.id = a.project_id
+      WHERE a.user_id = ${fromId} AND p.company_id = ${companyId} AND NOT p.is_archived
+        AND NOT EXISTS (SELECT 1 FROM user_project_access b WHERE b.user_id = ${toId} AND b.project_id = a.project_id)`);
+  }
+
+  const callerName = (req: any) => {
+    const u = req.user?.dbUser ?? req.user;
+    return [u?.firstName, u?.lastName].filter(Boolean).join(" ").trim() || u?.email || null;
+  };
+
+  /** What archiving this person would leave hanging, for the archive dialog. */
+  app.get("/api/users/:id/archive-impact", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(await archiveImpact(target.id, callerCompanyId));
+    } catch (error) {
+      console.error("Error loading archive impact:", error);
+      res.status(500).json({ error: "Failed to load their open work" });
+    }
+  });
+
   app.post("/api/users/:id/archive", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const callerCompanyId = getSessionCompanyId(req);
@@ -12943,10 +13027,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Optionally hand their open work to someone else first.
+      const reassignToId = typeof req.body?.reassignTo === "string" && req.body.reassignTo ? req.body.reassignTo : null;
+      let reassignTo: any = null;
+      let summary: Record<string, number> | null = null;
+      if (reassignToId) {
+        reassignTo = await storage.getUser(reassignToId);
+        if (!reassignTo || reassignTo.companyId !== callerCompanyId || !reassignTo.isActive
+            || reassignTo.userCategory !== "team" || reassignTo.id === target.id) {
+          return res.status(400).json({ error: "Choose an active team member to hand their work to." });
+        }
+        summary = await archiveImpact(target.id, callerCompanyId);
+        const toName = [reassignTo.firstName, reassignTo.lastName].filter(Boolean).join(" ").trim() || reassignTo.email || "";
+        await reassignOpenWork(target.id, reassignTo.id, toName, callerCompanyId, (req.user as any)?.id ?? null);
+      }
+
       const user = await storage.updateUser(target.id, { isActive: false });
       // requireAuth rejects an archived user on their next request anyway;
-      // this just clears the dead sessions.
+      // this just clears the dead sessions — and their phone stops getting
+      // push notifications.
       await storage.deleteSessionsForUser(target.id);
+      await db.delete(schema.pushTokens).where(eq(schema.pushTokens.userId, target.id));
+      try {
+        await db.insert(schema.userArchiveEvents).values({
+          companyId: callerCompanyId,
+          userId: target.id,
+          action: "archived",
+          byUserId: (req.user as any)?.id ?? null,
+          byName: callerName(req),
+          reassignedToId: reassignTo?.id ?? null,
+          reassignedToName: reassignTo ? [reassignTo.firstName, reassignTo.lastName].filter(Boolean).join(" ").trim() || reassignTo.email : null,
+          summary,
+        });
+      } catch (err) {
+        // The record is a nicety; archiving has already happened.
+        console.error("Failed to record archive event:", err);
+      }
       res.json(toSafeUser(user!));
     } catch (error) {
       console.error("Error archiving user:", error);
@@ -12993,6 +13109,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = await storage.updateUser(target.id, { isActive: true });
+      try {
+        await db.insert(schema.userArchiveEvents).values({
+          companyId: callerCompanyId,
+          userId: target.id,
+          action: "restored",
+          byUserId: (req.user as any)?.id ?? null,
+          byName: callerName(req),
+        });
+      } catch (err) {
+        console.error("Failed to record restore event:", err);
+      }
       res.json(toSafeUser(user!));
     } catch (error) {
       console.error("Error unarchiving user:", error);

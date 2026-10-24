@@ -8855,10 +8855,12 @@ export class DbStorage implements IStorage {
       .from(schema.users)
       .leftJoin(schema.userRoles, eq(schema.users.roleId, schema.userRoles.id))
       .where(and(...baseConditions))
+      // Alphabetical. Ordering by role rank first made every people dropdown
+      // read as random — the Owner, then Admins, then everyone else — with no
+      // headings to say why. The Team page groups by role itself.
       .orderBy(
-        asc(schema.userRoles.displayOrder),
-        asc(schema.users.firstName),
-        asc(schema.users.lastName)
+        sql`lower(coalesce(${schema.users.firstName}, ''))`,
+        sql`lower(coalesce(${schema.users.lastName}, ''))`,
       );
 
     return results.map(({ user, role }) => ({
@@ -30003,6 +30005,20 @@ export class DbStorage implements IStorage {
       await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS gst_inclusive boolean NOT NULL DEFAULT false`);
       // Migration 0106.
       await db.execute(sql`ALTER TABLE selection_template_options ADD COLUMN IF NOT EXISTS unit_charge integer`);
+      // Migration 0110.
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS user_archive_events (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id varchar NOT NULL,
+        user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action text NOT NULL,
+        by_user_id varchar,
+        by_name text,
+        reassigned_to_id varchar,
+        reassigned_to_name text,
+        summary jsonb,
+        created_at timestamp NOT NULL DEFAULT now()
+      )`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS user_archive_events_user_idx ON user_archive_events (user_id, created_at DESC)`);
       // Migration 0107.
       await db.execute(sql`ALTER TABLE selection_options ADD COLUMN IF NOT EXISTS client_suggested boolean NOT NULL DEFAULT false`);
       await db.execute(sql`ALTER TABLE selection_options ADD COLUMN IF NOT EXISTS suggested_by text`);

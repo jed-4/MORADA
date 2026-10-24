@@ -1,5 +1,6 @@
+import { pickerLabel, type PersonLike } from "@/lib/people";
+import { usePeople } from "@/hooks/use-people";
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
@@ -31,9 +32,8 @@ export function UserSelect({
   triggerClassName,
   "data-testid": testId,
 }: UserSelectProps) {
-  const { data: users = [], isLoading } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
+  // You first, then A–Z; no client logins; archived people collapsed at the bottom.
+  const { active: users, archived, meId, isLoading } = usePeople<User & PersonLike>();
 
   const options: SearchableSelectOption[] = useMemo(() => {
     const opts: SearchableSelectOption[] = [];
@@ -45,10 +45,8 @@ export function UserSelect({
       });
     }
     
-    users.forEach((user) => {
-      const displayName = user.firstName && user.lastName
-        ? `${user.firstName} ${user.lastName}`
-        : user.email || 'Unknown User';
+    const add = (user: any, group?: string) => {
+      const displayName = pickerLabel(user, meId);
       
       const initials = user.firstName && user.lastName
         ? `${user.firstName[0]}${user.lastName[0]}`
@@ -57,6 +55,7 @@ export function UserSelect({
       opts.push({
         value: user.id,
         label: displayName,
+        group,
         icon: showAvatar ? (
           <Avatar className="h-5 w-5">
             <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
@@ -64,10 +63,12 @@ export function UserSelect({
           </Avatar>
         ) : undefined,
       });
-    });
+    };
+    users.forEach((u) => add(u));
+    archived.forEach((u) => add(u, "Archived"));
     
     return opts;
-  }, [users, allowNone, noneLabel, showAvatar]);
+  }, [users, archived, meId, allowNone, noneLabel, showAvatar]);
 
   const handleValueChange = (newValue: string) => {
     if (newValue === "none") {
@@ -87,6 +88,7 @@ export function UserSelect({
       emptyMessage="No users found."
       disabled={disabled || isLoading}
       allowClear={allowClear}
+      collapsedGroups={["Archived"]}
       className={className}
       triggerClassName={triggerClassName}
       data-testid={testId}

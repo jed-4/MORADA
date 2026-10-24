@@ -1,3 +1,5 @@
+import { usePeople } from "@/hooks/use-people";
+import { pickerLabel } from "@/lib/people";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -79,6 +81,14 @@ export default function UserProfileView() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
+  // Who takes over their open work when they're archived ("" = leave it).
+  const [reassignTo, setReassignTo] = useState("");
+  const { data: archiveImpact, isLoading: impactLoading } = useQuery<Record<string, number>>({
+    queryKey: [`/api/users/${userId}/archive-impact`],
+    enabled: showArchiveDialog && !!userId,
+    staleTime: 0,
+  });
+  const handoverPeople = usePeople({ withArchived: false });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [subcontractorHourlyRate, setSubcontractorHourlyRate] = useState("");
   const [subcontractorChargeRate, setSubcontractorChargeRate] = useState("");
@@ -153,13 +163,20 @@ export default function UserProfileView() {
   // the team list and employee dropdowns; their timesheets etc. are untouched.
   const archiveUserMutation = useMutation({
     mutationFn: async (archive: boolean) => {
-      return await apiRequest(`/api/users/${userId}/${archive ? "archive" : "unarchive"}`, "POST");
+      return await apiRequest(
+        `/api/users/${userId}/${archive ? "archive" : "unarchive"}`,
+        "POST",
+        archive && reassignTo ? { reassignTo } : undefined,
+      );
     },
     onSuccess: (_data, archive) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users?status=archived"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users?status=all"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users/assignable"] });
+      // A hand-over moves tasks, reminders and job access.
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/archive-impact`] });
       setShowArchiveDialog(false);
       toast({
         title: archive ? "Team member archived" : "Team member restored",
@@ -762,7 +779,7 @@ export default function UserProfileView() {
       </div>
 
       {/* Archive Dialog */}
-      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
+      <AlertDialog open={showArchiveDialog} onOpenChange={(o) => { setShowArchiveDialog(o); if (!o) setReassignTo(""); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Archive {getUserDisplayName(user)}?</AlertDialogTitle>
@@ -772,6 +789,50 @@ export default function UserProfileView() {
               history stay exactly as they are. You can restore them from the Archived list.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* What they still have open, and who takes it over. */}
+          <div className="space-y-3 text-sm">
+            {impactLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking their open work…
+              </div>
+            ) : archiveImpact && Object.values(archiveImpact).some((n) => n > 0) ? (
+              <>
+                <div className="rounded-md border bg-muted/40 p-3 space-y-1" data-testid="archive-impact">
+                  <div className="text-xs font-medium">Still assigned to them</div>
+                  <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+                    {archiveImpact.tasks > 0 && <li>{archiveImpact.tasks} open task{archiveImpact.tasks === 1 ? "" : "s"}</li>}
+                    {archiveImpact.checklistItems > 0 && <li>{archiveImpact.checklistItems} checklist item{archiveImpact.checklistItems === 1 ? "" : "s"} to do</li>}
+                    {archiveImpact.estimates > 0 && <li>{archiveImpact.estimates} estimate{archiveImpact.estimates === 1 ? "" : "s"}</li>}
+                    {archiveImpact.reminders > 0 && <li>{archiveImpact.reminders} active reminder{archiveImpact.reminders === 1 ? "" : "s"}</li>}
+                    {archiveImpact.taskTemplates > 0 && <li>{archiveImpact.taskTemplates} task template{archiveImpact.taskTemplates === 1 ? "" : "s"} that create work for them</li>}
+                    {archiveImpact.projects > 0 && <li>On the team for {archiveImpact.projects} active job{archiveImpact.projects === 1 ? "" : "s"}</li>}
+                  </ul>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Hand this over to</label>
+                  <Select value={reassignTo || "none"} onValueChange={(v) => setReassignTo(v === "none" ? "" : v)}>
+                    <SelectTrigger className="h-9" data-testid="select-archive-reassign">
+                      <SelectValue placeholder="Leave it with them" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Leave it with them</SelectItem>
+                      {handoverPeople.active
+                        .filter((p: any) => p.id !== userId)
+                        .map((p: any) => (
+                          <SelectItem key={p.id} value={p.id}>{pickerLabel(p, handoverPeople.meId)}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Open tasks, checklist items, estimates, reminders and task templates move to them, and they're
+                    added to the same jobs. Finished work stays recorded against {getUserDisplayName(user)}.
+                  </p>
+                </div>
+              </>
+            ) : archiveImpact ? (
+              <p className="text-xs text-muted-foreground">Nothing open is assigned to them.</p>
+            ) : null}
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-archive">Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -784,6 +845,8 @@ export default function UserProfileView() {
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Archiving...
                 </>
+              ) : reassignTo ? (
+                "Hand over and archive"
               ) : (
                 "Archive"
               )}
