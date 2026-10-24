@@ -309,6 +309,10 @@ export default function EstimateTemplateDetail() {
           "Cost Code": code ? `${code.code} - ${code.title}` : i.costCodeTitle || "",
           Allowance: i.allowance || "None",
           Notes: "",
+          // Templates are one level deep — no subsections, no sub-items — so
+          // the column is written blank rather than omitted, keeping the sheet
+          // interchangeable with a job estimate's.
+          "Sub-item": "",
         };
       });
 
