@@ -126,6 +126,7 @@ app.patch("/api/users/:id", ok);
 app.post("/api/billing/select-plan", ok);
 app.get("/api/billing/plans", ok);
 app.get("/api/portal/variation/:token", ok);
+app.post("/api/webhooks/resend", ok);
 
 let baseUrl = "";
 let server: Server;
@@ -263,6 +264,10 @@ async function main() {
 
   await test("token-gated portal routes pass with no session at all", async () => {
     await assertPasses("GET", "/api/portal/variation/tok123", "anonymous", "portal callers have no session to scope");
+  });
+
+  await test("Resend delivery webhook passes with no session at all", async () => {
+    await assertPasses("POST", "/api/webhooks/resend", "anonymous", "Resend posts signed events with no session");
   });
 
   // 5 — MemStorage fails closed.
