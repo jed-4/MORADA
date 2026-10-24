@@ -12,7 +12,6 @@
  * grid container when an editor closes).
  */
 import React from "react";
-import type { DropPosition, DropTarget } from "./estimateDragTypes";
 import { useSortable } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,7 +64,7 @@ export interface SortableRowProps {
   className?: string;
   isDraggable?: boolean;
   gridTemplate: string;
-  dropIndicator?: DropPosition | null;
+  dropIndicator?: 'above' | 'below' | null;
   activeDragId?: string | null;
   onDoubleClick?: () => void;
 }
@@ -298,10 +297,7 @@ export interface EstimateGridCtx {
   handleToggleSelection: (id: string) => void;
   collapsedItems: Set<string>;
   handleToggleItemCollapse: (id: string) => void;
-  // Widened to the shared DropTarget: 'inside' is only ever produced for a
-  // GROUP drag, and the row renderers compare against 'above'/'below', so it
-  // reaches here as "no indicator" rather than needing a branch of its own.
-  dropTarget: DropTarget | null;
+  dropTarget: { id: string; position: 'above' | 'below' } | null;
   activeId: string | null;
 
   // take-off backed quantities (optional: the template grid has no take-off)

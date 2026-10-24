@@ -30,7 +30,6 @@ import { StatusBadge } from "@/components/StatusBadge";
 import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 import { activeStatusOptions, effectiveStatusKey, nextStatusKey, resolveStatusChip } from "@/lib/statusChip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import type { DropTarget } from "./estimateDragTypes";
 
 /** Any key configured under Field Settings > Estimate Section Statuses. */
 type GroupStatus = string;
@@ -98,8 +97,8 @@ interface EstimateGroupCardProps {
   onApplyCostCode?: (groupId: string) => void;
   costCodes?: CostCode[];
   costCategories?: CostCategory[];
-  dropIndicator?: 'above' | 'below' | 'inside' | null;
-  dropTarget?: DropTarget | null;
+  dropIndicator?: 'above' | 'below' | null;
+  dropTarget?: { id: string; position: 'above' | 'below' } | null;
   onUpdateStatus?: (groupId: string, status: GroupStatus) => void;
   /** Group-level show/hide in the client proposal; hides descendants with it. */
   onToggleProposalVisible?: (groupId: string, next: boolean) => void;
@@ -196,24 +195,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
-
-  /* A subgroup is a HEADING INSIDE its parent's table, not a second table.
-     It used to render as its own Card — same purple band, same weight, same
-     chrome — offset by `ml-8`. Two things went wrong with that. Visually a
-     nested card wearing its parent's header reads as a sibling, which is
-     exactly the distinction it exists to make. Structurally `ml-8` shifted the
-     nested grid while it kept the parent's column template, so every cell in a
-     subgroup sat 32px right of the column it belonged to.
-
-     So the indent now applies to the NAME, inside the item cell, and the row
-     stays in the parent's own column tracks. The treatment follows the one the
-     proposal PDF already uses for the same thing (PdfLineTable.renderGroup):
-     the parent keeps the filled band, a child drops the fill for a plain rule,
-     lighter weight, sentence case. */
-  const nested = nestingLevel > 0;
-  const Wrapper: React.ElementType = nested ? 'div' : Card;
-  const headerH = nested ? 'h-8' : 'h-9';
-  const cellBase = `${headerH} px-2 flex items-center text-sm overflow-hidden`;
+  const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
   // Kept in step with the line-item cells in EstimateDetail: same numeric
   // right-alignment, same muted band on computed figures, same money boundary.
@@ -247,7 +229,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className="relative group/grp"
+      className={`relative group/grp ${nestingLevel > 0 ? 'ml-8' : ''}`}
       data-sortable-group-id={group.id}
     >
       {effectiveDropIndicator === 'above' && (
@@ -256,12 +238,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       {effectiveDropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
-    <Wrapper
-      className={
-        nested
-          ? `bg-card ${isGroupSelected ? 'ring-2 ring-inset ring-primary' : ''}`
-          : `rounded-xl border border-border bg-card shadow-sm mb-4 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`
-      }
+    <Card
+      className={`rounded-xl border border-border bg-card shadow-sm mb-4 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -273,45 +251,25 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className={
-          `relative ${headerH} group/ghead transition-colors border-border ` +
-          (nested
-            // A NEUTRAL band, where a top-level section gets the purple one.
-            // Colour is what marks a top-level section, so a child never wears
-            // it — but it still needs a fill: the grid has no zebra striping,
-            // so an unfilled heading has nothing to read against and sits at
-            // the same visual weight as the lines beneath it.
-            ? 'bg-muted dark:bg-muted/40 hover:bg-muted-foreground/10 border-t '
-            : 'bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 border-b ') +
-          // 'inside' is the nest gesture mid-drag. An insertion line would be
-          // a lie here — nothing is being inserted between two things — so the
-          // target group is outlined instead: the group you are dropping INTO.
-          (effectiveDropIndicator === 'inside'
-            ? 'ring-2 ring-inset ring-primary bg-primary/15 z-30'
-            : '')
-        }
+        className="relative h-9 group/ghead bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 transition-colors border-b border-border"
         data-testid={`row-group-${group.id}`}
-        data-group-header-id={group.id}
       >
         {/* Drag handle — only on GROUP-ROW hover (not when hovering the group's items) */}
         {!isLocked && (
           <div
             {...attributes}
             {...listeners}
-            className={`absolute left-0 top-0 ${headerH} w-5 flex items-center justify-center opacity-0 group-hover/ghead:opacity-100 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-all z-20`}
+            className="absolute left-0 top-0 h-9 w-5 flex items-center justify-center opacity-0 group-hover/ghead:opacity-100 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-all z-20"
             data-testid={`drag-handle-group-${group.id}`}
             title="Drag to reorder group"
           >
             <GripVertical className="h-4 w-4" />
           </div>
         )}
-        {/* Purple left stripe — the mark of a top-level section. A subgroup
-            carrying it too was most of why a nested card read as a sibling. */}
-        {!nested && (
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary z-10 pointer-events-none" />
-        )}
+        {/* Purple left stripe */}
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary z-10 pointer-events-none" />
         {/* Checkbox — pl-5 clears the drag-handle lane at the left */}
-        <div className={`${headerH} pl-5 pr-1 flex items-center`} role="gridcell">
+        <div className="h-9 pl-5 pr-1 flex items-center" role="gridcell">
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -329,35 +287,20 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     sits left, the amount pins to the right edge of the column,
                     and the amounts line up down the page. */}
                 <div className="flex items-center gap-2 min-w-0 w-full">
-                  {/* Depth lives HERE, on the name, not on the row — the row
-                      has to stay in the parent's column tracks or the figures
-                      stop lining up with the lines above and below. The rule is
-                      what carries the containment: it draws the bracket from
-                      the parent's name down to its child's. */}
-                  {nested && (
-                    <div
-                      className="flex-shrink-0 self-stretch flex items-center"
-                      style={{ paddingLeft: (nestingLevel - 1) * 14 }}
-                      aria-hidden
-                    >
-                      <div className="w-3 border-t border-border" />
-                    </div>
-                  )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={`${nested ? 'h-5 w-5' : 'h-6 w-6'} p-0 flex-shrink-0`}
+                    className="h-6 w-6 p-0 flex-shrink-0"
                     onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
                     data-testid={`button-toggle-group-${group.id}`}
-                    title={group.isCollapsed ? 'Expand' : 'Collapse'}
                   >
                     {group.isCollapsed ? (
-                      <ChevronRight className={nested ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                      <ChevronRight className="h-4 w-4" />
                     ) : (
-                      <ChevronDown className={nested ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                      <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className={`flex-shrink-0 font-semibold ${nested ? 'text-[13px]' : 'text-sm'}`}>{group.name}</span>
+                  <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
                   {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
                     const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
                     return code ? (
@@ -367,10 +310,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     ) : null;
                   })()}
                   {effectiveGroupTotals && effectiveGroupTotals.builderCostExTax > 0 && (
-                    <span
-                      className={`text-xs font-semibold ml-auto flex-shrink-0 ${nested ? 'text-muted-foreground' : 'text-primary'}`}
-                      data-testid={`group-total-badge-${group.id}`}
-                    >
+                    <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
                       {formatCurrency(effectiveGroupTotals.builderCostExTax)}
                     </span>
                   )}
@@ -679,9 +619,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           )}
 
           {childSubgroups.map((childGroup, childIndex) => (
-            // No rule here: the nested header draws its own, and two stacked
-            // borders read as a double line.
-            <div key={`subgroup-${childGroup.id}`}>
+            <div key={`subgroup-${childGroup.id}`} className="border-t border-border/50">
               <EstimateGroupCard
                 group={childGroup}
                 groupedItems={groupedItems}
@@ -724,7 +662,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           ))}
         </div>
       </div>
-    </Wrapper>
+    </Card>
     </div>
   );
 };

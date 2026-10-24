@@ -1,6 +1,7 @@
+import { personName, pickerLabel, sortPeople } from "@/lib/people";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Check, X, Search, User, Building2, Wrench, Package } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, X, Search, User, Building2, Wrench, Package, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -45,7 +46,11 @@ export function AssigneeSelect({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const { data: authUser } = useQuery<any>({ queryKey: ["/api/auth/user"] });
-  const { data: assignableUsers = [] } = useQuery<any[]>({ queryKey: ["/api/users/assignable"] });
+  const { data: assignableUsersRaw = [] } = useQuery<any[]>({ queryKey: ["/api/users/assignable"] });
+  // You first, then A–Z (the server already leaves out clients and archived people).
+  const assignableUsers = useMemo(() => sortPeople(assignableUsersRaw, authUser?.id), [assignableUsersRaw, authUser?.id]);
+  // Archived staff, in their own section that starts collapsed.
+  const { data: archivedUsers = [] } = useQuery<any[]>({ queryKey: ["/api/users?status=archived"] });
   const { data: allContacts = [] } = useQuery<any[]>({ queryKey: ["/api/contacts"] });
 
   const sections: Section[] = useMemo(() => {
@@ -60,7 +65,7 @@ export function AssigneeSelect({
     }
 
     for (const u of assignableUsers) {
-      const label = u.displayName || u.name || [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Team member";
+      const label = pickerLabel(u, authUser?.id);
       companyItems.push({
         value: `user:${u.id}`,
         label,
@@ -110,8 +115,18 @@ export function AssigneeSelect({
       { key: "company", label: "Company", icon: <Building2 className="h-3.5 w-3.5" />, items: companyItems },
       { key: "trades", label: "Trades", icon: <Wrench className="h-3.5 w-3.5" />, items: trades },
       { key: "suppliers", label: "Suppliers", icon: <Package className="h-3.5 w-3.5" />, items: suppliers },
+      {
+        key: "archived",
+        label: "Archived team",
+        icon: <Archive className="h-3.5 w-3.5" />,
+        items: sortPeople(archivedUsers.filter((u: any) => u.userCategory === "team")).map((u: any) => ({
+          value: `user:${u.id}`,
+          label: personName(u),
+          description: u.email || undefined,
+        })),
+      },
     ];
-  }, [authUser, assignableUsers, allContacts]);
+  }, [authUser, assignableUsers, archivedUsers, allContacts]);
 
   const q = search.toLowerCase().trim();
 
@@ -137,7 +152,8 @@ export function AssigneeSelect({
   }, [sections, value]);
 
   const toggleSection = (key: string) => {
-    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+    // "archived" starts collapsed, so its unset state means collapsed.
+    setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? key === "archived") }));
   };
 
   const handleSelect = (optValue: string) => {
@@ -193,7 +209,8 @@ export function AssigneeSelect({
           )}
           {filteredSections.map(section => {
             if (section.items.length === 0) return null;
-            const isOpen = !(collapsed[section.key] ?? false);
+            // Archived people start collapsed; a search opens everything.
+            const isOpen = q ? true : !(collapsed[section.key] ?? section.key === "archived");
             return (
               <div key={section.key}>
                 <button

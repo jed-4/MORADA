@@ -623,6 +623,7 @@
     "server/routes.ts GET /api/user/timesheet-view-scope",
     "server/routes.ts GET /api/users",
     "server/routes.ts GET /api/users/:id",
+    "server/routes.ts GET /api/users/:id/archive-impact",
     "server/routes.ts GET /api/users/:userId/notes",
     "server/routes.ts GET /api/users/:userId/project-access",
     "server/routes.ts GET /api/users/assignable",

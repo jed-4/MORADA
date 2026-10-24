@@ -64,8 +64,9 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
     queryKey: ["/api/projects"],
   });
 
+  // Including archived people: activity by someone who has left keeps their name.
   const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users?status=all"],
   });
 
   const getUserName = (id: string | null) => {

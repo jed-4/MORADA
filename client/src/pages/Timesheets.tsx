@@ -1,3 +1,5 @@
+import { personName, pickerLabel } from "@/lib/people";
+import { usePeople } from "@/hooks/use-people";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
@@ -258,6 +260,10 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   });
 
   // Fetch users for filter
+  // The user filter: staff A–Z (you first), archived staff collapsed below.
+  const filterPeople = usePeople();
+  const [showArchivedInFilter, setShowArchivedInFilter] = useState(false);
+
   const { data: users = [] } = useQuery<UserType[]>({
     queryKey: ["/api/users"],
   });
@@ -1434,7 +1440,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="max-h-72 overflow-auto">
-                      {users.map((u: any) => (
+                      {/* You first, then A–Z; staff only; archived people collapsed at the bottom. */}
+                      {filterPeople.active.map((u: any) => (
                         <DropdownMenuItem
                           key={u.id}
                           className="flex items-center"
@@ -1447,7 +1454,36 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           }}
                         >
                           <Checkbox checked={selectedUsers.includes(u.id)} className="mr-2 pointer-events-none" />
-                          {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || u.username}
+                          {pickerLabel(u, filterPeople.meId)}
+                        </DropdownMenuItem>
+                      ))}
+                      {filterPeople.archived.length > 0 && (
+                        // A plain button, not a menu item: a menu item's select
+                        // fired twice on a real click, so the toggle undid itself.
+                        <button
+                          type="button"
+                          className="w-full flex items-center px-2 py-1.5 text-muted-foreground text-xs border-t mt-1 rounded-sm hover-elevate"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowArchivedInFilter((v) => !v); }}
+                          data-testid="button-filter-user-archived"
+                        >
+                          {showArchivedInFilter ? <ChevronDown className="w-3 h-3 mr-1.5" /> : <ChevronRight className="w-3 h-3 mr-1.5" />}
+                          Archived ({filterPeople.archived.length})
+                        </button>
+                      )}
+                      {showArchivedInFilter && filterPeople.archived.map((u: any) => (
+                        <DropdownMenuItem
+                          key={u.id}
+                          className="flex items-center"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            const next = selectedUsers.includes(u.id)
+                              ? selectedUsers.filter((x) => x !== u.id)
+                              : [...selectedUsers, u.id];
+                            setSelectedUsers(next);
+                          }}
+                        >
+                          <Checkbox checked={selectedUsers.includes(u.id)} className="mr-2 pointer-events-none" />
+                          {personName(u)}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>

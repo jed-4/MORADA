@@ -100,7 +100,6 @@ import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
-import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import {
   renderEstimateItemWithSubItems,
@@ -914,15 +913,9 @@ export default function EstimateDetail() {
   const [activeId, setActiveId] = useState<string | null>(null);
   
   // Track drop target and position for indicator line
-  // 'inside' is the nest gesture: the cursor is in the middle band of a group
-  // header rather than near one of its edges. Without it, nesting a group was
-  // unreachable — the old code decided nest-vs-reorder by comparing levels, so
-  // on an estimate whose groups are all top level (every estimate, until one
-  // subgroup exists) every target counted as "same level" and it always
-  // reordered.
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const dropTargetRef = React.useRef<DropTarget | null>(null);
-  const setDropTargetSync = (val: DropTarget | null) => {
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
+  const dropTargetRef = React.useRef<{ id: string; position: 'above' | 'below' } | null>(null);
+  const setDropTargetSync = (val: { id: string; position: 'above' | 'below' } | null) => {
     dropTargetRef.current = val;
     setDropTarget(val);
   };
@@ -1216,7 +1209,7 @@ export default function EstimateDetail() {
 
   // Mutation for reordering groups  
   const reorderGroupsMutation = useMutation({
-    mutationFn: async ({ groups }: { groups: { id: string; order: number; parentGroupId?: string | null }[] }) => {
+    mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
     onMutate: async ({ groups }) => {
@@ -1238,20 +1231,18 @@ export default function EstimateDetail() {
         (old: any) => {
           if (!Array.isArray(old)) return old;
           
-          // Apply the whole payload, parent included. Applying only `order`
-          // left a nest invisible until the next refetch — and this mutation
-          // deliberately doesn't refetch on success — so the group sprang back
-          // to where it came from and the drag looked broken.
-          const updateMap = new Map(groups.map(u => [u.id, u]));
-
+          // Create a map of order changes
+          const orderMap = new Map(groups.map(u => [u.id, u.order]));
+          
+          // Update the groups with new orders
           return old.map(group => {
-            const update = updateMap.get(group.id);
-            if (!update) return group;
-            return {
-              ...group,
-              order: update.order,
-              ...('parentGroupId' in update ? { parentGroupId: update.parentGroupId ?? null } : {}),
-            };
+            if (orderMap.has(group.id)) {
+              return {
+                ...group,
+                order: orderMap.get(group.id)
+              };
+            }
+            return group;
           });
         }
       );
@@ -1469,46 +1460,15 @@ export default function EstimateDetail() {
     removeNativeGhost();
   };
   
-  /**
-   * The pointer's live Y, tracked directly.
-   *
-   * The drag handlers used to reconstruct it as
-   * `activeRect.top + activeRect.height / 2 + delta.y`. That double-counts the
-   * movement: dnd-kit puts a `translateY(delta)` on the dragged element, and
-   * getBoundingClientRect() reports the TRANSFORMED box, so delta was already
-   * in `activeRect.top` before being added again. The drop landed about twice
-   * as far from the start as the cursor was — which is how a group dropped
-   * onto the section above it ended up nesting that section into ITSELF.
-   *
-   * Reading the pointer is also just the truth, and it is what the schedule
-   * list already does (currentMouseYRef in MoradaScheduleList).
-   */
-  const pointerYRef = React.useRef<number | null>(null);
-  React.useEffect(() => {
-    const track = (e: PointerEvent) => { pointerYRef.current = e.clientY; };
-    document.addEventListener('pointermove', track, { passive: true });
-    // pointerup too: the release can land somewhere no pointermove reported,
-    // and the release is the position the drop actually means.
-    document.addEventListener('pointerup', track, { passive: true });
-    return () => {
-      document.removeEventListener('pointermove', track);
-      document.removeEventListener('pointerup', track);
-    };
-  }, []);
-
   // Handle drag move - track position for Google Sheets-style indicator
   // Uses cursor position to find the exact gap where the item will be inserted
   const handleDragMove = (event: any) => {
-    const { active, delta } = event;
-
-    /* Keep the last good target when a frame can't resolve one.
-       dnd-kit reports `over: null` whenever its own collision detection finds
-       nothing under the cursor, and that happened on the LAST move of a drag
-       often enough to matter: the handler wiped the target, and the drop —
-       which reads that same ref — then had nothing to act on and silently did
-       nothing. It is also redundant now, because the target comes from the
-       cursor against measured rects, not from `over`. */
-    if (!active) return;
+    const { over, active, delta } = event;
+    
+    if (!over || !active) {
+      setDropTargetSync(null);
+      return;
+    }
     
     const activeIdStr = String(active.id);
 
@@ -1518,68 +1478,42 @@ export default function EstimateDetail() {
       ? (document.querySelector(`[data-sortable-group-id="${activeIdStr.replace('group-', '')}"]`) as HTMLElement | null)
       : (document.querySelector(`[data-sortable-id="${activeIdStr}"]`) as HTMLElement | null);
     const activeInitialRect = activeEl?.getBoundingClientRect();
-    // Only needed for the keyboard fallback below; a missing rect is not a
-    // reason to forget where the drag was heading.
-    if (!activeInitialRect && pointerYRef.current === null) return;
+    if (!activeInitialRect || !delta) {
+      setDropTargetSync(null);
+      return;
+    }
 
-    // The pointer itself, with the old reconstruction only as a fallback for
-    // the first move of a keyboard drag, where no pointer event has fired.
-    const cursorY = pointerYRef.current ?? (activeInitialRect!.top + activeInitialRect!.height / 2 + (delta?.y ?? 0));
+    // Calculate cursor position (center of dragged element + drag delta)
+    const cursorY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
 
-    // Handle group drag — insertion line between groups, or nest into one
+    // Handle group drag — show indicator between group cards
     if (activeIdStr.startsWith('group-')) {
-      const draggedGroupId = activeIdStr.replace('group-', '');
-      // Measure HEADERS, not cards. A card's rect encloses everything nested
-      // inside it, so a subgroup's rect sits within its parent's and midpoints
-      // computed from cards put the insertion line in places that don't exist.
-      const headerEls = document.querySelectorAll('[data-group-header-id]');
-      if (headerEls.length === 0) {
+      const groupEls = document.querySelectorAll('[data-sortable-group-id]');
+      if (groupEls.length === 0) {
         setDropTargetSync(null);
         return;
       }
-      // A group cannot be dropped into itself or into its own descendants, so
-      // those stop being targets at all — an indicator the drop would refuse
-      // is worse than none.
-      const blocked = descendantsOf(groups, draggedGroupId);
-      blocked.add(draggedGroupId);
-      // ...and anything inside a collapsed section, which is clipped rather
-      // than removed and so still measures its full height.
-      for (const id of Array.from(hiddenGroupIds(groups))) blocked.add(id);
-
-      const headers: { id: string; top: number; height: number; midpoint: number }[] = [];
-      headerEls.forEach((el) => {
-        const gid = el.getAttribute('data-group-header-id');
-        if (!gid || blocked.has(gid)) return;
+      const groupPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
+      groupEls.forEach((el) => {
+        const gid = el.getAttribute('data-sortable-group-id');
+        if (!gid || `group-${gid}` === activeIdStr) return;
         const rect = el.getBoundingClientRect();
-        if (rect.height === 0) return; // collapsed out of view
-        headers.push({ id: `group-${gid}`, top: rect.top, height: rect.height, midpoint: rect.top + rect.height / 2 });
+        groupPositions.push({ id: `group-${gid}`, top: rect.top, bottom: rect.bottom, midpoint: rect.top + rect.height / 2 });
       });
-      if (headers.length === 0) { setDropTargetSync(null); return; }
-      headers.sort((a, b) => a.top - b.top);
-
-      // Nest wins when the cursor is in a header's middle band: it is the only
-      // gesture that expresses "into", and the edges still give reorder.
-      const nestOver = headers.find(h =>
-        cursorY >= h.top + h.height * NEST_ZONE_TOP &&
-        cursorY <= h.top + h.height * NEST_ZONE_BOTTOM
-      );
-      if (nestOver) {
-        setDropTargetSync({ id: nestOver.id, position: 'inside' });
+      if (groupPositions.length === 0) { setDropTargetSync(null); return; }
+      groupPositions.sort((a, b) => a.top - b.top);
+      if (cursorY < groupPositions[0].midpoint) {
+        setDropTargetSync({ id: groupPositions[0].id, position: 'above' });
         return;
       }
-
-      if (cursorY < headers[0].midpoint) {
-        setDropTargetSync({ id: headers[0].id, position: 'above' });
+      const lastGrp = groupPositions[groupPositions.length - 1];
+      if (cursorY > lastGrp.midpoint) {
+        setDropTargetSync({ id: lastGrp.id, position: 'below' });
         return;
       }
-      const lastHeader = headers[headers.length - 1];
-      if (cursorY > lastHeader.midpoint) {
-        setDropTargetSync({ id: lastHeader.id, position: 'below' });
-        return;
-      }
-      for (let i = 0; i < headers.length; i++) {
-        const cur = headers[i];
-        const nxt = headers[i + 1];
+      for (let i = 0; i < groupPositions.length; i++) {
+        const cur = groupPositions[i];
+        const nxt = groupPositions[i + 1];
         if (cursorY <= cur.midpoint) { setDropTargetSync({ id: cur.id, position: 'above' }); return; }
         if (!nxt || cursorY <= nxt.midpoint) { setDropTargetSync({ id: cur.id, position: 'below' }); return; }
       }
@@ -1692,27 +1626,80 @@ export default function EstimateDetail() {
         // Dragging a group onto another group
         const overGroupId = effectiveOverId.replace('group-', '');
         const overGroup = groups.find(g => g.id === overGroupId);
-
-        if (!overGroup || draggedGroupId === overGroupId) {
+        
+        if (!overGroup) {
           return;
         }
-
-        // planGroupDrop returns [] for a refused move — onto itself, or into
-        // its own subtree, which would make the totals recursion
-        // non-terminating. handleDragMove already declines to offer those as
-        // targets; this is the second line, for a stale ref.
-        const updates = planGroupDrop(
-          groups,
-          draggedGroupId,
-          overGroupId,
-          capturedDropTarget?.position ?? 'below',
-        );
-        if (updates.length === 0) return;
-
-        // One payload, not two mutations racing. The old nest path fired the
-        // old siblings' resequence and the group's own move separately, and
-        // the second could land first.
-        reorderGroupsMutation.mutate({ groups: updates });
+        
+        // Prevent nesting a group into itself or its own descendants
+        if (draggedGroupId === overGroupId) {
+          return;
+        }
+        
+        // Check if overGroup is a descendant of draggedGroup (prevent circular nesting)
+        // Use a visited set to guard against missing or circular parentGroupId references
+        const visited = new Set<string>();
+        let checkGroup: typeof overGroup | undefined = overGroup;
+        while (checkGroup?.parentGroupId) {
+          if (visited.has(checkGroup.id)) break; // circular reference — stop walking
+          visited.add(checkGroup.id);
+          if (checkGroup.parentGroupId === draggedGroupId) {
+            return;
+          }
+          checkGroup = groups.find(g => g.id === checkGroup!.parentGroupId);
+        }
+        
+        
+        // Determine behavior: are they at the same level?
+        const sameLevelGroups = groups.filter(g => g.parentGroupId === draggedGroup.parentGroupId);
+        const isOverGroupSameLevel = sameLevelGroups.some(g => g.id === overGroupId);
+        
+        if (isOverGroupSameLevel) {
+          // Reorder at same level
+          const sortedSameLevelGroups = sameLevelGroups.sort((a, b) => (a.order || 0) - (b.order || 0));
+          
+          // Remove dragged group, find target in remaining list, then insert before/after
+          const withoutDragged = sortedSameLevelGroups.filter(g => g.id !== draggedGroupId);
+          const targetIdx = withoutDragged.findIndex(g => g.id === overGroupId);
+          if (targetIdx === -1) return;
+          const insertBefore = capturedDropTarget?.position === 'above';
+          const insertAt = insertBefore ? targetIdx : targetIdx + 1;
+          const reorderedGroups = [
+            ...withoutDragged.slice(0, insertAt),
+            draggedGroup,
+            ...withoutDragged.slice(insertAt)
+          ];
+          const updates = reorderedGroups.map((group, index) => ({
+            id: group.id,
+            order: index
+          }));
+          
+          reorderGroupsMutation.mutate({ groups: updates });
+        } else {
+          // Nest into the over group (make draggedGroup a subgroup of overGroup)
+          
+          // Get siblings left behind in the original level (need to reorder them)
+          const oldSiblings = sameLevelGroups.filter(g => g.id !== draggedGroupId);
+          const siblingUpdates = oldSiblings.map((group, index) => ({
+            id: group.id,
+            order: index
+          }));
+          
+          // Get siblings in the new parent
+          const newSiblings = groups.filter(g => g.parentGroupId === overGroupId);
+          const newOrder = newSiblings.length; // Add at end
+          
+          // Reorder old siblings first if any
+          if (siblingUpdates.length > 0) {
+            reorderGroupsMutation.mutate({ groups: siblingUpdates });
+          }
+          
+          // Then update the dragged group's parent and order
+          updateGroupMutation.mutate({
+            groupId: draggedGroupId,
+            updates: { parentGroupId: overGroupId, order: newOrder }
+          });
+        }
       } else {
         // Dragging group onto an item - ignore this case
       }

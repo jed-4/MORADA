@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown, Search, X } from "lucide-react"
+import { Check, ChevronsUpDown, Search, X, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -70,6 +70,11 @@ interface SearchableSelectProps {
   className?: string
   triggerClassName?: string
   allowClear?: boolean
+  /**
+   * Groups that start collapsed behind a "Show <group> (n)" row — e.g. archived
+   * people at the bottom of a people picker. Typing a search opens them.
+   */
+  collapsedGroups?: string[]
   "data-testid"?: string
 }
 
@@ -84,10 +89,14 @@ export function SearchableSelect({
   className,
   triggerClassName,
   allowClear = false,
+  collapsedGroups = [],
   "data-testid": testId,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchValue, setSearchValue] = React.useState("")
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
+  const isCollapsed = (group: string) =>
+    collapsedGroups.includes(group) && !expanded[group] && !searchValue.trim()
 
   const selectedOption = options.find((option) => option.value === value)
 
@@ -191,7 +200,19 @@ export function SearchableSelect({
                 ))}
               </CommandGroup>
             )}
-            {Object.entries(groupedOptions.groups).map(([groupName, groupOptions]) => (
+            {Object.entries(groupedOptions.groups).map(([groupName, groupOptions]) => isCollapsed(groupName) ? (
+              <CommandGroup key={groupName}>
+                <CommandItem
+                  value={`__show__ ${groupName}`}
+                  onSelect={() => setExpanded((e) => ({ ...e, [groupName]: true }))}
+                  className="cursor-pointer text-muted-foreground text-xs"
+                  data-testid={`option-show-group-${groupName.toLowerCase()}`}
+                >
+                  <ChevronRight className="mr-2 h-3.5 w-3.5" />
+                  Show {groupName.toLowerCase()} ({groupOptions.length})
+                </CommandItem>
+              </CommandGroup>
+            ) : (
               <CommandGroup key={groupName} heading={groupName}>
                 {groupOptions.map((option) => (
                   <CommandItem
