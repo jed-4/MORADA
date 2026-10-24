@@ -6663,6 +6663,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   /**
+   * Validate a proposed set of group re-parentings before any of it is written.
+   *
+   * A single move cannot be judged on its own once a batch is in flight: two
+   * moves that are each acyclic can compose into a cycle (A under B, B under A),
+   * and a cycle makes the client's totals recursion non-terminating. So the
+   * whole batch is resolved against the estimate's current tree first, then
+   * every affected group is walked to its root.
+   *
+   * Returns an error string, or null when the batch is safe.
+   */
+  const checkGroupReparenting = async (
+    estimateId: string,
+    moves: Array<{ id: string; parentGroupId: string | null }>,
+  ): Promise<string | null> => {
+    if (moves.length === 0) return null;
+    const siblings = await storage.getEstimateGroups(estimateId);
+    const parentOf = new Map<string, string | null>(
+      siblings.map((g: any) => [g.id as string, (g.parentGroupId ?? null) as string | null]),
+    );
+    for (const { id, parentGroupId } of moves) {
+      if (!parentOf.has(id)) return "Estimate group not found";
+      if (parentGroupId === id) return "A group cannot be its own parent";
+      // A parent outside this estimate would splice two estimates' trees
+      // together — the group would vanish from both pages.
+      if (parentGroupId !== null && !parentOf.has(parentGroupId)) {
+        return "Parent group must belong to the same estimate";
+      }
+      parentOf.set(id, parentGroupId);
+    }
+    for (const { id } of moves) {
+      const seen = new Set<string>([id]);
+      let cursor = parentOf.get(id) ?? null;
+      while (cursor) {
+        if (seen.has(cursor)) return "That move would create a circular group nesting";
+        seen.add(cursor);
+        cursor = parentOf.get(cursor) ?? null;
+      }
+    }
+    return null;
+  };
+
+  /**
    * A schedule is owned through its project — or, for a schedule template's
    * schedule (projectId null, migration 0095), through its template.
    */
@@ -8431,7 +8473,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/estimate-groups/reorder", async (req, res) => {
     try {
       const { groups } = req.body;
-      console.log('[REORDER] Received reorder request for groups:', JSON.stringify(groups, null, 2));
       
       if (!Array.isArray(groups)) {
         return res.status(400).json({ error: "Groups must be an array" });
@@ -8441,6 +8482,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const group of groups) {
         if (!group.id || typeof group.order !== 'number') {
           return res.status(400).json({ error: "Each group must have id and order" });
+        }
+        if ('parentGroupId' in group
+            && group.parentGroupId !== null
+            && typeof group.parentGroupId !== 'string') {
+          return res.status(400).json({ error: "parentGroupId must be a group id or null" });
         }
       }
 
@@ -8463,24 +8509,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Update each group's order and verify success
+      // Re-parenting arrives through this route too, so a drag that moves a
+      // group AND resequences its old and new siblings is one write rather
+      // than a reorder racing a separate PATCH. It is also what makes undo
+      // work: the undo snapshot has always carried parentGroupId, and this
+      // route used to drop it, so undoing a nest restored the ordering and
+      // left the group nested.
+      const moves = groups
+        .filter((g: any) => 'parentGroupId' in g)
+        .map((g: any) => ({ id: g.id as string, parentGroupId: (g.parentGroupId ?? null) as string | null }));
+      if (moves.length > 0) {
+        const estimateId = (await storage.getEstimateGroup(moves[0].id) as any)?.estimateId;
+        if (!estimateId) {
+          return res.status(404).json({ error: "Estimate group not found" });
+        }
+        const problem = await checkGroupReparenting(estimateId, moves);
+        if (problem) {
+          return res.status(400).json({ error: problem });
+        }
+      }
+
+      // Update each group's order (and parent, when the batch carries one).
       const results = await Promise.all(
-        groups.map(async ({ id, order }) => {
-          console.log(`[REORDER] Updating group ${id} to order ${order}`);
-          const existingGroup = await storage.getEstimateGroup(id);
-          console.log(`[REORDER] Existing group ${id}:`, existingGroup ? 'found' : 'NOT FOUND');
-          
-          const updated = await storage.updateEstimateGroup(id, { order });
+        groups.map(async ({ id, order, ...rest }: any) => {
+          const updates: { order: number; parentGroupId?: string | null } = { order };
+          if ('parentGroupId' in rest) updates.parentGroupId = rest.parentGroupId ?? null;
+          const updated = await storage.updateEstimateGroup(id, updates);
           if (!updated) {
-            console.log(`[REORDER] Failed to update group ${id}`);
             throw new Error(`Failed to update group ${id}`);
           }
-          console.log(`[REORDER] Successfully updated group ${id}`);
           return updated;
         })
       );
 
-      console.log('[REORDER] All groups updated successfully');
       res.json({ success: true, count: results.length });
     } catch (error: any) {
       console.error('[REORDER] Error:', error.message);
@@ -8511,26 +8572,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Guard re-parenting: the new parent must belong to the SAME estimate, and
       // must not make this group its own ancestor (a cycle would infinite-loop
       // the totals recursion). The client already prevents this, but a direct
-      // API call could otherwise corrupt the tree.
-      if ('parentGroupId' in validationResult.data && validationResult.data.parentGroupId) {
-        const newParentId = validationResult.data.parentGroupId as string;
-        if (newParentId === req.params.id) {
-          return res.status(400).json({ error: "A group cannot be its own parent" });
-        }
-        const parent = await storage.getEstimateGroup(newParentId);
-        if (!parent || parent.estimateId !== (owned as any).estimateId) {
-          return res.status(400).json({ error: "Parent group must belong to the same estimate" });
-        }
-        const seen = new Set<string>();
-        let cursor: string | null = newParentId;
-        while (cursor) {
-          if (cursor === req.params.id) {
-            return res.status(400).json({ error: "That move would create a circular group nesting" });
-          }
-          if (seen.has(cursor)) break; // pre-existing corrupt chain — stop walking
-          seen.add(cursor);
-          const ancestor = await storage.getEstimateGroup(cursor);
-          cursor = ancestor?.parentGroupId ?? null;
+      // API call could otherwise corrupt the tree. Shared with the reorder
+      // route so both paths judge a move the same way.
+      if ('parentGroupId' in validationResult.data) {
+        const problem = await checkGroupReparenting((owned as any).estimateId, [{
+          id: req.params.id,
+          parentGroupId: (validationResult.data.parentGroupId ?? null) as string | null,
+        }]);
+        if (problem) {
+          return res.status(400).json({ error: problem });
         }
       }
 
