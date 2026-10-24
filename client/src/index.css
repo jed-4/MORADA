@@ -1,4 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Inter is self-hosted from client/public/fonts (the same files the PDFs embed).
+ * It used to come from fonts.googleapis.com, which the server's CSP style-src
+ * never allowed — so the request was refused on every page and the app quietly
+ * rendered in the system font instead. Serving it ourselves needs no CSP change. */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Inter-400.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 400; font-display: swap; src: url('/fonts/Inter-400i.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/Inter-500.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 500; font-display: swap; src: url('/fonts/Inter-500i.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/Inter-600.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 600; font-display: swap; src: url('/fonts/Inter-600i.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Inter-700.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 700; font-display: swap; src: url('/fonts/Inter-700i.woff') format('woff'); }
 
 @tailwind base;
 @tailwind components;
