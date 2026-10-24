@@ -1,3 +1,5 @@
+import { ClientAccessList, type ClientAccessRow } from "@/components/team/ClientAccessList";
+import { usePermission } from "@/hooks/use-permission";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -33,7 +35,15 @@ export default function TeamManagement() {
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
 
-  const [showArchived, setShowArchived] = useState(false);
+  // Staff, the clients who can sign in to the portal, and archived staff.
+  // Clients used to be mixed in with the team.
+  const [tab, setTab] = useState<"team" | "clients" | "archived">("team");
+  const showArchived = tab === "archived";
+  const canSeeClientAccess = usePermission("sales.client_portal", "view");
+  const { data: clientAccess = [] } = useQuery<ClientAccessRow[]>({
+    queryKey: ["/api/team/client-access"],
+    enabled: canSeeClientAccess,
+  });
 
   const { data: activeUsers = [], isLoading: activeLoading } = useQuery<any[]>({
     queryKey: ["/api/users"],
@@ -107,9 +117,12 @@ export default function TeamManagement() {
 
   const users = allUsers.filter((user: any) =>
     (user.firstName || user.lastName || user.email) &&
-    // Revoked client-portal users are inactive too; they're managed from Contacts.
-    (!showArchived || user.userCategory === "team")
+    // Clients have their own tab; revoked client logins are inactive too, so
+    // the archived list is staff only.
+    (showArchived ? user.userCategory === "team" : user.userCategory !== "client")
   );
+  // Client invitations belong with the clients.
+  const teamInvitations = pendingInvitations.filter((inv: any) => inv.userCategory !== "client");
 
   const filteredUsers = users.filter((user: any) => {
     if (!searchQuery) return true;
@@ -140,20 +153,23 @@ export default function TeamManagement() {
           </div>
 
           <div className="flex items-center border rounded-md overflow-hidden h-6 text-xs">
-            <button
-              onClick={() => setShowArchived(false)}
-              className={`px-2 h-full ${!showArchived ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"}`}
-              data-testid="button-show-active"
-            >
-              Active
-            </button>
-            <button
-              onClick={() => setShowArchived(true)}
-              className={`px-2 h-full border-l ${showArchived ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"}`}
-              data-testid="button-show-archived"
-            >
-              Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
-            </button>
+            {([
+              ["team", "Team"],
+              ...(canSeeClientAccess ? [["clients", `Client access${clientAccess.length ? ` (${clientAccess.length})` : ""}`]] : []),
+              ["archived", `Archived${archivedCount > 0 ? ` (${archivedCount})` : ""}`],
+            ] as [typeof tab, string][]).map(([key, label], i) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`px-2 h-full ${i > 0 ? "border-l" : ""} ${tab === key ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"}`}
+                data-testid={key === "team" ? "button-show-active" : key === "archived" ? "button-show-archived" : "button-show-clients"}
+              >
+                {label}
+                {key === "clients" && clientAccess.some((r) => r.flags.length > 0) && (
+                  <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-[hsl(var(--amber))] align-middle" aria-label="Some access needs review" />
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -171,11 +187,13 @@ export default function TeamManagement() {
 
       {/* Content Area */}
       <div className="flex-1 overflow-auto p-3">
-        {usersLoading || invitationsLoading ? (
+        {tab === "clients" ? (
+          <ClientAccessList search={searchQuery} />
+        ) : usersLoading || invitationsLoading ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             Loading...
           </div>
-        ) : filteredUsers.length === 0 && (showArchived || pendingInvitations.length === 0) ? (
+        ) : filteredUsers.length === 0 && (showArchived || teamInvitations.length === 0) ? (
           <div className="flex flex-col items-center justify-center h-full">
             <Users className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">{showArchived ? "No archived team members" : "No team members found"}</h3>
@@ -190,14 +208,14 @@ export default function TeamManagement() {
         ) : (
           <div className="space-y-4">
             {/* Pending Invitations Section */}
-            {!showArchived && pendingInvitations.length > 0 && (
+            {!showArchived && teamInvitations.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" />
-                  Pending Invitations ({pendingInvitations.length})
+                  Pending Invitations ({teamInvitations.length})
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {pendingInvitations.map((invitation) => (
+                  {teamInvitations.map((invitation) => (
                     <PendingInvitationCard
                       key={invitation.id}
                       invitation={invitation}
@@ -222,7 +240,7 @@ export default function TeamManagement() {
             {/* Team Members Section */}
             {filteredUsers.length > 0 && (
               <div className="space-y-2">
-                {!showArchived && pendingInvitations.length > 0 && (
+                {!showArchived && teamInvitations.length > 0 && (
                   <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5" />
                     Active Members ({filteredUsers.length})
