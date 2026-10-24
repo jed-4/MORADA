@@ -17863,6 +17863,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // userInvitations.contactId). Status is always derived, never stored:
   // linked user → active/revoked; else pending invitation → invited; else none.
 
+  /**
+   * Everyone with client-portal access, for the Team page's Client access tab:
+   * who they are, which jobs they can see, when they last signed in, and a flag
+   * when the access looks stale (all their jobs finished, or long unused), so
+   * nobody has to remember to take access away.
+   *
+   * Reads only. Revoke / restore / resend go through the existing per-contact
+   * routes above, so there is one set of rules for portal access.
+   */
+  app.get("/api/team/client-access", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "view"), async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const [clientUsers, pendingInvites] = await Promise.all([
+        storage.getUsersByCompanyWithRoles(companyId, "client", "all"),
+        storage.getUserInvitationsByCompany(companyId, "pending"),
+      ]);
+      const now = Date.now();
+      const DAY = 24 * 60 * 60 * 1000;
+      const finished = (p: any) => !!p.isArchived || p.currentSystemPhase === "archive";
+      const jobsFor = async (contactId: string | null | undefined) =>
+        contactId
+          ? (await storage.getPortalProjectsForContact(contactId, companyId)).map((p: any) => ({
+              id: p.id, name: p.name, finished: finished(p),
+            }))
+          : [];
+
+      // What a signed-in client can actually open is their user_project_access
+      // grants — that's what the client gate checks — so list those, not the
+      // contact's linked jobs. One query for everyone.
+      const clientIds = clientUsers.map((u: any) => u.id);
+      const grants = clientIds.length === 0 ? [] : await db
+        .select({
+          userId: schema.userProjectAccess.userId,
+          id: schema.projects.id,
+          name: schema.projects.name,
+          isArchived: schema.projects.isArchived,
+          currentSystemPhase: schema.projects.currentSystemPhase,
+        })
+        .from(schema.userProjectAccess)
+        .innerJoin(schema.projects, eq(schema.userProjectAccess.projectId, schema.projects.id))
+        .where(and(inArray(schema.userProjectAccess.userId, clientIds), eq(schema.projects.companyId, companyId)));
+      const grantsByUser = new Map<string, { id: string; name: string; finished: boolean }[]>();
+      for (const g of grants) {
+        if (!grantsByUser.has(g.userId)) grantsByUser.set(g.userId, []);
+        grantsByUser.get(g.userId)!.push({ id: g.id, name: g.name, finished: finished(g) });
+      }
+
+      const userRows = await Promise.all(clientUsers.map(async (u: any) => {
+        const projects = grantsByUser.get(u.id) ?? [];
+        const flags: string[] = [];
+        if (u.isActive) {
+          if (projects.length === 0) flags.push("no_jobs");
+          else if (projects.every((p) => p.finished)) flags.push("jobs_finished");
+          const last = u.lastLoginAt ? new Date(u.lastLoginAt).getTime() : null;
+          if (last !== null && now - last > 90 * DAY) flags.push("inactive_90_days");
+          if (last === null && u.createdAt && now - new Date(u.createdAt).getTime() > 30 * DAY) flags.push("never_signed_in");
+        }
+        return {
+          kind: "user" as const,
+          userId: u.id,
+          contactId: u.contactId ?? null,
+          name: [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || "Client",
+          email: u.email ?? null,
+          status: u.isActive ? "active" : "revoked",
+          lastLoginAt: u.lastLoginAt ?? null,
+          projects,
+          flags,
+        };
+      }));
+
+      // Invited but not signed up yet — they hold a working link, so they
+      // belong on the list too. Their jobs are the contact's, which is what the
+      // invitation grants when accepted.
+      const contactsWithUsers = new Set(clientUsers.map((u: any) => u.contactId).filter(Boolean));
+      const inviteRows = await Promise.all(
+        pendingInvites
+          .filter((i: any) => i.userCategory === "client" && (!i.contactId || !contactsWithUsers.has(i.contactId)))
+          .map(async (i: any) => ({
+            kind: "invite" as const,
+            userId: null,
+            contactId: i.contactId ?? null,
+            name: [i.firstName, i.lastName].filter(Boolean).join(" ").trim() || i.email,
+            email: i.email ?? null,
+            status: "invited",
+            invitedAt: i.createdAt ?? null,
+            expired: !!i.expiresAt && new Date(i.expiresAt).getTime() < now,
+            lastLoginAt: null,
+            projects: await jobsFor(i.contactId),
+            flags: [] as string[],
+          })),
+      );
+
+      const order = { active: 0, invited: 1, revoked: 2 } as Record<string, number>;
+      const rows = [...userRows, ...inviteRows].sort(
+        (a, b) => (order[a.status] - order[b.status]) || a.name.localeCompare(b.name),
+      );
+      res.json(rows);
+    } catch (error) {
+      console.error("Error listing client access:", error);
+      res.status(500).json({ error: "Failed to load client access" });
+    }
+  });
+
   app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission(CLIENT_PORTAL_ACCESS_KEY, "view"), async (req, res) => {
     try {
       const companyId = (req.user as any).companyId as string;

@@ -599,6 +599,7 @@
     "server/routes.ts GET /api/tasks/:taskId/comments",
     "server/routes.ts GET /api/tasks/my",
     "server/routes.ts GET /api/tasks/user",
+    "server/routes.ts GET /api/team/client-access",
     "server/routes.ts GET /api/teams",
     "server/routes.ts GET /api/template-categories",
     "server/routes.ts GET /api/template-categories/:id",
