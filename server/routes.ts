@@ -254,6 +254,8 @@ import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
   fuzzyMatchTimesheetUser,
+  linkSubItemRows,
+  parseGroupPath,
   readTimesheetBreakFromRow,
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
@@ -7405,40 +7407,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
         costCodeMap.set(cc.code.toLowerCase().trim(), cc.code);
       }
 
-      // Get existing groups for this estimate to match against
-      const existingGroups = await storage.getEstimateGroups(estimateId);
-      const groupMap = new Map<string, string>(); // groupName (lowercase) -> groupId
-      
-      // Build map of existing groups (case-insensitive)
-      for (const group of existingGroups) {
-        groupMap.set(group.name.toLowerCase().trim(), group.id);
-      }
-      
-      // Collect all unique group names from import data
-      const uniqueGroupNames = new Set<string>();
-      items.forEach(item => {
-        if (item.group && item.group.trim()) {
-          uniqueGroupNames.add(item.group.trim());
-        }
-      });
+      /* Sections arrive as PATHS — "Kitchen > Joinery" — so nesting survives a
+         round trip. A sheet written before paths existed carries bare names,
+         which are simply one-segment paths, so it still reads correctly.
 
-      // Create any missing groups with sequential order values (preserving import order)
-      // Build an ordered list of group names as they appear in the CSV (first occurrence order)
-      const orderedGroupNames: string[] = [];
-      const seenGroupNames = new Set<string>();
-      items.forEach(item => {
-        if (item.group && item.group.trim()) {
-          const normalized = item.group.trim().toLowerCase();
-          if (!seenGroupNames.has(normalized)) {
-            seenGroupNames.add(normalized);
-            orderedGroupNames.push(item.group.trim());
+         Keying by path matters: "Joinery" under Kitchen and "Joinery" under
+         Bathroom are different sections, and the old bare-name map collapsed
+         them into whichever happened to be registered last. */
+      const existingGroups = await storage.getEstimateGroups(estimateId);
+      const groupById = new Map<string, any>(existingGroups.map((g: any) => [g.id, g]));
+      const pathKeyOf = (group: any): string => {
+        const segments: string[] = [];
+        const seen = new Set<string>();
+        let current: any = group;
+        while (current && !seen.has(current.id)) {
+          seen.add(current.id);
+          segments.unshift(String(current.name ?? "").trim().toLowerCase());
+          current = current.parentGroupId ? groupById.get(current.parentGroupId) : undefined;
+        }
+        return segments.join("\u0000");
+      };
+      const groupIdByPath = new Map<string, string>();
+      const idsByBareName = new Map<string, string[]>();
+      for (const group of existingGroups) {
+        groupIdByPath.set(pathKeyOf(group), group.id);
+        const bare = String((group as any).name ?? "").trim().toLowerCase();
+        idsByBareName.set(bare, [...(idsByBareName.get(bare) ?? []), group.id]);
+      }
+
+      // Next order within each parent. Orders are per-level, so one running
+      // counter across the whole estimate would pile new subsections onto
+      // numbers their siblings already use.
+      const nextOrderByParent = new Map<string, number>();
+      for (const group of existingGroups) {
+        const key = (group as any).parentGroupId ?? "";
+        const next = Math.max(nextOrderByParent.get(key) ?? 0, ((group as any).order ?? 0) + 1);
+        nextOrderByParent.set(key, next);
+      }
+      const takeOrder = (parentId: string | null): number => {
+        const key = parentId ?? "";
+        const order = nextOrderByParent.get(key) ?? 0;
+        nextOrderByParent.set(key, order + 1);
+        return order;
+      };
+
+      /* Resolve a path to a section id, creating whatever is missing along the
+         way. Returns null for a blank path (an ungrouped line). */
+      const resolveGroupPath = async (rawPath: string): Promise<string | null> => {
+        const segments = parseGroupPath(rawPath);
+        if (segments.length === 0) return null;
+
+        // A bare name that matches no top-level section, but exactly one
+        // section somewhere, resolves to that one. This is what a sheet
+        // written before paths existed means, and the old code did it by
+        // accident; doing it deliberately keeps those sheets importing where
+        // they always did. Ambiguous names fall through and create a new
+        // top-level section rather than guessing.
+        if (segments.length === 1) {
+          const bare = segments[0].toLowerCase();
+          if (!groupIdByPath.has(bare)) {
+            const candidates = idsByBareName.get(bare) ?? [];
+            if (candidates.length === 1) return candidates[0];
           }
         }
-      });
 
-      // Find the max existing group order to start new groups after it
-      const maxExistingOrder = existingGroups.reduce((max, g) => Math.max(max, g.order ?? 0), -1);
-      let nextOrder = maxExistingOrder + 1;
+        let parentId: string | null = null;
+        const keyParts: string[] = [];
+        for (const segment of segments) {
+          keyParts.push(segment.toLowerCase());
+          const key = keyParts.join("\u0000");
+          const found = groupIdByPath.get(key);
+          if (found) {
+            parentId = found;
+            continue;
+          }
+          const details = detailsByName.get(segment.toLowerCase());
+          const created = await storage.createEstimateGroup({
+            estimateId,
+            name: segment,
+            description: details?.description,
+            defaultCostCode: details?.defaultCostCode,
+            order: takeOrder(parentId),
+            isCollapsed: false,
+            parentGroupId: parentId ?? undefined,
+          });
+          groupIdByPath.set(key, created.id);
+          const bare = segment.toLowerCase();
+          idsByBareName.set(bare, [...(idsByBareName.get(bare) ?? []), created.id]);
+          parentId = created.id;
+        }
+        return parentId;
+      };
 
       // Group details by name. A default cost code is only kept if it is one of
       // this company's codes — the id arrives from the client.
@@ -7455,26 +7514,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      for (const groupName of orderedGroupNames) {
-        const normalizedName = groupName.toLowerCase().trim();
-        if (!groupMap.has(normalizedName)) {
-          const details = detailsByName.get(normalizedName);
-          const newGroup = await storage.createEstimateGroup({
-            estimateId,
-            name: groupName,
-            description: details?.description,
-            defaultCostCode: details?.defaultCostCode,
-            order: nextOrder,
-            isCollapsed: false,
-            parentGroupId: undefined,
-          });
-          groupMap.set(normalizedName, newGroup.id);
-          nextOrder++;
-        }
+      /* Resolve every distinct path up front, in the order the sheet first
+         mentions it, so new sections are created in the order they are read.
+         The per-row loop below is synchronous, so it cannot await. */
+      const groupIdByRawPath = new Map<string, string | null>();
+      for (const item of items) {
+        const raw = typeof item.group === "string" ? item.group.trim() : "";
+        if (!raw || groupIdByRawPath.has(raw)) continue;
+        groupIdByRawPath.set(raw, await resolveGroupPath(raw));
       }
 
       // Validate all items first
       const validatedItems: any[] = [];
+      // Parallel to validatedItems: whether that row said it is a sub-item.
+      // Kept beside rather than inside, because the flag is a property of the
+      // SHEET, not of an estimate item — the item records a parent id instead.
+      const subItemFlags: boolean[] = [];
       const itemCostCodes = new Map<number, string>(); // index -> costCode
       const errors: Array<{ row: number; errors: string[] }> = [];
       
@@ -7502,16 +7557,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
-        // Match group name to existing groups
-        let groupIdToStore = null;
-        
-        if (item.group) {
-          const groupNameToMatch = item.group.toLowerCase().trim();
-          const matchedGroupId = groupMap.get(groupNameToMatch);
-          if (matchedGroupId) {
-            groupIdToStore = matchedGroupId;
-          }
-        }
+        // Section, resolved from the path above.
+        const rawGroupPath = typeof item.group === "string" ? item.group.trim() : "";
+        const groupIdToStore = rawGroupPath ? (groupIdByRawPath.get(rawGroupPath) ?? null) : null;
         
         const unitCostExTax = item.unitCostExTax || 0;
         const quantity = item.quantity ?? 0;
@@ -7575,6 +7623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           } else {
             validatedItems.push(validationResult.data);
+            subItemFlags.push(item.isSubItem === true);
           }
         }
       });
@@ -7589,9 +7638,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Items are imported without groups - user can organize them manually later
+      /* Sub-items, in two passes.
 
-      const createdItems = await storage.bulkCreateEstimateItems(validatedItems);
+         A sub-item names no parent: it belongs to the nearest preceding row
+         that is not itself a sub-item, which is the order the export writes
+         and the way the sheet reads. So the parents go in first, and their ids
+         come back in input order, which is what links the children.
+
+         Both passes keep each row's original index as its `order`, so the
+         sheet's sequence survives the split.
+
+         A sub-item with no preceding parent row — the sheet starts with one —
+         is imported as an ordinary line. There is nothing for it to hang
+         under, and dropping it would lose the builder's work silently. */
+      const parentRowOf = linkSubItemRows(subItemFlags);
+
+      const parentRows = validatedItems.filter((_, i) => !parentRowOf.has(i));
+      const createdParents = await storage.bulkCreateEstimateItems(parentRows);
+
+      // bulkCreateEstimateItems inserts in input order and returns in the same
+      // order, so position maps a payload back to its created row.
+      const createdIdByRow = new Map<number, string>();
+      let cursor = 0;
+      validatedItems.forEach((_, index) => {
+        if (!parentRowOf.has(index)) createdIdByRow.set(index, createdParents[cursor++]?.id);
+      });
+
+      const childRows = validatedItems
+        .map((row, index) => ({ row, index }))
+        .filter(({ index }) => parentRowOf.has(index))
+        .map(({ row, index }) => {
+          const parentRow = validatedItems[parentRowOf.get(index)!];
+          return {
+            ...row,
+            parentItemId: createdIdByRow.get(parentRowOf.get(index)!),
+            // A sub-item's section must match its parent's. Group totals sum
+            // every row carrying the section id, sub-items included, so a
+            // mismatch would show the line under one section and its money
+            // under another.
+            groupId: parentRow.groupId ?? null,
+          };
+        });
+      const createdChildren = childRows.length > 0
+        ? await storage.bulkCreateEstimateItems(childRows)
+        : [];
+      const createdItems = [...createdParents, ...createdChildren];
 
       if (createdItems.length > 0) {
         triggerBudgetAutoRecalc(estimateId);

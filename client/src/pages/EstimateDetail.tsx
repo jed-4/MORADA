@@ -97,6 +97,7 @@ import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
 import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
 import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow } from "@/lib/estimateSpreadsheet";
+import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
@@ -3582,11 +3583,27 @@ export default function EstimateDetail() {
   // exported estimate re-imports cleanly (unlike the CSV dump above, which
   // includes computed columns the importer can't take back).
   const buildExportRows = (): EstimateExportRow[] => {
+    /* The section's full path, root first.
+       Writing only the section's own name lost the nesting: re-importing put
+       every subsection back at the top level, silently flattening the estimate
+       the sheet came from. Visited-guarded, because a corrupt parent chain in
+       legacy data must not hang an export. */
+    const groupPathOf = (groupId: string | null | undefined): string => {
+      const segments: string[] = [];
+      const seen = new Set<string>();
+      let current = groupId ? groups.find(g => g.id === groupId) : undefined;
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        segments.unshift(current.name);
+        current = current.parentGroupId ? groups.find(g => g.id === current!.parentGroupId) : undefined;
+      }
+      return formatGroupPath(segments);
+    };
+
     const rowFor = (it: EstimateItem): EstimateExportRow => {
-      const grp = groups.find(g => g.id === it.groupId);
       const code = costCodes.find(c => c.id === it.costCode);
       return {
-        Group: grp?.name || '',
+        Group: groupPathOf(it.groupId),
         Item: it.name || '',
         Type: it.type || '',
         Description: it.description || '',
@@ -3598,6 +3615,11 @@ export default function EstimateDetail() {
         'Cost Code': code ? `${code.code} - ${code.title}` : '',
         Allowance: it.allowance || 'None',
         Notes: it.notes || '',
+        // Sub-items used to export as ordinary rows, so re-importing promoted
+        // every one of them to a line of its own. The flag plus the row order
+        // below is the whole encoding: a sub-item belongs to the nearest
+        // preceding row without it.
+        'Sub-item': it.parentItemId ? 'Yes' : '',
       };
     };
     // Parent items in order, each followed by its sub-items.

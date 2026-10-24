@@ -8,6 +8,7 @@
 import {
   ESTIMATE_EXPORT_HEADERS,
   ESTIMATE_IMPORT_EXAMPLE_ROW,
+  ESTIMATE_IMPORT_EXAMPLE_SUB_ROW,
   type EstimateExportHeader,
 } from "@shared/import";
 
@@ -54,5 +55,8 @@ export async function downloadBlankImportTemplate(
     fileName: "Morada_Estimate_Import_Template.xlsx",
   },
 ): Promise<void> {
-  await downloadEstimateWorkbook([{ ...ESTIMATE_IMPORT_EXAMPLE_ROW }], opts);
+  await downloadEstimateWorkbook(
+    [{ ...ESTIMATE_IMPORT_EXAMPLE_ROW }, { ...ESTIMATE_IMPORT_EXAMPLE_SUB_ROW }],
+    opts,
+  );
 }

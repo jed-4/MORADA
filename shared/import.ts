@@ -268,7 +268,20 @@ export const importEstimateItemSchema = z.object({
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
   costCode: z.string().optional(),
-  group: z.string().optional(), // Group name to match against existing groups
+  // A section PATH, not a bare name: "Kitchen > Joinery" is the Joinery
+  // subsection of Kitchen. A single segment is an ordinary top-level section,
+  // so every sheet written before nesting existed still reads correctly.
+  group: z.string().optional(),
+  /**
+   * This line hangs under the line above it.
+   *
+   * A sub-item is identified by POSITION, not by naming its parent: it belongs
+   * to the nearest preceding row that is not itself a sub-item. That is how
+   * the export already orders them, it is how the sheet reads to a human, and
+   * it is the only encoding that stays unambiguous when two lines in a section
+   * share a name.
+   */
+  isSubItem: z.boolean().default(false),
   status: z.string().default("incomplete"),
   proposalVisible: z.boolean().default(true),
   shownAs: z.string().optional(),
@@ -384,6 +397,11 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "status": "status",
   
   // Proposal visibility variations
+  "sub-item": "isSubItem",
+  "sub item": "isSubItem",
+  "subitem": "isSubItem",
+  "sub": "isSubItem",
+
   "proposal visible": "proposalVisible",
   "proposal": "proposalVisible",
   "visible in proposal": "proposalVisible",
@@ -1049,20 +1067,22 @@ export function parseImportRow(
           } else {
             data[fieldKey] = rawValue;
           }
-        } else if (fieldKey === "proposalVisible") {
-          // Parse boolean values from various formats
+        } else if (fieldKey === "proposalVisible" || fieldKey === "isSubItem") {
+          // Parse boolean values from various formats. Left undefined when the
+          // cell is blank so each field's own Zod default applies — true for
+          // proposalVisible, false for isSubItem.
           if (value === undefined || value === null || value === "") {
-            // Leave undefined so Zod default (true) is used
             data[fieldKey] = undefined;
           } else if (typeof value === "boolean") {
             data[fieldKey] = value;
           } else if (typeof value === "string") {
             const normalized = value.toLowerCase().trim();
-            data[fieldKey] = normalized === "true" || normalized === "yes" || normalized === "1" || normalized === "shown";
+            data[fieldKey] = normalized === "true" || normalized === "yes" || normalized === "y"
+              || normalized === "1" || normalized === "x" || normalized === "shown";
           } else if (typeof value === "number") {
             data[fieldKey] = value === 1;
           } else {
-            data[fieldKey] = undefined; // Leave undefined so Zod default (true) is used
+            data[fieldKey] = undefined; // leave the field's Zod default in place
           }
         } else {
           data[fieldKey] = value || undefined;
@@ -1377,6 +1397,63 @@ export function parseFullEstimateImport(
 // exported files auto-detect with no manual column mapping. `Amount` is
 // deliberately absent: it is computed from Quantity x Unit Cost, and a column
 // the importer cannot take back would silently drift on a round trip.
+/**
+ * What separates the levels of a section path in the Group column.
+ *
+ * Spelled with spaces because that is how it is read aloud and how a builder
+ * types it. Parsing is tolerant of the spaces being absent.
+ *
+ * A section whose NAME contains ">" cannot round-trip unambiguously. There is
+ * no escaping: a path is split on the character, so such a name would come
+ * back as two sections. Rare enough to document rather than encode, but it is
+ * the one shape this format cannot carry.
+ */
+export const GROUP_PATH_SEPARATOR = " > ";
+
+/** ["Kitchen", "Joinery"] -> "Kitchen > Joinery". Blank segments are dropped. */
+export function formatGroupPath(segments: Array<string | null | undefined>): string {
+  return segments
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(GROUP_PATH_SEPARATOR);
+}
+
+/**
+ * "Kitchen > Joinery" -> ["Kitchen", "Joinery"].
+ *
+ * Tolerant on the way in: any spacing around the separator, and empty segments
+ * from a stray or doubled ">" are dropped rather than creating a section with
+ * no name.
+ */
+export function parseGroupPath(value: string | null | undefined): string[] {
+  if (typeof value !== "string") return [];
+  return value
+    .split(">")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Which rows hang under which, from the sheet's sub-item flags alone.
+ *
+ * Returns child row index -> parent row index. A row is a sub-item of the
+ * nearest preceding row that is NOT a sub-item, so two sub-items in a row are
+ * siblings under the same parent rather than a chain — which matches the data
+ * model, where sub-items are exactly one level deep.
+ *
+ * A leading sub-item, with nothing before it to hang under, is left out: the
+ * caller imports it as an ordinary line rather than dropping the row.
+ */
+export function linkSubItemRows(flags: boolean[]): Map<number, number> {
+  const parentOf = new Map<number, number>();
+  let lastParent = -1;
+  flags.forEach((isSub, index) => {
+    if (isSub && lastParent >= 0) parentOf.set(index, lastParent);
+    else lastParent = index;
+  });
+  return parentOf;
+}
+
 export const ESTIMATE_EXPORT_HEADERS = [
   'Group',
   'Item',
@@ -1390,13 +1467,20 @@ export const ESTIMATE_EXPORT_HEADERS = [
   'Cost Code',
   'Allowance',
   'Notes',
+  'Sub-item',
 ] as const;
 
 export type EstimateExportHeader = (typeof ESTIMATE_EXPORT_HEADERS)[number];
 
-/** The single demo row shipped in the blank "import template" download. */
+/**
+ * The demo rows shipped in the blank "import template" download.
+ *
+ * Two of them, because the two conventions a builder cannot guess are both
+ * shown by example and by nothing else: `Kitchen > Joinery` nests a section,
+ * and `Sub-item: Yes` hangs a line under the one above it.
+ */
 export const ESTIMATE_IMPORT_EXAMPLE_ROW: Record<EstimateExportHeader, string | number> = {
-  Group: 'Kitchen',
+  Group: 'Kitchen > Joinery',
   Item: 'Example line item',
   Type: 'Material',
   Description: '',
@@ -1408,4 +1492,14 @@ export const ESTIMATE_IMPORT_EXAMPLE_ROW: Record<EstimateExportHeader, string | 
   'Cost Code': '',
   Allowance: 'None',
   Notes: '',
+  'Sub-item': '',
+};
+
+/** Shown under the row above it — the only place the convention is spelled out. */
+export const ESTIMATE_IMPORT_EXAMPLE_SUB_ROW: Record<EstimateExportHeader, string | number> = {
+  ...ESTIMATE_IMPORT_EXAMPLE_ROW,
+  Item: 'Example sub-item, shown under the line above',
+  Quantity: 2,
+  'Unit Cost': 25,
+  'Sub-item': 'Yes',
 };

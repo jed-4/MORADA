@@ -82,6 +82,7 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   notes: "Notes",
   costCode: "Cost Code",
   group: "Group",
+  isSubItem: "Sub-item",
   status: "Status",
   proposalVisible: "Proposal Visible",
   shownAs: "Shown As",
