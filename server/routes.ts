@@ -2203,6 +2203,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
+    // Resend delivery webhook — same reason. Without this every delivered /
+    // bounced event 401'd here and email_deliveries rows never left "sent".
+    // The handler authorises by Svix signature, not session.
+    if (path === '/webhooks/resend') {
+      return next();
+    }
+
     // The company logo. Rendered by a homeowner's mail client, which has no
     // session and never will. Narrow on purpose — this matches ONE resource
     // per company, and the route it reaches takes the object path from the

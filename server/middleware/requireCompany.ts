@@ -41,7 +41,7 @@ function isPreCompanyPath(method: string, path: string, req: Request): boolean {
 
   // Token-gated and machine callers — no session, nothing to scope.
   if (path.startsWith("/portal/")) return true;
-  if (path === "/stripe/webhook" || path === "/xero/webhook") return true;
+  if (path === "/stripe/webhook" || path === "/xero/webhook" || path === "/webhooks/resend") return true;
   if (/^\/invitations\/by-token\/[^/]+$/.test(path)) return true;
   if (/^\/invitations\/[^/]+\/accept$/.test(path)) return true;
   if (/^\/proposals\/[^/]+\/(client-view|view|acceptances)$/.test(path)) return true;
