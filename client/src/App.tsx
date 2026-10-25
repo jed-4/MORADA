@@ -72,6 +72,8 @@ const RfiTemplateDetail = lazy(() => import("@/pages/RfiTemplateDetail"));
 const ChecklistTemplates = lazy(() => import("@/pages/ChecklistTemplates"));
 const NoteTemplates = lazy(() => import("@/pages/NoteTemplates"));
 const TaskTemplates = lazy(() => import("@/pages/TaskTemplates"));
+const TakeoffTemplates = lazy(() => import("@/pages/TakeoffTemplates"));
+const TakeoffTemplateDetail = lazy(() => import("@/pages/TakeoffTemplateDetail"));
 const ChecklistTemplateDetail = lazy(() => import("@/pages/ChecklistTemplateDetail"));
 const CostCodes = lazy(() => import("@/pages/CostCodes"));
 const Contacts = lazy(() => import("@/pages/Contacts"));
@@ -356,6 +358,8 @@ function Router() {
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/task-templates" component={TaskTemplates} />
+      <Route path="/takeoff-templates" component={TakeoffTemplates} />
+      <Route path="/takeoff-templates/:id" component={TakeoffTemplateDetail} />
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
       <Route path="/field-settings" component={FieldSettings} />

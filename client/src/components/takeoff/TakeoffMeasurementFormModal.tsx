@@ -47,19 +47,19 @@ interface Props {
   onSubmit: (data: MeasurementFormData) => void;
 }
 
-const COLOR_SWATCHES = [
+export const COLOR_SWATCHES = [
   "#A890D4", "#70CAD0", "#F0B964", "#DA988A", "#82C8A2",
   "#E27D9B", "#5FA5DC", "#C7A45F", "#7A8FB1", "#3F3F3F",
 ];
 
-const TYPE_OPTIONS: Array<{ value: MeasurementType; label: string; hint: string }> = [
+export const TYPE_OPTIONS: Array<{ value: MeasurementType; label: string; hint: string }> = [
   { value: "area", label: "Area", hint: "Polygon area on plan" },
   { value: "linear", label: "Linear", hint: "Polyline length, or a wall height" },
   { value: "count", label: "Count", hint: "Click to place items" },
   { value: "manual", label: "Manual", hint: "Type quantity manually" },
 ];
 
-const UNIT_OPTIONS: Record<MeasurementType, string[]> = {
+export const UNIT_OPTIONS: Record<MeasurementType, string[]> = {
   area: ["m²", "ft²"],
   linear: ["lm", "m", "m²", "ft"],
   count: ["each", "pcs"],

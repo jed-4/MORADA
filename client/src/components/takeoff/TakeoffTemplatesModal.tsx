@@ -61,8 +61,12 @@ export function SaveTemplateModal({ open, onOpenChange, measurements, categories
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const { data: settings } = useQuery<any>({ queryKey: ["/api/company-settings"] });
-  const existing: Template[] = (settings?.takeoffMeasurementTemplates as Template[]) ?? [];
+  // Read through the take-off templates route, which is the same blob the
+  // management page uses. Reading company-settings here instead put the two
+  // surfaces on different cache keys, so a template edited on one looked stale
+  // on the other until a reload.
+  const { data: existingData } = useQuery<Template[]>({ queryKey: ["/api/takeoff-templates"] });
+  const existing: Template[] = existingData ?? [];
 
   useEffect(() => {
     if (open) {
@@ -90,16 +94,13 @@ export function SaveTemplateModal({ open, onOpenChange, measurements, categories
           lineSize: m.lineSize,
           unit: m.unit,
         }));
-      const newTemplate: Template = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        items,
-      };
-      const next = [...existing, newTemplate];
-      return await apiRequest("/api/company-settings", "PATCH", { takeoffMeasurementTemplates: next });
+      // The server appends under its own read of the array. Building the next
+      // array HERE meant anything saved by someone else since this dialog
+      // opened was overwritten on save.
+      return await apiRequest("/api/takeoff-templates", "POST", { name: name.trim(), items });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff-templates"] });
       toast({ title: "Template saved" });
       onOpenChange(false);
     },
@@ -188,8 +189,12 @@ interface LoadProps {
 export function LoadTemplateModal({ open, onOpenChange, projectId, plans, categories, targetPageNumber = 1, onSuccess }: LoadProps) {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data: settings } = useQuery<any>({ queryKey: ["/api/company-settings"] });
-  const existing: Template[] = (settings?.takeoffMeasurementTemplates as Template[]) ?? [];
+  // Read through the take-off templates route, which is the same blob the
+  // management page uses. Reading company-settings here instead put the two
+  // surfaces on different cache keys, so a template edited on one looked stale
+  // on the other until a reload.
+  const { data: existingData } = useQuery<Template[]>({ queryKey: ["/api/takeoff-templates"] });
+  const existing: Template[] = existingData ?? [];
   const selected = existing.find((t) => t.id === selectedId);
 
   const apply = useMutation({
@@ -263,12 +268,10 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const next = existing.filter((t) => t.id !== id);
-      return await apiRequest("/api/company-settings", "PATCH", { takeoffMeasurementTemplates: next });
-    },
+    mutationFn: async (id: string) =>
+      await apiRequest(`/api/takeoff-templates/${id}`, "DELETE"),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff-templates"] });
       setSelectedId(null);
     },
   });
