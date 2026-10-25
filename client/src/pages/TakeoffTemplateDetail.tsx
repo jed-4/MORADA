@@ -25,6 +25,7 @@ import {
   type MeasurementType,
 } from "@/components/takeoff/TakeoffMeasurementFormModal";
 import type { TakeoffTemplate, TakeoffTemplateItem } from "@shared/takeoffTemplates";
+import { useResizableColumns, type ResizableColumn } from "@/components/useResizableColumns";
 
 /**
  * Edit one take-off template's items.
@@ -114,6 +115,43 @@ function withStoredValue<T extends { value: string; label: string }>(
 
 /** Stands in for the empty unit a "manual" item may legitimately have. */
 const BLANK_UNIT = "__none__";
+
+/**
+ * The editor's columns.
+ *
+ * Through `useResizableColumns` — the shared primitive the template grid, the
+ * labour sheet, the price list and the allowance tables all use. Widths and
+ * order persist per namespace, so a builder arranges this once.
+ *
+ * Reordering only works because the row below MAPS over `cols`. A grid that
+ * lists its cells positionally in JSX keeps drawing them in source order while
+ * the headers move, which is why the primitive makes reorder opt-in.
+ */
+const COLUMNS: ResizableColumn[] = [
+  { key: "color", defaultWidth: 56, fixed: true },
+  { key: "name", defaultWidth: 240, flex: true },
+  { key: "category", defaultWidth: 150 },
+  { key: "measurementType", defaultWidth: 110 },
+  { key: "unit", defaultWidth: 90 },
+  { key: "heightMm", defaultWidth: 100 },
+  { key: "fillPattern", defaultWidth: 130 },
+  { key: "lineType", defaultWidth: 115 },
+  { key: "lineSize", defaultWidth: 85 },
+  { key: "wastePercent", defaultWidth: 85 },
+];
+
+const COLUMN_LABELS: Record<string, string> = {
+  color: "",
+  name: "Item",
+  category: "Category",
+  measurementType: "Measures",
+  unit: "Unit",
+  heightMm: "Height mm",
+  fillPattern: "Fill",
+  lineType: "Line",
+  lineSize: "Weight",
+  wastePercent: "Waste %",
+};
 
 function defaultUnitFor(type: string): string {
   if (type === "area") return "m²";
@@ -208,6 +246,189 @@ export default function TakeoffTemplateDetail() {
     });
   };
 
+  const { cols, gridTemplate, minWidth, startResize, headerDragProps, draggingKey, resetOrder } =
+    useResizableColumns("takeoff-template-items", COLUMNS, 40, { reorderable: true });
+
+  /** One cell. Keyed by column so the header's order drives the row's order. */
+  const renderCell = (key: string, item: TakeoffTemplateItem, index: number) => {
+    switch (key) {
+      case "color":
+        return (
+          <Select value={item.color} onValueChange={(color) => update(index, { color })}>
+            <SelectTrigger className="h-8 w-full" data-testid={`select-color-${index}`}>
+              <span
+                className="h-4 w-4 rounded-full border border-border"
+                style={{ backgroundColor: item.color }}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {COLOR_SWATCHES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  <span className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full border border-border" style={{ backgroundColor: c }} />
+                    {c}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "name":
+        return (
+          <Input
+            value={item.name}
+            onChange={(e) => update(index, { name: e.target.value })}
+            placeholder="Item name, e.g. Wall tiles"
+            className="h-8 w-full"
+            data-testid={`input-name-${index}`}
+          />
+        );
+
+      case "category":
+        // Free text, but offering what is already in use. A template is stored
+        // with category NAMES, not ids, so two spellings make two categories —
+        // and on apply, two real categories in the project.
+        return (
+          <Input
+            value={item.categoryName ?? ""}
+            onChange={(e) => update(index, { categoryName: e.target.value || null })}
+            placeholder="Category"
+            className="h-8 w-full"
+            list="takeoff-template-categories"
+            data-testid={`input-category-${index}`}
+          />
+        );
+
+      case "measurementType":
+        return (
+          <Select
+            value={item.measurementType}
+            onValueChange={(measurementType) => {
+              // The unit follows the type unless the current one still applies
+              // — changing Area to Count must not leave "m²".
+              const allowed = unitsFor(measurementType);
+              update(index, {
+                measurementType,
+                unit: allowed.includes(item.unit ?? "") ? item.unit : defaultUnitFor(measurementType),
+                // A wall height only means anything on a linear run.
+                heightMm: measurementType === "linear" ? item.heightMm ?? null : null,
+              });
+            }}
+          >
+            <SelectTrigger className="h-8 w-full" data-testid={`select-type-${index}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPE_OPTIONS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "unit":
+        return (
+          <Select
+            value={item.unit || BLANK_UNIT}
+            // A Radix Select cannot hold "" as a value — that means "no
+            // selection" — so the blank unit a manual item is allowed to have
+            // travels as a sentinel and is mapped back here.
+            onValueChange={(unit) => update(index, { unit: unit === BLANK_UNIT ? "" : unit })}
+          >
+            <SelectTrigger className="h-8 w-full" data-testid={`select-unit-${index}`}>
+              <SelectValue placeholder="Unit" />
+            </SelectTrigger>
+            <SelectContent>
+              {withStoredValue(
+                unitsFor(item.measurementType).map((u) => ({ value: u || BLANK_UNIT, label: u || "—" })),
+                item.unit || undefined,
+              ).map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "heightMm":
+        // Wall height turns a run into an area, so it only applies to linear.
+        // The cell stays present but empty, because the column is shared: a
+        // row that dropped out of the grid would take its alignment with it.
+        return item.measurementType === "linear" ? (
+          <Input
+            type="number"
+            value={item.heightMm ?? ""}
+            onChange={(e) =>
+              update(index, { heightMm: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            placeholder="Height mm"
+            className="h-8 w-full"
+            data-testid={`input-height-${index}`}
+          />
+        ) : null;
+
+      case "fillPattern":
+        return (
+          <Select value={item.fillPattern ?? "solid"} onValueChange={(fillPattern) => update(index, { fillPattern })}>
+            <SelectTrigger className="h-8 w-full" data-testid={`select-fill-${index}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {withStoredValue(FILL_PATTERN_OPTIONS, item.fillPattern).map((f) => (
+                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "lineType":
+        return (
+          <Select value={item.lineType ?? "solid"} onValueChange={(lineType) => update(index, { lineType })}>
+            <SelectTrigger className="h-8 w-full" data-testid={`select-linetype-${index}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {withStoredValue(LINE_TYPE_OPTIONS, item.lineType).map((l) => (
+                <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "lineSize":
+        return (
+          <Select value={String(item.lineSize ?? 2)} onValueChange={(v) => update(index, { lineSize: Number(v) })}>
+            <SelectTrigger className="h-8 w-full" data-testid={`select-linesize-${index}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {withStoredValue(
+                LINE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: `${n}px` })),
+                item.lineSize === undefined ? undefined : String(item.lineSize),
+              ).map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "wastePercent":
+        return (
+          <Input
+            type="number"
+            value={item.wastePercent}
+            onChange={(e) => update(index, { wastePercent: Number(e.target.value) || 0 })}
+            className="h-8 w-full"
+            title="Waste %"
+            data-testid={`input-waste-${index}`}
+          />
+        );
+
+      default:
+        return null;
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center" data-testid="loading-template">
@@ -265,6 +486,17 @@ export default function TakeoffTemplateDetail() {
               {allCollapsed ? "Expand all" : "Collapse all"}
             </Button>
           )}
+          {/* Column order persists, so there has to be a way back from an
+              arrangement you regret. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={resetOrder}
+            title="Put the columns back in their original order"
+            data-testid="button-reset-columns"
+          >
+            Reset columns
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -302,7 +534,7 @@ export default function TakeoffTemplateDetail() {
         ))}
       </datalist>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto min-h-0">
         {items.length === 0 ? (
           <EmptyState
             icon={Calculator}
@@ -316,7 +548,40 @@ export default function TakeoffTemplateDetail() {
             }}
           />
         ) : (
-          <div className="space-y-3">
+          <div style={{ minWidth: `${minWidth}px` }}>
+            {/* Column header — drag a label to reorder, drag its right edge to
+                resize. Sticky so it survives scrolling an 87-item template,
+                and inside the horizontal scroller so the labels stay over
+                their own columns. */}
+            <div
+              className="sticky top-0 z-20 grid items-center bg-muted/70 backdrop-blur border-b border-border px-0 h-8 text-data font-medium text-muted-foreground uppercase tracking-wide select-none"
+              style={{ gridTemplateColumns: gridTemplate }}
+            >
+              {cols.map((col) => (
+                <div
+                  key={col.key}
+                  className={`relative flex items-center h-8 px-2 truncate ${
+                    col.fixed ? "" : "cursor-grab"
+                  } ${draggingKey === col.key ? "opacity-40" : ""}`}
+                  title={col.fixed ? undefined : "Drag to move, drag the edge to resize"}
+                  {...headerDragProps(col.key)}
+                >
+                  <span className="truncate">{COLUMN_LABELS[col.key] ?? col.key}</span>
+                  {!col.fixed && (
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
+                      onMouseDown={(e) => startResize(col.key, e.clientX, col.width)}
+                      title="Drag to resize"
+                    >
+                      <div className="w-px h-full bg-border/0 group-hover/resize:bg-border transition-colors" />
+                    </div>
+                  )}
+                </div>
+              ))}
+              {/* Trailing delete column — no label, never moves. */}
+              <div />
+            </div>
+
             {groups.map((group) => {
               const isCollapsed = collapsed.has(group.name);
               const needsName = group.rows.some((r) => !r.item.name.trim());
@@ -324,7 +589,10 @@ export default function TakeoffTemplateDetail() {
                 <div key={group.name} data-testid={`group-${group.name}`}>
                   {/* The category band. With 87 items in a real template, a flat
                       list put a builder's Tiling items on five different screens. */}
-                  <div className="flex items-center gap-2 h-8 px-2 rounded-md bg-muted border-t border-border">
+                  <div
+                    className="sticky top-8 z-10 flex items-center gap-2 h-8 px-2 bg-muted border-y border-border"
+                    style={{ minWidth: `${minWidth}px` }}
+                  >
                     <Button
                       variant="ghost"
                       size="sm"
@@ -360,189 +628,39 @@ export default function TakeoffTemplateDetail() {
                     </Button>
                   </div>
 
-                  {!isCollapsed && (
-                    <div className="space-y-2 pt-2">
-                      {group.rows.map(({ item, index }) => (
-              <div
-                key={index}
-                className="rounded-lg border border-border bg-card p-2 flex flex-wrap items-center gap-2"
-                data-testid={`row-template-item-${index}`}
-              >
-                {/* Colour — the thing you recognise an item by on the plan. */}
-                <Select value={item.color} onValueChange={(color) => update(index, { color })}>
-                  <SelectTrigger className="w-[60px] h-8" data-testid={`select-color-${index}`}>
-                    <span
-                      className="h-4 w-4 rounded-full border border-border"
-                      style={{ backgroundColor: item.color }}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COLOR_SWATCHES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="h-3 w-3 rounded-full border border-border"
-                            style={{ backgroundColor: c }}
-                          />
-                          {c}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Input
-                  value={item.name}
-                  onChange={(e) => update(index, { name: e.target.value })}
-                  placeholder="Item name, e.g. Wall tiles"
-                  className="h-8 flex-1 min-w-[160px]"
-                  data-testid={`input-name-${index}`}
-                />
-
-                {/* Free text, but offering what is already in use. A template
-                    is stored with category NAMES, not ids, so two spellings
-                    make two categories — and on apply, two real categories in
-                    the project. The datalist makes the existing one the easy
-                    choice without blocking a new one. */}
-                <Input
-                  value={item.categoryName ?? ""}
-                  onChange={(e) => update(index, { categoryName: e.target.value || null })}
-                  placeholder="Category"
-                  className="h-8 w-[130px]"
-                  list="takeoff-template-categories"
-                  data-testid={`input-category-${index}`}
-                />
-
-                <Select
-                  value={item.measurementType}
-                  onValueChange={(measurementType) => {
-                    // The unit follows the type unless the current one still
-                    // applies — changing Area to Count must not leave "m²".
-                    const allowed = unitsFor(measurementType);
-                    update(index, {
-                      measurementType,
-                      unit: allowed.includes(item.unit ?? "") ? item.unit : defaultUnitFor(measurementType),
-                      // A wall height only means anything on a linear run.
-                      heightMm: measurementType === "linear" ? item.heightMm ?? null : null,
-                    });
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-[110px]" data-testid={`select-type-${index}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TYPE_OPTIONS.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={item.unit || BLANK_UNIT}
-                  // A Radix Select cannot hold "" as a value — that means "no
-                  // selection" — so the blank unit a manual item is allowed to
-                  // have travels as a sentinel and is mapped back here. Without
-                  // this it would save a literal space as the unit.
-                  onValueChange={(unit) => update(index, { unit: unit === BLANK_UNIT ? "" : unit })}
-                >
-                  <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${index}`}>
-                    <SelectValue placeholder="Unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {withStoredValue(
-                      unitsFor(item.measurementType).map((u) => ({ value: u || BLANK_UNIT, label: u || "—" })),
-                      item.unit || undefined,
-                    ).map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Wall height turns a run into an area, so it only shows for linear. */}
-                {item.measurementType === "linear" && (
-                  <Input
-                    type="number"
-                    value={item.heightMm ?? ""}
-                    onChange={(e) =>
-                      update(index, { heightMm: e.target.value === "" ? null : Number(e.target.value) })
-                    }
-                    placeholder="Height mm"
-                    className="h-8 w-[100px]"
-                    data-testid={`input-height-${index}`}
-                  />
-                )}
-
-                <Select
-                  value={item.fillPattern ?? "solid"}
-                  onValueChange={(fillPattern) => update(index, { fillPattern })}
-                >
-                  <SelectTrigger className="h-8 w-[120px]" data-testid={`select-fill-${index}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {withStoredValue(FILL_PATTERN_OPTIONS, item.fillPattern).map((f) => (
-                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={item.lineType ?? "solid"}
-                  onValueChange={(lineType) => update(index, { lineType })}
-                >
-                  <SelectTrigger className="h-8 w-[110px]" data-testid={`select-linetype-${index}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {withStoredValue(LINE_TYPE_OPTIONS, item.lineType).map((l) => (
-                      <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={String(item.lineSize ?? 2)}
-                  onValueChange={(v) => update(index, { lineSize: Number(v) })}
-                >
-                  <SelectTrigger className="h-8 w-[80px]" data-testid={`select-linesize-${index}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {withStoredValue(
-                      LINE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: `${n}px` })),
-                      item.lineSize === undefined ? undefined : String(item.lineSize),
-                    ).map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Input
-                  type="number"
-                  value={item.wastePercent}
-                  onChange={(e) => update(index, { wastePercent: Number(e.target.value) || 0 })}
-                  className="h-8 w-[80px]"
-                  title="Waste %"
-                  data-testid={`input-waste-${index}`}
-                />
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    setDirty(true);
-                    setItems((prev) => prev.filter((_, i) => i !== index));
-                  }}
-                  aria-label={`Remove ${item.name || "item"}`}
-                  data-testid={`button-remove-${index}`}
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground" />
-                </Button>
+                  {!isCollapsed &&
+                    group.rows.map(({ item, index }) => (
+                      <div
+                        key={index}
+                        className="grid items-center border-b border-border/60 hover:bg-muted/30"
+                        style={{ gridTemplateColumns: gridTemplate, minWidth: `${minWidth}px` }}
+                        data-testid={`row-template-item-${index}`}
+                      >
+                        {/* Cells are MAPPED over cols, never listed in source
+                            order — that is the whole requirement for the header
+                            reorder to move the data with the label. */}
+                        {cols.map((col) => (
+                          <div key={col.key} className="px-1 py-1 min-w-0">
+                            {renderCell(col.key, item, index)}
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setDirty(true);
+                              setItems((prev) => prev.filter((_, i) => i !== index));
+                            }}
+                            aria-label={`Remove ${item.name || "item"}`}
+                            data-testid={`button-remove-${index}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </div>
                       </div>
-                      ))}
-                    </div>
-                  )}
+                    ))}
                 </div>
               );
             })}
