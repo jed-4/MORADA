@@ -90,4 +90,51 @@ check("an empty template groups to nothing", () => {
   assert.deepEqual(groupItems([]), []);
 });
 
+// --- reordering categories --------------------------------------------------
+
+/** What moveCategory does to the array: rebuild it block by block. */
+const moveCategory = (items: TakeoffTemplateItem[], from: string, to: string) => {
+  const blocks = groupItems(items);
+  const fromAt = blocks.findIndex((g) => g.name === from);
+  const toAt = blocks.findIndex((g) => g.name === to);
+  if (fromAt === -1 || toAt === -1 || from === to) return items;
+  const reordered = blocks.slice();
+  reordered.splice(toAt, 0, reordered.splice(fromAt, 1)[0]);
+  return reordered.flatMap((g) => g.rows.map((r) => r.item));
+};
+
+check("moving a category takes its items with it", () => {
+  const moved = moveCategory(scattered, "Fix Out", "Tiling");
+  assert.deepEqual(groupItems(moved).map((g) => g.name),
+    ["Fix Out", "Tiling", "Bath 1", "Flooring", UNCATEGORISED]);
+  // Doors and Skirting travel together and keep their relative order.
+  assert.deepEqual(moved.slice(0, 2).map((i) => i.name), ["Doors", "Skirting"]);
+});
+
+check("reordering never loses or duplicates an item", () => {
+  const before = scattered.map((i) => i.name).sort();
+  for (const [from, to] of [["Flooring", "Tiling"], [UNCATEGORISED, "Bath 1"], ["Tiling", "Flooring"]]) {
+    const after = moveCategory(scattered, from, to);
+    assert.deepEqual(after.map((i) => i.name).sort(), before, `${from} → ${to} changed the contents`);
+  }
+});
+
+check("the array order is what the take-off is numbered from", () => {
+  // The apply path walks this array and numbers categories by first
+  // appearance and measurements by position, so array order IS the order a
+  // builder sees once the template is loaded into a job.
+  const moved = moveCategory(scattered, "Flooring", "Tiling");
+  const seen: string[] = [];
+  for (const item of moved) {
+    const name = item.categoryName?.trim() || UNCATEGORISED;
+    if (!seen.includes(name)) seen.push(name);
+  }
+  assert.deepEqual(seen, groupItems(moved).map((g) => g.name),
+    "first-appearance order must match the groups shown in the editor");
+});
+
+check("moving a category onto itself changes nothing", () => {
+  assert.deepEqual(moveCategory(scattered, "Tiling", "Tiling"), scattered);
+});
+
 console.log(`takeoff template groups: ${passed} passed, 0 failed`);
