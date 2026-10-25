@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Plus, Trash2, Loader2, Calculator } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Loader2, Calculator, ChevronDown, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -41,12 +41,43 @@ import type { TakeoffTemplate, TakeoffTemplateItem } from "@shared/takeoffTempla
  */
 
 /** A sensible starting point, matching the measurement defaults in the schema. */
-function blankItem(): TakeoffTemplateItem {
+/** Items with no category of their own still need somewhere to live. */
+export const UNCATEGORISED = "Uncategorised";
+
+/**
+ * The items, gathered under their category, each keeping its REAL index.
+ *
+ * Grouping is a view: the items are stored as one flat array, so every row has
+ * to carry the index it actually sits at. Rendering a group's items by their
+ * position WITHIN the group would make an edit or a delete land on whichever
+ * item happened to hold that index in the whole array — the wrong one, almost
+ * always, and silently.
+ *
+ * Group order follows first appearance rather than the alphabet, so the order
+ * a builder arranged their template in survives.
+ */
+export function groupItems(items: TakeoffTemplateItem[]) {
+  const groups: Array<{ name: string; rows: Array<{ item: TakeoffTemplateItem; index: number }> }> = [];
+  const byName = new Map<string, number>();
+  items.forEach((item, index) => {
+    const name = item.categoryName?.trim() || UNCATEGORISED;
+    let at = byName.get(name);
+    if (at === undefined) {
+      at = groups.length;
+      byName.set(name, at);
+      groups.push({ name, rows: [] });
+    }
+    groups[at].rows.push({ item, index });
+  });
+  return groups;
+}
+
+function blankItem(categoryName: string | null = null): TakeoffTemplateItem {
   return {
     name: "",
     measurementType: "area",
     color: COLOR_SWATCHES[0],
-    categoryName: null,
+    categoryName,
     multiplier: 1,
     wastePercent: 0,
     heightMm: null,
@@ -136,6 +167,47 @@ export default function TakeoffTemplateDetail() {
     [items],
   );
 
+  const groups = useMemo(() => groupItems(items), [items]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const allCollapsed = groups.length > 0 && groups.every((g) => collapsed.has(g.name));
+
+  /** Existing category names, offered as you type rather than imposed. */
+  const categoryNames = useMemo(
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.categoryName?.trim()).filter((n): n is string => !!n)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
+
+  const toggleGroup = (name: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  /** Add an item at the END of its category, so it lands where you are looking. */
+  const addItem = (categoryName: string | null) => {
+    setDirty(true);
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.delete(categoryName?.trim() || UNCATEGORISED);
+      return next;
+    });
+    setItems((prev) => {
+      const key = categoryName?.trim() || UNCATEGORISED;
+      let lastInGroup = -1;
+      prev.forEach((item, i) => {
+        if ((item.categoryName?.trim() || UNCATEGORISED) === key) lastInGroup = i;
+      });
+      const fresh = blankItem(categoryName);
+      if (lastInGroup === -1) return [...prev, fresh];
+      return [...prev.slice(0, lastInGroup + 1), fresh, ...prev.slice(lastInGroup + 1)];
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center" data-testid="loading-template">
@@ -179,13 +251,24 @@ export default function TakeoffTemplateDetail() {
           {items.length} {items.length === 1 ? "item" : "items"}
         </Badge>
         <div className="ml-auto flex items-center gap-2">
+          {/* 87 items across fifteen categories is a lot of scrolling before
+              you find the one you came for. */}
+          {groups.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setCollapsed(allCollapsed ? new Set() : new Set(groups.map((g) => g.name)))
+              }
+              data-testid="button-toggle-all-groups"
+            >
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setDirty(true);
-              setItems((prev) => [...prev, blankItem()]);
-            }}
+            onClick={() => addItem(null)}
             data-testid="button-add-item"
           >
             <Plus className="h-4 w-4 mr-1" />
@@ -212,6 +295,13 @@ export default function TakeoffTemplateDetail() {
         </div>
       )}
 
+      {/* One list for every row's category field. */}
+      <datalist id="takeoff-template-categories">
+        {categoryNames.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+
       <div className="flex-1 overflow-auto p-3">
         {items.length === 0 ? (
           <EmptyState
@@ -221,16 +311,58 @@ export default function TakeoffTemplateDetail() {
             action={{
               label: "Add Item",
               icon: Plus,
-              onClick: () => {
-                setDirty(true);
-                setItems([blankItem()]);
-              },
+              onClick: () => addItem(null),
               "data-testid": "button-add-first-item",
             }}
           />
         ) : (
-          <div className="space-y-2">
-            {items.map((item, index) => (
+          <div className="space-y-3">
+            {groups.map((group) => {
+              const isCollapsed = collapsed.has(group.name);
+              const needsName = group.rows.some((r) => !r.item.name.trim());
+              return (
+                <div key={group.name} data-testid={`group-${group.name}`}>
+                  {/* The category band. With 87 items in a real template, a flat
+                      list put a builder's Tiling items on five different screens. */}
+                  <div className="flex items-center gap-2 h-8 px-2 rounded-md bg-muted border-t border-border">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 flex-shrink-0"
+                      onClick={() => toggleGroup(group.name)}
+                      aria-label={isCollapsed ? `Expand ${group.name}` : `Collapse ${group.name}`}
+                      data-testid={`button-toggle-group-${group.name}`}
+                    >
+                      {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                    <span
+                      className={`text-[13px] font-semibold ${group.name === UNCATEGORISED ? "text-muted-foreground" : ""}`}
+                    >
+                      {group.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {group.rows.length}
+                    </span>
+                    {/* Only worth saying while the group is shut — otherwise the
+                        row's own empty name field is right there. */}
+                    {needsName && isCollapsed && (
+                      <span className="text-xs text-destructive">needs a name</span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto h-6 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => addItem(group.name === UNCATEGORISED ? null : group.name)}
+                      data-testid={`button-add-to-${group.name}`}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+
+                  {!isCollapsed && (
+                    <div className="space-y-2 pt-2">
+                      {group.rows.map(({ item, index }) => (
               <div
                 key={index}
                 className="rounded-lg border border-border bg-card p-2 flex flex-wrap items-center gap-2"
@@ -267,11 +399,17 @@ export default function TakeoffTemplateDetail() {
                   data-testid={`input-name-${index}`}
                 />
 
+                {/* Free text, but offering what is already in use. A template
+                    is stored with category NAMES, not ids, so two spellings
+                    make two categories — and on apply, two real categories in
+                    the project. The datalist makes the existing one the easy
+                    choice without blocking a new one. */}
                 <Input
                   value={item.categoryName ?? ""}
                   onChange={(e) => update(index, { categoryName: e.target.value || null })}
                   placeholder="Category"
                   className="h-8 w-[130px]"
+                  list="takeoff-template-categories"
                   data-testid={`input-category-${index}`}
                 />
 
@@ -401,8 +539,13 @@ export default function TakeoffTemplateDetail() {
                 >
                   <Trash2 className="h-4 w-4 text-muted-foreground" />
                 </Button>
-              </div>
-            ))}
+                      </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
