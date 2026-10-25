@@ -70,7 +70,7 @@ const templateTypes = [
     icon: Calculator,
     url: "/takeoff-templates",
     color: "text-teal",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "estimates",

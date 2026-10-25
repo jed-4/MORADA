@@ -258,6 +258,11 @@ import {
   parseGroupPath,
   readTimesheetBreakFromRow,
 } from "@shared/import";
+import {
+  createTakeoffTemplateSchema,
+  readTakeoffTemplates,
+  updateTakeoffTemplateSchema,
+} from "@shared/takeoffTemplates";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
 import {
   resolveFormulaOnWrite, syncItemRefs, repriceLinesForMeasurement, getMeasurementUsage,
@@ -28792,6 +28797,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(rest);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company settings" });
+    }
+  });
+
+  /* ── Take-off templates ───────────────────────────────────────────────────
+   *
+   * A company-wide set of measurement items, reusable across projects. Stored
+   * as a JSON array on company_settings, which is where the in-take-off
+   * Save/Load flow has always kept them — these routes are a REST face over
+   * that array so the management page can use the same list primitives as
+   * every other template type.
+   *
+   * Each write re-reads the array and writes it back here, on the server.
+   * The take-off modal does that round trip in the BROWSER: it reads the
+   * settings when the dialog opens and PATCHes the whole array on save, so
+   * anything saved by someone else in between is overwritten. Doing it here
+   * narrows that window from minutes to milliseconds. It does not close it —
+   * two simultaneous writes can still collide — which is the cost of a JSON
+   * blob rather than rows, and is why this would want its own table if it
+   * grows past a handful of sets.
+   *
+   * Writes are admin-only, matching PATCH /api/company-settings, which is the
+   * gate the existing Save-as-template flow already sits behind.
+   */
+  const loadTakeoffTemplates = async (companyId: string) => {
+    const settings = await storage.getCompanySettings(companyId);
+    return readTakeoffTemplates((settings as any)?.takeoffMeasurementTemplates);
+  };
+  const storeTakeoffTemplates = async (companyId: string, next: unknown[]) => {
+    await storage.updateCompanySettings({ takeoffMeasurementTemplates: next } as any, companyId);
+  };
+
+  app.get("/api/takeoff-templates", requireAuth, async (req, res) => {
+    try {
+      res.json(await loadTakeoffTemplates((req.user as any)?.companyId));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch take-off templates" });
+    }
+  });
+
+  app.post("/api/takeoff-templates", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = createTakeoffTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const companyId = (req.user as any)?.companyId;
+      const existing = await loadTakeoffTemplates(companyId);
+      const created = { id: randomUUID(), ...parsed.data };
+      await storeTakeoffTemplates(companyId, [...existing, created]);
+      res.status(201).json(created);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create take-off template" });
+    }
+  });
+
+  app.patch("/api/takeoff-templates/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = updateTakeoffTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const companyId = (req.user as any)?.companyId;
+      const existing = await loadTakeoffTemplates(companyId);
+      const index = existing.findIndex((t) => t.id === req.params.id);
+      if (index === -1) {
+        return res.status(404).json({ error: "Take-off template not found" });
+      }
+      const updated = { ...existing[index], ...parsed.data };
+      const next = existing.slice();
+      next[index] = updated;
+      await storeTakeoffTemplates(companyId, next);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update take-off template" });
+    }
+  });
+
+  app.delete("/api/takeoff-templates/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      const existing = await loadTakeoffTemplates(companyId);
+      const next = existing.filter((t) => t.id !== req.params.id);
+      if (next.length === existing.length) {
+        return res.status(404).json({ error: "Take-off template not found" });
+      }
+      await storeTakeoffTemplates(companyId, next);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete take-off template" });
     }
   });
 
