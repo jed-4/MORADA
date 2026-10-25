@@ -34,6 +34,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -138,6 +139,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  // Permanently deletes the signed-in person's account (App Store guideline
+  // 5.1.1(v)); see server/accountDeletion.ts for what is wiped and what stays.
+  // Throws with the server's message (e.g. the only Owner must hand over
+  // first) so the caller can show it. The server has already dropped this
+  // device's push tokens and every session, so only local state is left.
+  const deleteAccount = async () => {
+    await apiRequest('/api/auth/delete-account', 'POST', { confirm: true });
+    stopSyncService();
+    disconnectSocket();
+    await clearSession();
+    await clearCachedSelections();
+    setUser(null);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -147,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         loginWithSession,
         logout,
+        deleteAccount,
         refreshUser,
       }}
     >

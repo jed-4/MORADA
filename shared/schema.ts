@@ -430,7 +430,7 @@ export const userArchiveEvents = pgTable("user_archive_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  action: text("action").notNull(), // "archived" | "restored"
+  action: text("action").notNull(), // "archived" | "restored" | "deleted" (self-service, server/accountDeletion.ts)
   byUserId: varchar("by_user_id"),
   byName: text("by_name"),
   reassignedToId: varchar("reassigned_to_id"),
@@ -439,6 +439,20 @@ export const userArchiveEvents = pgTable("user_archive_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type UserArchiveEvent = typeof userArchiveEvents.$inferSelect;
+
+/**
+ * Sign in with Apple (migration 0112): Apple user id ("sub") → Morada user.
+ * Its own table so a database without it loses only Apple sign-in, never a
+ * users read. Read and written by server/appleAuth.ts.
+ */
+export const userAppleIdentities = pgTable("user_apple_identities", {
+  appleSub: varchar("apple_sub").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("user_apple_identities_user_idx").on(table.userId),
+]);
 
 export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
   id: true,
