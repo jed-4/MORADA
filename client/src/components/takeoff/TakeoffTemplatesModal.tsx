@@ -211,6 +211,22 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
       // Pre-fetch existing categories to match by name.
       const existingCats = new Map<string, string>();
       categories.forEach((c) => existingCats.set(c.name.toLowerCase(), c.id));
+
+      /* ORDER. Both takeoff_categories and takeoff_measurements have an
+         `order` column that this path never set, so everything arrived at 0
+         and the take-off fell back to createdAt — the insert order, which is
+         near enough right but is not the template's order, and ties whenever
+         two rows share a timestamp.
+
+         The template's array IS the order: the management page arranges
+         categories and items by moving them within it. So both are numbered
+         from that, and the categories a template brings start AFTER whatever
+         the project already has rather than renumbering it — applying a
+         template must not rearrange categories the builder already made. */
+      let nextCategoryOrder =
+        categories.reduce((max, c) => Math.max(max, (c as { order?: number }).order ?? 0), -1) + 1;
+      let nextMeasurementOrder = 0;
+
       for (const item of selected.items) {
         let categoryId: string | null = null;
         if (item.categoryName) {
@@ -221,7 +237,7 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
             const cat = await apiRequest(
               `/api/projects/${projectId}/takeoff/categories`,
               "POST",
-              { name: item.categoryName },
+              { name: item.categoryName, order: nextCategoryOrder++ },
             );
             existingCats.set(key, cat.id);
             categoryId = cat.id;
@@ -230,6 +246,7 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
         await apiRequest(`/api/projects/${projectId}/takeoff/measurements`, "POST", {
           planId: targetPlanId,
           pageId: page.id,
+          order: nextMeasurementOrder++,
           categoryId,
           name: item.name,
           measurementType: item.measurementType,

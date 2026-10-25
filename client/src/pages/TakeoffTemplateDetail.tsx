@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -12,7 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Plus, Trash2, Loader2, Calculator, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Plus, Trash2, Loader2, Calculator, ChevronDown, ChevronRight,
+  ChevronsDownUp, ChevronsUpDown, Columns3, Search, GripVertical,
+} from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -205,7 +208,34 @@ export default function TakeoffTemplateDetail() {
     [items],
   );
 
-  const groups = useMemo(() => groupItems(items), [items]);
+  const [search, setSearch] = useState("");
+
+  /**
+   * Search filters the VIEW, never the array.
+   *
+   * Rows keep their true index through the filter, so an edit made while
+   * searching still lands on the right item — and Save always writes the whole
+   * template, not just what matched.
+   *
+   * A category whose NAME matches keeps all of its items, so searching
+   * "Tiling" gives you the section rather than nothing.
+   */
+  const term = search.trim().toLowerCase();
+  const groups = useMemo(() => {
+    const all = groupItems(items);
+    if (!term) return all;
+    return all
+      .map((group) => {
+        if (group.name.toLowerCase().includes(term)) return group;
+        return { ...group, rows: group.rows.filter((r) => r.item.name.toLowerCase().includes(term)) };
+      })
+      .filter((group) => group.rows.length > 0);
+  }, [items, term]);
+
+  const matchCount = useMemo(
+    () => groups.reduce((n, g) => n + g.rows.length, 0),
+    [groups],
+  );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const allCollapsed = groups.length > 0 && groups.every((g) => collapsed.has(g.name));
 
@@ -217,6 +247,50 @@ export default function TakeoffTemplateDetail() {
       ).sort((a, b) => a.localeCompare(b)),
     [items],
   );
+
+  /**
+   * Move a whole category above another, taking its items with it.
+   *
+   * The array IS the order — it is what the editor renders from and what the
+   * apply path numbers categories and measurements by — so reordering here is
+   * a rebuild of the array, category block by category block. Items keep their
+   * order within their own category.
+   *
+   * Native HTML5 drag, matching the column headers rather than adding a
+   * dnd-kit context for the sake of one list.
+   */
+  const moveCategory = (from: string, to: string) => {
+    if (from === to) return;
+    setDirty(true);
+    setItems((prev) => {
+      const blocks = groupItems(prev);
+      const fromAt = blocks.findIndex((g) => g.name === from);
+      const toAt = blocks.findIndex((g) => g.name === to);
+      if (fromAt === -1 || toAt === -1) return prev;
+      const reordered = blocks.slice();
+      reordered.splice(toAt, 0, reordered.splice(fromAt, 1)[0]);
+      return reordered.flatMap((g) => g.rows.map((r) => r.item));
+    });
+  };
+  /**
+   * The category being dragged.
+   *
+   * A REF, not state, because the dragover handler needs it synchronously —
+   * React has not re-rendered between dragstart and the first dragover, so a
+   * state value read there is still null and the drop does nothing. This is
+   * the same reason useResizableColumns keeps its dragged column at module
+   * level; the state below exists only to grey out the row being moved.
+   */
+  const dragCategoryRef = useRef<string | null>(null);
+  const [dragCategory, setDragCategory] = useState<string | null>(null);
+  const beginCategoryDrag = (name: string) => {
+    dragCategoryRef.current = name;
+    setDragCategory(name);
+  };
+  const endCategoryDrag = () => {
+    dragCategoryRef.current = null;
+    setDragCategory(null);
+  };
 
   const toggleGroup = (name: string) =>
     setCollapsed((prev) => {
@@ -439,11 +513,16 @@ export default function TakeoffTemplateDetail() {
 
   if (!template) {
     return (
-      <div className="h-full flex flex-col">
-        <div className="h-12 flex items-center px-3 gap-2 border-b border-border">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/takeoff-templates")}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Take-off Templates
-          </Button>
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/takeoff-templates")}
+          >
+            Take-offs
+          </button>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground">Not found</span>
         </div>
         <EmptyState
           icon={Calculator}
@@ -455,77 +534,110 @@ export default function TakeoffTemplateDetail() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" data-testid="page-takeoff-template-detail">
-      {/* Header — same shape as the other template detail pages. */}
-      <div className="h-12 bg-background flex items-center px-3 gap-2 flex-shrink-0 border-b border-border">
-        <Button
-          variant="ghost"
-          size="sm"
+    <div className="flex h-full flex-col" data-testid="page-takeoff-template-detail">
+      {/* Breadcrumb strip, then a header panel that is the top of one card the
+          body closes — the Tasks/Timesheets pattern the app is migrating to,
+          rather than the legacy full-bleed bar this page had. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => navigate("/templates")}
+          data-testid="link-templates"
+        >
+          Templates
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground"
           onClick={() => navigate("/takeoff-templates")}
           data-testid="button-back"
         >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Take-off Templates
-        </Button>
-        <span className="text-sm font-medium truncate">{template.name}</span>
-        <Badge variant="secondary" className="text-xs" data-testid="text-item-count">
-          {items.length} {items.length === 1 ? "item" : "items"}
-        </Badge>
-        <div className="ml-auto flex items-center gap-2">
-          {/* 87 items across fifteen categories is a lot of scrolling before
-              you find the one you came for. */}
-          {groups.length > 1 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setCollapsed(allCollapsed ? new Set() : new Set(groups.map((g) => g.name)))
-              }
-              data-testid="button-toggle-all-groups"
-            >
-              {allCollapsed ? "Expand all" : "Collapse all"}
-            </Button>
-          )}
-          {/* Column order persists, so there has to be a way back from an
-              arrangement you regret. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetOrder}
-            title="Put the columns back in their original order"
-            data-testid="button-reset-columns"
-          >
-            Reset columns
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => addItem(null)}
-            data-testid="button-add-item"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Item
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => save.mutate()}
-            // Blocked on a nameless item rather than silently saving one: an
-            // item with no name is unusable on a plan and impossible to pick
-            // out of a list afterwards.
-            disabled={!dirty || invalid || save.isPending}
-            title={invalid ? "Every item needs a name" : undefined}
-            data-testid="button-save-template"
-          >
-            {save.isPending ? "Saving..." : "Save"}
-          </Button>
-        </div>
+          Take-offs
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground truncate" data-testid="text-page-title">
+          {template.name}
+        </span>
       </div>
 
-      {invalid && (
-        <div className="px-3 py-1.5 text-xs text-destructive border-b border-border flex-shrink-0">
-          Every item needs a name before this can be saved.
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-9 flex items-center justify-between px-3 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0">
+              {items.length} {items.length === 1 ? "item" : "items"}
+              {groups.length > 1 && ` · ${groups.length} categories`}
+            </span>
+            {/* Always visible at w-40, the Timesheets variant of the pattern. */}
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search items..."
+                className="h-6 w-40 pl-7 pr-2 text-xs border border-border/50 rounded-md bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+                data-testid="input-search-items"
+              />
+            </div>
+            {search && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {matchCount} {matchCount === 1 ? "match" : "matches"}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Icon-only, per the token rules, and it says which way it goes. */}
+            {groups.length > 1 && (
+              <button
+                className="h-6 w-6 flex items-center justify-center text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2"
+                onClick={() =>
+                  setCollapsed(allCollapsed ? new Set() : new Set(groups.map((g) => g.name)))
+                }
+                title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+                aria-label={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+                data-testid="button-toggle-all-groups"
+              >
+                {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <button
+              className="h-6 w-6 flex items-center justify-center text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2"
+              onClick={resetOrder}
+              title="Put the columns back in their original order"
+              aria-label="Reset column order"
+              data-testid="button-reset-columns"
+            >
+              <Columns3 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="h-6 w-auto px-2 text-xs border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-0.5"
+              onClick={() => addItem(null)}
+              data-testid="button-add-item"
+            >
+              <Plus className="h-3 w-3" />
+              Add Item
+            </button>
+            {/* Primary CTA is a raw button, per the pattern. */}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-40 disabled:pointer-events-none"
+              onClick={() => save.mutate()}
+              // Blocked on a nameless item rather than silently saving one: an
+              // item with no name is unusable on a plan and impossible to pick
+              // out of a list afterwards.
+              disabled={!dirty || invalid || save.isPending}
+              title={invalid ? "Every item needs a name" : undefined}
+              data-testid="button-save-template"
+            >
+              {save.isPending ? "Saving..." : "Save"}
+            </button>
+          </div>
         </div>
-      )}
+        {invalid && (
+          <div className="px-3 py-1 text-xs text-destructive border-t border-border">
+            Every item needs a name before this can be saved.
+          </div>
+        )}
+      </div>
 
       {/* One list for every row's category field. */}
       <datalist id="takeoff-template-categories">
@@ -534,7 +646,7 @@ export default function TakeoffTemplateDetail() {
         ))}
       </datalist>
 
-      <div className="flex-1 overflow-auto min-h-0">
+      <div className="flex-1 overflow-auto min-h-0 border-x border-b border-border rounded-b-lg bg-card">
         {items.length === 0 ? (
           <EmptyState
             icon={Calculator}
@@ -590,9 +702,37 @@ export default function TakeoffTemplateDetail() {
                   {/* The category band. With 87 items in a real template, a flat
                       list put a builder's Tiling items on five different screens. */}
                   <div
-                    className="sticky top-8 z-10 flex items-center gap-2 h-8 px-2 bg-muted border-y border-border"
+                    className={`sticky top-8 z-10 flex items-center gap-2 h-8 px-2 bg-muted border-y border-border ${
+                      dragCategory === group.name ? "opacity-40" : ""
+                    }`}
                     style={{ minWidth: `${minWidth}px` }}
+                    // Dragging is disabled while searching: the visible groups
+                    // are a filtered subset then, so a drop would reorder
+                    // against a list the builder cannot see in full.
+                    draggable={!term}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      beginCategoryDrag(group.name);
+                    }}
+                    onDragOver={(e) => {
+                      const from = dragCategoryRef.current;
+                      if (!from || term) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      // Reorder as you drag, not on drop — the drop event is
+                      // the least reliable part of HTML5 drag-and-drop, and
+                      // waiting for it means nothing moves until you let go.
+                      if (from !== group.name) moveCategory(from, group.name);
+                    }}
+                    onDragEnd={endCategoryDrag}
+                    onDrop={(e) => { e.preventDefault(); endCategoryDrag(); }}
                   >
+                    {!term && (
+                      <GripVertical
+                        className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0 cursor-grab"
+                        aria-hidden
+                      />
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
