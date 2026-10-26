@@ -29,6 +29,8 @@ import {
   assetDueSummary,
   isHeavyVehicle,
   todayKey,
+  METER_UNIT,
+  type MeterType,
   type AssetDueSummary,
   type AssetStatus,
   type AssetType,
@@ -169,7 +171,13 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
                 {n.label}
                 <span className="text-muted-foreground">
                   {" "}
-                  {n.daysLeft != null ? `${relativeDays(n.daysLeft)} · ${shortDate(n.dueDate)}` : n.meterLeft != null ? `${n.meterLeft.toLocaleString("en-AU")} to go` : ""}
+                  {n.drivenBy === "meter" && n.meterLeft != null
+                    ? n.meterLeft < 0
+                      ? `${(-n.meterLeft).toLocaleString("en-AU")} ${METER_UNIT[row.original.meterType as MeterType] ?? ""} over`
+                      : `${n.meterLeft.toLocaleString("en-AU")} ${METER_UNIT[row.original.meterType as MeterType] ?? ""} to go`
+                    : n.daysLeft != null
+                      ? `${relativeDays(n.daysLeft)} · ${shortDate(n.dueDate)}`
+                      : ""}
                 </span>
               </span>
             </div>

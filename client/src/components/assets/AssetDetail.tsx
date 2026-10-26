@@ -420,7 +420,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                         <>
                           <div className="text-xs tabular-nums">{dueBits}</div>
                           <DueChip state={due.state}>
-                            {due.meterLeft != null && (due.daysLeft == null || due.state !== "ok")
+                            {due.drivenBy === "meter" && due.meterLeft != null
                               ? due.meterLeft < 0
                                 ? `${(-due.meterLeft).toLocaleString("en-AU")} ${unit} over`
                                 : `${due.meterLeft.toLocaleString("en-AU")} ${unit} to go`

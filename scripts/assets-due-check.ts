@@ -66,6 +66,20 @@ check("service: whichever comes first — date overdue wins over km ok", () => {
   assert.equal(due.state, "overdue");
 });
 
+check("service: label follows the side that set the state (the 1,800 km bug)", () => {
+  // Date overdue, km fine: the chip must say overdue by date, not "1,800 km to go".
+  const byDate = serviceDue({ everyMeter: 10_000, everyMonths: 6, lastDoneMeter: 50_000, lastDoneDate: "2026-03-01" }, ute, today);
+  assert.equal(byDate.state, "overdue");
+  assert.equal(byDate.drivenBy, "date");
+  // Km overdue, date fine.
+  const byMeter = serviceDue({ everyMeter: 5_000, everyMonths: 12, lastDoneMeter: 50_000, lastDoneDate: "2026-06-01" }, ute, today);
+  assert.equal(byMeter.state, "overdue");
+  assert.equal(byMeter.drivenBy, "meter");
+  // Both ok: the date speaks.
+  const both = serviceDue({ everyMeter: 10_000, everyMonths: 12, lastDoneMeter: 50_000, lastDoneDate: "2026-06-01" }, ute, today);
+  assert.equal(both.drivenBy, "date");
+});
+
 check("service: km overdue", () => {
   const due = serviceDue({ everyMeter: 5_000, everyMonths: null, lastDoneMeter: 50_000, lastDoneDate: null }, ute, today);
   assert.equal(due.meterLeft, -3_200);
@@ -113,6 +127,7 @@ check("summary: picks the most pressing item and counts", () => {
   assert.equal(s.overdue, 1);
   assert.equal(s.dueSoon, 1);
   assert.equal(s.next?.label, "Minor service");
+  assert.equal(s.next?.drivenBy, "date");
 });
 
 check("summary: soonest date wins within the same state", () => {

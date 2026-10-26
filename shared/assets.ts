@@ -162,6 +162,8 @@ export interface ServiceDue {
   meterLeft: number | null;
   /** Never done and no starting point — the schedule can't be worked out yet. */
   unknown: boolean;
+  /** Which side set the state, so a label shows the reason ("overdue" by date, not "1,800 km to go"). */
+  drivenBy: "date" | "meter" | null;
 }
 
 /**
@@ -191,14 +193,19 @@ export function serviceDue(
     if (asset.currentMeter != null) meterLeft = dueMeter - asset.currentMeter;
   }
 
-  const states: DueState[] = [];
-  if (daysLeft != null) states.push(stateForDays(daysLeft));
-  if (meterLeft != null) {
-    states.push(meterLeft < 0 ? "overdue" : meterLeft <= DUE_SOON_METER[meterType] ? "due_soon" : "ok");
-  }
-  const state = states.sort((a, b) => STATE_RANK[a] - STATE_RANK[b])[0] ?? "ok";
+  const dateState = daysLeft != null ? stateForDays(daysLeft) : null;
+  const meterState: DueState | null =
+    meterLeft != null ? (meterLeft < 0 ? "overdue" : meterLeft <= DUE_SOON_METER[meterType] ? "due_soon" : "ok") : null;
 
-  return { state, dueDate, daysLeft, dueMeter, meterLeft, unknown: states.length === 0 };
+  // The worse side wins. On a tie the date speaks, since "in 40 days" reads
+  // better than a distance — unless only the meter is known.
+  let drivenBy: ServiceDue["drivenBy"] = null;
+  if (dateState && meterState) drivenBy = STATE_RANK[meterState] < STATE_RANK[dateState] ? "meter" : "date";
+  else if (dateState) drivenBy = "date";
+  else if (meterState) drivenBy = "meter";
+  const state = drivenBy === "meter" ? meterState! : drivenBy === "date" ? dateState! : "ok";
+
+  return { state, dueDate, daysLeft, dueMeter, meterLeft, unknown: drivenBy === null, drivenBy };
 }
 
 export interface AssetDueSummary {
@@ -206,7 +213,15 @@ export interface AssetDueSummary {
   overdue: number;
   dueSoon: number;
   /** The most pressing item, for a one-line "next due" cell. */
-  next: { label: string; dueDate: string | null; daysLeft: number | null; meterLeft: number | null; state: DueState } | null;
+  next: {
+    label: string;
+    dueDate: string | null;
+    daysLeft: number | null;
+    meterLeft: number | null;
+    state: DueState;
+    /** What a one-line label should quote: the date or the distance left. */
+    drivenBy: "date" | "meter";
+  } | null;
 }
 
 /** Rolls an asset's compliance items and service schedules into one status. */
@@ -227,6 +242,7 @@ export function assetDueSummary(
       daysLeft: due.daysLeft,
       meterLeft: null,
       state: due.state,
+      drivenBy: "date",
       sortDays: due.daysLeft,
     });
   }
@@ -239,6 +255,7 @@ export function assetDueSummary(
       daysLeft: due.daysLeft,
       meterLeft: due.meterLeft,
       state: due.state,
+      drivenBy: due.drivenBy ?? "date",
       // A meter-only schedule has no date to sort on; rank it by state alone.
       sortDays: due.daysLeft ?? (due.state === "ok" ? Number.MAX_SAFE_INTEGER : -1),
     });
@@ -250,7 +267,9 @@ export function assetDueSummary(
     state: top?.state ?? "ok",
     overdue: candidates.filter((c) => c.state === "overdue").length,
     dueSoon: candidates.filter((c) => c.state === "due_soon").length,
-    next: top ? { label: top.label, dueDate: top.dueDate, daysLeft: top.daysLeft, meterLeft: top.meterLeft, state: top.state } : null,
+    next: top
+      ? { label: top.label, dueDate: top.dueDate, daysLeft: top.daysLeft, meterLeft: top.meterLeft, state: top.state, drivenBy: top.drivenBy }
+      : null,
   };
 }
 
