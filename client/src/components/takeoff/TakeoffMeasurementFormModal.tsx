@@ -97,6 +97,24 @@ export default function TakeoffMeasurementFormModal({
 }: Props) {
   const { toast } = useToast();
   const isEdit = !!editing;
+
+  /**
+   * Whether anything has been drawn for this measurement yet.
+   *
+   * The type was locked on EVERY existing measurement, which is right once
+   * there are shapes — geometry recorded as a polygon area cannot be
+   * reinterpreted as a count — and wrong before there are any. A measurement
+   * applied from a template has `geometry: []` and has never been drawn, so
+   * the lock caught exactly the lines a builder most wants to correct, and
+   * looked like templates were read-only when nothing of the sort was true.
+   *
+   * Legacy rows store geometry as Point[] or Point[][]; any of those shapes is
+   * "has been drawn" as long as it is a non-empty array.
+   */
+  const drawnShapes = Array.isArray((editing as any)?.geometry)
+    ? ((editing as any).geometry as unknown[]).length
+    : 0;
+  const typeLocked = isEdit && drawnShapes > 0;
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState<string>("__none__");
   const [newCategory, setNewCategory] = useState("");
@@ -147,11 +165,17 @@ export default function TakeoffMeasurementFormModal({
     }
   }, [open, editing]);
 
-  // Keep unit valid when type changes (only for create flow — don't stomp user choice on edit).
-  useEffect(() => {
-    if (isEdit) return;
-    setUnit(defaultUnitFor(measurementType));
-  }, [measurementType, isEdit]);
+  /* The unit follows the type — but only when the type is CHANGED, which is
+     why this is not an effect any more.
+     As an effect keyed on measurementType it also fired when the form was
+     seeded from an existing measurement, which was harmless while the type was
+     locked on every edit. Now that an undrawn measurement can change type, the
+     same effect would reset a template's saved unit to the type default the
+     moment the dialog opened — undoing exactly what #307 fixed. */
+  const changeMeasurementType = (next: MeasurementType) => {
+    setMeasurementType(next);
+    setUnit(defaultUnitFor(next));
+  };
 
   const createCategory = useMutation({
     mutationFn: async (catName: string) =>
@@ -259,8 +283,8 @@ export default function TakeoffMeasurementFormModal({
               <Label>Type</Label>
               <Select
                 value={measurementType}
-                onValueChange={(v) => setMeasurementType(v as MeasurementType)}
-                disabled={isEdit}
+                onValueChange={(v) => changeMeasurementType(v as MeasurementType)}
+                disabled={typeLocked}
               >
                 <SelectTrigger data-testid="select-measurement-type">
                   <SelectValue />
@@ -274,6 +298,16 @@ export default function TakeoffMeasurementFormModal({
                   ))}
                 </SelectContent>
               </Select>
+              {/* Said OUT HERE, not as a title on the Select: a disabled
+                  control carries pointer-events-none, so it swallows hover and
+                  a tooltip on it never appears. A greyed field that explains
+                  nothing is how this looked like templates were read-only. */}
+              {typeLocked && (
+                <p className="text-xs text-muted-foreground" data-testid="text-type-locked">
+                  Locked — {drawnShapes} shape{drawnShapes !== 1 ? "s" : ""} already measured.
+                  Delete them to change the type.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Unit</Label>

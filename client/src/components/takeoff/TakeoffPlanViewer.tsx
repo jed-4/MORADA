@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Page } from "react-pdf";
 import { PdfDocument as Document } from "@/components/PdfDocument";
@@ -52,6 +52,55 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [scalePopoverOpen, setScalePopoverOpen] = useState(false);
   const [toolbarScaleOpen, setToolbarScaleOpen] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  /**
+   * The measurements panel's width, remembered per browser.
+   *
+   * Dragging writes to the ref on every mousemove and to state at the end:
+   * setting state on each move re-renders the plan canvas under it, which
+   * makes the drag stutter on a large plan.
+   */
+  const PANEL_MIN = 240;
+  const PANEL_MAX = 720;
+  const PANEL_WIDTH_KEY = "takeoff-panel-width";
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+      if (Number.isFinite(saved) && saved >= PANEL_MIN && saved <= PANEL_MAX) return saved;
+    } catch {
+      /* private window, blocked storage — fall through to the default */
+    }
+    return 288; // what w-72 was
+  });
+  const startPanelResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+    let latest = startWidth;
+    const onMove = (ev: MouseEvent) => {
+      // Dragging the handle LEFT widens the panel, because it is on the panel's
+      // left edge with the plan to its left.
+      latest = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startWidth - (ev.clientX - startX)));
+      panelEl.current?.style.setProperty("width", `${latest}px`);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setPanelWidth(latest);
+      try {
+        localStorage.setItem(PANEL_WIDTH_KEY, String(latest));
+      } catch {
+        /* nothing to do — the width simply won't persist */
+      }
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [panelWidth]);
+  const panelEl = useRef<HTMLDivElement | null>(null);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
   // If parent navigates to a different starting page (new click from grid),
@@ -1255,7 +1304,20 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             </Button>
           </div>
         ) : (
-          <div className="w-72 flex-shrink-0">
+          <div ref={panelEl} className="flex-shrink-0 flex" style={{ width: panelWidth }}>
+            {/* Drag to widen. The panel was a fixed w-72 (288px), which cannot
+                hold a real item name — "Waterproofing — Bath 2 walls" truncates
+                at any font size — and a take-off list is read far more often
+                than the plan beside it is wide. */}
+            <div
+              className="w-1.5 -mr-1.5 z-20 cursor-col-resize group/resize flex-shrink-0"
+              onMouseDown={startPanelResize}
+              title="Drag to resize the panel"
+              data-testid="handle-panel-resize"
+            >
+              <div className="w-px h-full mx-auto bg-border/0 group-hover/resize:bg-border transition-colors" />
+            </div>
+            <div className="flex-1 min-w-0">
             <TakeoffMeasurementPanel
               projectId={projectId}
               plan={plan}
@@ -1277,6 +1339,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               onLoadTemplate={() => setLoadTemplateOpen(true)}
               onSaveTemplate={() => setSaveTemplateOpen(true)}
             />
+            </div>
           </div>
         )}
       </div>
