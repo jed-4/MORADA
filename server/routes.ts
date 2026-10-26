@@ -12769,11 +12769,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all active users in the company with minimal info for assignment purposes
       const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId);
+
+      /* Clients are assignable, but only on their OWN project.
+         A client login points at a CRM contact (users.contactId), and a
+         project names its client the same way (projects.clientId), so a
+         client belongs to a project exactly when those match.
+         Without ?projectId this returns staff only, which is what it has
+         always returned — every existing caller keeps its behaviour, and a
+         picker with no project in hand cannot offer a client it has no way to
+         scope. */
+      let clientContactId: string | null = null;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : null;
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        // Another company's project id must not reveal who its client is.
+        if (project && (project as any).companyId === currentUser.companyId) {
+          clientContactId = (project as any).clientId ?? null;
+        }
+      }
+
       // Return only necessary fields for assignment dropdowns
-      // People work is assigned to: staff, never client portal logins (and
-      // the query above already leaves out archived people).
       const assignableUsers = users
-        .filter((user: any) => user.userCategory !== "client")
+        .filter((user: any) =>
+          user.userCategory !== "client"
+          || (!!clientContactId && user.contactId === clientContactId))
         .map((user: any) => {
           // Build displayName from firstName and lastName
           const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Unknown User';
@@ -12798,6 +12817,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // subsume this one: a user can be status "active" and isActive
             // false.
             isActive: user.isActive !== false,
+            // So a picker can mark them rather than mixing them in with staff.
+            isClient: user.userCategory === "client",
           };
         });
       res.json(assignableUsers);
