@@ -7,6 +7,9 @@ import assert from 'node:assert';
 import {
   approvedVariationTotal,
   buildAttention,
+  groupInvoices,
+  outstandingBalance,
+  resolveClientNotificationTarget,
   formatDaysChanged,
   groupVariations,
   buildSelectionGallery,
@@ -215,6 +218,33 @@ check('days changed reads as a signed count of working days', () => {
   assert.strictEqual(formatDaysChanged(-1), '−1 working day');
   assert.strictEqual(formatDaysChanged(0), null);
   assert.strictEqual(formatDaysChanged(null), null);
+});
+
+check('claims: overdue first, then by due date; paid last, newest first', () => {
+  const inv = [
+    { id: 'p1', name: 'Slab', totalAmount: 100, status: 'paid', invoiceDate: '2026-06-01' },
+    { id: 'p2', name: 'Frame', totalAmount: 100, status: 'paid', invoiceDate: '2026-08-01' },
+    { id: 'd1', name: 'Lockup', totalAmount: 500, balanceAmount: 500, status: 'sent', dueDate: '2026-11-20' },
+    { id: 'o1', name: 'Roof', totalAmount: 300, balanceAmount: 200, status: 'partial', dueDate: '2026-10-01' },
+    { id: 'd2', name: 'Fixing', totalAmount: 400, status: 'sent', dueDate: '2026-11-05' },
+  ];
+  const groups = groupInvoices(inv, TODAY);
+  assert.deepStrictEqual(groups.map((g) => g.title), ['To pay', 'Paid']);
+  assert.deepStrictEqual(groups[0].data.map((i) => i.id), ['o1', 'd2', 'd1']);
+  assert.deepStrictEqual(groups[1].data.map((i) => i.id), ['p2', 'p1']);
+  // Balance where there is one, the total where there isn't, paid excluded.
+  assert.strictEqual(outstandingBalance(inv), 200 + 500 + 400);
+});
+
+check('notification taps route to client screens', () => {
+  assert.deepStrictEqual(resolveClientNotificationTarget({ link: '/projects/p1/selections/s9' }), { screen: 'ClientSelectionDetail', params: { selectionId: 's9' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ link: '/projects/p1/variations/v2?tab=x' }), { screen: 'ClientVariationDetail', params: { variationId: 'v2' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ link: '/projects/p1/client-invoices/i3' }), { screen: 'ClientInvoiceDetail', params: { invoiceId: 'i3' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ link: '/messages?channel=c%2F1' }), { screen: 'ClientMessageThread', params: { channelId: 'c/1' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ entityType: 'message', entityId: 'c2' }), { screen: 'ClientMessageThread', params: { channelId: 'c2' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ entityType: 'variation', entityId: 'v5' }), { screen: 'ClientVariationDetail', params: { variationId: 'v5' } });
+  assert.deepStrictEqual(resolveClientNotificationTarget({ link: '/timesheets' }), { screen: 'ClientRoot' });
+  assert.deepStrictEqual(resolveClientNotificationTarget(null), { screen: 'ClientRoot' });
 });
 
 console.log(`\nclientPortal: ${passed} passed`);

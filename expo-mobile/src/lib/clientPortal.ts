@@ -256,8 +256,34 @@ export interface ClientInvoice {
   dueDate?: string | null;
   totalAmount: number;
   balanceAmount?: number | null;
+  paidAmount?: number | null;
+  invoiceDate?: string | null;
   status: string;
 }
+
+/** Outstanding first (overdue, then by due date), then paid — newest first. */
+export function groupInvoices(invoices: ClientInvoice[], today: Date = new Date()): Array<{ title: string; data: ClientInvoice[] }> {
+  const open = invoices
+    .filter((i) => invoiceStatus(i, today).tone !== 'done')
+    .sort((a, b) => {
+      const ao = invoiceStatus(a, today).tone === 'attention' ? 0 : 1;
+      const bo = invoiceStatus(b, today).tone === 'attention' ? 0 : 1;
+      return ao - bo || dateStrOf(a.dueDate).localeCompare(dateStrOf(b.dueDate));
+    });
+  const paid = invoices
+    .filter((i) => invoiceStatus(i, today).tone === 'done')
+    .sort((a, b) => dateStrOf(b.invoiceDate).localeCompare(dateStrOf(a.invoiceDate)));
+  return [
+    { title: 'To pay', data: open },
+    { title: 'Paid', data: paid },
+  ].filter((g) => g.data.length > 0);
+}
+
+/** What's left to pay across every claim, cents. */
+export const outstandingBalance = (invoices: ClientInvoice[]) =>
+  invoices
+    .filter((i) => i.status !== 'paid')
+    .reduce((sum, i) => sum + (i.balanceAmount ?? i.totalAmount ?? 0), 0);
 
 export function invoiceStatus(inv: ClientInvoice, today: Date = new Date()): ClientStatus {
   if (inv.status === 'paid') return { label: 'Paid', tone: 'done' };
@@ -368,3 +394,46 @@ export const diaryTextFields = (entry: ClientDiaryEntry): Array<[string, string]
 /** Newest first. */
 export const sortDiary = (entries: ClientDiaryEntry[]) =>
   [...entries].sort((a, b) => new Date(b.entryDateTime).getTime() - new Date(a.entryDateTime).getTime());
+
+// ── Notifications ─────────────────────────────────────────────────────────
+
+export interface ClientNotificationTarget {
+  screen: 'ClientRoot' | 'ClientSelectionDetail' | 'ClientVariationDetail' | 'ClientInvoiceDetail' | 'ClientMessageThread';
+  params?: Record<string, string>;
+}
+
+/**
+ * Where a tapped notification takes a client. Client mode has its own screens,
+ * so the builder resolver (navigation/notificationRouting.ts) would send them
+ * to tabs they don't have. Reads the same payload: the web `link` the server
+ * stores (e.g. /projects/<id>/selections/<id>), or entityType/entityId.
+ * Anything unrecognised lands on Home.
+ */
+export function resolveClientNotificationTarget(
+  data: { type?: string | null; link?: string | null; entityType?: string | null; entityId?: string | null } | null | undefined,
+): ClientNotificationTarget {
+  const link = typeof data?.link === 'string' ? data.link : '';
+  const entityType = typeof data?.entityType === 'string' ? data.entityType : '';
+  const entityId = typeof data?.entityId === 'string' ? data.entityId : '';
+
+  const channel = link.match(/[?&]channel=([^&#]+)/)?.[1];
+  if (entityType === 'message' || data?.type === 'mention' || link.startsWith('/messages')) {
+    const channelId = channel ? decodeURIComponent(channel) : entityId;
+    return channelId ? { screen: 'ClientMessageThread', params: { channelId } } : { screen: 'ClientRoot' };
+  }
+
+  const section = link.match(/\/projects\/[^/?#]+\/(selections|variations|client-invoices)\/([^/?#]+)/);
+  const kind = section?.[1] ?? (
+    entityType === 'selection' ? 'selections'
+      : entityType === 'variation' ? 'variations'
+        : entityType === 'client_invoice' || entityType === 'invoice' ? 'client-invoices'
+          : ''
+  );
+  const id = section?.[2] ?? entityId;
+  if (kind && id) {
+    if (kind === 'selections') return { screen: 'ClientSelectionDetail', params: { selectionId: id } };
+    if (kind === 'variations') return { screen: 'ClientVariationDetail', params: { variationId: id } };
+    return { screen: 'ClientInvoiceDetail', params: { invoiceId: id } };
+  }
+  return { screen: 'ClientRoot' };
+}

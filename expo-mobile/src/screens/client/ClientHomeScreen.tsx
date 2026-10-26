@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { apiFetch, API_BASE_URL, getAuthedImageSource } from '../../services/api';
+import { apiFetch, getAuthedImageSource } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { usePermission } from '../../lib/usePermission';
@@ -36,20 +36,13 @@ import { dateStrOf, toLocalDateStr } from '../../lib/dates';
  *
  * Each section only loads when the client's role can see it (the same
  * portal.* keys the web portal reads) — asking for one they can't would just
- * 403. Selections and variations open in the app; progress claims open in
- * the web portal until their in-app screen lands.
+ * 403. Everything waiting on them opens in the app.
  */
 
 const ATTENTION_ICON: Record<AttentionItem['kind'], keyof typeof Ionicons.glyphMap> = {
   variation: 'document-text-outline',
   selection: 'color-palette-outline',
   invoice: 'receipt-outline',
-};
-
-const PORTAL_SECTION: Record<AttentionItem['kind'], string> = {
-  variation: 'variations',
-  selection: 'selections',
-  invoice: 'client-invoices',
 };
 
 async function optional<T>(allowed: boolean, path: string): Promise<T | undefined> {
@@ -128,7 +121,7 @@ export default function ClientHomeScreen() {
       navigation.navigate('ClientVariationDetail', { variationId: item.id, name: item.title });
       return;
     }
-    Linking.openURL(`${API_BASE_URL}/projects/${project.id}/${PORTAL_SECTION[item.kind]}/${item.id}`);
+    navigation.navigate('ClientInvoiceDetail', { invoiceId: item.id });
   };
 
   const latestPhoto = latest ? diaryPhotoUrls(latest).find((u) => u.startsWith('/') || u.startsWith('http')) : undefined;
@@ -206,7 +199,7 @@ export default function ClientHomeScreen() {
                             </Text>
                           </View>
                           {item.urgent && <ClientStatusPill label="Overdue" tone="attention" />}
-                          <Ionicons name={item.kind === 'invoice' ? 'open-outline' : 'chevron-forward'} size={16} color={theme.textMuted} />
+                          <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
                         </ClientCard>
                       </PressableScale>
                     ))}
@@ -266,7 +259,12 @@ export default function ClientHomeScreen() {
 
             {canDiary && latest && (
               <>
-                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LATEST FROM SITE</Text>
+                <View style={styles.sectionRow}>
+                  <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LATEST FROM SITE</Text>
+                  <Pressable onPress={() => navigation.navigate('ClientUpdates')} hitSlop={8}>
+                    <Text style={[styles.seeAll, { color: theme.primary }]}>See all</Text>
+                  </Pressable>
+                </View>
                 <PressableScale onPress={() => navigation.navigate('ClientUpdates')}>
                   <ClientCard style={styles.latest}>
                     {latestPhoto && (
@@ -296,6 +294,8 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 220 },
   chipText: { fontSize: fontSize.bodySm, fontWeight: fontWeight.medium },
   sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  seeAll: { fontSize: fontSize.bodySm, fontWeight: fontWeight.semibold },
   stack: { gap: 8 },
   caughtUp: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   caughtUpText: { flex: 1, fontSize: fontSize.sm },

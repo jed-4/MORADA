@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { apiFetch, getAuthedImageSource } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
@@ -22,6 +23,7 @@ export default function ClientUpdatesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const navigation = useNavigation<any>();
   const { project } = useClientProject();
   const [entries, setEntries] = useState<ClientDiaryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +62,7 @@ export default function ClientUpdatesScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ClientHeader
+        onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
         title="Updates"
         subtitle={entries.length ? `${entries.length} update${entries.length === 1 ? '' : 's'} from site` : project?.name}
       />

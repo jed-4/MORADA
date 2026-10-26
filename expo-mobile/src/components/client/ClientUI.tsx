@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, fontSize, fontWeight, radius, type Theme } from '../../theme';
@@ -36,11 +36,27 @@ export function ClientStatusPill({ label, tone }: { label: string; tone: ClientT
 }
 
 /** Title bar used at the top of every client tab. */
-export function ClientHeader({ title, subtitle, right }: { title: string; subtitle?: string | null; right?: ReactNode }) {
+export function ClientHeader({
+  title,
+  subtitle,
+  right,
+  onBack,
+}: {
+  title: string;
+  subtitle?: string | null;
+  right?: ReactNode;
+  /** Shown as a back chevron — for screens pushed on top of the tabs. */
+  onBack?: () => void;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.background }]}>
+      {onBack && (
+        <Pressable onPress={onBack} hitSlop={10} accessibilityLabel="Back" style={{ marginLeft: -6 }}>
+          <Ionicons name="chevron-back" size={26} color={theme.textSecondary} />
+        </Pressable>
+      )}
       <View style={styles.headerText}>
         <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={1}>{title}</Text>
         {!!subtitle && (

@@ -15,13 +15,14 @@ import {
   type ClientVariation,
 } from '../../lib/clientPortal';
 import { PressableScale } from '../../components/ui/PressableScale';
-import { ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
+import { ClientEmpty, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
 
 /**
  * Variations a client has been sent — the server hides drafts. Waiting on
- * you first; open one to read the document and sign it.
+ * you first; open one to read the document and sign it. One of the two
+ * sections of the Money tab (ClientMoneyScreen supplies the header).
  */
-export default function ClientVariationsScreen() {
+export default function ClientVariationsList() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { project } = useClientProject();
@@ -56,13 +57,12 @@ export default function ClientVariationsScreen() {
   const sections = useMemo(() => groupVariations(variations, query), [variations, query]);
   const awaiting = variations.filter((v) => variationStatus(v).tone === 'waiting').length;
   const approved = approvedVariationTotal(variations);
-  const subtitle = variations.length
+  const summary = variations.length
     ? [awaiting ? `${awaiting} to approve` : null, `${formatMoney(approved)} approved`].filter(Boolean).join(' · ')
-    : project?.name;
+    : null;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ClientHeader title="Variations" subtitle={subtitle} />
+    <View style={styles.container}>
       {failed && variations.length > 0 && <ClientOfflineNote text="Couldn't refresh — showing the last variations loaded." />}
       {loading ? (
         <ClientLoading />
@@ -75,7 +75,9 @@ export default function ClientVariationsScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ListHeaderComponent={
-            variations.length > 3 ? (
+            <>
+            {!!summary && <Text style={[styles.summary, { color: theme.textSecondary }]}>{summary}</Text>}
+            {variations.length > 3 ? (
               <View style={[styles.search, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Ionicons name="search" size={16} color={theme.textMuted} />
                 <TextInput
@@ -87,7 +89,8 @@ export default function ClientVariationsScreen() {
                   clearButtonMode="while-editing"
                 />
               </View>
-            ) : null
+            ) : null}
+            </>
           }
           ListEmptyComponent={
             failed ? (
@@ -142,6 +145,7 @@ export default function ClientVariationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  summary: { fontSize: fontSize.bodySm, marginTop: 4, marginBottom: 8 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 10, height: 40, marginBottom: 4 },
   searchInput: { flex: 1, fontSize: fontSize.sm },
