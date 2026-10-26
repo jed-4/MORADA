@@ -16175,10 +16175,46 @@ export class DbStorage implements IStorage {
           eq(schema.contacts.companyId, companyId)
         ))
         .returning();
+      await this.syncPortalLoginName(id, updateData);
       return updatedContacts[0];
     } catch (error) {
       console.error("Database error in updateContact:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Keep a client's portal LOGIN named the same as their CRM contact.
+   *
+   * A client is two rows: a `contacts` record and, once they are invited, a
+   * `users` record pointing at it through `users.contactId`. Each carries its
+   * own first and last name and nothing kept them together, so renaming the
+   * client renamed one of them. The other went on showing the old name
+   * wherever it is read — which for the login is every assignment picker, so a
+   * client renamed to "AJ" kept appearing as "Ailin" with nothing to explain
+   * it. Nothing was cached or stale; there were simply two names.
+   *
+   * One direction only, deliberately. The contact is the record a company
+   * edits; the login exists to let that person in. Syncing both ways invites a
+   * loop, and the question "which one wins" has an obvious answer here.
+   *
+   * Failure is logged, never thrown: a name that did not propagate must not
+   * fail the edit that did save.
+   */
+  private async syncPortalLoginName(
+    contactId: string,
+    updateData: Partial<InsertContact>,
+  ): Promise<void> {
+    const renames = ["firstName", "lastName"] as const;
+    if (!renames.some((k) => k in updateData)) return;
+    try {
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      for (const k of renames) if (k in updateData) patch[k] = (updateData as any)[k];
+      await db.update(schema.users)
+        .set(patch)
+        .where(eq(schema.users.contactId, contactId));
+    } catch (error) {
+      console.warn("[contacts] could not rename the linked portal login:", error);
     }
   }
 
