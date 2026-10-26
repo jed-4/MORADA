@@ -1771,6 +1771,7 @@ function getDefaultActionsForRole(
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
       'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
+      'business.assets',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -2007,6 +2008,7 @@ export class MemStorage implements IStorage {
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7238,6 +7240,7 @@ export class DbStorage implements IStorage {
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7318,6 +7321,63 @@ export class DbStorage implements IStorage {
     await this.backfillClientPortalGrants(createdKeys);
     await this.backfillMinutesGrants(createdKeys);
     await this.backfillClientPortalAccessGrants(createdKeys);
+    await this.backfillAssetRegisterGrants(createdKeys);
+  }
+
+  /**
+   * Who sees the new asset register on existing companies. New companies get
+   * it from getDefaultActionsForRole (project/office managers); existing roles
+   * only ever get a key through a backfill on the boot that creates it.
+   *
+   * Mirrors business.contacts: the same office audience already trusted with
+   * the company's other register of suppliers and people. View/add/edit only;
+   * deleting an asset takes its history with it, so that stays with admins
+   * until someone ticks it. Admin-like roles bypass checks and need nothing.
+   * Client roles are excluded.
+   */
+  private async backfillAssetRegisterGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("business.assets")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const assetsId = allPermissions.find((p) => p.key === "business.assets")?.id;
+      const contactsId = allPermissions.find((p) => p.key === "business.contacts")?.id;
+      if (!assetsId || !contactsId) return;
+
+      const contactsGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, contactsId));
+      if (contactsGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, contactsGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, assetsId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of contactsGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        const actions = ["view", "add", "edit"].filter((a) => held.includes(a));
+        if (actions.length === 0) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: assetsId,
+          allowedActions: actions as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] business.assets granted to ${granted} role(s), mirroring business.contacts`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillAssetRegisterGrants:", error);
+    }
   }
 
   /**
