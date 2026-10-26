@@ -52,6 +52,33 @@ export function priceListItemToLineFields(
 }
 
 /**
+ * One message for every entry point — the estimate grid, its dialog, and the
+ * estimate TEMPLATE grid.
+ *
+ * It says what the price was AND calls out a unit that couldn't come across,
+ * because a silently-missing unit on a line priced per linear metre is how you
+ * quote 40 metres of cornice as 40 "each". It lived in EstimateDetail; it is
+ * here now so the template grid says the same thing rather than its own
+ * version, or nothing.
+ */
+export function priceListSelectToast(
+  picked: PriceListLookupItem,
+  allowedUnits?: string[],
+) {
+  const carried = unitCarriesToEstimate(picked.unitType, allowedUnits);
+  const price = `${formatCents(lookupItemExGstCents(picked))} / ${picked.unitType}`;
+  return carried
+    ? {
+        title: "Priced from catalogue",
+        description: `${picked.name} — ${price} from ${picked.listName}.`,
+      }
+    : {
+        title: "Priced from catalogue — check the unit",
+        description: `${picked.name} — ${price} from ${picked.listName}. This list has no "${picked.unitType}" unit, so the line kept its existing one.`,
+      };
+}
+
+/**
  * Whether a catalogue unit exists in the estimate's own unit list.
  *
  * With no list supplied (nothing loaded yet) we let it through rather than silently

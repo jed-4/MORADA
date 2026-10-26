@@ -73,6 +73,21 @@ interface Props {
    * a contracted job with no way to be coded except one cell at a time.
    */
   lockedToCostCode?: boolean;
+  /**
+   * Apply the patch yourself instead of letting this component PATCH the
+   * estimate items route.
+   *
+   * Estimate TEMPLATES hold their lines as JSON on the template, not as rows —
+   * there is no estimateId and no per-item route — so they pass this and do a
+   * local array update. The menu, the fields and the dialog stay shared, which
+   * is the point: a second copy of this list would drift from the first.
+   *
+   * The patch is in ESTIMATE-ITEM terms whichever surface receives it; the
+   * template grid already owns the translation (toTemplatePatch).
+   */
+  onApply?: (itemIds: string[], patch: Record<string, any>) => Promise<void> | void;
+  /** Fields to leave out — a template has no per-line workflow, so no status. */
+  omitFields?: string[];
   onComplete: () => void;
 }
 
@@ -85,6 +100,8 @@ export function BulkEditDropdown({
   statusOptions,
   taxRate,
   disabled,
+  onApply,
+  omitFields,
   onComplete,
 }: Props) {
   const { toast } = useToast();
@@ -155,12 +172,14 @@ export function BulkEditDropdown({
   ];
 
   // On a contract, offer only what the lock lets through.
-  const offered = lockedToCostCode ? fields.filter((f) => f.key === "costCode") : fields;
+  const offered = (lockedToCostCode ? fields.filter((f) => f.key === "costCode") : fields)
+    .filter((f) => !omitFields?.includes(f.key));
 
   const currentField = openField ? fields.find((f) => f.key === openField) : null;
 
   const bulkMutation = useMutation({
     mutationFn: async (patch: Record<string, any>) => {
+      if (onApply) return await onApply(selectedItemIds, patch);
       return await apiRequest(
         `/api/estimates/${estimateId}/items/bulk-update`,
         "PATCH",
@@ -168,8 +187,12 @@ export function BulkEditDropdown({
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "summary"] });
+      // Only the estimate route has these caches to clear; a caller supplying
+      // onApply owns its own state and has already updated it.
+      if (!onApply) {
+        queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "items"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "summary"] });
+      }
       toast({
         title: "Updated",
         description: `Updated ${selectedItemIds.length} item${selectedItemIds.length !== 1 ? "s" : ""}.`,

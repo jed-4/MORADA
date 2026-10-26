@@ -35,8 +35,11 @@ import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
+import { priceListItemToLineFields, priceListSelectToast } from "@/components/estimates/PriceListItemPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Columns3 } from "lucide-react";
+import { Columns3, Trash2 } from "lucide-react";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
 // ─── The template's own row shape ────────────────────────────────────────────
@@ -54,6 +57,15 @@ export interface TemplateItem {
   unit?: string;
   quantity?: number;
   unitPrice?: number; // cents
+  /**
+   * The catalogue item this line's cost came from.
+   *
+   * Template lines are JSON, so this needs no migration. It was never carried:
+   * toEstimateItem hard-coded priceListItemId to null and the picker was wired
+   * to a no-op, so a template could hold a cost but never say where it came
+   * from — and a template built in July quietly carried July's prices forever.
+   */
+  priceListItemId?: string | null;
   markup?: number;
   allowance?: string;
   wastagePercent?: number;
@@ -104,12 +116,32 @@ function toEstimateItem(t: TemplateItem): EstimateItem {
     notes: "",
     parentItemId: null,
     isSelection: false,
-    priceListItemId: null,
+    priceListItemId: t.priceListItemId ?? null,
   } as unknown as EstimateItem;
 }
 
+/**
+ * Typing a cost by hand takes the line off the catalogue.
+ *
+ * The estimate route enforces this server-side so every path obeys it; a
+ * template has no server, and toTemplatePatch is its single write path, so the
+ * rule lives beside it. Skipped when the same write SETS the link, because
+ * that is the link being made — picking a catalogue item writes cost and link
+ * together. Everything else about a line — name, quantity, markup — keeps it.
+ */
+export function unlinkIfRepriced(
+  existing: TemplateItem,
+  patch: Partial<TemplateItem>,
+  data: Record<string, any>,
+): Partial<TemplateItem> {
+  if ("priceListItemId" in data) return {};
+  if (!existing.priceListItemId) return {};
+  const costChanged = patch.unitPrice !== undefined && patch.unitPrice !== existing.unitPrice;
+  return costChanged ? { priceListItemId: null } : {};
+}
+
 /** Reverse of toEstimateItem for the fields the shared cells can write. */
-function toTemplatePatch(
+export function toTemplatePatch(
   data: Record<string, any>,
   costCodes: CostCode[],
 ): Partial<TemplateItem> {
@@ -129,6 +161,10 @@ function toTemplatePatch(
   // stuck at 8%), but a change to any other value was lost the same way.
   if ("markup" in data) patch.markup = Number(data.markup) || 0;
   if ("unitCostExTax" in data) patch.unitPrice = Math.round((Number(data.unitCostExTax) || 0) * 100);
+  // Where the cost came from. Picking from the catalogue sets it; typing a cost
+  // by hand clears it, because the line no longer matches what it was linked to
+  // — the same rule the estimate page follows (#67).
+  if ("priceListItemId" in data) patch.priceListItemId = data.priceListItemId ?? null;
   if ("costCode" in data) {
     const cc = costCodes.find((c) => c.id === data.costCode);
     patch.costCodeId = data.costCode || undefined;
@@ -258,7 +294,34 @@ export function TemplateEstimateGrid({
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const { toast } = useToast();
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  /* The catalogue items this template's lines are linked to, so a linked line
+     can be marked as one. Same shape as the estimate page: ids sorted for a
+     stable query key, and no request at all when nothing is linked — which is
+     every template written before this. */
+  const linkedPriceListIds = useMemo(
+    () =>
+      Array.from(new Set(items.map((i) => i.priceListItemId).filter(Boolean) as string[])).sort(),
+    [items],
+  );
+  const { data: linkedPriceListItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/price-list/items/by-ids", linkedPriceListIds.join(",")],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/price-list/items/by-ids?ids=${encodeURIComponent(linkedPriceListIds.join(","))}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: linkedPriceListIds.length > 0,
+  });
+  const priceListItemMap = useMemo(
+    () => new Map(linkedPriceListItems.map((i) => [i.id, i])),
+    [linkedPriceListItems],
+  );
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -382,12 +445,86 @@ export function TemplateEstimateGrid({
     return out;
   }, [groups, groupedItems, calculatePricingValues]);
 
+  /** The units this template's own Field Settings list offers. */
+  const templateUnitNames = useMemo(
+    () => ((unitCategory?.options ?? []) as any[]).map((o) => o.name).filter(Boolean) as string[],
+    [unitCategory],
+  );
+
   // ── Writes ─────────────────────────────────────────────────────────────────
+  /**
+   * Bulk edit, through the same menu the estimate page uses.
+   *
+   * The checkboxes have rendered on this grid since it was written and nothing
+   * consumed the selection — you could tick twenty rows and the page did
+   * nothing, which reads as broken rather than missing.
+   *
+   * BulkEditDropdown hands back a patch in ESTIMATE-ITEM terms and
+   * toTemplatePatch already knows how to land that on a template line, money
+   * unit and all. So the only template-specific part is the group, which is a
+   * NAME here rather than an id.
+   */
+  const applyBulk = useCallback(
+    (itemIds: string[], data: Record<string, any>) => {
+      const ids = new Set(itemIds);
+      const patch = toTemplatePatch(data, costCodes);
+      // groupId is not in toTemplatePatch — on a template it is a group NAME,
+      // and "none" means ungrouped.
+      const movesGroup = "groupId" in data;
+      const groupName = data.groupId === UNGROUPED || data.groupId === "none" ? undefined : data.groupId;
+      if (Object.keys(patch).length === 0 && !movesGroup) return;
+      onSave(
+        items.map((i) =>
+          ids.has(i.id) && !i.isGroup
+            ? {
+                ...i,
+                ...patch,
+                ...(movesGroup ? { groupName } : {}),
+                // Bulk-setting a cost unlinks too — the same rule as typing one.
+                ...unlinkIfRepriced(i, patch, data),
+              }
+            : i,
+        ),
+      );
+    },
+    [items, onSave, costCodes],
+  );
+
+  /**
+   * The Group option's choices.
+   *
+   * BulkEditDropdown takes EstimateGroup rows because that is what a job
+   * estimate has. A template's groups are names on its lines, so each is
+   * presented as a pseudo-group whose id IS its name — which is exactly what
+   * applyBulk then writes to groupName.
+   */
+  const templateGroupsForBulk = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          items
+            .filter((i) => !i.isGroup)
+            .map((i) => i.groupName)
+            .filter((n): n is string => !!n && n !== UNGROUPED),
+        ),
+      )
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => ({ id: name, name }) as unknown as EstimateGroup),
+    [items],
+  );
+
+  const deleteSelected = useCallback(() => {
+    const ids = selectedItems;
+    if (ids.size === 0) return;
+    onSave(items.filter((i) => !ids.has(i.id) || i.isGroup));
+    setSelectedItems(new Set());
+  }, [items, onSave, selectedItems]);
+
   const patchItem = useCallback(
     (itemId: string, data: Record<string, any>) => {
       const patch = toTemplatePatch(data, costCodes);
       if (Object.keys(patch).length === 0) return;
-      onSave(items.map((i) => (i.id === itemId ? { ...i, ...patch } : i)));
+      onSave(items.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)));
     },
     [items, onSave, costCodes],
   );
@@ -643,12 +780,21 @@ export function TemplateEstimateGrid({
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
     handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus,
-    handlePriceListSelect: () => {},
+    handlePriceListSelect: (item, picked) => {
+      setEditingCell(null);
+      setEditingValue("");
+      // priceListItemToLineFields is the SHARED helper the estimate page uses,
+      // so a template line gets the same treatment: cost ex GST, the cost code
+      // for provenance, and the unit only when this grid's own unit list has
+      // it. toTemplatePatch then lands all of that in template terms.
+      patchItem(item.id, priceListItemToLineFields(picked, { allowedUnits: templateUnitNames }));
+      toast(priceListSelectToast(picked));
+    },
     estimate: { isLocked: false, taxRate: TAX_RATE, projectMarkupPercent: null },
     columns,
     costCodes,
     costCategories,
-    priceListItemMap: new Map(),
+    priceListItemMap,
     poLinkMap: new Map(),
     selectionByEstimateItemId: new Map(),
     estimateItemStatusCategory: statusCategory,
@@ -677,7 +823,10 @@ export function TemplateEstimateGrid({
     setItemToDelete: (id: string | null) => { if (id) onRequestDelete(id); },
     setIsDeleteDialogOpen: () => {},
     setLocation: () => {},
-    toast: () => {},
+    // Was `() => {}`, so every message the shared cells raised — a price-list
+    // confirmation, a unit that could not come across, a failed save — went
+    // nowhere. The grid looked silent when it was actually trying to speak.
+    toast,
   };
 
   const renderItemRow = useCallback(
@@ -700,7 +849,51 @@ export function TemplateEstimateGrid({
               header by just the border. */}
         {/* Columns picker. The header row itself reorders and resizes; this is
             what turns a column on or off, which this grid had no way to do. */}
-        <div className="sticky top-0 z-40 flex justify-end bg-card px-2 py-1 border-b border-border">
+        <div className="sticky top-0 z-40 flex items-center gap-2 bg-card px-2 py-1 border-b border-border">
+          {/* Selection bar, mirroring the estimate page. Nothing consumed the
+              selection before, so the checkboxes were decoration. */}
+          {selectedItems.size > 0 && (
+            // Pinned LEFT as well as top: this bar lives inside the grid's
+            // horizontal scroller, so without it the selection controls slide
+            // off the screen the moment you scroll right to reach the columns
+            // you wanted to bulk-edit.
+            <div className="sticky left-0 flex items-center gap-2 bg-card pr-2">
+              <span className="text-xs font-medium whitespace-nowrap" data-testid="text-selected-count">
+                {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected
+              </span>
+              <BulkEditDropdown
+                // No estimate behind a template, so the route is never used —
+                // onApply takes over. The id is still required by the props.
+                estimateId=""
+                selectedItemIds={Array.from(selectedItems)}
+                groups={templateGroupsForBulk}
+                unitOptions={(unitCategory?.options as any) || []}
+                statusOptions={[]}
+                taxRate={TAX_RATE}
+                // A template has no per-line workflow and no tax of its own:
+                // it is cost data that gets priced when it is used.
+                omitFields={["status", "unitCostIncTax"]}
+                onApply={applyBulk}
+                onComplete={() => setSelectedItems(new Set())}
+              />
+              <button
+                className="h-6 w-auto px-2 text-xs border border-destructive/30 text-destructive rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                onClick={deleteSelected}
+                data-testid="button-bulk-delete"
+              >
+                <Trash2 className="w-3 h-3" />
+                Delete
+              </button>
+              <button
+                className="h-6 w-auto px-2 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2"
+                onClick={() => setSelectedItems(new Set())}
+                data-testid="button-clear-selection"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+          <div className="ml-auto" />
           <Popover>
             <PopoverTrigger asChild>
               <button

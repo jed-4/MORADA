@@ -111,7 +111,7 @@ import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
 import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Tag, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase } from "lucide-react";
-import { PriceListItemPicker, priceListItemToLineFields, lookupItemExGstCents, unitCarriesToEstimate, type PriceListLookupItem } from "@/components/estimates/PriceListItemPicker";
+import { PriceListItemPicker, priceListItemToLineFields, priceListSelectToast, lookupItemExGstCents, unitCarriesToEstimate, type PriceListLookupItem } from "@/components/estimates/PriceListItemPicker";
 import { formatCents } from "@shared/money";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -3099,7 +3099,7 @@ export default function EstimateDetail() {
       itemId: item.id,
       data: priceListItemToLineFields(picked, { allowedUnits: estimateUnitNames }) as Partial<InsertEstimateItem>,
     });
-    toast(priceListSelectToast(picked));
+    toast(priceListSelectToast(picked, estimateUnitNames));
   };
 
   /** The units this estimate's own Field Settings list actually offers. */
@@ -3107,25 +3107,6 @@ export default function EstimateDetail() {
     () => (estimateItemUnitCategory?.options ?? []).map(o => o.name).filter(Boolean) as string[],
     [estimateItemUnitCategory],
   );
-
-  /**
-   * One message for both entry points. Says what the price was AND calls out a unit
-   * that couldn't come across, because a silently-missing unit on a line priced per
-   * linear metre is how you quote 40 metres of cornice as 40 "each".
-   */
-  const priceListSelectToast = (picked: PriceListLookupItem) => {
-    const carried = unitCarriesToEstimate(picked.unitType, estimateUnitNames);
-    const price = `${formatCents(lookupItemExGstCents(picked))} / ${picked.unitType}`;
-    return carried
-      ? {
-          title: "Priced from catalogue",
-          description: `${picked.name} — ${price} from ${picked.listName}.`,
-        }
-      : {
-          title: "Priced from catalogue — check the unit",
-          description: `${picked.name} — ${price} from ${picked.listName}. This estimate has no "${picked.unitType}" unit, so the line kept its existing one.`,
-        };
-  };
 
   /**
    * The dialog equivalent of handlePriceListSelect: fill the form from the catalogue
@@ -3143,7 +3124,7 @@ export default function EstimateDetail() {
     target.setValue('unitCostExTax', fields.unitCostExTax, opts);
     if (fields.costCode) target.setValue('costCode', fields.costCode, opts);
     target.setValue('priceListItemId', picked.id, opts);
-    toast(priceListSelectToast(picked));
+    toast(priceListSelectToast(picked, estimateUnitNames));
   };
 
   const handleCellCancel = () => {
