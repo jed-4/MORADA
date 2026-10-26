@@ -13,6 +13,8 @@ import ClientHomeScreen from '../screens/client/ClientHomeScreen';
 import ClientScheduleScreen from '../screens/client/ClientScheduleScreen';
 import ClientUpdatesScreen from '../screens/client/ClientUpdatesScreen';
 import ClientAccountScreen from '../screens/client/ClientAccountScreen';
+import ClientSelectionsScreen from '../screens/client/ClientSelectionsScreen';
+import ClientSelectionDetailScreen from '../screens/client/ClientSelectionDetailScreen';
 
 /**
  * Client mode — what a homeowner gets instead of the builder's tabs.
@@ -31,6 +33,7 @@ const Tab = createBottomTabNavigator();
 const TAB_ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
   ClientHome: ['home', 'home-outline'],
   ClientSchedule: ['calendar', 'calendar-outline'],
+  ClientSelections: ['color-palette', 'color-palette-outline'],
   ClientUpdates: ['newspaper', 'newspaper-outline'],
 };
 
@@ -38,6 +41,7 @@ function ClientTabs() {
   const theme = useTheme();
   const canSchedule = usePermission(PORTAL_KEYS.schedule);
   const canDiary = usePermission(PORTAL_KEYS.siteDiary);
+  const canSelections = usePermission(PORTAL_KEYS.selections);
 
   return (
     <Tab.Navigator
@@ -67,6 +71,7 @@ function ClientTabs() {
     >
       <Tab.Screen name="ClientHome" component={ClientHomeScreen} options={{ title: 'Home' }} />
       {canSchedule && <Tab.Screen name="ClientSchedule" component={ClientScheduleScreen} options={{ title: 'Schedule' }} />}
+      {canSelections && <Tab.Screen name="ClientSelections" component={ClientSelectionsScreen} options={{ title: 'Selections' }} />}
       {canDiary && <Tab.Screen name="ClientUpdates" component={ClientUpdatesScreen} options={{ title: 'Updates' }} />}
     </Tab.Navigator>
   );
@@ -124,6 +129,7 @@ export default function ClientNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="ClientRoot" component={ClientRoot} />
         <Stack.Screen name="ClientAccount" component={ClientAccountScreen} />
+        <Stack.Screen name="ClientSelectionDetail" component={ClientSelectionDetailScreen} />
       </Stack.Navigator>
     </ClientProjectProvider>
   );

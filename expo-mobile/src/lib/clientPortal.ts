@@ -161,6 +161,63 @@ export const selectionStatus = (s: ClientSelection): ClientStatus => {
   return { label: 'Choose an option', tone: 'waiting' };
 };
 
+export type SelectionFilter = 'all' | 'to-choose' | 'sent' | 'confirmed';
+
+/** Which filter bucket a selection falls in — mirrors the web gallery. */
+export function selectionFilterOf(s: ClientSelection): Exclude<SelectionFilter, 'all'> {
+  const { label } = selectionStatus(s);
+  return label === 'Choose an option' ? 'to-choose' : label === 'Your choice sent' ? 'sent' : 'confirmed';
+}
+
+export interface SelectionGalleryGroup<T extends ClientSelection> {
+  title: string;
+  data: T[];
+}
+
+/**
+ * Filter, search and group the gallery. Waiting-on-you first within each
+ * group — the reason a client opens the page — then by name. `groupBy`
+ * reads room or category; a blank one lands in "Everything else", last.
+ */
+export function buildSelectionGallery<T extends ClientSelection & { room?: string | null; category?: string | null }>(
+  selections: T[],
+  opts: { filter: SelectionFilter; query: string; groupBy: 'room' | 'category' },
+): SelectionGalleryGroup<T>[] {
+  const term = opts.query.trim().toLowerCase();
+  const rank = { 'to-choose': 0, sent: 1, confirmed: 2 } as const;
+  const matched = selections
+    .filter((s) => opts.filter === 'all' || selectionFilterOf(s) === opts.filter)
+    .filter((s) =>
+      !term ||
+      [s.name, s.room, s.category, ...(s.options ?? []).map((o: any) => o.name)]
+        .some((f) => (f ?? '').toLowerCase().includes(term)),
+    )
+    .sort((a, b) => rank[selectionFilterOf(a)] - rank[selectionFilterOf(b)] || a.name.localeCompare(b.name));
+
+  const OTHER = 'Everything else';
+  const groups = new Map<string, T[]>();
+  for (const s of matched) {
+    const key = (opts.groupBy === 'room' ? s.room : s.category)?.trim() || OTHER;
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  return Array.from(groups, ([title, data]) => ({ title, data })).sort((a, b) => {
+    if (a.title === OTHER) return 1;
+    if (b.title === OTHER) return -1;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+/**
+ * Whether the client can still pick: nothing confirmed by the builder, and
+ * the builder hasn't switched "client can change" off. The server enforces
+ * the same (isSelectionLockedForClient) and refuses otherwise.
+ */
+export function canClientChoose(
+  s: ClientSelection & { clientCanChange?: boolean | null },
+): boolean {
+  return selectionStatus(s).tone !== 'done' && s.clientCanChange !== false;
+}
+
 export interface ClientInvoice {
   id: string;
   invoiceNumber?: string | null;

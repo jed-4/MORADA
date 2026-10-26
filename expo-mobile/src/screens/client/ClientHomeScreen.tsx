@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { apiFetch, API_BASE_URL, getAuthedImageSource } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClientProject } from '../../contexts/ClientProjectContext';
@@ -36,8 +36,8 @@ import { dateStrOf, toLocalDateStr } from '../../lib/dates';
  *
  * Each section only loads when the client's role can see it (the same
  * portal.* keys the web portal reads) — asking for one they can't would just
- * 403. Variations, selections and claims open in the web portal until their
- * in-app screens land.
+ * 403. Selections open in the app; variations and claims open in the web
+ * portal until their in-app screens land.
  */
 
 const ATTENTION_ICON: Record<AttentionItem['kind'], keyof typeof Ionicons.glyphMap> = {
@@ -95,10 +95,12 @@ export default function ClientHomeScreen() {
     setLoading(false);
   }, [project, canVariations, canSelections, canInvoices, canSchedule, canDiary]);
 
+  // A different project starts from a spinner; coming back to Home (after
+  // choosing a selection, say) refreshes quietly in place.
   useEffect(() => {
     setLoading(true);
-    load();
-  }, [load]);
+  }, [project?.id]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -118,6 +120,10 @@ export default function ClientHomeScreen() {
   const openAttention = (item: AttentionItem) => {
     haptic.light();
     if (!project) return;
+    if (item.kind === 'selection') {
+      navigation.navigate('ClientSelectionDetail', { selectionId: item.id, name: item.title });
+      return;
+    }
     Linking.openURL(`${API_BASE_URL}/projects/${project.id}/${PORTAL_SECTION[item.kind]}/${item.id}`);
   };
 
@@ -196,7 +202,7 @@ export default function ClientHomeScreen() {
                             </Text>
                           </View>
                           {item.urgent && <ClientStatusPill label="Overdue" tone="attention" />}
-                          <Ionicons name="open-outline" size={16} color={theme.textMuted} />
+                          <Ionicons name={item.kind === 'selection' ? 'chevron-forward' : 'open-outline'} size={16} color={theme.textMuted} />
                         </ClientCard>
                       </PressableScale>
                     ))}

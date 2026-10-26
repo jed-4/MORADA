@@ -6,6 +6,9 @@
 import assert from 'node:assert';
 import {
   buildAttention,
+  buildSelectionGallery,
+  canClientChoose,
+  selectionFilterOf,
   diaryPhotoUrls,
   diaryTextFields,
   formatDateRange,
@@ -161,6 +164,32 @@ check('diary: photos from strings or objects, text fields only, newest first', (
   assert.deepStrictEqual(diaryTextFields(entry), [['Notes', 'Good pour']]);
   const sorted = sortDiary([entry, { ...entry, id: 'later', entryDateTime: '2026-10-09T03:00:00Z' }]);
   assert.strictEqual(sorted[0].id, 'later');
+});
+
+check('gallery: filter, search, waiting first, "Everything else" last', () => {
+  const rows = [
+    { id: '1', name: 'Basin', status: 'pending', room: 'Ensuite', category: 'Plumbing', options: [{ approvedAt: '2026-01-01' }] },
+    { id: '2', name: 'Tapware', status: 'pending', room: 'Ensuite', category: 'Plumbing', options: [{}] },
+    { id: '3', name: 'Paint', status: 'pending', room: '', category: 'Finishes', options: [{ isSelectedByClient: true }] },
+    { id: '4', name: 'Tiles', status: 'pending', room: 'Kitchen', category: 'Finishes', options: [{ name: 'Carrara' } as any] },
+  ];
+  const byRoom = buildSelectionGallery(rows, { filter: 'all', query: '', groupBy: 'room' });
+  assert.deepStrictEqual(byRoom.map((g) => g.title), ['Ensuite', 'Kitchen', 'Everything else']);
+  assert.deepStrictEqual(byRoom[0].data.map((s) => s.id), ['2', '1']);
+  const toChoose = buildSelectionGallery(rows, { filter: 'to-choose', query: '', groupBy: 'category' });
+  assert.deepStrictEqual(toChoose.flatMap((g) => g.data.map((s) => s.id)), ['4', '2']);
+  // Search reaches option names.
+  const carrara = buildSelectionGallery(rows, { filter: 'all', query: 'carrara', groupBy: 'room' });
+  assert.deepStrictEqual(carrara.flatMap((g) => g.data.map((s) => s.id)), ['4']);
+  assert.strictEqual(selectionFilterOf(rows[2]), 'sent');
+});
+
+check('a client can choose until the builder confirms, unless changes are switched off', () => {
+  const s = { id: '1', name: 'Tapware', status: 'pending', options: [{}] };
+  assert.strictEqual(canClientChoose(s), true);
+  assert.strictEqual(canClientChoose({ ...s, options: [{ isSelectedByClient: true }] }), true);
+  assert.strictEqual(canClientChoose({ ...s, options: [{ approvedAt: '2026-01-01' }] }), false);
+  assert.strictEqual(canClientChoose({ ...s, clientCanChange: false }), false);
 });
 
 console.log(`\nclientPortal: ${passed} passed`);
