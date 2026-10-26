@@ -342,6 +342,13 @@ export default function TakeoffMeasurementPanel({
                   rowSensors={sensors}
                   onRowDragEnd={handleRowDragEnd(group.id)}
                   draggable={group.id !== UNCAT}
+                  // Uncategorised is a placeholder, not a row in
+                  // takeoff_categories, so there is nothing to rename.
+                  onRename={
+                    group.id === UNCAT
+                      ? undefined
+                      : (name: string) => updateCategory.mutate({ id: group.id, data: { name } })
+                  }
                   // row props
                   editingId={editingId}
                   editName={editName}
@@ -450,6 +457,7 @@ function SortableGroup({
   group,
   isCollapsed,
   onToggle,
+  onRename,
   rowSensors,
   onRowDragEnd,
   draggable,
@@ -482,6 +490,8 @@ function SortableGroup({
   group: { id: string; name: string; rows: TakeoffMeasurement[] };
   isCollapsed: boolean;
   onToggle: () => void;
+  /** Absent for Uncategorised, which is not a real category. */
+  onRename?: (name: string) => void;
   rowSensors: ReturnType<typeof useSensors>;
   onRowDragEnd: (e: DragEndEvent) => void;
   draggable: boolean;
@@ -512,6 +522,18 @@ function SortableGroup({
   onRequestDelete: (m: TakeoffMeasurement) => void;
 }) {
   const sortable = useSortable({ id: group.id, disabled: !draggable });
+  /* Renaming a category. The route and the mutation have always accepted a
+     name; nothing ever sent one, so a category could be created and reordered
+     but never corrected — a typo was permanent. */
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(group.name);
+  const commitRename = () => {
+    const next = draftName.trim();
+    setRenaming(false);
+    // An empty name would leave a nameless band nobody can click back into.
+    if (!next || next === group.name) { setDraftName(group.name); return; }
+    onRename?.(next);
+  };
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
     transition: sortable.transition,
@@ -521,20 +543,55 @@ function SortableGroup({
   return (
     <div ref={sortable.setNodeRef} style={style} data-testid={`group-${group.id}`}>
       <div className="group/cat w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex-1 flex items-center gap-2 hover-elevate text-left -mx-1 px-1 py-0.5 rounded-sm"
-          data-testid={`button-toggle-group-${group.id}`}
-          aria-expanded={!isCollapsed}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-          )}
-          <span className="text-xs font-medium truncate">{group.name}</span>
-        </button>
+        {renaming ? (
+          <input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+              if (e.key === "Escape") { e.preventDefault(); setDraftName(group.name); setRenaming(false); }
+            }}
+            className="flex-1 h-6 px-1 text-xs font-medium bg-background border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+            aria-label={`Rename ${group.name}`}
+            data-testid={`input-rename-group-${group.id}`}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            // Double-click to rename, the way the schedule and estimate grids
+            // already work, so there is no extra control sitting in the band.
+            onDoubleClick={() => {
+              if (!onRename) return;
+              setDraftName(group.name);
+              setRenaming(true);
+            }}
+            title={onRename ? "Double-click to rename" : undefined}
+            className="flex-1 flex items-center gap-2 hover-elevate text-left -mx-1 px-1 py-0.5 rounded-sm"
+            data-testid={`button-toggle-group-${group.id}`}
+            aria-expanded={!isCollapsed}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            )}
+            <span className="text-xs font-medium truncate">{group.name}</span>
+          </button>
+        )}
+        {onRename && !renaming && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setDraftName(group.name); setRenaming(true); }}
+            className="p-1 rounded-sm text-muted-foreground opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 transition-opacity hover-elevate"
+            aria-label={`Rename ${group.name}`}
+            data-testid={`button-rename-group-${group.id}`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         {draggable && (
           <button
             type="button"

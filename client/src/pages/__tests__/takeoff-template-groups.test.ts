@@ -137,4 +137,57 @@ check("moving a category onto itself changes nothing", () => {
   assert.deepEqual(moveCategory(scattered, "Tiling", "Tiling"), scattered);
 });
 
+// --- renaming a category ----------------------------------------------------
+
+/** What renameCategory does: rewrite categoryName across the whole group. */
+const renameCategory = (items: TakeoffTemplateItem[], from: string, to: string) => {
+  const next = to.trim();
+  if (!next || next === from) return items;
+  return items.map((i) =>
+    (i.categoryName?.trim() || UNCATEGORISED) === from
+      ? { ...i, categoryName: next === UNCATEGORISED ? null : next }
+      : i,
+  );
+};
+
+check("renaming a category rewrites every item in it", () => {
+  // A template has no category rows, so the name lives on each item — which is
+  // why renaming had to be per-item, one at a time, before this.
+  const renamed = renameCategory(scattered, "Tiling", "Wall & Floor Tiling");
+  assert.deepEqual(
+    renamed.filter((i) => i.categoryName === "Wall & Floor Tiling").map((i) => i.name),
+    ["Bath 1 Floor Tiles", "Bath 2 Wall Tiles"],
+  );
+  assert.equal(renamed.some((i) => i.categoryName === "Tiling"), false);
+});
+
+check("renaming leaves other categories alone", () => {
+  const renamed = renameCategory(scattered, "Tiling", "Tiles");
+  assert.deepEqual(
+    renamed.filter((i) => i.categoryName === "Fix Out").map((i) => i.name),
+    ["Doors", "Skirting"],
+  );
+});
+
+check("renaming ONTO an existing category merges them", () => {
+  // Deliberate: this is how "Fix out" and "Fix Out" get reconciled.
+  const renamed = renameCategory(scattered, "Flooring", "Tiling");
+  const tiling = groupItems(renamed).find((g) => g.name === "Tiling")!;
+  assert.deepEqual(tiling.rows.map((r) => r.item.name),
+    ["Bath 1 Floor Tiles", "Bath 2 Wall Tiles", "Carpet"]);
+  assert.equal(groupItems(renamed).some((g) => g.name === "Flooring"), false);
+});
+
+check("a blank or unchanged name is refused rather than clearing the category", () => {
+  for (const bad of ["", "   ", "Tiling"]) {
+    assert.deepEqual(renameCategory(scattered, "Tiling", bad), scattered, `"${bad}" should be a no-op`);
+  }
+});
+
+check("renaming never loses an item", () => {
+  const renamed = renameCategory(scattered, "Tiling", "Tiles");
+  assert.equal(renamed.length, scattered.length);
+  assert.deepEqual(renamed.map((i) => i.name).sort(), scattered.map((i) => i.name).sort());
+});
+
 console.log(`takeoff template groups: ${passed} passed, 0 failed`);

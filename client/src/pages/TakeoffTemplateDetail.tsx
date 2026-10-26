@@ -283,6 +283,38 @@ export default function TakeoffTemplateDetail() {
    */
   const dragCategoryRef = useRef<string | null>(null);
   const [dragCategory, setDragCategory] = useState<string | null>(null);
+
+  /**
+   * Rename a category across every item in it.
+   *
+   * A template has no category rows — each item carries a `categoryName`
+   * string — so the name is only editable per item, one at a time, which for a
+   * category holding twenty lines is not a rename at all. This rewrites the
+   * whole group.
+   *
+   * Renaming ONTO an existing category merges the two, deliberately: that is
+   * how "Fix out" and "Fix Out" get reconciled, and grouping is by trimmed
+   * name, so the merge is what the editor shows the moment it saves.
+   */
+  const renameCategory = (from: string, to: string) => {
+    const next = to.trim();
+    if (!next || next === from) return;
+    setDirty(true);
+    setCollapsed((prev) => {
+      const s2 = new Set(prev);
+      if (s2.delete(from)) s2.add(next);
+      return s2;
+    });
+    setItems((prev) =>
+      prev.map((item) =>
+        (item.categoryName?.trim() || UNCATEGORISED) === from
+          ? { ...item, categoryName: next === UNCATEGORISED ? null : next }
+          : item,
+      ),
+    );
+  };
+  const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState("");
   const beginCategoryDrag = (name: string) => {
     dragCategoryRef.current = name;
     setDragCategory(name);
@@ -743,11 +775,40 @@ export default function TakeoffTemplateDetail() {
                     >
                       {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
-                    <span
-                      className={`text-[13px] font-semibold ${group.name === UNCATEGORISED ? "text-muted-foreground" : ""}`}
-                    >
-                      {group.name}
-                    </span>
+                    {renamingCategory === group.name ? (
+                      <input
+                        autoFocus
+                        value={categoryDraft}
+                        onChange={(e) => setCategoryDraft(e.target.value)}
+                        onBlur={() => { renameCategory(group.name, categoryDraft); setRenamingCategory(null); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); renameCategory(group.name, categoryDraft); setRenamingCategory(null); }
+                          if (e.key === "Escape") { e.preventDefault(); setRenamingCategory(null); }
+                        }}
+                        list="takeoff-template-categories"
+                        className="h-6 w-44 px-1 text-[13px] font-semibold bg-background border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+                        aria-label={`Rename ${group.name}`}
+                        data-testid={`input-rename-category-${group.name}`}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        // Uncategorised is where items with no category land,
+                        // not a category — naming it would mean giving every
+                        // one of them the same new category, which is not what
+                        // renaming a heading looks like it does.
+                        onDoubleClick={() => {
+                          if (group.name === UNCATEGORISED) return;
+                          setCategoryDraft(group.name);
+                          setRenamingCategory(group.name);
+                        }}
+                        title={group.name === UNCATEGORISED ? undefined : "Double-click to rename"}
+                        className={`text-[13px] font-semibold text-left ${group.name === UNCATEGORISED ? "text-muted-foreground cursor-default" : ""}`}
+                        data-testid={`button-category-name-${group.name}`}
+                      >
+                        {group.name}
+                      </button>
+                    )}
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {group.rows.length}
                     </span>
