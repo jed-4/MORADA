@@ -15524,7 +15524,57 @@ export class DbStorage implements IStorage {
     return updated;
   }
   
+  /**
+   * Remove a field option — by DEACTIVATING it, not by deleting the row.
+   *
+   * 🚨 A hard delete did not stick. `ensureAllRequiredOptionsExist` runs on
+   * every boot and re-inserts any option in `getRequiredOptionsForCategory`
+   * that it cannot find BY KEY, so deleting a built-in status removed it until
+   * the next restart and then it silently came back. From the outside that
+   * looks like the delete failing at random, because the timing is a deploy or
+   * a process restart rather than anything the user did.
+   *
+   * Deactivating settles it both ways: the row still exists, so the seeder
+   * sees it and leaves it alone, and every reader already filters on
+   * `isActive` — the status chips, the pickers and the filters all do. Rows
+   * that reference the key by value also keep resolving to a real option
+   * instead of dangling, which a hard delete never guaranteed.
+   *
+   * An option that is NOT one of the built-ins has nothing to resurrect it, so
+   * it is deleted outright and the row goes.
+   */
   async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
+    const existing = await db.select().from(schema.fieldOptions)
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
+      .limit(1);
+    if (existing.length === 0) return false;
+
+    const option = existing[0];
+    const category = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.id, option.categoryId))
+      .limit(1);
+    const isSeeded = category.length > 0
+      && this.getRequiredOptionsForCategory(category[0].key, category[0].id)
+        .some((o: any) => o.key === option.key);
+
+    if (isSeeded) {
+      // getFieldOptions already filters on isActive, so an option deactivated
+      // here disappears from every read exactly as a deleted one did — the
+      // Field Settings list included. Nothing on the client needs to filter.
+      // The trade: there is now no way to bring one back from the UI. That was
+      // only ever possible by accident, via the resurrection this fixes.
+      const result = await db.update(schema.fieldOptions)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(schema.fieldOptions.id, id),
+          eq(schema.fieldOptions.companyId, companyId),
+        ));
+      return result.rowCount ? result.rowCount > 0 : false;
+    }
+
     const result = await db.delete(schema.fieldOptions)
       .where(and(
         eq(schema.fieldOptions.id, id),
