@@ -136,6 +136,9 @@ export interface ClientVariation {
   totalAmount: number;
   status: string;
   approvalDeadline?: string | null;
+  portalSentAt?: string | null;
+  clientSignedName?: string | null;
+  clientSignedDate?: string | null;
 }
 
 export const variationStatus = (v: ClientVariation): ClientStatus => {
@@ -143,6 +146,34 @@ export const variationStatus = (v: ClientVariation): ClientStatus => {
   if (v.status === 'rejected') return { label: 'Declined', tone: 'attention' };
   return { label: 'Awaiting your approval', tone: 'waiting' };
 };
+
+/**
+ * "Waiting on you" then "Decided", newest first within each — the web list's
+ * grouping. Search matches name and number.
+ */
+export function groupVariations(variations: ClientVariation[], query = ''): Array<{ title: string; data: ClientVariation[] }> {
+  const term = query.trim().toLowerCase();
+  const matched = variations
+    .filter((v) => !term || [v.name, v.variationNumber].some((f) => (f ?? '').toLowerCase().includes(term)))
+    .sort((a, b) => (b.portalSentAt ?? '').localeCompare(a.portalSentAt ?? '') || (b.variationNumber ?? '').localeCompare(a.variationNumber ?? '', undefined, { numeric: true }));
+  const waiting = matched.filter((v) => variationStatus(v).tone === 'waiting');
+  const decided = matched.filter((v) => variationStatus(v).tone !== 'waiting');
+  return [
+    { title: 'Waiting on you', data: waiting },
+    { title: 'Decided', data: decided },
+  ].filter((g) => g.data.length > 0);
+}
+
+/** Sum of approved variations, cents — the list header's "approved" figure. */
+export const approvedVariationTotal = (variations: ClientVariation[]) =>
+  variations.filter((v) => v.status === 'approved').reduce((sum, v) => sum + (v.totalAmount ?? 0), 0);
+
+/** "+3 working days" / "−1 working day", or null for no change. */
+export function formatDaysChanged(days: number | null | undefined): string | null {
+  if (!days) return null;
+  const n = Math.abs(days);
+  return `${days > 0 ? '+' : '−'}${n} working day${n === 1 ? '' : 's'}`;
+}
 
 export interface ClientSelection {
   id: string;

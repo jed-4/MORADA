@@ -16,6 +16,7 @@ import { randomBytes, randomUUID } from "crypto";
 import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
+import { buildClientVariationDocument } from "./clientVariationDocument";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -24155,7 +24156,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
         return res.status(404).json({ error: "Variation not found" });
       }
-      res.json(await buildVariationPortalPayload(variation));
+      const payload = await buildVariationPortalPayload(variation);
+      // `document` is for the phone app, which can't run the web's document
+      // model itself — the same model, over the same client-safe payload.
+      res.json({ ...payload, document: buildClientVariationDocument(payload) });
     } catch (error) {
       console.error("Error building client variation view:", error);
       res.status(500).json({ error: "Failed to load variation" });

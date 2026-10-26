@@ -5,7 +5,10 @@
  */
 import assert from 'node:assert';
 import {
+  approvedVariationTotal,
   buildAttention,
+  formatDaysChanged,
+  groupVariations,
   buildSelectionGallery,
   canClientChoose,
   selectionFilterOf,
@@ -190,6 +193,28 @@ check('a client can choose until the builder confirms, unless changes are switch
   assert.strictEqual(canClientChoose({ ...s, options: [{ isSelectedByClient: true }] }), true);
   assert.strictEqual(canClientChoose({ ...s, options: [{ approvedAt: '2026-01-01' }] }), false);
   assert.strictEqual(canClientChoose({ ...s, clientCanChange: false }), false);
+});
+
+check('variations: waiting first, newest sent first, search by number', () => {
+  const vs = [
+    { id: 'a', variationNumber: 'VO-1', name: 'Fence', totalAmount: 10000, status: 'approved', portalSentAt: '2026-09-01' },
+    { id: 'b', variationNumber: 'VO-2', name: 'Skylight', totalAmount: 250000, status: 'sent', portalSentAt: '2026-10-01' },
+    { id: 'c', variationNumber: 'VO-3', name: 'Tiles', totalAmount: 5000, status: 'sent', portalSentAt: '2026-10-10' },
+    { id: 'd', variationNumber: 'VO-4', name: 'Paint', totalAmount: 7000, status: 'rejected', portalSentAt: '2026-10-12' },
+  ];
+  const groups = groupVariations(vs);
+  assert.deepStrictEqual(groups.map((g) => g.title), ['Waiting on you', 'Decided']);
+  assert.deepStrictEqual(groups[0].data.map((v) => v.id), ['c', 'b']);
+  assert.deepStrictEqual(groups[1].data.map((v) => v.id), ['d', 'a']);
+  assert.deepStrictEqual(groupVariations(vs, 'vo-1').flatMap((g) => g.data.map((v) => v.id)), ['a']);
+  assert.strictEqual(approvedVariationTotal(vs), 10000);
+});
+
+check('days changed reads as a signed count of working days', () => {
+  assert.strictEqual(formatDaysChanged(3), '+3 working days');
+  assert.strictEqual(formatDaysChanged(-1), '−1 working day');
+  assert.strictEqual(formatDaysChanged(0), null);
+  assert.strictEqual(formatDaysChanged(null), null);
 });
 
 console.log(`\nclientPortal: ${passed} passed`);

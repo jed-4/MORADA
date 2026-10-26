@@ -36,8 +36,8 @@ import { dateStrOf, toLocalDateStr } from '../../lib/dates';
  *
  * Each section only loads when the client's role can see it (the same
  * portal.* keys the web portal reads) — asking for one they can't would just
- * 403. Selections open in the app; variations and claims open in the web
- * portal until their in-app screens land.
+ * 403. Selections and variations open in the app; progress claims open in
+ * the web portal until their in-app screen lands.
  */
 
 const ATTENTION_ICON: Record<AttentionItem['kind'], keyof typeof Ionicons.glyphMap> = {
@@ -124,6 +124,10 @@ export default function ClientHomeScreen() {
       navigation.navigate('ClientSelectionDetail', { selectionId: item.id, name: item.title });
       return;
     }
+    if (item.kind === 'variation') {
+      navigation.navigate('ClientVariationDetail', { variationId: item.id, name: item.title });
+      return;
+    }
     Linking.openURL(`${API_BASE_URL}/projects/${project.id}/${PORTAL_SECTION[item.kind]}/${item.id}`);
   };
 
@@ -202,7 +206,7 @@ export default function ClientHomeScreen() {
                             </Text>
                           </View>
                           {item.urgent && <ClientStatusPill label="Overdue" tone="attention" />}
-                          <Ionicons name={item.kind === 'selection' ? 'chevron-forward' : 'open-outline'} size={16} color={theme.textMuted} />
+                          <Ionicons name={item.kind === 'invoice' ? 'open-outline' : 'chevron-forward'} size={16} color={theme.textMuted} />
                         </ClientCard>
                       </PressableScale>
                     ))}
