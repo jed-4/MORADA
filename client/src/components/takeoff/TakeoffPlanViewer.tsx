@@ -500,21 +500,39 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
       // Height is part of the sum (a wall run x its height), so changing it
       // re-totals the item there and then — without anything being redrawn.
       const entries = normalizeEntries(editingMeasurement.geometry, editingMeasurement.pageId);
+      /* 🚨 The TYPE has to travel, and the quantity has to be totalled under
+         the NEW one.
+         It was left out deliberately while the form locked Type on every edit:
+         it could not change, so sending it was pointless. Now that an undrawn
+         measurement can change type (#324), leaving it out means the change is
+         silently dropped — you set Area to Linear, save, and the item carries
+         on being an area and drawing as a filled polygon. Which is the shape
+         of the complaint: lineal metres rendering as an infilled square. */
+      const nextType = data.measurementType ?? editingMeasurement.measurementType;
       await updateMeasurement.mutateAsync({
         id: editingMeasurement.id,
         data: {
           name: data.name,
           categoryId: data.categoryId,
           color: data.color,
+          measurementType: nextType,
           multiplier: data.multiplier,
           wastePercent: data.wastePercent,
           heightMm: data.heightMm,
           quantity: totalQuantity(
             entries,
-            editingMeasurement.measurementType,
+            nextType,
             data.heightMm,
           ),
-          unit: data.unit === "__blank__" ? "" : data.unit,
+          /* A height on a linear item wins, the same rule finishGeometry
+             already persists when you draw: giving a run a wall height turns
+             it into an area, and the quantity above is recomputed as m². The
+             edit path kept whatever the form held — normally "lm" — so adding
+             a height through Edit left the figure in m² labelled lm. */
+          unit:
+            nextType === "linear"
+              ? unitForLinear(data.heightMm, data.unit === "__blank__" ? "" : data.unit)
+              : data.unit === "__blank__" ? "" : data.unit,
           fillPattern: data.fillPattern,
           lineType: data.lineType,
           lineSize: data.lineSize,
