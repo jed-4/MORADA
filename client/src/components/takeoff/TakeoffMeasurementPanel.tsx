@@ -349,6 +349,15 @@ export default function TakeoffMeasurementPanel({
                       ? undefined
                       : (name: string) => updateCategory.mutate({ id: group.id, data: { name } })
                   }
+                  onToggleGroupVisible={(visible: boolean) => {
+                    // Only the ones that need changing — a category of thirty
+                    // with two hidden should write two rows, not thirty.
+                    for (const m of group.rows) {
+                      if ((m.isVisible !== false) !== visible) {
+                        updateMeasurement.mutate({ id: m.id, data: { isVisible: visible } as any });
+                      }
+                    }
+                  }}
                   // row props
                   editingId={editingId}
                   editName={editName}
@@ -458,6 +467,7 @@ function SortableGroup({
   isCollapsed,
   onToggle,
   onRename,
+  onToggleGroupVisible,
   rowSensors,
   onRowDragEnd,
   draggable,
@@ -492,6 +502,8 @@ function SortableGroup({
   onToggle: () => void;
   /** Absent for Uncategorised, which is not a real category. */
   onRename?: (name: string) => void;
+  /** Show or hide every measurement in this category on the plan at once. */
+  onToggleGroupVisible: (visible: boolean) => void;
   rowSensors: ReturnType<typeof useSensors>;
   onRowDragEnd: (e: DragEndEvent) => void;
   draggable: boolean;
@@ -578,9 +590,41 @@ function SortableGroup({
             ) : (
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
             )}
-            <span className="text-xs font-medium truncate">{group.name}</span>
+            <span className="text-xs font-medium truncate" title={group.name}>{group.name}</span>
           </button>
         )}
+        {/* Hide the whole category's markup in one click. There was only a
+            per-measurement eye, so clearing a category off the plan meant
+            clicking every one of them — and a category is exactly the unit you
+            want to switch off while marking up another trade. */}
+        {(() => {
+          const shown = group.rows.filter((m: any) => m.isVisible !== false).length;
+          const allShown = shown === group.rows.length;
+          const noneShown = shown === 0;
+          return (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleGroupVisible(!allShown); }}
+              className="p-1 rounded-sm text-muted-foreground opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 transition-opacity hover-elevate data-[mixed=true]:opacity-100 data-[hidden=true]:opacity-100"
+              // Kept visible when the category is hidden or partly hidden —
+              // otherwise the only sign that markup is switched off is markup
+              // that is not there, which looks like it was never drawn.
+              data-hidden={noneShown}
+              data-mixed={!allShown && !noneShown}
+              title={
+                allShown ? `Hide all ${group.rows.length} on the plan`
+                : noneShown ? `Show all ${group.rows.length} on the plan`
+                : `${shown} of ${group.rows.length} shown — click to show all`
+              }
+              aria-label={allShown ? `Hide ${group.name} on the plan` : `Show ${group.name} on the plan`}
+              data-testid={`button-group-visibility-${group.id}`}
+            >
+              {noneShown
+                ? <EyeOff className="h-3.5 w-3.5" />
+                : <Eye className={`h-3.5 w-3.5 ${allShown ? "" : "opacity-50"}`} />}
+            </button>
+          );
+        })()}
         {onRename && !renaming && (
           <button
             type="button"
@@ -798,7 +842,11 @@ function SortableRow({
         ) : (
           <div
             className="text-sm truncate cursor-text flex items-center gap-1.5"
-            title="Double-click to rename"
+            // The NAME first. The title was the rename hint alone, so hovering
+            // a truncated "Waterproofing — Bath 2 wa…" told you how to rename
+            // it instead of what it was called — which is the one thing you
+            // hover a cut-off name to find out.
+            title={`${m.name}\nDouble-click to rename`}
             onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(); }}
           >
             {active && <Pencil className="h-3 w-3 text-primary flex-shrink-0" />}
