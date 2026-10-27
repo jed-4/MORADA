@@ -15,7 +15,7 @@ import { verifyAppleIdentityToken, type AppleIdentity } from './appleIdentityTok
  * The Apple user id ("sub") lives in its own table, not a column on `users`:
  * Drizzle selects users with an explicit column list, so a database missing a
  * new users column would fail every request. A missing table here fails only
- * this route, and the table is also created on first use (migration 0112).
+ * this route, and the table is also created on first use (migration 0113).
  */
 
 let tableReady: Promise<void> | null = null;

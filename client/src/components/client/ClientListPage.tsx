@@ -135,6 +135,7 @@ export function ClientListRow({
   onClick,
   muted,
   children,
+  "data-testid": testId,
 }: {
   marker?: ReactNode;
   title: ReactNode;
@@ -144,6 +145,7 @@ export function ClientListRow({
   onClick?: () => void;
   muted?: boolean;
   children?: ReactNode;
+  "data-testid"?: string;
 }) {
   const interactive = !!onClick;
   return (
@@ -156,6 +158,7 @@ export function ClientListRow({
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } } : undefined}
+      data-testid={testId}
     >
       {marker}
       <div className="min-w-0 flex-1">
@@ -170,7 +173,7 @@ export function ClientListRow({
 }
 
 /** The tick/empty circle the schedule uses for done vs not done. */
-export function ClientMarker({ done, icon }: { done: boolean; icon?: ReactNode }) {
+export function ClientMarker({ done = false, icon }: { done?: boolean; icon?: ReactNode }) {
   return (
     <div
       className={cn(

@@ -1029,6 +1029,8 @@ export interface IStorage {
   getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
   updateClientInvoice(id: string, invoice: Partial<InsertClientInvoice>): Promise<ClientInvoice | undefined>;
+  /** Freeze the client-facing figure on many claims in one statement. */
+  shareClientInvoiceForecasts(rows: { id: string; amountCents: number }[], sharedAt: Date, sharedById: string | null): Promise<number>;
   deleteClientInvoice(id: string): Promise<boolean>;
 
   // Client Invoice Items CRUD
@@ -7074,6 +7076,8 @@ export class MemStorage implements IStorage {
   async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> { return { fixed: 0 }; }
 
   // Client-invoice transactional save — MemStorage stubs
+  // `storage` is always DbStorage, so these exist to satisfy IStorage, not to work.
+  async shareClientInvoiceForecasts(): Promise<number> { return 0; }
   async createClientInvoiceFull(_invoice: InsertClientInvoice, _children: ClientInvoiceChildren): Promise<ClientInvoice> { throw new Error("Not implemented"); }
   async updateClientInvoiceFull(_id: string, _invoice: Partial<InsertClientInvoice>, _children: ClientInvoiceChildren): Promise<ClientInvoice | undefined> { return undefined; }
 
@@ -19495,6 +19499,44 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in updateClientInvoice:", error);
       return undefined;
+    }
+  }
+
+  /**
+   * Freeze what the client is told to expect, for many claims at once.
+   *
+   * ONE statement, not a loop. Neon sits in us-east-1 and this app runs from
+   * Australia, so each round trip costs ~400ms — a dozen claims updated one by
+   * one is a visible ten-second pause on a button a builder presses at contract
+   * signing. The amounts differ per row, so they arrive as a VALUES join.
+   *
+   * `sharedAt` and `sharedById` are the same for every row on purpose: they
+   * record the one act of sharing, not a dozen.
+   */
+  async shareClientInvoiceForecasts(
+    rows: { id: string; amountCents: number }[],
+    sharedAt: Date,
+    sharedById: string | null,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    try {
+      const values = sql.join(
+        rows.map((r) => sql`(${r.id}::varchar, ${r.amountCents}::integer)`),
+        sql`, `,
+      );
+      await db.execute(sql`
+        UPDATE client_invoices AS ci
+        SET client_shared_amount_cents = v.amount,
+            client_shared_at = ${sharedAt},
+            client_shared_by_id = ${sharedById},
+            updated_at = now()
+        FROM (VALUES ${values}) AS v(id, amount)
+        WHERE ci.id = v.id
+      `);
+      return rows.length;
+    } catch (error) {
+      console.error("Database error in shareClientInvoiceForecasts:", error);
+      throw error;
     }
   }
 
