@@ -458,3 +458,72 @@ export function mentionsRego(text: string | null | undefined, rego: string | nul
   const body = plate.split("").join("[\\s-]?");
   return new RegExp(`(^|[^A-Z0-9])${body}($|[^A-Z0-9])`).test(text.toUpperCase());
 }
+
+// ---- renewals in the cashflow forecast (PR 6) ---------------------------
+//
+// A due date with a "last paid" amount is a payment that will come round
+// again: rego, CTP, insurance... Opt-in per company (asset_register_settings.
+// include_in_cashflow), because a P&L import or a hand-entered "Vehicles"
+// expense may already be forecasting the same money as a monthly average.
+
+/** Registration fees are GST-free; CTP premiums, insurance and inspections carry GST. */
+export const COMPLIANCE_HAS_GST: Record<ComplianceKind, boolean> = {
+  rego: false,
+  ctp: true,
+  insurance: true,
+  safety_check: true,
+  finance: true,
+  warranty: true,
+  test_tag: true,
+  custom: true,
+};
+
+/** Kinds that are a payment when they come due. A finance END date isn't. */
+export const RENEWAL_KINDS: ComplianceKind[] = ["rego", "ctp", "insurance", "safety_check", "warranty", "test_tag", "custom"];
+
+export const RENEWAL_EXPENSE_GROUP = "Vehicles & plant (asset register)";
+
+export interface RenewalPayment {
+  /** Unique per occurrence; sourceId-style prefix so the UI can link to the asset. */
+  id: string;
+  assetId: string;
+  name: string;
+  amountCents: number; // inc GST, as entered ("last paid")
+  hasGst: boolean;
+  date: string; // YYYY-MM-DD
+}
+
+/**
+ * Every renewal payment between `today` and `horizonEnd`: due on the expiry
+ * date, then every `termMonths` after. An expiry already past is still owed,
+ * so it lands today. No amount, no payment; no term, just the one.
+ */
+export function renewalPayments(
+  items: { id: string; assetId: string; kind: string; label: string | null; expiryDate: string; termMonths: number | null; amountCents: number | null }[],
+  assets: { id: string; name: string; rego: string | null }[],
+  today: string,
+  horizonEnd: string,
+): RenewalPayment[] {
+  const out: RenewalPayment[] = [];
+  for (const item of items) {
+    const kind = item.kind as ComplianceKind;
+    if (!RENEWAL_KINDS.includes(kind) || !item.amountCents || item.amountCents <= 0) continue;
+    const asset = assets.find((a) => a.id === item.assetId);
+    if (!asset) continue;
+    const name = `${item.label || COMPLIANCE_KIND_LABELS[kind]} — ${asset.name}${asset.rego ? ` (${asset.rego})` : ""}`;
+    let date = item.expiryDate;
+    for (let n = 0; n < 240 && date <= horizonEnd; n++) {
+      out.push({
+        id: `${item.id}:${n}`,
+        assetId: asset.id,
+        name,
+        amountCents: item.amountCents,
+        hasGst: COMPLIANCE_HAS_GST[kind],
+        date: date < today ? today : date,
+      });
+      if (!item.termMonths || item.termMonths <= 0) break;
+      date = addMonthsKey(date, item.termMonths);
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+}
