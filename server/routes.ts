@@ -36183,6 +36183,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const r of rows) push("site_diary", { ...r, href: `/projects/${r.projectId}/site-diary` });
       })());
 
+      if (want("assets")) jobs.push((async () => {
+        const { complianceDue, serviceDue, todayKey, COMPLIANCE_KIND_LABELS } = await import("@shared/assets");
+        // Date keys compare as text. Archived and sold assets have nothing due.
+        const fromKey = String(startDate).slice(0, 10);
+        const toKey = String(endDate).slice(0, 10);
+        const live = ["active", "off_road"];
+        const today = todayKey();
+        const label = (a: { name: string; rego: string | null }) => `${a.name}${a.rego ? ` (${a.rego})` : ""}`;
+        const atMidnight = (key: string) => new Date(`${key}T00:00:00`);
+
+        const [items, schedules] = await Promise.all([
+          db.select({ item: schema.assetComplianceItems, asset: schema.assets })
+            .from(schema.assetComplianceItems)
+            .innerJoin(schema.assets, eq(schema.assetComplianceItems.assetId, schema.assets.id))
+            .where(and(
+              eq(schema.assetComplianceItems.companyId, companyId),
+              inArray(schema.assets.status, live),
+              gte(schema.assetComplianceItems.expiryDate, fromKey),
+              lte(schema.assetComplianceItems.expiryDate, toKey),
+            )),
+          db.select({ schedule: schema.assetServiceSchedules, asset: schema.assets })
+            .from(schema.assetServiceSchedules)
+            .innerJoin(schema.assets, eq(schema.assetServiceSchedules.assetId, schema.assets.id))
+            .where(and(eq(schema.assetServiceSchedules.companyId, companyId), inArray(schema.assets.status, live))),
+        ]);
+
+        for (const { item, asset } of items) {
+          const kind = item.label || COMPLIANCE_KIND_LABELS[item.kind as keyof typeof COMPLIANCE_KIND_LABELS] || item.kind;
+          push("assets", {
+            id: item.id,
+            title: `${kind} — ${label(asset)}`,
+            date: atMidnight(item.expiryDate),
+            projectId: null,
+            projectName: null,
+            status: complianceDue(item, today).state,
+            href: `/business/assets/${asset.id}`,
+          });
+        }
+        // Only the calendar side of a service: a km-only interval has no date.
+        for (const { schedule, asset } of schedules) {
+          const due = serviceDue(schedule, asset, today);
+          if (!due.dueDate || due.dueDate < fromKey || due.dueDate > toKey) continue;
+          push("assets", {
+            id: schedule.id,
+            title: `${schedule.label} — ${label(asset)}`,
+            date: atMidnight(due.dueDate),
+            projectId: null,
+            projectName: null,
+            status: due.state,
+            href: `/business/assets/${asset.id}`,
+          });
+        }
+      })());
+
       await Promise.all(jobs);
 
       // Project access last, so one predicate covers every layer. A row with no
@@ -49384,6 +49438,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       users: usersTable,
     } = await import("@shared/schema");
     const { normaliseRego, todayKey, ASSET_STATUS_LABELS } = await import("@shared/assets");
+    const { closeAssetReminderTasks } = await import("./services/assetReminders");
 
     const sessionCompanyId = (req: any): string | null => req.user?.companyId ?? null;
 
@@ -49589,6 +49644,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           .set({ ...parsed.data, ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
           .where(and(eq(assetComplianceItems.id, before.id), eq(assetComplianceItems.companyId, companyId)))
           .returning();
+        // Renewed: the "rego expiring" tasks are done with.
+        if (renewed) await closeAssetReminderTasks(companyId, { complianceItemId: before.id });
         res.json(row);
       } catch (error) {
         console.error("[assets] compliance update failed:", error);
@@ -49608,6 +49665,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           ))
           .returning({ id: assetComplianceItems.id });
         if (!row) return res.status(404).json({ error: "Item not found" });
+        await closeAssetReminderTasks(companyId, { complianceItemId: row.id });
         res.status(204).end();
       } catch (error) {
         console.error("[assets] compliance delete failed:", error);
@@ -49646,6 +49704,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const parsed = updateAssetServiceScheduleSchema.safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid schedule", issues: parsed.error.issues });
 
+        const [before] = await db.select().from(assetServiceSchedules)
+          .where(and(
+            eq(assetServiceSchedules.id, req.params.scheduleId),
+            eq(assetServiceSchedules.assetId, req.params.id),
+            eq(assetServiceSchedules.companyId, companyId),
+          ))
+          .limit(1);
+        if (!before) return res.status(404).json({ error: "Schedule not found" });
+
         const [row] = await db.update(assetServiceSchedules)
           .set({ ...parsed.data, updatedAt: new Date() })
           .where(and(
@@ -49655,6 +49722,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           ))
           .returning();
         if (!row) return res.status(404).json({ error: "Schedule not found" });
+        // A changed last-done point starts a new cycle; the old task is stale.
+        // Compared, not just present: the dialog always sends both fields.
+        if ((before.lastDoneDate ?? null) !== (row.lastDoneDate ?? null) || (before.lastDoneMeter ?? null) !== (row.lastDoneMeter ?? null)) {
+          await closeAssetReminderTasks(companyId, { scheduleId: row.id });
+        }
         if (!row.everyMeter && !row.everyMonths) {
           // Saved, but useless — say so rather than silently never falling due.
           return res.json({ ...row, warning: "This schedule has no interval, so it will never fall due" });
@@ -49678,6 +49750,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           ))
           .returning({ id: assetServiceSchedules.id });
         if (!row) return res.status(404).json({ error: "Schedule not found" });
+        await closeAssetReminderTasks(companyId, { scheduleId: row.id });
         res.status(204).end();
       } catch (error) {
         console.error("[assets] schedule delete failed:", error);
@@ -49737,6 +49810,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             await db.update(assetServiceSchedules)
               .set({ lastDoneDate: data.date, lastDoneMeter: data.meter ?? schedule.lastDoneMeter, updatedAt: new Date() })
               .where(and(eq(assetServiceSchedules.id, schedule.id), eq(assetServiceSchedules.companyId, companyId)));
+            await closeAssetReminderTasks(companyId, { scheduleId: schedule.id });
           }
         }
 

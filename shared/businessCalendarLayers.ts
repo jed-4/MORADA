@@ -28,7 +28,8 @@ export type BusinessCalendarLayerKey =
   | "defects"
   | "invoices"
   | "timesheets"
-  | "site_diary";
+  | "site_diary"
+  | "assets";
 
 export interface BusinessCalendarLayer {
   key: BusinessCalendarLayerKey;
@@ -103,6 +104,13 @@ export const BUSINESS_CALENDAR_LAYERS: BusinessCalendarLayer[] = [
     description: "Site diary entries, on the day they record",
     colorToken: "inspection",
     lookback: true,
+  },
+  {
+    key: "assets",
+    label: "Vehicles & assets",
+    description: "Rego, insurance and other expiries, and services due by date",
+    colorToken: "meeting",
+    permission: { key: "business.assets", action: "view" },
   },
 ];
 

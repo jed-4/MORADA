@@ -205,6 +205,12 @@ export async function processReminders() {
     console.log("[ReminderProcessor] Reminder processing completed");
     
     await processInsuranceExpiryReminders();
+    try {
+      const { processAssetReminders } = await import("../services/assetReminders");
+      await processAssetReminders();
+    } catch (err) {
+      console.error("[ReminderProcessor] Asset reminders failed:", err);
+    }
     await processRecurringTaskTemplates();
     await processTimesheetOvertimeReminders();
     await cleanupArchivedContacts();

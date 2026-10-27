@@ -109,6 +109,11 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((keyToUtc(to) - keyToUtc(from)) / 86_400_000);
 }
 
+/** Adds whole days to a date key. */
+export function addDaysKey(key: string, days: number): string {
+  return new Date(keyToUtc(key) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** Adds calendar months, clamping to the month's last day (31 Jan + 1 = 28/29 Feb). */
 export function addMonthsKey(key: string, months: number): string {
   const [y, m, d] = key.split("-").map(Number);
