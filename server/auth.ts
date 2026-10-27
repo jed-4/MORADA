@@ -6,6 +6,8 @@ import { storage } from './storage';
 import { PasswordUtils } from './utils/auth';
 import { OAuth2Client } from 'google-auth-library';
 import * as signature from 'cookie-signature';
+import { registerAppleAuthRoutes } from './appleAuth';
+import { registerAccountDeletionRoutes } from './accountDeletion';
 
 const SALT_ROUNDS = 12;
 
@@ -501,6 +503,12 @@ export async function setupAuth(app: Express) {
       res.status(401).json({ message: 'Google authentication failed' });
     }
   });
+
+  // Registered here, ahead of the client/plan/company gates in routes.ts: a
+  // signed-out phone has to reach Apple sign-in, and a client or a lapsed
+  // plan must still be able to delete their own account.
+  registerAppleAuthRoutes(app);
+  registerAccountDeletionRoutes(app);
 
   // GET logout for convenience
   app.get('/api/logout', (req: Request, res: Response) => {

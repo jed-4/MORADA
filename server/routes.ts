@@ -13237,6 +13237,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (target.isActive) {
         return res.json(toSafeUser(target));
       }
+      // Deleted by its owner (server/accountDeletion.ts): the person and their
+      // login are gone, so there is nobody to restore.
+      if (target.email?.endsWith("@deleted.invalid")) {
+        return res.status(400).json({ error: "This person deleted their account, so it can't be restored. Invite them again instead." });
+      }
 
       // Same Full User seat rule as inviting — restoring someone takes a seat.
       if (isStripeConfigured() && !(target.role as any)?.isMobileOnly) {
