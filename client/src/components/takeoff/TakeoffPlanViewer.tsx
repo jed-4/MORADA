@@ -835,6 +835,14 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         </Badge>
       </div>
 
+      {/* Everything below the title bar is a ROW, not a stack: the page tabs
+          and the drawing toolbar belong to the plan, so the measurement list
+          beside them starts at the top instead of 80px down it. The list is
+          read far more often than those two strips are looked at, and on a
+          laptop they were costing it a quarter of its height. */}
+      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+
       <div className="h-9 flex items-center gap-1 px-3 border-b border-border overflow-x-auto bg-background">
         {openPages.map((p) => (
           <div
@@ -1069,7 +1077,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         </Button>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <div
           ref={containerRef}
           className="flex-1 overflow-auto bg-muted/30 relative p-3"
@@ -1308,6 +1316,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             </div>
           )}
         </div>
+      </div>{/* end canvas row */}
+      </div>{/* end left column — page tabs, toolbar, canvas */}
 
         {panelCollapsed ? (
           <div className="flex-shrink-0 w-8 border-l border-border bg-card flex flex-col items-center pt-2">
@@ -1360,7 +1370,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             </div>
           </div>
         )}
-      </div>
+      </div>{/* end content row — left column + measurement panel */}
 
       <div className="h-8 flex items-center px-3 text-xs bg-[#3d3d3d] text-[#cccccc]">
         <span data-testid="status-message">{statusMessage}</span>
