@@ -12,6 +12,7 @@
  * the client is shown.
  */
 import type { VariationDocumentColumns } from "@shared/variationDocumentColumns";
+import { claimStage } from "@shared/claimSchedule";
 
 // ── Projects ────────────────────────────────────────────────────────────────
 
@@ -160,6 +161,37 @@ export const CLIENT_VISIBLE_INVOICE_STATUSES = new Set(["sent", "partial", "paid
 
 export function isInvoiceClientVisible(invoice: { status?: string | null } | null | undefined): boolean {
   return !!invoice && CLIENT_VISIBLE_INVOICE_STATUSES.has(String(invoice.status));
+}
+
+/**
+ * The forecast half of a claim: what the client was TOLD to expect.
+ *
+ * A claim the builder has shared but not yet sent appears in the client's
+ * payment schedule, and it must carry almost nothing — a name, when it is
+ * expected, and the frozen figure. Everything else is still being worked on.
+ *
+ * In particular it must not carry `totalAmount`, `subtotal`, `gstAmount`,
+ * `lineBreakdown` or anything derived from them. That is the entire
+ * requirement: the builder keeps editing the draft and the client sees a
+ * number that does not move. A field added to `projectClientInvoice` below is
+ * NOT automatically safe here — this projection is an allow-list on purpose,
+ * and the test file pins that it stays one.
+ */
+export function projectClientClaimForecast(invoice: any) {
+  return {
+    id: invoice.id,
+    projectId: invoice.projectId,
+    name: invoice.name,
+    // No invoiceNumber: an unsent claim has not been issued, and showing a
+    // number invites the client to treat it as a document they can pay.
+    invoiceDate: invoice.invoiceDate,
+    dueDate: invoice.dueDate,
+    // "upcoming" — never the builder's word "draft". See shared/claimSchedule.ts.
+    stage: claimStage(invoice),
+    // The frozen figure, and nothing that would reveal the live one.
+    amountIncCents: invoice.clientSharedAmountCents ?? null,
+    sharedAt: invoice.clientSharedAt,
+  };
 }
 
 /**
