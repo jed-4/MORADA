@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import type { User } from "@shared/schema";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
+import { isClaimInClientSchedule } from "@shared/claimSchedule";
 import { isPublicProposalShareRoute } from "./publicProposalRoutes";
 import {
   clientAllowanceEstimateIds,
@@ -10,6 +11,7 @@ import {
   projectClientScheduleItem,
   projectClientSiteDiaryEntry,
   isInvoiceClientVisible,
+  projectClientClaimForecast,
   isVariationClientVisible,
   projectClientAllowance,
   projectClientProject,
@@ -245,9 +247,35 @@ const shapeProjectList: ResponseShaper = async (body) =>
 const shapeProject: ResponseShaper = async (body) =>
   body && typeof body === "object" && !Array.isArray(body) ? projectClientProject(body) : HIDE_FROM_CLIENT;
 
-const shapeInvoiceList: ResponseShaper = async (body) =>
-  Array.isArray(body) ? body.filter(isInvoiceClientVisible).map(projectClientInvoice) : HIDE_FROM_CLIENT;
+/**
+ * The claims list a client gets: issued claims in full, plus the SHARED but
+ * not-yet-sent ones reduced to a forecast (name, date, frozen figure).
+ *
+ * Two different projections on purpose. An issued claim is a document they
+ * have been given; an unsent one is still being worked on, so it must carry
+ * none of its live money — see projectClientClaimForecast. Anything the
+ * builder has not shared is dropped entirely, which is what makes a draft safe
+ * to keep editing.
+ */
+const shapeInvoiceList: ResponseShaper = async (body) => {
+  if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
+  return body
+    .filter(isClaimInClientSchedule)
+    .map((invoice: any) =>
+      isInvoiceClientVisible(invoice)
+        ? projectClientInvoice(invoice)
+        : projectClientClaimForecast(invoice),
+    );
+};
 
+/**
+ * A single claim. Issued only — deliberately NOT widened to shared forecasts.
+ *
+ * There is no document to open for a claim that has not been sent: its lines,
+ * items and payments are all live and still moving. The client's schedule
+ * shows the forecast as a row and nothing more, so there is nothing here to
+ * drill into until it is issued.
+ */
 const shapeInvoice: ResponseShaper = async (body) =>
   isInvoiceClientVisible(body) ? projectClientInvoice(body) : HIDE_FROM_CLIENT;
 

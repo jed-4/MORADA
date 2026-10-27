@@ -2811,11 +2811,32 @@ export const clientInvoices = pgTable("client_invoices", {
   // object-storage path from /api/uploads/request-url. Mirrors
   // variations.attachments so both documents carry files the same way.
   attachments: jsonb("attachments").notNull().default([]),
+  /**
+   * The payment schedule the CLIENT sees, frozen (migration 0112).
+   *
+   * A client wants to know what is coming. The claims that answer that are
+   * drafts, and a draft's total moves as variations are approved and
+   * allowances reconcile — so showing them `totalAmount` would make every
+   * edit the builder makes look to the client like the price changing.
+   *
+   * `clientSharedAmountCents` is the figure the builder deliberately put in
+   * front of them, and editing the draft NEVER touches it. Null
+   * `clientSharedAt` means this claim is not in the client's schedule at all.
+   *
+   * These stop mattering the moment the claim is SENT: the existing
+   * sent/partial/paid visibility rule takes over and the client sees the real
+   * document. The stamp stays as the record of what they were told to expect,
+   * which is the question asked when the two differ.
+   */
+  clientSharedAmountCents: integer("client_shared_amount_cents"),
+  clientSharedAt: timestamp("client_shared_at"),
+  clientSharedById: varchar("client_shared_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   // Composite unique constraint: invoice numbers must be unique per company
   uniqueInvoiceNumberPerCompany: uniqueIndex("client_invoices_company_invoice_number_unique").on(table.companyId, table.invoiceNumber),
+  clientSharedIdx: index("client_invoices_shared_idx").on(table.projectId, table.clientSharedAt),
 }));
 
 // One line of the persisted invoice money snapshot. All amounts are integer
