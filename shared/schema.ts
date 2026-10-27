@@ -5,6 +5,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { JOB_MODES } from "./cashflow/types";
 import { FREQUENCIES } from "./cashflow/recurrence";
+import { minuteAttendeeSchema } from "./minuteAttendees";
 
 // Session storage table for Replit Auth
 // IMPORTANT: This table is mandatory for Replit Auth, don't drop it
@@ -4855,7 +4856,11 @@ export const minutes = pgTable("minutes", {
   title: text("title").notNull(),
   meetingDate: timestamp("meeting_date").notNull(),
   location: text("location"), // Meeting location (physical or virtual link)
-  attendees: json("attendees").default([]), // Array of attendee names or {name, contactId} objects
+  // Mixed array: "Some Name", {name, userId} for a team member, or
+  // {name, contactId} for a CRM contact. Read it with attendeeName() from
+  // shared/minuteAttendees.ts — `as string[]` here is how the minutes list came
+  // to throw on its own search.
+  attendees: json("attendees").default([]),
   contentHtml: text("content_html"), // Rich text HTML content
   contentText: text("content_text"), // Plain text for searching
   aiSummary: text("ai_summary"), // AI-generated summary
@@ -4886,10 +4891,11 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
   aiSummary: z.string().optional(),
-  attendees: z.array(z.union([
-    z.string(), // Manual entry
-    z.object({ name: z.string(), contactId: z.string() }) // From contacts
-  ])).optional(),
+  // A string typed by hand, a team member by userId, or a CRM contact by
+  // contactId — see shared/minuteAttendees.ts, which also holds the only safe
+  // way to READ one. Dropping `userId` here is what kept staff out of the
+  // attendee picker: the people who actually sit in the meeting had no shape.
+  attendees: z.array(minuteAttendeeSchema).optional(),
   actionItems: z.array(z.object({
     description: z.string(),
     assignee: z.string().optional(),
