@@ -41,11 +41,13 @@ export function PrestartDefectBanner({ asset, prestarts, canEdit }: { asset: Ass
             key={p.id}
             className={cn(
               "flex items-start gap-3 rounded-lg border px-4 py-3",
-              p.unsafe ? "border-destructive/40 bg-destructive/5" : "border-[hsl(var(--amber))]/50 bg-[hsl(var(--amber-light))]",
+              p.unsafe
+                ? "border-[hsl(var(--status-danger-fg))]/30 bg-[hsl(var(--status-danger-bg))]"
+                : "border-[hsl(var(--status-warning-fg))]/30 bg-[hsl(var(--status-warning-bg))]",
             )}
             data-testid={`banner-defect-${p.id}`}
           >
-            <TriangleAlert className={cn("w-4 h-4 mt-0.5 shrink-0", p.unsafe ? "text-destructive" : "text-[hsl(42_54%_32%)]")} />
+            <TriangleAlert className={cn("w-4 h-4 mt-0.5 shrink-0", p.unsafe ? "text-[hsl(var(--status-danger-fg))]" : "text-[hsl(var(--status-warning-fg))]")} />
             <div className="flex-1 min-w-0 text-xs">
               <div className="font-semibold">
                 {p.unsafe ? "Do not use — " : "Defect reported — "}

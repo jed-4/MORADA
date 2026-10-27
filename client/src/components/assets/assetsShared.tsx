@@ -44,10 +44,12 @@ export function relativeDays(days: number | null | undefined): string {
   return days > 0 ? `in ${days} days` : `${-days} days ago`;
 }
 
+// The design system's status tokens: contrast-checked (4.6:1) in light and
+// dark. Hard-coded dark text on the -light washes disappeared in dark mode.
 const DUE_STYLES: Record<DueState, string> = {
-  overdue: "bg-[hsl(var(--coral-light))] text-[hsl(11_52%_42%)] border-[hsl(var(--coral))]/40",
-  due_soon: "bg-[hsl(var(--amber-light))] text-[hsl(42_54%_32%)] border-[hsl(var(--amber))]/50",
-  ok: "bg-[hsl(var(--sage-light))] text-[hsl(147_39%_30%)] border-[hsl(var(--sage))]/50",
+  overdue: "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))] border-[hsl(var(--status-danger-fg))]/25",
+  due_soon: "bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))] border-[hsl(var(--status-warning-fg))]/25",
+  ok: "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))] border-[hsl(var(--status-success-fg))]/25",
 };
 const DUE_LABELS: Record<DueState, string> = { overdue: "Overdue", due_soon: "Due soon", ok: "OK" };
 
