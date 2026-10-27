@@ -49,6 +49,8 @@ export const workspaceItems: MoreTile[] = [
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: 'lavender', action: { type: 'more-screen', screen: 'Tasks' } },
   { id: 'timesheets', label: 'Timesheets', icon: 'time', color: 'amber', action: { type: 'more-screen', screen: 'Timesheets' } },
   { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: 'sage', action: { type: 'more-screen', screen: 'Checklists' } },
+  // Shown only to roles that can do pre-starts (MorePanel filters it).
+  { id: 'prestart', label: 'Pre-start', icon: 'car', color: 'amber', action: { type: 'more-screen', screen: 'PrestartList' } },
   { id: 'schedule', label: 'Schedule', icon: 'calendar', color: 'rose', action: { type: 'more-screen', screen: 'Schedule' } },
   // Shown only to roles that can view selections (MorePanel filters it).
   { id: 'selections', label: 'Selections', icon: 'color-palette', color: 'teal', action: { type: 'more-screen', screen: 'SelectionsProjects' } },

@@ -35,6 +35,7 @@ export const ASSET_TASK_REF = {
   compliance30: "asset_compliance_30",
   compliance7: "asset_compliance_7",
   service: "asset_service_due",
+  defect: "asset_defect",
 } as const;
 
 const LIVE_STATUSES = ["active", "off_road"];
@@ -47,7 +48,7 @@ export function serviceCycleRef(s: { id: string; lastDoneDate: string | null; la
 }
 
 /** Same rule as the supplier-insurance pass, cached per run. */
-async function resolveAssignee(companyId: string, cache: Map<string, string | null>): Promise<string | null> {
+export async function resolveAssignee(companyId: string, cache = new Map<string, string | null>()): Promise<string | null> {
   if (cache.has(companyId)) return cache.get(companyId)!;
   let assigneeId: string | null = null;
   const settings = await storage.getCompanySettings(companyId);
@@ -68,12 +69,12 @@ async function resolveAssignee(companyId: string, cache: Map<string, string | nu
   return assigneeId;
 }
 
-async function createAssetTask(input: {
+export async function createAssetTask(input: {
   companyId: string;
   assigneeId: string | null;
   title: string;
   description: string;
-  priority: "low" | "high";
+  priority: "low" | "medium" | "high";
   dueDate: string | null;
   referenceType: string;
   referenceId: string;
@@ -233,7 +234,7 @@ export async function processAssetReminders(now = new Date()): Promise<void> {
  */
 export async function closeAssetReminderTasks(
   companyId: string,
-  target: { complianceItemId: string } | { scheduleId: string },
+  target: { complianceItemId: string } | { scheduleId: string } | { prestartId: string },
 ): Promise<void> {
   const refMatch =
     "complianceItemId" in target
@@ -241,7 +242,9 @@ export async function closeAssetReminderTasks(
           inArray(schema.notes.referenceType, [ASSET_TASK_REF.compliance30, ASSET_TASK_REF.compliance7]),
           eq(schema.notes.referenceId, target.complianceItemId),
         )
-      : and(eq(schema.notes.referenceType, ASSET_TASK_REF.service), like(schema.notes.referenceId, `${target.scheduleId}:%`));
+      : "scheduleId" in target
+        ? and(eq(schema.notes.referenceType, ASSET_TASK_REF.service), like(schema.notes.referenceId, `${target.scheduleId}:%`))
+        : and(eq(schema.notes.referenceType, ASSET_TASK_REF.defect), eq(schema.notes.referenceId, target.prestartId));
 
   await db.update(schema.notes)
     .set({ status: "done", completedAt: new Date(), updatedAt: new Date() } as any)

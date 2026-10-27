@@ -55,7 +55,7 @@ export const COMPLIANCE_KIND_LABELS: Record<ComplianceKind, string> = {
   custom: "Other",
 };
 
-export const ASSET_EVENT_KINDS = ["service", "repair", "meter", "note", "assignment", "status"] as const;
+export const ASSET_EVENT_KINDS = ["service", "repair", "meter", "note", "assignment", "status", "prestart"] as const;
 export type AssetEventKind = (typeof ASSET_EVENT_KINDS)[number];
 export const ASSET_EVENT_KIND_LABELS: Record<AssetEventKind, string> = {
   service: "Service",
@@ -64,6 +64,7 @@ export const ASSET_EVENT_KIND_LABELS: Record<AssetEventKind, string> = {
   note: "Note",
   assignment: "Assignment",
   status: "Status change",
+  prestart: "Pre-start",
 };
 /** The kinds a person logs by hand. Assignment and status rows are written by the server. */
 export const MANUAL_EVENT_KINDS = ["service", "repair", "meter", "note"] as const;
@@ -288,4 +289,121 @@ export function defaultAssetName(a: { year?: number | null; make?: string | null
 export function normaliseRego(rego: string | null | undefined): string | null {
   const r = (rego ?? "").replace(/\s+/g, "").toUpperCase();
   return r || null;
+}
+
+// ---- pre-start checks ----------------------------------------------------
+//
+// One template per kind of asset. Heavy vehicles (> 4.5t GVM) get the NHVR
+// daily-check minimum: brakes, lights and reflectors, windows/mirrors/wipers,
+// structure and body, engine/driveline/exhaust — plus tyres, steering and
+// coupling. A failed CRITICAL item means "do not use": the server takes the
+// asset off the road until someone marks the defect fixed.
+
+export interface PrestartItem {
+  key: string;
+  label: string;
+  /** Hint under the label: what to look at. */
+  hint?: string;
+  critical?: boolean;
+}
+
+export const PRESTART_RESULTS = ["ok", "fault", "na"] as const;
+export type PrestartResult = (typeof PRESTART_RESULTS)[number];
+
+export const PRESTART_TEMPLATE_KEYS = ["light", "heavy", "trailer", "plant", "tool"] as const;
+export type PrestartTemplateKey = (typeof PRESTART_TEMPLATE_KEYS)[number];
+
+export const PRESTART_TEMPLATES: Record<PrestartTemplateKey, { label: string; items: PrestartItem[] }> = {
+  light: {
+    label: "Light vehicle",
+    items: [
+      { key: "tyres", label: "Tyres & wheels", hint: "Tread, pressure, damage, wheel nuts", critical: true },
+      { key: "brakes", label: "Brakes", hint: "Pedal feel, handbrake holds", critical: true },
+      { key: "steering", label: "Steering", hint: "No excess play or noise", critical: true },
+      { key: "lights", label: "Lights & indicators", hint: "Head, tail, brake, indicators, hazards", critical: true },
+      { key: "mirrors", label: "Windows, mirrors & wipers", hint: "Clear, uncracked, washers work" },
+      { key: "seatbelts", label: "Seatbelts & horn" },
+      { key: "warning_lights", label: "Dash warning lights", hint: "None on after start" },
+      { key: "leaks", label: "No fluid leaks", hint: "Oil, coolant, fuel under the vehicle" },
+      { key: "load", label: "Load & tray secure", hint: "Restraints, tailgate, toolboxes locked" },
+      { key: "safety_kit", label: "First aid kit & extinguisher" },
+    ],
+  },
+  heavy: {
+    label: "Heavy vehicle (NHVR daily check)",
+    items: [
+      { key: "brakes", label: "Brakes", hint: "Service & park brake, air pressure builds, no leaks", critical: true },
+      { key: "lights", label: "Lights & reflectors", hint: "All lamps, indicators, reflectors clean", critical: true },
+      { key: "mirrors", label: "Windows, mirrors & wipers", hint: "Clear view, mirrors adjusted", critical: true },
+      { key: "structure", label: "Structure & body", hint: "Chassis, tipper body, hoist, no damage", critical: true },
+      { key: "engine", label: "Engine, driveline & exhaust", hint: "Starts clean, no leaks, no smoke", critical: true },
+      { key: "tyres", label: "Tyres & wheels", hint: "Tread, pressure, nuts, no cuts", critical: true },
+      { key: "steering", label: "Steering & suspension", critical: true },
+      { key: "coupling", label: "Coupling (if towing)", hint: "Pin, safety chains, electrics" },
+      { key: "load", label: "Load restraint", hint: "Tailgate locked, load secured" },
+      { key: "warning_lights", label: "Dash warning lights" },
+      { key: "safety_kit", label: "First aid kit, extinguisher, triangles" },
+    ],
+  },
+  trailer: {
+    label: "Trailer",
+    items: [
+      { key: "coupling", label: "Coupling & safety chains", hint: "Locked on, chains crossed and shackled", critical: true },
+      { key: "lights", label: "Lights & plug", hint: "Tail, brake, indicators work", critical: true },
+      { key: "tyres", label: "Tyres & wheels", critical: true },
+      { key: "brakes", label: "Brakes (if fitted)", hint: "Breakaway cable attached" },
+      { key: "body", label: "Body, ramps & gates" },
+      { key: "load", label: "Load restraint" },
+    ],
+  },
+  plant: {
+    label: "Plant",
+    items: [
+      { key: "controls", label: "Controls & emergency stop", critical: true },
+      { key: "guards", label: "Guards in place", critical: true },
+      { key: "hydraulics", label: "Hydraulics", hint: "No leaks, hoses undamaged", critical: true },
+      { key: "rops", label: "ROPS & seatbelt", critical: true },
+      { key: "tracks", label: "Tracks / tyres" },
+      { key: "alarms", label: "Reversing alarm & beacon" },
+      { key: "fluids", label: "Fluid levels" },
+      { key: "attachments", label: "Attachments & pins secure" },
+    ],
+  },
+  tool: {
+    label: "Tool",
+    items: [
+      { key: "leads", label: "Leads & plug undamaged", critical: true },
+      { key: "guards", label: "Guards in place", critical: true },
+      { key: "test_tag", label: "Test & tag current", critical: true },
+      { key: "condition", label: "General condition" },
+    ],
+  },
+};
+
+/** Which checklist an asset gets. */
+export function prestartTemplateFor(asset: { assetType: string; gvmKg: number | null }): PrestartTemplateKey {
+  if (asset.assetType === "trailer") return "trailer";
+  if (asset.assetType === "plant") return "plant";
+  if (asset.assetType === "tool") return "tool";
+  return isHeavyVehicle(asset.gvmKg) ? "heavy" : "light";
+}
+
+export interface PrestartAnswer {
+  key: string;
+  result: PrestartResult;
+  note?: string | null;
+}
+
+/** Faults found, and whether any of them means the asset must not be used. */
+export function assessPrestart(templateKey: PrestartTemplateKey, answers: PrestartAnswer[]) {
+  const items = PRESTART_TEMPLATES[templateKey].items;
+  const byKey = new Map(answers.map((a) => [a.key, a]));
+  const missing = items.filter((i) => !byKey.has(i.key)).map((i) => i.key);
+  const faults = items.filter((i) => byKey.get(i.key)?.result === "fault");
+  return {
+    missing,
+    faults,
+    hasDefect: faults.length > 0,
+    critical: faults.some((i) => i.critical),
+  };
 }
