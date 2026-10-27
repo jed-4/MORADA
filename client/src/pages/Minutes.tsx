@@ -50,6 +50,7 @@ import {
 import { format } from "date-fns";
 import { ProjectSelect } from "@/components/ProjectSelect";
 import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
+import { attendeeNames } from "@shared/minuteAttendees";
 
 /** A Date as the value a <input type="datetime-local"> expects, in LOCAL time. */
 function toLocalDateTimeInput(value: Date | string | null | undefined): string {
@@ -194,7 +195,7 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
       title: minute.title,
       meetingDate: new Date(minute.meetingDate),
       location: minute.location || "",
-      attendees: (minute.attendees as string[]) || [],
+      attendees: (minute.attendees as Attendee[]) || [],
       contentHtml: minute.contentHtml || "",
       contentText: minute.contentText || "",
       projectId: minute.projectId || undefined,
@@ -217,7 +218,10 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
     return (
       minute.title.toLowerCase().includes(search) ||
       minute.location?.toLowerCase().includes(search) ||
-      ((minute.attendees as string[]) || []).some((a: string) => a.toLowerCase().includes(search))
+      // Through attendeeNames, because an attendee is not always a string. It
+      // can be {name, userId} or {name, contactId}, and `a.toLowerCase()` on
+      // one of those threw — taking the whole minutes list down with it.
+      attendeeNames(minute.attendees).some((a) => a.toLowerCase().includes(search))
     );
   });
 
@@ -447,7 +451,7 @@ function MinuteCard({
   navigate: (to: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
-  const attendees = (minute.attendees as string[]) || [];
+  const attendees = attendeeNames(minute.attendees);
   
   return (
     <Card

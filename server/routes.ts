@@ -226,7 +226,8 @@ import {
 // existing routes already referenced `schema.` without this import and threw
 // a ReferenceError at runtime (every selections-portal request 500ed).
 import * as schema from "@shared/schema";
-import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems } from "@shared/minuteActionItems";
+import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems, actionItemPlacement } from "@shared/minuteActionItems";
+import { attendeeNames } from "@shared/minuteAttendees";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -4157,10 +4158,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete data.ownerId;
       delete data.ownerName;
 
+      const movingProject =
+        Object.prototype.hasOwnProperty.call(data, "projectId") &&
+        (data.projectId ?? null) !== ((owned as any).projectId ?? null);
+
       const minute = await storage.updateMinute(req.params.id, data);
       if (!minute) {
         return res.status(404).json({ error: "Minute not found" });
       }
+
+      /* Moving a minute moves its action items with it.
+         An action item IS a task (a `notes` row, see shared/minuteActionItems.ts)
+         and the task carries the project — copied off the minute when it was
+         created. Move the minute alone and this meeting's work stays in the old
+         job's To-Dos, where nobody is looking for it, while the meeting it came
+         out of sits somewhere else entirely. The four fields are the same four
+         the create sets, so a moved item is indistinguishable from one raised
+         in the new project.
+         Scoped to this minute's own items: referenceType + referenceId, inside
+         the company. */
+      if (movingProject) {
+        const companyId = (req.user as any)?.companyId;
+        await db.update(schema.notes)
+          .set(actionItemPlacement((minute as any).projectId, companyId))
+          .where(and(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.notes.referenceType, MINUTE_ACTION_REFERENCE),
+            eq(schema.notes.referenceId, req.params.id),
+          ));
+      }
+
       res.json(minute);
     } catch (error) {
       res.status(500).json({ error: "Failed to update minute" });
@@ -4252,10 +4279,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content: "",
         type: "task",
         status: "todo",
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null,
         // The link back to the meeting it came out of.
@@ -4347,10 +4372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // finished work because it changed storage would be its own bug.
         status: wasCompleted ? "done" : "todo",
         completedAt: wasCompleted ? new Date() : null,
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: due && !Number.isNaN(due.getTime()) ? due : null,
         referenceType: MINUTE_ACTION_REFERENCE,
@@ -4394,7 +4417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: [
           {
             role: "user",
-            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
+            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${attendeeNames(minute.attendees).join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
           }
         ],
       });
