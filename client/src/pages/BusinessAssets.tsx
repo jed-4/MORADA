@@ -6,6 +6,7 @@ import { Loader2, Plus, Search, Truck } from "lucide-react";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { AssetDetail } from "@/components/assets/AssetDetail";
 import { AssetDialog } from "@/components/assets/AssetDialogs";
+import { AssetRegisterSettingsButton } from "@/components/assets/AssetRecharge";
 import {
   ASSETS_KEY,
   ASSIGNABLE_USERS_KEY,
@@ -50,6 +51,7 @@ export default function BusinessAssets() {
 
 function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
   const canAdd = usePermission("business.assets", "add");
+  const canEdit = usePermission("business.assets", "edit");
   const { data: assets = [], isLoading, error } = useQuery<AssetListRow[]>({ queryKey: ASSETS_KEY });
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY });
   const [adding, setAdding] = useState(false);
@@ -230,6 +232,8 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
             <h3 className="text-sm font-semibold">Asset register</h3>
             <p className="text-xs text-muted-foreground">Vehicles, trailers, plant and tools — rego, insurance, servicing, and who has them.</p>
           </div>
+          <div className="flex items-center gap-1.5">
+          <AssetRegisterSettingsButton canEdit={canEdit} />
           {canAdd && (
             <button
               type="button"
@@ -240,6 +244,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
               <Plus className="w-3.5 h-3.5" />Add asset
             </button>
           )}
+          </div>
         </div>
 
         {assets.length === 0 ? (

@@ -196,6 +196,19 @@ export default function BudgetPage() {
     enabled: !!projectId && canViewActuals,
   });
 
+  // Vehicles & plant charged to this job at their day rate (asset register).
+  // Its total is actualCosts.internalCostCents (margin bar); this splits it by
+  // cost code for the table's Internal column.
+  const { data: internalBreakdown } = useQuery<{
+    total: number;
+    byCostCode: Array<{ costCodeId: string | null; costCodeTitle: string; categoryTitle: string; internalCents: number }>;
+    byAsset: Array<{ assetId: string; name: string; rego: string | null; days: number; cents: number }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "internal-costs"],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/internal-costs`, "GET"),
+    enabled: !!projectId && canViewActuals,
+  });
+
   // Drill-down: which cost code's Bills are being inspected (null = closed).
   const [actualDrill, setActualDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
   const { data: drillData, isLoading: drillLoading } = useQuery<{
@@ -427,6 +440,12 @@ export default function BudgetPage() {
     (labourBreakdown?.byCostCode ?? []).forEach((b) => {
       labourByKey.set(b.costCodeId ? `cc:${b.costCodeId}` : "uncategorized", b);
     });
+    // Recharges with no cost code set get their own row, never "Uncategorized".
+    const internalByKey = new Map<string, { costCodeId: string | null; costCodeTitle: string; categoryTitle: string; internalCents: number }>();
+    (internalBreakdown?.byCostCode ?? []).forEach((b) => {
+      internalByKey.set(b.costCodeId ? `cc:${b.costCodeId}` : "internal:vehicles", b);
+    });
+    const usedInternalKeys = new Set<string>();
 
     const items: CostItem[] = [];
     const usedLabourKeys = new Set<string>();
@@ -443,7 +462,9 @@ export default function BudgetPage() {
       if (labourMatch) usedLabourKeys.add(key);
       const labour = labourMatch?.labourCents ?? 0;
       const bills = li.actualAmount;
-      const internal = 0;
+      const internalMatch = internalByKey.get(key);
+      if (internalMatch) usedInternalKeys.add(key);
+      const internal = internalMatch?.internalCents ?? 0;
       items.push({
         id: li.id,
         costCodeId: li.costCodeId,
@@ -460,6 +481,10 @@ export default function BudgetPage() {
     (labourBreakdown?.byCostCode ?? []).forEach((b) => {
       const key = b.costCodeId ? `cc:${b.costCodeId}` : "uncategorized";
       if (usedLabourKeys.has(key) || b.labourCents === 0) return;
+      // A labour-only row can also carry this code's recharge.
+      const internalMatch = internalByKey.get(key);
+      if (internalMatch) usedInternalKeys.add(key);
+      const internal = internalMatch?.internalCents ?? 0;
       items.push({
         id: `labour-${key}`,
         costCodeId: b.costCodeId,
@@ -468,13 +493,29 @@ export default function BudgetPage() {
         budgeted: 0,
         labour: b.labourCents,
         bills: 0,
-        internal: 0,
-        total: b.labourCents,
+        internal,
+        total: b.labourCents + internal,
+      });
+    });
+
+    (internalBreakdown?.byCostCode ?? []).forEach((b) => {
+      const key = b.costCodeId ? `cc:${b.costCodeId}` : "internal:vehicles";
+      if (usedInternalKeys.has(key) || b.internalCents === 0) return;
+      items.push({
+        id: `internal-${key}`,
+        costCodeId: b.costCodeId,
+        costCodeTitle: b.costCodeTitle || "Vehicles & plant",
+        categoryTitle: b.categoryTitle || "Uncategorized",
+        budgeted: 0,
+        labour: 0,
+        bills: 0,
+        internal: b.internalCents,
+        total: b.internalCents,
       });
     });
 
     return items;
-  }, [lineItems, labourBreakdown]);
+  }, [lineItems, labourBreakdown, internalBreakdown]);
 
   type CostRow =
     | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; labour: number; bills: number; internal: number; total: number }
