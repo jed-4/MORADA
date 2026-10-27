@@ -125,6 +125,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
+import { priceListSearchTokens } from "@shared/priceListSearch";
 import { orderGroups } from "@shared/templateGroupOrder";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
@@ -28294,6 +28295,44 @@ export class DbStorage implements IStorage {
       if (!term) return [];
       const like = `%${term}%`;
 
+      /* Every WORD has to match, not the whole phrase.
+         This was one LIKE over the raw query, so the words had to be adjacent
+         and in the catalogue's order: "240 pine" found nothing because the item
+         is "240 x 45 T2 Pine". Nobody remembers a timber item as one string —
+         they remember a size, a species and a supplier, in whatever order those
+         come to mind. See shared/priceListSearch.ts.
+
+         Each word is matched against the item's whole searchable text at once
+         (name, nickname, code, and the book it lives in) rather than four
+         separate LIKEs per word, so a three-word search costs three clauses
+         instead of twelve on a route that fires per keystroke. COALESCE is not
+         optional: in Postgres anything || NULL is NULL, and a single missing
+         nickname would blank the entire haystack for that row. */
+      const haystack = sql`LOWER(
+        ${schema.priceListItems.name} || ' ' ||
+        COALESCE(${schema.priceListItems.nickname}, '') || ' ' ||
+        COALESCE(${schema.priceListItems.code}, '') || ' ' ||
+        ${schema.priceLists.name}
+      )`;
+      const tokens = priceListSearchTokens(term);
+      // A query of nothing but whitespace tokenises to nothing; fall back to
+      // the whole term so the search can never silently match every row.
+      const tokenClauses = (tokens.length ? tokens : [term]).map(
+        (t) => sql`${haystack} LIKE ${`%${t}%`}`,
+      );
+
+      /* The item's OWN text, for ranking. A row that matched only because of
+         the book it sits in is the weakest kind of hit — one list name matching
+         drags in that supplier's entire catalogue — so those sort last. */
+      const itemText = sql`LOWER(
+        ${schema.priceListItems.name} || ' ' ||
+        COALESCE(${schema.priceListItems.nickname}, '') || ' ' ||
+        COALESCE(${schema.priceListItems.code}, '')
+      )`;
+      const allTokensInItem = and(
+        ...(tokens.length ? tokens : [term]).map((t) => sql`${itemText} LIKE ${`%${t}%`}`),
+      )!;
+
       const rows = await db
         .select({
           item: schema.priceListItems,
@@ -28306,28 +28345,23 @@ export class DbStorage implements IStorage {
           eq(schema.priceListItems.companyId, companyId),
           eq(schema.priceListItems.isActive, true),
           eq(schema.priceLists.isArchived, false),
-          or(
-            sql`LOWER(${schema.priceListItems.name}) LIKE ${like}`,
-            sql`LOWER(${schema.priceListItems.nickname}) LIKE ${like}`,
-            sql`LOWER(${schema.priceListItems.code}) LIKE ${like}`,
-            // The book's name too, so typing a supplier browses their catalogue —
-            // "plaster" found nothing before, even though every item lived in "The
-            // Plaster Shop". Ranked last below, because one list name matching drags
-            // in its whole book and those rows are the weakest kind of hit.
-            sql`LOWER(${schema.priceLists.name}) LIKE ${like}`,
-          )!,
+          and(...tokenClauses)!,
         ))
         // A code hit is the strongest signal a builder can give — they typed the SKU
         // off the invoice. Then names that START with the term, then other item-text
         // hits, and finally rows that only matched by which book they're in.
+        // A code hit is the strongest signal a builder can give — they typed the
+        // SKU off the invoice. Then the phrase exactly as typed, so someone who
+        // DID type the full name still gets it first. Then every word found in
+        // the item itself, and last the rows that needed the book's name to
+        // match at all.
         .orderBy(
           sql`CASE
             WHEN LOWER(${schema.priceListItems.code}) = ${term} THEN 0
             WHEN LOWER(${schema.priceListItems.name}) LIKE ${term + '%'} THEN 1
-            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like}
-              OR LOWER(${schema.priceListItems.nickname}) LIKE ${like}
-              OR LOWER(${schema.priceListItems.code}) LIKE ${like} THEN 2
-            ELSE 3
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like} THEN 2
+            WHEN ${allTokensInItem} THEN 3
+            ELSE 4
           END`,
           asc(schema.priceListItems.name),
         )
