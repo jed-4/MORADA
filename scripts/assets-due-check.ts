@@ -16,6 +16,8 @@ import {
   normaliseRego,
   serviceDue,
   todayKey,
+  categoriseVehicleCost,
+  mentionsRego,
 } from "../shared/assets.ts";
 
 const today = "2026-10-26";
@@ -159,6 +161,27 @@ check("heavy vehicle threshold is over 4.5t, not at", () => {
 check("rego is upper-cased without spaces", () => {
   assert.equal(normaliseRego(" ab 12 cd "), "AB12CD");
   assert.equal(normaliseRego("  "), null);
+});
+
+check("rego matching: whole plate only, spaces ignored", () => {
+  assert.equal(mentionsRego("Fuel - AB12CD - 45.2L diesel", "AB12CD"), true);
+  assert.equal(mentionsRego("Service for ab 12 cd", "AB12CD"), true);
+  assert.equal(mentionsRego("Card 4 AB-12-CD", "AB12CD"), true);
+  assert.equal(mentionsRego("Part XAB12CDE", "AB12CD"), false);
+  assert.equal(mentionsRego("Anything", "AB"), false);
+  assert.equal(mentionsRego(null, "AB12CD"), false);
+});
+
+check("cost categories: specific before general", () => {
+  assert.equal(categoriseVehicleCost("Tyre service x4"), "tyres");
+  assert.equal(categoriseVehicleCost("Diesel 62L"), "fuel");
+  assert.equal(categoriseVehicleCost("Monthly statement", "WEX Motorpass"), "fuel");
+  assert.equal(categoriseVehicleCost("60,000km logbook service", "Ultra Tune"), "service");
+  assert.equal(categoriseVehicleCost("12 month registration"), "rego");
+  assert.equal(categoriseVehicleCost("Comprehensive premium", "NRMA"), "insurance");
+  assert.equal(categoriseVehicleCost("Linkt top-up"), "tolls");
+  assert.equal(categoriseVehicleCost("Chattel mortgage repayment"), "finance");
+  assert.equal(categoriseVehicleCost("Cable ties"), "other");
 });
 
 console.log(`assets-due-check: ok (${n} checks)`);

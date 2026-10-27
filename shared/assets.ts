@@ -407,3 +407,54 @@ export function assessPrestart(templateKey: PrestartTemplateKey, answers: Presta
     critical: faults.some((i) => i.critical),
   };
 }
+
+// ---- running costs from bills -------------------------------------------
+//
+// Bill lines linked to an asset (bill_line_items.asset_id, migration 0115) are
+// its running cost. Category is read from the words on the line and the
+// supplier — good enough to split fuel from servicing on a chart; nothing is
+// stored, so the rules can improve without a backfill.
+
+export const VEHICLE_COST_CATEGORIES = ["fuel", "service", "tyres", "rego", "insurance", "finance", "tolls", "other"] as const;
+export type VehicleCostCategory = (typeof VEHICLE_COST_CATEGORIES)[number];
+export const VEHICLE_COST_CATEGORY_LABELS: Record<VehicleCostCategory, string> = {
+  fuel: "Fuel",
+  service: "Servicing & repairs",
+  tyres: "Tyres",
+  rego: "Rego & CTP",
+  insurance: "Insurance",
+  finance: "Finance",
+  tolls: "Tolls",
+  other: "Other",
+};
+
+// First match wins, so the specific words come before the general ones
+// ("tyre service" is tyres, not servicing).
+const COST_RULES: [VehicleCostCategory, RegExp][] = [
+  ["tolls", /\b(toll|linkt|e-?toll|e-?tag|transurban)\b/i],
+  ["fuel", /\b(fuel|diesel|unleaded|petrol|ulp|e10|adblue|fleetcard|fleet card|motorpass|ampol|caltex|bp|shell|7-eleven|united petroleum|liberty)\b/i],
+  ["tyres", /\b(tyres?|tires?|beaurepaires|bob jane|tyrepower|wheel alignment)\b/i],
+  ["rego", /\b(rego|registration|ctp|green slip|pink slip|blue slip|service nsw|transport for nsw|tmr|vicroads|nhvr)\b/i],
+  ["insurance", /\b(insurance|insurer|premium|policy|nrma|aami|allianz|qbe|gio|suncorp|youi|budget direct)\b/i],
+  ["finance", /\b(finance|lease|loan|repayment|chattel|novated|interest)\b/i],
+  ["service", /\b(service|servicing|repair|mechanic|logbook|brakes?|battery|oil|filter|ultra tune|midas|mycar|kmart tyre|windscreen|o'brien|instant windscreens)\b/i],
+];
+
+export function categoriseVehicleCost(description: string | null | undefined, supplierName?: string | null): VehicleCostCategory {
+  const text = `${description ?? ""} ${supplierName ?? ""}`;
+  for (const [category, re] of COST_RULES) if (re.test(text)) return category;
+  return "other";
+}
+
+/**
+ * Does this text mention the plate? Compared with spaces and dashes removed,
+ * and only as a whole token, so "AB12CD" doesn't match "XAB12CDE". Plates
+ * shorter than 3 characters never match — too likely to be a coincidence.
+ */
+export function mentionsRego(text: string | null | undefined, rego: string | null | undefined): boolean {
+  const plate = normaliseRego(rego)?.replace(/[^A-Z0-9]/g, "");
+  if (!text || !plate || plate.length < 3) return false;
+  // "AB12CD", "AB 12 CD" and "AB-12-CD" all count; the plate must stand alone.
+  const body = plate.split("").join("[\\s-]?");
+  return new RegExp(`(^|[^A-Z0-9])${body}($|[^A-Z0-9])`).test(text.toUpperCase());
+}

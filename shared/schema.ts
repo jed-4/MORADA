@@ -2271,12 +2271,17 @@ export const billLineItems = pgTable("bill_line_items", {
   account: text("account"), // Xero account code
   total: integer("total").notNull().default(0), // Total in cents
   order: integer("order").notNull().default(0), // For sorting
+  // The vehicle/plant this line is a running cost of (migration 0115). Set
+  // only through the asset routes, never the bill editor: it is omitted from
+  // insertBillLineItemSchema, so saving a bill can neither wipe nor forge it.
+  assetId: varchar("asset_id").references((): AnyPgColumn => assets.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertBillLineItemSchema = createInsertSchema(billLineItems).omit({
   id: true,
   createdAt: true,
+  assetId: true,
 }).extend({
   lineType: z.enum(["estimate", "item", "custom"]),
   tax: z.enum(["GST on expenses", "No GST"]),
