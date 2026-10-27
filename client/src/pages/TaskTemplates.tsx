@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { AssignablePerson } from "@shared/assignable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -166,7 +167,7 @@ export default function TaskTemplates() {
   });
 
   // Create task from template functionality
-  const { data: users = [] } = useQuery<any[]>({ queryKey: ["/api/users"] });
+  const { data: users = [] } = useQuery<AssignablePerson[]>({ queryKey: ["/api/users/assignable"] });
   const [isCreateTaskDialogOpen, setIsCreateTaskDialogOpen] = useState(false);
   const [selectedTemplateForTask, setSelectedTemplateForTask] = useState<TaskTemplate | null>(null);
   const [createTaskFormData, setCreateTaskFormData] = useState({
