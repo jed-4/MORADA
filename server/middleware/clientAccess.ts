@@ -12,6 +12,7 @@ import {
   isInvoiceClientVisible,
   isVariationClientVisible,
   projectClientAllowance,
+  projectClientProject,
   projectClientInvoice,
   projectClientInvoiceItem,
   projectClientInvoicePayments,
@@ -237,6 +238,13 @@ const shapeVariationItems: ResponseShaper = async (body, _req, user, path) => {
   return projectClientVariationItems(body, columns, costCodeLabels);
 };
 
+/** Projects: an allow-list, never the raw row (see projectClientProject). */
+const shapeProjectList: ResponseShaper = async (body) =>
+  Array.isArray(body) ? body.map(projectClientProject) : HIDE_FROM_CLIENT;
+
+const shapeProject: ResponseShaper = async (body) =>
+  body && typeof body === "object" && !Array.isArray(body) ? projectClientProject(body) : HIDE_FROM_CLIENT;
+
 const shapeInvoiceList: ResponseShaper = async (body) =>
   Array.isArray(body) ? body.filter(isInvoiceClientVisible).map(projectClientInvoice) : HIDE_FROM_CLIENT;
 
@@ -418,11 +426,12 @@ const ALLOW_RULES: AllowRule[] = [
   // --- Projects (the list route scopes itself to userProjectAccess) ---
   // No permission key: being granted the project (userProjectAccess) is what
   // lets a client see it; the sections inside are each gated below.
-  { methods: ["GET"], pattern: /^\/projects$/ },
+  { methods: ["GET"], pattern: /^\/projects$/, shape: shapeProjectList },
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+$/,
     project: projectParam,
+    shape: shapeProject,
   },
 
   // --- Schedule ---

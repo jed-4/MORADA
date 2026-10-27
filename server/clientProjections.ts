@@ -13,6 +13,47 @@
  */
 import type { VariationDocumentColumns } from "@shared/variationDocumentColumns";
 
+// ── Projects ────────────────────────────────────────────────────────────────
+
+/**
+ * A project as a client sees it, from GET /projects and GET /projects/:id.
+ *
+ * Those routes send whole `projects` rows to the team, and until this
+ * projection a client got the same: budget, contract cost and price, the
+ * contracted totals, the trades-portal TOKEN (which opens the trades portal),
+ * Xero and Google Drive ids, the owner, and the list's foreman enrichment.
+ *
+ * Kept: what client-reachable code actually reads (2026-10-27 sweep of the web
+ * client portal — ProjectContext, ClientHome, SidebarNav, ProjectSwitcher,
+ * CustomizableProjectOverview — and the Expo client mode): identity, name,
+ * place, status/phase, icon/colour, the archived/business flags the shell
+ * filters on, and the client badge (clientId + the list's clientName). Plus
+ * the timeline a homeowner may be shown (dates, percent complete, progress).
+ */
+export function projectClientProject(project: any) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description ?? null,
+    location: project.location ?? null,
+    status: project.status ?? null,
+    projectStatus: project.projectStatus ?? null,
+    currentSystemPhase: project.currentSystemPhase ?? null,
+    icon: project.icon ?? null,
+    color: project.color ?? null,
+    isArchived: !!project.isArchived,
+    isBusiness: !!project.isBusiness,
+    clientId: project.clientId ?? null,
+    // List enrichment: present on GET /projects only.
+    ...("clientName" in project ? { clientName: project.clientName ?? null } : {}),
+    ...("progress" in project ? { progress: project.progress ?? null } : {}),
+    startDate: project.startDate ?? null,
+    endDate: project.endDate ?? null,
+    practicalCompletionDate: project.practicalCompletionDate ?? null,
+    percentComplete: project.percentComplete ?? null,
+  };
+}
+
 // ── Variations ──────────────────────────────────────────────────────────────
 
 /**
