@@ -1,4 +1,5 @@
 import { useParams, useLocation } from "wouter";
+import type { AssignablePerson } from "@shared/assignable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { pdf } from "@react-pdf/renderer";
@@ -267,8 +268,8 @@ export default function RFQDetail() {
   const rfqDocStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
   const rfqBrandColor = companySettings?.brandColor || "#6d28d9";
 
-  const { data: teamUsers = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: teamUsers = [] } = useQuery<AssignablePerson[]>({
+    queryKey: ["/api/users/assignable"],
   });
 
   const { data: reminderTemplates = [] } = useQuery<RfqReminderTemplate[]>({
