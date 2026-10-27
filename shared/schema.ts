@@ -441,7 +441,7 @@ export const userArchiveEvents = pgTable("user_archive_events", {
 export type UserArchiveEvent = typeof userArchiveEvents.$inferSelect;
 
 /**
- * Sign in with Apple (migration 0112): Apple user id ("sub") → Morada user.
+ * Sign in with Apple (migration 0113): Apple user id ("sub") → Morada user.
  * Its own table so a database without it loses only Apple sign-in, never a
  * users read. Read and written by server/appleAuth.ts.
  */

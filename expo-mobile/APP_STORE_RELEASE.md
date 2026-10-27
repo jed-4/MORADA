@@ -8,7 +8,7 @@ everything else is a portal step only the account holder can do.
 
 | Apple guideline | What changed |
 |---|---|
-| 4.8 Login services | **Sign in with Apple** on the login screen (iOS only), above Google. Sign-in only: an Apple ID is linked to an existing Morada user by Apple-verified email on first use, then by Apple's user id. "Hide my email" can't match anyone and is refused with an explanation. Route `POST /api/auth/apple/mobile`; table `user_apple_identities` (migration **0112**, also created on first use). |
+| 4.8 Login services | **Sign in with Apple** on the login screen (iOS only), above Google. Sign-in only: an Apple ID is linked to an existing Morada user by Apple-verified email on first use, then by Apple's user id. "Hide my email" can't match anyone and is refused with an explanation. Route `POST /api/auth/apple/mobile`; table `user_apple_identities` (migration **0113**, also created on first use). |
 | 5.1.1(v) Account deletion | **Settings → Account → Delete account**, and on the client screen. Wipes login, name, email, phone, photo, Google/Apple links, calendar tokens, sessions and push tokens; keeps the user row as "Deleted user" so their timesheets/bills/diary entries keep an owner. The only Owner of a company that still has a team is refused until they hand over. Route `POST /api/auth/delete-account`. Restore is blocked for deleted accounts. |
 | 5.1.1 Purpose strings | Camera and photo prompts now say what they are used for. |
 | 2.1 / iPad | `supportsTablet: false` — iPhone only until the layouts are tested on iPad. |
@@ -17,7 +17,7 @@ everything else is a portal step only the account holder can do.
 
 ## Before the build
 
-1. **Apply migration 0112 to prod** (optional — the route creates the table on
+1. **Apply migration 0113 to prod** (optional — the route creates the table on
    first use, but by-hand migrations are the house rule).
 2. **Deploy the server** so `/api/auth/apple/mobile` and
    `/api/auth/delete-account` exist in production. The phone app talks to prod.
