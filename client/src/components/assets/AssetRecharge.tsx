@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Briefcase, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import { Briefcase, CalendarPlus, Loader2, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -255,19 +255,28 @@ export function AssetRegisterSettingsButton({ canEdit }: { canEdit: boolean }) {
 
   return (
     <>
-      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setOpen(true)} data-testid="button-asset-settings">
-        Job charging
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2.5 text-xs"
+        onClick={() => setOpen(true)}
+        title="Which cost code vehicle day-rate charges land on in each job's budget"
+        data-testid="button-asset-settings"
+      >
+        <Settings className="w-3.5 h-3.5 mr-1" />Settings
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Charging vehicles to jobs</DialogTitle>
+            <DialogTitle>Asset register settings</DialogTitle>
             <DialogDescription>
-              Each vehicle's day rate is charged to a job on days it's booked there, or its driver has approved hours there. It shows in the job's Budget as an internal cost, on this cost code.
+              This doesn't add a charge. Vehicles with a day rate (set on each vehicle under Edit) charge jobs automatically: on days
+              they're booked to a job, or their driver has approved hours on it. This picks the cost code those charges land on in
+              each job's Budget, under Internal.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Cost code</Label>
+            <Label className="text-xs">Cost code for vehicle charges</Label>
             <Select value={value} onValueChange={(v) => v && setValue(v)}>
               <SelectTrigger className="h-8 text-xs" data-testid="select-recharge-cost-code"><SelectValue /></SelectTrigger>
               <SelectContent>

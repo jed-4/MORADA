@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -55,6 +56,13 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
   const { data: assets = [], isLoading, error } = useQuery<AssetListRow[]>({ queryKey: ASSETS_KEY });
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY });
   const [adding, setAdding] = useState(false);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const find = () => setToolbarSlot(document.getElementById("business-toolbar-slot"));
+    find();
+    const id = window.setTimeout(find, 0);
+    return () => window.clearTimeout(id);
+  }, []);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
@@ -88,10 +96,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withDue, showInactive, typeFilter, search, people]);
 
-  const active = withDue.filter((a) => !INACTIVE.includes(a.status));
-  const overdue = active.filter((a) => a.due.state === "overdue").length;
-  const dueSoon = active.filter((a) => a.due.state === "due_soon").length;
-  const offRoad = active.filter((a) => a.status === "off_road").length;
   const typeCounts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[a.assetType] = (c[a.assetType] ?? 0) + 1;
@@ -215,35 +219,32 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     ...ASSET_TYPES.filter((t) => typeCounts[t]).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
   ];
 
+  // Page actions sit top right, in the Business header's toolbar slot (the
+  // same place the Overview's dashboard controls go).
+  const actions = (
+    <div className="flex items-center gap-1.5 self-center">
+      <AssetRegisterSettingsButton canEdit={canEdit} />
+      {canAdd && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="h-7 w-auto px-2.5 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+          data-testid="button-add-asset"
+        >
+          <Plus className="w-3.5 h-3.5" />Add asset
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="page-business-assets">
-      {active.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Stat label="On the books" value={active.length} />
-          <Stat label="Overdue" value={overdue} tone={overdue ? "overdue" : undefined} />
-          <Stat label="Due in 30 days" value={dueSoon} tone={dueSoon ? "due_soon" : undefined} />
-          <Stat label="Off road" value={offRoad} tone={offRoad ? "overdue" : undefined} />
-        </div>
-      )}
-
+      {toolbarSlot ? createPortal(actions, toolbarSlot) : <div className="flex justify-end">{actions}</div>}
       <Card className="overflow-hidden min-w-0" data-testid="card-asset-register">
         <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-border">
           <div>
             <h3 className="text-sm font-semibold">Asset register</h3>
             <p className="text-xs text-muted-foreground">Vehicles, trailers, plant and tools — rego, insurance, servicing, and who has them.</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-          <AssetRegisterSettingsButton canEdit={canEdit} />
-          {canAdd && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              data-testid="button-add-asset"
-            >
-              <Plus className="w-3.5 h-3.5" />Add asset
-            </button>
-          )}
           </div>
         </div>
 
@@ -308,17 +309,5 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
 
       <AssetDialog open={adding} asset={null} onClose={() => setAdding(false)} onCreated={(a) => onOpen(a.id)} />
     </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "overdue" | "due_soon" }) {
-  return (
-    <Card className="px-4 py-3">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="flex items-center gap-2">
-        <span className="text-lg font-semibold tabular-nums">{value}</span>
-        {tone && <DueChip state={tone} />}
-      </div>
-    </Card>
   );
 }

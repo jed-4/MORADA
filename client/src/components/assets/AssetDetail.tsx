@@ -345,7 +345,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         <Section
           icon={CalendarClock}
           title="Due dates"
-          description="Rego, CTP, insurance and anything else that expires"
+          description="Rego, CTP, insurance or any check. A To-Do is added 30 and 7 days before each date"
           testId="card-asset-compliance"
           action={canEdit && <AddButton onClick={() => setCompliance({ open: true, item: null })} testId="button-add-compliance">Add</AddButton>}
         >
@@ -386,7 +386,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         <Section
           icon={Wrench}
           title="Servicing"
-          description={asset.meterType === "none" ? "Due every so many months" : `Due on ${unit} or months, whichever comes first`}
+          description={asset.meterType === "none" ? "Due every so many months. A To-Do is added when one falls due" : `Due on ${unit} or months, whichever comes first. A To-Do is added when one falls due`}
           testId="card-asset-schedules"
           action={canEdit && (
             <div className="flex items-center gap-1.5">
