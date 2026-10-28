@@ -313,7 +313,10 @@ export function projectClientAllowance(row: any) {
     item: {
       id: item.id,
       estimateId: item.estimateId,
-      name: item.shownAs || item.name,
+      // Not `shownAs`: despite its schema comment it is the proposal's display MODE
+      // ('empty' | 'price' | 'included' | 'excluded'), so it put "price" in place
+      // of the allowance name.
+      name: item.name,
       description: item.description,
       groupName: item.groupName ?? null,
       groupOrder: item.groupOrder ?? null,
