@@ -461,6 +461,14 @@ function ClientInvoiceDetailInner() {
     enabled: isEditMode,
   });
 
+  // Xero-style view mode: once approved (and through sent / part-paid / paid /
+  // cancelled) the invoice opens read-only and the Edit button unlocks it.
+  // Screen-level only — the server still accepts edits, as Xero allows.
+  const [editUnlocked, setEditUnlocked] = useState(false);
+  useEffect(() => { setEditUnlocked(false); }, [effectiveInvoiceId]);
+  const isIssuedInvoice = !!invoice?.status && invoice.status !== "draft";
+  const isViewOnly = isEditMode && isIssuedInvoice && !editUnlocked;
+
   const { data: existingCustomLines = [] } = useQuery<ClientInvoiceItem[]>({
     queryKey: [`/api/client-invoices/${effectiveInvoiceId}/items`],
     enabled: isEditMode,
@@ -1602,6 +1610,7 @@ function ClientInvoiceDetailInner() {
       return updatedInvoice;
     },
     onSuccess: async (inv) => {
+      setEditUnlocked(false);
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
@@ -2416,7 +2425,7 @@ function ClientInvoiceDetailInner() {
                   <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
                 <h2 className="text-sm font-semibold" data-testid="text-page-title">
-                  {isEditMode ? "Edit Invoice" : "Create Invoice"}
+                  {isViewOnly ? "Invoice" : isEditMode ? "Edit Invoice" : "Create Invoice"}
                 </h2>
               </div>
 
@@ -2435,6 +2444,17 @@ function ClientInvoiceDetailInner() {
                     <span>Email</span>
                   </button>
                 )}
+                {isViewOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditUnlocked(true)}
+                    className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-edit-invoice"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
+                ) : (
                 <button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
@@ -2448,6 +2468,7 @@ function ClientInvoiceDetailInner() {
                   )}
                   <span>{isEditMode ? "Update" : "Create"} Invoice</span>
                 </button>
+                )}
 
                 {isEditMode && (
                   <DropdownMenu>
@@ -2714,6 +2735,10 @@ function ClientInvoiceDetailInner() {
                   </div>
                 )}
 
+                {/* A disabled fieldset disables every native control and Radix
+                    trigger in the invoice's own content — that is view mode.
+                    Payments and attachments sit outside it and stay live. */}
+                <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-invoice-content">
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
@@ -3059,6 +3084,7 @@ function ClientInvoiceDetailInner() {
                                   content={field.value || ""}
                                   onChange={(html) => field.onChange(html)}
                                   placeholder="Enter introduction text..."
+                                  disabled={isViewOnly}
                                   data-testid="editor-introduction"
                                 />
                               </FormControl>
@@ -4273,6 +4299,7 @@ function ClientInvoiceDetailInner() {
                   </div>{/* end summary content */}
               </div>{/* end summary-panel */}
               </div>{/* end Act 2: Money */}
+                </fieldset>
 
                 {/* Payments — money, so it sits with the financials, not adrift
                    at the bottom of the page. */}
@@ -4350,6 +4377,7 @@ function ClientInvoiceDetailInner() {
               {/* ── Act 3: Presentation — everything that shapes how the invoice
                    reads to the client. All collapsible, all closed by default. ── */}
               <div className="rounded-lg border border-border bg-card overflow-hidden">
+                <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-invoice-presentation">
                 {/* Closing Text sub-section */}
                 <div>
                   <div
@@ -4377,6 +4405,7 @@ function ClientInvoiceDetailInner() {
                                 content={field.value || ""}
                                 onChange={(html) => field.onChange(html)}
                                 placeholder="Enter closing text..."
+                                  disabled={isViewOnly}
                                 data-testid="editor-closing"
                               />
                             </FormControl>
@@ -4457,6 +4486,8 @@ function ClientInvoiceDetailInner() {
                     </div>
                   )}
                 </div>
+
+                </fieldset>
 
                 {/* Attachments sub-section */}
                 <div className="border-t border-border/50" data-testid="section-attachments">
