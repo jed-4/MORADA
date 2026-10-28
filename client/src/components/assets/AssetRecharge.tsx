@@ -255,16 +255,15 @@ export function AssetRegisterSettingsButton({ canEdit }: { canEdit: boolean }) {
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7 px-2.5 text-xs"
+      <button
+        type="button"
         onClick={() => setOpen(true)}
         title="Which cost code vehicle day-rate charges land on in each job's budget"
+        className="h-6 w-auto px-2 text-xs border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
         data-testid="button-asset-settings"
       >
-        <Settings className="w-3.5 h-3.5 mr-1" />Settings
-      </Button>
+        <Settings className="w-3.5 h-3.5" />Settings
+      </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

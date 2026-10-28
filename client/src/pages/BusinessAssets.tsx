@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -19,8 +18,6 @@ import {
 } from "@/components/assets/assetsShared";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { AssetListRow } from "@shared/schema";
@@ -56,13 +53,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
   const { data: assets = [], isLoading, error } = useQuery<AssetListRow[]>({ queryKey: ASSETS_KEY });
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY });
   const [adding, setAdding] = useState(false);
-  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    const find = () => setToolbarSlot(document.getElementById("business-toolbar-slot"));
-    find();
-    const id = window.setTimeout(find, 0);
-    return () => window.clearTimeout(id);
-  }, []);
+
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
@@ -219,32 +210,68 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     ...ASSET_TYPES.filter((t) => typeCounts[t]).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
   ];
 
-  // Page actions sit top right, in the Business header's toolbar slot (the
-  // same place the Overview's dashboard controls go).
-  const actions = (
-    <div className="flex items-center gap-1.5 self-center">
-      <AssetRegisterSettingsButton canEdit={canEdit} />
-      {canAdd && (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="h-7 w-auto px-2.5 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-          data-testid="button-add-asset"
-        >
-          <Plus className="w-3.5 h-3.5" />Add asset
-        </button>
-      )}
-    </div>
-  );
+  // Design tokens (see the Tasks/Timesheets card header): h-6 chips, raw
+  // primary CTA, everything on one h-9 toolbar row at the top of the card.
+  const chip = (active: boolean) =>
+    cn(
+      "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 active-elevate-2",
+      active ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground hover-elevate",
+    );
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="page-business-assets">
-      {toolbarSlot ? createPortal(actions, toolbarSlot) : <div className="flex justify-end">{actions}</div>}
       <Card className="overflow-hidden min-w-0" data-testid="card-asset-register">
-        <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-border">
-          <div>
-            <h3 className="text-sm font-semibold">Asset register</h3>
-            <p className="text-xs text-muted-foreground">Vehicles, trailers, plant and tools — rego, insurance, servicing, and who has them.</p>
+        <div className="h-9 flex items-center justify-between gap-2 px-3 border-b border-border">
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+            {assets.length > 0 &&
+              filterButtons.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setTypeFilter(b.id)}
+                  className={chip(typeFilter === b.id)}
+                  data-testid={`filter-asset-type-${b.id}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {assets.length > 0 && (
+              <>
+                <div className="relative">
+                  <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search"
+                    aria-label="Search name, rego or driver"
+                    className="h-6 w-40 pl-6 pr-2 text-xs rounded-md border border-border/50 bg-transparent placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+                    data-testid="input-asset-search"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInactive((v) => !v)}
+                  className={chip(showInactive)}
+                  aria-pressed={showInactive}
+                  data-testid="switch-asset-inactive"
+                >
+                  Archived &amp; sold
+                </button>
+              </>
+            )}
+            <AssetRegisterSettingsButton canEdit={canEdit} />
+            {canAdd && (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-add-asset"
+              >
+                <Plus className="w-3.5 h-3.5" />Add asset
+              </button>
+            )}
           </div>
         </div>
 
@@ -258,38 +285,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b border-border">
-              <div className="flex items-center gap-1">
-                {filterButtons.map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => setTypeFilter(b.id)}
-                    className={cn(
-                      "h-6 px-2 text-xs rounded-md border",
-                      typeFilter === b.id ? "bg-primary/10 border-primary/30 text-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                    data-testid={`filter-asset-type-${b.id}`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-              <div className="relative ml-auto">
-                <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, rego, driver"
-                  className="h-7 w-[220px] pl-7 text-xs"
-                  data-testid="input-asset-search"
-                />
-              </div>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Switch checked={showInactive} onCheckedChange={setShowInactive} data-testid="switch-asset-inactive" />
-                Archived &amp; sold
-              </label>
-            </div>
             {rows.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">Nothing matches.</p>
             ) : (
