@@ -554,6 +554,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 onCommit={() => handleCellSave(item, 'name')}
                 onCancel={handleCellCancel}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
+                linked={!!item.priceListItemId}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-xs md:text-xs font-medium"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}

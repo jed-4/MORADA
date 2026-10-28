@@ -111,6 +111,14 @@ interface PriceListItemPickerProps {
   className?: string;
   placeholder?: string;
   autoFocus?: boolean;
+  /**
+   * The line is already linked to a catalogue item, so the user is RENAMING it.
+   * The list then stays shut until they type, and nothing is pre-highlighted —
+   * Enter saves the typed name. Otherwise a shortened name ("Plasterboard")
+   * still matches its own catalogue item, Enter re-picks it, and the full
+   * catalogue name comes straight back. Arrow keys / click still pick.
+   */
+  linked?: boolean;
   "data-testid"?: string;
 }
 
@@ -137,11 +145,16 @@ export function PriceListItemPicker({
   className,
   placeholder,
   autoFocus,
+  linked = false,
   "data-testid": testId,
 }: PriceListItemPickerProps) {
   const [debounced, setDebounced] = useState(value);
   const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
+  const noHighlight = linked ? -1 : 0;
+  const [highlight, setHighlight] = useState(noHighlight);
+  // The name the input opened with. A linked line opening on its own catalogue
+  // name would otherwise pop the list the moment the cell is clicked.
+  const initialTermRef = useRef(value.trim());
   const anchorRef = useRef<HTMLDivElement>(null);
   const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; bottom: number; width: number } | null>(null);
   // Set while a dropdown row is being clicked. The input's blur fires BEFORE the
@@ -174,9 +187,9 @@ export function PriceListItemPicker({
   // Keyed off the term, not the array, so dismissing with Escape stays dismissed
   // until the next keystroke.
   useEffect(() => {
-    if (enabled) setOpen(true);
-    setHighlight(0);
-  }, [term, enabled]);
+    if (enabled && !(linked && term === initialTermRef.current)) setOpen(true);
+    setHighlight(noHighlight);
+  }, [term, enabled, linked, noHighlight]);
 
   const visible = open && enabled && results.length > 0;
 
@@ -216,20 +229,25 @@ export function PriceListItemPicker({
       if (e.key === "ArrowDown") {
         e.preventDefault();
         e.stopPropagation();
-        setHighlight(h => (h + 1) % results.length);
+        setHighlight(h => (h + 1 + results.length) % results.length);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
-        setHighlight(h => (h - 1 + results.length) % results.length);
+        setHighlight(h => (h < 0 ? results.length - 1 : (h - 1 + results.length) % results.length));
         return;
       }
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && highlight >= 0) {
         e.preventDefault();
         e.stopPropagation();
         choose(results[highlight]);
         return;
+      }
+      if (e.key === "Enter") {
+        // Nothing highlighted (a linked line being renamed): drop the list and let
+        // Enter do what it does with no list open — save the typed name.
+        setOpen(false);
       }
       if (e.key === "Escape") {
         // First Escape closes the list, a second cancels the edit — so dismissing a
@@ -265,7 +283,10 @@ export function PriceListItemPicker({
           setOpen(false);
           onCommit?.();
         }}
-        onFocus={e => e.target.select()}
+        onFocus={e => {
+          initialTermRef.current = e.target.value.trim();
+          e.target.select();
+        }}
         className={className}
         placeholder={placeholder}
         autoFocus={autoFocus}

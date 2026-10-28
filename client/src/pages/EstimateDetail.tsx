@@ -6521,6 +6521,7 @@ export default function EstimateDetail() {
                             value={field.value ?? ""}
                             onChange={field.onChange}
                             onSelect={(picked) => applyPriceListItemToForm(editForm, picked)}
+                            linked={!!editForm.watch('priceListItemId')}
                             placeholder="e.g. Premium Kitchen Cabinets — or search your price lists"
                             data-testid="input-edit-item-name"
                           />
