@@ -527,3 +527,31 @@ export function renewalPayments(
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
+
+// ---- who sees the money (business.asset_costs) ---------------------------
+//
+// Viewing the register (business.assets) shows what's due and who has what.
+// The money — purchase price, finance, day rate, what renewals and services
+// cost — needs business.asset_costs too, so a supervisor can see rego dates
+// without the numbers. Stripped on the SERVER; the client only hides blanks.
+
+export const ASSET_COSTS_PERMISSION = "business.asset_costs";
+
+/** Fields on an asset that are money. */
+const ASSET_MONEY_FIELDS = ["purchaseCents", "financeProvider", "dayRateCents"] as const;
+
+/** A copy of an asset (list row or detail) with every money field blanked. */
+export function redactAssetMoney<T extends Record<string, any>>(asset: T): T {
+  const out: Record<string, any> = { ...asset };
+  for (const f of ASSET_MONEY_FIELDS) if (f in out) out[f] = null;
+  if (Array.isArray(out.complianceItems)) out.complianceItems = out.complianceItems.map((i: any) => ({ ...i, amountCents: null }));
+  if (Array.isArray(out.events)) out.events = out.events.map((e: any) => ({ ...e, costCents: null }));
+  return out as T;
+}
+
+/** Drop money fields from a write by someone who can't see them, so they can neither set nor wipe them. */
+export function withoutMoneyFields<T extends Record<string, any>>(data: T): T {
+  const out: Record<string, any> = { ...data };
+  for (const f of [...ASSET_MONEY_FIELDS, "amountCents", "costCents"]) delete out[f];
+  return out as T;
+}

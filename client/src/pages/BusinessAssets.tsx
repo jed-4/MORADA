@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Loader2, Plus, Search, Truck } from "lucide-react";
+import { Check, Filter, Loader2, Plus, Search, Truck } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { AssetDetail } from "@/components/assets/AssetDetail";
 import { AssetDialog } from "@/components/assets/AssetDialogs";
-import { AssetRegisterSettingsButton } from "@/components/assets/AssetRecharge";
 import {
   ASSETS_KEY,
   ASSIGNABLE_USERS_KEY,
@@ -15,11 +16,11 @@ import {
   relativeDays,
   shortDate,
   type AssignableUser,
+  ICON_BUTTON,
+  PRIMARY_BUTTON,
 } from "@/components/assets/assetsShared";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { AssetListRow } from "@shared/schema";
@@ -55,6 +56,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
   const { data: assets = [], isLoading, error } = useQuery<AssetListRow[]>({ queryKey: ASSETS_KEY });
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY });
   const [adding, setAdding] = useState(false);
+
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
@@ -88,10 +90,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withDue, showInactive, typeFilter, search, people]);
 
-  const active = withDue.filter((a) => !INACTIVE.includes(a.status));
-  const overdue = active.filter((a) => a.due.state === "overdue").length;
-  const dueSoon = active.filter((a) => a.due.state === "due_soon").length;
-  const offRoad = active.filter((a) => a.status === "off_road").length;
   const typeCounts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[a.assetType] = (c[a.assetType] ?? 0) + 1;
@@ -212,39 +210,70 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
 
   const filterButtons: { id: TypeFilter; label: string }[] = [
     { id: "all", label: "All" },
-    ...ASSET_TYPES.filter((t) => typeCounts[t]).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
+    ...ASSET_TYPES.filter((t) => typeCounts[t] || typeFilter === t).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
   ];
+
+  const activeFilters = (typeFilter !== "all" ? 1 : 0) + (showInactive ? 1 : 0);
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="page-business-assets">
-      {active.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Stat label="On the books" value={active.length} />
-          <Stat label="Overdue" value={overdue} tone={overdue ? "overdue" : undefined} />
-          <Stat label="Due in 30 days" value={dueSoon} tone={dueSoon ? "due_soon" : undefined} />
-          <Stat label="Off road" value={offRoad} tone={offRoad ? "overdue" : undefined} />
-        </div>
-      )}
-
       <Card className="overflow-hidden min-w-0" data-testid="card-asset-register">
-        <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-border">
-          <div>
-            <h3 className="text-sm font-semibold">Asset register</h3>
-            <p className="text-xs text-muted-foreground">Vehicles, trailers, plant and tools — rego, insurance, servicing, and who has them.</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-          <AssetRegisterSettingsButton canEdit={canEdit} />
+        <div className="h-9 flex items-center justify-end gap-1.5 px-3 border-b border-border">
+          {assets.length > 0 && (
+            <>
+              <div className="relative">
+                <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search"
+                  aria-label="Search name, rego or driver"
+                  className="h-6 w-40 pl-6 pr-2 text-xs rounded-md border border-border/50 bg-transparent placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+                  data-testid="input-asset-search"
+                />
+              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" className={cn(ICON_BUTTON, "relative", activeFilters > 0 && "bg-primary/10 text-primary border-primary/20")} aria-label="Filter" data-testid="button-asset-filter">
+                    <Filter className="w-3.5 h-3.5" />
+                    {activeFilters > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold">
+                        {activeFilters}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-52 p-2">
+                  <div className="text-[11px] font-medium text-muted-foreground px-1 pb-1">Type</div>
+                  {filterButtons.map((b) => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setTypeFilter(b.id)}
+                      className={cn(
+                        "w-full flex items-center justify-between rounded-md px-2 py-1 text-xs hover-elevate",
+                        typeFilter === b.id && "bg-primary/10 text-primary font-medium",
+                      )}
+                      data-testid={`filter-asset-type-${b.id}`}
+                    >
+                      {b.label}
+                      {typeFilter === b.id && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                  <div className="my-2 border-t border-border" />
+                  <label className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer">
+                    <Checkbox checked={showInactive} onCheckedChange={(v) => setShowInactive(v === true)} data-testid="switch-asset-inactive" />
+                    Show archived &amp; sold
+                  </label>
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
           {canAdd && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              data-testid="button-add-asset"
-            >
+            <button type="button" onClick={() => setAdding(true)} className={PRIMARY_BUTTON} data-testid="button-add-asset">
               <Plus className="w-3.5 h-3.5" />Add asset
             </button>
           )}
-          </div>
         </div>
 
         {assets.length === 0 ? (
@@ -257,38 +286,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b border-border">
-              <div className="flex items-center gap-1">
-                {filterButtons.map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => setTypeFilter(b.id)}
-                    className={cn(
-                      "h-6 px-2 text-xs rounded-md border",
-                      typeFilter === b.id ? "bg-primary/10 border-primary/30 text-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                    data-testid={`filter-asset-type-${b.id}`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-              <div className="relative ml-auto">
-                <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, rego, driver"
-                  className="h-7 w-[220px] pl-7 text-xs"
-                  data-testid="input-asset-search"
-                />
-              </div>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Switch checked={showInactive} onCheckedChange={setShowInactive} data-testid="switch-asset-inactive" />
-                Archived &amp; sold
-              </label>
-            </div>
             {rows.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">Nothing matches.</p>
             ) : (
@@ -308,17 +305,5 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
 
       <AssetDialog open={adding} asset={null} onClose={() => setAdding(false)} onCreated={(a) => onOpen(a.id)} />
     </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "overdue" | "due_soon" }) {
-  return (
-    <Card className="px-4 py-3">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="flex items-center gap-2">
-        <span className="text-lg font-semibold tabular-nums">{value}</span>
-        {tone && <DueChip state={tone} />}
-      </div>
-    </Card>
   );
 }

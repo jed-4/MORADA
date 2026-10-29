@@ -49793,7 +49793,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       insertAssetDocumentSchema,
       users: usersTable,
     } = await import("@shared/schema");
-    const { normaliseRego, todayKey, addMonthsKey, daysBetween, ASSET_STATUS_LABELS } = await import("@shared/assets");
+    const { normaliseRego, todayKey, addMonthsKey, daysBetween, ASSET_STATUS_LABELS, ASSET_COSTS_PERMISSION, redactAssetMoney, withoutMoneyFields } = await import("@shared/assets");
+    // The register's money (purchase, finance, day rate, renewal and service
+    // costs) needs business.asset_costs on top of business.assets. Stripped
+    // here, on the way out, and dropped from writes on the way in.
+    const canSeeAssetCosts = (req: any) => userHasPermission(req.user, ASSET_COSTS_PERMISSION, "view");
     const { closeAssetReminderTasks } = await import("./services/assetReminders");
 
     const sessionCompanyId = (req: any): string | null => req.user?.companyId ?? null;
@@ -50137,7 +50141,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       };
     };
 
-    app.get("/api/assets/:id/costs", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    app.get("/api/assets/:id/costs", requireAuth, requirePermission("business.assets", "view"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50214,7 +50218,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.get("/api/assets/:id/bill-line-suggestions", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.get("/api/assets/:id/bill-line-suggestions", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50277,7 +50281,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.post("/api/assets/:id/bill-lines", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.post("/api/assets/:id/bill-lines", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50303,7 +50307,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.delete("/api/assets/:id/bill-lines/:lineId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.delete("/api/assets/:id/bill-lines/:lineId", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50380,36 +50384,40 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       return p ?? null;
     };
 
-    app.get("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    // Which cost code vehicle day-rate charges land on in each job's budget.
+    // Set from the Cost Codes page, so it follows the cost-code routes' gate
+    // (any team member). Not under /api/cost-codes/: GET /api/cost-codes/:id
+    // would shadow it. Unset = charges show as their own "Vehicles & plant" line.
+    app.get("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
         const [row] = await db.select().from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1);
-        res.json({ rechargeCostCodeId: row?.rechargeCostCodeId ?? null });
+        res.json({ costCodeId: row?.rechargeCostCodeId ?? null });
       } catch (error) {
-        console.error("[assets] settings read failed:", error);
-        res.status(500).json({ error: "Failed to load settings" });
+        console.error("[assets] vehicle charge code read failed:", error);
+        res.status(500).json({ error: "Failed to load" });
       }
     });
 
-    app.put("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.put("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-        const parsed = z.object({ rechargeCostCodeId: z.string().min(1).nullable() }).safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: "Invalid settings", issues: parsed.error.issues });
-        if (parsed.data.rechargeCostCodeId) {
+        const parsed = z.object({ costCodeId: z.string().min(1).nullable() }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+        if (parsed.data.costCodeId) {
           const [code] = await db.select({ id: costCodesTable.id }).from(costCodesTable)
-            .where(and(eq(costCodesTable.id, parsed.data.rechargeCostCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
+            .where(and(eq(costCodesTable.id, parsed.data.costCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
           if (!code) return res.status(404).json({ error: "Cost code not found" });
         }
         await db.insert(assetRegisterSettings)
-          .values({ companyId, rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() })
-          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() } });
-        res.json({ rechargeCostCodeId: parsed.data.rechargeCostCodeId });
+          .values({ companyId, rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() } });
+        res.json({ costCodeId: parsed.data.costCodeId });
       } catch (error) {
-        console.error("[assets] settings save failed:", error);
-        res.status(500).json({ error: "Failed to save settings" });
+        console.error("[assets] vehicle charge code save failed:", error);
+        res.status(500).json({ error: "Failed to save" });
       }
     });
 
@@ -50470,7 +50478,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     });
 
     // What this asset has charged to jobs over the last 12 months.
-    app.get("/api/assets/:id/recharges", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    app.get("/api/assets/:id/recharges", requireAuth, requirePermission("business.assets", "view"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50577,11 +50585,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           db.select().from(assetComplianceItems).where(eq(assetComplianceItems.companyId, companyId)).orderBy(asc(assetComplianceItems.expiryDate)),
           db.select().from(assetServiceSchedules).where(eq(assetServiceSchedules.companyId, companyId)).orderBy(asc(assetServiceSchedules.label)),
         ]);
-        res.json(rows.map((a) => ({
-          ...a,
-          complianceItems: items.filter((i) => i.assetId === a.id),
-          serviceSchedules: schedules.filter((s) => s.assetId === a.id),
-        })));
+        const seeCosts = await canSeeAssetCosts(req);
+        res.json(rows.map((a) => {
+          const row = {
+            ...a,
+            complianceItems: items.filter((i) => i.assetId === a.id),
+            serviceSchedules: schedules.filter((s) => s.assetId === a.id),
+          };
+          return seeCosts ? row : redactAssetMoney(row);
+        }));
       } catch (error) {
         console.error("[assets] list failed:", error);
         res.status(500).json({ error: "Failed to load assets" });
@@ -50613,7 +50625,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             .orderBy(desc(assetPrestarts.checkedAt))
             .limit(30),
         ]);
-        res.json({ ...asset, complianceItems, serviceSchedules, events, documents, prestarts });
+        const detail = { ...asset, complianceItems, serviceSchedules, events, documents, prestarts };
+        res.json((await canSeeAssetCosts(req)) ? detail : redactAssetMoney(detail));
       } catch (error) {
         console.error("[assets] detail failed:", error);
         res.status(500).json({ error: "Failed to load the asset" });
@@ -50627,7 +50640,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = insertAssetSchema.omit({ companyId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
-        const data = { ...parsed.data, rego: normaliseRego(parsed.data.rego) };
+        const seeCosts = await canSeeAssetCosts(req);
+        const data = { ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), rego: normaliseRego(parsed.data.rego) };
         if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
         if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
           return res.status(400).json({ error: "That person isn't in your company" });
@@ -50644,7 +50658,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             createdById: req.user.id,
           });
         }
-        res.status(201).json(row);
+        res.status(201).json(seeCosts ? row : redactAssetMoney(row));
       } catch (error) {
         console.error("[assets] create failed:", error);
         res.status(500).json({ error: "Failed to add the asset" });
@@ -50660,7 +50674,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = updateAssetSchema.safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
-        const data = { ...parsed.data };
+        const seeCosts = await canSeeAssetCosts(req);
+        const data = { ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)) };
         if ("rego" in data) data.rego = normaliseRego(data.rego);
         if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
         if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
@@ -50684,7 +50699,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           auto.push({ companyId, assetId: row.id, kind: "status", date: todayKey(), title: `${label(before.status)} → ${label(row.status)}`, createdById: req.user.id });
         }
         if (auto.length) await db.insert(assetEvents).values(auto);
-        res.json(row);
+        res.json(seeCosts ? row : redactAssetMoney(row));
       } catch (error) {
         console.error("[assets] update failed:", error);
         res.status(500).json({ error: "Failed to save the asset" });
@@ -50719,9 +50734,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const parsed = insertAssetComplianceItemSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid item", issues: parsed.error.issues });
         if (!isOwnObjectPath(parsed.data.documentUrl, companyId)) return res.status(400).json({ error: "Invalid document" });
+        const seeCosts = await canSeeAssetCosts(req);
 
-        const [row] = await db.insert(assetComplianceItems).values({ ...parsed.data, companyId, assetId: asset.id }).returning();
-        res.status(201).json(row);
+        const [row] = await db.insert(assetComplianceItems)
+          .values({ ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), companyId, assetId: asset.id })
+          .returning();
+        res.status(201).json(seeCosts ? row : { ...row, amountCents: null });
       } catch (error) {
         console.error("[assets] compliance create failed:", error);
         res.status(500).json({ error: "Failed to add the item" });
@@ -50748,13 +50766,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         // A renewed expiry starts the reminders again.
         const renewed = parsed.data.expiryDate && parsed.data.expiryDate !== before.expiryDate;
+        const seeCosts = await canSeeAssetCosts(req);
         const [row] = await db.update(assetComplianceItems)
-          .set({ ...parsed.data, ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
+          .set({ ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
           .where(and(eq(assetComplianceItems.id, before.id), eq(assetComplianceItems.companyId, companyId)))
           .returning();
         // Renewed: the "rego expiring" tasks are done with.
         if (renewed) await closeAssetReminderTasks(companyId, { complianceItemId: before.id });
-        res.json(row);
+        res.json(seeCosts ? row : { ...row, amountCents: null });
       } catch (error) {
         console.error("[assets] compliance update failed:", error);
         res.status(500).json({ error: "Failed to save the item" });
@@ -50877,7 +50896,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = insertAssetEventSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid entry", issues: parsed.error.issues });
-        const data = parsed.data;
+        const data = (await canSeeAssetCosts(req)) ? parsed.data : withoutMoneyFields(parsed.data);
         if (data.kind === "meter" && data.meter == null) return res.status(400).json({ error: "Enter the reading" });
 
         let schedule: typeof assetServiceSchedules.$inferSelect | null = null;
