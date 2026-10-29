@@ -9,8 +9,15 @@ import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLi
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
 import { DefaultDiary, type DefaultDiaryHandle } from "@/components/systems/DefaultDiary";
+import { usePermission } from "@/hooks/use-permission";
 
-const ALLOWED_TABS = ["folders", "tasks", "workflows", "reminders", "diary"];
+const ALL_TABS = [
+  { id: "folders", label: "Folders", Icon: Folder },
+  { id: "tasks", label: "Operational Tasks", Icon: ListTodo },
+  { id: "workflows", label: "Workflows", Icon: Workflow },
+  { id: "reminders", label: "Reminders", Icon: Bell },
+  { id: "diary", label: "Default Diary", Icon: CalendarDays },
+];
 
 export default function Systems() {
   // Get tab from URL query parameter
@@ -18,16 +25,26 @@ export default function Systems() {
   const urlParams = new URLSearchParams(searchString);
   const tabFromUrl = urlParams.get("tab");
   
-  // Validate tab from URL, fallback to "folders" if invalid
-  const validatedTab = tabFromUrl && ALLOWED_TABS.includes(tabFromUrl) ? tabFromUrl : "folders";
-  const [activeTab, setActiveTab] = useState(validatedTab);
+  // A tab the role can't view is not rendered at all — the server refuses its
+  // data anyway (operations.* keys), so showing it would only show an error.
+  const canViewLibrary = usePermission("operations.library", "view");
+  const canViewTasks = usePermission("operations.tasks", "view");
+  const canViewWorkflows = usePermission("operations.workflows", "view");
+  const tabs = ALL_TABS.filter((t) =>
+    t.id === "folders" ? canViewLibrary
+    : t.id === "tasks" || t.id === "diary" ? canViewTasks
+    : t.id === "workflows" ? canViewWorkflows
+    : true,
+  );
+  const allowedIds = tabs.map((t) => t.id);
+
+  const [requestedTab, setActiveTab] = useState(tabFromUrl ?? "");
   const [searchQuery, setSearchQuery] = useState("");
+  const activeTab = allowedIds.includes(requestedTab) ? requestedTab : allowedIds[0];
 
   // Update active tab when URL changes
   useEffect(() => {
-    if (tabFromUrl && ALLOWED_TABS.includes(tabFromUrl)) {
-      setActiveTab(tabFromUrl);
-    }
+    if (tabFromUrl) setActiveTab(tabFromUrl);
   }, [tabFromUrl]);
   
   // Refs for accessing child component functions
@@ -42,76 +59,23 @@ export default function Systems() {
       {/* Row 1: Tabs Only (h-9) */}
       <div className="h-9 bg-background dark:bg-background flex items-center px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => setActiveTab("folders")}
-            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "folders"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate"
-            }`}
-            data-testid="tab-folders"
-          >
-            <div className="flex items-center gap-1.5">
-              <Folder className="h-3 w-3" />
-              <span>Folders</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab("tasks")}
-            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "tasks"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate"
-            }`}
-            data-testid="tab-tasks"
-          >
-            <div className="flex items-center gap-1.5">
-              <ListTodo className="h-3 w-3" />
-              <span>Operational Tasks</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab("workflows")}
-            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "workflows"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate"
-            }`}
-            data-testid="tab-workflows"
-          >
-            <div className="flex items-center gap-1.5">
-              <Workflow className="h-3 w-3" />
-              <span>Workflows</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab("reminders")}
-            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "reminders"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate"
-            }`}
-            data-testid="tab-reminders"
-          >
-            <div className="flex items-center gap-1.5">
-              <Bell className="h-3 w-3" />
-              <span>Reminders</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab("diary")}
-            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "diary"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate"
-            }`}
-            data-testid="tab-diary"
-          >
-            <div className="flex items-center gap-1.5">
-              <CalendarDays className="h-3 w-3" />
-              <span>Default Diary</span>
-            </div>
-          </button>
+          {tabs.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+                activeTab === id
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover-elevate"
+              }`}
+              data-testid={`tab-${id}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Icon className="h-3 w-3" />
+                <span>{label}</span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -211,6 +175,8 @@ function SystemsControlBar({
 
 // Folders tab controls
 function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<FolderTreeHandle> }) {
+  const canAdd = usePermission("operations.library", "add");
+  if (!canAdd) return null;
   return (
     <>
       <Button
@@ -239,6 +205,8 @@ function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<Fol
 
 // Tasks tab controls
 function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<TaskLibraryHandle> }) {
+  const canAdd = usePermission("operations.tasks", "add");
+  const canEdit = usePermission("operations.tasks", "edit");
   return (
     <>
       <div className="flex items-center gap-1">
@@ -251,6 +219,7 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
           <span>Inactive</span>
         </Badge>
       </div>
+      {canEdit && (
       <Button
         size="sm"
         variant="outline"
@@ -261,6 +230,8 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
         <CalendarIcon className="w-3 h-3" />
         <span>Generate Tasks</span>
       </Button>
+      )}
+      {canAdd && (
       <Button
         size="sm"
         className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
@@ -270,12 +241,14 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
         <Plus className="w-3 h-3" />
         <span>New Template</span>
       </Button>
+      )}
     </>
   );
 }
 
 // Workflows tab controls
 function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.RefObject<WorkflowBuilderHandle> }) {
+  const canAdd = usePermission("operations.workflows", "add");
   return (
     <>
       <div className="flex items-center gap-1">
@@ -288,6 +261,7 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
           <span>Inactive</span>
         </Badge>
       </div>
+      {canAdd && (
       <Button
         size="sm"
         className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
@@ -297,6 +271,7 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
         <Plus className="w-3 h-3" />
         <span>New Workflow</span>
       </Button>
+      )}
     </>
   );
 }

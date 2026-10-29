@@ -64,3 +64,30 @@ export function sortActionItems<T extends MinuteActionTask>(tasks: T[]): T[] {
     return at - bt;
   });
 }
+
+/**
+ * Where an action item SITS: the four fields that put a task in a project's
+ * To-Dos or in the business list.
+ *
+ * One function because two places need the same answer and must not drift: the
+ * route that raises an action item off a minute, and the one that moves a
+ * minute to another job. A minute written against the wrong project used to be
+ * unfixable, and the first attempt at fixing it moved the minute alone — which
+ * leaves this meeting's work in the old job's To-Dos, where nobody is looking
+ * for it, while the meeting it came out of lives somewhere else.
+ *
+ * `taskContextId` falls back to the company, not to null: a business-level task
+ * is anchored to the company, which is what the task lists filter on.
+ */
+export function actionItemPlacement(projectId: string | null | undefined, companyId: string) {
+  // `|| null`, not `?? null`: the project picker sends "" for Business, and
+  // notes.project_id is plain text with no foreign key, so an empty string
+  // would be stored happily and match no project at all.
+  const inProject = !!projectId;
+  return {
+    projectId: projectId || null,
+    scope: inProject ? "project" : "personal",
+    taskContextType: inProject ? "project" : "business",
+    taskContextId: inProject ? projectId! : companyId,
+  };
+}
