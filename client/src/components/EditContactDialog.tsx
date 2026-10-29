@@ -31,6 +31,7 @@ import { insertContactSchema, type InsertContact, type Contact } from "@shared/s
 import { z } from "zod";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 import { PortalAccessSection } from "@/components/contacts/PortalAccessSection";
+import { EmailHistoryList } from "@/components/email-log/EmailHistoryList";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
@@ -1042,6 +1043,13 @@ export default function EditContactDialog({
                 </FormItem>
               )}
             />
+
+            {/* Emails — from the SAVED addresses, not the fields being edited:
+                the history belongs to the address the email went to. */}
+            <div className="space-y-2 pt-2" data-testid="section-contact-emails">
+              <p className="text-base font-medium">Emails sent</p>
+              <EmailHistoryList addresses={[contact.email, contact.spouseEmail]} />
+            </div>
 
             </div>
 

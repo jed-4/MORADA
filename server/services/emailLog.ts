@@ -47,8 +47,8 @@ export interface EmailLogFilters {
   type?: string | null;
   projectId?: string | null;
   senderId?: string | null;
-  /** Exact recipient, case-insensitive — a contact's history. */
-  address?: string | null;
+  /** Exact recipients, case-insensitive — a contact's or supplier's history. */
+  addresses?: string[] | null;
   q?: string | null;
   from?: string | null;
   to?: string | null;
@@ -111,9 +111,11 @@ function filterConditions(f: EmailLogFilters, trackingEnabled: boolean): SQL[] {
   }
   if (f.projectId) conds.push(eq(emailDeliveries.projectId, f.projectId));
   if (f.senderId) conds.push(eq(emailDeliveries.userId, f.senderId));
-  if (f.address) {
+  const addresses = Array.from(new Set((f.addresses ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean))).slice(0, 50);
+  if (addresses.length) {
+    const list = sql.join(addresses.map((a) => sql`${a}`), sql`, `);
     conds.push(sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${emailDeliveries.toAddresses}) a
-                           WHERE lower(a) = lower(${f.address.trim()}))`);
+                           WHERE lower(a) IN (${list}))`);
   }
   if (f.q?.trim()) {
     const like = `%${f.q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
