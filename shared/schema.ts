@@ -5,6 +5,15 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { JOB_MODES } from "./cashflow/types";
 import { FREQUENCIES } from "./cashflow/recurrence";
+import {
+  ASSET_TYPES,
+  ASSET_STATUSES,
+  METER_TYPES,
+  COMPLIANCE_KINDS,
+  MANUAL_EVENT_KINDS,
+  ASSET_DOCUMENT_CATEGORIES,
+  AU_STATES,
+} from "./assets";
 import { minuteAttendeeSchema } from "./minuteAttendees";
 
 // Session storage table for Replit Auth
@@ -9283,4 +9292,217 @@ export type ReviewItemWithDetail = ReviewItem & {
   revisions: (ReviewRevision & { documents: ReviewDocument[] })[];
   comments: ReviewComment[];
   approvals: ReviewApproval[];
+};
+
+// ============================================================
+// Asset register (migration 0111). Vehicles first; trailers, plant and tools
+// share the same tables via asset_type. Vocabulary and the "what's due" maths
+// live in shared/assets.ts. Every child table carries company_id as well as
+// asset_id so each query can be company-scoped on its own row.
+// ============================================================
+
+const assetDateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+const nonNegInt = z.number().int().min(0);
+
+export const assets = pgTable("assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetType: text("asset_type").notNull().default("vehicle"), // ASSET_TYPES
+  name: text("name").notNull(),
+  status: text("status").notNull().default("active"), // ASSET_STATUSES
+  make: text("make"),
+  model: text("model"),
+  year: integer("year"),
+  vin: text("vin"),
+  rego: text("rego"), // upper-case, no spaces (normaliseRego)
+  regoState: text("rego_state"), // AU_STATES
+  gvmKg: integer("gvm_kg"), // > 4500 = heavy vehicle (NHVR)
+  colour: text("colour"),
+  photoUrl: text("photo_url"), // /objects/company/<companyId>/...
+  assignedUserId: varchar("assigned_user_id").references(() => users.id, { onDelete: "set null" }),
+  purchaseDate: text("purchase_date"), // 'YYYY-MM-DD'
+  purchaseCents: integer("purchase_cents"), // inc GST
+  financeProvider: text("finance_provider"),
+  meterType: text("meter_type").notNull().default("km"), // METER_TYPES
+  currentMeter: integer("current_meter"),
+  currentMeterDate: text("current_meter_date"), // 'YYYY-MM-DD' of that reading
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("assets_company_idx").on(table.companyId),
+  regoIdx: index("assets_company_rego_idx").on(table.companyId, table.rego),
+}));
+
+// companyId stays on the insert schema; routes .omit() it and take it from the
+// session (scripts/check-route-tenancy.mjs). The meter is moved by logging a
+// reading, not by editing the asset, so the history can't disagree with it.
+export const insertAssetSchema = createInsertSchema(assets).omit({
+  id: true,
+  currentMeter: true,
+  currentMeterDate: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Give it a name"),
+  assetType: z.enum(ASSET_TYPES),
+  status: z.enum(ASSET_STATUSES).optional(),
+  meterType: z.enum(METER_TYPES).optional(),
+  regoState: z.enum(AU_STATES).nullable().optional(),
+  year: z.number().int().min(1950).max(2100).nullable().optional(),
+  gvmKg: nonNegInt.nullable().optional(),
+  purchaseCents: nonNegInt.nullable().optional(),
+  purchaseDate: assetDateKey.nullable().optional(),
+  photoUrl: z.string().startsWith("/objects/").nullable().optional(),
+});
+export const updateAssetSchema = insertAssetSchema.omit({ companyId: true }).partial();
+export type InsertAsset = z.infer<typeof insertAssetSchema>;
+export type Asset = typeof assets.$inferSelect;
+
+/** Rego, CTP, insurance, pink slip, finance end... one row per expiring thing. */
+export const assetComplianceItems = pgTable("asset_compliance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // COMPLIANCE_KINDS
+  label: text("label"), // overrides the kind's label, e.g. "Comprehensive - NRMA"
+  provider: text("provider"),
+  policyNumber: text("policy_number"),
+  expiryDate: text("expiry_date").notNull(), // 'YYYY-MM-DD'
+  termMonths: integer("term_months"), // 3 / 6 / 12 for rego
+  amountCents: integer("amount_cents"), // last renewal, inc GST
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  // For the expiry reminder pass (PR 2). Cleared whenever expiryDate changes.
+  reminder30Sent: boolean("reminder_30_sent").notNull().default(false),
+  reminder7Sent: boolean("reminder_7_sent").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  assetIdx: index("asset_compliance_items_asset_idx").on(table.assetId),
+  companyExpiryIdx: index("asset_compliance_items_company_expiry_idx").on(table.companyId, table.expiryDate),
+}));
+
+export const insertAssetComplianceItemSchema = createInsertSchema(assetComplianceItems).omit({
+  id: true,
+  reminder30Sent: true,
+  reminder7Sent: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  kind: z.enum(COMPLIANCE_KINDS),
+  expiryDate: assetDateKey,
+  termMonths: z.number().int().min(1).max(120).nullable().optional(),
+  amountCents: nonNegInt.nullable().optional(),
+  documentUrl: z.string().startsWith("/objects/").nullable().optional(),
+});
+export const updateAssetComplianceItemSchema = insertAssetComplianceItemSchema.omit({ companyId: true, assetId: true }).partial();
+export type AssetComplianceItem = typeof assetComplianceItems.$inferSelect;
+
+/** "Minor service every 10,000 km or 6 months", whichever comes first. */
+export const assetServiceSchedules = pgTable("asset_service_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  everyMeter: integer("every_meter"), // km or hours, per the asset's meter type
+  everyMonths: integer("every_months"),
+  lastDoneMeter: integer("last_done_meter"),
+  lastDoneDate: text("last_done_date"), // 'YYYY-MM-DD'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  assetIdx: index("asset_service_schedules_asset_idx").on(table.assetId),
+}));
+
+export const insertAssetServiceScheduleSchema = createInsertSchema(assetServiceSchedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  label: z.string().trim().min(1, "Name the service"),
+  everyMeter: z.number().int().min(1).nullable().optional(),
+  everyMonths: z.number().int().min(1).max(120).nullable().optional(),
+  lastDoneMeter: nonNegInt.nullable().optional(),
+  lastDoneDate: assetDateKey.nullable().optional(),
+});
+export const updateAssetServiceScheduleSchema = insertAssetServiceScheduleSchema.omit({ companyId: true, assetId: true }).partial();
+export type AssetServiceSchedule = typeof assetServiceSchedules.$inferSelect;
+
+/**
+ * The asset's history: services, repairs, meter readings and notes logged by
+ * hand, plus assignment and status changes the server writes itself.
+ */
+export const assetEvents = pgTable("asset_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // ASSET_EVENT_KINDS
+  date: text("date").notNull(), // 'YYYY-MM-DD'
+  title: text("title"),
+  notes: text("notes"),
+  meter: integer("meter"),
+  costCents: integer("cost_cents"), // inc GST
+  // A service that completes a schedule moves that schedule's last-done point.
+  scheduleId: varchar("schedule_id").references(() => assetServiceSchedules.id, { onDelete: "set null" }),
+  // Assignment rows: who it went to (null = unassigned).
+  relatedUserId: varchar("related_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  assetDateIdx: index("asset_events_asset_date_idx").on(table.assetId, table.date),
+}));
+
+// Only the hand-logged kinds come from a request; who logged it comes from the session.
+export const insertAssetEventSchema = createInsertSchema(assetEvents).omit({
+  id: true,
+  relatedUserId: true,
+  createdById: true,
+  createdAt: true,
+}).extend({
+  kind: z.enum(MANUAL_EVENT_KINDS),
+  date: assetDateKey,
+  meter: nonNegInt.nullable().optional(),
+  costCents: nonNegInt.nullable().optional(),
+});
+export type AssetEvent = typeof assetEvents.$inferSelect;
+
+export const assetDocuments = pgTable("asset_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  category: text("category").notNull().default("other"), // ASSET_DOCUMENT_CATEGORIES
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(), // /objects/company/<companyId>/...
+  fileType: text("file_type"),
+  fileSize: integer("file_size"),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  assetIdx: index("asset_documents_asset_idx").on(table.assetId),
+}));
+
+export const insertAssetDocumentSchema = createInsertSchema(assetDocuments).omit({
+  id: true,
+  uploadedById: true,
+  createdAt: true,
+}).extend({
+  category: z.enum(ASSET_DOCUMENT_CATEGORIES).optional(),
+  fileName: z.string().trim().min(1),
+  fileUrl: z.string().startsWith("/objects/"),
+  fileSize: nonNegInt.nullable().optional(),
+});
+export type AssetDocument = typeof assetDocuments.$inferSelect;
+
+/** GET /api/assets row: the asset plus enough to show what's due. */
+export type AssetListRow = Asset & {
+  complianceItems: AssetComplianceItem[];
+  serviceSchedules: AssetServiceSchedule[];
+};
+
+/** GET /api/assets/:id */
+export type AssetDetail = AssetListRow & {
+  events: AssetEvent[];
+  documents: AssetDocument[];
 };

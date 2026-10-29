@@ -49637,6 +49637,456 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // ============================================================
+  // ===== ASSET REGISTER (migration 0111) =====
+  // Vehicles first; trailers, plant and tools share the tables. Every child
+  // table carries company_id, so each query is scoped on its own row and a
+  // child id from another company is simply not found (404, never 403).
+  // ============================================================
+  {
+    const {
+      assets,
+      assetComplianceItems,
+      assetServiceSchedules,
+      assetEvents,
+      assetDocuments,
+      insertAssetSchema,
+      updateAssetSchema,
+      insertAssetComplianceItemSchema,
+      updateAssetComplianceItemSchema,
+      insertAssetServiceScheduleSchema,
+      updateAssetServiceScheduleSchema,
+      insertAssetEventSchema,
+      insertAssetDocumentSchema,
+      users: usersTable,
+    } = await import("@shared/schema");
+    const { normaliseRego, todayKey, ASSET_STATUS_LABELS } = await import("@shared/assets");
+
+    const sessionCompanyId = (req: any): string | null => req.user?.companyId ?? null;
+
+    const findOwnedAsset = async (assetId: string, companyId: string) => {
+      const [row] = await db.select().from(assets)
+        .where(and(eq(assets.id, assetId), eq(assets.companyId, companyId)))
+        .limit(1);
+      return row ?? null;
+    };
+
+    // An uploaded file must sit under the caller's own company prefix. The
+    // object route would refuse to serve anything else to them anyway; this
+    // stops a dead link being saved in the first place.
+    const isOwnObjectPath = (path: string | null | undefined, companyId: string) =>
+      path == null || path.startsWith(`/objects/company/${companyId}/`);
+
+    const userInCompany = async (userId: string, companyId: string) => {
+      const [u] = await db.select({ id: usersTable.id }).from(usersTable)
+        .where(and(eq(usersTable.id, userId), eq(usersTable.companyId, companyId)))
+        .limit(1);
+      return !!u;
+    };
+
+    app.get("/api/assets", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+        // Three queries for the whole register, never one per asset.
+        const [rows, items, schedules] = await Promise.all([
+          db.select().from(assets).where(eq(assets.companyId, companyId)).orderBy(asc(assets.name)),
+          db.select().from(assetComplianceItems).where(eq(assetComplianceItems.companyId, companyId)).orderBy(asc(assetComplianceItems.expiryDate)),
+          db.select().from(assetServiceSchedules).where(eq(assetServiceSchedules.companyId, companyId)).orderBy(asc(assetServiceSchedules.label)),
+        ]);
+        res.json(rows.map((a) => ({
+          ...a,
+          complianceItems: items.filter((i) => i.assetId === a.id),
+          serviceSchedules: schedules.filter((s) => s.assetId === a.id),
+        })));
+      } catch (error) {
+        console.error("[assets] list failed:", error);
+        res.status(500).json({ error: "Failed to load assets" });
+      }
+    });
+
+    app.get("/api/assets/:id", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const [complianceItems, serviceSchedules, events, documents] = await Promise.all([
+          db.select().from(assetComplianceItems)
+            .where(and(eq(assetComplianceItems.assetId, asset.id), eq(assetComplianceItems.companyId, companyId)))
+            .orderBy(asc(assetComplianceItems.expiryDate)),
+          db.select().from(assetServiceSchedules)
+            .where(and(eq(assetServiceSchedules.assetId, asset.id), eq(assetServiceSchedules.companyId, companyId)))
+            .orderBy(asc(assetServiceSchedules.label)),
+          db.select().from(assetEvents)
+            .where(and(eq(assetEvents.assetId, asset.id), eq(assetEvents.companyId, companyId)))
+            .orderBy(desc(assetEvents.date), desc(assetEvents.createdAt)),
+          db.select().from(assetDocuments)
+            .where(and(eq(assetDocuments.assetId, asset.id), eq(assetDocuments.companyId, companyId)))
+            .orderBy(desc(assetDocuments.createdAt)),
+        ]);
+        res.json({ ...asset, complianceItems, serviceSchedules, events, documents });
+      } catch (error) {
+        console.error("[assets] detail failed:", error);
+        res.status(500).json({ error: "Failed to load the asset" });
+      }
+    });
+
+    app.post("/api/assets", requireAuth, requirePermission("business.assets", "add"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+        const parsed = insertAssetSchema.omit({ companyId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
+        const data = { ...parsed.data, rego: normaliseRego(parsed.data.rego) };
+        if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
+        if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
+          return res.status(400).json({ error: "That person isn't in your company" });
+        }
+
+        const [row] = await db.insert(assets).values({ ...data, companyId }).returning();
+        if (row.assignedUserId) {
+          await db.insert(assetEvents).values({
+            companyId,
+            assetId: row.id,
+            kind: "assignment",
+            date: todayKey(),
+            relatedUserId: row.assignedUserId,
+            createdById: req.user.id,
+          });
+        }
+        res.status(201).json(row);
+      } catch (error) {
+        console.error("[assets] create failed:", error);
+        res.status(500).json({ error: "Failed to add the asset" });
+      }
+    });
+
+    app.patch("/api/assets/:id", requireAuth, requirePermission("business.assets", "edit"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const before = await findOwnedAsset(req.params.id, companyId);
+        if (!before) return res.status(404).json({ error: "Asset not found" });
+
+        const parsed = updateAssetSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
+        const data = { ...parsed.data };
+        if ("rego" in data) data.rego = normaliseRego(data.rego);
+        if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
+        if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
+          return res.status(400).json({ error: "That person isn't in your company" });
+        }
+
+        const [row] = await db.update(assets)
+          .set({ ...data, updatedAt: new Date() })
+          .where(and(eq(assets.id, before.id), eq(assets.companyId, companyId)))
+          .returning();
+        if (!row) return res.status(404).json({ error: "Asset not found" });
+
+        // The history writes itself for the two changes people later ask about:
+        // who had it, and when it came off the road.
+        const auto: (typeof assetEvents.$inferInsert)[] = [];
+        if ("assignedUserId" in data && (before.assignedUserId ?? null) !== (row.assignedUserId ?? null)) {
+          auto.push({ companyId, assetId: row.id, kind: "assignment", date: todayKey(), relatedUserId: row.assignedUserId, createdById: req.user.id });
+        }
+        if (data.status && before.status !== row.status) {
+          const label = (s: string) => ASSET_STATUS_LABELS[s as keyof typeof ASSET_STATUS_LABELS] ?? s;
+          auto.push({ companyId, assetId: row.id, kind: "status", date: todayKey(), title: `${label(before.status)} → ${label(row.status)}`, createdById: req.user.id });
+        }
+        if (auto.length) await db.insert(assetEvents).values(auto);
+        res.json(row);
+      } catch (error) {
+        console.error("[assets] update failed:", error);
+        res.status(500).json({ error: "Failed to save the asset" });
+      }
+    });
+
+    app.delete("/api/assets/:id", requireAuth, requirePermission("business.assets", "delete"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        // Children cascade. The UI offers Archive first; this is for mistakes.
+        const [row] = await db.delete(assets)
+          .where(and(eq(assets.id, req.params.id), eq(assets.companyId, companyId)))
+          .returning({ id: assets.id });
+        if (!row) return res.status(404).json({ error: "Asset not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] delete failed:", error);
+        res.status(500).json({ error: "Failed to delete the asset" });
+      }
+    });
+
+    // ---- compliance items (rego, CTP, insurance, ...) ----
+
+    app.post("/api/assets/:id/compliance", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const parsed = insertAssetComplianceItemSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid item", issues: parsed.error.issues });
+        if (!isOwnObjectPath(parsed.data.documentUrl, companyId)) return res.status(400).json({ error: "Invalid document" });
+
+        const [row] = await db.insert(assetComplianceItems).values({ ...parsed.data, companyId, assetId: asset.id }).returning();
+        res.status(201).json(row);
+      } catch (error) {
+        console.error("[assets] compliance create failed:", error);
+        res.status(500).json({ error: "Failed to add the item" });
+      }
+    });
+
+    app.patch("/api/assets/:id/compliance/:itemId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+        const parsed = updateAssetComplianceItemSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid item", issues: parsed.error.issues });
+        if (!isOwnObjectPath(parsed.data.documentUrl, companyId)) return res.status(400).json({ error: "Invalid document" });
+
+        const [before] = await db.select().from(assetComplianceItems)
+          .where(and(
+            eq(assetComplianceItems.id, req.params.itemId),
+            eq(assetComplianceItems.assetId, req.params.id),
+            eq(assetComplianceItems.companyId, companyId),
+          ))
+          .limit(1);
+        if (!before) return res.status(404).json({ error: "Item not found" });
+
+        // A renewed expiry starts the reminders again.
+        const renewed = parsed.data.expiryDate && parsed.data.expiryDate !== before.expiryDate;
+        const [row] = await db.update(assetComplianceItems)
+          .set({ ...parsed.data, ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
+          .where(and(eq(assetComplianceItems.id, before.id), eq(assetComplianceItems.companyId, companyId)))
+          .returning();
+        res.json(row);
+      } catch (error) {
+        console.error("[assets] compliance update failed:", error);
+        res.status(500).json({ error: "Failed to save the item" });
+      }
+    });
+
+    app.delete("/api/assets/:id/compliance/:itemId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [row] = await db.delete(assetComplianceItems)
+          .where(and(
+            eq(assetComplianceItems.id, req.params.itemId),
+            eq(assetComplianceItems.assetId, req.params.id),
+            eq(assetComplianceItems.companyId, companyId),
+          ))
+          .returning({ id: assetComplianceItems.id });
+        if (!row) return res.status(404).json({ error: "Item not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] compliance delete failed:", error);
+        res.status(500).json({ error: "Failed to delete the item" });
+      }
+    });
+
+    // ---- service schedules ----
+
+    app.post("/api/assets/:id/schedules", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const parsed = insertAssetServiceScheduleSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid schedule", issues: parsed.error.issues });
+        if (!parsed.data.everyMeter && !parsed.data.everyMonths) {
+          return res.status(400).json({ error: "Give it a distance/hours interval, a months interval, or both" });
+        }
+
+        const [row] = await db.insert(assetServiceSchedules).values({ ...parsed.data, companyId, assetId: asset.id }).returning();
+        res.status(201).json(row);
+      } catch (error) {
+        console.error("[assets] schedule create failed:", error);
+        res.status(500).json({ error: "Failed to add the schedule" });
+      }
+    });
+
+    app.patch("/api/assets/:id/schedules/:scheduleId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+        const parsed = updateAssetServiceScheduleSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid schedule", issues: parsed.error.issues });
+
+        const [row] = await db.update(assetServiceSchedules)
+          .set({ ...parsed.data, updatedAt: new Date() })
+          .where(and(
+            eq(assetServiceSchedules.id, req.params.scheduleId),
+            eq(assetServiceSchedules.assetId, req.params.id),
+            eq(assetServiceSchedules.companyId, companyId),
+          ))
+          .returning();
+        if (!row) return res.status(404).json({ error: "Schedule not found" });
+        if (!row.everyMeter && !row.everyMonths) {
+          // Saved, but useless — say so rather than silently never falling due.
+          return res.json({ ...row, warning: "This schedule has no interval, so it will never fall due" });
+        }
+        res.json(row);
+      } catch (error) {
+        console.error("[assets] schedule update failed:", error);
+        res.status(500).json({ error: "Failed to save the schedule" });
+      }
+    });
+
+    app.delete("/api/assets/:id/schedules/:scheduleId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [row] = await db.delete(assetServiceSchedules)
+          .where(and(
+            eq(assetServiceSchedules.id, req.params.scheduleId),
+            eq(assetServiceSchedules.assetId, req.params.id),
+            eq(assetServiceSchedules.companyId, companyId),
+          ))
+          .returning({ id: assetServiceSchedules.id });
+        if (!row) return res.status(404).json({ error: "Schedule not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] schedule delete failed:", error);
+        res.status(500).json({ error: "Failed to delete the schedule" });
+      }
+    });
+
+    // ---- history (services, repairs, meter readings, notes) ----
+
+    app.post("/api/assets/:id/events", requireAuth, requirePermission("business.assets", "edit"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const parsed = insertAssetEventSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid entry", issues: parsed.error.issues });
+        const data = parsed.data;
+        if (data.kind === "meter" && data.meter == null) return res.status(400).json({ error: "Enter the reading" });
+
+        let schedule: typeof assetServiceSchedules.$inferSelect | null = null;
+        if (data.scheduleId) {
+          [schedule] = await db.select().from(assetServiceSchedules)
+            .where(and(
+              eq(assetServiceSchedules.id, data.scheduleId),
+              eq(assetServiceSchedules.assetId, asset.id),
+              eq(assetServiceSchedules.companyId, companyId),
+            ))
+            .limit(1);
+          if (!schedule) return res.status(400).json({ error: "That service schedule isn't on this asset" });
+        }
+
+        const [row] = await db.insert(assetEvents)
+          .values({ ...data, scheduleId: data.kind === "service" ? (data.scheduleId ?? null) : null, companyId, assetId: asset.id, createdById: req.user.id })
+          .returning();
+
+        // A reading only ever moves the meter forward: a lower number is far
+        // more likely a typo or an old receipt than a wound-back odometer.
+        // Deleting an entry later does not roll the meter back.
+        let meterIgnored = false;
+        if (data.meter != null && asset.meterType !== "none") {
+          if (asset.currentMeter == null || data.meter >= asset.currentMeter) {
+            await db.update(assets)
+              .set({ currentMeter: data.meter, currentMeterDate: data.date, updatedAt: new Date() })
+              .where(and(eq(assets.id, asset.id), eq(assets.companyId, companyId)));
+          } else {
+            meterIgnored = true;
+          }
+        }
+
+        // Completing a scheduled service resets when it's next due — unless a
+        // later service is already on record.
+        if (schedule && data.kind === "service") {
+          const newer = !schedule.lastDoneDate || data.date >= schedule.lastDoneDate;
+          if (newer) {
+            await db.update(assetServiceSchedules)
+              .set({ lastDoneDate: data.date, lastDoneMeter: data.meter ?? schedule.lastDoneMeter, updatedAt: new Date() })
+              .where(and(eq(assetServiceSchedules.id, schedule.id), eq(assetServiceSchedules.companyId, companyId)));
+          }
+        }
+
+        res.status(201).json({ ...row, meterIgnored });
+      } catch (error) {
+        console.error("[assets] event create failed:", error);
+        res.status(500).json({ error: "Failed to save the entry" });
+      }
+    });
+
+    app.delete("/api/assets/:id/events/:eventId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [row] = await db.delete(assetEvents)
+          .where(and(
+            eq(assetEvents.id, req.params.eventId),
+            eq(assetEvents.assetId, req.params.id),
+            eq(assetEvents.companyId, companyId),
+          ))
+          .returning({ id: assetEvents.id });
+        if (!row) return res.status(404).json({ error: "Entry not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] event delete failed:", error);
+        res.status(500).json({ error: "Failed to delete the entry" });
+      }
+    });
+
+    // ---- documents ----
+
+    app.post("/api/assets/:id/documents", requireAuth, requirePermission("business.assets", "edit"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const parsed = insertAssetDocumentSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid document", issues: parsed.error.issues });
+        if (!isOwnObjectPath(parsed.data.fileUrl, companyId)) return res.status(400).json({ error: "Invalid document" });
+
+        const [row] = await db.insert(assetDocuments)
+          .values({ ...parsed.data, companyId, assetId: asset.id, uploadedById: req.user.id })
+          .returning();
+        res.status(201).json(row);
+      } catch (error) {
+        console.error("[assets] document create failed:", error);
+        res.status(500).json({ error: "Failed to attach the document" });
+      }
+    });
+
+    app.delete("/api/assets/:id/documents/:documentId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        // Removes the link only; the stored file stays (same as PO attachments).
+        const [row] = await db.delete(assetDocuments)
+          .where(and(
+            eq(assetDocuments.id, req.params.documentId),
+            eq(assetDocuments.assetId, req.params.id),
+            eq(assetDocuments.companyId, companyId),
+          ))
+          .returning({ id: assetDocuments.id });
+        if (!row) return res.status(404).json({ error: "Document not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] document delete failed:", error);
+        res.status(500).json({ error: "Failed to remove the document" });
+      }
+    });
+  }
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication

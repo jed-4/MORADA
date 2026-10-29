@@ -24,6 +24,7 @@ const ComingSoonPage = lazy(() => import("./ComingSoonPage"));
 const BusinessMetrics = lazy(() => import("./BusinessMetrics"));
 const BusinessOverheads = lazy(() => import("./BusinessOverheads"));
 const BusinessCashflow = lazy(() => import("./BusinessCashflow"));
+const BusinessAssets = lazy(() => import("./BusinessAssets"));
 
 export default function Business() {
   const [location, navigate] = useLocation();
@@ -31,13 +32,17 @@ export default function Business() {
   const businessLabel = (user as any)?.companyNickname || "Business";
   const canViewOverheads = usePermission("business.overheads", "view");
   const canViewCashflow = usePermission("business.cashflow", "view");
+  const canViewAssets = usePermission("business.assets", "view");
 
   const visibleTabs = useMemo(
     () =>
       BUSINESS_TABS.filter(
-        (t) => (t.id !== "overheads" || canViewOverheads) && (t.id !== "cashflow" || canViewCashflow),
+        (t) =>
+          (t.id !== "overheads" || canViewOverheads) &&
+          (t.id !== "cashflow" || canViewCashflow) &&
+          (t.id !== "assets" || canViewAssets),
       ),
-    [canViewOverheads, canViewCashflow],
+    [canViewOverheads, canViewCashflow, canViewAssets],
   );
 
   const { toolbarVisible } = useToolbarVisible();
@@ -95,6 +100,21 @@ export default function Business() {
             <h3 className="text-sm font-semibold">No cashflow access</h3>
             <p className="text-xs text-muted-foreground max-w-xs">
               The cashflow forecast is for owners and admins. Contact your administrator to request access.
+            </p>
+          </div>
+        );
+      case "assets":
+        return canViewAssets ? (
+          <BusinessAssets />
+        ) : (
+          <div
+            className="flex flex-col h-full items-center justify-center gap-2 text-center p-8"
+            data-testid="page-assets-no-access"
+          >
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">No asset register access</h3>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              You don't have permission to view the asset register. Contact your administrator to request access.
             </p>
           </div>
         );
