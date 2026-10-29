@@ -2632,7 +2632,46 @@ export const emailDeliveries = pgTable("email_deliveries", {
    *  without a join table per feature. */
   contextType: text("context_type"),
   contextId: varchar("context_id"),
-});
+
+  // ── 0114: the email log ──────────────────────────────────────────────────
+  /** Resolved at write time from the context document. */
+  projectId: varchar("project_id"),
+
+  fromAddress: text("from_address"),
+  replyTo: text("reply_to"),
+  /** The rendered HTML exactly as sent. Null when redacted or pre-0114. */
+  htmlBody: text("html_body"),
+  /** Body deliberately not kept — it carried a live sign-in link. */
+  bodyRedacted: boolean("body_redacted").notNull().default(false),
+  attachments: jsonb("attachments").$type<EmailDeliveryAttachment[]>().notNull().default([]),
+
+  /** Opens are approximate (Apple Mail prefetches images) and never move `status`. */
+  deliveredAt: timestamp("delivered_at"),
+  firstOpenedAt: timestamp("first_opened_at"),
+  lastOpenedAt: timestamp("last_opened_at"),
+  openCount: integer("open_count").notNull().default(0),
+  firstClickedAt: timestamp("first_clicked_at"),
+  clickCount: integer("click_count").notNull().default(0),
+
+  /** Set once the sender has been told it bounced — webhooks retry. */
+  senderNotifiedAt: timestamp("sender_notified_at"),
+  /** On a "fix and resend" copy, the row it replaced. */
+  resentFromId: varchar("resent_from_id"),
+}, (table) => ({
+  contextIdx: index("email_deliveries_context_idx").on(table.contextType, table.contextId, table.sentAt),
+  messageIdx: index("email_deliveries_message_idx").on(table.providerMessageId),
+  companyIdx: index("email_deliveries_company_idx").on(table.companyId, table.sentAt),
+  projectIdx: index("email_deliveries_project_idx").on(table.companyId, table.projectId, table.sentAt),
+}));
+
+/** One attachment as recorded on an email_deliveries row. `objectPath` is null
+ *  when the bytes were not kept (no company to scope the upload, or too big). */
+export interface EmailDeliveryAttachment {
+  filename: string;
+  contentType: string | null;
+  size: number;
+  objectPath: string | null;
+}
 
 export const insertEmailDeliverySchema = createInsertSchema(emailDeliveries).omit({
   id: true,
@@ -2646,7 +2685,7 @@ export type EmailDelivery = typeof emailDeliveries.$inferSelect;
  * the request and nothing more. Everything past it arrives by webhook, which is
  * the whole point: acceptance is not delivery.
  */
-export const EMAIL_DELIVERY_STATUS = ["sent", "delivered", "bounced", "complained", "failed"] as const;
+export const EMAIL_DELIVERY_STATUS = ["sent", "delayed", "delivered", "bounced", "complained", "failed"] as const;
 export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUS)[number];
 
 export const variationSends = pgTable("variation_sends", {

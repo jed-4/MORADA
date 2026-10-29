@@ -31,6 +31,7 @@ const Tasks = lazy(() => import("@/pages/Tasks"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const Docs = lazy(() => import("@/pages/Docs"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
+const EmailLog = lazy(() => import("@/pages/EmailLog"));
 const MinuteDetail = lazy(() => import("@/pages/MinuteDetail"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -381,7 +382,7 @@ function Router() {
         <Route path="/suggestions-review" component={SuggestionsReview} />
       )}
       <Route path="/checklists">{() => <ComingSoonPage section="checklists" />}</Route>
-      <Route path="/emails">{() => <ComingSoonPage section="emails" />}</Route>
+      <Route path="/emails" component={EmailLog} />
       <Route path="/crm">{() => <ComingSoonPage section="crm" />}</Route>
       <Route path="/business-team">{() => <ComingSoonPage section="business-team" />}</Route>
 

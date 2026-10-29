@@ -34,7 +34,7 @@ interface SendEmailParams {
   replyTo?: string;
 }
 
-async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success: boolean; messageId?: string; sentVia: 'gmail' | 'resend' }> {
+async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success: boolean; messageId?: string; sentVia: 'gmail' | 'resend'; fromAddress?: string }> {
   const { to, subject, html, userId, attachments, from, replyTo } = params;
   
   if (userId && gmailServiceInitialized && gmailService) {
@@ -52,7 +52,7 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
         } as any);
         
         if (result.success) {
-          return { success: true, messageId: result.messageId, sentVia: 'gmail' };
+          return { success: true, messageId: result.messageId, sentVia: 'gmail', fromAddress: canSend.email ?? undefined };
         }
         
         console.log(`⚠️ Gmail sending failed, falling back to Resend:`, result.error);
@@ -85,7 +85,7 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
     throw new Error(`Failed to send email: ${error.message || 'Unknown error'}`);
   }
   
-  return { success: true, messageId: data?.id, sentVia: 'resend' };
+  return { success: true, messageId: data?.id, sentVia: 'resend', fromAddress: sendParams.from };
 }
 
 interface SendInvitationEmailParams {
@@ -188,7 +188,7 @@ export async function sendInvitationEmail({
   `;
 
   const subject = `You've been invited to join ${companyName} on Morada`;
-  const record = { to, subject, userId, context: { type: 'team_invite', companyId } };
+  const record = { to, subject, html, userId, context: { type: 'team_invite', companyId } };
 
   try {
     const result = await sendEmailWithFallback({ to, subject, html, userId });
@@ -199,6 +199,7 @@ export async function sendInvitationEmail({
     await recordDelivery(record, {
       provider: result.sentVia,
       messageId: result.messageId,
+      fromAddress: result.fromAddress,
       status: 'sent',
     });
     return { id: result.messageId };
@@ -318,7 +319,7 @@ export async function sendClientPortalInviteEmail({
   `;
 
   const subject = `${companyName} has invited you to view your project on Morada`;
-  const record = { to, subject, context: { type: 'client_portal_invite', id: contactId, companyId } };
+  const record = { to, subject, html, context: { type: 'client_portal_invite', id: contactId, companyId } };
 
   try {
     const result = await sendEmailWithFallback({ to, subject, html });
@@ -329,6 +330,7 @@ export async function sendClientPortalInviteEmail({
     await recordDelivery(record, {
       provider: result.sentVia,
       messageId: result.messageId,
+      fromAddress: result.fromAddress,
       status: 'sent',
     });
     return { id: result.messageId };
@@ -443,7 +445,7 @@ export async function sendReminderEmail({
   `;
 
   const subject = `Reminder: ${reminderTitle}`;
-  const record = { to, subject, userId, context: { type: 'reminder', companyId } };
+  const record = { to, subject, html, userId, context: { type: 'reminder', companyId } };
 
   try {
     const result = await sendEmailWithFallback({ to, subject, html, userId });
@@ -454,6 +456,7 @@ export async function sendReminderEmail({
     await recordDelivery(record, {
       provider: result.sentVia,
       messageId: result.messageId,
+      fromAddress: result.fromAddress,
       status: 'sent',
     });
     return { id: result.messageId };
@@ -489,9 +492,50 @@ export interface EmailContext {
 interface DeliveryRecord {
   to: string | string[];
   subject: string;
+  html?: string;
+  replyTo?: string;
+  attachments?: SendEmailAttachment[];
   userId?: string;
   context?: EmailContext;
 }
+
+/**
+ * Context types whose body is never kept. Each carries a live sign-in or
+ * set-password link; the log is readable by any admin, and a stored copy would
+ * let one sign in as somebody else.
+ */
+export const REDACTED_CONTEXT_TYPES = new Set(["password_reset", "team_invite", "client_portal_invite"]);
+
+/** Sends that nobody is waiting on — a failure here is otherwise silent. */
+const BACKGROUND_CONTEXT_TYPES = new Set(["rfq_reminder", "proposal_reminder", "reminder", "client_decision"]);
+
+/**
+ * Where each context type's document lives, for resolving the project at write
+ * time. Same mapping as the backfill in migrations/0114_email_log.sql.
+ */
+const PROJECT_TABLE_FOR_CONTEXT: Record<string, string> = {
+  variation: "variations",
+  client_decision: "variations",
+  proposal: "proposals",
+  proposal_reminder: "proposals",
+  rfq: "rfqs",
+  rfq_reminder: "rfqs",
+  purchase_order: "purchase_orders",
+  client_invoice: "client_invoices",
+  selection: "selections",
+  review_item: "review_items",
+};
+
+/** Attachments over this are listed but not kept. */
+const MAX_STORED_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+
+/**
+ * An RFQ goes to every supplier with the same PDF; storing it once per email
+ * would be N identical uploads. Keyed by content hash, short-lived on purpose —
+ * this is a burst de-dupe, not a cache.
+ */
+const recentAttachmentUploads = new Map<string, { path: string; at: number }>();
+const ATTACHMENT_DEDUPE_MS = 30 * 60 * 1000;
 
 /**
  * Record the attempt. Deliberately best-effort: a logging failure must never
@@ -501,19 +545,39 @@ interface DeliveryRecord {
  * send that prompted all this was a client portal invite, which has its own
  * function and would otherwise have stayed exactly as invisible as before.
  *
+ * The project is resolved inside the INSERT (a sub-select on the context
+ * document) rather than with a lookup first: the database is ~400ms away, and
+ * this runs inside the request that sent the email.
+ *
  * Returns the row id so the caller can link the send to its own record.
  */
 async function recordDelivery(
   params: DeliveryRecord,
-  outcome: { provider?: string; messageId?: string; status: string; detail?: string },
+  outcome: { provider?: string; messageId?: string; fromAddress?: string; status: string; detail?: string },
 ): Promise<string | undefined> {
   try {
     const { db } = await import("../db");
+    const { sql } = await import("drizzle-orm");
     const { emailDeliveries } = await import("@shared/schema");
+
+    const contextType = params.context?.type ?? null;
+    const contextId = params.context?.id ?? null;
+    const companyId = params.context?.companyId ?? null;
+    const redacted = !!contextType && REDACTED_CONTEXT_TYPES.has(contextType);
+    const projectTable = contextType ? PROJECT_TABLE_FOR_CONTEXT[contextType] : undefined;
+
+    const attachments = (params.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      contentType: a.mimeType ?? null,
+      // base64 → bytes without decoding the whole thing twice.
+      size: Math.floor((a.content.length * 3) / 4) - (a.content.endsWith("==") ? 2 : a.content.endsWith("=") ? 1 : 0),
+      objectPath: null as string | null,
+    }));
+
     const [row] = await db
       .insert(emailDeliveries)
       .values({
-        companyId: params.context?.companyId ?? null,
+        companyId,
         userId: params.userId ?? null,
         toAddresses: Array.isArray(params.to) ? params.to : [params.to],
         subject: params.subject,
@@ -521,14 +585,115 @@ async function recordDelivery(
         providerMessageId: outcome.messageId ?? null,
         status: outcome.status,
         statusDetail: outcome.detail ?? null,
-        contextType: params.context?.type ?? null,
-        contextId: params.context?.id ?? null,
+        contextType,
+        contextId,
+        // Table name is from the fixed map above, never from input.
+        projectId: projectTable && contextId
+          ? sql`(SELECT project_id FROM ${sql.identifier(projectTable)} WHERE id = ${contextId} LIMIT 1)`
+          : null,
+        fromAddress: outcome.fromAddress ?? null,
+        replyTo: params.replyTo ?? null,
+        htmlBody: redacted ? null : params.html ?? null,
+        bodyRedacted: redacted,
+        attachments,
       } as any)
-      .returning({ id: emailDeliveries.id });
+      .returning({ id: emailDeliveries.id, companyId: emailDeliveries.companyId });
+
+    if (row?.id && companyId && params.attachments?.length) {
+      // Not awaited: storing the copy must not slow the send it belongs to.
+      void storeAttachmentCopies(row.id, companyId, params.attachments, attachments);
+    }
+    if (row?.id && outcome.status === "failed" && contextType && BACKGROUND_CONTEXT_TYPES.has(contextType)) {
+      void notifySenderOfProblem(row.id);
+    }
     return row?.id;
   } catch (err: any) {
     console.error("[email] failed to record delivery:", err?.message);
     return undefined;
+  }
+}
+
+async function storeAttachmentCopies(
+  deliveryId: string,
+  companyId: string,
+  source: SendEmailAttachment[],
+  recorded: Array<{ filename: string; contentType: string | null; size: number; objectPath: string | null }>,
+): Promise<void> {
+  try {
+    const crypto = await import("crypto");
+    const { ObjectStorageService } = await import("../replit_integrations/object_storage");
+    const { db } = await import("../db");
+    const { eq } = await import("drizzle-orm");
+    const { emailDeliveries } = await import("@shared/schema");
+    const oss = new ObjectStorageService();
+    const now = Date.now();
+    for (const [key, entry] of Array.from(recentAttachmentUploads)) {
+      if (now - entry.at > ATTACHMENT_DEDUPE_MS) recentAttachmentUploads.delete(key);
+    }
+
+    const stored = await Promise.all(source.map(async (a, i) => {
+      if (recorded[i].size > MAX_STORED_ATTACHMENT_BYTES) return recorded[i];
+      const bytes = Buffer.from(a.content, "base64");
+      const hash = `${companyId}:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+      const hit = recentAttachmentUploads.get(hash);
+      if (hit) return { ...recorded[i], objectPath: hit.path };
+      const path = await oss.uploadObjectEntity(bytes, a.mimeType || "application/octet-stream", companyId);
+      recentAttachmentUploads.set(hash, { path, at: Date.now() });
+      return { ...recorded[i], objectPath: path };
+    }));
+
+    await db.update(emailDeliveries).set({ attachments: stored } as any).where(eq(emailDeliveries.id, deliveryId));
+  } catch (err: any) {
+    // The email went; only the archived copy is missing, and the row says so
+    // (objectPath stays null and the log shows "not kept").
+    console.error("[email] failed to store attachment copy:", err?.message);
+  }
+}
+
+/**
+ * Tell whoever sent it that an email did not arrive. Once per row — Resend
+ * retries webhooks, and a bounce that notifies three times teaches people to
+ * ignore it. Used for bounces/complaints (from the webhook) and for failures of
+ * background sends nobody was watching.
+ */
+export async function notifySenderOfProblem(deliveryId: string): Promise<void> {
+  try {
+    const { db } = await import("../db");
+    const { and, eq, isNull } = await import("drizzle-orm");
+    const { emailDeliveries } = await import("@shared/schema");
+    const { storage } = await import("../storage");
+
+    // Claim the notification atomically, so two concurrent webhook deliveries
+    // cannot both send it.
+    const [row] = await db
+      .update(emailDeliveries)
+      .set({ senderNotifiedAt: new Date() } as any)
+      .where(and(eq(emailDeliveries.id, deliveryId), isNull(emailDeliveries.senderNotifiedAt)))
+      .returning();
+    if (!row || !row.userId || !row.companyId) return;
+
+    const to = (row.toAddresses ?? []).join(", ") || "the recipient";
+    const what = row.status === "complained" ? "was marked as spam by" : row.status === "failed" ? "could not be sent to" : "bounced from";
+    const notification = await storage.createNotification({
+      userId: row.userId,
+      companyId: row.companyId,
+      type: "email_problem",
+      title: `Email ${what} ${to}`,
+      message: [row.subject, row.statusDetail].filter(Boolean).join(" — ") || null,
+      link: `/emails?id=${row.id}`,
+      entityType: "email_delivery",
+      entityId: row.id,
+      isRead: false,
+      createdByUserId: null,
+    } as any);
+    try {
+      const { emitNotification } = await import("../socketManager");
+      emitNotification(row.userId, notification);
+    } catch {
+      // Live push is a nicety; the notification is already stored.
+    }
+  } catch (err: any) {
+    console.error("[email] failed to notify sender:", err?.message);
   }
 }
 
@@ -546,6 +711,7 @@ export async function sendGenericEmail(params: SendGenericEmailParams) {
     const deliveryId = await recordDelivery(params, {
       provider: result.sentVia,
       messageId: result.messageId,
+      fromAddress: result.fromAddress,
       status: "sent",
     });
     return { id: result.messageId, sentVia: result.sentVia, deliveryId };

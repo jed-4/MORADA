@@ -17,7 +17,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
-import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { isProposalEditable, blockedFieldsWhenLocked, proposalLockMessage, READY_STATUS } from "@shared/proposalLock";
@@ -31,7 +31,8 @@ import {
   localUploadName,
 } from "./replit_integrations/object_storage/localObjectStorage";
 import { renderClientEmail } from "./services/clientEmailShell";
-import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
+import { verifyResendSignature, parseResendEvent, deliveryPatch } from "./services/resendWebhook";
+import { listEmailDeliveries, getEmailDelivery, getEmailDeliveryDetail, type EmailLogScope } from "./services/emailLog";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -30025,28 +30026,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!event) return res.json({ ok: true, ignored: true });
 
       const { emailDeliveries } = await import("@shared/schema");
-      const updated = await db
-        .update(emailDeliveries)
-        .set({
-          status: event.status,
-          statusDetail: event.detail ?? null,
-          statusUpdatedAt: event.occurredAt ?? new Date(),
-        })
+      const [row] = await db
+        .select()
+        .from(emailDeliveries)
         .where(eq(emailDeliveries.providerMessageId, event.messageId))
-        .returning({ id: emailDeliveries.id });
+        .limit(1);
 
-      if (updated.length === 0) {
+      if (!row) {
         // Emails sent before this shipped have no row. Worth a log line — a
         // flood of these means the message ids are not being stored.
-        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.status})`);
-      } else if (event.status === "bounced" || event.status === "complained") {
-        console.warn(`[resend-webhook] ${event.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.kind})`);
+        return res.json({ ok: true, matched: 0 });
       }
 
-      res.json({ ok: true, matched: updated.length });
+      // Read-then-write, not a blind SET: events arrive out of order and are
+      // retried, and deliveryPatch is what stops a late "delivered" erasing a
+      // bounce. Opens increment from the value read, so two opens landing in
+      // the same instant can count once — acceptable for an approximate number.
+      const patch = deliveryPatch(row as any, event);
+      if (patch) {
+        await db.update(emailDeliveries).set(patch as any).where(eq(emailDeliveries.id, row.id));
+      }
+
+      if (patch?.status === "bounced" || patch?.status === "complained") {
+        console.warn(`[resend-webhook] ${patch.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+        await notifySenderOfProblem(row.id);
+      }
+
+      res.json({ ok: true, matched: 1 });
     } catch (error) {
       console.error("[resend-webhook] error:", error);
       res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // ── Email log ────────────────────────────────────────────────────────────
+  // Every email the app sent, from email_deliveries. Company-scoped always;
+  // without admin.email_log a user sees the emails they sent themselves —
+  // "did my variation arrive?" should not need an admin.
+  async function emailLogScope(req: any): Promise<EmailLogScope | null> {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) return null;
+    const all = await userHasPermission(req.user, "admin.email_log", "view");
+    return { companyId, onlyUserId: all ? null : req.user.id };
+  }
+
+  app.get("/api/email-deliveries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const q = req.query as Record<string, string | undefined>;
+      const statuses = ["attention", "delivered", "opened", "problem", "unconfirmed"] as const;
+      res.json(await listEmailDeliveries(scope, {
+        status: statuses.includes(q.status as any) ? (q.status as (typeof statuses)[number]) : null,
+        type: q.type || null,
+        projectId: q.projectId || null,
+        senderId: q.senderId || null,
+        address: q.address || null,
+        q: q.q || null,
+        from: q.from && /^\d{4}-\d{2}-\d{2}$/.test(q.from) ? q.from : null,
+        to: q.to && /^\d{4}-\d{2}-\d{2}$/.test(q.to) ? q.to : null,
+        cursor: q.cursor || null,
+        limit: q.limit ? Number(q.limit) : undefined,
+      }));
+    } catch (error) {
+      console.error("Error listing email deliveries:", error);
+      res.status(500).json({ error: "Failed to load the email log" });
+    }
+  });
+
+  app.get("/api/email-deliveries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const detail = await getEmailDeliveryDetail(scope, req.params.id);
+      if (!detail) return res.status(404).json({ error: "Email not found" });
+      res.json(detail);
+    } catch (error) {
+      console.error("Error loading email delivery:", error);
+      res.status(500).json({ error: "Failed to load the email" });
+    }
+  });
+
+  /** The attachment exactly as it went out — served from the copy stored at send time. */
+  app.get("/api/email-deliveries/:id/attachments/:index", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const row = await getEmailDelivery(scope, req.params.id);
+      const attachment = row?.attachments?.[Number(req.params.index)];
+      if (!row || !attachment) return res.status(404).json({ error: "Attachment not found" });
+      if (!attachment.objectPath) return res.status(404).json({ error: "No copy of this attachment was kept" });
+      // The stored path names its company; refuse one that is not the caller's,
+      // whatever the row says.
+      if (!attachment.objectPath.startsWith(`/objects/company/${scope.companyId}/`)) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const oss = new ObjectStorageService();
+      const normalisedPath = attachment.objectPath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await oss.getObjectEntityFile(normalisedPath);
+      const safeName = attachment.filename.replace(/["\r\n]/g, "");
+      res.setHeader("Content-Disposition", `${req.query.download ? "attachment" : "inline"}; filename="${safeName}"`);
+      await oss.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      console.error("Email attachment error:", error);
+      res.status(500).json({ error: "Failed to load the attachment" });
     }
   });
 
