@@ -5533,7 +5533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   //            reconciles with the cost-code breakdown the user already sees.
   //   - labour: sum of timesheet totals (duration × hourlyRate, dollars, no GST),
   //             excluding rejected timesheets. Converted to cents.
-  //   - internal: placeholder (0) for future internal-cost tracking.
+  //   - internal: vehicles & plant at their day rate (server/services/assetRecharge.ts).
   app.get(
     "/api/projects/:id/actual-costs",
     requireAuth,
@@ -5582,7 +5582,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           timesheetCostCents += Math.round((Number(ts.total) || 0) * 100);
         }
 
-        const internalCostCents = 0; // Placeholder for future internal-cost tracking.
+        // Vehicles & plant charged to this job at their day rate (asset
+        // register, PR 5). An internal cost like labour: ex GST, and not cash —
+        // the real fuel and servicing are already in bills.
+        const { loadRecharges } = await import("./services/assetRecharge");
+        const internalCostCents = companyId
+          ? (await loadRecharges(companyId, { projectId })).reduce((s, c) => s + c.cents, 0)
+          : 0;
         const actualCostExGstCents =
           billsCostExGstCents + timesheetCostCents + internalCostCents;
 
@@ -50300,6 +50306,204 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       } catch (error) {
         console.error("[assets] options failed:", error);
         res.status(500).json({ error: "Failed to load assets" });
+      }
+    });
+
+    // ---- recharge to jobs (PR 5, migration 0116) ----
+    // Day rate x days used, worked out from the driver's approved timesheets
+    // and bookings (shared/assetRecharge.ts). Charges are computed, not stored.
+    const { assetBookings, insertAssetBookingSchema, assetRegisterSettings, projects: projectsTable, costCodes: costCodesTable } = await import("@shared/schema");
+    const { loadRecharges } = await import("./services/assetRecharge");
+
+    const projectInCompany = async (projectId: string, companyId: string) => {
+      const [p] = await db.select({ id: projectsTable.id, name: projectsTable.name }).from(projectsTable)
+        .where(and(eq(projectsTable.id, projectId), eq(projectsTable.companyId, companyId))).limit(1);
+      return p ?? null;
+    };
+
+    app.get("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [row] = await db.select().from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1);
+        res.json({ rechargeCostCodeId: row?.rechargeCostCodeId ?? null });
+      } catch (error) {
+        console.error("[assets] settings read failed:", error);
+        res.status(500).json({ error: "Failed to load settings" });
+      }
+    });
+
+    app.put("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const parsed = z.object({ rechargeCostCodeId: z.string().min(1).nullable() }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid settings", issues: parsed.error.issues });
+        if (parsed.data.rechargeCostCodeId) {
+          const [code] = await db.select({ id: costCodesTable.id }).from(costCodesTable)
+            .where(and(eq(costCodesTable.id, parsed.data.rechargeCostCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
+          if (!code) return res.status(404).json({ error: "Cost code not found" });
+        }
+        await db.insert(assetRegisterSettings)
+          .values({ companyId, rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() } });
+        res.json({ rechargeCostCodeId: parsed.data.rechargeCostCodeId });
+      } catch (error) {
+        console.error("[assets] settings save failed:", error);
+        res.status(500).json({ error: "Failed to save settings" });
+      }
+    });
+
+    app.get("/api/assets/:id/bookings", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const rows = await db.select({ booking: assetBookings, projectName: projectsTable.name })
+          .from(assetBookings)
+          .innerJoin(projectsTable, eq(assetBookings.projectId, projectsTable.id))
+          .where(and(eq(assetBookings.assetId, asset.id), eq(assetBookings.companyId, companyId)))
+          .orderBy(desc(assetBookings.fromDate));
+        res.json(rows.map((r) => ({ ...r.booking, projectName: r.projectName })));
+      } catch (error) {
+        console.error("[assets] bookings read failed:", error);
+        res.status(500).json({ error: "Failed to load bookings" });
+      }
+    });
+
+    app.post("/api/assets/:id/bookings", requireAuth, requirePermission("business.assets", "edit"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const parsed = insertAssetBookingSchema.omit({ companyId: true }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid booking", issues: parsed.error.issues });
+        if (parsed.data.toDate < parsed.data.fromDate) return res.status(400).json({ error: "The booking ends before it starts" });
+        if (!(await projectInCompany(parsed.data.projectId, companyId))) return res.status(404).json({ error: "Project not found" });
+        if (daysBetween(parsed.data.fromDate, parsed.data.toDate) > 366) return res.status(400).json({ error: "Book a year or less at a time" });
+        const [row] = await db.insert(assetBookings).values({ ...parsed.data, companyId, assetId: asset.id, createdById: req.user.id }).returning();
+        res.status(201).json(row);
+      } catch (error) {
+        console.error("[assets] booking create failed:", error);
+        res.status(500).json({ error: "Failed to book" });
+      }
+    });
+
+    app.delete("/api/assets/:id/bookings/:bookingId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [row] = await db.delete(assetBookings)
+          .where(and(
+            eq(assetBookings.id, req.params.bookingId),
+            eq(assetBookings.assetId, req.params.id),
+            eq(assetBookings.companyId, companyId),
+          ))
+          .returning({ id: assetBookings.id });
+        if (!row) return res.status(404).json({ error: "Booking not found" });
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] booking delete failed:", error);
+        res.status(500).json({ error: "Failed to remove the booking" });
+      }
+    });
+
+    // What this asset has charged to jobs over the last 12 months.
+    app.get("/api/assets/:id/recharges", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const from = addMonthsKey(todayKey(), -12);
+        const charges = await loadRecharges(companyId, { assetId: asset.id, from });
+
+        const byProject = new Map<string, { projectId: string; days: number; cents: number; bookedDays: number }>();
+        for (const c of charges) {
+          const row = byProject.get(c.projectId) ?? { projectId: c.projectId, days: 0, cents: 0, bookedDays: 0 };
+          row.days += c.fraction;
+          row.cents += c.cents;
+          if (c.source === "booking") row.bookedDays += c.fraction;
+          byProject.set(c.projectId, row);
+        }
+        const ids = Array.from(byProject.keys());
+        const names = ids.length
+          ? await db.select({ id: projectsTable.id, name: projectsTable.name }).from(projectsTable)
+              .where(and(inArray(projectsTable.id, ids), eq(projectsTable.companyId, companyId)))
+          : [];
+        res.json({
+          from,
+          dayRateCents: asset.dayRateCents,
+          totalCents: charges.reduce((s, c) => s + c.cents, 0),
+          days: Math.round(charges.reduce((s, c) => s + c.fraction, 0) * 10) / 10,
+          byProject: Array.from(byProject.values())
+            .map((r) => ({ ...r, days: Math.round(r.days * 10) / 10, bookedDays: Math.round(r.bookedDays * 10) / 10, projectName: names.find((n) => n.id === r.projectId)?.name ?? "Project" }))
+            .sort((a, b) => b.cents - a.cents),
+        });
+      } catch (error) {
+        console.error("[assets] recharges failed:", error);
+        res.status(500).json({ error: "Failed to load recharges" });
+      }
+    });
+
+    // The job's side: what vehicles have charged it, for the Budget page's
+    // Internal column. Same permission as the job's actual costs.
+    app.get("/api/projects/:id/internal-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const project = await projectInCompany(req.params.id, companyId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+
+        const [charges, settingsRows] = await Promise.all([
+          loadRecharges(companyId, { projectId: project.id }),
+          db.select().from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1),
+        ]);
+        const total = charges.reduce((s, c) => s + c.cents, 0);
+        const byAssetMap = new Map<string, { assetId: string; days: number; cents: number }>();
+        for (const c of charges) {
+          const row = byAssetMap.get(c.assetId) ?? { assetId: c.assetId, days: 0, cents: 0 };
+          row.days += c.fraction;
+          row.cents += c.cents;
+          byAssetMap.set(c.assetId, row);
+        }
+        const assetRows = byAssetMap.size
+          ? await db.select({ id: assets.id, name: assets.name, rego: assets.rego }).from(assets)
+              .where(and(eq(assets.companyId, companyId), inArray(assets.id, Array.from(byAssetMap.keys()))))
+          : [];
+
+        const costCodeId = settingsRows[0]?.rechargeCostCodeId ?? null;
+        let costCode: { id: string; title: string; categoryTitle: string } | null = null;
+        if (costCodeId) {
+          const [cc] = await db.select({ id: costCodesTable.id, title: costCodesTable.title, categoryId: costCodesTable.categoryId })
+            .from(costCodesTable).where(and(eq(costCodesTable.id, costCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
+          if (cc) {
+            const { costCategories } = await import("@shared/schema");
+            const [cat] = cc.categoryId
+              ? await db.select({ title: costCategories.title }).from(costCategories).where(eq(costCategories.id, cc.categoryId)).limit(1)
+              : [];
+            costCode = { id: cc.id, title: cc.title, categoryTitle: cat?.title ?? "Uncategorized" };
+          }
+        }
+
+        res.json({
+          total,
+          costCode,
+          byCostCode: total
+            ? [{ costCodeId: costCode?.id ?? null, costCodeTitle: costCode?.title ?? "Vehicles & plant", categoryTitle: costCode?.categoryTitle ?? "Uncategorized", internalCents: total }]
+            : [],
+          byAsset: Array.from(byAssetMap.values()).map((r) => ({
+            ...r,
+            days: Math.round(r.days * 10) / 10,
+            name: assetRows.find((a) => a.id === r.assetId)?.name ?? "Asset",
+            rego: assetRows.find((a) => a.id === r.assetId)?.rego ?? null,
+          })),
+        });
+      } catch (error) {
+        console.error("[assets] internal costs failed:", error);
+        res.status(500).json({ error: "Failed to load internal costs" });
       }
     });
 

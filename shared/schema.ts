@@ -9329,6 +9329,9 @@ export const assets = pgTable("assets", {
   purchaseDate: text("purchase_date"), // 'YYYY-MM-DD'
   purchaseCents: integer("purchase_cents"), // inc GST
   financeProvider: text("finance_provider"),
+  // What a day of use charges a job, ex GST (an internal cost, like labour).
+  // 0/null = never charged. See shared/assetRecharge.ts (migration 0116).
+  dayRateCents: integer("day_rate_cents"),
   meterType: text("meter_type").notNull().default("km"), // METER_TYPES
   currentMeter: integer("current_meter"),
   currentMeterDate: text("current_meter_date"), // 'YYYY-MM-DD' of that reading
@@ -9358,6 +9361,7 @@ export const insertAssetSchema = createInsertSchema(assets).omit({
   year: z.number().int().min(1950).max(2100).nullable().optional(),
   gvmKg: nonNegInt.nullable().optional(),
   purchaseCents: nonNegInt.nullable().optional(),
+  dayRateCents: nonNegInt.nullable().optional(),
   purchaseDate: assetDateKey.nullable().optional(),
   photoUrl: z.string().startsWith("/objects/").nullable().optional(),
 });
@@ -9550,6 +9554,49 @@ export const submitPrestartSchema = z.object({
   checkedAt: z.string().datetime().optional(),
 });
 export type AssetPrestart = typeof assetPrestarts.$inferSelect;
+
+/**
+ * The asset is on a job for these days (migration 0116). Charges the job its
+ * day rate, and wins over the driver's timesheets for those days.
+ */
+export const assetBookings = pgTable("asset_bookings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  fromDate: text("from_date").notNull(), // 'YYYY-MM-DD'
+  toDate: text("to_date").notNull(),
+  includeWeekends: boolean("include_weekends").notNull().default(false),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  assetIdx: index("asset_bookings_asset_idx").on(table.assetId),
+  projectIdx: index("asset_bookings_project_idx").on(table.projectId),
+}));
+
+// companyId stays here and the route .omit()s it (scripts/check-route-tenancy.mjs
+// looks for that at the call site); assetId comes from the URL. projectId does
+// come from the body, and the route checks it's the company's.
+export const insertAssetBookingSchema = createInsertSchema(assetBookings).omit({
+  id: true,
+  assetId: true,
+  createdById: true,
+  createdAt: true,
+}).extend({
+  fromDate: assetDateKey,
+  toDate: assetDateKey,
+});
+export type AssetBooking = typeof assetBookings.$inferSelect;
+
+/** One row per company: asset register settings (migration 0116). */
+export const assetRegisterSettings = pgTable("asset_register_settings", {
+  companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
+  // Every vehicle recharge lands on this cost code in the job's budget.
+  rechargeCostCodeId: varchar("recharge_cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type AssetRegisterSettings = typeof assetRegisterSettings.$inferSelect;
 
 /** GET /api/assets row: the asset plus enough to show what's due. */
 export type AssetListRow = Asset & {

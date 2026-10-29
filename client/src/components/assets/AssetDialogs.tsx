@@ -109,6 +109,7 @@ interface AssetForm {
   purchaseDate: string;
   purchaseDollars: number | null;
   financeProvider: string;
+  dayRateDollars: number | null;
   notes: string;
 }
 
@@ -130,6 +131,7 @@ function blankAsset(): AssetForm {
     purchaseDate: "",
     purchaseDollars: null,
     financeProvider: "",
+    dayRateDollars: null,
     notes: "",
   };
 }
@@ -171,6 +173,7 @@ export function AssetDialog({
             purchaseDate: asset.purchaseDate ?? "",
             purchaseDollars: asset.purchaseCents == null ? null : asset.purchaseCents / 100,
             financeProvider: asset.financeProvider ?? "",
+            dayRateDollars: asset.dayRateCents == null ? null : asset.dayRateCents / 100,
             notes: asset.notes ?? "",
           }
         : blankAsset(),
@@ -198,6 +201,7 @@ export function AssetDialog({
         purchaseDate: f.purchaseDate || null,
         purchaseCents: toCents(f.purchaseDollars),
         financeProvider: f.financeProvider.trim() || null,
+        dayRateCents: toCents(f.dayRateDollars),
         notes: f.notes.trim() || null,
       };
       return asset ? apiRequest(`/api/assets/${asset.id}`, "PATCH", body) : apiRequest("/api/assets", "POST", body);
@@ -317,6 +321,15 @@ export function AssetDialog({
             <Field label="Finance provider">
               <Input className="h-8 text-xs" value={f.financeProvider} onChange={(e) => set("financeProvider", e.target.value)} placeholder="Owned outright" />
             </Field>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
+              <NumericInput className="h-8 text-xs" min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
+            </Field>
+            <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
+              Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
+            </p>
           </div>
 
           <Field label="Notes">
