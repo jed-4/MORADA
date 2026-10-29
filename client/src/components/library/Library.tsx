@@ -1,10 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch, useLocation } from "wouter";
 import { format } from "date-fns";
 import {
   BookOpen, Plus, MoreHorizontal, Trash2, Folder, FolderOpen, ChevronDown, ChevronRight,
   FileText, Pencil, Check, MoveRight, History, Archive, ArchiveRestore, Send, ShieldCheck,
-  Undo2, Link2, ExternalLink, Lock,
+  Undo2, Link2, ExternalLink, Lock, ListTodo,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,34 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const { data: docs = [], isLoading } = useQuery<Doc[]>({ queryKey: ["/api/docs"] });
   const selectedDoc = useMemo(() => docs.find((d) => d.id === selectedDocId) ?? null, [docs, selectedDocId]);
 
+  // ?doc=<id> opens a document directly — the "View SOP" link on a To-Do and
+  // the task editor's "Open" both land here.
+  const docParam = new URLSearchParams(useSearch()).get("doc");
+  const [, navigate] = useLocation();
+  useEffect(() => { if (docParam) setSelectedDocId(docParam); }, [docParam]);
+  useEffect(() => {
+    const folderId = selectedDoc?.folderId;
+    if (folderId) setExpandedFolders((prev) => (prev.has(folderId) ? prev : new Set([...Array.from(prev), folderId])));
+  }, [selectedDoc?.folderId]);
+
+  const { data: usage = [] } = useQuery<{ id: string; title: string; isActive: boolean }[]>({
+    queryKey: ["/api/docs", selectedDocId, "usage"],
+    queryFn: async () => (await fetch(`/api/docs/${selectedDocId}/usage`, { credentials: "include" })).json(),
+    enabled: !!selectedDocId,
+  });
+
+  // Someone who can only read the Library should be reading what was signed
+  // off, not a draft someone is part-way through. Show the last approved
+  // version while a newer draft is in progress.
+  const showApprovedCopy = !!selectedDoc && !canEdit
+    && (selectedDoc.status === "draft" || selectedDoc.status === "in_review")
+    && selectedDoc.currentVersion > 0;
+  const { data: approvedCopy } = useQuery<DocVersion>({
+    queryKey: ["/api/docs", selectedDocId, "versions", selectedDoc?.currentVersion],
+    queryFn: async () => (await fetch(`/api/docs/${selectedDocId}/versions/${selectedDoc!.currentVersion}`, { credentials: "include" })).json(),
+    enabled: showApprovedCopy,
+  });
+
   const { data: versions = [] } = useQuery<Omit<DocVersion, "contentHtml">[]>({
     queryKey: ["/api/docs", selectedDocId, "versions"],
     queryFn: async () => (await fetch(`/api/docs/${selectedDocId}/versions`, { credentials: "include" })).json(),
@@ -241,8 +270,12 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   };
 
   // Switching docs saves what was typed in the previous one first.
+  // Keyed on the loaded doc, not the selected id: a ?doc= link selects an id
+  // before the list has arrived, and the title would otherwise stay blank.
   useEffect(() => {
     if (selectedDoc && !isCreatingRef.current) setEditTitle(selectedDoc.title || "");
+  }, [selectedDoc?.id]);
+  useEffect(() => {
     setUnlockedDocId(null);
     setViewVersion(null);
     return () => { flushSave().catch(() => {}); };
@@ -528,6 +561,16 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                 <span className="font-medium">Sent back:</span> {selectedDoc.reviewNote}
               </div>
             )}
+            {showApprovedCopy && (
+              <div className="px-6 py-2 border-b text-xs text-muted-foreground" data-testid="library-showing-approved">
+                Showing approved v{selectedDoc.currentVersion}. A newer draft is being worked on.
+              </div>
+            )}
+            {!canEdit && selectedDoc.currentVersion === 0 && status !== "archived" && (
+              <div className="px-6 py-2 border-b text-xs bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))]" data-testid="library-not-approved">
+                Not approved yet — this may still change.
+              </div>
+            )}
             {editable && lockedByReview && (
               <div className="px-6 py-2 border-b text-xs text-muted-foreground flex items-center gap-1.5">
                 <Lock className="h-3 w-3" />Changing this document reopens it as a draft. The approved version stays in its history.
@@ -537,7 +580,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-3xl mx-auto px-10 py-10">
                 <input
-                  value={editTitle}
+                  value={showApprovedCopy ? (approvedCopy?.title ?? "") : editTitle}
                   onChange={(e) => { setEditTitle(e.target.value); scheduleSave({ title: e.target.value }); }}
                   placeholder="Untitled"
                   readOnly={!editable}
@@ -567,9 +610,28 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                     )}
                   </div>
                 )}
+                {usage.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap mb-4 text-xs text-muted-foreground" data-testid="library-doc-usage">
+                    <ListTodo className="h-3.5 w-3.5 shrink-0" />
+                    <span>Used by</span>
+                    {usage.map((t, i) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className="text-foreground hover:underline"
+                        onClick={() => navigate("/systems?tab=tasks")}
+                      >
+                        {t.title}{!t.isActive ? " (inactive)" : ""}{i < usage.length - 1 ? "," : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showApprovedCopy && !approvedCopy ? (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
+                ) : (
                 <NotionEditor
-                  key={`${selectedDoc.id}-${editable}`}
-                  content={selectedDoc.contentHtml || ""}
+                  key={`${selectedDoc.id}-${editable}-${showApprovedCopy ? approvedCopy?.version : "live"}`}
+                  content={showApprovedCopy ? approvedCopy!.contentHtml : (selectedDoc.contentHtml || "")}
                   editable={editable}
                   onChange={(html, text) => {
                     if (!editable) return;
@@ -580,6 +642,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   }}
                   placeholder="Start writing, or press '/' for commands…"
                 />
+                )}
               </div>
             </div>
           </>

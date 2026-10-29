@@ -21,7 +21,8 @@ import {
   ArrowUp,
   ArrowDown,
   PlayCircle,
-  GripVertical
+  GripVertical,
+  BookOpen,
 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -63,7 +64,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { UserSelect } from "@/components/UserSelect";
-import type { TaskTemplate, UserRole } from "@shared/schema";
+import type { TaskTemplate, UserRole, Doc } from "@shared/schema";
+import { usePermission } from "@/hooks/use-permission";
+import { useLocation } from "wouter";
 
 const DAYS_OF_WEEK = [
   { value: 0, label: "Sun", fullLabel: "Sunday" },
@@ -186,6 +189,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     dueDayOfMonth: 1,
     checklist: [] as Array<{ text: string; completed: boolean }>,
     externalLinks: [] as string[],
+    sopDocId: "" as string,
     isRecurringTemplate: false,
     recurringDays: [] as number[],
     recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
@@ -194,6 +198,28 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     defaultTaskStatus: "todo", // Default status for tasks created from this template
     scope: "business" as "business" | "project",
     projectId: "" as string,
+  });
+
+  // Library docs for the SOP picker. Only fetched for roles that can read the
+  // Library; others see the linked SOP's name from the template list.
+  const canViewLibrary = usePermission("operations.library", "view");
+  const canAddLibrary = usePermission("operations.library", "add");
+  const [, navigate] = useLocation();
+  const { data: libraryDocs = [] } = useQuery<Doc[]>({
+    queryKey: ["/api/docs"],
+    enabled: canViewLibrary,
+  });
+  const sopOptions = libraryDocs
+    .filter((d) => d.status !== "archived" || d.id === templateForm.sopDocId)
+    .sort((a, b) => (a.docType === "sop" ? 0 : 1) - (b.docType === "sop" ? 0 : 1) || (a.title || "").localeCompare(b.title || "", undefined, { numeric: true }));
+  const createSopMutation = useMutation({
+    mutationFn: async (title: string) => apiRequest("/api/docs", "POST", { title, docType: "sop" }),
+    onSuccess: (doc: Doc) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/docs"] });
+      setTemplateForm((prev) => ({ ...prev, sopDocId: doc.id }));
+      toast({ title: "SOP created", description: "Save the task, then write the SOP in the Library." });
+    },
+    onError: (e: any) => toast({ title: "Couldn't create the SOP", description: e?.message, variant: "destructive" }),
   });
 
   // Fetch task templates
@@ -406,6 +432,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       dueDayOfMonth: 1,
       checklist: [],
       externalLinks: [],
+      sopDocId: "",
       isRecurringTemplate: false,
       recurringDays: [],
       recurringSchedule: [],
@@ -442,6 +469,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       dueDayOfMonth: template.dueDayOfMonth || 1,
       checklist: template.checklist ? (Array.isArray(template.checklist) ? template.checklist : JSON.parse(template.checklist as string)) : [],
       externalLinks: template.externalLinks ? (Array.isArray(template.externalLinks) ? template.externalLinks : JSON.parse(template.externalLinks as string)) : [],
+      sopDocId: template.sopDocId || "",
       isRecurringTemplate: template.isRecurringTemplate || false,
       recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
       recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
@@ -499,6 +527,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       ...templateForm,
       // Remove empty external links
       externalLinks: templateForm.externalLinks.filter(link => link.trim() !== ""),
+      sopDocId: templateForm.sopDocId || null,
       // Include recurring fields if enabled
       isRecurringTemplate: templateForm.isRecurringTemplate,
       recurringSchedule: recurringScheduleData,
@@ -958,8 +987,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   <div></div>
 
                   {/* Title */}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex items-center gap-1.5">
                     <div className="text-sm text-foreground truncate leading-5">{template.title}</div>
+                    {template.sopDocId && (
+                      <BookOpen className="h-3 w-3 text-muted-foreground flex-shrink-0" aria-label="Has an SOP" data-testid={`template-sop-${template.id}`} />
+                    )}
                   </div>
 
                   {/* Category & Info Badges */}
@@ -1572,6 +1604,52 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 <div className="text-data text-muted-foreground px-2 py-1 bg-muted/30 rounded">No items</div>
               )}
             </div>
+
+            {/* SOP — the Library doc that explains how to do this task */}
+            {canViewLibrary && (
+              <div>
+                <Label className="text-data text-muted-foreground mb-0.5 block">SOP</Label>
+                <div className="flex gap-1">
+                  <Select
+                    value={templateForm.sopDocId || "none"}
+                    // Radix emits "" while hydrating to a value outside the
+                    // options; ignore it rather than unlinking the SOP.
+                    onValueChange={(v) => v && setTemplateForm((prev) => ({ ...prev, sopDocId: v === "none" ? "" : v }))}
+                  >
+                    <SelectTrigger className="h-6 text-table flex-1" data-testid="select-template-sop">
+                      <SelectValue placeholder="No SOP" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No SOP</SelectItem>
+                      {sopOptions.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.title || "Untitled"}{d.docType !== "sop" ? ` (${d.docType})` : ""}{d.status !== "approved" ? ` — ${d.status.replace("_", " ")}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* Open leaves this dialog, so only once the link is saved. */}
+                  {templateForm.sopDocId ? (templateForm.sopDocId === editingTemplate?.sopDocId && (
+                    <Button
+                      type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-data gap-0.5"
+                      onClick={() => { setShowDialog(false); navigate(`/systems?tab=library&doc=${templateForm.sopDocId}`); }}
+                      data-testid="button-open-sop"
+                    >
+                      <BookOpen className="h-2.5 w-2.5" />Open
+                    </Button>
+                  )) : canAddLibrary && (
+                    <Button
+                      type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-data gap-0.5"
+                      disabled={createSopMutation.isPending}
+                      onClick={() => createSopMutation.mutate(templateForm.title.trim() || "Untitled SOP")}
+                      data-testid="button-new-sop"
+                    >
+                      <Plus className="h-2.5 w-2.5" />New SOP
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* External Links */}
             <div>

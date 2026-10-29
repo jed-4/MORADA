@@ -5157,6 +5157,9 @@ export const taskTemplates = pgTable("task_templates", {
   
   // Attachments and links
   externalLinks: json("external_links").default([]), // Array of URLs
+  // The Library doc (usually an SOP) that explains how to do this task (0119).
+  // Every To-Do generated from the template shows it as "View SOP".
+  sopDocId: varchar("sop_doc_id").references((): AnyPgColumn => docs.id, { onDelete: "set null" }),
   
   // Status - now references task_template_statuses table
   statusId: varchar("status_id").references(() => taskTemplateStatuses.id), // Reference to task template status

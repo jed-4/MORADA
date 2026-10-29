@@ -1,5 +1,5 @@
 /**
- * Library sign-off: draft → in review → approved, with every approval kept as a
+ * Library sign-off and the SOP ↔ task link: draft → in review → approved, with every approval kept as a
  * version, edits reopening an approved doc, archive/restore, and the
  * permission split between editing and approving.
  *
@@ -185,6 +185,45 @@ async function main() {
       assert.strictEqual((await api("GET", `/api/docs/${docId}/versions/1`, B.cookie)).status, 404);
     });
 
+    // --- SOP ↔ task template link (Phase 3) ---
+    let templateId = "";
+    await test("a task template links to its SOP; the To-Do lookup returns it", async () => {
+      const r = await api("POST", "/api/systems/task-templates", A.cookie, { title: "Daily bills check", sopDocId: docId });
+      assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+      templateId = r.body.id;
+      assert.strictEqual(r.body.sopDocId, docId);
+      const sop = await api("GET", `/api/systems/task-templates/${templateId}/sop`, A.cookie);
+      assert.strictEqual(sop.status, 200);
+      assert.strictEqual(sop.body.id, docId);
+      assert.strictEqual(sop.body.title, "Bills hygiene");
+      assert.strictEqual(sop.body.currentVersion, 3);
+    });
+
+    await test("the Library shows which tasks use a doc", async () => {
+      const r = await api("GET", `/api/docs/${docId}/usage`, A.cookie);
+      assert.deepStrictEqual(r.body.map((t: any) => t.title), ["Daily bills check"]);
+    });
+
+    await test("a template without an SOP looks up as null", async () => {
+      const r = await api("POST", "/api/systems/task-templates", A.cookie, { title: "No SOP" });
+      assert.strictEqual((await api("GET", `/api/systems/task-templates/${r.body.id}/sop`, A.cookie)).body, null);
+    });
+
+    await test("another company can't link to, look up, or list users of A's SOP", async () => {
+      assert.strictEqual((await api("POST", "/api/systems/task-templates", B.cookie, { title: "x", sopDocId: docId })).status, 400);
+      assert.strictEqual((await api("GET", `/api/systems/task-templates/${templateId}/sop`, B.cookie)).status, 404);
+      assert.strictEqual((await api("GET", `/api/docs/${docId}/usage`, B.cookie)).status, 404);
+    });
+
+    await test("deleting the SOP unlinks it and leaves the task", async () => {
+      const tmp = await api("POST", "/api/docs", A.cookie, { title: "Throwaway SOP" });
+      const t = await api("POST", "/api/systems/task-templates", A.cookie, { title: "Uses throwaway", sopDocId: tmp.body.id });
+      assert.strictEqual((await api("DELETE", `/api/docs/${tmp.body.id}`, A.cookie)).status, 204);
+      const after = await api("GET", `/api/systems/task-templates/${t.body.id}`, A.cookie);
+      assert.strictEqual(after.status, 200);
+      assert.strictEqual(after.body.sopDocId, null);
+    });
+
     // A non-admin in company A who may edit the library but not approve.
     const editor = await register("Editor");
     const role = await storage.createUserRole({ name: `Library editor ${editor.unique}`, companyId: A.companyId, userCategory: "team", isBuiltIn: false } as any);
@@ -210,6 +249,8 @@ async function main() {
 
 async function cleanup(companyIds: string[]) {
   const stmts: Array<[string, any[]]> = [
+    [`DELETE FROM notes WHERE company_id = ANY($1)`, [companyIds]],
+    [`DELETE FROM task_templates WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM doc_versions WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM docs WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM doc_folders WHERE company_id = ANY($1)`, [companyIds]],
