@@ -391,6 +391,11 @@ export interface IStorage {
   createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
   updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
   deleteDocFolder(id: string): Promise<void>;
+  // Library sign-off (0118)
+  setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined>;
+  approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined>;
+  getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]>;
+  getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined>;
 
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
@@ -30711,6 +30716,88 @@ export class DbStorage implements IStorage {
       await db.delete(schema.docFolders).where(eq(schema.docFolders.id, id));
     } catch (error) {
       console.error("Database error in deleteDocFolder:", error);
+      throw error;
+    }
+  }
+
+  // Sign-off fields are not in InsertDoc on purpose (an edit must never set
+  // them), so the review routes write them through here instead.
+  async setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined> {
+    try {
+      const [doc] = await db.update(schema.docs)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+        .returning();
+      return doc;
+    } catch (error) {
+      console.error("Database error in setDocReviewState:", error);
+      throw error;
+    }
+  }
+
+  // Snapshot the doc's current text as the next version and mark it approved,
+  // in one transaction so a version number is never taken twice or skipped.
+  async approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined> {
+    try {
+      return await db.transaction(async (tx) => {
+        const [doc] = await tx.select().from(schema.docs)
+          .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+          .for("update");
+        if (!doc) return undefined;
+        const version = (doc.currentVersion ?? 0) + 1;
+        const now = new Date();
+        await tx.insert(schema.docVersions).values({
+          companyId,
+          docId: id,
+          version,
+          title: doc.title || "Untitled",
+          contentHtml: doc.contentHtml || "",
+          approvedById: approver.id,
+          approvedByName: approver.name,
+          approvedAt: now,
+        });
+        const [updated] = await tx.update(schema.docs)
+          .set({
+            status: "approved",
+            currentVersion: version,
+            approvedAt: now,
+            approvedById: approver.id,
+            approvedByName: approver.name,
+            reviewNote: null,
+            updatedAt: now,
+          })
+          .where(eq(schema.docs.id, id))
+          .returning();
+        return updated;
+      });
+    } catch (error) {
+      console.error("Database error in approveDoc:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]> {
+    try {
+      return await db.select().from(schema.docVersions)
+        .where(and(eq(schema.docVersions.docId, docId), eq(schema.docVersions.companyId, companyId)))
+        .orderBy(desc(schema.docVersions.version));
+    } catch (error) {
+      console.error("Database error in getDocVersions:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined> {
+    try {
+      const [row] = await db.select().from(schema.docVersions)
+        .where(and(
+          eq(schema.docVersions.docId, docId),
+          eq(schema.docVersions.companyId, companyId),
+          eq(schema.docVersions.version, version),
+        ));
+      return row;
+    } catch (error) {
+      console.error("Database error in getDocVersion:", error);
       throw error;
     }
   }
