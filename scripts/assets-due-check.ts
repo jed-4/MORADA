@@ -7,6 +7,7 @@
  */
 import assert from "node:assert/strict";
 import {
+  addDaysKey,
   addMonthsKey,
   assetDueSummary,
   complianceDue,
@@ -30,6 +31,12 @@ check("addMonthsKey clamps to the month's last day", () => {
   assert.equal(addMonthsKey("2028-01-31", 1), "2028-02-29");
   assert.equal(addMonthsKey("2026-08-15", 6), "2027-02-15");
   assert.equal(addMonthsKey("2026-12-01", 12), "2027-12-01");
+});
+
+check("addDaysKey crosses month and year ends", () => {
+  assert.equal(addDaysKey("2026-10-26", 30), "2026-11-25");
+  assert.equal(addDaysKey("2026-12-20", 15), "2027-01-04");
+  assert.equal(addDaysKey("2026-03-01", -1), "2026-02-28");
 });
 
 check("daysBetween is whole days across DST", () => {
