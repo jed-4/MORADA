@@ -9594,6 +9594,10 @@ export const assetRegisterSettings = pgTable("asset_register_settings", {
   companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
   // Every vehicle recharge lands on this cost code in the job's budget.
   rechargeCostCodeId: varchar("recharge_cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  // Put rego/insurance renewals (amount + term on each due date) in the
+  // cashflow forecast. Off by default: the register may already hold the same
+  // money as a "Vehicles" expense (migration 0117).
+  includeInCashflow: boolean("include_in_cashflow").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export type AssetRegisterSettings = typeof assetRegisterSettings.$inferSelect;

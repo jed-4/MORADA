@@ -47589,6 +47589,65 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // Asset register renewals in the forecast (PR 6). The switch belongs to
+  // whoever runs the cashflow, so it's gated on business.cashflow, not the
+  // asset register's permission.
+  app.get("/api/cashflow/asset-renewals", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { assets, assetComplianceItems, assetRegisterSettings, businessExpenses } = await import("@shared/schema");
+      const { renewalPayments, todayKey: assetToday, addMonthsKey: assetAddMonths } = await import("@shared/assets");
+
+      const today = assetToday();
+      const [[settings], rows, expenses] = await Promise.all([
+        db.select({ on: assetRegisterSettings.includeInCashflow }).from(assetRegisterSettings)
+          .where(eq(assetRegisterSettings.companyId, companyId)).limit(1),
+        db.select({ item: assetComplianceItems, asset: { id: assets.id, name: assets.name, rego: assets.rego } })
+          .from(assetComplianceItems)
+          .innerJoin(assets, eq(assetComplianceItems.assetId, assets.id))
+          .where(and(eq(assetComplianceItems.companyId, companyId), inArray(assets.status, ["active", "off_road"]))),
+        db.select({ id: businessExpenses.id, name: businessExpenses.name, category: businessExpenses.category, amountCents: businessExpenses.amountCents, frequency: businessExpenses.frequency })
+          .from(businessExpenses)
+          .where(and(eq(businessExpenses.companyId, companyId), eq(businessExpenses.isActive, true))),
+      ]);
+
+      const payments = renewalPayments(rows.map((r) => r.item), rows.map((r) => r.asset), today, assetAddMonths(today, 12));
+      // Register rows that probably forecast the same money already.
+      const overlap = expenses.filter((e) => /vehicle|motor|\bcar\b|\bute\b|fleet|rego|registration|ctp|green slip/i.test(`${e.name} ${e.category ?? ""}`));
+      // Due dates that can't be forecast yet, so the page can say why.
+      const missingAmount = rows.filter((r) => ["rego", "ctp", "insurance"].includes(r.item.kind) && !r.item.amountCents).length;
+
+      res.json({
+        enabled: !!settings?.on,
+        next12MonthsCents: payments.reduce((s, p) => s + p.amountCents, 0),
+        payments: payments.map((p) => ({ date: p.date, name: p.name, amountCents: p.amountCents, assetId: p.assetId })),
+        overlap,
+        missingAmount,
+      });
+    } catch (error: any) {
+      console.error("[cashflow] asset renewals read failed:", error);
+      res.status(500).json({ error: "Failed to load vehicle renewals" });
+    }
+  });
+
+  app.put("/api/cashflow/asset-renewals", requireAuth, requirePermission("business.cashflow", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+      const { assetRegisterSettings } = await import("@shared/schema");
+      await db.insert(assetRegisterSettings)
+        .values({ companyId, includeInCashflow: parsed.data.enabled, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { includeInCashflow: parsed.data.enabled, updatedAt: new Date() } });
+      res.json({ enabled: parsed.data.enabled });
+    } catch (error: any) {
+      console.error("[cashflow] asset renewals switch failed:", error);
+      res.status(500).json({ error: "Failed to save" });
+    }
+  });
+
   app.get("/api/cashflow/expenses", requireAuth, requirePermission("business.cashflow", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;

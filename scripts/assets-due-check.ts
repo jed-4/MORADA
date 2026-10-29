@@ -18,6 +18,7 @@ import {
   todayKey,
   categoriseVehicleCost,
   mentionsRego,
+  renewalPayments,
 } from "../shared/assets.ts";
 
 const today = "2026-10-26";
@@ -182,6 +183,29 @@ check("cost categories: specific before general", () => {
   assert.equal(categoriseVehicleCost("Linkt top-up"), "tolls");
   assert.equal(categoriseVehicleCost("Chattel mortgage repayment"), "finance");
   assert.equal(categoriseVehicleCost("Cable ties"), "other");
+});
+
+check("renewals: repeat by term inside the window, rego GST-free, finance end skipped", () => {
+  const assets = [{ id: "a", name: "Hilux", rego: "AB12CD" }];
+  const p = renewalPayments([
+    { id: "r", assetId: "a", kind: "rego", label: null, expiryDate: "2026-11-10", termMonths: 6, amountCents: 47250 },
+    { id: "i", assetId: "a", kind: "insurance", label: "Comprehensive", expiryDate: "2027-03-01", termMonths: 12, amountCents: 189000 },
+    { id: "f", assetId: "a", kind: "finance", label: null, expiryDate: "2027-01-01", termMonths: null, amountCents: 500000 },
+    { id: "x", assetId: "a", kind: "ctp", label: null, expiryDate: "2026-12-01", termMonths: 12, amountCents: null },
+  ], assets, "2026-10-28", "2027-10-28");
+  assert.deepEqual(p.map((x) => [x.date, x.name, x.hasGst]), [
+    ["2026-11-10", "Registration — Hilux (AB12CD)", false],
+    ["2027-03-01", "Comprehensive — Hilux (AB12CD)", true],
+    ["2027-05-10", "Registration — Hilux (AB12CD)", false],
+  ]);
+});
+
+check("renewals: an expiry already past is owed today, once", () => {
+  const p = renewalPayments(
+    [{ id: "r", assetId: "a", kind: "rego", label: null, expiryDate: "2026-10-01", termMonths: 12, amountCents: 90000 }],
+    [{ id: "a", name: "Ute", rego: null }], "2026-10-28", "2027-10-28",
+  );
+  assert.deepEqual(p.map((x) => x.date), ["2026-10-28", "2027-10-01"]);
 });
 
 console.log(`assets-due-check: ok (${n} checks)`);
