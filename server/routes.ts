@@ -49739,6 +49739,269 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       return !!u;
     };
 
+    // ---- pre-start checks (PR 3, migration 0114) ----
+    // The phone's endpoints live under /api/asset-prestarts so they can never
+    // be shadowed by /api/assets/:id, and so field staff only need
+    // assets.prestart, not the whole register (business.assets).
+    const { assetPrestarts, submitPrestartSchema } = await import("@shared/schema");
+    const { PRESTART_TEMPLATES, prestartTemplateFor, assessPrestart } = await import("@shared/assets");
+    const { createAssetTask, resolveAssignee } = await import("./services/assetReminders");
+    const LIVE_ASSET_STATUSES = ["active", "off_road"];
+
+    /** What the phone needs about an asset — no money, no finance, no VIN. */
+    const prestartView = (a: typeof assets.$inferSelect) => ({
+      id: a.id,
+      name: a.name,
+      assetType: a.assetType,
+      rego: a.rego,
+      status: a.status,
+      meterType: a.meterType,
+      currentMeter: a.currentMeter,
+      assignedUserId: a.assignedUserId,
+      templateKey: prestartTemplateFor(a),
+    });
+
+    app.get("/api/asset-prestarts/assets", requireAuth, requirePermission("assets.prestart", "view"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const today = todayKey();
+
+        const [rows, todays, openDefects] = await Promise.all([
+          db.select().from(assets)
+            .where(and(eq(assets.companyId, companyId), inArray(assets.status, LIVE_ASSET_STATUSES)))
+            .orderBy(asc(assets.name)),
+          db.select({ assetId: assetPrestarts.assetId, hasDefect: assetPrestarts.hasDefect })
+            .from(assetPrestarts)
+            .where(and(eq(assetPrestarts.companyId, companyId), eq(assetPrestarts.date, today))),
+          db.select({ assetId: assetPrestarts.assetId })
+            .from(assetPrestarts)
+            .where(and(eq(assetPrestarts.companyId, companyId), eq(assetPrestarts.defectStatus, "open"))),
+        ]);
+        res.json(rows.map((a) => ({
+          ...prestartView(a),
+          checkedToday: todays.some((t) => t.assetId === a.id),
+          openDefects: openDefects.filter((d) => d.assetId === a.id).length,
+        })));
+      } catch (error) {
+        console.error("[assets] prestart list failed:", error);
+        res.status(500).json({ error: "Failed to load vehicles" });
+      }
+    });
+
+    app.get("/api/asset-prestarts/assets/:id", requireAuth, requirePermission("assets.prestart", "view"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const [last] = await db.select({
+          id: assetPrestarts.id,
+          checkedAt: assetPrestarts.checkedAt,
+          date: assetPrestarts.date,
+          hasDefect: assetPrestarts.hasDefect,
+          signedName: assetPrestarts.signedName,
+        })
+          .from(assetPrestarts)
+          .where(and(eq(assetPrestarts.assetId, asset.id), eq(assetPrestarts.companyId, companyId)))
+          .orderBy(desc(assetPrestarts.checkedAt))
+          .limit(1);
+        const view = prestartView(asset);
+        res.json({ ...view, template: PRESTART_TEMPLATES[view.templateKey], lastPrestart: last ?? null });
+      } catch (error) {
+        console.error("[assets] prestart context failed:", error);
+        res.status(500).json({ error: "Failed to load the asset" });
+      }
+    });
+
+    app.post("/api/assets/:id/prestarts", requireAuth, requirePermission("assets.prestart", "add"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        if (!LIVE_ASSET_STATUSES.includes(asset.status)) {
+          return res.status(400).json({ error: "This asset is archived or sold" });
+        }
+
+        const parsed = submitPrestartSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid pre-start", issues: parsed.error.issues });
+        const body = parsed.data;
+
+        const templateKey = prestartTemplateFor(asset);
+        const known = new Set(PRESTART_TEMPLATES[templateKey].items.map((i) => i.key));
+        const results = body.results.filter((r) => known.has(r.key));
+        const assessment = assessPrestart(templateKey, results);
+        if (assessment.missing.length) {
+          return res.status(400).json({ error: "Answer every item on the checklist", missing: assessment.missing });
+        }
+        if (asset.meterType !== "none" && body.meter == null) {
+          return res.status(400).json({ error: asset.meterType === "hours" ? "Enter the engine hours" : "Enter the odometer" });
+        }
+        if ((body.photos ?? []).some((p) => !isOwnObjectPath(p, companyId))) {
+          return res.status(400).json({ error: "Invalid photo" });
+        }
+
+        // Done offline and synced later: trust the phone's time, within reason.
+        const now = new Date();
+        const checkedAt = body.checkedAt ? new Date(body.checkedAt) : now;
+        if (checkedAt.getTime() > now.getTime() + 5 * 60_000) return res.status(400).json({ error: "That time is in the future" });
+        if (now.getTime() - checkedAt.getTime() > 14 * 86_400_000) return res.status(400).json({ error: "That check is more than 14 days old" });
+
+        const unsafe = !!body.unsafe || assessment.critical;
+        const [prestart] = await db.insert(assetPrestarts).values({
+          companyId,
+          assetId: asset.id,
+          userId: req.user.id,
+          checkedAt,
+          date: todayKey("Australia/Sydney", checkedAt),
+          templateKey,
+          meter: asset.meterType === "none" ? null : body.meter ?? null,
+          results,
+          photos: body.photos ?? [],
+          hasDefect: assessment.hasDefect || unsafe,
+          unsafe,
+          defectStatus: assessment.hasDefect || unsafe ? "open" : null,
+          notes: body.notes ?? null,
+          signedName: body.signedName,
+        }).returning();
+
+        // Same forward-only meter rule as a logged reading.
+        if (prestart.meter != null && (asset.currentMeter == null || prestart.meter >= asset.currentMeter)) {
+          await db.update(assets)
+            .set({ currentMeter: prestart.meter, currentMeterDate: prestart.date, updatedAt: new Date() })
+            .where(and(eq(assets.id, asset.id), eq(assets.companyId, companyId)));
+        }
+
+        const faultLabels = assessment.faults.map((f) => f.label);
+        const events: (typeof assetEvents.$inferInsert)[] = [{
+          companyId,
+          assetId: asset.id,
+          kind: "prestart",
+          date: prestart.date,
+          title: prestart.hasDefect
+            ? `Pre-start: ${faultLabels.length ? faultLabels.join(", ") : "marked not safe"}`
+            : "Pre-start passed",
+          notes: body.notes ?? null,
+          meter: prestart.meter,
+          createdById: req.user.id,
+        }];
+
+        // Not safe: off the road until someone fixes it.
+        let offRoad = false;
+        if (unsafe && asset.status === "active") {
+          await db.update(assets)
+            .set({ status: "off_road", updatedAt: new Date() })
+            .where(and(eq(assets.id, asset.id), eq(assets.companyId, companyId)));
+          events.push({ companyId, assetId: asset.id, kind: "status", date: prestart.date, title: "Active → Off road (pre-start fault)", createdById: req.user.id });
+          offRoad = true;
+        }
+        await db.insert(assetEvents).values(events);
+
+        if (prestart.hasDefect) {
+          const who = body.signedName;
+          const faultLines = assessment.faults
+            .map((f) => {
+              const note = results.find((r) => r.key === f.key)?.note;
+              return `- ${f.label}${note ? `: ${note}` : ""}`;
+            })
+            .join("\n");
+          await createAssetTask({
+            companyId,
+            assigneeId: await resolveAssignee(companyId),
+            title: `${unsafe ? "DO NOT USE: " : "Defect: "}${asset.name}${asset.rego ? ` (${asset.rego})` : ""}${faultLabels.length ? ` — ${faultLabels.join(", ")}` : ""}`,
+            description: `${who} found ${faultLabels.length ? "faults" : "a problem"} on the pre-start ${prestart.date}.\n${faultLines}${body.notes ? `\n\n${body.notes}` : ""}${unsafe ? "\n\nThe asset has been taken off the road." : ""}\n\nMark the defect fixed on the asset once it's repaired; this task closes itself.`,
+            priority: unsafe ? "high" : "medium",
+            dueDate: prestart.date,
+            referenceType: "asset_defect",
+            referenceId: prestart.id,
+          });
+        }
+
+        res.status(201).json({ prestart, offRoad });
+      } catch (error) {
+        console.error("[assets] prestart create failed:", error);
+        res.status(500).json({ error: "Failed to save the pre-start" });
+      }
+    });
+
+    app.patch("/api/assets/:id/prestarts/:prestartId/defect", requireAuth, requirePermission("business.assets", "edit"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const parsed = z.object({
+          notes: z.string().trim().max(2000).nullable().optional(),
+          returnToService: z.boolean().optional(),
+        }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+
+        const [row] = await db.update(assetPrestarts)
+          .set({ defectStatus: "fixed", defectFixedAt: new Date(), defectFixedById: req.user.id, defectFixNotes: parsed.data.notes ?? null })
+          .where(and(
+            eq(assetPrestarts.id, req.params.prestartId),
+            eq(assetPrestarts.assetId, req.params.id),
+            eq(assetPrestarts.companyId, companyId),
+            eq(assetPrestarts.defectStatus, "open"),
+          ))
+          .returning();
+        if (!row) return res.status(404).json({ error: "No open defect on that pre-start" });
+
+        await closeAssetReminderTasks(companyId, { prestartId: row.id });
+        const today = todayKey();
+        const events: (typeof assetEvents.$inferInsert)[] = [{
+          companyId, assetId: row.assetId, kind: "repair", date: today,
+          title: "Pre-start defect fixed", notes: parsed.data.notes ?? null, createdById: req.user.id,
+        }];
+
+        // Back on the road only if asked, and only once nothing unsafe is still open.
+        let backOnRoad = false;
+        if (parsed.data.returnToService) {
+          const [stillOpen] = await db.select({ id: assetPrestarts.id }).from(assetPrestarts)
+            .where(and(
+              eq(assetPrestarts.assetId, row.assetId),
+              eq(assetPrestarts.companyId, companyId),
+              eq(assetPrestarts.defectStatus, "open"),
+              eq(assetPrestarts.unsafe, true),
+            ))
+            .limit(1);
+          if (!stillOpen) {
+            const [updated] = await db.update(assets)
+              .set({ status: "active", updatedAt: new Date() })
+              .where(and(eq(assets.id, row.assetId), eq(assets.companyId, companyId), eq(assets.status, "off_road")))
+              .returning({ id: assets.id });
+            if (updated) {
+              events.push({ companyId, assetId: row.assetId, kind: "status", date: today, title: "Off road → Active", createdById: req.user.id });
+              backOnRoad = true;
+            }
+          }
+        }
+        await db.insert(assetEvents).values(events);
+        res.json({ prestart: row, backOnRoad });
+      } catch (error) {
+        console.error("[assets] defect fix failed:", error);
+        res.status(500).json({ error: "Failed to save" });
+      }
+    });
+
+    // QR sticker for the dash: the phone's camera opens the pre-start for
+    // this asset in the app (the buildpro:// scheme the app already registers).
+    app.get("/api/assets/:id/qr.png", requireAuth, requirePermission("business.assets", "view"), async (req: any, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const buffer = await QRCode.toBuffer(`buildpro://prestart/${asset.id}`, { width: 600, margin: 2 });
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Cache-Control", "private, max-age=86400");
+        res.send(buffer);
+      } catch (error) {
+        console.error("[assets] qr failed:", error);
+        res.status(500).json({ error: "Failed to make the QR code" });
+      }
+    });
+
     app.get("/api/assets", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
@@ -49768,7 +50031,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const asset = await findOwnedAsset(req.params.id, companyId);
         if (!asset) return res.status(404).json({ error: "Asset not found" });
 
-        const [complianceItems, serviceSchedules, events, documents] = await Promise.all([
+        const [complianceItems, serviceSchedules, events, documents, prestarts] = await Promise.all([
           db.select().from(assetComplianceItems)
             .where(and(eq(assetComplianceItems.assetId, asset.id), eq(assetComplianceItems.companyId, companyId)))
             .orderBy(asc(assetComplianceItems.expiryDate)),
@@ -49781,8 +50044,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           db.select().from(assetDocuments)
             .where(and(eq(assetDocuments.assetId, asset.id), eq(assetDocuments.companyId, companyId)))
             .orderBy(desc(assetDocuments.createdAt)),
+          db.select().from(assetPrestarts)
+            .where(and(eq(assetPrestarts.assetId, asset.id), eq(assetPrestarts.companyId, companyId)))
+            .orderBy(desc(assetPrestarts.checkedAt))
+            .limit(30),
         ]);
-        res.json({ ...asset, complianceItems, serviceSchedules, events, documents });
+        res.json({ ...asset, complianceItems, serviceSchedules, events, documents, prestarts });
       } catch (error) {
         console.error("[assets] detail failed:", error);
         res.status(500).json({ error: "Failed to load the asset" });

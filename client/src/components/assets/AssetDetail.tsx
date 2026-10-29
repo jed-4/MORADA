@@ -49,6 +49,7 @@ import {
   type MeterType,
 } from "@shared/assets";
 import { AssetDialog, ComplianceDialog, EventDialog, ScheduleDialog, type EventPreset } from "./AssetDialogs";
+import { PrestartDefectBanner, PrestartsSection } from "./AssetPrestarts";
 import {
   ASSIGNABLE_USERS_KEY,
   DueChip,
@@ -307,6 +308,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         )}
       </div>
 
+      <PrestartDefectBanner asset={asset} prestarts={asset.prestarts ?? []} canEdit={canEdit} />
+
       {/* Facts */}
       <Card className="p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-3">
@@ -499,7 +502,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                       </div>
                       {e.notes && <p className="text-[11px] text-muted-foreground whitespace-pre-wrap mt-0.5">{e.notes}</p>}
                     </div>
-                    {canEdit && e.kind !== "assignment" && e.kind !== "status" && (
+                    {canEdit && e.kind !== "assignment" && e.kind !== "status" && e.kind !== "prestart" && (
                       <RowMenu label="Entry actions" onDelete={() => setPendingDelete({ kind: "event", id: e.id })} />
                     )}
                   </li>
@@ -508,6 +511,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
             </ul>
           )}
         </Section>
+
+        <PrestartsSection asset={asset} prestarts={asset.prestarts ?? []} />
 
         {/* Documents */}
         <Section

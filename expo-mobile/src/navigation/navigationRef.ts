@@ -1,6 +1,7 @@
 import { createNavigationContainerRef } from '@react-navigation/native';
 import { resolveNotificationTarget } from './notificationRouting';
 import { resolveClientNotificationTarget } from '../lib/clientPortal';
+import { prestartAssetIdFromUrl } from './prestartLink';
 
 export const navigationRef = createNavigationContainerRef<any>();
 
@@ -42,5 +43,18 @@ export function navigateClientFromPush(data: Record<string, any> | undefined | n
     navigate('Client', { screen: target.screen, params: target.params });
   } catch {
     // Navigation tree may not be fully ready on cold start; safe to ignore.
+  }
+}
+
+/** True if the URL was a pre-start link and we navigated to it. */
+export function openPrestartFromUrl(url: string | null | undefined): boolean {
+  const assetId = prestartAssetIdFromUrl(url);
+  if (!assetId || !navigationRef.isReady()) return false;
+  const navigate = navigationRef.navigate as (name: string, params?: any) => void;
+  try {
+    navigate('Main', { screen: 'More', params: { screen: 'Prestart', params: { assetId } } });
+    return true;
+  } catch {
+    return false;
   }
 }
