@@ -388,9 +388,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     queryKey: ["/api/field-categories"],
   });
 
-  const { data: users = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
-  });
   const peopleIncludingArchived = usePeople();
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -540,6 +537,25 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       color: (sourceData as any)?.color || undefined,
       isPrivate: (sourceData as any)?.isPrivate || false,
       checklistInstanceId: (sourceData as any)?.checklistInstanceId || undefined,
+    },
+  });
+
+  /* The task's project, as the form currently holds it — a task can be moved
+     between projects in this dialog, so the client offered has to follow. */
+  const assigneeProjectId = form.watch("projectId") || projectId || null;
+
+  /* Assignable people, through the endpoint that knows who may be assigned.
+     This read the RAW /api/users, which returns every category — so client
+     portal logins sat in the assignee list alongside staff with nothing to
+     tell them apart, on every project. /api/users/assignable returns staff,
+     plus THIS project's client when a project is named. */
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/assignable", assigneeProjectId ?? "none"],
+    queryFn: async () => {
+      const qs = assigneeProjectId ? `?projectId=${encodeURIComponent(assigneeProjectId)}` : "";
+      const res = await fetch(`/api/users/assignable${qs}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
     },
   });
 
@@ -1609,7 +1625,14 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                               {getInitials(getUserDisplayName(user))}
                             </AvatarFallback>
                           </Avatar>
-                          {getUserDisplayName(user)}
+                          <span className="flex-1 truncate">{getUserDisplayName(user)}</span>
+                          {/* A client is assignable on their own project, but
+                              must never be mistaken for a staff member. */}
+                          {user.isClient && (
+                            <Badge variant="secondary" className="ml-2 text-[10px] px-1 py-0 h-4 flex-shrink-0">
+                              Client
+                            </Badge>
+                          )}
                         </DropdownMenuItem>
                       );
                     })}

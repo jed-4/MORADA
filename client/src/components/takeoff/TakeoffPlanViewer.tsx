@@ -500,21 +500,39 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
       // Height is part of the sum (a wall run x its height), so changing it
       // re-totals the item there and then — without anything being redrawn.
       const entries = normalizeEntries(editingMeasurement.geometry, editingMeasurement.pageId);
+      /* 🚨 The TYPE has to travel, and the quantity has to be totalled under
+         the NEW one.
+         It was left out deliberately while the form locked Type on every edit:
+         it could not change, so sending it was pointless. Now that an undrawn
+         measurement can change type (#324), leaving it out means the change is
+         silently dropped — you set Area to Linear, save, and the item carries
+         on being an area and drawing as a filled polygon. Which is the shape
+         of the complaint: lineal metres rendering as an infilled square. */
+      const nextType = data.measurementType ?? editingMeasurement.measurementType;
       await updateMeasurement.mutateAsync({
         id: editingMeasurement.id,
         data: {
           name: data.name,
           categoryId: data.categoryId,
           color: data.color,
+          measurementType: nextType,
           multiplier: data.multiplier,
           wastePercent: data.wastePercent,
           heightMm: data.heightMm,
           quantity: totalQuantity(
             entries,
-            editingMeasurement.measurementType,
+            nextType,
             data.heightMm,
           ),
-          unit: data.unit === "__blank__" ? "" : data.unit,
+          /* A height on a linear item wins, the same rule finishGeometry
+             already persists when you draw: giving a run a wall height turns
+             it into an area, and the quantity above is recomputed as m². The
+             edit path kept whatever the form held — normally "lm" — so adding
+             a height through Edit left the figure in m² labelled lm. */
+          unit:
+            nextType === "linear"
+              ? unitForLinear(data.heightMm, data.unit === "__blank__" ? "" : data.unit)
+              : data.unit === "__blank__" ? "" : data.unit,
           fillPattern: data.fillPattern,
           lineType: data.lineType,
           lineSize: data.lineSize,
@@ -817,6 +835,14 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         </Badge>
       </div>
 
+      {/* Everything below the title bar is a ROW, not a stack: the page tabs
+          and the drawing toolbar belong to the plan, so the measurement list
+          beside them starts at the top instead of 80px down it. The list is
+          read far more often than those two strips are looked at, and on a
+          laptop they were costing it a quarter of its height. */}
+      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+
       <div className="h-9 flex items-center gap-1 px-3 border-b border-border overflow-x-auto bg-background">
         {openPages.map((p) => (
           <div
@@ -1051,7 +1077,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         </Button>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <div
           ref={containerRef}
           className="flex-1 overflow-auto bg-muted/30 relative p-3"
@@ -1290,6 +1316,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             </div>
           )}
         </div>
+      </div>{/* end canvas row */}
+      </div>{/* end left column — page tabs, toolbar, canvas */}
 
         {panelCollapsed ? (
           <div className="flex-shrink-0 w-8 border-l border-border bg-card flex flex-col items-center pt-2">
@@ -1342,7 +1370,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             </div>
           </div>
         )}
-      </div>
+      </div>{/* end content row — left column + measurement panel */}
 
       <div className="h-8 flex items-center px-3 text-xs bg-[#3d3d3d] text-[#cccccc]">
         <span data-testid="status-message">{statusMessage}</span>

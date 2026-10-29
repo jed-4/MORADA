@@ -169,6 +169,29 @@ const uploadViaPresignedUrl = async (
   return { uploadURL, objectPath };
 };
 
+/**
+ * Upload through the server (multipart POST /api/uploads/file) instead of a
+ * presigned URL. This is the only upload route a CLIENT session may use — the
+ * presigned /api/uploads/request-url is team-only — so client mode sends
+ * message photos this way. Same { objectPath } result as the presigned flow.
+ */
+export const uploadPhotoViaServer = async (localUri: string): Promise<{ objectPath: string }> => {
+  const headers: Record<string, string> = { 'X-Client': 'mobile' };
+  if (sessionId) headers['X-Session-ID'] = sessionId;
+  const result = await uploadAsync(`${API_BASE_URL}/api/uploads/file`, localUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystemUploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: 'image/jpeg',
+    headers,
+  });
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Failed to upload photo: ${result.status}`);
+  }
+  const body = JSON.parse(result.body);
+  return { objectPath: body.objectPath };
+};
+
 export const uploadPhoto = (localUri: string) =>
   uploadViaPresignedUrl(localUri, `photo-${Date.now()}.jpg`, 'image/jpeg');
 
