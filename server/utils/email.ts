@@ -511,7 +511,7 @@ const BACKGROUND_CONTEXT_TYPES = new Set(["rfq_reminder", "proposal_reminder", "
 
 /**
  * Where each context type's document lives, for resolving the project at write
- * time. Same mapping as the backfill in migrations/0114_email_log.sql.
+ * time. Same mapping as the backfill in migrations/0118_email_log.sql.
  */
 const PROJECT_TABLE_FOR_CONTEXT: Record<string, string> = {
   variation: "variations",

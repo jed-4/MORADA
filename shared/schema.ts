@@ -2648,7 +2648,7 @@ export const emailDeliveries = pgTable("email_deliveries", {
   contextType: text("context_type"),
   contextId: varchar("context_id"),
 
-  // ── 0114: the email log ──────────────────────────────────────────────────
+  // ── 0118: the email log ──────────────────────────────────────────────────
   /** Resolved at write time from the context document. */
   projectId: varchar("project_id"),
 
