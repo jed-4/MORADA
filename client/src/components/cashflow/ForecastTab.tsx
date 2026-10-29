@@ -527,6 +527,8 @@ function sourceHref(e: CashEvent): string | null {
   if (e.source === "invoice" && e.projectId && e.sourceId) return `/projects/${e.projectId}/client-invoices/${e.sourceId}`;
   if (e.source === "bill" && e.sourceId) return e.projectId ? `/projects/${e.projectId}/bills/${e.sourceId}` : `/bills/${e.sourceId}`;
   if ((e.source === "claim" || e.source === "job_cost") && e.projectId) return `/projects/${e.projectId}`;
+  // Rego/insurance renewals from the asset register: "asset:<assetId>:<item>:<n>".
+  if (e.source === "expense" && e.sourceId?.startsWith("asset:")) return `/business/assets/${e.sourceId.split(":")[1]}`;
   return null;
 }
 

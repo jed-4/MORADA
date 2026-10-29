@@ -13,6 +13,7 @@ import {
   Hammer,
   Inbox,
   Wallet,
+  Truck,
   GanttChart,
   FolderOpen,
   StickyNote,
@@ -78,6 +79,7 @@ import MyProjectsWidget from "@/components/user-workspace/widgets/MyProjectsWidg
 import BusinessKPIsWidget from "@/components/business-widgets/BusinessKPIsWidget";
 import BusinessCashFlowWidget from "@/components/business-widgets/BusinessCashFlowWidget";
 import BusinessCashflowForecastWidget from "@/components/business-widgets/BusinessCashflowForecastWidget";
+import BusinessFleetDueWidget from "@/components/business-widgets/BusinessFleetDueWidget";
 import BusinessActivityWidget from "@/components/business-widgets/BusinessActivityWidget";
 import BusinessProjectsWidget from "@/components/business-widgets/BusinessProjectsWidget";
 import BusinessFinancialsWidget from "@/components/business-widgets/BusinessFinancialsWidget";
@@ -668,6 +670,19 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     financialGated: true,
     requiredPermission: { key: "business.cashflow", action: "view" },
     defaultColumns: 5,
+    defaultRowSpan: 2,
+  },
+  businessFleetDue: {
+    type: "businessFleetDue",
+    name: "Vehicles & Assets Due",
+    description: "Rego, insurance and services overdue or due in the next 30 days (Business → Assets)",
+    icon: Truck,
+    component: BusinessFleetDueWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "amber",
+    requiredPermission: { key: "business.assets", action: "view" },
+    defaultColumns: 4,
     defaultRowSpan: 2,
   },
   businessVariationsPending: {

@@ -204,6 +204,9 @@ type LineItem = {
   order: number;
   appliesToAllowances: boolean;
   allowanceItemId?: string;
+  /** Vehicle/plant this line is a running cost of. Saved on its own (PATCH
+   *  /api/bill-line-items/:id/asset), never by the bill save. */
+  assetId?: string | null;
 };
 
 type XeroValidationIssue = {
@@ -771,6 +774,7 @@ export default function BillDetail() {
             order: item.order,
             appliesToAllowances: !!allowance,
             allowanceItemId: allowance?.estimateItemId,
+            assetId: (item as any).assetId ?? null,
           };
         })
       );
@@ -1324,12 +1328,29 @@ export default function BillDetail() {
     account: 80,
     unitCost: 120,
     allowance: 140,
+    vehicle: 140,
     exTax: 90,
     amtTax: 80,
     incTax: 90,
   };
 
   const getColWidth = (key: string) => defaultColWidths[key] || 100;
+
+  // The vehicle column only appears once the company has an asset register.
+  const { data: assetOptions = [] } = useQuery<{ id: string; name: string; rego: string | null; status: string }[]>({
+    queryKey: ["/api/asset-options"],
+  });
+  const setLineAsset = async (index: number, lineId: string, assetId: string | null) => {
+    const previous = lineItems[index]?.assetId ?? null;
+    setLineItems((prev) => prev.map((l, i) => (i === index ? { ...l, assetId } : l)));
+    try {
+      await apiRequest(`/api/bill-line-items/${lineId}/asset`, "PATCH", { assetId });
+      queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+    } catch {
+      setLineItems((prev) => prev.map((l, i) => (i === index ? { ...l, assetId: previous } : l)));
+      toast({ title: "Couldn't link that line to the vehicle", variant: "destructive" });
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: BillFormData) => {
@@ -3940,6 +3961,34 @@ export default function BillDetail() {
                         </Select>
                       ),
                     });
+                    if (assetOptions.length > 0) {
+                      cols.push({
+                        key: "vehicle", header: "Vehicle", width: getColWidth("vehicle"), truncate: false,
+                        cell: (item, index) =>
+                          item.id ? (
+                            <Select
+                              value={item.assetId || "none"}
+                              onValueChange={(value) => value && setLineAsset(index, item.id!, value === "none" ? null : value)}
+                            >
+                              <SelectTrigger className="text-table border-0 shadow-none bg-transparent" data-testid={`select-vehicle-${index}`}>
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {assetOptions
+                                  .filter((a) => a.id === item.assetId || (a.status !== "archived" && a.status !== "sold"))
+                                  .map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.name}{a.rego ? ` (${a.rego})` : ""}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-table text-muted-foreground px-2">Save first</span>
+                          ),
+                      });
+                    }
                     return cols;
                   })()}
                   actions={(_item, index) => (

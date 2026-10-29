@@ -717,6 +717,7 @@ export async function loadCashflow(
     endDate: e.endDate,
     category: e.category,
   }));
+  expenses.push(...(await loadAssetRenewalExpenses(companyId, today)));
 
   // GST that moved before today in periods the ATO hasn't been paid for.
   const basFreq = settings.basFrequency === "monthly" ? "monthly" : "quarterly";
@@ -1014,4 +1015,39 @@ export async function seedClaimStagesFromProposal(companyId: string, projectId: 
     })),
   );
   return milestones.length;
+}
+
+/**
+ * Rego, CTP and insurance renewals from the asset register, as one-off
+ * expenses on the dates they fall due (shared/assets.ts renewalPayments).
+ * Only when the company has switched it on — off by default so a forecast
+ * already carrying a "Vehicles" expense isn't silently doubled. Computed each
+ * time, never stored, so an edited due date can't leave a stale payment.
+ * The id carries the asset so the forecast can link through to it.
+ */
+async function loadAssetRenewalExpenses(companyId: string, today: DateKey): Promise<ExpenseInput[]> {
+  const { assets, assetComplianceItems, assetRegisterSettings } = await import("@shared/schema");
+  const { renewalPayments, addMonthsKey, RENEWAL_EXPENSE_GROUP } = await import("@shared/assets");
+
+  const [settings] = await db.select({ on: assetRegisterSettings.includeInCashflow })
+    .from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1);
+  if (!settings?.on) return [];
+
+  const rows = await db.select({ item: assetComplianceItems, asset: { id: assets.id, name: assets.name, rego: assets.rego } })
+    .from(assetComplianceItems)
+    .innerJoin(assets, eq(assetComplianceItems.assetId, assets.id))
+    .where(and(eq(assetComplianceItems.companyId, companyId), inArray(assets.status, ["active", "off_road"])));
+
+  // Past any forecast horizon the engine offers; it clips to its own window.
+  const payments = renewalPayments(rows.map((r) => r.item), rows.map((r) => r.asset), today, addMonthsKey(today, 36));
+  return payments.map((p) => ({
+    id: `asset:${p.assetId}:${p.id}`,
+    name: p.name,
+    amountCents: p.amountCents,
+    hasGst: p.hasGst,
+    frequency: "once" as Frequency,
+    nextDate: p.date,
+    endDate: null,
+    category: RENEWAL_EXPENSE_GROUP,
+  }));
 }
