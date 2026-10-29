@@ -153,6 +153,9 @@ export function AssetDetail({ assetId }: { assetId: string }) {
   const { toast } = useToast();
   const canEdit = usePermission("business.assets", "edit");
   const canDelete = usePermission("business.assets", "delete");
+  // The money (costs, job charges, purchase, finance) needs business.asset_costs;
+  // the server strips it otherwise, so these parts are left out, not blank.
+  const seeCosts = usePermission("business.asset_costs", "view");
   const today = todayKey();
 
   const { data: asset, isLoading, error } = useQuery<AssetDetailData>({ queryKey: assetKey(assetId) });
@@ -323,7 +326,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
               ? [shortDate(asset.purchaseDate), asset.purchaseCents != null ? money(asset.purchaseCents) : null].filter((x) => x && x !== "—").join(" · ")
               : null}
           </Fact>
-          <Fact label="Finance">{asset.financeProvider}</Fact>
+          {seeCosts && <Fact label="Finance">{asset.financeProvider}</Fact>}
         </div>
         {asset.notes && <p className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{asset.notes}</p>}
       </Card>
@@ -508,8 +511,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
 
         <PrestartsSection asset={asset} prestarts={asset.prestarts ?? []} />
 
-        <AssetCostsSection asset={asset} canEdit={canEdit} />
-        <AssetRechargeSection asset={asset} canEdit={canEdit} />
+        {seeCosts && <AssetCostsSection asset={asset} canEdit={canEdit} />}
+        {seeCosts && <AssetRechargeSection asset={asset} canEdit={canEdit} />}
 
         {/* Documents */}
         <Section

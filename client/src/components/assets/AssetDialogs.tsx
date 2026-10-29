@@ -9,6 +9,7 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { Asset, AssetComplianceItem, AssetServiceSchedule } from "@shared/schema";
@@ -158,6 +159,9 @@ export function AssetDialog({
   const [f, setF] = useState<AssetForm>(blankAsset);
   const set = <K extends keyof AssetForm>(k: K, v: AssetForm[K]) => setF((prev) => ({ ...prev, [k]: v }));
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY, enabled: open });
+  // Without business.asset_costs the money fields aren't shown or sent (the
+  // server would drop them anyway, so an edit can't wipe them).
+  const seeCosts = usePermission("business.asset_costs", "view");
 
   useEffect(() => {
     if (!open) return;
@@ -206,9 +210,13 @@ export function AssetDialog({
         assignedUserId: f.assignedUserId === NONE ? null : f.assignedUserId,
         meterType: f.meterType,
         purchaseDate: f.purchaseDate || null,
-        purchaseCents: toCents(f.purchaseDollars),
-        financeProvider: f.financeProvider.trim() || null,
-        dayRateCents: toCents(f.dayRateDollars),
+        ...(seeCosts
+          ? {
+              purchaseCents: toCents(f.purchaseDollars),
+              financeProvider: f.financeProvider.trim() || null,
+              dayRateCents: toCents(f.dayRateDollars),
+            }
+          : {}),
         notes: f.notes.trim() || null,
       };
       return asset ? apiRequest(`/api/assets/${asset.id}`, "PATCH", body) : apiRequest("/api/assets", "POST", body);
@@ -322,22 +330,28 @@ export function AssetDialog({
             <Field label="Purchase date">
               <Input type="date" className="h-8 text-xs" value={f.purchaseDate} onChange={(e) => set("purchaseDate", e.target.value)} />
             </Field>
-            <Field label="Purchase price (inc GST)">
-              <NumericInput className={NUMBER_FIELD} min={0} value={f.purchaseDollars} onCommit={(v) => set("purchaseDollars", v)} />
-            </Field>
-            <Field label="Finance provider">
-              <Input className="h-8 text-xs" value={f.financeProvider} onChange={(e) => set("financeProvider", e.target.value)} placeholder="Owned outright" />
-            </Field>
+            {seeCosts && (
+              <>
+                <Field label="Purchase price (inc GST)">
+                  <NumericInput className={NUMBER_FIELD} min={0} value={f.purchaseDollars} onCommit={(v) => set("purchaseDollars", v)} />
+                </Field>
+                <Field label="Finance provider">
+                  <Input className="h-8 text-xs" value={f.financeProvider} onChange={(e) => set("financeProvider", e.target.value)} placeholder="Owned outright" />
+                </Field>
+              </>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
-              <NumericInput className={NUMBER_FIELD} min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
-            </Field>
-            <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
-              Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
-            </p>
-          </div>
+          {seeCosts && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
+                <NumericInput className={NUMBER_FIELD} min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
+              </Field>
+              <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
+                Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
+              </p>
+            </div>
+          )}
 
           <Field label="Notes">
             <Textarea className="text-xs min-h-[60px]" value={f.notes} onChange={(e) => set("notes", e.target.value)} />
@@ -370,6 +384,7 @@ export function ComplianceDialog({
   const [policyNumber, setPolicyNumber] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [termMonths, setTermMonths] = useState<number | null>(12);
+  const seeCosts = usePermission("business.asset_costs", "view");
   const [amount, setAmount] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
 
@@ -394,7 +409,7 @@ export function ComplianceDialog({
         policyNumber: policyNumber.trim() || null,
         expiryDate,
         termMonths,
-        amountCents: toCents(amount),
+        ...(seeCosts ? { amountCents: toCents(amount) } : {}),
         notes: notes.trim() || null,
       };
       return item
@@ -450,9 +465,11 @@ export function ComplianceDialog({
             <Field label="Policy / reference">
               <Input className="h-8 text-xs" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
             </Field>
-            <Field label="Last paid (inc GST)">
-              <NumericInput className={NUMBER_FIELD} min={0} value={amount} onCommit={setAmount} />
-            </Field>
+            {seeCosts && (
+              <Field label="Last paid (inc GST)">
+                <NumericInput className={NUMBER_FIELD} min={0} value={amount} onCommit={setAmount} />
+              </Field>
+            )}
           </div>
           <Field label="Notes">
             <Textarea className="text-xs min-h-[50px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -607,7 +624,7 @@ export function EventDialog({
         date,
         title: title.trim() || null,
         meter: hasMeter ? meterValue : null,
-        costCents: kind === "service" || kind === "repair" ? toCents(cost) : null,
+        ...(seeCosts ? { costCents: kind === "service" || kind === "repair" ? toCents(cost) : null } : {}),
         scheduleId: kind === "service" && scheduleId !== NONE ? scheduleId : null,
         notes: notes.trim() || null,
       }),
@@ -621,7 +638,8 @@ export function EventDialog({
     onError: (err) => toast({ title: errorText(err, "Couldn't save the entry"), variant: "destructive" }),
   });
 
-  const showCost = kind === "service" || kind === "repair";
+  const seeCosts = usePermission("business.asset_costs", "view");
+  const showCost = seeCosts && (kind === "service" || kind === "repair");
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>

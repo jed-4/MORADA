@@ -19,6 +19,8 @@ import {
   categoriseVehicleCost,
   mentionsRego,
   renewalPayments,
+  redactAssetMoney,
+  withoutMoneyFields,
 } from "../shared/assets.ts";
 
 const today = "2026-10-26";
@@ -206,6 +208,28 @@ check("renewals: an expiry already past is owed today, once", () => {
     [{ id: "a", name: "Ute", rego: null }], "2026-10-28", "2027-10-28",
   );
   assert.deepEqual(p.map((x) => x.date), ["2026-10-28", "2027-10-01"]);
+});
+
+check("asset costs: every money field is blanked for someone without the permission", () => {
+  const detail = {
+    id: "a", name: "Hilux", rego: "AB12CD", purchaseCents: 6250000, financeProvider: "Macquarie", dayRateCents: 9500,
+    complianceItems: [{ id: "c", kind: "rego", expiryDate: "2026-11-10", amountCents: 94550 }],
+    events: [{ id: "e", kind: "service", costCents: 41200, meter: 58650 }],
+  };
+  const r = redactAssetMoney(detail);
+  assert.equal(r.purchaseCents, null);
+  assert.equal(r.financeProvider, null);
+  assert.equal(r.dayRateCents, null);
+  assert.equal(r.complianceItems[0].amountCents, null);
+  assert.equal(r.complianceItems[0].expiryDate, "2026-11-10"); // dates still visible
+  assert.equal(r.events[0].costCents, null);
+  assert.equal(r.events[0].meter, 58650);
+  assert.equal(detail.purchaseCents, 6250000); // original untouched
+});
+
+check("asset costs: a write without the permission can't set or wipe money", () => {
+  const w = withoutMoneyFields({ name: "Hilux", purchaseCents: null, dayRateCents: 1, financeProvider: "x", amountCents: 5, costCents: 7, meter: 3 });
+  assert.deepEqual(w, { name: "Hilux", meter: 3 });
 });
 
 console.log(`assets-due-check: ok (${n} checks)`);
