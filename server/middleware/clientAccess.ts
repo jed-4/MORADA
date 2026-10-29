@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import type { User } from "@shared/schema";
 import { resolveVariationDocumentColumns } from "@shared/variationDocumentColumns";
 import { PORTAL_KEYS } from "@shared/clientPortalPermissions";
+import { isClaimInClientSchedule } from "@shared/claimSchedule";
 import { isPublicProposalShareRoute } from "./publicProposalRoutes";
 import {
   clientAllowanceEstimateIds,
@@ -10,8 +11,10 @@ import {
   projectClientScheduleItem,
   projectClientSiteDiaryEntry,
   isInvoiceClientVisible,
+  projectClientClaimForecast,
   isVariationClientVisible,
   projectClientAllowance,
+  projectClientProject,
   projectClientInvoice,
   projectClientInvoiceItem,
   projectClientInvoicePayments,
@@ -237,9 +240,42 @@ const shapeVariationItems: ResponseShaper = async (body, _req, user, path) => {
   return projectClientVariationItems(body, columns, costCodeLabels);
 };
 
-const shapeInvoiceList: ResponseShaper = async (body) =>
-  Array.isArray(body) ? body.filter(isInvoiceClientVisible).map(projectClientInvoice) : HIDE_FROM_CLIENT;
+/** Projects: an allow-list, never the raw row (see projectClientProject). */
+const shapeProjectList: ResponseShaper = async (body) =>
+  Array.isArray(body) ? body.map(projectClientProject) : HIDE_FROM_CLIENT;
 
+const shapeProject: ResponseShaper = async (body) =>
+  body && typeof body === "object" && !Array.isArray(body) ? projectClientProject(body) : HIDE_FROM_CLIENT;
+
+/**
+ * The claims list a client gets: issued claims in full, plus the SHARED but
+ * not-yet-sent ones reduced to a forecast (name, date, frozen figure).
+ *
+ * Two different projections on purpose. An issued claim is a document they
+ * have been given; an unsent one is still being worked on, so it must carry
+ * none of its live money — see projectClientClaimForecast. Anything the
+ * builder has not shared is dropped entirely, which is what makes a draft safe
+ * to keep editing.
+ */
+const shapeInvoiceList: ResponseShaper = async (body) => {
+  if (!Array.isArray(body)) return HIDE_FROM_CLIENT;
+  return body
+    .filter(isClaimInClientSchedule)
+    .map((invoice: any) =>
+      isInvoiceClientVisible(invoice)
+        ? projectClientInvoice(invoice)
+        : projectClientClaimForecast(invoice),
+    );
+};
+
+/**
+ * A single claim. Issued only — deliberately NOT widened to shared forecasts.
+ *
+ * There is no document to open for a claim that has not been sent: its lines,
+ * items and payments are all live and still moving. The client's schedule
+ * shows the forecast as a row and nothing more, so there is nothing here to
+ * drill into until it is issued.
+ */
 const shapeInvoice: ResponseShaper = async (body) =>
   isInvoiceClientVisible(body) ? projectClientInvoice(body) : HIDE_FROM_CLIENT;
 
@@ -418,11 +454,12 @@ const ALLOW_RULES: AllowRule[] = [
   // --- Projects (the list route scopes itself to userProjectAccess) ---
   // No permission key: being granted the project (userProjectAccess) is what
   // lets a client see it; the sections inside are each gated below.
-  { methods: ["GET"], pattern: /^\/projects$/ },
+  { methods: ["GET"], pattern: /^\/projects$/, shape: shapeProjectList },
   {
     methods: ["GET"],
     pattern: /^\/projects\/[^/]+$/,
     project: projectParam,
+    shape: shapeProject,
   },
 
   // --- Schedule ---

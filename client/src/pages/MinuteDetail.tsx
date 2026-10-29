@@ -11,6 +11,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
+import { ProjectSelect } from "@/components/ProjectSelect";
 import { DetailLayout } from "@/components/detail/DetailLayout";
 import { DocumentSection } from "@/components/detail/DocumentSection";
 import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
@@ -174,6 +175,8 @@ export default function MinuteDetail() {
   const [editedLocation, setEditedLocation] = useState("");
   const [editedRecordingUrl, setEditedRecordingUrl] = useState("");
   const [editedAttendees, setEditedAttendees] = useState<Attendee[]>([]);
+  /** "" is Business — a minute that belongs to the company, not to a job. */
+  const [editedProjectId, setEditedProjectId] = useState("");
   // RichTextEditor captures its content ONCE, at mount (initialContentRef), and
   // this page fills its state from a useEffect that runs after that first
   // render — so a minute that already had notes showed an empty editor and the
@@ -203,6 +206,7 @@ export default function MinuteDetail() {
       setEditedLocation(minute.location || "");
       setEditedRecordingUrl(minute.recordingUrl || "");
       setEditedAttendees((minute.attendees as Attendee[]) || []);
+      setEditedProjectId(minute.projectId || "");
       notesBaselineRef.current = null;
       setHydrated(true);
     }
@@ -213,6 +217,9 @@ export default function MinuteDetail() {
   const { data: projects = [] } = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/projects"],
   });
+  // The project it is IN, not the one picked but not yet saved: the crumb next
+  // to it links there, and a breadcrumb that reads one job while its link goes
+  // to another is worse than one that waits for Save.
   const projectName = minute?.projectId
     ? (projects.find(p => p.id === minute.projectId)?.name ?? null)
     : null;
@@ -227,8 +234,16 @@ export default function MinuteDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });
       toast({ title: "Minutes saved" });
     },
-    onError: () => {
-      toast({ title: "Failed to update meeting minutes", variant: "destructive" });
+    onError: (error: any) => {
+      // Say WHY. A rejected save here showed one unexplained red toast while
+      // the server was naming the offending field — the edit was simply gone,
+      // and the only way to find out that the attendees had failed validation
+      // was to read the network tab.
+      toast({
+        title: "Failed to update meeting minutes",
+        description: error?.message || undefined,
+        variant: "destructive",
+      });
     },
   });
 
@@ -349,6 +364,9 @@ export default function MinuteDetail() {
       location: editedLocation,
       recordingUrl: editedRecordingUrl,
       attendees: editedAttendees as any,
+      // "" means Business, and must be sent as null — not dropped, or moving a
+      // minute OFF a project would silently leave it where it was.
+      projectId: editedProjectId || null,
       contentHtml,
       contentText,
     } as any);
@@ -361,6 +379,7 @@ export default function MinuteDetail() {
     editedDate !== toLocalDateTimeInput(minute.meetingDate) ||
     editedLocation !== (minute.location || "") ||
     editedRecordingUrl !== (minute.recordingUrl || "") ||
+    editedProjectId !== (minute.projectId || "") ||
     normaliseText(contentText) !== (notesBaselineRef.current ?? normaliseText(minute.contentText)) ||
     JSON.stringify(editedAttendees) !== JSON.stringify((minute.attendees as Attendee[]) || [])
   );
@@ -445,6 +464,33 @@ export default function MinuteDetail() {
           <>
             {/* The meeting's facts. These used to be one cramped line of icons
                 under the title, with nowhere for attendees to grow. */}
+
+            {/* Which job these minutes belong to. The project was fixed at
+                creation, from whichever page you happened to be on, and a
+                minute written against the wrong job could only be deleted and
+                retyped. Its action items follow the move — they are tasks
+                carrying the project, and leaving them behind would put this
+                meeting's work in another job's To-Dos. */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Project</label>
+              <ProjectSelect
+                value={editedProjectId || undefined}
+                onValueChange={(v) => setEditedProjectId(v || "")}
+                placeholder="Business (no project)"
+                allowNone
+                className="h-8 text-sm"
+                data-testid="select-minute-project"
+              />
+              {editedProjectId !== (minute.projectId || "") && (
+                <p className="text-xs text-muted-foreground" data-testid="text-project-move-note">
+                  Save to move these minutes
+                  {actions.items.length > 0
+                    ? ` and their ${actions.items.length} action ${actions.items.length === 1 ? "item" : "items"}.`
+                    : "."}
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Date and time</label>
               <Input
@@ -472,7 +518,7 @@ export default function MinuteDetail() {
               <HybridAttendeeSelector
                 value={editedAttendees}
                 onChange={setEditedAttendees}
-                projectId={minute.projectId ?? undefined}
+                projectId={editedProjectId || undefined}
               />
             </div>
 
