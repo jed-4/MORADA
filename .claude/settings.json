@@ -28,8 +28,6 @@
       "Bash(git clean *)",
       "Bash(git push --force*)",
       "Bash(chmod *)",
-      "Read(.env)",
-      "Read(**/.env)",
       "Read(~/.ssh/**)"
     ]
   },
