@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Asset, AssetBooking } from "@shared/schema";
 import { todayKey } from "@shared/assets";
-import { errorText, money, shortDate } from "./assetsShared";
+import { CHIP_BUTTON, ICON_BUTTON, SectionHeader, errorText, money, shortDate } from "./assetsShared";
 
 interface RechargeResponse {
   from: string;
@@ -55,38 +55,31 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
 
   return (
     <Card className="overflow-hidden min-w-0 lg:col-span-2" data-testid="card-asset-recharge">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
-          <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Charged to jobs</h3>
-            <p className="text-xs text-muted-foreground">
-              {asset.dayRateCents
-                ? `${money(asset.dayRateCents)}/day ex GST — on booked days, and days its driver has approved hours on a job.`
-                : "No day rate set, so it isn't charged to jobs. Set one under Edit."}
-            </p>
-          </div>
-        </div>
+      <SectionHeader
+        icon={Briefcase}
+        title="Charged to jobs"
+        hint={asset.dayRateCents ? `${money(asset.dayRateCents)}/day ex GST` : "No day rate — set one under Edit"}
+      >
         {canEdit && (
-          <Button size="sm" variant="outline" className="h-6 px-2 text-xs shrink-0" onClick={() => setBooking(true)} data-testid="button-book-asset">
-            <CalendarPlus className="w-3.5 h-3.5 mr-1" />Book to job
-          </Button>
+          <button type="button" className={CHIP_BUTTON} onClick={() => setBooking(true)} data-testid="button-book-asset">
+            <CalendarPlus className="w-3 h-3" />Book to job
+          </button>
         )}
-      </div>
+      </SectionHeader>
 
       {isLoading || !data ? (
         <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="grid md:grid-cols-[280px_1fr] divide-y md:divide-y-0 md:divide-x divide-border">
-          <div className="px-4 py-3 flex flex-col gap-3">
+          <div className="px-3 py-2 flex flex-col gap-2">
             <div>
               <div className="text-[11px] text-muted-foreground">Last 12 months</div>
-              <div className="text-base font-semibold tabular-nums">{money(data.totalCents)}</div>
+              <div className="text-sm font-semibold tabular-nums">{money(data.totalCents)}</div>
               <div className="text-[11px] text-muted-foreground">{data.days} day{data.days === 1 ? "" : "s"} on jobs</div>
             </div>
             <div>
               <div className="text-[11px] text-muted-foreground">Recovered from jobs</div>
-              <div className="text-base font-semibold tabular-nums">{recovery != null ? `${recovery}%` : "—"}</div>
+              <div className="text-sm font-semibold tabular-nums">{recovery != null ? `${recovery}%` : "—"}</div>
               <div className="text-[11px] text-muted-foreground">
                 {runningLast12 ? `of ${money(runningLast12)} running costs` : "link bills to see running costs"}
               </div>
@@ -94,11 +87,11 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
           </div>
           <div className="flex flex-col">
             {data.byProject.length === 0 ? (
-              <p className="px-4 py-6 text-xs text-muted-foreground text-center">Nothing charged to jobs in the last 12 months.</p>
+              <p className="px-3 py-4 text-xs text-muted-foreground text-center">Nothing charged to jobs in the last 12 months.</p>
             ) : (
               <ul className="divide-y divide-border">
                 {data.byProject.map((p) => (
-                  <li key={p.projectId} className="flex items-center gap-3 px-4 py-2" data-testid={`row-recharge-${p.projectId}`}>
+                  <li key={p.projectId} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-recharge-${p.projectId}`}>
                     <div className="flex-1 min-w-0">
                       <a href={`/projects/${p.projectId}`} className="text-xs font-medium truncate hover:underline">{p.projectName}</a>
                       <div className="text-[11px] text-muted-foreground">
@@ -111,7 +104,7 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
               </ul>
             )}
             {(upcoming.length > 0 || past.length > 0) && (
-              <div className="border-t border-border px-4 py-2">
+              <div className="border-t border-border px-3 py-1.5">
                 <div className="text-[11px] font-medium text-muted-foreground mb-1">Bookings</div>
                 <ul className="flex flex-col gap-1">
                   {[...upcoming, ...past].map((b) => (
@@ -258,11 +251,12 @@ export function AssetRegisterSettingsButton({ canEdit }: { canEdit: boolean }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Which cost code vehicle day-rate charges land on in each job's budget"
-        className="h-6 w-auto px-2 text-xs border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+        title="Settings: which cost code vehicle charges land on"
+        aria-label="Asset register settings"
+        className={ICON_BUTTON}
         data-testid="button-asset-settings"
       >
-        <Settings className="w-3.5 h-3.5" />Settings
+        <Settings className="w-3.5 h-3.5" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">

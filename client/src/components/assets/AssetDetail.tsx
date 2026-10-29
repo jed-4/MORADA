@@ -63,10 +63,14 @@ import {
   relativeDays,
   shortDate,
   type AssignableUser,
+  CHIP_BUTTON,
+  ICON_BUTTON,
+  PRIMARY_BUTTON,
+  SectionHeader,
 } from "./assetsShared";
 
 function Section({
-  icon: Icon,
+  icon,
   title,
   description,
   action,
@@ -82,16 +86,7 @@ function Section({
 }) {
   return (
     <Card className="overflow-hidden min-w-0" data-testid={testId}>
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
-          <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">{title}</h3>
-            {description && <p className="text-xs text-muted-foreground">{description}</p>}
-          </div>
-        </div>
-        {action}
-      </div>
+      <SectionHeader icon={icon} title={title} hint={description}>{action}</SectionHeader>
       {children}
     </Card>
   );
@@ -102,7 +97,7 @@ function AddButton({ onClick, children, testId }: { onClick: () => void; childre
     <button
       type="button"
       onClick={onClick}
-      className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 shrink-0"
+      className={PRIMARY_BUTTON}
       data-testid={testId}
     >
       <Plus className="w-3.5 h-3.5" />
@@ -112,7 +107,7 @@ function AddButton({ onClick, children, testId }: { onClick: () => void; childre
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="px-4 py-6 text-xs text-muted-foreground text-center">{children}</p>;
+  return <p className="px-3 py-4 text-xs text-muted-foreground text-center">{children}</p>;
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
@@ -128,7 +123,7 @@ function RowMenu({ onEdit, onDelete, label }: { onEdit?: () => void; onDelete: (
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={label}>
+        <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={label}>
           <MoreVertical className="w-3 h-3" />
         </Button>
       </DropdownMenuTrigger>
@@ -251,34 +246,30 @@ export function AssetDetail({ assetId }: { assetId: string }) {
   })();
 
   return (
-    <div className="flex flex-col gap-4 p-4 max-w-6xl" data-testid="asset-detail">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-start gap-2 min-w-0">
-          <Button size="icon" variant="ghost" className="h-7 w-7 mt-0.5" onClick={() => navigate("/business/assets")} aria-label="Back to the register" data-testid="button-asset-back">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-semibold truncate" data-testid="text-asset-name">{asset.name}</h2>
-              {asset.rego && <Badge variant="outline" className="font-mono text-[11px] no-default-active-elevate">{asset.rego}{asset.regoState ? ` · ${asset.regoState}` : ""}</Badge>}
-              <Badge variant="secondary" className="text-[11px] no-default-active-elevate">{ASSET_STATUS_LABELS[asset.status as AssetStatus] ?? asset.status}</Badge>
-              {heavy && <Badge variant="outline" className="text-[11px] no-default-active-elevate" title="Over 4.5t GVM — NHVR daily checks and Chain of Responsibility apply">Heavy vehicle</Badge>}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {ASSET_TYPE_LABELS[asset.assetType as AssetType] ?? asset.assetType}
-              {[asset.year, asset.make, asset.model].filter(Boolean).length > 0 && ` · ${[asset.year, asset.make, asset.model].filter(Boolean).join(" ")}`}
-            </p>
-          </div>
+    <div className="flex flex-col gap-3 p-4 max-w-6xl" data-testid="asset-detail">
+      {/* Header: one line */}
+      <div className="flex items-center justify-between gap-2 min-h-9">
+        <div className="flex items-center gap-2 min-w-0">
+          <button type="button" className={ICON_BUTTON} onClick={() => navigate("/business/assets")} aria-label="Back to the register" data-testid="button-asset-back">
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+          <h2 className="text-sm font-semibold truncate" data-testid="text-asset-name">{asset.name}</h2>
+          {asset.rego && <Badge variant="outline" className="font-mono text-[11px] no-default-active-elevate shrink-0">{asset.rego}{asset.regoState ? ` · ${asset.regoState}` : ""}</Badge>}
+          <Badge variant="secondary" className="text-[11px] no-default-active-elevate shrink-0">{ASSET_STATUS_LABELS[asset.status as AssetStatus] ?? asset.status}</Badge>
+          {heavy && <Badge variant="outline" className="text-[11px] no-default-active-elevate shrink-0" title="Over 4.5t GVM — NHVR daily checks and Chain of Responsibility apply">Heavy</Badge>}
+          <span className="text-xs text-muted-foreground truncate hidden md:inline">
+            {ASSET_TYPE_LABELS[asset.assetType as AssetType] ?? asset.assetType}
+            {[asset.year, asset.make, asset.model].filter(Boolean).length > 0 && ` · ${[asset.year, asset.make, asset.model].filter(Boolean).join(" ")}`}
+          </span>
         </div>
         {canEdit && (
-          <div className="flex items-center gap-1.5">
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-asset">
-              <Pencil className="w-3.5 h-3.5 mr-1" />Edit
-            </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button type="button" className={CHIP_BUTTON} onClick={() => setEditing(true)} data-testid="button-edit-asset">
+              <Pencil className="w-3 h-3" />Edit
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="outline" className="h-7 w-7" aria-label="More asset actions"><MoreVertical className="w-3.5 h-3.5" /></Button>
+                <button type="button" className={ICON_BUTTON} aria-label="More asset actions"><MoreVertical className="w-3.5 h-3.5" /></button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {asset.status !== "off_road" && !archived && (
@@ -313,8 +304,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       <PrestartDefectBanner asset={asset} prestarts={asset.prestarts ?? []} canEdit={canEdit} />
 
       {/* Facts */}
-      <Card className="p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-3">
+      <Card className="px-3 py-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-x-4 gap-y-2">
           <Fact label="Assigned to">{nameOf(asset.assignedUserId) ?? "Nobody (pool)"}</Fact>
           <Fact label={asset.meterType === "hours" ? "Engine hours" : "Odometer"}>
             {asset.meterType === "none" ? "No meter" : (
@@ -334,18 +325,16 @@ export function AssetDetail({ assetId }: { assetId: string }) {
           </Fact>
           <Fact label="Finance">{asset.financeProvider}</Fact>
         </div>
-        {asset.notes && <p className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{asset.notes}</p>}
+        {asset.notes && <p className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{asset.notes}</p>}
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2 items-start">
-        <AssetCostsSection asset={asset} canEdit={canEdit} />
-        <AssetRechargeSection asset={asset} canEdit={canEdit} />
+      <div className="grid gap-3 lg:grid-cols-2 items-start">
 
         {/* Due dates */}
         <Section
           icon={CalendarClock}
           title="Due dates"
-          description="Rego, CTP, insurance or any check. A To-Do is added 30 and 7 days before each date"
+          description="To-Do 30 & 7 days before each"
           testId="card-asset-compliance"
           action={canEdit && <AddButton onClick={() => setCompliance({ open: true, item: null })} testId="button-add-compliance">Add</AddButton>}
         >
@@ -357,14 +346,14 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                 const due = complianceDue(item, today);
                 const label = item.label || COMPLIANCE_KIND_LABELS[item.kind as ComplianceKind] || item.kind;
                 return (
-                  <li key={item.id} className="flex items-center gap-3 px-4 py-2" data-testid={`row-compliance-${item.id}`}>
+                  <li key={item.id} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-compliance-${item.id}`}>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">{label}</div>
                       <div className="text-[11px] text-muted-foreground truncate">
                         {[item.provider, item.policyNumber, item.amountCents != null ? money(item.amountCents) : null, item.termMonths ? `${item.termMonths}-month term` : null].filter(Boolean).join(" · ") || "—"}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       <div className="text-xs tabular-nums">{shortDate(item.expiryDate)}</div>
                       <DueChip state={due.state}>{relativeDays(due.daysLeft)}</DueChip>
                     </div>
@@ -386,14 +375,14 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         <Section
           icon={Wrench}
           title="Servicing"
-          description={asset.meterType === "none" ? "Due every so many months. A To-Do is added when one falls due" : `Due on ${unit} or months, whichever comes first. A To-Do is added when one falls due`}
+          description={asset.meterType === "none" ? "By months · To-Do when due" : `${unit} or months, whichever first · To-Do when due`}
           testId="card-asset-schedules"
           action={canEdit && (
             <div className="flex items-center gap-1.5">
               {asset.serviceSchedules.length > 0 && (
-                <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setEventPreset({ kind: "service" })} data-testid="button-log-service">
+                <button type="button" className={CHIP_BUTTON} onClick={() => setEventPreset({ kind: "service" })} data-testid="button-log-service">
                   Log service
-                </Button>
+                </button>
               )}
               <AddButton onClick={() => setSchedule({ open: true, schedule: null })} testId="button-add-schedule">Schedule</AddButton>
             </div>
@@ -412,7 +401,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                   due.dueDate ? `by ${shortDate(due.dueDate)}` : null,
                 ].filter(Boolean).join(" or ");
                 return (
-                  <li key={s.id} className="flex items-center gap-3 px-4 py-2" data-testid={`row-schedule-${s.id}`}>
+                  <li key={s.id} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-schedule-${s.id}`}>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">{s.label}</div>
                       <div className="text-[11px] text-muted-foreground truncate">
@@ -421,7 +410,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                         {s.lastDoneMeter != null && asset.meterType !== "none" && ` at ${meter(s.lastDoneMeter, asset.meterType)}`}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       {due.unknown ? (
                         <span className="text-[11px] text-muted-foreground">Set last done</span>
                       ) : (
@@ -440,7 +429,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                     {canEdit && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={`${s.label} actions`}><MoreVertical className="w-3 h-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`${s.label} actions`}><MoreVertical className="w-3 h-3" /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setEventPreset({ kind: "service", scheduleId: s.id })}>
@@ -466,14 +455,14 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         <Section
           icon={History}
           title="History"
-          description="Services, repairs, readings, and who had it"
+          description="Services, repairs, readings, drivers"
           testId="card-asset-history"
           action={canEdit && (
             <div className="flex items-center gap-1.5">
               {asset.meterType !== "none" && (
-                <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setEventPreset({ kind: "meter" })} data-testid="button-log-meter">
-                  <Gauge className="w-3.5 h-3.5 mr-1" />Reading
-                </Button>
+                <button type="button" className={CHIP_BUTTON} onClick={() => setEventPreset({ kind: "meter" })} data-testid="button-log-meter">
+                  <Gauge className="w-3 h-3" />Reading
+                </button>
               )}
               <AddButton onClick={() => setEventPreset({ kind: "repair" })} testId="button-add-event">Entry</AddButton>
             </div>
@@ -493,7 +482,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                       : e.title || kindLabel;
                 const schedLabel = e.scheduleId ? asset.serviceSchedules.find((s) => s.id === e.scheduleId)?.label : null;
                 return (
-                  <li key={e.id} className="flex items-start gap-3 px-4 py-2" data-testid={`row-event-${e.id}`}>
+                  <li key={e.id} className="flex items-start gap-3 px-3 py-1.5" data-testid={`row-event-${e.id}`}>
                     <span className="text-[11px] text-muted-foreground tabular-nums w-16 shrink-0 pt-0.5">{shortDate(e.date)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium">{headline}</div>
@@ -519,16 +508,19 @@ export function AssetDetail({ assetId }: { assetId: string }) {
 
         <PrestartsSection asset={asset} prestarts={asset.prestarts ?? []} />
 
+        <AssetCostsSection asset={asset} canEdit={canEdit} />
+        <AssetRechargeSection asset={asset} canEdit={canEdit} />
+
         {/* Documents */}
         <Section
           icon={FileText}
           title="Documents"
-          description="Rego papers, certificates, service book, photos"
+          description="Rego, certificates, service book"
           testId="card-asset-documents"
           action={canEdit && (
             <div className="flex items-center gap-1.5">
               <Select value={docCategory} onValueChange={(v) => v && setDocCategory(v as AssetDocumentCategory)}>
-                <SelectTrigger className="h-6 w-[120px] text-xs" aria-label="Document type"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-6 w-[110px] text-xs border-border/50 px-2" aria-label="Document type"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {ASSET_DOCUMENT_CATEGORIES.map((c) => (
                     <SelectItem key={c} value={c} className="text-xs">{ASSET_DOCUMENT_CATEGORY_LABELS[c]}</SelectItem>
@@ -546,10 +538,10 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                 }}
                 data-testid="input-asset-document"
               />
-              <Button size="sm" className="h-6 px-2 text-xs" disabled={isUploading || attach.isPending} onClick={() => fileInput.current?.click()} data-testid="button-attach-document">
-                {isUploading || attach.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Paperclip className="w-3.5 h-3.5 mr-1" />}
+              <button type="button" className={PRIMARY_BUTTON} disabled={isUploading || attach.isPending} onClick={() => fileInput.current?.click()} data-testid="button-attach-document">
+                {isUploading || attach.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
                 Attach
-              </Button>
+              </button>
             </div>
           )}
         >
@@ -558,7 +550,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
           ) : (
             <ul className="divide-y divide-border">
               {asset.documents.map((d) => (
-                <li key={d.id} className="flex items-center gap-3 px-4 py-2" data-testid={`row-document-${d.id}`}>
+                <li key={d.id} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-document-${d.id}`}>
                   <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
                   <a href={d.fileUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs font-medium truncate hover:underline">
                     {d.fileName}
