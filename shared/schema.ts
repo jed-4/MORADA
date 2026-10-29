@@ -14,6 +14,7 @@ import {
   ASSET_DOCUMENT_CATEGORIES,
   AU_STATES,
 } from "./assets";
+import { minuteAttendeeSchema } from "./minuteAttendees";
 
 // Session storage table for Replit Auth
 // IMPORTANT: This table is mandatory for Replit Auth, don't drop it
@@ -438,7 +439,7 @@ export const userArchiveEvents = pgTable("user_archive_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  action: text("action").notNull(), // "archived" | "restored"
+  action: text("action").notNull(), // "archived" | "restored" | "deleted" (self-service, server/accountDeletion.ts)
   byUserId: varchar("by_user_id"),
   byName: text("by_name"),
   reassignedToId: varchar("reassigned_to_id"),
@@ -447,6 +448,20 @@ export const userArchiveEvents = pgTable("user_archive_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type UserArchiveEvent = typeof userArchiveEvents.$inferSelect;
+
+/**
+ * Sign in with Apple (migration 0113): Apple user id ("sub") → Morada user.
+ * Its own table so a database without it loses only Apple sign-in, never a
+ * users read. Read and written by server/appleAuth.ts.
+ */
+export const userAppleIdentities = pgTable("user_apple_identities", {
+  appleSub: varchar("apple_sub").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("user_apple_identities_user_idx").on(table.userId),
+]);
 
 export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
   id: true,
@@ -2819,11 +2834,32 @@ export const clientInvoices = pgTable("client_invoices", {
   // object-storage path from /api/uploads/request-url. Mirrors
   // variations.attachments so both documents carry files the same way.
   attachments: jsonb("attachments").notNull().default([]),
+  /**
+   * The payment schedule the CLIENT sees, frozen (migration 0112).
+   *
+   * A client wants to know what is coming. The claims that answer that are
+   * drafts, and a draft's total moves as variations are approved and
+   * allowances reconcile — so showing them `totalAmount` would make every
+   * edit the builder makes look to the client like the price changing.
+   *
+   * `clientSharedAmountCents` is the figure the builder deliberately put in
+   * front of them, and editing the draft NEVER touches it. Null
+   * `clientSharedAt` means this claim is not in the client's schedule at all.
+   *
+   * These stop mattering the moment the claim is SENT: the existing
+   * sent/partial/paid visibility rule takes over and the client sees the real
+   * document. The stamp stays as the record of what they were told to expect,
+   * which is the question asked when the two differ.
+   */
+  clientSharedAmountCents: integer("client_shared_amount_cents"),
+  clientSharedAt: timestamp("client_shared_at"),
+  clientSharedById: varchar("client_shared_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   // Composite unique constraint: invoice numbers must be unique per company
   uniqueInvoiceNumberPerCompany: uniqueIndex("client_invoices_company_invoice_number_unique").on(table.companyId, table.invoiceNumber),
+  clientSharedIdx: index("client_invoices_shared_idx").on(table.projectId, table.clientSharedAt),
 }));
 
 // One line of the persisted invoice money snapshot. All amounts are integer
@@ -4864,7 +4900,11 @@ export const minutes = pgTable("minutes", {
   title: text("title").notNull(),
   meetingDate: timestamp("meeting_date").notNull(),
   location: text("location"), // Meeting location (physical or virtual link)
-  attendees: json("attendees").default([]), // Array of attendee names or {name, contactId} objects
+  // Mixed array: "Some Name", {name, userId} for a team member, or
+  // {name, contactId} for a CRM contact. Read it with attendeeName() from
+  // shared/minuteAttendees.ts — `as string[]` here is how the minutes list came
+  // to throw on its own search.
+  attendees: json("attendees").default([]),
   contentHtml: text("content_html"), // Rich text HTML content
   contentText: text("content_text"), // Plain text for searching
   aiSummary: text("ai_summary"), // AI-generated summary
@@ -4895,10 +4935,11 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
   aiSummary: z.string().optional(),
-  attendees: z.array(z.union([
-    z.string(), // Manual entry
-    z.object({ name: z.string(), contactId: z.string() }) // From contacts
-  ])).optional(),
+  // A string typed by hand, a team member by userId, or a CRM contact by
+  // contactId — see shared/minuteAttendees.ts, which also holds the only safe
+  // way to READ one. Dropping `userId` here is what kept staff out of the
+  // attendee picker: the people who actually sit in the meeting had no shape.
+  attendees: z.array(minuteAttendeeSchema).optional(),
   actionItems: z.array(z.object({
     description: z.string(),
     assignee: z.string().optional(),

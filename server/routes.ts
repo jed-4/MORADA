@@ -16,6 +16,7 @@ import { randomBytes, randomUUID } from "crypto";
 import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
+import { buildClientVariationDocument } from "./clientVariationDocument";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -226,7 +227,9 @@ import {
 // existing routes already referenced `schema.` without this import and threw
 // a ReferenceError at runtime (every selections-portal request 500ed).
 import * as schema from "@shared/schema";
-import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems } from "@shared/minuteActionItems";
+import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems, actionItemPlacement } from "@shared/minuteActionItems";
+import { attendeeNames } from "@shared/minuteAttendees";
+import { isClaimIssued } from "@shared/claimSchedule";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -4157,10 +4160,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete data.ownerId;
       delete data.ownerName;
 
+      const movingProject =
+        Object.prototype.hasOwnProperty.call(data, "projectId") &&
+        (data.projectId ?? null) !== ((owned as any).projectId ?? null);
+
       const minute = await storage.updateMinute(req.params.id, data);
       if (!minute) {
         return res.status(404).json({ error: "Minute not found" });
       }
+
+      /* Moving a minute moves its action items with it.
+         An action item IS a task (a `notes` row, see shared/minuteActionItems.ts)
+         and the task carries the project — copied off the minute when it was
+         created. Move the minute alone and this meeting's work stays in the old
+         job's To-Dos, where nobody is looking for it, while the meeting it came
+         out of sits somewhere else entirely. The four fields are the same four
+         the create sets, so a moved item is indistinguishable from one raised
+         in the new project.
+         Scoped to this minute's own items: referenceType + referenceId, inside
+         the company. */
+      if (movingProject) {
+        const companyId = (req.user as any)?.companyId;
+        await db.update(schema.notes)
+          .set(actionItemPlacement((minute as any).projectId, companyId))
+          .where(and(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.notes.referenceType, MINUTE_ACTION_REFERENCE),
+            eq(schema.notes.referenceId, req.params.id),
+          ));
+      }
+
       res.json(minute);
     } catch (error) {
       res.status(500).json({ error: "Failed to update minute" });
@@ -4252,10 +4281,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content: "",
         type: "task",
         status: "todo",
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null,
         // The link back to the meeting it came out of.
@@ -4347,10 +4374,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // finished work because it changed storage would be its own bug.
         status: wasCompleted ? "done" : "todo",
         completedAt: wasCompleted ? new Date() : null,
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: due && !Number.isNaN(due.getTime()) ? due : null,
         referenceType: MINUTE_ACTION_REFERENCE,
@@ -4394,7 +4419,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: [
           {
             role: "user",
-            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
+            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${attendeeNames(minute.attendees).join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
           }
         ],
       });
@@ -12769,11 +12794,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all active users in the company with minimal info for assignment purposes
       const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId);
+
+      /* Clients are assignable, but only on their OWN project.
+         A client login points at a CRM contact (users.contactId), and a
+         project names its client the same way (projects.clientId), so a
+         client belongs to a project exactly when those match.
+         Without ?projectId this returns staff only, which is what it has
+         always returned — every existing caller keeps its behaviour, and a
+         picker with no project in hand cannot offer a client it has no way to
+         scope. */
+      let clientContactId: string | null = null;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : null;
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        // Another company's project id must not reveal who its client is.
+        if (project && (project as any).companyId === currentUser.companyId) {
+          clientContactId = (project as any).clientId ?? null;
+        }
+      }
+
       // Return only necessary fields for assignment dropdowns
-      // People work is assigned to: staff, never client portal logins (and
-      // the query above already leaves out archived people).
       const assignableUsers = users
-        .filter((user: any) => user.userCategory !== "client")
+        .filter((user: any) =>
+          user.userCategory !== "client"
+          || (!!clientContactId && user.contactId === clientContactId))
         .map((user: any) => {
           // Build displayName from firstName and lastName
           const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Unknown User';
@@ -12798,6 +12842,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // subsume this one: a user can be status "active" and isActive
             // false.
             isActive: user.isActive !== false,
+            // So a picker can mark them rather than mixing them in with staff.
+            isClient: user.userCategory === "client",
           };
         });
       res.json(assignableUsers);
@@ -13191,6 +13237,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (target.isActive) {
         return res.json(toSafeUser(target));
+      }
+      // Deleted by its owner (server/accountDeletion.ts): the person and their
+      // login are gone, so there is nobody to restore.
+      if (target.email?.endsWith("@deleted.invalid")) {
+        return res.status(400).json({ error: "This person deleted their account, so it can't be restored. Invite them again instead." });
       }
 
       // Same Full User seat rule as inviting — restoring someone takes a seat.
@@ -24106,7 +24157,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
         return res.status(404).json({ error: "Variation not found" });
       }
-      res.json(await buildVariationPortalPayload(variation));
+      const payload = await buildVariationPortalPayload(variation);
+      // `document` is for the phone app, which can't run the web's document
+      // model itself — the same model, over the same client-safe payload.
+      res.json({ ...payload, document: buildClientVariationDocument(payload) });
     } catch (error) {
       console.error("Error building client variation view:", error);
       res.status(500).json({ error: "Failed to load variation" });
@@ -26205,6 +26259,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+
+      /* Issuing a claim needs "send", not merely "edit".
+         The Send Invoice button does not email anything — it PATCHes
+         status:"sent" straight through this route. So "edit" alone was enough
+         to put a claim in front of the client and make it a live receivable,
+         while the one route that actually gates "send" (send-email) could be
+         bypassed by pressing the other button.
+         It matters more now: "sent" is the switch that replaces the figure the
+         client was told to expect with the real claim — see
+         shared/claimSchedule.ts. */
+      if (
+        data.status && isClaimIssued({ status: data.status }) &&
+        !isClaimIssued(owned as any) &&
+        !(await userHasPermission(req.user as any, "projects.invoices", "send"))
+      ) {
+        return res.status(403).json({
+          error: "Sending a progress claim needs the Send permission on Progress Claims.",
+        });
+      }
+
       if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
@@ -26469,6 +26543,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     return true;
   };
+
+  /**
+   * Share a claim's figure with the client, or stop sharing it.
+   *
+   * This is what puts a not-yet-sent claim into the client's payment schedule.
+   * It freezes `clientSharedAmountCents` at the claim's total RIGHT NOW, and
+   * nothing afterwards moves it — the builder goes on editing the draft and
+   * the client keeps seeing the figure they were given until the builder
+   * shares again. That is the whole feature.
+   *
+   * Gated on "send", not "edit". Telling a client a number is a commitment of
+   * the same kind as issuing the claim, and it is not something everyone who
+   * may tidy up a draft should be able to do.
+   */
+  app.post("/api/client-invoices/:id/share-with-client", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
+
+      // An issued claim is already in front of the client, in full. Sharing a
+      // forecast of it would be a second, staler number for the same money.
+      if (isClaimIssued(invoice as any)) {
+        return res.status(409).json({
+          error: "This claim has already been sent — the client can see the real one.",
+        });
+      }
+
+      // Dates on a draft linked to a schedule item follow that item, so settle
+      // them before freezing: the client is being told WHEN as well as how much.
+      const settled = await withFollowedDates(invoice);
+      const amount = (settled as any).totalAmount ?? 0;
+
+      const updated = await storage.updateClientInvoice(req.params.id, {
+        clientSharedAmountCents: amount,
+        clientSharedAt: new Date(),
+        clientSharedById: (req.user as any)?.id ?? null,
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("[client-invoices/share] ", error);
+      res.status(500).json({ error: "Failed to share this claim with the client" });
+    }
+  });
+
+  app.delete("/api/client-invoices/:id/share-with-client", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
+      // Clearing the stamp removes the row from the client's schedule. It does
+      // NOT hide an issued claim: that is governed by status, not by this.
+      const updated = await storage.updateClientInvoice(req.params.id, {
+        clientSharedAmountCents: null,
+        clientSharedAt: null,
+        clientSharedById: null,
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("[client-invoices/unshare] ", error);
+      res.status(500).json({ error: "Failed to stop sharing this claim" });
+    }
+  });
+
+  /**
+   * Share the whole payment schedule at once.
+   *
+   * What a builder actually does at contract signing: the claims exist as
+   * drafts against the schedule, and the client should see all of them, not be
+   * told about each one as it comes. Re-running it re-freezes every unsent
+   * claim at its current total, which is also how you push through a round of
+   * approved variations in one go.
+   *
+   * Already-sent claims are left alone — they are real documents, and a
+   * forecast stamped over the top would be a staler second number.
+   */
+  app.post("/api/projects/:projectId/share-payment-schedule", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      const companyId = (req.user as any)?.companyId;
+      const invoices = await storage.getClientInvoices(projectId, undefined, companyId);
+      const unissued = invoices.filter((i: any) => !isClaimIssued(i));
+
+      // Settle the dates in PARALLEL and write in ONE statement. Neon is in
+      // us-east-1 and this runs from Australia at ~400ms a trip, so a dozen
+      // claims done one at a time is a ten-second wait on a button.
+      const settled = await Promise.all(unissued.map((i: any) => withFollowedDates(i)));
+      const rows = settled.map((i: any) => ({ id: i.id, amountCents: i.totalAmount ?? 0 }));
+
+      const sharedAt = new Date();
+      await storage.shareClientInvoiceForecasts(rows, sharedAt, (req.user as any)?.id ?? null);
+
+      res.json({ shared: rows.length, invoiceIds: rows.map((r) => r.id) });
+    } catch (error) {
+      console.error("[projects/share-payment-schedule] ", error);
+      res.status(500).json({ error: "Failed to share the payment schedule" });
+    }
+  });
 
   app.post("/api/client-invoices/full", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {

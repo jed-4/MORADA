@@ -125,6 +125,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
+import { priceListSearchTokens } from "@shared/priceListSearch";
 import { orderGroups } from "@shared/templateGroupOrder";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
@@ -1029,6 +1030,8 @@ export interface IStorage {
   getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
   updateClientInvoice(id: string, invoice: Partial<InsertClientInvoice>): Promise<ClientInvoice | undefined>;
+  /** Freeze the client-facing figure on many claims in one statement. */
+  shareClientInvoiceForecasts(rows: { id: string; amountCents: number }[], sharedAt: Date, sharedById: string | null): Promise<number>;
   deleteClientInvoice(id: string): Promise<boolean>;
 
   // Client Invoice Items CRUD
@@ -7076,6 +7079,8 @@ export class MemStorage implements IStorage {
   async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> { return { fixed: 0 }; }
 
   // Client-invoice transactional save — MemStorage stubs
+  // `storage` is always DbStorage, so these exist to satisfy IStorage, not to work.
+  async shareClientInvoiceForecasts(): Promise<number> { return 0; }
   async createClientInvoiceFull(_invoice: InsertClientInvoice, _children: ClientInvoiceChildren): Promise<ClientInvoice> { throw new Error("Not implemented"); }
   async updateClientInvoiceFull(_id: string, _invoice: Partial<InsertClientInvoice>, _children: ClientInvoiceChildren): Promise<ClientInvoice | undefined> { return undefined; }
 
@@ -15584,7 +15589,57 @@ export class DbStorage implements IStorage {
     return updated;
   }
   
+  /**
+   * Remove a field option — by DEACTIVATING it, not by deleting the row.
+   *
+   * 🚨 A hard delete did not stick. `ensureAllRequiredOptionsExist` runs on
+   * every boot and re-inserts any option in `getRequiredOptionsForCategory`
+   * that it cannot find BY KEY, so deleting a built-in status removed it until
+   * the next restart and then it silently came back. From the outside that
+   * looks like the delete failing at random, because the timing is a deploy or
+   * a process restart rather than anything the user did.
+   *
+   * Deactivating settles it both ways: the row still exists, so the seeder
+   * sees it and leaves it alone, and every reader already filters on
+   * `isActive` — the status chips, the pickers and the filters all do. Rows
+   * that reference the key by value also keep resolving to a real option
+   * instead of dangling, which a hard delete never guaranteed.
+   *
+   * An option that is NOT one of the built-ins has nothing to resurrect it, so
+   * it is deleted outright and the row goes.
+   */
   async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
+    const existing = await db.select().from(schema.fieldOptions)
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
+      .limit(1);
+    if (existing.length === 0) return false;
+
+    const option = existing[0];
+    const category = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.id, option.categoryId))
+      .limit(1);
+    const isSeeded = category.length > 0
+      && this.getRequiredOptionsForCategory(category[0].key, category[0].id)
+        .some((o: any) => o.key === option.key);
+
+    if (isSeeded) {
+      // getFieldOptions already filters on isActive, so an option deactivated
+      // here disappears from every read exactly as a deleted one did — the
+      // Field Settings list included. Nothing on the client needs to filter.
+      // The trade: there is now no way to bring one back from the UI. That was
+      // only ever possible by accident, via the resurrection this fixes.
+      const result = await db.update(schema.fieldOptions)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(schema.fieldOptions.id, id),
+          eq(schema.fieldOptions.companyId, companyId),
+        ));
+      return result.rowCount ? result.rowCount > 0 : false;
+    }
+
     const result = await db.delete(schema.fieldOptions)
       .where(and(
         eq(schema.fieldOptions.id, id),
@@ -16185,10 +16240,46 @@ export class DbStorage implements IStorage {
           eq(schema.contacts.companyId, companyId)
         ))
         .returning();
+      await this.syncPortalLoginName(id, updateData);
       return updatedContacts[0];
     } catch (error) {
       console.error("Database error in updateContact:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Keep a client's portal LOGIN named the same as their CRM contact.
+   *
+   * A client is two rows: a `contacts` record and, once they are invited, a
+   * `users` record pointing at it through `users.contactId`. Each carries its
+   * own first and last name and nothing kept them together, so renaming the
+   * client renamed one of them. The other went on showing the old name
+   * wherever it is read — which for the login is every assignment picker, so a
+   * client renamed to "AJ" kept appearing as "Ailin" with nothing to explain
+   * it. Nothing was cached or stale; there were simply two names.
+   *
+   * One direction only, deliberately. The contact is the record a company
+   * edits; the login exists to let that person in. Syncing both ways invites a
+   * loop, and the question "which one wins" has an obvious answer here.
+   *
+   * Failure is logged, never thrown: a name that did not propagate must not
+   * fail the edit that did save.
+   */
+  private async syncPortalLoginName(
+    contactId: string,
+    updateData: Partial<InsertContact>,
+  ): Promise<void> {
+    const renames = ["firstName", "lastName"] as const;
+    if (!renames.some((k) => k in updateData)) return;
+    try {
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      for (const k of renames) if (k in updateData) patch[k] = (updateData as any)[k];
+      await db.update(schema.users)
+        .set(patch)
+        .where(eq(schema.users.contactId, contactId));
+    } catch (error) {
+      console.warn("[contacts] could not rename the linked portal login:", error);
     }
   }
 
@@ -19469,6 +19560,44 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in updateClientInvoice:", error);
       return undefined;
+    }
+  }
+
+  /**
+   * Freeze what the client is told to expect, for many claims at once.
+   *
+   * ONE statement, not a loop. Neon sits in us-east-1 and this app runs from
+   * Australia, so each round trip costs ~400ms — a dozen claims updated one by
+   * one is a visible ten-second pause on a button a builder presses at contract
+   * signing. The amounts differ per row, so they arrive as a VALUES join.
+   *
+   * `sharedAt` and `sharedById` are the same for every row on purpose: they
+   * record the one act of sharing, not a dozen.
+   */
+  async shareClientInvoiceForecasts(
+    rows: { id: string; amountCents: number }[],
+    sharedAt: Date,
+    sharedById: string | null,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    try {
+      const values = sql.join(
+        rows.map((r) => sql`(${r.id}::varchar, ${r.amountCents}::integer)`),
+        sql`, `,
+      );
+      await db.execute(sql`
+        UPDATE client_invoices AS ci
+        SET client_shared_amount_cents = v.amount,
+            client_shared_at = ${sharedAt},
+            client_shared_by_id = ${sharedById},
+            updated_at = now()
+        FROM (VALUES ${values}) AS v(id, amount)
+        WHERE ci.id = v.id
+      `);
+      return rows.length;
+    } catch (error) {
+      console.error("Database error in shareClientInvoiceForecasts:", error);
+      throw error;
     }
   }
 
@@ -28226,6 +28355,44 @@ export class DbStorage implements IStorage {
       if (!term) return [];
       const like = `%${term}%`;
 
+      /* Every WORD has to match, not the whole phrase.
+         This was one LIKE over the raw query, so the words had to be adjacent
+         and in the catalogue's order: "240 pine" found nothing because the item
+         is "240 x 45 T2 Pine". Nobody remembers a timber item as one string —
+         they remember a size, a species and a supplier, in whatever order those
+         come to mind. See shared/priceListSearch.ts.
+
+         Each word is matched against the item's whole searchable text at once
+         (name, nickname, code, and the book it lives in) rather than four
+         separate LIKEs per word, so a three-word search costs three clauses
+         instead of twelve on a route that fires per keystroke. COALESCE is not
+         optional: in Postgres anything || NULL is NULL, and a single missing
+         nickname would blank the entire haystack for that row. */
+      const haystack = sql`LOWER(
+        ${schema.priceListItems.name} || ' ' ||
+        COALESCE(${schema.priceListItems.nickname}, '') || ' ' ||
+        COALESCE(${schema.priceListItems.code}, '') || ' ' ||
+        ${schema.priceLists.name}
+      )`;
+      const tokens = priceListSearchTokens(term);
+      // A query of nothing but whitespace tokenises to nothing; fall back to
+      // the whole term so the search can never silently match every row.
+      const tokenClauses = (tokens.length ? tokens : [term]).map(
+        (t) => sql`${haystack} LIKE ${`%${t}%`}`,
+      );
+
+      /* The item's OWN text, for ranking. A row that matched only because of
+         the book it sits in is the weakest kind of hit — one list name matching
+         drags in that supplier's entire catalogue — so those sort last. */
+      const itemText = sql`LOWER(
+        ${schema.priceListItems.name} || ' ' ||
+        COALESCE(${schema.priceListItems.nickname}, '') || ' ' ||
+        COALESCE(${schema.priceListItems.code}, '')
+      )`;
+      const allTokensInItem = and(
+        ...(tokens.length ? tokens : [term]).map((t) => sql`${itemText} LIKE ${`%${t}%`}`),
+      )!;
+
       const rows = await db
         .select({
           item: schema.priceListItems,
@@ -28238,28 +28405,23 @@ export class DbStorage implements IStorage {
           eq(schema.priceListItems.companyId, companyId),
           eq(schema.priceListItems.isActive, true),
           eq(schema.priceLists.isArchived, false),
-          or(
-            sql`LOWER(${schema.priceListItems.name}) LIKE ${like}`,
-            sql`LOWER(${schema.priceListItems.nickname}) LIKE ${like}`,
-            sql`LOWER(${schema.priceListItems.code}) LIKE ${like}`,
-            // The book's name too, so typing a supplier browses their catalogue —
-            // "plaster" found nothing before, even though every item lived in "The
-            // Plaster Shop". Ranked last below, because one list name matching drags
-            // in its whole book and those rows are the weakest kind of hit.
-            sql`LOWER(${schema.priceLists.name}) LIKE ${like}`,
-          )!,
+          and(...tokenClauses)!,
         ))
         // A code hit is the strongest signal a builder can give — they typed the SKU
         // off the invoice. Then names that START with the term, then other item-text
         // hits, and finally rows that only matched by which book they're in.
+        // A code hit is the strongest signal a builder can give — they typed the
+        // SKU off the invoice. Then the phrase exactly as typed, so someone who
+        // DID type the full name still gets it first. Then every word found in
+        // the item itself, and last the rows that needed the book's name to
+        // match at all.
         .orderBy(
           sql`CASE
             WHEN LOWER(${schema.priceListItems.code}) = ${term} THEN 0
             WHEN LOWER(${schema.priceListItems.name}) LIKE ${term + '%'} THEN 1
-            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like}
-              OR LOWER(${schema.priceListItems.nickname}) LIKE ${like}
-              OR LOWER(${schema.priceListItems.code}) LIKE ${like} THEN 2
-            ELSE 3
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like} THEN 2
+            WHEN ${allTokensInItem} THEN 3
+            ELSE 4
           END`,
           asc(schema.priceListItems.name),
         )

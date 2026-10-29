@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, KeyboardEvent } from "react";
+import type { AssignablePerson } from "@shared/assignable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -257,7 +258,9 @@ function SortableTaskRow({
   onBulkSelect: () => void;
   statusOptions: any[];
   priorityOptions: any[];
-  users: User[];
+  // The assignable projection, not a User row — the row only ever reads an
+  // id and a name to draw an avatar and a label.
+  users: AssignablePerson[];
   projects: Project[];
   onUpdate: (field: string, value: any) => void;
   columnOrder: TaskColumnKey[];
@@ -660,8 +663,8 @@ export default function TaskListCompact({
   });
 
   // Fetch users for assignee dropdown
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: users = [] } = useQuery<AssignablePerson[]>({
+    queryKey: ["/api/users/assignable"],
   });
 
   // Fetch projects for project column

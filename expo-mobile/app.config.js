@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "Morada",
     slug: "buildpro-mobile",
-    version: "1.0.2",
+    version: "1.1.0",
     scheme: "buildpro",
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -24,9 +24,13 @@ module.exports = {
       fallbackToCacheTimeout: 0,
     },
     ios: {
-      supportsTablet: true,
+      // iPhone only for now: the screens are laid out for a phone and have
+      // never been tested on iPad. App Review tests on iPad when this is true.
+      supportsTablet: false,
       bundleIdentifier: "com.buildpro.mobile",
-      buildNumber: "16",
+      // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
+      usesAppleSignIn: true,
+      buildNumber: "17",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -37,7 +41,7 @@ module.exports = {
         backgroundColor: "#7C6B86",
       },
       package: "com.buildpro.mobile",
-      versionCode: 13,
+      versionCode: 14,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
@@ -52,12 +56,13 @@ module.exports = {
       "expo-web-browser",
       "expo-font",
       "expo-notifications",
+      "expo-apple-authentication",
       "@react-native-community/datetimepicker",
       [
         "expo-image-picker",
         {
-          photosPermission: "Morada needs access to your photos to attach images to notes.",
-          cameraPermission: "Morada needs access to your camera to take photos for notes.",
+          photosPermission: "Morada uses your photos so you can attach them to site diary entries, checklists, receipts, notes and messages.",
+          cameraPermission: "Morada uses your camera so you can photograph site progress, checklist items and receipts.",
         },
       ],
       [

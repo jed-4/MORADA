@@ -12,6 +12,48 @@
  * the client is shown.
  */
 import type { VariationDocumentColumns } from "@shared/variationDocumentColumns";
+import { claimStage } from "@shared/claimSchedule";
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
+/**
+ * A project as a client sees it, from GET /projects and GET /projects/:id.
+ *
+ * Those routes send whole `projects` rows to the team, and until this
+ * projection a client got the same: budget, contract cost and price, the
+ * contracted totals, the trades-portal TOKEN (which opens the trades portal),
+ * Xero and Google Drive ids, the owner, and the list's foreman enrichment.
+ *
+ * Kept: what client-reachable code actually reads (2026-10-27 sweep of the web
+ * client portal — ProjectContext, ClientHome, SidebarNav, ProjectSwitcher,
+ * CustomizableProjectOverview — and the Expo client mode): identity, name,
+ * place, status/phase, icon/colour, the archived/business flags the shell
+ * filters on, and the client badge (clientId + the list's clientName). Plus
+ * the timeline a homeowner may be shown (dates, percent complete, progress).
+ */
+export function projectClientProject(project: any) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description ?? null,
+    location: project.location ?? null,
+    status: project.status ?? null,
+    projectStatus: project.projectStatus ?? null,
+    currentSystemPhase: project.currentSystemPhase ?? null,
+    icon: project.icon ?? null,
+    color: project.color ?? null,
+    isArchived: !!project.isArchived,
+    isBusiness: !!project.isBusiness,
+    clientId: project.clientId ?? null,
+    // List enrichment: present on GET /projects only.
+    ...("clientName" in project ? { clientName: project.clientName ?? null } : {}),
+    ...("progress" in project ? { progress: project.progress ?? null } : {}),
+    startDate: project.startDate ?? null,
+    endDate: project.endDate ?? null,
+    practicalCompletionDate: project.practicalCompletionDate ?? null,
+    percentComplete: project.percentComplete ?? null,
+  };
+}
 
 // ── Variations ──────────────────────────────────────────────────────────────
 
@@ -119,6 +161,37 @@ export const CLIENT_VISIBLE_INVOICE_STATUSES = new Set(["sent", "partial", "paid
 
 export function isInvoiceClientVisible(invoice: { status?: string | null } | null | undefined): boolean {
   return !!invoice && CLIENT_VISIBLE_INVOICE_STATUSES.has(String(invoice.status));
+}
+
+/**
+ * The forecast half of a claim: what the client was TOLD to expect.
+ *
+ * A claim the builder has shared but not yet sent appears in the client's
+ * payment schedule, and it must carry almost nothing — a name, when it is
+ * expected, and the frozen figure. Everything else is still being worked on.
+ *
+ * In particular it must not carry `totalAmount`, `subtotal`, `gstAmount`,
+ * `lineBreakdown` or anything derived from them. That is the entire
+ * requirement: the builder keeps editing the draft and the client sees a
+ * number that does not move. A field added to `projectClientInvoice` below is
+ * NOT automatically safe here — this projection is an allow-list on purpose,
+ * and the test file pins that it stays one.
+ */
+export function projectClientClaimForecast(invoice: any) {
+  return {
+    id: invoice.id,
+    projectId: invoice.projectId,
+    name: invoice.name,
+    // No invoiceNumber: an unsent claim has not been issued, and showing a
+    // number invites the client to treat it as a document they can pay.
+    invoiceDate: invoice.invoiceDate,
+    dueDate: invoice.dueDate,
+    // "upcoming" — never the builder's word "draft". See shared/claimSchedule.ts.
+    stage: claimStage(invoice),
+    // The frozen figure, and nothing that would reveal the live one.
+    amountIncCents: invoice.clientSharedAmountCents ?? null,
+    sharedAt: invoice.clientSharedAt,
+  };
 }
 
 /**

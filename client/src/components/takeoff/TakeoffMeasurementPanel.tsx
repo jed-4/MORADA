@@ -19,6 +19,8 @@ import {
   Pencil,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ChevronLast,
   MoreVertical,
   GripVertical,
@@ -287,24 +289,51 @@ export default function TakeoffMeasurementPanel({
   const toggleGroup = (catId: string) =>
     setCollapsed((prev) => ({ ...prev, [catId]: !prev[catId] }));
 
+  /* Collapse / expand every category at once — the same control the take-off
+     TEMPLATE editor has, so the two lists behave alike. Derived from the groups
+     rather than kept as its own flag: collapsing the last open category on its
+     own must leave the button offering "expand", and a stored boolean drifts
+     out of step with the rows the moment one is toggled by hand. */
+  const allCollapsed = ordered.length > 0 && ordered.every((g) => collapsed[g.id]);
+  const toggleAllGroups = () =>
+    setCollapsed(allCollapsed ? {} : Object.fromEntries(ordered.map((g) => [g.id, true])));
+
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
-      <div className="px-3 py-2 border-b border-border flex items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">
-            This plan — all pages
-          </div>
-          <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
+      {/* One row, not two. The plan's name was repeated here from the viewer's
+          own title bar directly above, and the two-line block cost the list
+          another 48px for nothing. */}
+      <div className="h-9 px-3 border-b border-border flex items-center gap-1 flex-shrink-0">
+        {/* "All pages", not "Measurements": the column header below already
+            says what the list is, and the one thing that is NOT obvious is
+            that it shows the whole plan rather than the page on screen. At the
+            default panel width a longer label simply truncates to nothing. */}
+        <div className="flex-1 min-w-0 text-xs uppercase tracking-wide text-muted-foreground truncate" title="Every measurement on this plan, not just the page on screen">
+          All pages
         </div>
-        <Button size="sm" variant="ghost" onClick={onAddClick} data-testid="button-add-measurement-header">
-          <Plus className="h-4 w-4 mr-1" /> Add measurement
+        <Button size="sm" variant="ghost" className="h-6 px-2" onClick={onAddClick} data-testid="button-add-measurement-header">
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add
         </Button>
+        {/* Icon-only, and it says which way it goes — same control and same
+            wording as the take-off template editor. */}
+        {ordered.length > 1 && (
+          <button
+            className="h-6 w-6 flex items-center justify-center border border-border/50 rounded-md text-muted-foreground hover-elevate active-elevate-2 flex-shrink-0"
+            onClick={toggleAllGroups}
+            title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+            aria-label={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+            data-testid="button-toggle-all-groups"
+          >
+            {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+          </button>
+        )}
         {onCollapse && (
           <Button
             size="icon"
             variant="ghost"
+            className="h-6 w-6 flex-shrink-0"
             onClick={onCollapse}
-            title="Collapse panel"
+            title="Hide the measurements panel"
             data-testid="button-collapse-panel"
           >
             <ChevronLast className="h-4 w-4" />
@@ -312,13 +341,13 @@ export default function TakeoffMeasurementPanel({
         )}
       </div>
 
-      <div className="px-3 py-2 border-b border-border flex items-center text-xs font-medium text-muted-foreground">
+      <div className="px-3 py-1 border-b border-border flex items-center text-xs font-medium text-muted-foreground flex-shrink-0">
         <span className="flex-1">Name</span>
         <span className="w-20 text-right">Qty</span>
         <span className="w-8" />
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto">
         {ordered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground text-center">
             No measurements on this plan yet.
