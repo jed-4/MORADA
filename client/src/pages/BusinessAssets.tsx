@@ -8,7 +8,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { AssetDetail } from "@/components/assets/AssetDetail";
 import { AssetDialog } from "@/components/assets/AssetDialogs";
-import { AssetRegisterSettingsButton } from "@/components/assets/AssetRecharge";
 import {
   ASSETS_KEY,
   ASSIGNABLE_USERS_KEY,
@@ -270,7 +269,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
               </Popover>
             </>
           )}
-          <AssetRegisterSettingsButton canEdit={canEdit} />
           {canAdd && (
             <button type="button" onClick={() => setAdding(true)} className={PRIMARY_BUTTON} data-testid="button-add-asset">
               <Plus className="w-3.5 h-3.5" />Add asset

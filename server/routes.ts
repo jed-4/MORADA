@@ -50103,36 +50103,40 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       return p ?? null;
     };
 
-    app.get("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    // Which cost code vehicle day-rate charges land on in each job's budget.
+    // Set from the Cost Codes page, so it follows the cost-code routes' gate
+    // (any team member). Not under /api/cost-codes/: GET /api/cost-codes/:id
+    // would shadow it. Unset = charges show as their own "Vehicles & plant" line.
+    app.get("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
         const [row] = await db.select().from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1);
-        res.json({ rechargeCostCodeId: row?.rechargeCostCodeId ?? null });
+        res.json({ costCodeId: row?.rechargeCostCodeId ?? null });
       } catch (error) {
-        console.error("[assets] settings read failed:", error);
-        res.status(500).json({ error: "Failed to load settings" });
+        console.error("[assets] vehicle charge code read failed:", error);
+        res.status(500).json({ error: "Failed to load" });
       }
     });
 
-    app.put("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.put("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-        const parsed = z.object({ rechargeCostCodeId: z.string().min(1).nullable() }).safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: "Invalid settings", issues: parsed.error.issues });
-        if (parsed.data.rechargeCostCodeId) {
+        const parsed = z.object({ costCodeId: z.string().min(1).nullable() }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+        if (parsed.data.costCodeId) {
           const [code] = await db.select({ id: costCodesTable.id }).from(costCodesTable)
-            .where(and(eq(costCodesTable.id, parsed.data.rechargeCostCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
+            .where(and(eq(costCodesTable.id, parsed.data.costCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
           if (!code) return res.status(404).json({ error: "Cost code not found" });
         }
         await db.insert(assetRegisterSettings)
-          .values({ companyId, rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() })
-          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() } });
-        res.json({ rechargeCostCodeId: parsed.data.rechargeCostCodeId });
+          .values({ companyId, rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() } });
+        res.json({ costCodeId: parsed.data.costCodeId });
       } catch (error) {
-        console.error("[assets] settings save failed:", error);
-        res.status(500).json({ error: "Failed to save settings" });
+        console.error("[assets] vehicle charge code save failed:", error);
+        res.status(500).json({ error: "Failed to save" });
       }
     });
 

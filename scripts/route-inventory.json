@@ -200,7 +200,6 @@
     "server/routes.ts GET /api/asset-options",
     "server/routes.ts GET /api/asset-prestarts/assets",
     "server/routes.ts GET /api/asset-prestarts/assets/:id",
-    "server/routes.ts GET /api/asset-register/settings",
     "server/routes.ts GET /api/assets",
     "server/routes.ts GET /api/assets/:id",
     "server/routes.ts GET /api/assets/:id/bill-line-suggestions",
@@ -660,6 +659,7 @@
     "server/routes.ts GET /api/variations/:id/sends",
     "server/routes.ts GET /api/variations/:id/sends/:sendId/pdf",
     "server/routes.ts GET /api/variations/:id/timesheets",
+    "server/routes.ts GET /api/vehicle-charge-cost-code",
     "server/routes.ts GET /api/weather",
     "server/routes.ts GET /api/xero/accounts",
     "server/routes.ts GET /api/xero/bills/import",
@@ -1324,7 +1324,6 @@
     "server/routes.ts POST /api/xero/sync-overhead-actuals",
     "server/routes.ts POST /api/xero/sync-purchase-order/:id",
     "server/routes.ts POST /api/xero/webhook",
-    "server/routes.ts PUT /api/asset-register/settings",
     "server/routes.ts PUT /api/bills/:billId/line-items",
     "server/routes.ts PUT /api/cashflow/asset-renewals",
     "server/routes.ts PUT /api/cashflow/projects/:projectId/claims",
@@ -1343,6 +1342,7 @@
     "server/routes.ts PUT /api/template-group-order",
     "server/routes.ts PUT /api/timesheets/:timesheetId/cost-codes",
     "server/routes.ts PUT /api/uploads/local/:objectId",
-    "server/routes.ts PUT /api/users/:userId/project-access/bulk"
+    "server/routes.ts PUT /api/users/:userId/project-access/bulk",
+    "server/routes.ts PUT /api/vehicle-charge-cost-code"
   ]
 }
