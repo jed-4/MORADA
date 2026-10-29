@@ -2654,7 +2654,7 @@ export const emailDeliveries = pgTable("email_deliveries", {
 
   fromAddress: text("from_address"),
   replyTo: text("reply_to"),
-  /** The rendered HTML exactly as sent. Null when redacted or pre-0114. */
+  /** The rendered HTML exactly as sent. Null when redacted or pre-0118. */
   htmlBody: text("html_body"),
   /** Body deliberately not kept — it carried a live sign-in link. */
   bodyRedacted: boolean("body_redacted").notNull().default(false),
