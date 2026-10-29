@@ -20,6 +20,7 @@ import type { Contact } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permission";
 import { CLIENT_PORTAL_ACCESS_KEY } from "@shared/clientPortalPermissions";
 import { GivePortalAccessDialog } from "./GivePortalAccessDialog";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 type PortalAccessInfo = {
   status: "none" | "invited" | "active" | "revoked";
@@ -93,6 +94,7 @@ export function PortalAccessSection({ contact }: { contact: Contact }) {
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-0.5">
           <p className="text-base font-medium">Portal access</p>
+          {status === "invited" && <BouncedAddressWarning emails={[email]} />}
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Checking access…</p>
           ) : status === "none" ? (

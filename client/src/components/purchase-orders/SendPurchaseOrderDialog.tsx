@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PurchaseOrderDocument } from "./pdf/PurchaseOrderDocument";
 import type { PurchaseOrder, PurchaseOrderItem } from "@shared/schema";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 interface Company {
   name: string;
@@ -149,6 +150,11 @@ export function SendPurchaseOrderDialog({
               placeholder="supplier@example.com"
               className="mt-1"
               data-testid="input-send-email"
+            />
+            <BouncedAddressWarning
+              emails={to.split(/[,;\s]+/)}
+              onUseSuggestion={(bad, fix) => setTo(to.replace(bad, fix))}
+              className="mt-2"
             />
           </div>
           <div>

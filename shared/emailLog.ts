@@ -214,3 +214,65 @@ export interface EmailLogDetail extends EmailLogRow {
   timeline: EmailTimelineEvent[];
   resentAs: Array<{ id: string; sentAt: string; toAddresses: string[]; status: string }>;
 }
+
+// ── Fixing an address ───────────────────────────────────────────────────────
+
+/** Domain typos common enough to be worth a suggestion. Exact matches only —
+ *  a guess about an unfamiliar domain would be worse than no guess. */
+const DOMAIN_FIXES: Record<string, string> = {
+  "gmial.com": "gmail.com",
+  "gmai.com": "gmail.com",
+  "gmal.com": "gmail.com",
+  "gamil.com": "gmail.com",
+  "gnail.com": "gmail.com",
+  "gmail.co": "gmail.com",
+  "gmail.con": "gmail.com",
+  "gmail.com.au": "gmail.com",
+  "hotmial.com": "hotmail.com",
+  "hotmai.com": "hotmail.com",
+  "hotmail.con": "hotmail.com",
+  "outlok.com": "outlook.com",
+  "outlook.con": "outlook.com",
+  "yaho.com": "yahoo.com",
+  "yahoo.con": "yahoo.com",
+  "icloud.con": "icloud.com",
+  "iclod.com": "icloud.com",
+  "bigpond.con": "bigpond.com",
+  "bigpong.com": "bigpond.com",
+  "optusnet.com": "optusnet.com.au",
+};
+
+/**
+ * A likely correction for an address that bounced, or null.
+ *
+ * Deliberately narrow. The email that started all this went to
+ * `name_@gmail.com` — valid syntax, so no rule could have caught it, and
+ * guessing at the local part would put words in a client's mouth. What IS
+ * safe to suggest: whitespace, a doubled or trailing dot, a comma for a dot,
+ * and the well-known domain typos above.
+ */
+export function suggestEmailFix(address: string): string | null {
+  const original = address;
+  let a = address.trim().toLowerCase().replace(/\s+/g, "").replace(/,/g, ".").replace(/\.{2,}/g, ".").replace(/\.$/, "");
+  const at = a.lastIndexOf("@");
+  if (at < 1) return null;
+  const local = a.slice(0, at).replace(/\.$/, "");
+  let domain = a.slice(at + 1);
+  domain = DOMAIN_FIXES[domain] ?? domain;
+  a = `${local}@${domain}`;
+  return a !== original.trim().toLowerCase() ? a : null;
+}
+
+/** Loose check, matching what the send routes accept. */
+export function isPlausibleEmail(address: string): boolean {
+  return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(address.trim());
+}
+
+/** An address that has bounced or complained, and not been delivered to since. */
+export interface AddressProblem {
+  address: string;
+  status: "bounced" | "complained";
+  detail: string | null;
+  at: string;
+  deliveryId: string;
+}

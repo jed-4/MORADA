@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 type GivePortalAccessDialogProps = {
   open: boolean;
@@ -69,6 +70,7 @@ export function GivePortalAccessDialog({
                 <p className="font-medium" data-testid="text-portal-invite-email">{email}</p>
               </div>
             </div>
+            <BouncedAddressWarning emails={[email]} />
             <div className="flex items-center gap-3">
               <ShieldCheck className="h-4 w-4 text-muted-foreground shrink-0" />
               <div>

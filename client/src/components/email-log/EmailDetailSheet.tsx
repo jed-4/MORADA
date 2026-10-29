@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -5,6 +6,9 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { EmailStatusChip } from "./EmailStatusChip";
+import { ResendEmailDialog } from "./ResendEmailDialog";
+import { usePermission } from "@/hooks/use-permission";
+import { useAuth } from "@/hooks/use-auth";
 import {
   deliveryHealth,
   emailContextHref,
@@ -12,7 +16,7 @@ import {
   type EmailLogDetail,
   type EmailTimelineEvent,
 } from "@shared/emailLog";
-import { ExternalLink, FileText, Lock, Paperclip } from "lucide-react";
+import { ExternalLink, FileText, Lock, Paperclip, RotateCw } from "lucide-react";
 
 const fmt = (iso: string) => format(new Date(iso), "d MMM yyyy, h:mm a");
 
@@ -60,7 +64,15 @@ export function EmailDetailSheet({
     staleTime: 15_000,
   });
 
+  const { user } = useAuth();
+  const canResendAny = usePermission("admin.email_log", "send");
+  const [resendOpen, setResendOpen] = useState(false);
+
   const health = email ? deliveryHealth(email, { trackingEnabled }) : null;
+  const canResend = !!email?.htmlBody && (canResendAny || email.userId === (user as any)?.id);
+  // Resending a problem email is the obvious next step; resending one that
+  // arrived is occasionally useful ("can you send it again?") but not the point.
+  const resendIsTheFix = !!health?.needsAttention;
   const docHref = email ? emailContextHref(email.contextType, email.contextId, email.projectId) : null;
 
   return (
@@ -111,9 +123,27 @@ export function EmailDetailSheet({
             </SheetHeader>
 
             {health?.needsAttention && (
-              <div className="mx-6 mt-4 rounded-md border border-status-danger-bg bg-status-danger-bg/40 px-3 py-2 text-xs text-status-danger-fg" data-testid="callout-email-problem">
+              <div
+                className={cn(
+                  "mx-6 mt-4 rounded-md border px-3 py-2 text-xs",
+                  health.tone === "negative"
+                    ? "border-status-danger-bg bg-status-danger-bg/40 text-status-danger-fg"
+                    : "border-status-warning-bg bg-status-warning-bg/40 text-status-warning-fg",
+                )}
+                data-testid="callout-email-problem"
+              >
                 <p className="font-medium">{health.label}</p>
                 <p className="mt-0.5">{health.hint}</p>
+                {canResend && (
+                  <button
+                    type="button"
+                    onClick={() => setResendOpen(true)}
+                    className="mt-2 h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 inline-flex items-center gap-1"
+                    data-testid="button-fix-and-resend"
+                  >
+                    <RotateCw className="h-3 w-3" /> Fix address and resend
+                  </button>
+                )}
               </div>
             )}
 
@@ -131,6 +161,18 @@ export function EmailDetailSheet({
               <dt className="text-muted-foreground">Sent by</dt>
               <dd>{email.senderName || "Morada (automatic)"}</dd>
             </dl>
+            {canResend && !resendIsTheFix && (
+              <div className="px-6 -mt-1 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setResendOpen(true)}
+                  className="h-6 w-auto px-2 text-xs border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 inline-flex items-center gap-1"
+                  data-testid="button-resend-email"
+                >
+                  <RotateCw className="h-3 w-3" /> Resend
+                </button>
+              </div>
+            )}
 
             <section className="px-6 pb-4">
               <h3 className="text-xs font-semibold mb-2">What happened</h3>
@@ -228,6 +270,14 @@ export function EmailDetailSheet({
                 </div>
               )}
             </section>
+            {email && (
+              <ResendEmailDialog
+                email={email}
+                open={resendOpen}
+                onOpenChange={setResendOpen}
+                onResent={(newId) => newId && onOpenEmail(newId)}
+              />
+            )}
           </div>
         )}
       </SheetContent>

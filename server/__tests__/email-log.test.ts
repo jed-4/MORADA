@@ -14,7 +14,7 @@
  */
 import assert from "node:assert";
 import { deliveryPatch, parseResendEvent, type ResendDeliveryEvent } from "../services/resendWebhook";
-import { deliveryHealth, emailContextHref, emailTypeLabel } from "@shared/emailLog";
+import { deliveryHealth, emailContextHref, emailTypeLabel, suggestEmailFix, isPlausibleEmail } from "@shared/emailLog";
 
 let passed = 0;
 let failed = 0;
@@ -164,6 +164,34 @@ check("links need a project, and point at the right page", () => {
   assert.strictEqual(emailContextHref("rfq_reminder", "r1", "p1"), "/projects/p1/rfqs/r1");
   assert.strictEqual(emailContextHref("variation", "v1", null), null);
   assert.strictEqual(emailContextHref("password_reset", "u1", "p1"), null);
+});
+
+console.log("suggestEmailFix:");
+
+check("well-known domain typos are corrected", () => {
+  assert.strictEqual(suggestEmailFix("sam@gmial.com"), "sam@gmail.com");
+  assert.strictEqual(suggestEmailFix("sam@hotmail.con"), "sam@hotmail.com");
+  assert.strictEqual(suggestEmailFix("sam@optusnet.com"), "sam@optusnet.com.au");
+});
+
+check("whitespace, commas and stray dots are cleaned", () => {
+  assert.strictEqual(suggestEmailFix(" sam @gmail.com "), "sam@gmail.com");
+  assert.strictEqual(suggestEmailFix("sam@gmail,com"), "sam@gmail.com");
+  assert.strictEqual(suggestEmailFix("sam.@gmail.com."), "sam@gmail.com");
+});
+
+check("the local part is never guessed at (the original bounce)", () => {
+  assert.strictEqual(suggestEmailFix("jedsmithh4_@gmail.com"), null);
+});
+
+check("a correct address gets no suggestion", () => {
+  assert.strictEqual(suggestEmailFix("Sam@Example.com.au"), null);
+});
+
+check("isPlausibleEmail", () => {
+  assert.ok(isPlausibleEmail("a@b.co"));
+  assert.ok(!isPlausibleEmail("a@b"));
+  assert.ok(!isPlausibleEmail("a b@c.com"));
 });
 
 console.log(`\nemail-log: ${passed} passed, ${failed} failed`);

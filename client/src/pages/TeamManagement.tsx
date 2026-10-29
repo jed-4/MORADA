@@ -27,6 +27,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type UserInvitation } from "@shared/schema";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 export default function TeamManagement() {
   const [, navigate] = useLocation();
@@ -472,6 +473,8 @@ function PendingInvitationCard({
               </span>
             )}
           </div>
+          {/* Resending to an address that already bounced will bounce again. */}
+          <BouncedAddressWarning emails={[invitation.email]} className="mt-1.5" />
         </div>
 
         <div className={`flex items-center gap-1 shrink-0 ${isHovered ? 'visible' : 'invisible'}`}>

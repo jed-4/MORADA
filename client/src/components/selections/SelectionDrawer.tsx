@@ -38,6 +38,7 @@ import {
   SelectionThumbnail,
 } from "./selectionHelpers";
 import { useSelectionPdfExport } from "./useSelectionPdfExport";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 export function SelectionDrawer({
   selection,
@@ -188,6 +189,7 @@ export function SelectionDrawer({
             </button>
           </div>
           {sendOpen && (
+            <>
             <form
               className="flex items-center gap-1.5 pb-2.5"
               onSubmit={(e) => { e.preventDefault(); if (sendTo.trim()) sendPortalMutation.mutate(); }}
@@ -205,6 +207,12 @@ export function SelectionDrawer({
                 {sendPortalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Send"}
               </Button>
             </form>
+            <BouncedAddressWarning
+              emails={[sendTo]}
+              onUseSuggestion={(bad, fix) => setSendTo(sendTo.replace(bad, fix))}
+              className="mb-2.5"
+            />
+            </>
           )}
         </SheetHeader>
 

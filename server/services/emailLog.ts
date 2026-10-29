@@ -20,10 +20,12 @@ import {
   ATTENTION_WINDOW_MS,
   NO_CONFIRMATION_AFTER_MS,
   emailTypeKey,
+  isPlausibleEmail,
   type EmailLogDetail,
   type EmailLogListResponse,
   type EmailLogRow,
   type EmailTimelineEvent,
+  type AddressProblem,
 } from "@shared/emailLog";
 
 /**
@@ -522,4 +524,139 @@ async function portalEvents(row: DeliveryRow, companyId: string): Promise<EmailT
     console.error("[email-log] portal events failed:", err?.message);
   }
   return out;
+}
+
+/**
+ * Addresses among `emails` whose most recent outcome in this company was a
+ * bounce or a spam complaint — i.e. the next email to them will likely fail
+ * the same way. A later successful delivery clears it.
+ *
+ * Only single-recipient bounces count: a bounce on a message sent to two
+ * people does not say which of them is wrong, and warning about the good
+ * address would teach people to ignore the warning.
+ */
+export async function findAddressProblems(companyId: string, emails: string[]): Promise<AddressProblem[]> {
+  const wanted = Array.from(new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))).slice(0, 50);
+  if (!wanted.length) return [];
+  const list = sql.join(wanted.map((e) => sql`${e}`), sql`, `);
+  const result: any = await db.execute(sql`
+    SELECT DISTINCT ON (addr) addr, d.id, d.status, d.status_detail,
+           -- As text: raw pg reads a tz-less timestamp as LOCAL time, while
+           -- Drizzle (everywhere else) reads it as UTC.
+           coalesce(d.status_updated_at, d.sent_at)::text AS at
+      FROM email_deliveries d,
+           LATERAL (SELECT lower(a) AS addr FROM jsonb_array_elements_text(d.to_addresses) a) x
+     WHERE d.company_id = ${companyId}
+       AND addr IN (${list})
+       AND d.sent_at > now() - interval '365 days'
+       AND (d.status = 'delivered'
+            OR (d.status IN ('bounced', 'complained') AND jsonb_array_length(d.to_addresses) = 1))
+     ORDER BY addr, d.sent_at DESC
+  `);
+  return (result.rows ?? [])
+    .filter((r: any) => r.status === "bounced" || r.status === "complained")
+    .map((r: any): AddressProblem => ({
+      address: r.addr,
+      status: r.status,
+      detail: r.status_detail ?? null,
+      at: new Date(`${String(r.at).replace(" ", "T")}Z`).toISOString(),
+      deliveryId: r.id,
+    }));
+}
+
+export class ResendRefused extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+  }
+}
+
+/**
+ * Send the stored copy of an email again — to a corrected address, usually.
+ *
+ * What goes out is the message exactly as it was, attachments included, from
+ * the stored copies; nothing is re-rendered, so a document that has changed
+ * since is not silently swapped for its newer version. The new row points at
+ * the original (resent_from_id), so the log reads as one story.
+ *
+ * Refused when there is nothing faithful to send: no stored body (sent before
+ * the log kept copies, or a redacted sign-in email — those have their own
+ * resend buttons that mint a fresh link), or an attachment that was not kept.
+ */
+export async function resendDelivery(
+  scope: EmailLogScope,
+  id: string,
+  opts: { to: string[]; actorUserId: string },
+): Promise<{ deliveryId: string | null }> {
+  const row = await getEmailDelivery(scope, id);
+  if (!row) throw new ResendRefused("Email not found", 404);
+  if (row.bodyRedacted) {
+    throw new ResendRefused("This email carried a personal sign-in link, so no copy was kept. Resend it from the invite or password screen, which issues a fresh link.");
+  }
+  if (!row.htmlBody) {
+    throw new ResendRefused("No copy of this email was kept — it was sent before Morada kept copies. Send it again from the document.");
+  }
+  const to = Array.from(new Set(opts.to.map((e) => e.trim()).filter(Boolean)));
+  if (!to.length || to.some((e) => !isPlausibleEmail(e))) {
+    throw new ResendRefused("Enter a valid email address.");
+  }
+  if (to.length > 10) throw new ResendRefused("Resend to at most 10 addresses at once.");
+
+  const stored = row.attachments ?? [];
+  if (stored.some((a) => !a.objectPath)) {
+    throw new ResendRefused("An attachment on this email was not kept, so it cannot be resent exactly. Send it again from the document.", 409);
+  }
+  const { ObjectStorageService } = await import("../replit_integrations/object_storage");
+  const oss = new ObjectStorageService();
+  const attachments = await Promise.all(stored.map(async (a) => {
+    if (!a.objectPath!.startsWith(`/objects/company/${scope.companyId}/`)) {
+      throw new ResendRefused("Attachment not found", 404);
+    }
+    const file = await oss.getObjectEntityFile(a.objectPath!.replace(/^\/objects\/company\/[^/]+\//, "/objects/"));
+    const [bytes] = await file.download();
+    return { filename: a.filename, content: Buffer.from(bytes).toString("base64"), mimeType: a.contentType ?? undefined };
+  }));
+
+  const { sendGenericEmail } = await import("../utils/email");
+  const result = await sendGenericEmail({
+    to,
+    subject: row.subject ?? "",
+    html: row.htmlBody,
+    // Keep the builder-branded "X via Morada" sender; a Gmail original goes
+    // out through the resender's own Gmail when they have it connected.
+    from: row.provider === "resend" && row.fromAddress ? row.fromAddress : undefined,
+    replyTo: row.replyTo ?? undefined,
+    userId: opts.actorUserId,
+    attachments: attachments.length ? attachments : undefined,
+    context: { type: row.contextType ?? "resend", id: row.contextId, companyId: scope.companyId },
+  });
+
+  if (result.deliveryId) {
+    await db.update(emailDeliveries).set({ resentFromId: row.id } as any).where(eq(emailDeliveries.id, result.deliveryId));
+  }
+  return { deliveryId: result.deliveryId ?? null };
+}
+
+/**
+ * Replace a bad address wherever the company keeps it — contacts, suppliers
+ * and supplier contacts — so the next email does not bounce the same way.
+ * Exact (case-insensitive) matches only, and only inside this company.
+ */
+export async function replaceAddressInAddressBook(
+  companyId: string,
+  oldAddress: string,
+  newAddress: string,
+): Promise<{ contacts: number; suppliers: number; supplierContacts: number }> {
+  const oldLower = oldAddress.trim().toLowerCase();
+  const next = newAddress.trim();
+  const [c, s, sc]: any[] = await Promise.all([
+    db.execute(sql`UPDATE contacts SET email = ${next}
+                    WHERE company_id = ${companyId} AND lower(trim(email)) = ${oldLower}`),
+    db.execute(sql`UPDATE suppliers SET email = ${next}
+                    WHERE company_id = ${companyId} AND lower(trim(email)) = ${oldLower}`),
+    db.execute(sql`UPDATE supplier_contacts sc SET email = ${next}
+                     FROM suppliers s
+                    WHERE s.id = sc.supplier_id AND s.company_id = ${companyId}
+                      AND lower(trim(sc.email)) = ${oldLower}`),
+  ]);
+  return { contacts: c.rowCount ?? 0, suppliers: s.rowCount ?? 0, supplierContacts: sc.rowCount ?? 0 };
 }

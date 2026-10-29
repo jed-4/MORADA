@@ -22,6 +22,7 @@ import { expiryFromDays } from "@shared/proposalExpiry";
 import { proposalFileName } from "@/components/proposals/proposalDisplay";
 import { format } from "date-fns";
 import type { Contact, Proposal } from "@shared/schema";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 interface Recipient {
   name?: string;
@@ -243,6 +244,13 @@ export function SendProposalDialog({
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            <BouncedAddressWarning
+              emails={[...recipients.map((r) => r.email), newEmail]}
+              onUseSuggestion={(bad, fix) => {
+                if (newEmail.trim() === bad) setNewEmail(fix);
+                setRecipients((prev) => prev.map((r) => (r.email === bad ? { ...r, email: fix } : r)));
+              }}
+            />
           </div>
 
           <div className="space-y-2">

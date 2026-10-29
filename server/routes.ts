@@ -32,7 +32,7 @@ import {
 } from "./replit_integrations/object_storage/localObjectStorage";
 import { renderClientEmail } from "./services/clientEmailShell";
 import { verifyResendSignature, parseResendEvent, deliveryPatch } from "./services/resendWebhook";
-import { listEmailDeliveries, getEmailDelivery, getEmailDeliveryDetail, type EmailLogScope } from "./services/emailLog";
+import { listEmailDeliveries, getEmailDelivery, getEmailDeliveryDetail, findAddressProblems, resendDelivery, replaceAddressInAddressBook, ResendRefused, type EmailLogScope } from "./services/emailLog";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -30144,6 +30144,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * "Has this address bounced before?" — for the send dialogs, before the
+   * email goes. Any team member: it says only that an address failed, which
+   * they are about to find out the hard way otherwise. Registered before
+   * /:id so the literal path is not read as an id.
+   */
+  app.get("/api/email-deliveries/address-check", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const emails = String(req.query.emails ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+      res.json({ problems: await findAddressProblems(companyId, emails) });
+    } catch (error) {
+      console.error("Error checking email addresses:", error);
+      // A warning that cannot load must not block a send.
+      res.json({ problems: [] });
+    }
+  });
+
   app.get("/api/email-deliveries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const scope = await emailLogScope(req);
@@ -30154,6 +30173,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error loading email delivery:", error);
       res.status(500).json({ error: "Failed to load the email" });
+    }
+  });
+
+  /**
+   * Fix and resend: the stored copy, attachments included, to a corrected
+   * address. Your own emails always; anyone else's needs admin.email_log:send.
+   */
+  app.post("/api/email-deliveries/:id/resend", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const row = await getEmailDelivery(scope, req.params.id);
+      if (!row) return res.status(404).json({ error: "Email not found" });
+      if (row.userId !== req.user.id && !(await userHasPermission(req.user, "admin.email_log", "send"))) {
+        return res.status(403).json({ error: "You can resend only the emails you sent" });
+      }
+
+      const to: string[] = Array.isArray(req.body?.to) ? req.body.to.map(String) : [];
+      const result = await resendDelivery(scope, row.id, { to, actorUserId: req.user.id });
+
+      // One bad address swapped for one good one is unambiguous enough to
+      // carry into the address book; anything else is left alone.
+      let addressBook = null;
+      const original = row.toAddresses ?? [];
+      if (req.body?.updateAddressBook && original.length === 1 && to.length === 1
+          && original[0].trim().toLowerCase() !== to[0].trim().toLowerCase()) {
+        addressBook = await replaceAddressInAddressBook(scope.companyId, original[0], to[0]);
+      }
+      res.json({ ...result, addressBook });
+    } catch (error: any) {
+      if (error instanceof ResendRefused) return res.status(error.status).json({ error: error.message });
+      console.error("Error resending email:", error);
+      res.status(502).json({ error: "The email could not be resent", detail: error?.message });
     }
   });
 
