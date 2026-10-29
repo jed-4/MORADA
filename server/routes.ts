@@ -3212,7 +3212,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // DOCS — company-level documents (SOPs, procedures, guides)
   // ============================================================
 
-  app.get("/api/docs", requireAuth, async (req, res) => {
+  // Cross-reference guards for the Operations routes. Each returns true when the
+  // id is absent (nothing to check) or names a row the caller's company owns.
+  const docFolderIsOwn = async (companyId: string, folderId: unknown): Promise<boolean> => {
+    if (folderId === undefined || folderId === null || folderId === "") return true;
+    if (typeof folderId !== "string") return false;
+    const folders = await storage.getDocFolders(companyId);
+    return folders.some((f) => f.id === folderId);
+  };
+
+  app.get("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -3227,7 +3236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/docs/:id", requireAuth, async (req, res) => {
+  app.get("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const doc = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!doc) return;
@@ -3237,9 +3246,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docs", requireAuth, async (req, res) => {
+  app.post("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const user = req.user as any;
+      if (!(await docFolderIsOwn(user.companyId, req.body?.folderId))) {
+        return res.status(400).json({ error: "Folder not found" });
+      }
       const doc = await storage.createDoc({
         ...req.body,
         companyId: user.companyId,
@@ -3253,11 +3265,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/docs/:id", requireAuth, async (req, res) => {
+  app.patch("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
-      const doc = await storage.updateDoc(req.params.id, req.body);
+      // The body went straight to .set(), so {companyId} moved a doc into
+      // another tenant and {folderId} could file it under a foreign folder.
+      const { id: _id, companyId: _co, ownerId: _owner, createdAt: _c, ...changes } = req.body ?? {};
+      if (!(await docFolderIsOwn((req.user as any).companyId, changes.folderId))) {
+        return res.status(400).json({ error: "Folder not found" });
+      }
+      const doc = await storage.updateDoc(req.params.id, changes);
       if (!doc) return res.status(404).json({ error: "Doc not found" });
       res.json(doc);
     } catch (error) {
@@ -3265,7 +3283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/docs/:id", requireAuth, async (req, res) => {
+  app.delete("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
@@ -3276,7 +3294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/doc-folders", requireAuth, async (req, res) => {
+  app.get("/api/doc-folders", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -3287,9 +3305,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/doc-folders", requireAuth, async (req, res) => {
+  app.post("/api/doc-folders", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
+      if (!(await docFolderIsOwn(companyId, req.body?.parentFolderId))) {
+        return res.status(400).json({ error: "Parent folder not found" });
+      }
       const folder = await storage.createDocFolder({ ...req.body, companyId });
       res.status(201).json(folder);
     } catch (error) {
@@ -3297,9 +3318,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/doc-folders/:id", requireAuth, async (req, res) => {
+  app.patch("/api/doc-folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
-      const folder = await storage.updateDocFolder(req.params.id, req.body);
+      // Had no ownership check at all: any folder was renamable by id, and a
+      // {companyId} in the body moved it into the caller's tenant.
+      if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
+      const { id: _id, companyId: _co, ...changes } = req.body ?? {};
+      if (changes.parentFolderId === req.params.id
+        || !(await docFolderIsOwn((req.user as any).companyId, changes.parentFolderId))) {
+        return res.status(400).json({ error: "Parent folder not found" });
+      }
+      const folder = await storage.updateDocFolder(req.params.id, changes);
       if (!folder) return res.status(404).json({ error: "Folder not found" });
       res.json(folder);
     } catch (error) {
@@ -3307,7 +3336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
+  app.delete("/api/doc-folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       // Ownership: doc folders carry companyId directly. Without this any
       // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
@@ -31882,7 +31911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Template Statuses routes (company-specific)
-  app.get("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/task-template-statuses", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const statuses = await storage.getTaskTemplateStatuses(req.user!.companyId);
       res.json(statuses);
@@ -31894,7 +31923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const status = await storage.getTaskTemplateStatus(req.params.id, req.user!.companyId);
       if (!status) {
@@ -31909,7 +31938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/task-template-statuses", requireAuth, requireTeamMember, requirePermission("operations.tasks", "add"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
@@ -31940,7 +31969,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -31967,7 +31996,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "delete"), async (req, res) => {
     try {
       const success = await storage.deleteTaskTemplateStatus(req.params.id, req.user!.companyId);
       if (!success) {
@@ -31982,7 +32011,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/task-template-statuses/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/task-template-statuses/reorder", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const { updates } = req.body;
       
@@ -40492,7 +40521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   // System Folders
-  app.get("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/folders", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { parentId } = req.query;
@@ -40506,7 +40535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const folder = await storage.getSystemFolder(req.params.id, companyId);
@@ -40519,7 +40548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/folders", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const validationResult = insertSystemFolderSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40545,7 +40574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const validationResult = insertSystemFolderSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40566,7 +40595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteSystemFolder(req.params.id, companyId);
@@ -40576,7 +40605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/folders/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/folders/reorder", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { updates } = req.body;
@@ -40588,7 +40617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // System Documents
-  app.get("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/documents", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { folderId } = req.query;
@@ -40602,7 +40631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const document = await storage.getSystemDocument(req.params.id, companyId);
@@ -40615,7 +40644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/documents", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const validationResult = insertSystemDocumentSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40651,7 +40680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const validationResult = insertSystemDocumentSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40692,7 +40721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteSystemDocument(req.params.id, companyId);
@@ -40702,7 +40731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/documents/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/documents/reorder", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { updates } = req.body;
@@ -40714,7 +40743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Templates
-  app.get("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/task-templates", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { isActive } = req.query;
@@ -40728,7 +40757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const template = await storage.getTaskTemplate(req.params.id, companyId);
@@ -40741,7 +40770,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+  // Every id a task template points at must belong to the caller's company.
+  // projectId matters most: generated tasks inherit it as their context, so a
+  // foreign project id attached this company's tasks to someone else's job.
+  // Returns the name of the first foreign field, or null when all are owned.
+  const foreignTaskTemplateRef = async (companyId: string, data: Record<string, any>): Promise<string | null> => {
+    const has = (v: unknown) => v !== undefined && v !== null && v !== "";
+    if (has(data.projectId)) {
+      const project = await storage.getProject(data.projectId);
+      if (!project || project.companyId !== companyId) return "Project";
+    }
+    if (has(data.statusId) && !(await storage.getTaskTemplateStatus(data.statusId, companyId))) return "Status";
+    if (has(data.defaultRoleId) && !(await storage.getUserRole(data.defaultRoleId, companyId))) return "Role";
+    if (has(data.categoryId) && !(await storage.getTemplateCategory(data.categoryId, companyId))) return "Category";
+    if (has(data.scopeStageId)) {
+      const stage = await storage.getScopeStage(data.scopeStageId);
+      if (!stage || (stage as any).companyId !== companyId) return "Scope stage";
+    }
+    if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
+      const tags = await Promise.all(data.tagIds.map((id: string) => storage.getTaskTag(id, companyId)));
+      if (tags.some((t) => !t)) return "Tag";
+    }
+    return null;
+  };
+
+  app.post("/api/systems/task-templates", requireAuth, requireTeamMember, requirePermission("operations.tasks", "add"), async (req, res) => {
     try {
       console.log("[POST /api/systems/task-templates] Request body:", JSON.stringify(req.body, null, 2));
       
@@ -40757,6 +40810,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId!;
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const foreignRef = await foreignTaskTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
 
       console.log("[POST /api/systems/task-templates] Creating template with companyId:", companyId, "createdBy:", createdBy);
 
@@ -40790,7 +40846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40801,6 +40857,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = req.user!.companyId!;
+      const foreignRef = await foreignTaskTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
       const template = await storage.updateTaskTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Task template not found" });
@@ -40827,7 +40885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteTaskTemplate(req.params.id, companyId);
@@ -40838,7 +40896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate recurring tasks from active templates (4-week rolling window)
-  app.post("/api/systems/task-templates/generate-recurring", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/task-templates/generate-recurring", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const result = await storage.generateRecurringTasks(companyId);
@@ -40850,7 +40908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clear and regenerate tasks for a specific template (when template is edited)
-  app.post("/api/systems/task-templates/:id/regenerate", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/task-templates/:id/regenerate", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const result = await storage.clearAndRegenerateTemplateTask(req.params.id, companyId);
@@ -40862,7 +40920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Workflow Templates
-  app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { isActive } = req.query;
@@ -40876,7 +40934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const template = await storage.getWorkflowTemplate(req.params.id, companyId);
@@ -40889,7 +40947,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+  // A workflow names the task templates and roles it will use. Nothing fires
+  // workflows yet, but the executor will trust these ids, so check them now.
+  const foreignWorkflowTemplateRef = async (companyId: string, data: Record<string, any>): Promise<string | null> => {
+    const templateIds = new Set<string>([
+      ...(Array.isArray(data.taskTemplateIds) ? data.taskTemplateIds : []),
+      ...(Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.templateId) : []),
+    ].filter((id): id is string => typeof id === "string" && id !== ""));
+    const roleIds = new Set<string>(
+      (Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.assigneeRoleId) : [])
+        .filter((id: unknown): id is string => typeof id === "string" && id !== ""),
+    );
+    const [templates, roles] = await Promise.all([
+      Promise.all(Array.from(templateIds).map((id) => storage.getTaskTemplate(id, companyId))),
+      Promise.all(Array.from(roleIds).map((id) => storage.getUserRole(id, companyId))),
+    ]);
+    if (templates.some((t) => !t)) return "Task template";
+    if (roles.some((r) => !r)) return "Role";
+    return null;
+  };
+
+  app.post("/api/systems/workflow-templates", requireAuth, requireTeamMember, requirePermission("operations.workflows", "add"), async (req, res) => {
     try {
       const validationResult = insertWorkflowTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40903,6 +40981,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
 
+      const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
+
       const template = await storage.createWorkflowTemplate({
         ...validationResult.data,
         companyId,
@@ -40915,7 +40996,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "edit"), async (req, res) => {
     try {
       const validationResult = insertWorkflowTemplateSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40926,6 +41007,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = req.user!.companyId!;
+      const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
       const template = await storage.updateWorkflowTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Workflow template not found" });
@@ -40936,7 +41019,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteWorkflowTemplate(req.params.id, companyId);
@@ -40947,8 +41030,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Project Workflows
-  app.get("/api/projects/:projectId/workflows", requireAuth, async (req, res) => {
+  // project_workflows has no companyId — it is owned through its project.
+  // Every route here read/wrote by id alone, so any login could list, edit or
+  // delete another company's workflows, or attach one to a foreign project.
+  const getOwnedProjectWorkflow = async (req: any, res: any, id: string) => {
+    const workflow = await storage.getProjectWorkflow(id);
+    if (!workflow) { res.status(404).json({ error: "Project workflow not found" }); return null; }
+    if (!(await enforceProjectCompany(req, res, workflow.projectId, "Project workflow not found"))) return null;
+    return workflow;
+  };
+  const workflowTemplateIsOwn = async (companyId: string, id: unknown) =>
+    id === undefined || (typeof id === "string" && !!(await storage.getWorkflowTemplate(id, companyId)));
+
+  app.get("/api/projects/:projectId/workflows", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const workflows = await storage.getProjectWorkflows(req.params.projectId);
       res.json(workflows);
     } catch (error) {
@@ -40956,19 +41052,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.get("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
-      const workflow = await storage.getProjectWorkflow(req.params.id);
-      if (!workflow) {
-        return res.status(404).json({ error: "Project workflow not found" });
-      }
+      const workflow = await getOwnedProjectWorkflow(req, res, req.params.id);
+      if (!workflow) return;
       res.json(workflow);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project workflow" });
     }
   });
 
-  app.post("/api/project-workflows", requireAuth, async (req, res) => {
+  app.post("/api/project-workflows", requireAuth, requireTeamMember, requirePermission("operations.workflows", "add"), async (req, res) => {
     try {
       const validationResult = insertProjectWorkflowSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40978,6 +41072,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      if (!(await workflowTemplateIsOwn((req.user as any).companyId, validationResult.data.workflowTemplateId))) {
+        return res.status(400).json({ error: "Workflow template not found" });
+      }
       const workflow = await storage.createProjectWorkflow(validationResult.data);
       res.status(201).json(workflow);
     } catch (error) {
@@ -40985,7 +41083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.patch("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "edit"), async (req, res) => {
     try {
       const validationResult = insertProjectWorkflowSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40995,6 +41093,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await getOwnedProjectWorkflow(req, res, req.params.id))) return;
+      if (validationResult.data.projectId !== undefined
+        && !(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      if (!(await workflowTemplateIsOwn((req.user as any).companyId, validationResult.data.workflowTemplateId))) {
+        return res.status(400).json({ error: "Workflow template not found" });
+      }
       const workflow = await storage.updateProjectWorkflow(req.params.id, validationResult.data);
       if (!workflow) {
         return res.status(404).json({ error: "Project workflow not found" });
@@ -41005,8 +41109,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.delete("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "delete"), async (req, res) => {
     try {
+      if (!(await getOwnedProjectWorkflow(req, res, req.params.id))) return;
       await storage.deleteProjectWorkflow(req.params.id);
       res.status(204).send();
     } catch (error) {

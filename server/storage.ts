@@ -1775,6 +1775,7 @@ function getDefaultActionsForRole(
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
       'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
       'business.assets',
+      'operations.tasks', 'operations.library', 'operations.workflows',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1801,6 +1802,10 @@ function getDefaultActionsForRole(
     grant('dashboard.project_health', ['view']);
     grant('business.messages', ['view', 'add', 'send']);
     grant('business.team', ['view']);
+    // View only: the calendar reads task templates to draw recurring tasks,
+    // and anyone handed a task should be able to open its SOP.
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
     return result;
   }
 
@@ -1816,6 +1821,8 @@ function getDefaultActionsForRole(
       'timesheets.manage', 'timesheets.rates',
     ];
     for (const key of keys) grantAll(key);
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
     return result;
   }
 
@@ -1843,6 +1850,8 @@ function getDefaultActionsForRole(
     grant('files.manage', ['view']);
     grant('tasks.manage', ['view']);
     grant('tasks.project', ['view']);
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
     return result;
   }
 
@@ -1998,6 +2007,11 @@ export class MemStorage implements IStorage {
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Operations screen (/systems). Before these existed every team member
+      // could read and change all of it; see backfillOperationsGrants.
+      { key: "operations.tasks", name: "Operational Tasks", description: "Recurring task templates that generate the team's To-Dos", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "operations.library", name: "Library", description: "SOPs, policies, templates and other company documents", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "operations.workflows", name: "Workflows", description: "Automations that create tasks when something happens", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -7232,6 +7246,11 @@ export class DbStorage implements IStorage {
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Operations screen (/systems). Before these existed every team member
+      // could read and change all of it; see backfillOperationsGrants.
+      { key: "operations.tasks", name: "Operational Tasks", description: "Recurring task templates that generate the team's To-Dos", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "operations.library", name: "Library", description: "SOPs, policies, templates and other company documents", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "operations.workflows", name: "Workflows", description: "Automations that create tasks when something happens", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -7327,6 +7346,7 @@ export class DbStorage implements IStorage {
     await this.backfillMinutesGrants(createdKeys);
     await this.backfillClientPortalAccessGrants(createdKeys);
     await this.backfillAssetRegisterGrants(createdKeys);
+    await this.backfillOperationsGrants(createdKeys);
   }
 
   /**
@@ -7382,6 +7402,49 @@ export class DbStorage implements IStorage {
       }
     } catch (error) {
       console.error("Database error in backfillAssetRegisterGrants:", error);
+    }
+  }
+
+  /**
+   * The Operations keys arrived after the screen did. Until then every route
+   * behind it checked only requireTeamMember, so every team role could read
+   * and change everything there. On the boot that creates a key, hand each
+   * existing team role exactly that — so nobody loses anything on deploy and
+   * admins tighten it from Roles & Permissions. Library "approve" is new
+   * (sign-off didn't exist), so it is not handed out; admins bypass anyway.
+   * Runs only on the creating boot, so a later untick is never re-granted.
+   */
+  private async backfillOperationsGrants(createdKeys: Set<string>): Promise<void> {
+    const wanted: Record<string, string[]> = {
+      "operations.tasks": ["view", "add", "edit", "delete"],
+      "operations.library": ["view", "add", "edit", "delete"],
+      "operations.workflows": ["view", "add", "edit", "delete"],
+    };
+    const keys = Object.keys(wanted).filter((k) => createdKeys.has(k));
+    if (keys.length === 0) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const teamRoles = (await db.select().from(schema.userRoles))
+        .filter((r) => (r.userCategory || "team") === "team");
+      if (teamRoles.length === 0) return;
+
+      for (const key of keys) {
+        const permissionId = allPermissions.find((p) => p.key === key)?.id;
+        if (!permissionId) continue;
+        const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+          .from(schema.rolePermissions)
+          .where(eq(schema.rolePermissions.permissionId, permissionId));
+        const alreadyHeld = new Set(existing.map((e) => e.roleId));
+        const rows = teamRoles
+          .filter((r) => !alreadyHeld.has(r.id))
+          .map((r) => ({ roleId: r.id, permissionId, allowedActions: wanted[key] as any }));
+        if (rows.length === 0) continue;
+        await db.insert(schema.rolePermissions).values(rows);
+        console.log(`[permissions] ${key} granted to ${rows.length} team role(s) — matches pre-permission access`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillOperationsGrants:", error);
     }
   }
 
