@@ -349,14 +349,20 @@ export async function processInsuranceExpiryReminders() {
             const supplierName = supplier?.name || 'Unknown Supplier';
             const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
             
+            const description = `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`;
             await storage.createTask({
               companyId: company.id,
               title: `Insurance Expiry Warning: ${supplierName} - ${insurance.insuranceType}`,
-              description: `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`,
-              status: 'To Do',
-              priority: 'Low',
+              // Tasks live in `notes`: `content` and `author` are NOT NULL. A
+              // `description` key is silently dropped by Drizzle and the insert fails.
+              content: description,
+              contentText: description,
+              author: 'System',
+              status: 'todo',
+              priority: 'low',
               dueDate: new Date(insurance.expiryDate!),
               assigneeId: assigneeUserId,
+              assigneeIds: assigneeUserId ? [assigneeUserId] : [],
               referenceType: 'insurance_expiry_30',
               referenceId: insurance.id,
             });
@@ -377,14 +383,18 @@ export async function processInsuranceExpiryReminders() {
             const supplierName = supplier?.name || 'Unknown Supplier';
             const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
             
+            const description = `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`;
             await storage.createTask({
               companyId: company.id,
               title: `URGENT: Insurance Expiring Soon - ${supplierName} - ${insurance.insuranceType}`,
-              description: `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`,
-              status: 'To Do',
-              priority: 'High',
+              content: description,
+              contentText: description,
+              author: 'System',
+              status: 'todo',
+              priority: 'high',
               dueDate: new Date(insurance.expiryDate!),
               assigneeId: assigneeUserId,
+              assigneeIds: assigneeUserId ? [assigneeUserId] : [],
               referenceType: 'insurance_expiry_7',
               referenceId: insurance.id,
             });
@@ -412,14 +422,18 @@ export async function processInsuranceExpiryReminders() {
             const contactName = insurance.contact.name || 'Unknown Supplier';
             const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
             
+            const description = `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`;
             await storage.createTask({
               companyId: company.id,
               title: `Insurance Expiry Warning: ${contactName} - ${insurance.insuranceType}`,
-              description: `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`,
-              status: 'To Do',
-              priority: 'Low',
+              content: description,
+              contentText: description,
+              author: 'System',
+              status: 'todo',
+              priority: 'low',
               dueDate: new Date(insurance.expiryDate!),
               assigneeId: assigneeUserId,
+              assigneeIds: assigneeUserId ? [assigneeUserId] : [],
               referenceType: 'contact_insurance_expiry_30',
               referenceId: insurance.id,
             });
@@ -439,14 +453,18 @@ export async function processInsuranceExpiryReminders() {
             const contactName = insurance.contact.name || 'Unknown Supplier';
             const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
             
+            const description = `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`;
             await storage.createTask({
               companyId: company.id,
               title: `URGENT: Insurance Expiring Soon - ${contactName} - ${insurance.insuranceType}`,
-              description: `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`,
-              status: 'To Do',
-              priority: 'High',
+              content: description,
+              contentText: description,
+              author: 'System',
+              status: 'todo',
+              priority: 'high',
               dueDate: new Date(insurance.expiryDate!),
               assigneeId: assigneeUserId,
+              assigneeIds: assigneeUserId ? [assigneeUserId] : [],
               referenceType: 'contact_insurance_expiry_7',
               referenceId: insurance.id,
             });

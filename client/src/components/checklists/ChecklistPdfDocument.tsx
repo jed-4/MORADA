@@ -180,8 +180,14 @@ const styles = StyleSheet.create({
 interface GroupData {
   id: string;
   name: string;
-  assigneeName?: string;
-  items: (ChecklistInstanceItem & { assigneeName?: string; completedByName?: string })[];
+  // Nullable, because that is what the columns are: an unassigned item has a
+  // null name, not a missing key. Typed as string-only, the caller had to
+  // launder every value and TypeScript could not help.
+  assigneeName?: string | null;
+  // ChecklistInstanceItem already carries assigneeName and completedByName,
+  // both nullable. The old intersection re-declared them as `string`, which
+  // contradicted the row type and made every caller launder its values.
+  items: ChecklistInstanceItem[];
 }
 
 interface ChecklistPdfProps {
@@ -256,7 +262,12 @@ export function ChecklistPdfDocument({ checklist, groups, projectName, exportDat
                     {item.status === "completed" && item.completedByName && (
                       <Text>Completed by: {item.completedByName}</Text>
                     )}
-                    {item.dueDate && <Text>Due: {new Date(item.dueDate).toLocaleDateString()}</Text>}
+                    {/* No per-item due date: checklist_instance_items has no
+                        such column — only the checklist itself has one — so
+                        this always rendered nothing. It survived because the
+                        item type here re-declared two fields in a way that
+                        contradicted the row and made TypeScript stop checking
+                        the rest. */}
                   </View>
                   {item.notes && (
                     <Text style={styles.itemNotes}>{item.notes}</Text>

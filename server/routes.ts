@@ -16,6 +16,7 @@ import { randomBytes, randomUUID } from "crypto";
 import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
+import { buildClientVariationDocument } from "./clientVariationDocument";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -226,7 +227,9 @@ import {
 // existing routes already referenced `schema.` without this import and threw
 // a ReferenceError at runtime (every selections-portal request 500ed).
 import * as schema from "@shared/schema";
-import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems } from "@shared/minuteActionItems";
+import { MINUTE_ACTION_REFERENCE, carriedForward, sortActionItems, actionItemPlacement } from "@shared/minuteActionItems";
+import { attendeeNames } from "@shared/minuteAttendees";
+import { isClaimIssued } from "@shared/claimSchedule";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -3223,7 +3226,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // DOCS — company-level documents (SOPs, procedures, guides)
   // ============================================================
 
-  app.get("/api/docs", requireAuth, async (req, res) => {
+  // Cross-reference guards for the Operations routes. Each returns true when the
+  // id is absent (nothing to check) or names a row the caller's company owns.
+  const docFolderIsOwn = async (companyId: string, folderId: unknown): Promise<boolean> => {
+    if (folderId === undefined || folderId === null || folderId === "") return true;
+    if (typeof folderId !== "string") return false;
+    const folders = await storage.getDocFolders(companyId);
+    return folders.some((f) => f.id === folderId);
+  };
+
+  app.get("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -3238,7 +3250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/docs/:id", requireAuth, async (req, res) => {
+  app.get("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const doc = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!doc) return;
@@ -3248,9 +3260,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docs", requireAuth, async (req, res) => {
+  app.post("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const user = req.user as any;
+      if (!(await docFolderIsOwn(user.companyId, req.body?.folderId))) {
+        return res.status(400).json({ error: "Folder not found" });
+      }
       const doc = await storage.createDoc({
         ...req.body,
         companyId: user.companyId,
@@ -3264,11 +3279,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/docs/:id", requireAuth, async (req, res) => {
+  app.patch("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
-      const doc = await storage.updateDoc(req.params.id, req.body);
+      // The body went straight to .set(), so {companyId} moved a doc into
+      // another tenant and {folderId} could file it under a foreign folder.
+      const { id: _id, companyId: _co, ownerId: _owner, createdAt: _c, ...changes } = req.body ?? {};
+      if (!(await docFolderIsOwn((req.user as any).companyId, changes.folderId))) {
+        return res.status(400).json({ error: "Folder not found" });
+      }
+      const doc = await storage.updateDoc(req.params.id, changes);
       if (!doc) return res.status(404).json({ error: "Doc not found" });
       res.json(doc);
     } catch (error) {
@@ -3276,7 +3297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/docs/:id", requireAuth, async (req, res) => {
+  app.delete("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
@@ -3287,7 +3308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/doc-folders", requireAuth, async (req, res) => {
+  app.get("/api/doc-folders", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -3298,9 +3319,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/doc-folders", requireAuth, async (req, res) => {
+  app.post("/api/doc-folders", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
+      if (!(await docFolderIsOwn(companyId, req.body?.parentFolderId))) {
+        return res.status(400).json({ error: "Parent folder not found" });
+      }
       const folder = await storage.createDocFolder({ ...req.body, companyId });
       res.status(201).json(folder);
     } catch (error) {
@@ -3308,9 +3332,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/doc-folders/:id", requireAuth, async (req, res) => {
+  app.patch("/api/doc-folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
-      const folder = await storage.updateDocFolder(req.params.id, req.body);
+      // Had no ownership check at all: any folder was renamable by id, and a
+      // {companyId} in the body moved it into the caller's tenant.
+      if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
+      const { id: _id, companyId: _co, ...changes } = req.body ?? {};
+      if (changes.parentFolderId === req.params.id
+        || !(await docFolderIsOwn((req.user as any).companyId, changes.parentFolderId))) {
+        return res.status(400).json({ error: "Parent folder not found" });
+      }
+      const folder = await storage.updateDocFolder(req.params.id, changes);
       if (!folder) return res.status(404).json({ error: "Folder not found" });
       res.json(folder);
     } catch (error) {
@@ -3318,7 +3350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
+  app.delete("/api/doc-folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       // Ownership: doc folders carry companyId directly. Without this any
       // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
@@ -4171,10 +4203,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete data.ownerId;
       delete data.ownerName;
 
+      const movingProject =
+        Object.prototype.hasOwnProperty.call(data, "projectId") &&
+        (data.projectId ?? null) !== ((owned as any).projectId ?? null);
+
       const minute = await storage.updateMinute(req.params.id, data);
       if (!minute) {
         return res.status(404).json({ error: "Minute not found" });
       }
+
+      /* Moving a minute moves its action items with it.
+         An action item IS a task (a `notes` row, see shared/minuteActionItems.ts)
+         and the task carries the project — copied off the minute when it was
+         created. Move the minute alone and this meeting's work stays in the old
+         job's To-Dos, where nobody is looking for it, while the meeting it came
+         out of sits somewhere else entirely. The four fields are the same four
+         the create sets, so a moved item is indistinguishable from one raised
+         in the new project.
+         Scoped to this minute's own items: referenceType + referenceId, inside
+         the company. */
+      if (movingProject) {
+        const companyId = (req.user as any)?.companyId;
+        await db.update(schema.notes)
+          .set(actionItemPlacement((minute as any).projectId, companyId))
+          .where(and(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.notes.referenceType, MINUTE_ACTION_REFERENCE),
+            eq(schema.notes.referenceId, req.params.id),
+          ));
+      }
+
       res.json(minute);
     } catch (error) {
       res.status(500).json({ error: "Failed to update minute" });
@@ -4266,10 +4324,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content: "",
         type: "task",
         status: "todo",
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null,
         // The link back to the meeting it came out of.
@@ -4361,10 +4417,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // finished work because it changed storage would be its own bug.
         status: wasCompleted ? "done" : "todo",
         completedAt: wasCompleted ? new Date() : null,
-        scope: minute.projectId ? "project" : "personal",
-        projectId: minute.projectId ?? null,
-        taskContextType: minute.projectId ? "project" : "business",
-        taskContextId: minute.projectId ?? companyId,
+        // The same four fields the move writes — see actionItemPlacement.
+        ...actionItemPlacement(minute.projectId, companyId),
         assigneeIds,
         dueDate: due && !Number.isNaN(due.getTime()) ? due : null,
         referenceType: MINUTE_ACTION_REFERENCE,
@@ -4408,7 +4462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: [
           {
             role: "user",
-            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
+            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${attendeeNames(minute.attendees).join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
           }
         ],
       });
@@ -12789,11 +12843,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all active users in the company with minimal info for assignment purposes
       const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId);
+
+      /* Clients are assignable, but only on their OWN project.
+         A client login points at a CRM contact (users.contactId), and a
+         project names its client the same way (projects.clientId), so a
+         client belongs to a project exactly when those match.
+         Without ?projectId this returns staff only, which is what it has
+         always returned — every existing caller keeps its behaviour, and a
+         picker with no project in hand cannot offer a client it has no way to
+         scope. */
+      let clientContactId: string | null = null;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : null;
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        // Another company's project id must not reveal who its client is.
+        if (project && (project as any).companyId === currentUser.companyId) {
+          clientContactId = (project as any).clientId ?? null;
+        }
+      }
+
       // Return only necessary fields for assignment dropdowns
-      // People work is assigned to: staff, never client portal logins (and
-      // the query above already leaves out archived people).
       const assignableUsers = users
-        .filter((user: any) => user.userCategory !== "client")
+        .filter((user: any) =>
+          user.userCategory !== "client"
+          || (!!clientContactId && user.contactId === clientContactId))
         .map((user: any) => {
           // Build displayName from firstName and lastName
           const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Unknown User';
@@ -12818,6 +12891,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // subsume this one: a user can be status "active" and isActive
             // false.
             isActive: user.isActive !== false,
+            // So a picker can mark them rather than mixing them in with staff.
+            isClient: user.userCategory === "client",
           };
         });
       res.json(assignableUsers);
@@ -13211,6 +13286,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (target.isActive) {
         return res.json(toSafeUser(target));
+      }
+      // Deleted by its owner (server/accountDeletion.ts): the person and their
+      // login are gone, so there is nobody to restore.
+      if (target.email?.endsWith("@deleted.invalid")) {
+        return res.status(400).json({ error: "This person deleted their account, so it can't be restored. Invite them again instead." });
       }
 
       // Same Full User seat rule as inviting — restoring someone takes a seat.
@@ -24126,7 +24206,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await clientOwnsProject(variation.projectId, client.companyId))) {
         return res.status(404).json({ error: "Variation not found" });
       }
-      res.json(await buildVariationPortalPayload(variation));
+      const payload = await buildVariationPortalPayload(variation);
+      // `document` is for the phone app, which can't run the web's document
+      // model itself — the same model, over the same client-safe payload.
+      res.json({ ...payload, document: buildClientVariationDocument(payload) });
     } catch (error) {
       console.error("Error building client variation view:", error);
       res.status(500).json({ error: "Failed to load variation" });
@@ -26225,6 +26308,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+
+      /* Issuing a claim needs "send", not merely "edit".
+         The Send Invoice button does not email anything — it PATCHes
+         status:"sent" straight through this route. So "edit" alone was enough
+         to put a claim in front of the client and make it a live receivable,
+         while the one route that actually gates "send" (send-email) could be
+         bypassed by pressing the other button.
+         It matters more now: "sent" is the switch that replaces the figure the
+         client was told to expect with the real claim — see
+         shared/claimSchedule.ts. */
+      if (
+        data.status && isClaimIssued({ status: data.status }) &&
+        !isClaimIssued(owned as any) &&
+        !(await userHasPermission(req.user as any, "projects.invoices", "send"))
+      ) {
+        return res.status(403).json({
+          error: "Sending a progress claim needs the Send permission on Progress Claims.",
+        });
+      }
+
       if (!(await scheduleItemInProject(data.scheduleItemId, (owned as any).projectId))) {
         return res.status(400).json({ error: "That schedule item isn't on this job" });
       }
@@ -26489,6 +26592,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     return true;
   };
+
+  /**
+   * Share a claim's figure with the client, or stop sharing it.
+   *
+   * This is what puts a not-yet-sent claim into the client's payment schedule.
+   * It freezes `clientSharedAmountCents` at the claim's total RIGHT NOW, and
+   * nothing afterwards moves it — the builder goes on editing the draft and
+   * the client keeps seeing the figure they were given until the builder
+   * shares again. That is the whole feature.
+   *
+   * Gated on "send", not "edit". Telling a client a number is a commitment of
+   * the same kind as issuing the claim, and it is not something everyone who
+   * may tidy up a draft should be able to do.
+   */
+  app.post("/api/client-invoices/:id/share-with-client", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
+
+      // An issued claim is already in front of the client, in full. Sharing a
+      // forecast of it would be a second, staler number for the same money.
+      if (isClaimIssued(invoice as any)) {
+        return res.status(409).json({
+          error: "This claim has already been sent — the client can see the real one.",
+        });
+      }
+
+      // Dates on a draft linked to a schedule item follow that item, so settle
+      // them before freezing: the client is being told WHEN as well as how much.
+      const settled = await withFollowedDates(invoice);
+      const amount = (settled as any).totalAmount ?? 0;
+
+      const updated = await storage.updateClientInvoice(req.params.id, {
+        clientSharedAmountCents: amount,
+        clientSharedAt: new Date(),
+        clientSharedById: (req.user as any)?.id ?? null,
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("[client-invoices/share] ", error);
+      res.status(500).json({ error: "Failed to share this claim with the client" });
+    }
+  });
+
+  app.delete("/api/client-invoices/:id/share-with-client", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
+      // Clearing the stamp removes the row from the client's schedule. It does
+      // NOT hide an issued claim: that is governed by status, not by this.
+      const updated = await storage.updateClientInvoice(req.params.id, {
+        clientSharedAmountCents: null,
+        clientSharedAt: null,
+        clientSharedById: null,
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("[client-invoices/unshare] ", error);
+      res.status(500).json({ error: "Failed to stop sharing this claim" });
+    }
+  });
+
+  /**
+   * Share the whole payment schedule at once.
+   *
+   * What a builder actually does at contract signing: the claims exist as
+   * drafts against the schedule, and the client should see all of them, not be
+   * told about each one as it comes. Re-running it re-freezes every unsent
+   * claim at its current total, which is also how you push through a round of
+   * approved variations in one go.
+   *
+   * Already-sent claims are left alone — they are real documents, and a
+   * forecast stamped over the top would be a staler second number.
+   */
+  app.post("/api/projects/:projectId/share-payment-schedule", requireAuth, requireTeamPermission("projects.invoices", "send"), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      const companyId = (req.user as any)?.companyId;
+      const invoices = await storage.getClientInvoices(projectId, undefined, companyId);
+      const unissued = invoices.filter((i: any) => !isClaimIssued(i));
+
+      // Settle the dates in PARALLEL and write in ONE statement. Neon is in
+      // us-east-1 and this runs from Australia at ~400ms a trip, so a dozen
+      // claims done one at a time is a ten-second wait on a button.
+      const settled = await Promise.all(unissued.map((i: any) => withFollowedDates(i)));
+      const rows = settled.map((i: any) => ({ id: i.id, amountCents: i.totalAmount ?? 0 }));
+
+      const sharedAt = new Date();
+      await storage.shareClientInvoiceForecasts(rows, sharedAt, (req.user as any)?.id ?? null);
+
+      res.json({ shared: rows.length, invoiceIds: rows.map((r) => r.id) });
+    } catch (error) {
+      console.error("[projects/share-payment-schedule] ", error);
+      res.status(500).json({ error: "Failed to share the payment schedule" });
+    }
+  });
 
   app.post("/api/client-invoices/full", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
@@ -31730,7 +31931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Template Statuses routes (company-specific)
-  app.get("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/task-template-statuses", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const statuses = await storage.getTaskTemplateStatuses(req.user!.companyId);
       res.json(statuses);
@@ -31742,7 +31943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const status = await storage.getTaskTemplateStatus(req.params.id, req.user!.companyId);
       if (!status) {
@@ -31757,7 +31958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/task-template-statuses", requireAuth, requireTeamMember, requirePermission("operations.tasks", "add"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
@@ -31788,7 +31989,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -31815,7 +32016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/task-template-statuses/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "delete"), async (req, res) => {
     try {
       const success = await storage.deleteTaskTemplateStatus(req.params.id, req.user!.companyId);
       if (!success) {
@@ -31830,7 +32031,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/task-template-statuses/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/task-template-statuses/reorder", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const { updates } = req.body;
       
@@ -40394,7 +40595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   // System Folders
-  app.get("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/folders", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { parentId } = req.query;
@@ -40408,7 +40609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const folder = await storage.getSystemFolder(req.params.id, companyId);
@@ -40421,7 +40622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/folders", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const validationResult = insertSystemFolderSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40447,7 +40648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const validationResult = insertSystemFolderSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40468,7 +40669,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/folders/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteSystemFolder(req.params.id, companyId);
@@ -40478,7 +40679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/folders/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/folders/reorder", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { updates } = req.body;
@@ -40490,7 +40691,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // System Documents
-  app.get("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/documents", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { folderId } = req.query;
@@ -40504,7 +40705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const document = await storage.getSystemDocument(req.params.id, companyId);
@@ -40517,7 +40718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/documents", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const validationResult = insertSystemDocumentSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40553,7 +40754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const validationResult = insertSystemDocumentSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40594,7 +40795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/documents/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteSystemDocument(req.params.id, companyId);
@@ -40604,7 +40805,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/documents/reorder", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/documents/reorder", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { updates } = req.body;
@@ -40616,7 +40817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Templates
-  app.get("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/task-templates", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { isActive } = req.query;
@@ -40630,7 +40831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const template = await storage.getTaskTemplate(req.params.id, companyId);
@@ -40643,7 +40844,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+  // Every id a task template points at must belong to the caller's company.
+  // projectId matters most: generated tasks inherit it as their context, so a
+  // foreign project id attached this company's tasks to someone else's job.
+  // Returns the name of the first foreign field, or null when all are owned.
+  const foreignTaskTemplateRef = async (companyId: string, data: Record<string, any>): Promise<string | null> => {
+    const has = (v: unknown) => v !== undefined && v !== null && v !== "";
+    if (has(data.projectId)) {
+      const project = await storage.getProject(data.projectId);
+      if (!project || project.companyId !== companyId) return "Project";
+    }
+    if (has(data.statusId) && !(await storage.getTaskTemplateStatus(data.statusId, companyId))) return "Status";
+    if (has(data.defaultRoleId) && !(await storage.getUserRole(data.defaultRoleId, companyId))) return "Role";
+    if (has(data.categoryId) && !(await storage.getTemplateCategory(data.categoryId, companyId))) return "Category";
+    if (has(data.scopeStageId)) {
+      const stage = await storage.getScopeStage(data.scopeStageId);
+      if (!stage || (stage as any).companyId !== companyId) return "Scope stage";
+    }
+    if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
+      const tags = await Promise.all(data.tagIds.map((id: string) => storage.getTaskTag(id, companyId)));
+      if (tags.some((t) => !t)) return "Tag";
+    }
+    return null;
+  };
+
+  app.post("/api/systems/task-templates", requireAuth, requireTeamMember, requirePermission("operations.tasks", "add"), async (req, res) => {
     try {
       console.log("[POST /api/systems/task-templates] Request body:", JSON.stringify(req.body, null, 2));
       
@@ -40659,6 +40884,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId!;
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const foreignRef = await foreignTaskTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
 
       console.log("[POST /api/systems/task-templates] Creating template with companyId:", companyId, "createdBy:", createdBy);
 
@@ -40692,7 +40920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const validationResult = insertTaskTemplateSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40703,6 +40931,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = req.user!.companyId!;
+      const foreignRef = await foreignTaskTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
       const template = await storage.updateTaskTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Task template not found" });
@@ -40729,7 +40959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteTaskTemplate(req.params.id, companyId);
@@ -40740,7 +40970,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate recurring tasks from active templates (4-week rolling window)
-  app.post("/api/systems/task-templates/generate-recurring", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/task-templates/generate-recurring", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const result = await storage.generateRecurringTasks(companyId);
@@ -40752,7 +40982,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clear and regenerate tasks for a specific template (when template is edited)
-  app.post("/api/systems/task-templates/:id/regenerate", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/systems/task-templates/:id/regenerate", requireAuth, requireTeamMember, requirePermission("operations.tasks", "edit"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const result = await storage.clearAndRegenerateTemplateTask(req.params.id, companyId);
@@ -40764,7 +40994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Workflow Templates
-  app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const { isActive } = req.query;
@@ -40778,7 +41008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const template = await storage.getWorkflowTemplate(req.params.id, companyId);
@@ -40791,7 +41021,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+  // A workflow names the task templates and roles it will use. Nothing fires
+  // workflows yet, but the executor will trust these ids, so check them now.
+  const foreignWorkflowTemplateRef = async (companyId: string, data: Record<string, any>): Promise<string | null> => {
+    const templateIds = new Set<string>([
+      ...(Array.isArray(data.taskTemplateIds) ? data.taskTemplateIds : []),
+      ...(Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.templateId) : []),
+    ].filter((id): id is string => typeof id === "string" && id !== ""));
+    const roleIds = new Set<string>(
+      (Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.assigneeRoleId) : [])
+        .filter((id: unknown): id is string => typeof id === "string" && id !== ""),
+    );
+    const [templates, roles] = await Promise.all([
+      Promise.all(Array.from(templateIds).map((id) => storage.getTaskTemplate(id, companyId))),
+      Promise.all(Array.from(roleIds).map((id) => storage.getUserRole(id, companyId))),
+    ]);
+    if (templates.some((t) => !t)) return "Task template";
+    if (roles.some((r) => !r)) return "Role";
+    return null;
+  };
+
+  app.post("/api/systems/workflow-templates", requireAuth, requireTeamMember, requirePermission("operations.workflows", "add"), async (req, res) => {
     try {
       const validationResult = insertWorkflowTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40805,6 +41055,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
 
+      const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
+
       const template = await storage.createWorkflowTemplate({
         ...validationResult.data,
         companyId,
@@ -40817,7 +41070,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.patch("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "edit"), async (req, res) => {
     try {
       const validationResult = insertWorkflowTemplateSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40828,6 +41081,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = req.user!.companyId!;
+      const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
+      if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
       const template = await storage.updateWorkflowTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Workflow template not found" });
@@ -40838,7 +41093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "delete"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       await storage.deleteWorkflowTemplate(req.params.id, companyId);
@@ -40849,8 +41104,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Project Workflows
-  app.get("/api/projects/:projectId/workflows", requireAuth, async (req, res) => {
+  // project_workflows has no companyId — it is owned through its project.
+  // Every route here read/wrote by id alone, so any login could list, edit or
+  // delete another company's workflows, or attach one to a foreign project.
+  const getOwnedProjectWorkflow = async (req: any, res: any, id: string) => {
+    const workflow = await storage.getProjectWorkflow(id);
+    if (!workflow) { res.status(404).json({ error: "Project workflow not found" }); return null; }
+    if (!(await enforceProjectCompany(req, res, workflow.projectId, "Project workflow not found"))) return null;
+    return workflow;
+  };
+  const workflowTemplateIsOwn = async (companyId: string, id: unknown) =>
+    id === undefined || (typeof id === "string" && !!(await storage.getWorkflowTemplate(id, companyId)));
+
+  app.get("/api/projects/:projectId/workflows", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const workflows = await storage.getProjectWorkflows(req.params.projectId);
       res.json(workflows);
     } catch (error) {
@@ -40858,19 +41126,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.get("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
     try {
-      const workflow = await storage.getProjectWorkflow(req.params.id);
-      if (!workflow) {
-        return res.status(404).json({ error: "Project workflow not found" });
-      }
+      const workflow = await getOwnedProjectWorkflow(req, res, req.params.id);
+      if (!workflow) return;
       res.json(workflow);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project workflow" });
     }
   });
 
-  app.post("/api/project-workflows", requireAuth, async (req, res) => {
+  app.post("/api/project-workflows", requireAuth, requireTeamMember, requirePermission("operations.workflows", "add"), async (req, res) => {
     try {
       const validationResult = insertProjectWorkflowSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -40880,6 +41146,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      if (!(await workflowTemplateIsOwn((req.user as any).companyId, validationResult.data.workflowTemplateId))) {
+        return res.status(400).json({ error: "Workflow template not found" });
+      }
       const workflow = await storage.createProjectWorkflow(validationResult.data);
       res.status(201).json(workflow);
     } catch (error) {
@@ -40887,7 +41157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.patch("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "edit"), async (req, res) => {
     try {
       const validationResult = insertProjectWorkflowSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -40897,6 +41167,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await getOwnedProjectWorkflow(req, res, req.params.id))) return;
+      if (validationResult.data.projectId !== undefined
+        && !(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      if (!(await workflowTemplateIsOwn((req.user as any).companyId, validationResult.data.workflowTemplateId))) {
+        return res.status(400).json({ error: "Workflow template not found" });
+      }
       const workflow = await storage.updateProjectWorkflow(req.params.id, validationResult.data);
       if (!workflow) {
         return res.status(404).json({ error: "Project workflow not found" });
@@ -40907,8 +41183,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/project-workflows/:id", requireAuth, async (req, res) => {
+  app.delete("/api/project-workflows/:id", requireAuth, requireTeamMember, requirePermission("operations.workflows", "delete"), async (req, res) => {
     try {
+      if (!(await getOwnedProjectWorkflow(req, res, req.params.id))) return;
       await storage.deleteProjectWorkflow(req.params.id);
       res.status(204).send();
     } catch (error) {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import type { AssignablePerson } from "@shared/assignable";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -393,8 +394,8 @@ export default function BusinessOverview() {
     queryKey: ["/api/user-roles"],
   });
 
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: users = [] } = useQuery<AssignablePerson[]>({
+    queryKey: ["/api/users/assignable"],
   });
 
   const sensors = useSensors(

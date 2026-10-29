@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,14 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  useColorScheme,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '../contexts/AuthContext';
-import { API_BASE_URL } from '../services/api';
+import { API_BASE_URL, apiRequest } from '../services/api';
 import { useTheme } from '../theme';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -22,10 +25,18 @@ WebBrowser.maybeCompleteAuthSession();
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { login, loginWithSession } = useAuth();
   const theme = useTheme();
+  const isDark = useColorScheme() === 'dark';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+  }, []);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -57,6 +68,10 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       fontSize: 14,
       color: theme.textSecondary,
       marginTop: 8,
+    },
+    appleButton: {
+      height: 50,
+      marginBottom: 12,
     },
     googleButton: {
       backgroundColor: theme.card,
@@ -174,6 +189,44 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  // Sign in with Apple (App Store guideline 4.8). Apple gets sha256 of a
+  // one-off nonce and the server gets the raw value, so the identity token
+  // can't be replayed on its own. Sign-in only: an Apple ID with no Morada
+  // account is refused by the server with a message we show as-is.
+  const handleApplePress = async () => {
+    setIsAppleLoading(true);
+    try {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        ],
+        nonce: hashedNonce,
+      });
+      if (!credential.identityToken) {
+        Alert.alert('Apple Sign In Failed', 'Apple did not return a sign-in token. Please try again.');
+        return;
+      }
+      const response = await apiRequest('/api/auth/apple/mobile', 'POST', {
+        identityToken: credential.identityToken,
+        nonce: rawNonce,
+      });
+      const data = await response.json();
+      const loginResult = await loginWithSession(data.sessionId);
+      if (!loginResult.success) {
+        Alert.alert('Login Failed', loginResult.error || 'Could not complete sign in');
+      }
+    } catch (err: any) {
+      // Closing Apple's sheet is not an error.
+      if (err?.code === 'ERR_REQUEST_CANCELED') return;
+      Alert.alert('Apple Sign In Failed', err?.message || 'Could not sign in with Apple');
+    } finally {
+      setIsAppleLoading(false);
+    }
+  };
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Missing Fields', 'Please enter your email and password.');
@@ -204,6 +257,24 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           <Text style={styles.logo}>Morada</Text>
           <Text style={styles.subtitle}>Project Management for Builders</Text>
         </View>
+
+        {appleAvailable && (
+          isAppleLoading ? (
+            <View style={[styles.appleButton, { justifyContent: 'center' }]}>
+              <ActivityIndicator color={theme.textPrimary} />
+            </View>
+          ) : (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={isDark
+                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={8}
+              style={styles.appleButton}
+              onPress={handleApplePress}
+            />
+          )
+        )}
 
         <TouchableOpacity
           style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
