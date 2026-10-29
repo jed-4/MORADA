@@ -1730,6 +1730,14 @@ async function syncBillFromXeroInternal(
     let lineItemsSynced = 0;
     if (canOverwriteLines && xeroLineItems.length > 0) {
       const existingLineItems = await storage.getBillLineItems(bill.id);
+      // Asset links live on the line, and these lines are about to be
+      // recreated from Xero. Carry each link across to the new line with the
+      // same description and amount; anything Xero changed loses its link
+      // rather than landing on the wrong vehicle.
+      const assetByLine = new Map<string, string>();
+      for (const li of existingLineItems) {
+        if ((li as any).assetId) assetByLine.set(`${(li.description ?? "").trim()}|${li.total}`, (li as any).assetId);
+      }
       for (const li of existingLineItems) {
         await storage.deleteBillLineItem(li.id);
       }
@@ -1743,7 +1751,7 @@ async function syncBillFromXeroInternal(
         const xl = xeroLineItems[i];
         const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
         const totalLineCents = Math.round((xl.LineAmount || xl.UnitAmount * (xl.Quantity || 1) || 0) * 100);
-        await storage.createBillLineItem({
+        const created = await storage.createBillLineItem({
           billId: bill.id,
           lineType: "custom",
           description: xl.Description || "",
@@ -1755,6 +1763,12 @@ async function syncBillFromXeroInternal(
           total: totalLineCents,
           order: i,
         } as any);
+        const carriedAssetId = assetByLine.get(`${(xl.Description || "").trim()}|${totalLineCents}`);
+        if (carriedAssetId && created?.id) {
+          await db.update(schema.billLineItems)
+            .set({ assetId: carriedAssetId })
+            .where(eq(schema.billLineItems.id, created.id));
+        }
         lineItemsSynced++;
       }
     }
@@ -49714,7 +49728,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       insertAssetDocumentSchema,
       users: usersTable,
     } = await import("@shared/schema");
-    const { normaliseRego, todayKey, ASSET_STATUS_LABELS } = await import("@shared/assets");
+    const { normaliseRego, todayKey, addMonthsKey, daysBetween, ASSET_STATUS_LABELS } = await import("@shared/assets");
     const { closeAssetReminderTasks } = await import("./services/assetReminders");
 
     const sessionCompanyId = (req: any): string | null => req.user?.companyId ?? null;
@@ -49999,6 +50013,293 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       } catch (error) {
         console.error("[assets] qr failed:", error);
         res.status(500).json({ error: "Failed to make the QR code" });
+      }
+    });
+
+    // ---- running costs from bills (PR 4, migration 0115) ----
+    // A bill line tagged with an asset is that asset's cost. Lines are only
+    // ever tagged here (or from the bill page below), never by the bill
+    // editor's save, which can't see the column.
+    const { bills: billsTable, billLineItems: billLinesTable, contacts: contactsTable } = await import("@shared/schema");
+    const { splitLineGstCents } = await import("@shared/billTotals");
+    const { categoriseVehicleCost, mentionsRego, VEHICLE_COST_CATEGORIES } = await import("@shared/assets");
+
+    type CostLine = {
+      lineId: string;
+      billId: string;
+      billNumber: string;
+      billReference: string | null;
+      billDate: string;
+      supplierName: string | null;
+      description: string;
+      incGstCents: number;
+      category: string;
+      billStatus: string;
+    };
+
+    /** Bill lines joined to their bill + supplier, company-scoped, voided bills out. */
+    const costLineRows = (companyId: string, where: any) =>
+      db.select({
+        line: billLinesTable,
+        billNumber: billsTable.billNumber,
+        billReference: billsTable.billReference,
+        billDate: billsTable.billDate,
+        billType: billsTable.billType,
+        billStatus: billsTable.status,
+        taxMode: billsTable.taxMode,
+        supplierId: billsTable.supplierId,
+        supplierName: contactsTable.name,
+      })
+        .from(billLinesTable)
+        .innerJoin(billsTable, eq(billLinesTable.billId, billsTable.id))
+        .leftJoin(contactsTable, eq(billsTable.supplierId, contactsTable.id))
+        .where(and(eq(billsTable.companyId, companyId), isNull(billsTable.xeroVoidedAt), where));
+
+    const toCostLine = (r: Awaited<ReturnType<typeof costLineRows>>[number]): CostLine => {
+      const { ex, gst } = splitLineGstCents(r.line.total ?? 0, r.line.tax === "GST on expenses", r.taxMode === "inclusive" ? "inclusive" : "exclusive", 10);
+      const sign = r.billType === "credit" ? -1 : 1;
+      return {
+        lineId: r.line.id,
+        billId: r.line.billId,
+        billNumber: r.billNumber,
+        billReference: r.billReference,
+        billDate: new Date(r.billDate).toISOString(),
+        supplierName: r.supplierName ?? null,
+        description: r.line.description,
+        incGstCents: sign * (ex + gst),
+        category: categoriseVehicleCost(r.line.description, r.supplierName),
+        billStatus: r.billStatus,
+      };
+    };
+
+    app.get("/api/assets/:id/costs", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        const [rows, logged, readings, prestartReadings] = await Promise.all([
+          costLineRows(companyId, eq(billLinesTable.assetId, asset.id)).orderBy(desc(billsTable.billDate)),
+          db.select({ date: assetEvents.date, costCents: assetEvents.costCents, kind: assetEvents.kind, title: assetEvents.title })
+            .from(assetEvents)
+            .where(and(eq(assetEvents.assetId, asset.id), eq(assetEvents.companyId, companyId), isNotNull(assetEvents.costCents))),
+          db.select({ date: assetEvents.date, meter: assetEvents.meter })
+            .from(assetEvents)
+            .where(and(eq(assetEvents.assetId, asset.id), eq(assetEvents.companyId, companyId), isNotNull(assetEvents.meter))),
+          db.select({ date: assetPrestarts.date, meter: assetPrestarts.meter })
+            .from(assetPrestarts)
+            .where(and(eq(assetPrestarts.assetId, asset.id), eq(assetPrestarts.companyId, companyId), isNotNull(assetPrestarts.meter))),
+        ]);
+        const lines = rows.map(toCostLine);
+
+        const today = todayKey();
+        const yearAgo = addMonthsKey(today, -12);
+        const inLast12 = (iso: string) => iso.slice(0, 10) > yearAgo;
+        const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
+
+        const byCategory = Object.fromEntries(VEHICLE_COST_CATEGORIES.map((c) => [c, 0])) as Record<string, number>;
+        for (const l of lines) if (inLast12(l.billDate)) byCategory[l.category] += l.incGstCents;
+
+        // Australian financial year (1 July – 30 June), labelled by the year it ends: FY26.
+        const fyOf = (iso: string) => {
+          const [y, m] = iso.slice(0, 7).split("-").map(Number);
+          return `FY${String((m >= 7 ? y + 1 : y) % 100).padStart(2, "0")}`;
+        };
+        const byFinancialYear: Record<string, number> = {};
+        for (const l of lines) byFinancialYear[fyOf(l.billDate)] = (byFinancialYear[fyOf(l.billDate)] ?? 0) + l.incGstCents;
+
+        const loggedLast12 = sum(logged.filter((e) => e.date > yearAgo).map((e) => e.costCents ?? 0));
+        const billsLast12 = sum(lines.filter((l) => inLast12(l.billDate)).map((l) => l.incGstCents));
+
+        // Distance over the last 12 months, from every reading we have. Needs
+        // at least a month between first and last reading to mean anything.
+        const allReadings = [...readings, ...prestartReadings]
+          .filter((r): r is { date: string; meter: number } => r.meter != null)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const before = allReadings.filter((r) => r.date <= yearAgo).pop();
+        const within = allReadings.filter((r) => r.date > yearAgo);
+        const start = before ?? within[0];
+        const end = within[within.length - 1];
+        let distance: { from: string; to: string; amount: number } | null = null;
+        if (start && end && end.meter > start.meter && daysBetween(start.date, end.date) >= 30) {
+          distance = { from: start.date, to: end.date, amount: end.meter - start.meter };
+        }
+        const costPerUnitCents =
+          distance && asset.meterType !== "none" ? Math.round((billsLast12 + loggedLast12) / distance.amount) : null;
+
+        res.json({
+          lines,
+          summary: {
+            billsAllTimeCents: sum(lines.map((l) => l.incGstCents)),
+            billsLast12Cents: billsLast12,
+            loggedAllTimeCents: sum(logged.map((e) => e.costCents ?? 0)),
+            loggedLast12Cents: loggedLast12,
+            purchaseCents: asset.purchaseCents,
+            byCategoryLast12: byCategory,
+            byFinancialYear,
+            distanceLast12: distance,
+            costPerUnitCents,
+            meterType: asset.meterType,
+          },
+        });
+      } catch (error) {
+        console.error("[assets] costs failed:", error);
+        res.status(500).json({ error: "Failed to load costs" });
+      }
+    });
+
+    app.get("/api/assets/:id/bill-line-suggestions", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+        // Suppliers already linked to this asset (fuel card, the mechanic).
+        const linkedSuppliers = await db.selectDistinct({ supplierId: billsTable.supplierId })
+          .from(billLinesTable)
+          .innerJoin(billsTable, eq(billLinesTable.billId, billsTable.id))
+          .where(and(eq(billsTable.companyId, companyId), eq(billLinesTable.assetId, asset.id), isNotNull(billsTable.supplierId)));
+        const supplierIds = linkedSuppliers.map((s) => s.supplierId!).filter(Boolean);
+
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - 24);
+        const plate = normaliseRego(asset.rego);
+        // SQL narrows to candidates (plate in the squashed text, or a known
+        // supplier); mentionsRego then decides, so "XAB12CDE" never matches.
+        const textMatch = plate && plate.length >= 3
+          ? sql`(upper(regexp_replace(coalesce(${billLinesTable.description}, '') || ' ' || coalesce(${billsTable.billReference}, ''), '[\\s-]', '', 'g')) LIKE ${"%" + plate + "%"})`
+          : null;
+        const supplierMatch = supplierIds.length ? inArray(billsTable.supplierId, supplierIds) : null;
+        if (!textMatch && !supplierMatch) return res.json({ suggestions: [], hasRego: !!plate });
+
+        const rows = await costLineRows(companyId, and(
+          isNull(billLinesTable.assetId),
+          gte(billsTable.billDate, cutoff),
+          textMatch && supplierMatch ? or(textMatch, supplierMatch) : (textMatch ?? supplierMatch)!,
+        ))
+          .orderBy(desc(billsTable.billDate))
+          .limit(300);
+
+        // A fuel-card statement names each vehicle's plate: a line naming
+        // ANOTHER asset's rego is that vehicle's, whatever the supplier.
+        const otherRegos = (await db.select({ rego: assets.rego }).from(assets)
+          .where(and(eq(assets.companyId, companyId), ne(assets.id, asset.id), isNotNull(assets.rego))))
+          .map((a) => a.rego!);
+
+        const suggestions = rows
+          .map((r) => {
+            const line = toCostLine(r);
+            const text = `${r.line.description} ${r.billReference ?? ""}`;
+            const byRego = mentionsRego(text, asset.rego);
+            // A known supplier alone isn't enough for a line that reads like
+            // something else entirely (screws on the mechanic's account), or
+            // that names another vehicle.
+            const bySupplier =
+              !!r.supplierId &&
+              supplierIds.includes(r.supplierId) &&
+              line.category !== "other" &&
+              !otherRegos.some((rego) => mentionsRego(text, rego));
+            return byRego || bySupplier ? { ...line, reason: byRego ? "rego" : "supplier" } : null;
+          })
+          .filter(Boolean)
+          .slice(0, 100);
+        res.json({ suggestions, hasRego: !!plate });
+      } catch (error) {
+        console.error("[assets] bill suggestions failed:", error);
+        res.status(500).json({ error: "Failed to find bills" });
+      }
+    });
+
+    app.post("/api/assets/:id/bill-lines", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const asset = await findOwnedAsset(req.params.id, companyId);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const parsed = z.object({ lineIds: z.array(z.string().min(1)).min(1).max(200) }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+
+        // Only lines on this company's bills; anything else is silently not found.
+        const owned = await db.select({ id: billLinesTable.id })
+          .from(billLinesTable)
+          .innerJoin(billsTable, eq(billLinesTable.billId, billsTable.id))
+          .where(and(eq(billsTable.companyId, companyId), inArray(billLinesTable.id, parsed.data.lineIds)));
+        if (!owned.length) return res.status(404).json({ error: "No matching bill lines" });
+
+        await db.update(billLinesTable)
+          .set({ assetId: asset.id })
+          .where(inArray(billLinesTable.id, owned.map((o) => o.id)));
+        res.json({ linked: owned.length });
+      } catch (error) {
+        console.error("[assets] link bill lines failed:", error);
+        res.status(500).json({ error: "Failed to link" });
+      }
+    });
+
+    app.delete("/api/assets/:id/bill-lines/:lineId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const [owned] = await db.select({ id: billLinesTable.id })
+          .from(billLinesTable)
+          .innerJoin(billsTable, eq(billLinesTable.billId, billsTable.id))
+          .where(and(
+            eq(billsTable.companyId, companyId),
+            eq(billLinesTable.id, req.params.lineId),
+            eq(billLinesTable.assetId, req.params.id),
+          ))
+          .limit(1);
+        if (!owned) return res.status(404).json({ error: "Not linked to this asset" });
+        await db.update(billLinesTable).set({ assetId: null }).where(eq(billLinesTable.id, owned.id));
+        res.status(204).end();
+      } catch (error) {
+        console.error("[assets] unlink bill line failed:", error);
+        res.status(500).json({ error: "Failed to unlink" });
+      }
+    });
+
+    // From the bill page: tag one line with an asset (or clear it). Needs the
+    // bill permission to touch the bill and the asset to belong to the company.
+    app.patch("/api/bill-line-items/:lineId/asset", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const parsed = z.object({ assetId: z.string().min(1).nullable() }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+
+        const [owned] = await db.select({ id: billLinesTable.id })
+          .from(billLinesTable)
+          .innerJoin(billsTable, eq(billLinesTable.billId, billsTable.id))
+          .where(and(eq(billsTable.companyId, companyId), eq(billLinesTable.id, req.params.lineId)))
+          .limit(1);
+        if (!owned) return res.status(404).json({ error: "Bill line not found" });
+        if (parsed.data.assetId && !(await findOwnedAsset(parsed.data.assetId, companyId))) {
+          return res.status(404).json({ error: "Asset not found" });
+        }
+        await db.update(billLinesTable).set({ assetId: parsed.data.assetId }).where(eq(billLinesTable.id, owned.id));
+        res.json({ id: owned.id, assetId: parsed.data.assetId });
+      } catch (error) {
+        console.error("[assets] tag bill line failed:", error);
+        res.status(500).json({ error: "Failed to save" });
+      }
+    });
+
+    // The bill page's asset picker: names only, no costs, so anyone who can
+    // edit bills can tag a line without needing the asset register.
+    app.get("/api/asset-options", requireAuth, requirePermission("financial.bills", "view"), async (req, res) => {
+      try {
+        const companyId = sessionCompanyId(req);
+        if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+        const rows = await db.select({ id: assets.id, name: assets.name, rego: assets.rego, status: assets.status })
+          .from(assets)
+          .where(eq(assets.companyId, companyId))
+          .orderBy(asc(assets.name));
+        res.json(rows);
+      } catch (error) {
+        console.error("[assets] options failed:", error);
+        res.status(500).json({ error: "Failed to load assets" });
       }
     });
 

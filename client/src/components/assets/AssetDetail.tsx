@@ -50,6 +50,7 @@ import {
 } from "@shared/assets";
 import { AssetDialog, ComplianceDialog, EventDialog, ScheduleDialog, type EventPreset } from "./AssetDialogs";
 import { PrestartDefectBanner, PrestartsSection } from "./AssetPrestarts";
+import { AssetCostsSection } from "./AssetCosts";
 import {
   ASSIGNABLE_USERS_KEY,
   DueChip,
@@ -336,6 +337,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
+        <AssetCostsSection asset={asset} canEdit={canEdit} />
+
         {/* Due dates */}
         <Section
           icon={CalendarClock}
