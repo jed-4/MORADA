@@ -138,6 +138,7 @@ import {
   insertDefectSchema,
   insertMinuteSchema,
   insertSystemFolderSchema,
+  insertDocSchema,
   insertSystemDocumentSchema,
   insertTaskTemplateSchema,
   insertTaskTagSchema,
@@ -3221,6 +3222,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return folders.some((f) => f.id === folderId);
   };
 
+  const docBodySchema = insertDocSchema.omit({ companyId: true, ownerId: true, ownerName: true }).partial();
+  const normaliseDocText = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").trim();
+  const userDisplayName = (u: any) =>
+    `${u?.firstName ?? ""} ${u?.lastName ?? ""}`.trim() || u?.email || "Unknown";
+
   app.get("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
@@ -3249,11 +3255,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const user = req.user as any;
-      if (!(await docFolderIsOwn(user.companyId, req.body?.folderId))) {
+      const parsed = docBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      if (!(await docFolderIsOwn(user.companyId, parsed.data.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
       }
       const doc = await storage.createDoc({
-        ...req.body,
+        ...parsed.data,
         companyId: user.companyId,
         ownerId: user.id,
         ownerName: user.name || user.username,
@@ -3269,14 +3277,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
-      // The body went straight to .set(), so {companyId} moved a doc into
-      // another tenant and {folderId} could file it under a foreign folder.
-      const { id: _id, companyId: _co, ownerId: _owner, createdAt: _c, ...changes } = req.body ?? {};
-      if (!(await docFolderIsOwn((req.user as any).companyId, changes.folderId))) {
+      // The body used to go straight to .set(), so {companyId} moved a doc
+      // into another tenant. The schema now carries only editable fields —
+      // sign-off state is written by the review routes below, never here.
+      const parsed = docBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const changes = parsed.data;
+      const companyId = (req.user as any).companyId;
+      if (!(await docFolderIsOwn(companyId, changes.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
       }
-      const doc = await storage.updateDoc(req.params.id, changes);
+      if (owned.status === "archived" && (changes.title !== undefined || changes.contentHtml !== undefined)) {
+        return res.status(409).json({ error: "Restore this document before editing it" });
+      }
+      let doc = await storage.updateDoc(req.params.id, changes);
       if (!doc) return res.status(404).json({ error: "Doc not found" });
+      // Changing the words of a signed-off (or in-review) doc reopens it. The
+      // approved text stays in doc_versions. Compared as text, not HTML: the
+      // editor re-serialises markup on load, which would otherwise reopen a
+      // doc that was merely opened.
+      const textChanged = changes.contentText !== undefined
+        && normaliseDocText(changes.contentText) !== normaliseDocText(owned.contentText);
+      const titleChanged = changes.title !== undefined && changes.title !== owned.title;
+      if ((owned.status === "approved" || owned.status === "in_review") && (textChanged || titleChanged)) {
+        doc = (await storage.setDocReviewState(req.params.id, companyId, {
+          status: "draft", submittedAt: null, submittedById: null,
+        })) ?? doc;
+      }
       res.json(doc);
     } catch (error) {
       res.status(500).json({ error: "Failed to update doc" });
@@ -3291,6 +3318,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doc" });
+    }
+  });
+
+  // ── Library sign-off: draft → in_review → approved, archived on the side ──
+  // Anyone who can edit can ask for review; only "approve" signs off or sends
+  // back. An approver may approve a draft directly (small teams).
+
+  app.post("/api/docs/:id/submit", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "draft") return res.status(409).json({ error: `A ${owned.status.replace("_", " ")} document can't be sent for review` });
+      const user = req.user as any;
+      const doc = await storage.setDocReviewState(owned.id, user.companyId, {
+        status: "in_review", submittedAt: new Date(), submittedById: user.id, reviewNote: null,
+      });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send for review" });
+    }
+  });
+
+  app.post("/api/docs/:id/approve", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "draft" && owned.status !== "in_review") {
+        return res.status(409).json({ error: `This document is already ${owned.status}` });
+      }
+      const user = req.user as any;
+      const doc = await storage.approveDoc(owned.id, user.companyId, { id: user.id, name: userDisplayName(user) });
+      if (!doc) return res.status(404).json({ error: "Doc not found" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve" });
+    }
+  });
+
+  app.post("/api/docs/:id/reject", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "in_review") return res.status(409).json({ error: "Only a document in review can be sent back" });
+      const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 2000) : "";
+      const doc = await storage.setDocReviewState(owned.id, (req.user as any).companyId, {
+        status: "draft", reviewNote: note || null, submittedAt: null, submittedById: null,
+      });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send back" });
+    }
+  });
+
+  app.post("/api/docs/:id/archive", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const doc = await storage.setDocReviewState(owned.id, (req.user as any).companyId, { status: "archived" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to archive" });
+    }
+  });
+
+  // Restoring returns a doc to approved only when its text is still exactly
+  // the last approved version; otherwise it comes back as a draft.
+  app.post("/api/docs/:id/restore", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "archived") return res.status(409).json({ error: "This document isn't archived" });
+      const companyId = (req.user as any).companyId;
+      const latest = owned.currentVersion > 0 ? await storage.getDocVersion(owned.id, owned.currentVersion, companyId) : undefined;
+      const unchanged = !!latest && latest.title === owned.title && latest.contentHtml === (owned.contentHtml ?? "");
+      const doc = await storage.setDocReviewState(owned.id, companyId, { status: unchanged ? "approved" : "draft" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to restore" });
+    }
+  });
+
+  app.get("/api/docs/:id/versions", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const versions = await storage.getDocVersions(owned.id, (req.user as any).companyId);
+      // The list is for the history panel; bodies are fetched one at a time.
+      res.json(versions.map(({ contentHtml: _body, ...v }) => v));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch versions" });
+    }
+  });
+
+  app.get("/api/docs/:id/versions/:version", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const version = Number(req.params.version);
+      if (!Number.isInteger(version) || version < 1) return res.status(404).json({ error: "Version not found" });
+      const row = await storage.getDocVersion(owned.id, version, (req.user as any).companyId);
+      if (!row) return res.status(404).json({ error: "Version not found" });
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch version" });
     }
   });
 

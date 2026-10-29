@@ -756,12 +756,55 @@ export const docs = pgTable("docs", {
   contentText: text("content_text").default(""),
   ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
   ownerName: text("owner_name"),
+  // Library (migration 0118). docType is what the document IS; status is where
+  // it sits in sign-off. Editing an approved doc drops it back to draft — the
+  // approved text is kept as a row in doc_versions, so nothing is lost.
+  docType: text("doc_type").notNull().default("document"), // see LIBRARY_DOC_TYPES
+  status: text("status").notNull().default("draft"), // see LIBRARY_DOC_STATUSES
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  linkUrl: text("link_url"), // a link-only entry (e.g. a Google Drive file)
+  currentVersion: integer("current_version").notNull().default(0), // last approved version, 0 = never
+  submittedAt: timestamp("submitted_at"),
+  submittedById: varchar("submitted_by_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id, { onDelete: "set null" }),
+  approvedByName: text("approved_by_name"),
+  reviewNote: text("review_note"), // why a review was sent back
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
-export const insertDocSchema = createInsertSchema(docs).omit({ id: true, createdAt: true, updatedAt: true });
+export const LIBRARY_DOC_TYPES = ["sop", "policy", "template", "checklist", "reference", "document"] as const;
+export const LIBRARY_DOC_STATUSES = ["draft", "in_review", "approved", "archived"] as const;
+export type LibraryDocType = typeof LIBRARY_DOC_TYPES[number];
+export type LibraryDocStatus = typeof LIBRARY_DOC_STATUSES[number];
+// Sign-off fields are written only by the submit/approve/reject/archive
+// routes, never by a create or an edit.
+export const insertDocSchema = createInsertSchema(docs, {
+  docType: z.enum(LIBRARY_DOC_TYPES).optional(),
+  tags: z.array(z.string()).optional(),
+}).omit({
+  id: true, createdAt: true, updatedAt: true,
+  status: true, currentVersion: true, submittedAt: true, submittedById: true,
+  approvedAt: true, approvedById: true, approvedByName: true, reviewNote: true,
+});
 export type Doc = typeof docs.$inferSelect;
 export type InsertDoc = z.infer<typeof insertDocSchema>;
+
+// One row per approval: the exact text that was signed off.
+export const docVersions = pgTable("doc_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  docId: varchar("doc_id").notNull().references(() => docs.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  title: text("title").notNull(),
+  contentHtml: text("content_html").notNull().default(""),
+  approvedById: varchar("approved_by_id").references(() => users.id, { onDelete: "set null" }),
+  approvedByName: text("approved_by_name"),
+  approvedAt: timestamp("approved_at").notNull().defaultNow(),
+}, (t) => ({
+  docVersionUnique: uniqueIndex("doc_versions_doc_version_uq").on(t.docId, t.version),
+}));
+export type DocVersion = typeof docVersions.$inferSelect;
 
 // Custom Field Definitions (max 4 per system)
 export const customFieldDefs = pgTable("custom_field_defs", {
