@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { getUserDisplayName } from "@/lib/utils";
+import type { AssignablePerson } from "@shared/assignable";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -219,8 +221,8 @@ export default function ChecklistInstanceDetail() {
     enabled: !!checklistId,
   });
 
-  const { data: teamMembers = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: teamMembers = [] } = useQuery<AssignablePerson[]>({
+    queryKey: ["/api/users/assignable"],
   });
 
   // Fetch tasks for this project for linking
@@ -344,7 +346,7 @@ export default function ChecklistInstanceDetail() {
         status: newStatus,
         completedAt: isCompleting ? new Date() : null,
         completedBy: isCompleting ? user?.id : null,
-        completedByName: isCompleting ? user?.name : null,
+        completedByName: isCompleting ? getUserDisplayName(user) : null,
       },
     });
   };
@@ -371,7 +373,7 @@ export default function ChecklistInstanceDetail() {
           contentType: response.metadata.contentType,
           size: response.metadata.size,
           uploadedAt: new Date().toISOString(),
-          uploadedBy: user?.name || "Unknown",
+          uploadedBy: getUserDisplayName(user) || "Unknown",
         };
         currentAttachments = [...currentAttachments, newAttachment];
         updateItemMutation.mutate({
@@ -403,7 +405,7 @@ export default function ChecklistInstanceDetail() {
         status: "na",
         completedAt: new Date(),
         completedBy: user?.id,
-        completedByName: user?.name,
+        completedByName: getUserDisplayName(user),
       },
     });
   };
@@ -433,7 +435,7 @@ export default function ChecklistInstanceDetail() {
     
     // Add new note entry
     const newEntry = {
-      author: user?.name || "Unknown",
+      author: getUserDisplayName(user) || "Unknown",
       date: new Date().toISOString(),
       text: newNoteText.trim()
     };
@@ -467,7 +469,7 @@ export default function ChecklistInstanceDetail() {
       priority: settingsForm.priority,
       dueDate: settingsForm.dueDate ? new Date(settingsForm.dueDate) : null,
       assigneeId: settingsForm.assigneeId || null,
-      assigneeName: assignee?.name || null,
+      assigneeName: assignee?.displayName || null,
     });
   };
 
@@ -476,7 +478,7 @@ export default function ChecklistInstanceDetail() {
       status: "completed",
       completedAt: new Date(),
       completedBy: user?.id,
-      completedByName: user?.name,
+      completedByName: getUserDisplayName(user),
     });
   };
 
@@ -492,8 +494,11 @@ export default function ChecklistInstanceDetail() {
         assigneeName: undefined,
         items: groupItems.map((i: ChecklistInstanceItem) => ({
           ...i,
-          assigneeName: teamMembers?.find((u: User) => u.id === i.assigneeId)?.name,
-          completedByName: i.completedByName || teamMembers?.find((u: User) => u.id === i.completedBy)?.name,
+          // ?? null, not undefined: the row type these feed carries nullable
+          // names, and an undefined would not satisfy it.
+          assigneeName: teamMembers?.find((u) => u.id === i.assigneeId)?.displayName ?? null,
+          completedByName:
+            i.completedByName || teamMembers?.find((u) => u.id === i.completedBy)?.displayName || null,
         })),
       }));
       const exportDate = format(new Date(), "MMM d, yyyy h:mm a");
@@ -918,17 +923,17 @@ export default function ChecklistInstanceDetail() {
                                           onClick={() => {
                                             updateItemMutation.mutate({
                                               itemId: item.id,
-                                              data: { assigneeId: member.id, assigneeName: member.name }
+                                              data: { assigneeId: member.id, assigneeName: member.displayName }
                                             });
                                             setOpenAssignPopover(null);
                                           }}
                                         >
                                           <Avatar className="h-4 w-4 mr-2">
                                             <AvatarFallback className="text-2xs bg-primary/20 text-primary">
-                                              {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                              {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                             </AvatarFallback>
                                           </Avatar>
-                                          <span className="truncate">{member.name}</span>
+                                          <span className="truncate">{member.displayName}</span>
                                           {item.assigneeId === member.id && (
                                             <Check className="h-3 w-3 ml-auto text-primary shrink-0" />
                                           )}
@@ -1153,7 +1158,7 @@ export default function ChecklistInstanceDetail() {
                 <SelectContent>
                   {teamMembers.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
-                      {member.name}
+                      {member.displayName}
                     </SelectItem>
                   ))}
                 </SelectContent>

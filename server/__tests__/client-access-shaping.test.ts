@@ -17,6 +17,7 @@ import {
   projectClientInvoice,
   projectClientInvoiceItem,
   projectClientInvoicePayments,
+  projectClientProject,
   projectClientVariation,
   projectClientVariationItems,
 } from "../clientProjections";
@@ -53,6 +54,47 @@ const variationRow = {
   relatedTo: "internal ref",
 };
 
+// Every column a projects row carries that a homeowner must never receive.
+const projectRow = {
+  id: "p1",
+  name: "Irwin Residence",
+  description: "Two-storey rebuild",
+  location: "12 Smith St, Bondi",
+  status: "active",
+  currentSystemPhase: "construction",
+  icon: "home",
+  color: "#87749A",
+  isArchived: false,
+  isBusiness: false,
+  clientId: "contact-1",
+  startDate: "2026-03-02",
+  percentComplete: 40,
+  companyId: "c1",
+  ownerId: "u-builder",
+  budget: 90000000,
+  clientBudget: 95000000,
+  contractCost: 80000000,
+  contractPrice: 100000000,
+  contractedTotalExGstCents: 90909091,
+  contractedTotalIncGstCents: 100000000,
+  contractedEstimateId: "est1",
+  selectedEstimateId: "est1",
+  tradesPortalToken: "trades-secret",
+  googleDriveFolderId: "drive-1",
+  googleDriveFolderName: "Irwin",
+  xeroTrackingOptionId: "xero-1",
+  xeroTrackingOptionName: "Irwin",
+  leadNumber: "L-12",
+  phaseTransitions: [{ to: "construction" }],
+  invoicingMethod: "progress",
+};
+const PROJECT_SECRETS = [
+  "ownerId", "budget", "clientBudget", "contractCost", "contractPrice",
+  "contractedTotalExGstCents", "contractedTotalIncGstCents", "contractedEstimateId", "selectedEstimateId",
+  "tradesPortalToken", "googleDriveFolderId", "googleDriveFolderName", "xeroTrackingOptionId",
+  "xeroTrackingOptionName", "leadNumber", "phaseTransitions", "invoicingMethod", "companyId", "foreman",
+];
+
 const invoiceRow = {
   id: "i1",
   projectId: "p1",
@@ -78,6 +120,26 @@ const invoiceRow = {
 
 async function projections() {
   console.log("projections");
+
+  await check("project keeps what the client screens read, and nothing else", () => {
+    const out: any = projectClientProject({ ...projectRow, clientName: "The Irwins", foreman: "Kye", progress: 42 });
+    for (const key of PROJECT_SECRETS) assert.ok(!(key in out), `${key} leaked`);
+    assert.strictEqual(out.name, "Irwin Residence");
+    assert.strictEqual(out.location, "12 Smith St, Bondi");
+    assert.strictEqual(out.currentSystemPhase, "construction");
+    assert.strictEqual(out.clientName, "The Irwins");
+    assert.strictEqual(out.progress, 42);
+  });
+
+  await check("project: a column added to the table later stays server-side", () => {
+    const out: any = projectClientProject({ ...projectRow, someFutureMarginColumn: 123 });
+    assert.ok(!("someFutureMarginColumn" in out));
+  });
+
+  await check("project: list-only enrichment is absent on a single project", () => {
+    const out: any = projectClientProject(projectRow);
+    assert.ok(!("clientName" in out) && !("progress" in out));
+  });
 
   await check("variation drops token, audit trail and internal ids", () => {
     const out: any = projectClientVariation(variationRow);
@@ -292,6 +354,27 @@ async function gate() {
       statuses.map((status) => ({ ...invoiceRow, id: status, status })));
     assert.deepStrictEqual(r.body.map((i: any) => i.id), ["sent", "partial", "paid", "overdue"]);
     assert.ok(!("xeroInvoiceId" in r.body[0]));
+  });
+
+  await check("client project list: allow-listed fields only", async () => {
+    const r = await run(client, "GET", "/projects", [{ ...projectRow, clientName: "The Irwins", foreman: "Kye", progress: 40 }]);
+    assert.strictEqual(r.status, 200);
+    for (const key of PROJECT_SECRETS) assert.ok(!(key in r.body[0]), `${key} leaked`);
+    assert.strictEqual(r.body[0].id, "p1");
+    assert.strictEqual(r.body[0].clientName, "The Irwins");
+  });
+
+  await check("client single project: no trades token, no money", async () => {
+    const r = await run(client, "GET", "/projects/p1", projectRow);
+    assert.strictEqual(r.status, 200);
+    for (const key of PROJECT_SECRETS) assert.ok(!(key in r.body), `${key} leaked`);
+    assert.strictEqual(r.body.name, "Irwin Residence");
+  });
+
+  await check("team still gets the whole project row", async () => {
+    const r = await run(team, "GET", "/projects/p1", projectRow);
+    assert.strictEqual(r.body.tradesPortalToken, "trades-secret");
+    assert.strictEqual(r.body.contractCost, 80000000);
   });
 
   await check("client draft invoice payments are a 404", async () => {

@@ -273,11 +273,11 @@ export default function QuantityFormulaEditor({
    * React resets the caret to the end when the value prop changes, so it is put
    * back on the next frame — after the re-render that the onChange causes.
    */
-  const insertAtCaret = (text: string) => {
+  const insertAtCaret = (text: string, caretAt = text.length) => {
     const el = inputRef.current;
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
-    const caret = start + text.length;
+    const caret = start + caretAt;
     onChange(value.slice(0, start) + text + value.slice(end));
     requestAnimationFrame(() => {
       const again = inputRef.current;
@@ -288,6 +288,32 @@ export default function QuantityFormulaEditor({
   };
 
   const append = insertAtCaret;
+
+  /**
+   * ROUND, with its closing bracket already there and the caret inside it.
+   *
+   * It inserted the bare text "ROUND(" and left the caret after it, so every
+   * formula had to be finished by remembering to press ")" — and picking a
+   * take-off item next put the measurement AFTER the open bracket with nothing
+   * closing it, which is not a formula at all.
+   *
+   * With a selection it wraps instead: highlight `2 * 3`, press ROUND, get
+   * `ROUND(2 * 3)` with the caret after the close, which is what every
+   * expression editor does and what the selection-replacing behaviour above
+   * already implies.
+   */
+  const insertRound = () => {
+    const el = inputRef.current;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const selected = value.slice(start, end);
+    if (selected) {
+      insertAtCaret(`ROUND(${selected})`, `ROUND(${selected})`.length);
+    } else {
+      // Caret between the brackets, so a take-off pick lands inside them.
+      insertAtCaret("ROUND()", "ROUND(".length);
+    }
+  };
 
   // Keep the caret in the cell: a blur commits, and a popover click must not.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
@@ -433,7 +459,7 @@ export default function QuantityFormulaEditor({
             <button
               key={k}
               type="button"
-              onClick={() => append(k)}
+              onClick={() => (k === "ROUND(" ? insertRound() : append(k))}
               className="h-8 min-w-[2.5rem] rounded-sm bg-muted text-sm hover-elevate"
               data-testid={`${testId}-key-${k === "*" ? "times" : k === "/" ? "divide" : k.replace("(", "")}`}
             >

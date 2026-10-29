@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiFetch, apiRequest, uploadPhoto, ApiError } from '../services/api';
+import { apiFetch, apiRequest, uploadPhoto, uploadPhotoViaServer, ApiError } from '../services/api';
 import { onSocketEvent, useSocketConnected } from '../services/socket';
 import { usePresence } from '../lib/usePresence';
 import { useTypingEmitter, useTypingUsers } from '../lib/useTypingIndicator';
@@ -105,6 +105,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
   const { channelId, channelName } = route.params as { channelId: string; channelName: string };
   const { user } = useAuth();
+  const isClient = user?.userCategory === 'client';
   const theme = useTheme();
   const toast = useToast();
   const colors = {
@@ -263,7 +264,8 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         setMessages(prev => prev.map(m => (
           m.id === tempId ? { ...m, uploadStatus: `Uploading ${i + 1} of ${images.length}…` } : m
         )));
-        const { objectPath } = await uploadPhoto(img.uri);
+        // Clients may only upload through the server route (see uploadPhotoViaServer).
+        const { objectPath } = await (isClient ? uploadPhotoViaServer : uploadPhoto)(img.uri);
         pendingAttachmentPaths.push({
           objectPath,
           fileName: img.fileName || `photo-${Date.now()}.jpg`,
@@ -289,7 +291,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
       setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: false, failed: true, uploadStatus: undefined } : m)));
       if (isRetry) toast.error('Message failed to send');
     }
-  }, [channelId, toast]);
+  }, [channelId, toast, isClient]);
 
   // The composer hands up the already-resolved markup + staged images.
   const handleSend = useCallback((markup: string, images: PendingImage[]) => {
@@ -589,13 +591,16 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     pinnedSheetRef.current?.present();
   }, [topPinned, listData]);
 
-  const isOwnMenuMessage = !!menuMessage && menuMessage.userId === user?.id;
+  // Clients can react and copy, but the server refuses them edit, delete and
+  // pin (clientAccess ALLOW_RULES), so those actions aren't offered.
+  const isOwnMenuMessage = !!menuMessage && menuMessage.userId === user?.id && !isClient;
   const menuReactions = menuMessage ? reactionsMap[menuMessage.id] || [] : [];
   const myRole = members.find(m => m.userId === user?.id)?.role;
   const isChannelAdmin = myRole === 'owner' || myRole === 'admin';
   // Server rule (storage.toggleMessagePin): anyone may pin; only the pinner or
   // an owner/admin may unpin. Hide the action instead of offering a sure 403.
   const canPinMenuMessage =
+    !isClient &&
     !!menuMessage &&
     !menuMessage.pending &&
     !menuMessage.failed &&
