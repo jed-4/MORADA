@@ -16,6 +16,7 @@ import { navigationIntegration } from '../lib/sentry';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
+import ClientNavigator from './ClientNavigator';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
@@ -336,7 +337,10 @@ function MainTabs() {
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  // Clients get client mode (ClientNavigator): the builder tabs below are
+  // screens the server refuses them on.
+  const isClient = user?.userCategory === 'client';
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useTheme();
@@ -376,7 +380,9 @@ export default function AppNavigator() {
       }}
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? (
+        {isAuthenticated && isClient ? (
+          <Stack.Screen name="Client" component={ClientNavigator} />
+        ) : isAuthenticated ? (
           <Stack.Screen name="Main" component={MainTabs} />
         ) : (
           <>

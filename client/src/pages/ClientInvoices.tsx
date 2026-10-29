@@ -1,5 +1,6 @@
 import { useState, useMemo, type ReactNode } from "react";
 import { usePermission } from "@/hooks/use-permission";
+import { isClaimIssued, isClaimShared } from "@shared/claimSchedule";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -145,6 +146,38 @@ function ClientInvoicesInner({ embedded }: { embedded?: boolean } = {}) {
   });
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+
+  /* Sharing the payment schedule with the client.
+     Freezes every unsent claim at its current total, so the client sees what
+     is coming while the builder goes on editing the drafts. Gated on Send
+     rather than Edit — telling a client a number is a commitment of the same
+     kind as issuing the claim. See shared/claimSchedule.ts. */
+  const canSendInvoices = usePermission("projects.invoices", "send");
+  const unsharedUnissuedCount = useMemo(
+    () => invoices.filter((i: any) => !isClaimIssued(i) && !isClaimShared(i)).length,
+    [invoices],
+  );
+  const shareScheduleMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest(`/api/projects/${projectIdFromUrl}/share-payment-schedule`, "POST"),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      const n = result?.shared ?? 0;
+      toast({
+        title: n === 0 ? "Nothing to share" : `Shared ${n} ${n === 1 ? "claim" : "claims"}`,
+        description: n === 0
+          ? "Every claim on this job has already been sent."
+          : "The client can see these amounts and dates. Editing the claims won't change what they see.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't share the payment schedule",
+        description: error?.message || undefined,
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: projectVariations = [] } = useQuery<Variation[]>({
     queryKey: ["/api/variations", { projectId: projectIdFromUrl, status: "approved" }],
@@ -595,14 +628,34 @@ function ClientInvoicesInner({ embedded }: { embedded?: boolean } = {}) {
               ? <>{currentProject!.name} <span className="text-muted-foreground font-normal">· Client Invoices</span></>
               : pageTitle}
           </h2>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
-            onClick={handleCreateInvoice}
-            data-testid="button-create-invoice"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Create Invoice</span>
-          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Share the whole payment schedule in one go — what a builder
+                actually does at contract signing, rather than telling the
+                client about each claim as it comes. Re-running it re-freezes
+                every unsent claim at today's amount, which is also how a round
+                of approved variations gets pushed through. */}
+            {hasProjectContext && canSendInvoices && unsharedUnissuedCount > 0 && (
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                onClick={() => shareScheduleMutation.mutate()}
+                disabled={shareScheduleMutation.isPending}
+                data-testid="button-share-payment-schedule"
+              >
+                {shareScheduleMutation.isPending
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Eye className="w-3 h-3" />}
+                <span>Share schedule with client</span>
+              </button>
+            )}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={handleCreateInvoice}
+              data-testid="button-create-invoice"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Create Invoice</span>
+            </button>
+          </div>
         </div>
 
         {/* Row 2 — Finance summary (lilac, bottom section of card) */}

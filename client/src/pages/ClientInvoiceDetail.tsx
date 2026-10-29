@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { invoiceDateMode, itemClaimDate, scheduleMovedSinceLock } from "@shared/invoiceScheduleDates";
+import { hasSharedAmountDrift, isClaimIssued, isClaimShared, sharedAmountDrift } from "@shared/claimSchedule";
 import { EmptyState } from "@/components/EmptyState";
 import { usePermission } from "@/hooks/use-permission";
 import { useParams, useLocation } from "wouter";
@@ -21,6 +22,7 @@ import {
   Calendar as CalendarIcon,
   Loader2,
   Eye,
+  EyeOff,
   Send,
   Download,
   Mail,
@@ -1713,6 +1715,36 @@ function ClientInvoiceDetailInner() {
     },
   });
 
+  /* Sharing the payment schedule.
+     Freezes what the client is told to expect. Editing the draft afterwards
+     never moves that figure — the point is that the builder can keep working
+     without the client watching the number change. See shared/claimSchedule.ts. */
+  const canSendInvoices = usePermission("projects.invoices", "send");
+  const shareWithClientMutation = useMutation({
+    mutationFn: async (share: boolean) =>
+      apiRequest(
+        `/api/client-invoices/${effectiveInvoiceId}/share-with-client`,
+        share ? "POST" : "DELETE",
+      ),
+    onSuccess: (_d, share) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({
+        title: share ? "Shared with the client" : "No longer shared",
+        description: share
+          ? "They'll see this amount in their payment schedule until you share again."
+          : "It's been taken out of their payment schedule.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't update sharing",
+        description: error?.message || undefined,
+        variant: "destructive",
+      });
+    },
+  });
+
   const sendInvoiceMutation = useMutation({
     mutationFn: async () => {
       await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", {
@@ -2496,7 +2528,45 @@ function ClientInvoiceDetailInner() {
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap">
-                {isEditMode && invoice?.status === "draft" && (
+                {/* Share with the client — what puts this claim into their
+                    payment schedule before it is sent. The figure freezes on
+                    the press; editing afterwards never moves it, which is the
+                    whole point. Gated on Send, like issuing: telling a client a
+                    number is the same kind of commitment. */}
+                {isEditMode && invoice && !isClaimIssued(invoice as any) && canSendInvoices && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => shareWithClientMutation.mutate(!isClaimShared(invoice as any))}
+                        disabled={shareWithClientMutation.isPending}
+                        className={cn(
+                          "h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
+                          isClaimShared(invoice as any)
+                            ? "text-status-info border-status-info/30"
+                            : "text-muted-foreground",
+                        )}
+                        data-testid="button-share-with-client"
+                      >
+                        {shareWithClientMutation.isPending ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : isClaimShared(invoice as any) ? (
+                          <Eye className="w-3 h-3" />
+                        ) : (
+                          <EyeOff className="w-3 h-3" />
+                        )}
+                        <span>{isClaimShared(invoice as any) ? "Shared" : "Share with client"}</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isClaimShared(invoice as any)
+                        ? `The client sees ${formatCurrency(((invoice as any).clientSharedAmountCents ?? 0) / 100)} in their payment schedule. Editing this claim won't change what they see.`
+                        : "Put this claim in the client's payment schedule, at today's amount."}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {isEditMode && invoice?.status === "draft" && canSendInvoices && (
                   <button
                     type="button"
                     onClick={() => sendInvoiceMutation.mutate()}
@@ -2607,6 +2677,42 @@ function ClientInvoiceDetailInner() {
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
             <div className="max-w-4xl mx-auto px-3 py-3 space-y-3">
+
+                {/* The claim has moved away from what the client was told.
+                    Deliberately a builder-only banner: the client is NOT shown
+                    the drift, because a figure that does not move is the entire
+                    reason the frozen one exists. This is the prompt to decide
+                    whether they should be told the new number. */}
+                {isEditMode && invoice && hasSharedAmountDrift(invoice as any) && (
+                  <div
+                    className="rounded-lg border border-amber/40 bg-amber-light px-3 py-2 flex items-center justify-between gap-3"
+                    data-testid="banner-shared-amount-drift"
+                  >
+                    <div className="text-xs">
+                      <span className="font-medium">The client is still seeing{" "}
+                        {formatCurrency(((invoice as any).clientSharedAmountCents ?? 0) / 100)}.
+                      </span>{" "}
+                      <span className="text-muted-foreground">
+                        This claim is now{" "}
+                        {formatCurrency(((invoice as any).totalAmount ?? 0) / 100)}
+                        {" — "}
+                        {sharedAmountDrift(invoice as any) > 0 ? "up" : "down"}{" "}
+                        {formatCurrency(Math.abs(sharedAmountDrift(invoice as any)) / 100)}.
+                      </span>
+                    </div>
+                    {canSendInvoices && (
+                      <button
+                        type="button"
+                        onClick={() => shareWithClientMutation.mutate(true)}
+                        disabled={shareWithClientMutation.isPending}
+                        className="h-6 shrink-0 px-2 text-xs border rounded-md bg-card hover-elevate active-elevate-2"
+                        data-testid="button-reshare-with-client"
+                      >
+                        Share the new amount
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">

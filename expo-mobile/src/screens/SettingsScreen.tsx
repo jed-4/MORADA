@@ -8,6 +8,7 @@ import {
   useColorScheme,
   Switch,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
 
 type Props = {
@@ -99,6 +101,34 @@ export default function SettingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
 
   const theme = useTheme();
+  const { deleteAccount } = useAuth();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Two steps on purpose: deletion can't be undone. The server refuses the
+  // only Owner of a company that still has a team, and we show its message.
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Delete your account?',
+      "This removes your login, name, email, phone and photo, and signs you out on every device. Timesheets, diary entries and other work you recorded stay with your company. This can't be undone.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              await deleteAccount();
+            } catch (err: any) {
+              setIsDeleting(false);
+              Alert.alert("Couldn't delete account", err?.message || 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const colors = {
     bg: theme.background,
     card: theme.card,
@@ -197,6 +227,28 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+          <TouchableOpacity
+            style={[styles.itemRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={confirmDeleteAccount}
+            disabled={isDeleting}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <View style={[styles.itemIconWrap, { backgroundColor: theme.statusDangerBg }]}>
+              <Ionicons name="trash-outline" size={18} color={theme.statusDanger} />
+            </View>
+            <View style={styles.itemText}>
+              <Text style={[styles.itemLabel, { color: theme.statusDanger }]}>Delete account</Text>
+              <Text style={[styles.itemDescription, { color: colors.secondary }]}>
+                Removes your login and personal details. Work you recorded stays with your company.
+              </Text>
+            </View>
+            {isDeleting && <ActivityIndicator size="small" color={colors.secondary} />}
+          </TouchableOpacity>
         </View>
 
         {/* Build identity. Every build so far has reported version "1.0.2", so

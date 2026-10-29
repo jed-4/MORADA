@@ -79,7 +79,7 @@ export function MoradaTaskList({
 
   // Fetch users for assignee dropdown
   const { data: users = [] } = useQuery<Array<{ id: string; name: string; email: string }>>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/assignable"],
   });
 
   // Create task mutation
