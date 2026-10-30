@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Copy, Check } from "lucide-react";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 const inviteFormSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -253,6 +254,10 @@ export default function InviteUserDialog({
                       />
                     </FormControl>
                     <FormMessage />
+                    <BouncedAddressWarning
+                      emails={[field.value]}
+                      onUseSuggestion={(_bad, fix) => form.setValue("email", fix, { shouldValidate: true })}
+                    />
                   </FormItem>
                 )}
               />
