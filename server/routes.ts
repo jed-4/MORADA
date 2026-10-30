@@ -30287,6 +30287,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   app.get("/api/email-deliveries", requireAuth, requireTeamMember, async (req: any, res) => {
+    // Tenancy: emailLogScope takes companyId from the session (getSessionCompanyId)
+    // and every query in services/emailLog.ts filters email_deliveries.company_id
+    // by it — plus user_id for someone without admin.email_log.
     try {
       const scope = await emailLogScope(req);
       if (!scope) return res.status(403).json({ error: "No company context" });
@@ -30331,6 +30334,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/email-deliveries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    // Tenancy: emailLogScope takes companyId from the session (getSessionCompanyId)
+    // and every query in services/emailLog.ts filters email_deliveries.company_id
+    // by it — plus user_id for someone without admin.email_log.
     try {
       const scope = await emailLogScope(req);
       if (!scope) return res.status(403).json({ error: "No company context" });
