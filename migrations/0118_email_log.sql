@@ -39,10 +39,6 @@ ALTER TABLE email_deliveries
 CREATE INDEX IF NOT EXISTS email_deliveries_project_idx
   ON email_deliveries (company_id, project_id, sent_at DESC);
 
--- "Has this address bounced before?" and a contact's email history.
-CREATE INDEX IF NOT EXISTS email_deliveries_to_idx
-  ON email_deliveries USING gin (to_addresses);
-
 -- ── Backfill ────────────────────────────────────────────────────────────────
 -- Rows written with no company (reminders, some schedulers) take the sender's.
 -- Without this they are visible to nobody.
