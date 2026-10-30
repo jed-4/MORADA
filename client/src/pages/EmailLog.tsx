@@ -62,6 +62,7 @@ export default function EmailLog() {
     if (projectId) p.set("projectId", projectId);
     if (from) p.set("from", from);
     if (to) p.set("to", to);
+    if (from || to) p.set("tz", Intl.DateTimeFormat().resolvedOptions().timeZone);
     return p.toString();
   }, [tab, debouncedQ, type, projectId, from, to]);
 

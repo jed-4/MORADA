@@ -46,13 +46,16 @@ export function ResendEmailDialog({
     // Pre-fill with the likely fix when there is one, so the common case is
     // a glance and a click.
     setTo(original.map((a) => suggestEmailFix(a) ?? a).join(", "));
-    setUpdateAddressBook(true);
   }, [open, original]);
 
   const addresses = split(to);
   const valid = addresses.length > 0 && addresses.every(isPlausibleEmail);
+  // Only an address that FAILED is replaced in the address book. Resending a
+  // delivered email to someone else ("send it to my wife too") must never
+  // overwrite the client's good address.
+  const originalFailed = ["bounced", "complained", "failed"].includes(email.status);
   const changedSingle =
-    original.length === 1 && addresses.length === 1 && original[0].toLowerCase() !== addresses[0].toLowerCase();
+    originalFailed && original.length === 1 && addresses.length === 1 && original[0].toLowerCase() !== addresses[0].toLowerCase();
 
   const resend = useMutation({
     mutationFn: async () => {
@@ -66,7 +69,10 @@ export function ResendEmailDialog({
       };
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-deliveries"] });
+      // Every email-log view, including contact histories keyed by URL.
+      queryClient.invalidateQueries({
+        predicate: (q) => typeof q.queryKey[0] === "string" && q.queryKey[0].startsWith("/api/email-deliveries"),
+      });
       const book = result.addressBook;
       const updated = book ? book.contacts + book.suppliers + book.supplierContacts : 0;
       toast({

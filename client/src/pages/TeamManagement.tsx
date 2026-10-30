@@ -216,6 +216,9 @@ export default function TeamManagement() {
                   <Clock className="w-3.5 h-3.5" />
                   Pending Invitations ({teamInvitations.length})
                 </h3>
+                {/* One check for all of them — resending to an address that
+                    already bounced will bounce again. */}
+                <BouncedAddressWarning emails={teamInvitations.map((i) => i.email)} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {teamInvitations.map((invitation) => (
                     <PendingInvitationCard
@@ -473,8 +476,6 @@ function PendingInvitationCard({
               </span>
             )}
           </div>
-          {/* Resending to an address that already bounced will bounce again. */}
-          <BouncedAddressWarning emails={[invitation.email]} className="mt-1.5" />
         </div>
 
         <div className={`flex items-center gap-1 shrink-0 ${isHovered ? 'visible' : 'invisible'}`}>

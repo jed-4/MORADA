@@ -9,7 +9,7 @@ import {
   proposals,
   proposalAcceptances,
   rfqs,
-  rfqPortalTokens,
+  rfqRecipients,
   rfqQuotes,
   purchaseOrders,
   clientInvoices,
@@ -52,6 +52,9 @@ export interface EmailLogFilters {
   q?: string | null;
   from?: string | null;
   to?: string | null;
+  /** IANA zone the from/to dates are in. sent_at is UTC; without this an
+   *  Australian "from 1 Oct" would start at 10–11am local. */
+  timeZone?: string | null;
   cursor?: string | null;
   limit?: number;
 }
@@ -121,8 +124,11 @@ function filterConditions(f: EmailLogFilters, trackingEnabled: boolean): SQL[] {
     const like = `%${f.q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     conds.push(sql`(${emailDeliveries.subject} ILIKE ${like} OR ${emailDeliveries.toAddresses}::text ILIKE ${like})`);
   }
-  if (f.from) conds.push(sql`${emailDeliveries.sentAt} >= ${f.from}::date`);
-  if (f.to) conds.push(sql`${emailDeliveries.sentAt} < (${f.to}::date + 1)`);
+  const localDate = f.timeZone
+    ? sql`((${emailDeliveries.sentAt} AT TIME ZONE 'UTC') AT TIME ZONE ${f.timeZone})::date`
+    : sql`(${emailDeliveries.sentAt})::date`;
+  if (f.from) conds.push(sql`${localDate} >= ${f.from}::date`);
+  if (f.to) conds.push(sql`${localDate} <= ${f.to}::date`);
   return conds;
 }
 
@@ -140,7 +146,7 @@ const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOStrin
 
 export async function listEmailDeliveries(scope: EmailLogScope, f: EmailLogFilters): Promise<EmailLogListResponse> {
   const trackingEnabled = isDeliveryTrackingEnabled();
-  const limit = Math.min(Math.max(f.limit ?? 100, 1), 200);
+  const limit = Math.min(Math.max(Number.isFinite(f.limit) ? f.limit! : 100, 1), 200);
   const base = [...scopeConditions(scope), ...filterConditions(f, trackingEnabled)];
 
   const cursor = decodeCursor(f.cursor);
@@ -148,9 +154,11 @@ export async function listEmailDeliveries(scope: EmailLogScope, f: EmailLogFilte
     ? [...base, sql`(${emailDeliveries.sentAt}, ${emailDeliveries.id}) < (${cursor.ts}::timestamp, ${cursor.id})`]
     : base;
 
-  // Summary is over the last 30 days of the SCOPE, not the filters — the
-  // counts are the tabs, and they should not change as you click between them.
-  const summaryConds = [...scopeConditions(scope), sql`${emailDeliveries.sentAt} > now() - interval '30 days'`];
+  // Summary is over the SCOPE, not the filters — the counts are the tabs, and
+  // they should not change as you click between them. Totals cover 30 days;
+  // "attention" is unwindowed so the badge matches the list it opens.
+  const summaryConds = scopeConditions(scope);
+  const last30 = sql`${emailDeliveries.sentAt} > now() - interval '30 days'`;
 
   const [rows, [summary]] = await Promise.all([
     db
@@ -187,9 +195,9 @@ export async function listEmailDeliveries(scope: EmailLogScope, f: EmailLogFilte
       .limit(limit + 1),
     db
       .select({
-        total: sql<number>`count(*)::int`,
-        delivered: sql<number>`count(*) FILTER (WHERE ${emailDeliveries.status} = 'delivered')::int`,
-        opened: sql<number>`count(*) FILTER (WHERE ${emailDeliveries.openCount} > 0)::int`,
+        total: sql<number>`count(*) FILTER (WHERE ${last30})::int`,
+        delivered: sql<number>`count(*) FILTER (WHERE ${last30} AND ${emailDeliveries.status} = 'delivered')::int`,
+        opened: sql<number>`count(*) FILTER (WHERE ${last30} AND ${emailDeliveries.openCount} > 0)::int`,
         attention: sql<number>`count(*) FILTER (WHERE ${attentionSql(trackingEnabled)})::int`,
       })
       .from(emailDeliveries)
@@ -335,7 +343,7 @@ export async function getEmailDeliveryDetail(scope: EmailLogScope, id: string): 
     ...base,
     fromAddress: row.fromAddress,
     replyTo: row.replyTo,
-    htmlBody: row.htmlBody,
+    htmlBody: row.htmlBody ? hideBearerLinks(row.htmlBody) : null,
     bodyRedacted: row.bodyRedacted,
     attachments: (row.attachments ?? []).map((a) => ({
       filename: a.filename,
@@ -352,6 +360,7 @@ export async function getEmailDeliveryDetail(scope: EmailLogScope, id: string): 
 }
 
 type DeliveryRow = typeof emailDeliveries.$inferSelect;
+
 
 function buildTimeline(
   row: DeliveryRow,
@@ -486,18 +495,20 @@ async function portalEvents(row: DeliveryRow, companyId: string): Promise<EmailT
         // RFQ links are per supplier, so match the token issued to this recipient.
         const recipients = (row.toAddresses ?? []).map((a) => a.toLowerCase());
         if (!recipients.length) break;
+        // Portal links are per recipient (rfq_recipients; rfq_portal_tokens
+        // is the legacy fallback), so match the one issued to this address.
         const tokens = await db
           .select({
-            viewedAt: rfqPortalTokens.viewedAt,
-            quoteId: rfqPortalTokens.quoteSubmittedId,
+            viewedAt: rfqRecipients.viewedAt,
+            quoteId: rfqRecipients.quoteId,
             quoteSubmittedAt: rfqQuotes.submittedAt,
-            email: rfqPortalTokens.supplierEmail,
+            email: rfqRecipients.supplierEmail,
           })
-          .from(rfqPortalTokens)
-          .leftJoin(rfqQuotes, eq(rfqQuotes.id, rfqPortalTokens.quoteSubmittedId))
-          .innerJoin(rfqs, eq(rfqs.id, rfqPortalTokens.rfqId))
+          .from(rfqRecipients)
+          .leftJoin(rfqQuotes, eq(rfqQuotes.id, rfqRecipients.quoteId))
+          .innerJoin(rfqs, eq(rfqs.id, rfqRecipients.rfqId))
           .innerJoin(projects, eq(projects.id, rfqs.projectId))
-          .where(and(eq(rfqPortalTokens.rfqId, row.contextId), eq(projects.companyId, companyId)));
+          .where(and(eq(rfqRecipients.rfqId, row.contextId), eq(projects.companyId, companyId)));
         for (const t of tokens) {
           if (!t.email || !recipients.includes(t.email.toLowerCase())) continue;
           if (t.viewedAt && t.viewedAt > sentAt) {

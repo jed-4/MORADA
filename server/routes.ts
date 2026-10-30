@@ -30075,8 +30075,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!event) return res.json({ ok: true, ignored: true });
 
       const { emailDeliveries } = await import("@shared/schema");
+      // Only what deliveryPatch reads — opens and clicks multiply event
+      // volume, and the row carries the whole email body.
       const [row] = await db
-        .select()
+        .select({
+          id: emailDeliveries.id,
+          status: emailDeliveries.status,
+          deliveredAt: emailDeliveries.deliveredAt,
+          firstOpenedAt: emailDeliveries.firstOpenedAt,
+          firstClickedAt: emailDeliveries.firstClickedAt,
+          openCount: emailDeliveries.openCount,
+          clickCount: emailDeliveries.clickCount,
+        })
         .from(emailDeliveries)
         .where(eq(emailDeliveries.providerMessageId, event.messageId))
         .limit(1);
@@ -30092,7 +30102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // retried, and deliveryPatch is what stops a late "delivered" erasing a
       // bounce. Opens increment from the value read, so two opens landing in
       // the same instant can count once — acceptable for an approximate number.
-      const patch = deliveryPatch(row as any, event);
+      const patch = deliveryPatch(row, event);
       if (patch) {
         await db.update(emailDeliveries).set(patch as any).where(eq(emailDeliveries.id, row.id));
       }
@@ -30113,6 +30123,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Every email the app sent, from email_deliveries. Company-scoped always;
   // without admin.email_log a user sees the emails they sent themselves —
   // "did my variation arrive?" should not need an admin.
+  /** The viewer's IANA zone, so a "From 1 Oct" filter means their 1 October. */
+  function validTimeZone(tz: unknown): string | null {
+    if (typeof tz !== "string" || !tz || tz.length > 64) return null;
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: tz });
+      return tz;
+    } catch {
+      return null;
+    }
+  }
+
   async function emailLogScope(req: any): Promise<EmailLogScope | null> {
     const companyId = getSessionCompanyId(req);
     if (!companyId) return null;
@@ -30136,7 +30157,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         from: q.from && /^\d{4}-\d{2}-\d{2}$/.test(q.from) ? q.from : null,
         to: q.to && /^\d{4}-\d{2}-\d{2}$/.test(q.to) ? q.to : null,
         cursor: q.cursor || null,
-        limit: q.limit ? Number(q.limit) : undefined,
+        limit: Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined,
+        timeZone: validTimeZone(q.tz),
       }));
     } catch (error) {
       console.error("Error listing email deliveries:", error);
@@ -30197,7 +30219,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // carry into the address book; anything else is left alone.
       let addressBook = null;
       const original = row.toAddresses ?? [];
-      if (req.body?.updateAddressBook && original.length === 1 && to.length === 1
+      // Only a FAILED address is replaced: resending a delivered email to a
+      // second person must never overwrite a good address on file.
+      if (req.body?.updateAddressBook && ["bounced", "complained", "failed"].includes(row.status)
+          && original.length === 1 && to.length === 1
           && original[0].trim().toLowerCase() !== to[0].trim().toLowerCase()) {
         addressBook = await replaceAddressInAddressBook(scope.companyId, original[0], to[0]);
       }
@@ -30227,8 +30252,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const oss = new ObjectStorageService();
       const normalisedPath = attachment.objectPath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
       const objectFile = await oss.getObjectEntityFile(normalisedPath);
-      const safeName = attachment.filename.replace(/["\r\n]/g, "");
-      res.setHeader("Content-Disposition", `${req.query.download ? "attachment" : "inline"}; filename="${safeName}"`);
+      // setHeader throws on anything above U+00FF, and proposal PDFs are named
+      // after the project ("Smith – Reno.pdf"): ASCII fallback + RFC 5987 name.
+      const asciiName = attachment.filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+      res.setHeader(
+        "Content-Disposition",
+        `${req.query.download ? "attachment" : "inline"}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      );
       await oss.downloadObject(objectFile, res);
     } catch (error: any) {
       if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
