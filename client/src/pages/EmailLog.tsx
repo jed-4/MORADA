@@ -39,8 +39,10 @@ export default function EmailLog() {
   const selectedId = useMemo(() => new URLSearchParams(search).get("id"), [search]);
 
   const [tab, setTab] = useState<StatusTab>("all");
-  const [q, setQ] = useState("");
-  const [debouncedQ, setDebouncedQ] = useState("");
+  // ?q= lets another screen (a contact's email history) link straight to a search.
+  const initialQ = useMemo(() => new URLSearchParams(search).get("q") ?? "", []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [q, setQ] = useState(initialQ);
+  const [debouncedQ, setDebouncedQ] = useState(initialQ);
   const [type, setType] = useState("");
   const [projectId, setProjectId] = useState("");
   const [from, setFrom] = useState("");
@@ -90,8 +92,8 @@ export default function EmailLog() {
   useEffect(() => {
     if (landed || !summary) return;
     setLanded(true);
-    if (summary.attention > 0 && !selectedId) setTab("attention");
-  }, [summary, landed, selectedId]);
+    if (summary.attention > 0 && !selectedId && !initialQ) setTab("attention");
+  }, [summary, landed, selectedId, initialQ]);
 
   const { data: projects = [] } = useQuery<Array<{ id: string; name: string }>>({ queryKey: ["/api/projects"] });
   const projectOptions = useMemo(

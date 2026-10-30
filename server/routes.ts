@@ -30300,7 +30300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: q.type || null,
         projectId: q.projectId || null,
         senderId: q.senderId || null,
-        address: q.address || null,
+        addresses: q.addresses ? q.addresses.split(",") : null,
         q: q.q || null,
         from: q.from && /^\d{4}-\d{2}-\d{2}$/.test(q.from) ? q.from : null,
         to: q.to && /^\d{4}-\d{2}-\d{2}$/.test(q.to) ? q.to : null,
