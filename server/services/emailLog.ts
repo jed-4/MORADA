@@ -20,6 +20,7 @@ import {
   ATTENTION_WINDOW_MS,
   NO_CONFIRMATION_AFTER_MS,
   emailTypeKey,
+  hideBearerLinks,
   type EmailLogDetail,
   type EmailLogListResponse,
   type EmailLogRow,
