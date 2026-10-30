@@ -59,7 +59,7 @@ export function BouncedAddressWarning({
   return (
     <div
       className={cn(
-        "rounded-md border border-status-warning-bg bg-status-warning-bg/40 px-3 py-2 text-xs text-status-warning-fg space-y-1",
+        "rounded-md border border-status-warning-bg bg-status-warning-bg/40 px-3 py-2 text-xs text-status-warning space-y-1",
         className,
       )}
       role="alert"
