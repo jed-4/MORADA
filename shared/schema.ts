@@ -807,6 +807,24 @@ export const docVersions = pgTable("doc_versions", {
 }));
 export type DocVersion = typeof docVersions.$inferSelect;
 
+// Operations starter pack (0120): one row per pack item a company has been
+// given. The unique key is what makes "Add starter pack" safe to press twice,
+// and a row stays after the company deletes the copy, so a deleted SOP never
+// comes back. targetId is the company's own copy (docs / doc_folders /
+// task_templates id) — the pack itself is code, never a shared row.
+export const operationsStarterInstalls = pgTable("operations_starter_installs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  itemKey: text("item_key").notNull(),
+  kind: text("kind").notNull(), // "folder" | "doc" | "task"
+  targetId: varchar("target_id"),
+  packVersion: integer("pack_version").notNull(),
+  installedAt: timestamp("installed_at").notNull().defaultNow(),
+}, (t) => ({
+  companyItemUnique: uniqueIndex("operations_starter_installs_company_item_uq").on(t.companyId, t.itemKey),
+}));
+export type OperationsStarterInstall = typeof operationsStarterInstalls.$inferSelect;
+
 // Custom Field Definitions (max 4 per system)
 export const customFieldDefs = pgTable("custom_field_defs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Library, type LibraryHandle } from "@/components/library/Library";
+import { StarterPackButton } from "@/components/library/StarterPackButton";
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
@@ -180,6 +181,7 @@ function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHa
   if (!canAdd) return null;
   return (
     <>
+      <StarterPackButton />
       <Button
         size="sm"
         variant="outline"

@@ -107,6 +107,8 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const [unlockedDocId, setUnlockedDocId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const pendingRef = useRef<{ title: string; html: string; text: string } | null>(null);
+  // The editor's own markup for the doc it last mounted (see its onChange).
+  const editorBaselineRef = useRef<{ mount: string; html: string } | null>(null);
   const isCreatingRef = useRef(false);
 
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
@@ -635,9 +637,19 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   editable={editable}
                   onChange={(html, text) => {
                     if (!editable) return;
-                    // The editor re-emits on load; only a change in the words counts.
                     const base = pendingRef.current?.text ?? selectedDoc.contentText ?? "";
-                    if (docText(text) === docText(base) && html === (pendingRef.current?.html ?? selectedDoc.contentHtml)) return;
+                    // The editor re-emits on load with its own markup (list
+                    // items wrapped in <p>, whitespace between tags gone). Same
+                    // words, so it's not an edit: that markup becomes the
+                    // baseline instead of being saved, or every first open of a
+                    // doc not written in this editor (starter pack, imports)
+                    // would write. Recorded on the first emit whatever it is and
+                    // moved on every save, so a bold-only change still saves.
+                    const mount = `${selectedDoc.id}-${editable}`;
+                    const first = editorBaselineRef.current?.mount !== mount;
+                    if (first) editorBaselineRef.current = { mount, html };
+                    if (docText(text) === docText(base) && (first || html === editorBaselineRef.current!.html)) return;
+                    editorBaselineRef.current!.html = html; // what's saved now
                     scheduleSave({ html, text });
                   }}
                   placeholder="Start writing, or press '/' for commands…"
