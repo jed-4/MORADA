@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Briefcase, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import { Briefcase, CalendarPlus, Loader2, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Asset, AssetBooking } from "@shared/schema";
 import { todayKey } from "@shared/assets";
-import { errorText, money, shortDate } from "./assetsShared";
+import { CHIP_BUTTON, ICON_BUTTON, SectionHeader, errorText, money, shortDate } from "./assetsShared";
 
 interface RechargeResponse {
   from: string;
@@ -55,38 +55,31 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
 
   return (
     <Card className="overflow-hidden min-w-0 lg:col-span-2" data-testid="card-asset-recharge">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
-          <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Charged to jobs</h3>
-            <p className="text-xs text-muted-foreground">
-              {asset.dayRateCents
-                ? `${money(asset.dayRateCents)}/day ex GST — on booked days, and days its driver has approved hours on a job.`
-                : "No day rate set, so it isn't charged to jobs. Set one under Edit."}
-            </p>
-          </div>
-        </div>
+      <SectionHeader
+        icon={Briefcase}
+        title="Charged to jobs"
+        hint={asset.dayRateCents ? `${money(asset.dayRateCents)}/day ex GST` : "No day rate — set one under Edit"}
+      >
         {canEdit && (
-          <Button size="sm" variant="outline" className="h-6 px-2 text-xs shrink-0" onClick={() => setBooking(true)} data-testid="button-book-asset">
-            <CalendarPlus className="w-3.5 h-3.5 mr-1" />Book to job
-          </Button>
+          <button type="button" className={CHIP_BUTTON} onClick={() => setBooking(true)} data-testid="button-book-asset">
+            <CalendarPlus className="w-3 h-3" />Book to job
+          </button>
         )}
-      </div>
+      </SectionHeader>
 
       {isLoading || !data ? (
         <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="grid md:grid-cols-[280px_1fr] divide-y md:divide-y-0 md:divide-x divide-border">
-          <div className="px-4 py-3 flex flex-col gap-3">
+          <div className="px-3 py-2 flex flex-col gap-2">
             <div>
               <div className="text-[11px] text-muted-foreground">Last 12 months</div>
-              <div className="text-base font-semibold tabular-nums">{money(data.totalCents)}</div>
+              <div className="text-sm font-semibold tabular-nums">{money(data.totalCents)}</div>
               <div className="text-[11px] text-muted-foreground">{data.days} day{data.days === 1 ? "" : "s"} on jobs</div>
             </div>
             <div>
               <div className="text-[11px] text-muted-foreground">Recovered from jobs</div>
-              <div className="text-base font-semibold tabular-nums">{recovery != null ? `${recovery}%` : "—"}</div>
+              <div className="text-sm font-semibold tabular-nums">{recovery != null ? `${recovery}%` : "—"}</div>
               <div className="text-[11px] text-muted-foreground">
                 {runningLast12 ? `of ${money(runningLast12)} running costs` : "link bills to see running costs"}
               </div>
@@ -94,11 +87,11 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
           </div>
           <div className="flex flex-col">
             {data.byProject.length === 0 ? (
-              <p className="px-4 py-6 text-xs text-muted-foreground text-center">Nothing charged to jobs in the last 12 months.</p>
+              <p className="px-3 py-4 text-xs text-muted-foreground text-center">Nothing charged to jobs in the last 12 months.</p>
             ) : (
               <ul className="divide-y divide-border">
                 {data.byProject.map((p) => (
-                  <li key={p.projectId} className="flex items-center gap-3 px-4 py-2" data-testid={`row-recharge-${p.projectId}`}>
+                  <li key={p.projectId} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-recharge-${p.projectId}`}>
                     <div className="flex-1 min-w-0">
                       <a href={`/projects/${p.projectId}`} className="text-xs font-medium truncate hover:underline">{p.projectName}</a>
                       <div className="text-[11px] text-muted-foreground">
@@ -111,7 +104,7 @@ export function AssetRechargeSection({ asset, canEdit }: { asset: Asset; canEdit
               </ul>
             )}
             {(upcoming.length > 0 || past.length > 0) && (
-              <div className="border-t border-border px-4 py-2">
+              <div className="border-t border-border px-3 py-1.5">
                 <div className="text-[11px] font-medium text-muted-foreground mb-1">Bookings</div>
                 <ul className="flex flex-col gap-1">
                   {[...upcoming, ...past].map((b) => (
@@ -226,65 +219,3 @@ function BookingDialog({ asset, open, onClose }: { asset: Asset; open: boolean; 
   );
 }
 
-/** Register-level settings: which cost code vehicle recharges land on. */
-export function AssetRegisterSettingsButton({ canEdit }: { canEdit: boolean }) {
-  const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const { data: settings } = useQuery<{ rechargeCostCodeId: string | null }>({ queryKey: ["/api/asset-register/settings"] });
-  const { data: costCodes = [] } = useQuery<{ id: string; code: string; title: string; isArchived?: boolean; isActive?: boolean }[]>({
-    queryKey: ["/api/cost-codes"],
-    enabled: open,
-  });
-  const [value, setValue] = useState<string>("none");
-  useEffect(() => {
-    if (open) setValue(settings?.rechargeCostCodeId ?? "none");
-  }, [open, settings]);
-
-  const save = useMutation({
-    mutationFn: () => apiRequest("/api/asset-register/settings", "PUT", { rechargeCostCodeId: value === "none" ? null : value }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/asset-register/settings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      setOpen(false);
-    },
-    onError: (err) => toast({ title: errorText(err, "Couldn't save"), variant: "destructive" }),
-  });
-
-  if (!canEdit) return null;
-  const usable = costCodes.filter((c) => c.id === value || (!c.isArchived && c.isActive !== false));
-
-  return (
-    <>
-      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setOpen(true)} data-testid="button-asset-settings">
-        Job charging
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Charging vehicles to jobs</DialogTitle>
-            <DialogDescription>
-              Each vehicle's day rate is charged to a job on days it's booked there, or its driver has approved hours there. It shows in the job's Budget as an internal cost, on this cost code.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">Cost code</Label>
-            <Select value={value} onValueChange={(v) => v && setValue(v)}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-recharge-cost-code"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none" className="text-xs">None — show as "Vehicles & plant"</SelectItem>
-                {usable.map((c) => (
-                  <SelectItem key={c.id} value={c.id} className="text-xs">{c.code ? `${c.code} · ` : ""}{c.title}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-[11px] text-muted-foreground">Not cash: the real fuel and servicing are already in bills, so this stays out of the cashflow forecast.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="button-save-asset-settings">Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}

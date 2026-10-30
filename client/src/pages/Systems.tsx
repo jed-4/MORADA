@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays } from "lucide-react";
+import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTree";
+import { Library, type LibraryHandle } from "@/components/library/Library";
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
@@ -12,7 +12,7 @@ import { DefaultDiary, type DefaultDiaryHandle } from "@/components/systems/Defa
 import { usePermission } from "@/hooks/use-permission";
 
 const ALL_TABS = [
-  { id: "folders", label: "Folders", Icon: Folder },
+  { id: "library", label: "Library", Icon: BookOpen },
   { id: "tasks", label: "Operational Tasks", Icon: ListTodo },
   { id: "workflows", label: "Workflows", Icon: Workflow },
   { id: "reminders", label: "Reminders", Icon: Bell },
@@ -31,24 +31,25 @@ export default function Systems() {
   const canViewTasks = usePermission("operations.tasks", "view");
   const canViewWorkflows = usePermission("operations.workflows", "view");
   const tabs = ALL_TABS.filter((t) =>
-    t.id === "folders" ? canViewLibrary
+    t.id === "library" ? canViewLibrary
     : t.id === "tasks" || t.id === "diary" ? canViewTasks
     : t.id === "workflows" ? canViewWorkflows
     : true,
   );
   const allowedIds = tabs.map((t) => t.id);
 
-  const [requestedTab, setActiveTab] = useState(tabFromUrl ?? "");
+  // "folders" was this tab's name before the Library replaced it.
+  const [requestedTab, setActiveTab] = useState(tabFromUrl === "folders" ? "library" : tabFromUrl ?? "");
   const [searchQuery, setSearchQuery] = useState("");
   const activeTab = allowedIds.includes(requestedTab) ? requestedTab : allowedIds[0];
 
   // Update active tab when URL changes
   useEffect(() => {
-    if (tabFromUrl) setActiveTab(tabFromUrl);
+    if (tabFromUrl) setActiveTab(tabFromUrl === "folders" ? "library" : tabFromUrl);
   }, [tabFromUrl]);
   
   // Refs for accessing child component functions
-  const folderTreeRef = useRef<FolderTreeHandle>(null);
+  const libraryRef = useRef<LibraryHandle>(null);
   const taskLibraryRef = useRef<TaskLibraryHandle>(null);
   const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
   const businessRemindersRef = useRef<BusinessRemindersHandle>(null);
@@ -84,7 +85,7 @@ export default function Systems() {
         activeTab={activeTab} 
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        folderTreeRef={folderTreeRef}
+        libraryRef={libraryRef}
         taskLibraryRef={taskLibraryRef}
         workflowBuilderRef={workflowBuilderRef}
         businessRemindersRef={businessRemindersRef}
@@ -92,9 +93,9 @@ export default function Systems() {
 
       {/* Content Area */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === "folders" && (
+        {activeTab === "library" && (
           <div className="h-full">
-            <FolderTree ref={folderTreeRef} searchQuery={searchQuery} />
+            <Library ref={libraryRef} searchQuery={searchQuery} />
           </div>
         )}
         {activeTab === "tasks" && (
@@ -127,7 +128,7 @@ function SystemsControlBar({
   activeTab, 
   searchQuery,
   setSearchQuery,
-  folderTreeRef,
+  libraryRef,
   taskLibraryRef,
   workflowBuilderRef,
   businessRemindersRef
@@ -135,7 +136,7 @@ function SystemsControlBar({
   activeTab: string;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  folderTreeRef: React.RefObject<FolderTreeHandle>;
+  libraryRef: React.RefObject<LibraryHandle>;
   taskLibraryRef: React.RefObject<TaskLibraryHandle>;
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
   businessRemindersRef: React.RefObject<BusinessRemindersHandle>;
@@ -156,8 +157,8 @@ function SystemsControlBar({
 
       {/* Right: Tab-Specific Action Buttons */}
       <div className="flex items-center gap-1.5">
-        {activeTab === "folders" && (
-          <FoldersControls folderTreeRef={folderTreeRef} />
+        {activeTab === "library" && (
+          <LibraryControls libraryRef={libraryRef} />
         )}
         {activeTab === "tasks" && (
           <TasksControls taskLibraryRef={taskLibraryRef} />
@@ -173,8 +174,8 @@ function SystemsControlBar({
   );
 }
 
-// Folders tab controls
-function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<FolderTreeHandle> }) {
+// Library tab controls
+function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHandle> }) {
   const canAdd = usePermission("operations.library", "add");
   if (!canAdd) return null;
   return (
@@ -183,7 +184,7 @@ function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<Fol
         size="sm"
         variant="outline"
         className="h-6 px-2 text-xs gap-1"
-        onClick={() => folderTreeRef.current?.openNewFolderDialog()}
+        onClick={() => libraryRef.current?.newFolder()}
         data-testid="button-new-folder"
       >
         <FolderPlus className="w-3 h-3" />
@@ -193,7 +194,7 @@ function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<Fol
         size="sm"
         variant="outline"
         className="h-6 px-2 text-xs gap-1"
-        onClick={() => folderTreeRef.current?.openNewDocumentDialog()}
+        onClick={() => libraryRef.current?.newDoc()}
         data-testid="button-new-document"
       >
         <FilePlus className="w-3 h-3" />

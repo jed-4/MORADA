@@ -12,7 +12,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { Asset, AssetPrestart } from "@shared/schema";
 import { PRESTART_TEMPLATES, type PrestartAnswer, type PrestartTemplateKey } from "@shared/assets";
-import { DueChip, errorText, invalidateAssets, meter } from "./assetsShared";
+import { CHIP_BUTTON, DueChip, SectionHeader, errorText, invalidateAssets, meter } from "./assetsShared";
 
 function itemLabel(templateKey: string, key: string): string {
   return PRESTART_TEMPLATES[templateKey as PrestartTemplateKey]?.items.find((i) => i.key === key)?.label ?? key;
@@ -40,7 +40,7 @@ export function PrestartDefectBanner({ asset, prestarts, canEdit }: { asset: Ass
           <div
             key={p.id}
             className={cn(
-              "flex items-start gap-3 rounded-lg border px-4 py-3",
+              "flex items-start gap-3 rounded-lg border px-3 py-2",
               p.unsafe
                 ? "border-[hsl(var(--status-danger-fg))]/30 bg-[hsl(var(--status-danger-bg))]"
                 : "border-[hsl(var(--status-warning-fg))]/30 bg-[hsl(var(--status-warning-bg))]",
@@ -59,9 +59,9 @@ export function PrestartDefectBanner({ asset, prestarts, canEdit }: { asset: Ass
               </div>
             </div>
             {canEdit && (
-              <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => setFixing(p)} data-testid={`button-fix-defect-${p.id}`}>
+              <button type="button" className={CHIP_BUTTON} onClick={() => setFixing(p)} data-testid={`button-fix-defect-${p.id}`}>
                 Mark fixed
-              </Button>
+              </button>
             )}
           </div>
         );
@@ -145,18 +145,11 @@ export function PrestartsSection({ asset, prestarts }: { asset: Asset; prestarts
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <Card className="overflow-hidden min-w-0" data-testid="card-asset-prestarts">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
-          <ClipboardCheck className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Pre-starts</h3>
-            <p className="text-xs text-muted-foreground">Done on the phone: More → Pre-start, or scan the dash sticker</p>
-          </div>
-        </div>
+      <SectionHeader icon={ClipboardCheck} title="Pre-starts" hint="On the phone: More → Pre-start, or scan the sticker">
         <QrStickerButton asset={asset} />
-      </div>
+      </SectionHeader>
       {prestarts.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-muted-foreground text-center">No pre-starts yet.</p>
+        <p className="px-3 py-4 text-xs text-muted-foreground text-center">No pre-starts yet.</p>
       ) : (
         <ul className="divide-y divide-border max-h-[420px] overflow-y-auto">
           {prestarts.map((p) => {
@@ -168,7 +161,7 @@ export function PrestartsSection({ asset, prestarts }: { asset: Asset; prestarts
                 <button
                   type="button"
                   onClick={() => setOpenId(isOpen ? null : p.id)}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-muted/40"
+                  className="w-full flex items-center gap-3 px-3 py-1.5 text-left hover:bg-muted/40"
                 >
                   {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                   <div className="flex-1 min-w-0">
@@ -242,9 +235,9 @@ function QrStickerButton({ asset }: { asset: Asset }) {
 
   return (
     <>
-      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setOpen(true)} data-testid="button-qr-sticker">
-        <QrCode className="w-3.5 h-3.5 mr-1" />Sticker
-      </Button>
+      <button type="button" className={CHIP_BUTTON} onClick={() => setOpen(true)} data-testid="button-qr-sticker">
+        <QrCode className="w-3 h-3" />Sticker
+      </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
