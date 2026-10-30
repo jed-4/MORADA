@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { getApiBaseUrl } from "@/lib/queryClient";
 import { EmailStatusChip } from "./EmailStatusChip";
 import {
   deliveryHealth,
@@ -186,7 +187,7 @@ export function EmailDetailSheet({
                       <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       {a.stored ? (
                         <a
-                          href={`/api/email-deliveries/${email.id}/attachments/${i}`}
+                          href={`${getApiBaseUrl()}/api/email-deliveries/${email.id}/attachments/${i}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-primary hover:underline truncate"

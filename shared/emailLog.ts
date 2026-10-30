@@ -214,3 +214,29 @@ export interface EmailLogDetail extends EmailLogRow {
   timeline: EmailTimelineEvent[];
   resentAs: Array<{ id: string; sentAt: string; toAddresses: string[]; status: string }>;
 }
+
+/**
+ * Portal links in client and supplier emails are bearer tokens: whoever holds
+ * /portal/variation/<token> can sign as the client. Staff mostly can reach
+ * them anyway, but the log is a new place they would sit in plain sight, so
+ * the copy SHOWN here has them masked. The stored copy is untouched — a
+ * resend must carry the working link.
+ *
+ * Masks any long token-like path segment or query value in an href, and the
+ * same URL wherever it appears as visible text.
+ */
+export function hideBearerLinks(html: string): string {
+  const TOKEN = /[A-Za-z0-9_-]{20,}/g;
+  const urls = new Set<string>();
+  html.replace(/href\s*=\s*(["'])(.*?)\1/gi, (_m, _q, url: string) => {
+    if (TOKEN.test(url)) urls.add(url);
+    TOKEN.lastIndex = 0;
+    return "";
+  });
+  let out = html;
+  for (const url of Array.from(urls)) {
+    const masked = url.replace(TOKEN, "\u2022\u2022\u2022\u2022");
+    out = out.split(url).join(masked);
+  }
+  return out;
+}

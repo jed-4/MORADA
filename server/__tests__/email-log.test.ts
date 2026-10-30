@@ -14,7 +14,7 @@
  */
 import assert from "node:assert";
 import { deliveryPatch, parseResendEvent, type ResendDeliveryEvent } from "../services/resendWebhook";
-import { deliveryHealth, emailContextHref, emailTypeLabel } from "@shared/emailLog";
+import { deliveryHealth, emailContextHref, emailTypeLabel, hideBearerLinks } from "@shared/emailLog";
 
 let passed = 0;
 let failed = 0;
@@ -164,6 +164,20 @@ check("links need a project, and point at the right page", () => {
   assert.strictEqual(emailContextHref("rfq_reminder", "r1", "p1"), "/projects/p1/rfqs/r1");
   assert.strictEqual(emailContextHref("variation", "v1", null), null);
   assert.strictEqual(emailContextHref("password_reset", "u1", "p1"), null);
+});
+
+console.log("hideBearerLinks:");
+
+check("portal tokens in hrefs and visible text are masked", () => {
+  const url = "https://app.moradaco.com.au/portal/variation/3f1c9a2b-7d44-4e8a-9b1f-0c2d3e4f5a6b";
+  const out = hideBearerLinks(`<a href="${url}">Review</a><p>${url}</p>`);
+  assert.ok(!out.includes("3f1c9a2b-7d44"), out);
+  assert.ok(out.includes("/portal/variation/"), "path kept so the reader sees what it was");
+});
+
+check("ordinary links are left alone", () => {
+  const html = `<a href="https://lighthouseprojects.com.au/contact">Contact</a>`;
+  assert.strictEqual(hideBearerLinks(html), html);
 });
 
 console.log(`\nemail-log: ${passed} passed, ${failed} failed`);
