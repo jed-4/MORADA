@@ -9,6 +9,7 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { Asset, AssetComplianceItem, AssetServiceSchedule } from "@shared/schema";
@@ -37,6 +38,11 @@ import {
 import { ASSIGNABLE_USERS_KEY, errorText, invalidateAssets, toCents, type AssignableUser } from "./assetsShared";
 
 const NONE = "__none__";
+
+// NumericInput is a bare <input>: it carries no field styling of its own, so
+// without this it rendered as a white browser box (invisible text in dark mode).
+const NUMBER_FIELD =
+  "flex h-8 w-full rounded-md border border-input bg-background px-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35 disabled:opacity-50";
 
 function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
@@ -80,7 +86,9 @@ function PlainSelect<T extends string>({
 
 function SaveFooter({ pending, onCancel, label = "Save" }: { pending: boolean; onCancel: () => void; label?: string }) {
   return (
-    <DialogFooter>
+    // Sticky inside DialogContent's own scroll (p-6, overflow-y-auto), so Save
+    // is always reachable on a long form without scrolling to the end.
+    <DialogFooter className="sticky -bottom-6 z-10 -mx-6 -mb-6 mt-2 border-t border-border bg-background px-6 py-3">
       <Button type="button" variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
       <Button type="submit" size="sm" disabled={pending} data-testid="button-save">
         {pending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
@@ -151,6 +159,9 @@ export function AssetDialog({
   const [f, setF] = useState<AssetForm>(blankAsset);
   const set = <K extends keyof AssetForm>(k: K, v: AssetForm[K]) => setF((prev) => ({ ...prev, [k]: v }));
   const { data: people = [] } = useQuery<AssignableUser[]>({ queryKey: ASSIGNABLE_USERS_KEY, enabled: open });
+  // Without business.asset_costs the money fields aren't shown or sent (the
+  // server would drop them anyway, so an edit can't wipe them).
+  const seeCosts = usePermission("business.asset_costs", "view");
 
   useEffect(() => {
     if (!open) return;
@@ -199,9 +210,13 @@ export function AssetDialog({
         assignedUserId: f.assignedUserId === NONE ? null : f.assignedUserId,
         meterType: f.meterType,
         purchaseDate: f.purchaseDate || null,
-        purchaseCents: toCents(f.purchaseDollars),
-        financeProvider: f.financeProvider.trim() || null,
-        dayRateCents: toCents(f.dayRateDollars),
+        ...(seeCosts
+          ? {
+              purchaseCents: toCents(f.purchaseDollars),
+              financeProvider: f.financeProvider.trim() || null,
+              dayRateCents: toCents(f.dayRateDollars),
+            }
+          : {}),
         notes: f.notes.trim() || null,
       };
       return asset ? apiRequest(`/api/assets/${asset.id}`, "PATCH", body) : apiRequest("/api/assets", "POST", body);
@@ -259,7 +274,7 @@ export function AssetDialog({
               <Input className="h-8 text-xs" value={f.model} onChange={(e) => set("model", e.target.value)} placeholder="Hilux SR5" />
             </Field>
             <Field label="Year">
-              <NumericInput className="h-8 text-xs" integer value={f.year} onCommit={(v) => set("year", v)} placeholder="2022" />
+              <NumericInput className={NUMBER_FIELD} integer value={f.year} onCommit={(v) => set("year", v)} placeholder="2022" />
             </Field>
             {isRoadAsset && (
               <>
@@ -277,7 +292,7 @@ export function AssetDialog({
                   label="GVM (kg)"
                   hint={isHeavyVehicle(f.gvmKg) ? "Heavy vehicle: NHVR daily checks apply" : `Over ${HEAVY_VEHICLE_GVM_KG.toLocaleString()} kg is a heavy vehicle`}
                 >
-                  <NumericInput className="h-8 text-xs" integer min={0} value={f.gvmKg} onCommit={(v) => set("gvmKg", v)} />
+                  <NumericInput className={NUMBER_FIELD} integer min={0} value={f.gvmKg} onCommit={(v) => set("gvmKg", v)} />
                 </Field>
               </>
             )}
@@ -315,22 +330,28 @@ export function AssetDialog({
             <Field label="Purchase date">
               <Input type="date" className="h-8 text-xs" value={f.purchaseDate} onChange={(e) => set("purchaseDate", e.target.value)} />
             </Field>
-            <Field label="Purchase price (inc GST)">
-              <NumericInput className="h-8 text-xs" min={0} value={f.purchaseDollars} onCommit={(v) => set("purchaseDollars", v)} />
-            </Field>
-            <Field label="Finance provider">
-              <Input className="h-8 text-xs" value={f.financeProvider} onChange={(e) => set("financeProvider", e.target.value)} placeholder="Owned outright" />
-            </Field>
+            {seeCosts && (
+              <>
+                <Field label="Purchase price (inc GST)">
+                  <NumericInput className={NUMBER_FIELD} min={0} value={f.purchaseDollars} onCommit={(v) => set("purchaseDollars", v)} />
+                </Field>
+                <Field label="Finance provider">
+                  <Input className="h-8 text-xs" value={f.financeProvider} onChange={(e) => set("financeProvider", e.target.value)} placeholder="Owned outright" />
+                </Field>
+              </>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
-              <NumericInput className="h-8 text-xs" min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
-            </Field>
-            <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
-              Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
-            </p>
-          </div>
+          {seeCosts && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
+                <NumericInput className={NUMBER_FIELD} min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
+              </Field>
+              <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
+                Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
+              </p>
+            </div>
+          )}
 
           <Field label="Notes">
             <Textarea className="text-xs min-h-[60px]" value={f.notes} onChange={(e) => set("notes", e.target.value)} />
@@ -363,6 +384,7 @@ export function ComplianceDialog({
   const [policyNumber, setPolicyNumber] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [termMonths, setTermMonths] = useState<number | null>(12);
+  const seeCosts = usePermission("business.asset_costs", "view");
   const [amount, setAmount] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
 
@@ -387,7 +409,7 @@ export function ComplianceDialog({
         policyNumber: policyNumber.trim() || null,
         expiryDate,
         termMonths,
-        amountCents: toCents(amount),
+        ...(seeCosts ? { amountCents: toCents(amount) } : {}),
         notes: notes.trim() || null,
       };
       return item
@@ -406,7 +428,10 @@ export function ComplianceDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{item ? "Edit due date" : "Add due date"}</DialogTitle>
-          <DialogDescription>Rego, CTP, insurance, safety checks — anything with an expiry.</DialogDescription>
+          <DialogDescription>
+            Rego, CTP, insurance, safety checks — anything with a date. Morada adds a To-Do 30 days before and an urgent one 7 days
+            before. Use <span className="font-medium">Other</span> for any check you want reminding about.
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -432,7 +457,7 @@ export function ComplianceDialog({
               <Input type="date" className="h-8 text-xs" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} data-testid="input-compliance-expiry" />
             </Field>
             <Field label="Term (months)" hint={termMonths && expiryDate ? `Renewing makes it ${addMonthsKey(expiryDate, termMonths)}` : undefined}>
-              <NumericInput className="h-8 text-xs" integer min={1} value={termMonths} onCommit={setTermMonths} />
+              <NumericInput className={NUMBER_FIELD} integer min={1} value={termMonths} onCommit={setTermMonths} />
             </Field>
             <Field label={kind === "rego" ? "Authority" : "Provider"}>
               <Input className="h-8 text-xs" value={provider} onChange={(e) => setProvider(e.target.value)} placeholder={kind === "insurance" ? "NRMA" : kind === "ctp" ? "Allianz" : ""} />
@@ -440,9 +465,11 @@ export function ComplianceDialog({
             <Field label="Policy / reference">
               <Input className="h-8 text-xs" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
             </Field>
-            <Field label="Last paid (inc GST)">
-              <NumericInput className="h-8 text-xs" min={0} value={amount} onCommit={setAmount} />
-            </Field>
+            {seeCosts && (
+              <Field label="Last paid (inc GST)">
+                <NumericInput className={NUMBER_FIELD} min={0} value={amount} onCommit={setAmount} />
+              </Field>
+            )}
           </div>
           <Field label="Notes">
             <Textarea className="text-xs min-h-[50px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -529,18 +556,18 @@ export function ScheduleDialog({
           <div className="grid grid-cols-2 gap-3">
             {hasMeter && (
               <Field label={`Every (${unit})`}>
-                <NumericInput className="h-8 text-xs" integer min={1} value={everyMeter} onCommit={setEveryMeter} />
+                <NumericInput className={NUMBER_FIELD} integer min={1} value={everyMeter} onCommit={setEveryMeter} />
               </Field>
             )}
             <Field label="Every (months)">
-              <NumericInput className="h-8 text-xs" integer min={1} value={everyMonths} onCommit={setEveryMonths} />
+              <NumericInput className={NUMBER_FIELD} integer min={1} value={everyMonths} onCommit={setEveryMonths} />
             </Field>
             <Field label="Last done" hint="Blank counts from the purchase date">
               <Input type="date" className="h-8 text-xs" value={lastDoneDate} onChange={(e) => setLastDoneDate(e.target.value)} />
             </Field>
             {hasMeter && (
               <Field label={`Last done at (${unit})`}>
-                <NumericInput className="h-8 text-xs" integer min={0} value={lastDoneMeter} onCommit={setLastDoneMeter} />
+                <NumericInput className={NUMBER_FIELD} integer min={0} value={lastDoneMeter} onCommit={setLastDoneMeter} />
               </Field>
             )}
           </div>
@@ -597,7 +624,7 @@ export function EventDialog({
         date,
         title: title.trim() || null,
         meter: hasMeter ? meterValue : null,
-        costCents: kind === "service" || kind === "repair" ? toCents(cost) : null,
+        ...(seeCosts ? { costCents: kind === "service" || kind === "repair" ? toCents(cost) : null } : {}),
         scheduleId: kind === "service" && scheduleId !== NONE ? scheduleId : null,
         notes: notes.trim() || null,
       }),
@@ -611,7 +638,8 @@ export function EventDialog({
     onError: (err) => toast({ title: errorText(err, "Couldn't save the entry"), variant: "destructive" }),
   });
 
-  const showCost = kind === "service" || kind === "repair";
+  const seeCosts = usePermission("business.asset_costs", "view");
+  const showCost = seeCosts && (kind === "service" || kind === "repair");
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -656,12 +684,12 @@ export function EventDialog({
             )}
             {hasMeter && (
               <Field label={`Reading (${unit})`} hint={asset.currentMeter != null ? `Currently ${asset.currentMeter.toLocaleString("en-AU")}` : undefined}>
-                <NumericInput className="h-8 text-xs" integer min={0} value={meterValue} onCommit={setMeterValue} data-testid="input-event-meter" />
+                <NumericInput className={NUMBER_FIELD} integer min={0} value={meterValue} onCommit={setMeterValue} data-testid="input-event-meter" />
               </Field>
             )}
             {showCost && (
               <Field label="Cost (inc GST)">
-                <NumericInput className="h-8 text-xs" min={0} value={cost} onCommit={setCost} />
+                <NumericInput className={NUMBER_FIELD} min={0} value={cost} onCommit={setCost} />
               </Field>
             )}
           </div>

@@ -94,6 +94,7 @@ import {
   HardDrive,
   Lock,
   ClipboardList,
+  BookOpen,
   Copy,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
@@ -382,6 +383,18 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     enabled: open && !!fromMinuteId,
+  });
+
+  // The SOP behind a task generated from an operational task template — how
+  // the job is meant to be done, one click from the To-Do.
+  const fromTemplateId = (task as any)?.templateId as string | undefined;
+  const { data: sop } = useQuery<{ id: string; title: string; status: string; currentVersion: number } | null>({
+    queryKey: ["/api/systems/task-templates", fromTemplateId, "sop"],
+    queryFn: () =>
+      fetch(`/api/systems/task-templates/${fromTemplateId}/sop`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    enabled: open && !!fromTemplateId,
   });
 
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -1203,6 +1216,31 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
               <span className="text-muted-foreground flex-shrink-0">
                 · {format(new Date(fromMinute.meetingDate), "d MMM yyyy")}
               </span>
+            )}
+          </div>
+        )}
+
+        {sop && (
+          <div className="flex items-center gap-2 px-6 py-2 border-b bg-muted/10 text-sm" data-testid="task-sop">
+            <BookOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-muted-foreground flex-shrink-0">How to do it</span>
+            <button
+              type="button"
+              className="font-medium hover:underline truncate text-left"
+              onClick={() => {
+                // Same close-then-navigate order as the minutes link above.
+                onOpenChange(false);
+                setTimeout(() => navigate(`/systems?tab=library&doc=${sop.id}`), 0);
+              }}
+              data-testid="link-task-sop"
+            >
+              View SOP: {sop.title || "Untitled"}
+            </button>
+            {sop.currentVersion > 0 && (
+              <span className="text-muted-foreground flex-shrink-0">· v{sop.currentVersion}</span>
+            )}
+            {sop.currentVersion === 0 && (
+              <span className="text-muted-foreground flex-shrink-0">· not approved yet</span>
             )}
           </div>
         )}

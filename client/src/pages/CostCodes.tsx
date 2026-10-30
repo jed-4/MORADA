@@ -48,6 +48,7 @@ import {
   FolderInput,
   Columns3,
   HardHat,
+  Truck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -212,6 +213,23 @@ export default function CostCodes() {
         variant: "destructive",
       });
     },
+  });
+
+  // Which code the asset register's vehicle day-rate charges land on in job
+  // budgets (one per company). Unset = they show as a "Vehicles & plant" line.
+  const { data: vehicleChargeSetting } = useQuery<{ costCodeId: string | null }>({ queryKey: ["/api/vehicle-charge-cost-code"] });
+  const vehicleChargeCodeId = vehicleChargeSetting?.costCodeId ?? null;
+  const setVehicleChargeCode = useMutation({
+    mutationFn: (costCodeId: string | null) => apiRequest("/api/vehicle-charge-cost-code", "PUT", { costCodeId }),
+    onSuccess: (_r, costCodeId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-charge-cost-code"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: costCodeId ? "Vehicle charges will land on this code" : "Vehicle charges will show as their own line",
+        description: "Applies to every job's budget straight away.",
+      });
+    },
+    onError: () => toast({ title: "Couldn't save that", variant: "destructive" }),
   });
 
   const bulkToggleLabourMutation = useMutation({
@@ -419,6 +437,16 @@ export default function CostCodes() {
                 <HardHat className="h-3 w-3" /> Labour
               </Badge>
             )}
+            {row.original.id === vehicleChargeCodeId && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-data"
+                title="Vehicle and plant day-rate charges land on this code in each job's budget"
+                data-testid={`badge-vehicle-charges-${row.original.id}`}
+              >
+                <Truck className="h-3 w-3" /> Vehicle charges
+              </Badge>
+            )}
           </div>
         ),
         size: 280,
@@ -507,6 +535,14 @@ export default function CostCodes() {
                       </>
                     )}
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setVehicleChargeCode.mutate(code.id === vehicleChargeCodeId ? null : code.id)}
+                    disabled={code.isArchived && code.id !== vehicleChargeCodeId}
+                    data-testid={`menu-vehicle-charges-${code.id}`}
+                  >
+                    <Truck className="h-4 w-4 mr-2" />
+                    {code.id === vehicleChargeCodeId ? "Stop using for vehicle charges" : "Use for vehicle charges"}
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => {
@@ -537,7 +573,7 @@ export default function CostCodes() {
       },
     ];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCodeIds, allVisibleSelected, someVisibleSelected]);
+  }, [selectedCodeIds, allVisibleSelected, someVisibleSelected, vehicleChargeCodeId]);
 
   const pickerColumns = useMemo(
     () => [

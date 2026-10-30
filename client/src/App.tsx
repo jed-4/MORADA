@@ -29,7 +29,6 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 import { clientAware } from "@/components/client/clientAware";
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Notes = lazy(() => import("@/pages/Notes"));
-const Docs = lazy(() => import("@/pages/Docs"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
 const EmailLog = lazy(() => import("@/pages/EmailLog"));
 const MinuteDetail = lazy(() => import("@/pages/MinuteDetail"));
@@ -186,7 +185,8 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/messages" component={Messages} />
       <Route path="/notes" component={Notes} />
-      <Route path="/docs" component={Docs} />
+      {/* Docs now live in Operations → Library. */}
+      <Route path="/docs">{() => <Redirect to="/systems?tab=library" />}</Route>
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />

@@ -139,6 +139,7 @@ import {
   insertDefectSchema,
   insertMinuteSchema,
   insertSystemFolderSchema,
+  insertDocSchema,
   insertSystemDocumentSchema,
   insertTaskTemplateSchema,
   insertTaskTagSchema,
@@ -3236,6 +3237,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return folders.some((f) => f.id === folderId);
   };
 
+  const docBodySchema = insertDocSchema.omit({ companyId: true, ownerId: true, ownerName: true }).partial();
+  const normaliseDocText = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").trim();
+  const userDisplayName = (u: any) =>
+    `${u?.firstName ?? ""} ${u?.lastName ?? ""}`.trim() || u?.email || "Unknown";
+
   app.get("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
@@ -3264,11 +3270,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), async (req, res) => {
     try {
       const user = req.user as any;
-      if (!(await docFolderIsOwn(user.companyId, req.body?.folderId))) {
+      const parsed = docBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      if (!(await docFolderIsOwn(user.companyId, parsed.data.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
       }
       const doc = await storage.createDoc({
-        ...req.body,
+        ...parsed.data,
         companyId: user.companyId,
         ownerId: user.id,
         ownerName: user.name || user.username,
@@ -3284,14 +3292,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!owned) return;
-      // The body went straight to .set(), so {companyId} moved a doc into
-      // another tenant and {folderId} could file it under a foreign folder.
-      const { id: _id, companyId: _co, ownerId: _owner, createdAt: _c, ...changes } = req.body ?? {};
-      if (!(await docFolderIsOwn((req.user as any).companyId, changes.folderId))) {
+      // The body used to go straight to .set(), so {companyId} moved a doc
+      // into another tenant. The schema now carries only editable fields —
+      // sign-off state is written by the review routes below, never here.
+      const parsed = docBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const changes = parsed.data;
+      const companyId = (req.user as any).companyId;
+      if (!(await docFolderIsOwn(companyId, changes.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
       }
-      const doc = await storage.updateDoc(req.params.id, changes);
+      if (owned.status === "archived" && (changes.title !== undefined || changes.contentHtml !== undefined)) {
+        return res.status(409).json({ error: "Restore this document before editing it" });
+      }
+      let doc = await storage.updateDoc(req.params.id, changes);
       if (!doc) return res.status(404).json({ error: "Doc not found" });
+      // Changing the words of a signed-off (or in-review) doc reopens it. The
+      // approved text stays in doc_versions. Compared as text, not HTML: the
+      // editor re-serialises markup on load, which would otherwise reopen a
+      // doc that was merely opened.
+      const textChanged = changes.contentText !== undefined
+        && normaliseDocText(changes.contentText) !== normaliseDocText(owned.contentText);
+      const titleChanged = changes.title !== undefined && changes.title !== owned.title;
+      if ((owned.status === "approved" || owned.status === "in_review") && (textChanged || titleChanged)) {
+        doc = (await storage.setDocReviewState(req.params.id, companyId, {
+          status: "draft", submittedAt: null, submittedById: null,
+        })) ?? doc;
+      }
       res.json(doc);
     } catch (error) {
       res.status(500).json({ error: "Failed to update doc" });
@@ -3306,6 +3333,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doc" });
+    }
+  });
+
+  // ── Library sign-off: draft → in_review → approved, archived on the side ──
+  // Anyone who can edit can ask for review; only "approve" signs off or sends
+  // back. An approver may approve a draft directly (small teams).
+
+  app.post("/api/docs/:id/submit", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "draft") return res.status(409).json({ error: `A ${owned.status.replace("_", " ")} document can't be sent for review` });
+      const user = req.user as any;
+      const doc = await storage.setDocReviewState(owned.id, user.companyId, {
+        status: "in_review", submittedAt: new Date(), submittedById: user.id, reviewNote: null,
+      });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send for review" });
+    }
+  });
+
+  app.post("/api/docs/:id/approve", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "draft" && owned.status !== "in_review") {
+        return res.status(409).json({ error: `This document is already ${owned.status}` });
+      }
+      const user = req.user as any;
+      const doc = await storage.approveDoc(owned.id, user.companyId, { id: user.id, name: userDisplayName(user) });
+      if (!doc) return res.status(404).json({ error: "Doc not found" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve" });
+    }
+  });
+
+  app.post("/api/docs/:id/reject", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "in_review") return res.status(409).json({ error: "Only a document in review can be sent back" });
+      const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 2000) : "";
+      const doc = await storage.setDocReviewState(owned.id, (req.user as any).companyId, {
+        status: "draft", reviewNote: note || null, submittedAt: null, submittedById: null,
+      });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send back" });
+    }
+  });
+
+  app.post("/api/docs/:id/archive", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const doc = await storage.setDocReviewState(owned.id, (req.user as any).companyId, { status: "archived" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to archive" });
+    }
+  });
+
+  // Restoring returns a doc to approved only when its text is still exactly
+  // the last approved version; otherwise it comes back as a draft.
+  app.post("/api/docs/:id/restore", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      if (owned.status !== "archived") return res.status(409).json({ error: "This document isn't archived" });
+      const companyId = (req.user as any).companyId;
+      const latest = owned.currentVersion > 0 ? await storage.getDocVersion(owned.id, owned.currentVersion, companyId) : undefined;
+      const unchanged = !!latest && latest.title === owned.title && latest.contentHtml === (owned.contentHtml ?? "");
+      const doc = await storage.setDocReviewState(owned.id, companyId, { status: unchanged ? "approved" : "draft" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to restore" });
+    }
+  });
+
+  // Which task templates point at this doc — "Used by" in the Library.
+  app.get("/api/docs/:id/usage", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const templates = await storage.getTaskTemplates((req.user as any).companyId);
+      res.json(templates
+        .filter((t) => t.sopDocId === owned.id)
+        .map((t) => ({ id: t.id, title: t.title, isActive: t.isActive, frequency: t.frequency })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch usage" });
+    }
+  });
+
+  app.get("/api/docs/:id/versions", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const versions = await storage.getDocVersions(owned.id, (req.user as any).companyId);
+      // The list is for the history panel; bodies are fetched one at a time.
+      res.json(versions.map(({ contentHtml: _body, ...v }) => v));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch versions" });
+    }
+  });
+
+  app.get("/api/docs/:id/versions/:version", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const version = Number(req.params.version);
+      if (!Number.isInteger(version) || version < 1) return res.status(404).json({ error: "Version not found" });
+      const row = await storage.getDocVersion(owned.id, version, (req.user as any).companyId);
+      if (!row) return res.status(404).json({ error: "Version not found" });
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch version" });
     }
   });
 
@@ -40999,6 +41144,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The SOP behind a task, for the "View SOP" link on a generated To-Do. Only
+  // a summary: the reader opens the doc itself in the Library.
+  app.get("/api/systems/task-templates/:id/sop", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId;
+      const template = await storage.getTaskTemplate(req.params.id, companyId);
+      if (!template) return res.status(404).json({ error: "Task template not found" });
+      const doc = template.sopDocId ? await storage.getDoc(template.sopDocId) : undefined;
+      if (!doc || doc.companyId !== companyId) return res.json(null);
+      res.json({ id: doc.id, title: doc.title, docType: doc.docType, status: doc.status, currentVersion: doc.currentVersion });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP" });
+    }
+  });
+
   app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
@@ -41028,6 +41188,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (has(data.scopeStageId)) {
       const stage = await storage.getScopeStage(data.scopeStageId);
       if (!stage || (stage as any).companyId !== companyId) return "Scope stage";
+    }
+    if (has(data.sopDocId)) {
+      const doc = await storage.getDoc(data.sopDocId);
+      if (!doc || doc.companyId !== companyId) return "SOP";
     }
     if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
       const tags = await Promise.all(data.tagIds.map((id: string) => storage.getTaskTag(id, companyId)));
@@ -49961,7 +50125,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       insertAssetDocumentSchema,
       users: usersTable,
     } = await import("@shared/schema");
-    const { normaliseRego, todayKey, addMonthsKey, daysBetween, ASSET_STATUS_LABELS } = await import("@shared/assets");
+    const { normaliseRego, todayKey, addMonthsKey, daysBetween, ASSET_STATUS_LABELS, ASSET_COSTS_PERMISSION, redactAssetMoney, withoutMoneyFields } = await import("@shared/assets");
+    // The register's money (purchase, finance, day rate, renewal and service
+    // costs) needs business.asset_costs on top of business.assets. Stripped
+    // here, on the way out, and dropped from writes on the way in.
+    const canSeeAssetCosts = (req: any) => userHasPermission(req.user, ASSET_COSTS_PERMISSION, "view");
     const { closeAssetReminderTasks } = await import("./services/assetReminders");
 
     const sessionCompanyId = (req: any): string | null => req.user?.companyId ?? null;
@@ -50305,7 +50473,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       };
     };
 
-    app.get("/api/assets/:id/costs", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    app.get("/api/assets/:id/costs", requireAuth, requirePermission("business.assets", "view"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50382,7 +50550,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.get("/api/assets/:id/bill-line-suggestions", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.get("/api/assets/:id/bill-line-suggestions", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50445,7 +50613,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.post("/api/assets/:id/bill-lines", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.post("/api/assets/:id/bill-lines", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50471,7 +50639,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
     });
 
-    app.delete("/api/assets/:id/bill-lines/:lineId", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.delete("/api/assets/:id/bill-lines/:lineId", requireAuth, requirePermission("business.assets", "edit"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50548,36 +50716,40 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       return p ?? null;
     };
 
-    app.get("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    // Which cost code vehicle day-rate charges land on in each job's budget.
+    // Set from the Cost Codes page, so it follows the cost-code routes' gate
+    // (any team member). Not under /api/cost-codes/: GET /api/cost-codes/:id
+    // would shadow it. Unset = charges show as their own "Vehicles & plant" line.
+    app.get("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
         const [row] = await db.select().from(assetRegisterSettings).where(eq(assetRegisterSettings.companyId, companyId)).limit(1);
-        res.json({ rechargeCostCodeId: row?.rechargeCostCodeId ?? null });
+        res.json({ costCodeId: row?.rechargeCostCodeId ?? null });
       } catch (error) {
-        console.error("[assets] settings read failed:", error);
-        res.status(500).json({ error: "Failed to load settings" });
+        console.error("[assets] vehicle charge code read failed:", error);
+        res.status(500).json({ error: "Failed to load" });
       }
     });
 
-    app.put("/api/asset-register/settings", requireAuth, requirePermission("business.assets", "edit"), async (req, res) => {
+    app.put("/api/vehicle-charge-cost-code", requireAuth, requireTeamMember, async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-        const parsed = z.object({ rechargeCostCodeId: z.string().min(1).nullable() }).safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: "Invalid settings", issues: parsed.error.issues });
-        if (parsed.data.rechargeCostCodeId) {
+        const parsed = z.object({ costCodeId: z.string().min(1).nullable() }).safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+        if (parsed.data.costCodeId) {
           const [code] = await db.select({ id: costCodesTable.id }).from(costCodesTable)
-            .where(and(eq(costCodesTable.id, parsed.data.rechargeCostCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
+            .where(and(eq(costCodesTable.id, parsed.data.costCodeId), eq(costCodesTable.companyId, companyId))).limit(1);
           if (!code) return res.status(404).json({ error: "Cost code not found" });
         }
         await db.insert(assetRegisterSettings)
-          .values({ companyId, rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() })
-          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.rechargeCostCodeId, updatedAt: new Date() } });
-        res.json({ rechargeCostCodeId: parsed.data.rechargeCostCodeId });
+          .values({ companyId, rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: assetRegisterSettings.companyId, set: { rechargeCostCodeId: parsed.data.costCodeId, updatedAt: new Date() } });
+        res.json({ costCodeId: parsed.data.costCodeId });
       } catch (error) {
-        console.error("[assets] settings save failed:", error);
-        res.status(500).json({ error: "Failed to save settings" });
+        console.error("[assets] vehicle charge code save failed:", error);
+        res.status(500).json({ error: "Failed to save" });
       }
     });
 
@@ -50638,7 +50810,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     });
 
     // What this asset has charged to jobs over the last 12 months.
-    app.get("/api/assets/:id/recharges", requireAuth, requirePermission("business.assets", "view"), async (req, res) => {
+    app.get("/api/assets/:id/recharges", requireAuth, requirePermission("business.assets", "view"), requirePermission("business.asset_costs", "view"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
@@ -50745,11 +50917,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           db.select().from(assetComplianceItems).where(eq(assetComplianceItems.companyId, companyId)).orderBy(asc(assetComplianceItems.expiryDate)),
           db.select().from(assetServiceSchedules).where(eq(assetServiceSchedules.companyId, companyId)).orderBy(asc(assetServiceSchedules.label)),
         ]);
-        res.json(rows.map((a) => ({
-          ...a,
-          complianceItems: items.filter((i) => i.assetId === a.id),
-          serviceSchedules: schedules.filter((s) => s.assetId === a.id),
-        })));
+        const seeCosts = await canSeeAssetCosts(req);
+        res.json(rows.map((a) => {
+          const row = {
+            ...a,
+            complianceItems: items.filter((i) => i.assetId === a.id),
+            serviceSchedules: schedules.filter((s) => s.assetId === a.id),
+          };
+          return seeCosts ? row : redactAssetMoney(row);
+        }));
       } catch (error) {
         console.error("[assets] list failed:", error);
         res.status(500).json({ error: "Failed to load assets" });
@@ -50781,7 +50957,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             .orderBy(desc(assetPrestarts.checkedAt))
             .limit(30),
         ]);
-        res.json({ ...asset, complianceItems, serviceSchedules, events, documents, prestarts });
+        const detail = { ...asset, complianceItems, serviceSchedules, events, documents, prestarts };
+        res.json((await canSeeAssetCosts(req)) ? detail : redactAssetMoney(detail));
       } catch (error) {
         console.error("[assets] detail failed:", error);
         res.status(500).json({ error: "Failed to load the asset" });
@@ -50795,7 +50972,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = insertAssetSchema.omit({ companyId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
-        const data = { ...parsed.data, rego: normaliseRego(parsed.data.rego) };
+        const seeCosts = await canSeeAssetCosts(req);
+        const data = { ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), rego: normaliseRego(parsed.data.rego) };
         if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
         if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
           return res.status(400).json({ error: "That person isn't in your company" });
@@ -50812,7 +50990,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             createdById: req.user.id,
           });
         }
-        res.status(201).json(row);
+        res.status(201).json(seeCosts ? row : redactAssetMoney(row));
       } catch (error) {
         console.error("[assets] create failed:", error);
         res.status(500).json({ error: "Failed to add the asset" });
@@ -50828,7 +51006,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = updateAssetSchema.safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid asset", issues: parsed.error.issues });
-        const data = { ...parsed.data };
+        const seeCosts = await canSeeAssetCosts(req);
+        const data = { ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)) };
         if ("rego" in data) data.rego = normaliseRego(data.rego);
         if (!isOwnObjectPath(data.photoUrl, companyId)) return res.status(400).json({ error: "Invalid photo" });
         if (data.assignedUserId && !(await userInCompany(data.assignedUserId, companyId))) {
@@ -50852,7 +51031,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           auto.push({ companyId, assetId: row.id, kind: "status", date: todayKey(), title: `${label(before.status)} → ${label(row.status)}`, createdById: req.user.id });
         }
         if (auto.length) await db.insert(assetEvents).values(auto);
-        res.json(row);
+        res.json(seeCosts ? row : redactAssetMoney(row));
       } catch (error) {
         console.error("[assets] update failed:", error);
         res.status(500).json({ error: "Failed to save the asset" });
@@ -50887,9 +51066,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const parsed = insertAssetComplianceItemSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid item", issues: parsed.error.issues });
         if (!isOwnObjectPath(parsed.data.documentUrl, companyId)) return res.status(400).json({ error: "Invalid document" });
+        const seeCosts = await canSeeAssetCosts(req);
 
-        const [row] = await db.insert(assetComplianceItems).values({ ...parsed.data, companyId, assetId: asset.id }).returning();
-        res.status(201).json(row);
+        const [row] = await db.insert(assetComplianceItems)
+          .values({ ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), companyId, assetId: asset.id })
+          .returning();
+        res.status(201).json(seeCosts ? row : { ...row, amountCents: null });
       } catch (error) {
         console.error("[assets] compliance create failed:", error);
         res.status(500).json({ error: "Failed to add the item" });
@@ -50916,13 +51098,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         // A renewed expiry starts the reminders again.
         const renewed = parsed.data.expiryDate && parsed.data.expiryDate !== before.expiryDate;
+        const seeCosts = await canSeeAssetCosts(req);
         const [row] = await db.update(assetComplianceItems)
-          .set({ ...parsed.data, ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
+          .set({ ...(seeCosts ? parsed.data : withoutMoneyFields(parsed.data)), ...(renewed ? { reminder30Sent: false, reminder7Sent: false } : {}), updatedAt: new Date() })
           .where(and(eq(assetComplianceItems.id, before.id), eq(assetComplianceItems.companyId, companyId)))
           .returning();
         // Renewed: the "rego expiring" tasks are done with.
         if (renewed) await closeAssetReminderTasks(companyId, { complianceItemId: before.id });
-        res.json(row);
+        res.json(seeCosts ? row : { ...row, amountCents: null });
       } catch (error) {
         console.error("[assets] compliance update failed:", error);
         res.status(500).json({ error: "Failed to save the item" });
@@ -51045,7 +51228,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
         const parsed = insertAssetEventSchema.omit({ companyId: true, assetId: true }).safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ error: "Invalid entry", issues: parsed.error.issues });
-        const data = parsed.data;
+        const data = (await canSeeAssetCosts(req)) ? parsed.data : withoutMoneyFields(parsed.data);
         if (data.kind === "meter" && data.meter == null) return res.status(400).json({ error: "Enter the reading" });
 
         let schedule: typeof assetServiceSchedules.$inferSelect | null = null;
