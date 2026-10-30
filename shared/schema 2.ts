@@ -1,0 +1,9223 @@
+import { sql } from "drizzle-orm";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, primaryKey, date, doublePrecision, serial } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+import { JOB_MODES } from "./cashflow/types";
+import { FREQUENCIES } from "./cashflow/recurrence";
+
+// Session storage table for Replit Auth
+// IMPORTANT: This table is mandatory for Replit Auth, don't drop it
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// Companies table for multi-tenant support
+export const companies = pgTable("companies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  nickname: text("nickname"), // Short display name for header/UI
+  abn: text("abn"),
+  address: text("address"),
+  phone: text("phone"),
+  email: text("email"),
+  website: text("website"),
+  logo: text("logo"),
+  ownerId: varchar("owner_id"), // User who created/owns the company
+  isActive: boolean("is_active").notNull().default(true),
+
+  // Monotonic RFQ sequence. Held here rather than derived from max(existing)
+  // so deleting an RFQ never frees its number for reuse — an RFQ number is
+  // emailed to suppliers, so it has to keep meaning one document forever.
+  // Allocated with a single atomic UPDATE ... RETURNING, which also removes
+  // the create-race the old count-based generator had.
+  rfqLastNumber: integer("rfq_last_number").notNull().default(0),
+
+
+  // Google Drive integration - company-level OAuth credentials
+  googleDriveClientId: text("google_drive_client_id"), // Company's own OAuth Client ID
+  googleDriveClientSecret: text("google_drive_client_secret"), // Company's own OAuth Client Secret (encrypted)
+  
+  // Google Drive integration - connection tokens
+  googleDriveEmail: text("google_drive_email"),
+  googleDriveAccessToken: text("google_drive_access_token"),
+  googleDriveRefreshToken: text("google_drive_refresh_token"),
+  googleDriveTokenExpiry: timestamp("google_drive_token_expiry"),
+  googleDriveConnectedAt: timestamp("google_drive_connected_at"),
+  googleDriveConnectedBy: varchar("google_drive_connected_by"),
+  googleDriveRootFolderId: text("google_drive_root_folder_id"),
+
+  // Trial / plan / billing tracking.
+  // chosenPlan = tier picked at signup; plan = effective tier for gating
+  // (during trial: 'subbie' for Subbie signups, 'studio' for everyone else;
+  // switches to chosenPlan at expiry/subscription);
+  // planStatus = trialing | active | expired | cancelled (legacy: 'trial').
+  trialEndsAt: timestamp("trial_ends_at"),
+  planStatus: varchar("plan_status").default("trial"),
+  chosenPlan: varchar("chosen_plan").default("builder"),
+  plan: varchar("plan").default("builder"),
+  billingCycle: varchar("billing_cycle").default("monthly"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+
+  // Founding member programme: the first FOUNDING_MEMBER_LIMIT companies to
+  // start a paid subscription lock in founding pricing — first month free and
+  // Studio half price for life. Set once by the Stripe webhook when the
+  // qualifying subscription activates; never unset.
+  isFoundingMember: boolean("is_founding_member").notNull().default(false),
+  foundingMemberAt: timestamp("founding_member_at"),
+
+  // Referral system: every company gets a unique shareable code, and a company
+  // that signed up through someone's link records who referred them.
+  referralCode: varchar("referral_code", { length: 20 }).unique(),
+  referredByCompanyId: varchar("referred_by_company_id"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// User roles (Admin, Project Manager, Carpenter, Subcontractor, Client, etc.)
+export const userRoles = pgTable("user_roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  name: text("name").notNull(),
+  description: text("description"),
+  userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
+  // Billing: a mobile-only (field app) team role does NOT consume a paid Full
+  // User seat. Full Users = active team users whose role is not mobile-only.
+  // Only meaningful for team roles; client/supplier are always free.
+  isMobileOnly: boolean("is_mobile_only").notNull().default(false),
+  isBuiltIn: boolean("is_built_in").notNull().default(false), // System-defined roles
+  isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0), // Custom sort order
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: role names must be unique per company
+  uniqueNamePerCompany: uniqueIndex("user_roles_company_name_unique").on(table.companyId, table.name),
+}));
+
+// Users table with custom authentication
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  
+  // Authentication fields
+  passwordHash: text("password_hash"), // For email/password login (bcrypt)
+  googleId: varchar("google_id").unique(), // For Google OAuth login
+
+  // Terms of Service acceptance — proof of agreement at registration.
+  // Null on accounts created before this was recorded (or via invite/OAuth).
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: text("terms_version"),
+  
+  // Application fields
+  phone: text("phone"),
+  companyId: varchar("company_id").references(() => companies.id),
+  userCategory: text("user_category").notNull().default("team"), // "team" | "supplier" | "client"
+  roleId: varchar("role_id").references(() => userRoles.id),
+  roleName: text("role_name"), // Cached for performance
+  contactId: varchar("contact_id").references(() => contacts.id), // CRM contact this portal user represents (client portal access)
+  isActive: boolean("is_active").notNull().default(true),
+  isInvitePending: boolean("is_invite_pending").notNull().default(false),
+  invitedBy: varchar("invited_by"),
+  invitedAt: timestamp("invited_at"),
+  lastLoginAt: timestamp("last_login_at"),
+  
+  // Google Calendar integration fields
+  googleCalendarEmail: text("google_calendar_email"),
+  googleCalendarAccessToken: text("google_calendar_access_token"),
+  googleCalendarRefreshToken: text("google_calendar_refresh_token"),
+  googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
+  googleCalendarConnectedAt: timestamp("google_calendar_connected_at"),
+  
+  // Gmail integration - send BuildPro emails from user's Gmail
+  useGmailForSending: boolean("use_gmail_for_sending").notNull().default(false),
+
+  // BuildPro platform staff (super-admin that sits ABOVE individual companies).
+  // Distinct from company-scoped admin/owner roles (isAdminLike). Granted by
+  // directly setting this column on a user row (no self-serve UI). Used to gate
+  // cross-tenant features such as the suggestion review page.
+  isPlatformStaff: boolean("is_platform_staff").notNull().default(false),
+  
+  // User preferences
+  timezone: text("timezone"), // User's preferred display timezone (null = use company timezone)
+  
+  // Subcontractor & rate fields (management-only visibility)
+  isSubcontractor: boolean("is_subcontractor").notNull().default(false),
+  isGstRegistered: boolean("is_gst_registered").notNull().default(true), // When false, PO/bill lines for this user push to Xero with taxType "NONE" (GST-free)
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Pay rate - cost to company per hour
+  chargeRate: numeric("charge_rate", { precision: 10, scale: 2 }), // Charge rate - what you charge the client per hour
+
+  // Xero link (used when this user is acting as a subcontractor "supplier" on POs/bills)
+  xeroContactId: text("xero_contact_id"), // Xero ContactID for this user as a supplier
+  xeroDefaultAccountCode: text("xero_default_account_code"), // Default Xero account code (e.g. 5000 Subcontractors)
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Available permissions/features in the system
+export const permissions = pgTable("permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(), // e.g., "projects.view", "estimates.edit"
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // "admin", "projects", "financial", etc.
+  actions: json("actions").notNull().default(['view']), // ["view", "add", "edit", "delete"]
+  isBuiltIn: boolean("is_built_in").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Role permissions matrix (many-to-many)
+export const rolePermissions = pgTable("role_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roleId: varchar("role_id").notNull().references(() => userRoles.id, { onDelete: "cascade" }),
+  permissionId: varchar("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
+  allowedActions: json("allowed_actions").notNull().default(['view']),
+  viewScope: text("view_scope").default("own"),
+  viewableRoleIds: json("viewable_role_ids").default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// User project access control
+export const userProjectAccess = pgTable("user_project_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  accessLevel: text("access_level").notNull().default("view"), // "view" | "edit" | "admin"
+  grantedBy: varchar("granted_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// User invitations for suppliers and clients
+export const userInvitations = pgTable("user_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  email: text("email").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  company: text("company"),
+  phone: text("phone"),
+  userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
+  roleId: varchar("role_id").notNull().references(() => userRoles.id),
+  projectIds: json("project_ids").default([]), // Array of project IDs they'll have access to
+  contactId: varchar("contact_id").references(() => contacts.id), // CRM contact this invitation grants portal access for (client invites)
+  invitedBy: varchar("invited_by").notNull().references(() => users.id),
+  inviteToken: text("invite_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdUserId: varchar("created_user_id").references(() => users.id), // Set when invitation is accepted
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "expired" | "cancelled"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Password reset tokens for manager-initiated password resets
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  requestedBy: varchar("requested_by").references(() => users.id), // Manager who requested the reset
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// Shared password policy — used by registration and invitation acceptance forms
+export const PASSWORD_REQUIREMENTS_HINT =
+  "At least 8 characters, with an uppercase letter, a lowercase letter, and a number";
+
+export const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .regex(/[A-Z]/, "Password must include at least one uppercase letter")
+  .regex(/[a-z]/, "Password must include at least one lowercase letter")
+  .regex(/[0-9]/, "Password must include at least one number");
+
+// User column preferences for customizing table views
+export const userColumnPreferences = pgTable("user_column_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  pageKey: text("page_key").notNull(), // e.g., "estimate_detail", "tasks_list"
+  columnConfig: jsonb("column_config").notNull(), // Array of { id, label, visible, widthPx }
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// User view preferences for persistent UI state (filters, layout, etc.)
+export const userViewPreferences = pgTable("user_view_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  viewKey: text("view_key").notNull(), // e.g., "tasks", "calendar", "estimates"
+  preferences: jsonb("preferences").notNull(), // JSON object with filters, activeTab, columnOrder, columnWidths, columnVisibility, groupBy, etc.
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // One preference record per user per view
+  uniqueUserView: uniqueIndex("user_view_preferences_user_view_unique").on(table.userId, table.viewKey),
+}));
+
+// Dashboard themes for customizable backgrounds
+export const dashboardThemes = pgTable("dashboard_themes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  dashboardType: text("dashboard_type").notNull(), // "business" | "user" | "project"
+  projectId: varchar("project_id"), // Only for project dashboards
+  
+  // Background settings
+  backgroundType: text("background_type").notNull().default("color"), // "color" | "gradient" | "image"
+  backgroundColor: text("background_color").default("#f8fafc"), // Hex color
+  backgroundGradient: text("background_gradient"), // CSS gradient string
+  backgroundImage: text("background_image"), // URL to uploaded image
+  
+  // Overlay settings for images
+  overlayEnabled: boolean("overlay_enabled").default(true),
+  overlayColor: text("overlay_color").default("#000000"),
+  overlayOpacity: integer("overlay_opacity").default(40), // 0-100
+  blurStrength: integer("blur_strength").default(0), // 0-20
+  
+  // Header theming
+  headerBackgroundType: text("header_background_type").default("inherit"), // "inherit" | "color" | "transparent"
+  headerColor: text("header_color"),
+  
+  // Widget theming
+  widgetBackgroundType: text("widget_background_type").default("default"), // "default" | "frosted" | "transparent"
+  widgetOpacity: integer("widget_opacity").default(100), // 0-100
+  
+  // Page background (outer background behind widgets, header, sidebar)
+  pageBackgroundColor: text("page_background_color"), // Hex color for page background (legacy/fallback)
+  pageBackgroundPalette: jsonb("page_background_palette"), // { dashboard: "#hex", workspace: "#hex", project: "#hex" }
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserDashboard: uniqueIndex("dashboard_themes_user_dashboard_unique").on(
+    table.userId, 
+    table.dashboardType, 
+    table.projectId
+  ),
+}));
+
+export const insertDashboardThemeSchema = createInsertSchema(dashboardThemes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DashboardTheme = typeof dashboardThemes.$inferSelect;
+export type InsertDashboardTheme = z.infer<typeof insertDashboardThemeSchema>;
+
+// Business dashboard views with access control
+export const businessDashboardViews = pgTable("business_dashboard_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  isDefault: boolean("is_default").notNull().default(false), // Default "Overview" view
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  
+  // Widget configuration
+  widgets: jsonb("widgets").notNull().default([]), // Array of widget configs
+  
+  // Access control
+  visibility: text("visibility").notNull().default("everyone"), // "everyone" | "roles" | "users" | "private"
+  allowedRoleIds: text("allowed_role_ids").array(), // Role IDs that can access (when visibility = "roles")
+  allowedUserIds: text("allowed_user_ids").array(), // User IDs that can access (when visibility = "users")
+  
+  // Ordering
+  displayOrder: integer("display_order").notNull().default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBusinessDashboardViewSchema = createInsertSchema(businessDashboardViews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type BusinessDashboardView = typeof businessDashboardViews.$inferSelect;
+export type InsertBusinessDashboardView = z.infer<typeof insertBusinessDashboardViewSchema>;
+
+// Schema for company creation/updates
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  // Referral fields are server-managed — never client-writable.
+  referralCode: true,
+  referredByCompanyId: true,
+  // Founding member status is server-managed — never client-writable.
+  isFoundingMember: true,
+  foundingMemberAt: true,
+});
+
+// Referral credits: a pending "1 free month" credit for the referrer, created
+// when a referred company pays its first invoice and issued after a 7-day hold.
+export const referralCredits = pgTable("referral_credits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  referrerCompanyId: varchar("referrer_company_id").notNull(),
+  refereeCompanyId: varchar("referee_company_id").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | issued | cancelled
+  refereeInvoiceId: text("referee_invoice_id"),
+  fireAfter: timestamp("fire_after"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ReferralCredit = typeof referralCredits.$inferSelect;
+
+// Trial lifecycle emails already sent, one row per (company, email). The
+// UNIQUE(company_id, email_key) index — see migration 0033 — is what makes
+// each send once-only; the sweep claims by inserting before calling Resend.
+export const onboardingEmailLog = pgTable("onboarding_email_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  emailKey: varchar("email_key", { length: 40 }).notNull(), // welcome | tips_day3 | trial_ending | trial_ended
+  toEmail: text("to_email").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export type OnboardingEmailLogEntry = typeof onboardingEmailLog.$inferSelect;
+
+// Schema for user creation/updates (Replit Auth compatible)
+export const upsertUserSchema = z.object({
+  id: z.string(),
+  email: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  profileImageUrl: z.string().nullable(),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  email: z.string().email().nullable().optional(),
+  userCategory: z.enum(["team", "supplier", "client"]).default("team"),
+});
+
+export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserProjectAccessSchema = createInsertSchema(userProjectAccess).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserInvitationSchema = createInsertSchema(userInvitations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  inviteToken: true,
+  expiresAt: true,
+}).extend({
+  projectIds: z.array(z.string()).default([]),
+});
+
+export const insertUserColumnPreferencesSchema = createInsertSchema(userColumnPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserViewPreferencesSchema = createInsertSchema(userViewPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types
+export type Company = typeof companies.$inferSelect;
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type UpsertUser = z.infer<typeof upsertUserSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type UserProjectAccess = typeof userProjectAccess.$inferSelect;
+export type InsertUserProjectAccess = z.infer<typeof insertUserProjectAccessSchema>;
+export type UserInvitation = typeof userInvitations.$inferSelect;
+export type InsertUserInvitation = z.infer<typeof insertUserInvitationSchema>;
+export type UserColumnPreferences = typeof userColumnPreferences.$inferSelect;
+export type InsertUserColumnPreferences = z.infer<typeof insertUserColumnPreferencesSchema>;
+export type UserViewPreferences = typeof userViewPreferences.$inferSelect;
+export type InsertUserViewPreferences = z.infer<typeof insertUserViewPreferencesSchema>;
+
+// Utility types for role-based access
+export type UserWithRole = User & {
+  role?: UserRole;
+  permissions?: Permission[];
+  /** Server-computed flag: true for admin / owner / general-manager roles. */
+  isAdminLike?: boolean;
+};
+
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
+export type UserCategory = "team" | "supplier" | "client";
+
+// Note Groups for organizing notes
+export const noteGroups = pgTable("note_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  projectId: text("project_id"), // Null for personal/company-wide groups
+  name: text("name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteGroupSchema = createInsertSchema(noteGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertNoteGroup = z.infer<typeof insertNoteGroupSchema>;
+export type NoteGroup = typeof noteGroups.$inferSelect;
+
+export const notes: any = pgTable("notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(), // Legacy plain text content
+  contentHtml: text("content_html"), // Rich text HTML content
+  contentText: text("content_text"), // Plain text for searching
+  category: text("category").notNull().default("General"), // Legacy - will migrate to customFields
+  priority: text("priority").notNull().default("low"), // Legacy - will migrate to customFields
+  author: text("author").notNull(), // Legacy author field
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"), // Cached for performance
+  visibility: text("visibility").notNull().default("team_only"), // "team_only" | "everyone" | "project_team" | "private"
+  pinned: boolean("pinned").default(false), // Whether note is pinned to top
+  customFields: json("custom_fields").default({}), // Record<string, any> for custom field values
+  projectId: text("project_id"),
+  scope: text("scope").notNull().default("project"), // "personal" | "project" | "system" - determines where note appears
+  
+  // Task-specific fields
+  type: text("type").notNull().default("note"), // "note" | "task"
+  status: text("status").default("todo"), // "todo" | "in-progress" | "done" for tasks
+  assigneeId: varchar("assignee_id").references(() => users.id), // Legacy single assignee
+  assigneeName: text("assignee_name"), // Legacy cached name
+  assigneeIds: text("assignee_ids").array().default([]), // Multiple assignee user IDs
+  assigneeNames: json("assignee_names").default([]), // Cached names for performance: string[]
+  dueDate: timestamp("due_date"),
+  startTime: text("start_time"), // Optional time in HH:MM format for timed events
+  endTime: text("end_time"), // Optional time in HH:MM format for timed events
+  completedAt: timestamp("completed_at"),
+  tags: json("tags").default([]), // string[] for task tags
+  labels: json("labels").default([]), // string[] for task labels from field options
+  checklist: json("checklist").default([]), // Array of checklist items [{id, text, completed}] for tasks
+  color: text("color"), // Notion-style color for calendar display (e.g., "blue", "green", "red")
+  
+  // Subtask support
+  parentTaskId: varchar("parent_task_id").references(() => notes.id),
+  subtaskOrder: integer("subtask_order").default(0),
+  
+  // Recurring task settings
+  isRecurring: boolean("is_recurring").default(false),
+  recurringType: text("recurring_type"), // "daily" | "weekly" | "monthly" | "yearly" | "custom"
+  recurringInterval: integer("recurring_interval").default(1), // Every N days/weeks/months
+  recurringDays: json("recurring_days").default([]), // For weekly: [1,2,3] (Mon,Tue,Wed), for monthly: [15,30] (dates)
+  includeSaturday: boolean("include_saturday").default(false), // For daily recurrence: include Saturday
+  includeSunday: boolean("include_sunday").default(false), // For daily recurrence: include Sunday
+  recurringStartDate: timestamp("recurring_start_date"), // When the recurring pattern starts
+  recurringEndDate: timestamp("recurring_end_date"),
+  lastRecurringDate: timestamp("last_recurring_date"),
+  templateId: varchar("template_id"), // Link to task template for recurring tasks
+  occurrenceDate: date("occurrence_date"), // Original scheduled date from template (for duplicate prevention)
+  isModified: boolean("is_modified").default(false), // True if user has moved/rescheduled this task from template time
+  
+  // Reference fields for system-generated tasks (e.g., insurance expiry reminders)
+  referenceType: text("reference_type"), // e.g., "insurance_expiry_30", "insurance_expiry_7"
+  referenceId: varchar("reference_id"), // ID of the referenced entity (e.g., insurance ID)
+  
+  // Polymorphic task context - determines if task belongs to a project or the business
+  taskContextType: text("task_context_type"), // "project" | "business" - null for legacy, will be backfilled
+  taskContextId: varchar("task_context_id"), // FK to projects.id or companies.id depending on contextType
+  
+  // Grouping support
+  groupId: varchar("group_id").references(() => noteGroups.id), // Note group for organization
+  
+  // Archive support
+  archivedAt: timestamp("archived_at"), // When the note was archived (null = not archived)
+  archivedById: varchar("archived_by_id").references(() => users.id), // Who archived the note
+  
+  // Privacy
+  isPrivate: boolean("is_private").default(false), // If true, only assigned users can see this task
+  
+  // Linked checklist instance - allows attaching a formal checklist to a task
+  checklistInstanceId: varchar("checklist_instance_id"), // FK to checklist_instances.id
+  checklistInstanceName: text("checklist_instance_name"), // Cached name for display
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteSchema = createInsertSchema(notes).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Server-managed fields (backend will set these)
+  author: z.string().optional(),
+  ownerId: z.string().optional(),
+  ownerName: z.string().optional(),
+  // Make legacy fields optional for backward compatibility during migration
+  category: z.string().optional(),
+  priority: z.string().optional(),
+  // Ensure new fields are properly handled
+  contentHtml: z.string().optional(),
+  contentText: z.string().optional(),
+  visibility: z.enum(["team_only", "everyone", "project_team", "private"]).optional(),
+  pinned: z.boolean().optional(),
+  customFields: z.record(z.any()).optional(),
+  scope: z.enum(["personal", "project", "system", "business"]).optional(),
+  // Task-specific fields
+  type: z.enum(["note", "task"]).optional(),
+  status: z.enum(["todo", "in-progress", "done"]).optional(),
+  assigneeId: z.string().optional(), // Legacy single assignee
+  assigneeName: z.string().optional(), // Legacy cached name
+  assigneeIds: z.array(z.string()).optional(), // Multiple assignee user IDs
+  assigneeNames: z.array(z.string()).optional(), // Cached names for performance
+  // Nullable for the same reason startTime/endTime are: the column is nullable
+  // and a due date has to be removable. Note the `.nullable()` has to wrap the
+  // coercion — z.coerce.date() alone turns null into new Date(null), the epoch.
+  dueDate: z.coerce.date().optional().nullable(), // Coerce strings to dates for JSON compatibility
+  // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
+  // columns are nullable in the DB; without null here the value cannot be cleared.
+  startTime: z.string().nullable().optional(), // HH:MM format
+  endTime: z.string().nullable().optional(), // HH:MM format
+  completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  tags: z.array(z.string()).optional(),
+  labels: z.array(z.string()).optional(),
+  checklist: z.array(z.object({
+    id: z.string().optional(),
+    text: z.string(),
+    completed: z.boolean().default(false),
+    assigneeId: z.string().optional(), // Optional assignee for this checklist item
+    assigneeName: z.string().optional(), // Cached name for display
+  })).optional(),
+  color: z.string().optional(), // Notion-style color for calendar display
+  // Subtask fields
+  parentTaskId: z.string().optional(),
+  subtaskOrder: z.number().optional(),
+  // Recurring task fields
+  isRecurring: z.boolean().optional(),
+  recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
+  recurringInterval: z.number().optional(),
+  recurringDays: z.array(z.number()).optional(),
+  includeSaturday: z.boolean().optional(),
+  includeSunday: z.boolean().optional(),
+  recurringStartDate: z.coerce.date().optional(),
+  recurringEndDate: z.coerce.date().optional(),
+  templateId: z.string().optional(),
+  occurrenceDate: z.coerce.date().optional(), // Original scheduled date from template
+  isModified: z.boolean().optional(), // True if user moved/rescheduled from template time
+  lastRecurringDate: z.coerce.date().optional(),
+  // Reference fields for system-generated tasks
+  referenceType: z.string().optional(),
+  referenceId: z.string().optional(),
+  // Polymorphic task context
+  taskContextType: z.enum(["project", "business"]).optional(),
+  taskContextId: z.string().optional(),
+  // Grouping support
+  groupId: z.string().nullable().optional(),
+  // Archive support (server-managed)
+  archivedAt: z.coerce.date().nullable().optional(),
+  archivedById: z.string().nullable().optional(),
+  // Privacy
+  isPrivate: z.boolean().optional(),
+  // Linked checklist instance
+  checklistInstanceId: z.string().nullable().optional(),
+  checklistInstanceName: z.string().nullable().optional(),
+});
+
+export type InsertNote = z.infer<typeof insertNoteSchema>;
+export type Note = typeof notes.$inferSelect;
+
+// Task-specific types
+export const insertTaskSchema = insertNoteSchema.extend({
+  type: z.literal("task"),
+  status: z.string().default("todo"),
+  projectId: z.string().optional().nullable(), // Legacy - use taskContextType/taskContextId instead
+  scope: z.enum(["personal", "project", "system", "business"]).default("project"), // Legacy - use taskContextType instead
+  // Polymorphic context - every task should have a context
+  taskContextType: z.enum(["project", "business"]).optional(), // Required for new tasks
+  taskContextId: z.string().optional(), // projects.id or companies.id
+});
+
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type Task = Note & { type: "task" };
+
+// Docs — company-level documents (SOPs, procedures, guides)
+export const docFolders = pgTable("doc_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  name: text("name").notNull(),
+  parentFolderId: varchar("parent_folder_id"),
+  sortOrder: integer("sort_order").default(0),
+});
+export const insertDocFolderSchema = createInsertSchema(docFolders).omit({ id: true });
+export type DocFolder = typeof docFolders.$inferSelect;
+export type InsertDocFolder = z.infer<typeof insertDocFolderSchema>;
+
+export const docs = pgTable("docs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  folderId: varchar("folder_id").references(() => docFolders.id, { onDelete: "set null" }),
+  title: text("title").notNull().default("Untitled"),
+  contentHtml: text("content_html").default(""),
+  contentText: text("content_text").default(""),
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertDocSchema = createInsertSchema(docs).omit({ id: true, createdAt: true, updatedAt: true });
+export type Doc = typeof docs.$inferSelect;
+export type InsertDoc = z.infer<typeof insertDocSchema>;
+
+// Custom Field Definitions (max 4 per system)
+export const customFieldDefs = pgTable("custom_field_defs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(), // Field key for customFields object
+  label: text("label").notNull(), // Display name
+  type: text("type").notNull().default("text"), // "text" | "select"
+  required: boolean("required").notNull().default(false),
+  order: integer("order").notNull().default(0), // Display order
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCustomFieldDefSchema = createInsertSchema(customFieldDefs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCustomFieldDef = z.infer<typeof insertCustomFieldDefSchema>;
+export type CustomFieldDef = typeof customFieldDefs.$inferSelect;
+
+// Custom Field Options (for select-type fields)
+export const customFieldOptions = pgTable("custom_field_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fieldDefId: varchar("field_def_id").notNull().references(() => customFieldDefs.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  value: text("value").notNull(),
+  color: text("color"), // Optional hex color code
+  order: integer("order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCustomFieldOptionSchema = createInsertSchema(customFieldOptions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCustomFieldOption = z.infer<typeof insertCustomFieldOptionSchema>;
+export type CustomFieldOption = typeof customFieldOptions.$inferSelect;
+
+// Note Templates
+export const noteTemplates = pgTable("note_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(), // Multi-tenancy support
+  name: text("name").notNull(),
+  description: text("description"),
+  defaultTitle: text("default_title"),
+  contentHtml: text("content_html"), // Template content with rich text
+  contentText: text("content_text"), // Plain text version
+  defaultCustomFields: json("default_custom_fields").default({}), // Record<string, any>
+  isFormBased: boolean("is_form_based").notNull().default(false), // If true, uses fields; if false, uses content
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"), // Cached for performance
+  isPublic: boolean("is_public").notNull().default(false), // Can other users see/use this template
+  isActive: boolean("is_active").notNull().default(true),
+  visibleToRoles: json("visible_to_roles").default([]), // Array of role IDs that can see this template (empty = all roles)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
+  id: true,
+  companyId: true,
+  ownerId: true,
+  ownerName: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  visibleToRoles: z.array(z.string()).default([]),
+});
+
+export type InsertNoteTemplate = z.infer<typeof insertNoteTemplateSchema>;
+export type NoteTemplate = typeof noteTemplates.$inferSelect;
+
+// Note Template Fields (for form-based templates)
+export const noteTemplateFields = pgTable("note_template_fields", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => noteTemplates.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // Unique field key for form data storage
+  label: text("label").notNull(), // Display label for the field
+  type: text("type").notNull(), // text, textarea, select, date, checkbox, number
+  description: text("description"), // Help text shown below field
+  placeholder: text("placeholder"), // Placeholder text for input fields
+  required: boolean("required").notNull().default(false),
+  order: integer("order").notNull().default(0), // Display order
+  options: json("options").default([]), // For select type: [{value: string, label: string}]
+  defaultValue: text("default_value"), // Default value for the field
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteTemplateFieldSchema = createInsertSchema(noteTemplateFields).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["text", "textarea", "select", "date", "checkbox", "number"]),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+});
+
+export type InsertNoteTemplateField = z.infer<typeof insertNoteTemplateFieldSchema>;
+export type NoteTemplateField = typeof noteTemplateFields.$inferSelect;
+
+// Project Types Constants
+export const PROJECT_TYPES = [
+  'New Build',
+  'Major Renovation', 
+  'Extension',
+  'Minor Renovation',
+  'Repair & Maintenance',
+  'Commercial Fit-out',
+  'Landscaping',
+  'Custom Build'
+] as const;
+
+export type ProjectType = typeof PROJECT_TYPES[number];
+
+// Project Icons (Lucide React icon names)
+export const PROJECT_ICONS = [
+  { name: 'Building2', label: 'Building' },
+  { name: 'Home', label: 'Home' },
+  { name: 'Hammer', label: 'Hammer' },
+  { name: 'Wrench', label: 'Wrench' },
+  { name: 'HardHat', label: 'Hard Hat' },
+  { name: 'Drill', label: 'Drill' },
+  { name: 'Paintbrush', label: 'Paint Brush' },
+  { name: 'Scissors', label: 'Scissors' },
+  { name: 'Ruler', label: 'Ruler' },
+  { name: 'PenTool', label: 'Pen Tool' },
+  { name: 'Boxes', label: 'Boxes' },
+  { name: 'Package', label: 'Package' },
+] as const;
+
+// Projects (for task organization)
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  jobNumber: text("job_number"), // Project reference number (displayed as "Project Number")
+  projectType: text("project_type"), // References PROJECT_TYPES
+  color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
+  icon: text("icon").default("Building2"), // Lucide icon name
+  location: text("location"), // Project address/location (displayed as "Address")
+  status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
+  
+  // New hierarchical status fields
+  projectStatus: text("project_status").default("lead"), // High-level status: Lead, Pre-Construction, Construction, Post Construction
+  projectSubStatus: text("project_sub_status").notNull().default("lead_new"), // Low-level status tied to projectStatus - REQUIRED
+  
+  // System Phase Tracking (auto-derived from projectSubStatus systemPhase mapping)
+  currentSystemPhase: text("current_system_phase").default("lead"), // lead | pre_construction | construction | post_construction | archive
+  
+  // Phase-specific job numbers (each phase can have its own job number)
+  leadNumber: text("lead_number"), // Lead phase number (e.g., "L-001")
+  preConstructionNumber: text("pre_construction_number"), // Pre-construction number (e.g., "PC-4501")
+  constructionNumber: text("construction_number"), // Main job number (e.g., "4501")
+  
+  // Phase transition tracking
+  phaseTransitions: json("phase_transitions").default([]), // Array of { fromPhase, toPhase, timestamp, userId, userName }
+  
+  // Client and financial fields
+  clientId: varchar("client_id").references(() => contacts.id),
+  clientBudget: integer("client_budget"), // Client's budget in cents
+  contractCost: integer("contract_cost"), // Agreed contract cost in cents
+  selectedEstimateId: varchar("selected_estimate_id"), // Reference to the estimate used for costing
+  
+  // Date fields
+  startDate: text("start_date"), // ISO date string (legacy)
+  endDate: text("end_date"), // ISO date string (legacy)
+  proposedStartDate: text("proposed_start_date"), // ISO date string
+  proposedEndDate: text("proposed_end_date"), // ISO date string
+  // The date the build actually reached practical completion, ISO date string.
+  // Distinct from endDate, which is what the programme currently predicts and
+  // keeps predicting after the job is done. NULL means "not complete yet" —
+  // a different state from any date, and the common one.
+  // Open-job exposure stops here, and the statutory warranty and defects
+  // liability periods both start here.
+  practicalCompletionDate: text("practical_completion_date"),
+  
+  budget: integer("budget"), // Internal budget in cents (legacy)
+  isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
+  isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
+  invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
+  contractPrice: integer("contract_price"), // Live cached estimate total in cents (stamped at Approve; tracks estimate edits until contracted)
+
+  // ── Frozen contract sum ───────────────────────────────────────────────────
+  // Captured when an estimate is marked as the contract. Once set, these are
+  // the client's contract price — the live estimate no longer moves it, so an
+  // approved variation is the ONLY instrument that can change what is owed.
+  // Cleared when the contract is reverted (renegotiation), re-stamped on the
+  // next Mark as Contract. contractedAt is the "is frozen" predicate.
+  contractedTotalExGstCents: integer("contracted_total_ex_gst_cents"),
+  contractedTotalIncGstCents: integer("contracted_total_inc_gst_cents"),
+  contractedAt: timestamp("contracted_at"),
+  contractedEstimateId: varchar("contracted_estimate_id"), // Audit: which revision was signed
+  percentComplete: integer("percent_complete").notNull().default(0), // Construction completion % (0-100); used by OH predictor for remaining revenue
+  
+  // Google Drive integration
+  googleDriveFolderId: text("google_drive_folder_id"), // Linked Google Drive folder ID
+  googleDriveFolderName: text("google_drive_folder_name"), // Display name of linked folder
+  
+  // Xero tracking integration (TC2 - Jobs)
+  xeroTrackingOptionId: text("xero_tracking_option_id"), // Auto-created tracking option ID in Xero TC2
+  xeroTrackingOptionName: text("xero_tracking_option_name"), // Cached name for display
+  
+  companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
+  ownerId: varchar("owner_id").references(() => users.id),
+  tradesPortalToken: varchar("trades_portal_token").unique(), // UUID for /portal/project/:token/trades, generated lazily
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
+  status: z.enum(["active", "on_hold", "completed"]).default("active"),
+  color: z.string().default("#A890D4"),
+  icon: z.string().default("Building2"),
+  projectSubStatus: z.string().min(1, "Status is required"), // Required - must select a status
+});
+
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
+
+// Task Views (saved filters and view settings)
+export const taskViews = pgTable("task_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Owner of the view
+  name: text("name").notNull(),
+  viewType: text("view_type").notNull().default("board"), // "board" | "list" | "calendar"
+  filters: json("filters").default({}), // Filter settings (status, priority, assignee, labels, etc.)
+  groupBy: text("group_by").default("none"), // "none" | "status" | "priority" | "assignee"
+  columnConfig: json("column_config").default({}), // Column visibility and order for list view
+  isDefault: boolean("is_default").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTaskViewSchema = createInsertSchema(taskViews).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTaskView = z.infer<typeof insertTaskViewSchema>;
+export type TaskView = typeof taskViews.$inferSelect;
+
+// Estimates
+export const estimates = pgTable("estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("draft"), // "draft" | "approved" | "contract" | "archived"
+  isLocked: boolean("is_locked").notNull().default(false),
+  projectMarkupPercent: doublePrecision("project_markup_percent").default(0), // Percentage (10 = 10%, 7.5 = 7.5%)
+  taxRate: integer("tax_rate").default(10), // GST percentage (10 = 10%). Integer is fine — Australian GST is fixed at 10%.
+  notes: text("notes"),
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"),
+  assigneeIds: text("assignee_ids").array().default([]), // Multiple user IDs who can work on this estimate
+  parentEstimateId: varchar("parent_estimate_id").references((): AnyPgColumn => estimates.id), // Links all revisions back to the original (Rev A) estimate
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  contractedAt: timestamp("contracted_at"),
+  contractedById: varchar("contracted_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateSchema = createInsertSchema(estimates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
+export type Estimate = typeof estimates.$inferSelect;
+
+// Estimate Items (Line Items)
+export const estimateItems = pgTable("estimate_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment"
+  groupId: varchar("group_id").references(() => estimateGroups.id), // Reference to estimate groups
+  parentItemId: varchar("parent_item_id").references((): any => estimateItems.id, { onDelete: "cascade" }), // For sub-items (3-level nesting)
+  costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
+  costCategoryId: varchar("cost_category_id").references(() => costCategories.id, { onDelete: "set null" }), // Optional direct category link
+  allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
+  allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
+  pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
+  quantity: doublePrecision("quantity").notNull().default(1),
+  // What the estimator wrote in the quantity cell, when it is more than a
+  // number: an expression over take-off measurements, e.g. "{takeoff:9f3…}*1.1"
+  // (migration 0088). `quantity` above stays the evaluated result and is what
+  // pricing and the client ever see. Null = a plain typed quantity.
+  // Evaluated ONLY by shared/quantityFormula.ts — never with eval().
+  quantityFormula: text("quantity_formula"),
+  wastagePercent: integer("wastage_percent").notNull().default(0), // Wastage percentage (0, 10, 15, 20, etc.)
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
+  status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
+  unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
+  // The inc-GST unit price exactly as typed (migration 0085). When set it is
+  // AUTHORITATIVE for the line and unitCostExTax is derived from it — see
+  // typedUnitCostIncTax in shared/pricing.ts. Null means the line is priced ex-GST.
+  unitCostIncTax: doublePrecision("unit_cost_inc_tax"),
+  markupPercent: doublePrecision("markup_percent"), // Optional item-specific markup % (e.g. 10, 7.5). Falls back to project markup if null
+  // Provenance: the catalogue item this line's unit cost was taken from.
+  // INVARIANT: this is set only while unitCostExTax still equals the catalogue price.
+  // Editing the unit cost CLEARS it (the line has left the catalogue and is the
+  // estimator's own number), so a drift warning can only ever mean "the supplier's
+  // book moved" — never "someone edited this on purpose". Renaming the line, or
+  // changing qty/wastage/markup, all keep the link.
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
+  // taxAmount and priceIncTax are a denormalised cache of the line price.
+  // They are populated ONLY by computeEstimateItemPrice in shared/pricing.ts.
+  // Never compute or write these inline — always go through that function.
+  taxAmount: doublePrecision("tax_amount").notNull().default(0), // Cached: line tax amount in dollars (2dp)
+  priceIncTax: doublePrecision("price_inc_tax").notNull().default(0), // Cached: line total inc tax in dollars (2dp)
+  description: text("description"),
+  notes: text("notes"),
+  attachmentUrl: text("attachment_url"), // File attachment path/URL
+  requestForQuote: boolean("request_for_quote").notNull().default(false),
+  isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
+  proposalVisible: boolean("proposal_visible").notNull().default(true), // Show/hide in proposal (renamed from visibleInProposal)
+  shownAs: text("shown_as"), // Custom text to display in proposal instead of item name
+  trackLabourHours: boolean("track_labour_hours").notNull().default(false), // Include in labour hours budget tracking
+  order: integer("order").notNull().default(0), // For sorting within groups
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Convert price fields to numbers for easier handling
+  unitCostExTax: z.number().default(0),
+  taxAmount: z.number().default(0), 
+  priceIncTax: z.number().default(0),
+  markupPercent: z.number().optional().nullable(),
+  shownAs: z.string().optional().nullable(),
+  wastagePercent: z.number().default(0),
+  priceListItemId: z.string().optional().nullable(),
+});
+
+export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;
+export type EstimateItem = typeof estimateItems.$inferSelect;
+
+// Estimate Groups (for organizing line items)
+export const estimateGroups = pgTable("estimate_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  parentGroupId: varchar("parent_group_id").references((): any => estimateGroups.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  defaultCostCode: varchar("default_cost_code").references(() => costCodes.id, { onDelete: "set null" }),
+  defaultCostCategoryId: varchar("default_cost_category_id").references(() => costCategories.id, { onDelete: "set null" }),
+  order: integer("order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  // Hide this whole section from the client's proposal — the group-level
+  // counterpart of estimate_items.proposal_visible. Hiding a group hides its
+  // descendants too; that tree walk lives in shared/proposalTotals.ts so the
+  // printed document and the total at the bottom resolve it identically.
+  proposalVisible: boolean("proposal_visible").notNull().default(true),
+  status: text("status").notNull().default("not_started"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const ESTIMATE_GROUP_STATUSES = ["not_started", "in_progress", "complete"] as const;
+export type EstimateGroupStatus = typeof ESTIMATE_GROUP_STATUSES[number];
+
+export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Section status is configurable in Field Settings (estimate_group.status),
+  // so any option key is valid — ESTIMATE_GROUP_STATUSES are just the seeded
+  // defaults, not the permitted set.
+  status: z.string().min(1).optional(),
+});
+
+export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;
+export type EstimateGroup = typeof estimateGroups.$inferSelect;
+
+// Summary calculation type for API responses
+export type EstimateSummary = {
+  subtotal: number;
+  builderCostTotal: number;
+  markupAmount: number;
+  subtotalWithMarkup: number;
+  taxAmount: number;
+  total: number;
+  itemCount: number;
+};
+
+// Estimate Notes (running notes for team collaboration)
+export const estimateNotes = pgTable("estimate_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEstimateNoteSchema = createInsertSchema(estimateNotes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEstimateNote = z.infer<typeof insertEstimateNoteSchema>;
+export type EstimateNote = typeof estimateNotes.$inferSelect;
+
+// Company Settings
+export const companySettings = pgTable("company_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Explicit FK to the company that owns this settings record.
+  // Bills imported via the bill inbox are scoped exclusively to this company.
+  companyId: varchar("company_id").references(() => companies.id),
+  companyName: text("company_name"),
+  nickname: text("nickname"), // Short display name for header/UI
+  email: text("email"),
+  phone: text("phone"), 
+  website: text("website"),
+  address: text("address"),
+  /** The PUBLIC url of the logo — what the PDFs, the portal and the client
+   *  emails read. Written by the logo upload route; never edited by hand. */
+  logoUrl: text("logo_url"),
+  /** The logo itself, base64. Small, bounded and read by exactly one route.
+   *  See migrations/0076 for why this is not in object storage. */
+  logoData: text("logo_data"),
+  logoMime: text("logo_mime"),
+  
+  // Social Media Links
+  facebook: text("facebook"),
+  linkedin: text("linkedin"),
+  twitter: text("twitter"),
+  instagram: text("instagram"),
+  googleMyBusiness: text("google_my_business"),
+  yelp: text("yelp"),
+  
+  // System settings
+  taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // Tax rate as percentage (e.g., 10.00 for 10%)
+  defaultBuilderMarginPercent: doublePrecision("default_builder_margin_percent").notNull().default(0), // Company default builder's margin (project markup %) seeded onto new estimates
+
+  // Calendar & week settings
+  weekStartDay: integer("week_start_day").notNull().default(1), // 0 = Sunday, 1 = Monday (default)
+  
+  // Timesheet defaults
+  timesheetDateFormat: text("timesheet_date_format").notNull().default("short"), // "short" = "1/1/26", "long" = "Mon 1 Jan"
+  standardWorkStart: text("standard_work_start").default("07:00"),
+  standardWorkEnd: text("standard_work_end").default("15:30"),
+  timesheetReminderEnabled: boolean("timesheet_reminder_enabled").notNull().default(true),
+  timesheetReminderThresholdHours: numeric("timesheet_reminder_threshold_hours", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  timesheetAutoRound: boolean("timesheet_auto_round").notNull().default(false),
+  timesheetDefaultBreak: numeric("timesheet_default_break", { precision: 4, scale: 2 }).notNull().default("0.00"),
+  
+  // Company brand colour
+  brandColor: text("brand_color").default("#3B82F6"), // Company brand colour used for business-level events and throughout the app
+  /**
+   * The accent, beside the brand colour. Used on proposal covers — the rule
+   * under the masthead, the tint behind the client card.
+   *
+   * NULLABLE WITH NO DEFAULT on purpose. proposal_primary_color had a default
+   * of #3B82F6 and nothing could tell "chose blue" from "never chose", so a
+   * column nobody had ever edited beat the Brand Colour in the resolution
+   * chain and every proposal in the product printed the same blue. Unset has
+   * to stay distinguishable from chosen. See migration 0080.
+   */
+  brandSecondaryColor: text("brand_secondary_color"),
+  
+  // Proposal branding
+  /** @deprecated Superseded by brandColor — nothing reads this. See 0078. */
+  proposalPrimaryColor: text("proposal_primary_color"),
+  proposalShowLogo: boolean("proposal_show_logo").default(true), // Whether the company logo is shown on proposal PDFs by default
+  proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color
+  proposalFontFamily: text("proposal_font_family").default("Inter"), // Font family for proposals
+  proposalHeaderText: text("proposal_header_text"), // Default header text for proposals
+  proposalFooterText: text("proposal_footer_text"), // Default footer text for proposals
+  
+  // Client invoice terms & conditions (company-wide default)
+  termsAndConditions: text("terms_and_conditions"),
+  // Default column/section visibility new variation documents inherit.
+  variationPdfColumns: jsonb("variation_pdf_columns"),
+  // Named column presets: [{ id, name, columns }]. See shared/variationDocumentColumns.ts.
+  variationColumnTemplates: jsonb("variation_column_templates"),
+  termsTemplates: jsonb("terms_templates").$type<Array<{ id: string; name: string; content: string; defaultFor: string[] }>>().default([]), // Array of { id, name, content } T&C templates
+  
+  // Insurance expiry reminder settings
+  insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)
+  
+  // Schedule defaults
+  defaultClientVisibilityWeeks: integer("default_client_visibility_weeks").default(null), // Company-wide default for how many weeks ahead clients can see schedule items (null = all)
+  workspaceScheduleView: text("workspace_schedule_view").default("all"), // "all" | "parents" | "sub_items" — controls which level of items show in the mobile workspace schedule widget
+  
+  // Activity feed visibility settings - which activity types appear in the feed
+  // JSON object with activity type keys and boolean visibility values
+  // e.g., { "task": true, "estimate": true, "bill": false, ... }
+  activityTypesVisible: json("activity_types_visible").$type<Record<string, boolean>>(),
+  
+  // ── Builder Compliance & Metrics ───────────────────────────────────────────
+  // Home Warranty Insurance / Domestic Building Insurance (DBI)
+  hwiExposureLimit: numeric("hwi_exposure_limit", { precision: 15, scale: 2 }), // Max $ exposure allowed by insurer
+  // Eligibility is capped two ways — a dollar total across open jobs, and a
+  // count of them. The count rarely binds but it is a real term of the approval.
+  hwiJobCountLimit: integer("hwi_job_count_limit"),
+  // Per-job maximums by job type: [{ code, label, limit }], limit in dollars.
+  // jsonb rather than fixed columns: H01..H05 is icare's NSW taxonomy and other
+  // states differ. Null means "not entered" — distinct from a $0 entry, which
+  // means the builder holds no approval for that category at all.
+  hwiConstructionLimits: jsonb("hwi_construction_limits").$type<HbcfConstructionLimit[]>(),
+  hwiInsurer: text("hwi_insurer"),
+  hwiPolicyNumber: text("hwi_policy_number"),
+  hwiExpiryDate: text("hwi_expiry_date"), // ISO date string
+
+  // Builder's Licence
+  builderLicenseNumber: text("builder_license_number"),
+  builderLicenseExpiry: text("builder_license_expiry"), // ISO date string
+  builderLicenseState: text("builder_license_state").default("VIC"), // e.g. VIC, NSW, QLD
+
+  // Public Liability Insurance
+  publicLiabilityInsurer: text("public_liability_insurer"),
+  publicLiabilityLimit: numeric("public_liability_limit", { precision: 15, scale: 2 }),
+  publicLiabilityExpiry: text("public_liability_expiry"), // ISO date string
+  publicLiabilityPolicyNumber: text("public_liability_policy_number"),
+
+  // Contract Works / Project Insurance
+  contractWorksInsurer: text("contract_works_insurer"),
+  contractWorksLimit: numeric("contract_works_limit", { precision: 15, scale: 2 }),
+  contractWorksExpiry: text("contract_works_expiry"), // ISO date string
+  contractWorksPolicyNumber: text("contract_works_policy_number"),
+
+  // Workers Compensation
+  workersCompInsurer: text("workers_comp_insurer"),
+  workersCompPolicyNumber: text("workers_comp_policy_number"),
+  workersCompExpiry: text("workers_comp_expiry"), // ISO date string
+
+  // Professional Indemnity
+  profIndemnityInsurer: text("prof_indemnity_insurer"),
+  profIndemnityLimit: numeric("prof_indemnity_limit", { precision: 15, scale: 2 }),
+  profIndemnityExpiry: text("prof_indemnity_expiry"), // ISO date string
+
+  // Financial Targets
+  annualRevenueTarget: numeric("annual_revenue_target", { precision: 15, scale: 2 }),
+
+  // Gmail Bill Inbox — company-level Google account used for polling inbound bills
+  billInboxGmailEmail: text("bill_inbox_gmail_email"),
+  billInboxGmailAccessToken: text("bill_inbox_gmail_access_token"),
+  billInboxGmailRefreshToken: text("bill_inbox_gmail_refresh_token"),
+  billInboxGmailTokenExpiry: timestamp("bill_inbox_gmail_token_expiry"),
+  billInboxGmailConnectedAt: timestamp("bill_inbox_gmail_connected_at"),
+  billInboxPollingEnabled: boolean("bill_inbox_polling_enabled").notNull().default(false),
+  billInboxLastPolledAt: timestamp("bill_inbox_last_polled_at"),
+  billInboxDefaultUserId: varchar("bill_inbox_default_user_id"),
+  billInboxStatus: text("bill_inbox_status"), // null = ok, 'error' = token failed
+  billInboxLastError: text("bill_inbox_last_error"),
+  billInboxLastErrorAt: timestamp("bill_inbox_last_error_at"),
+
+  // Xero Defaults
+  // Fallback Xero AccountCode applied to bill line items that don't have an
+  // account on the line and where the supplier has no xeroDefaultAccountCode.
+  // Used by pushBillToXeroInternal pre-flight to avoid Xero 400 "AccountCode
+  // is required" errors. Stored on companySettings (per company) rather than
+  // systemConfiguration (which is global / non-tenant-scoped).
+  billDefaultXeroAccount: text("bill_default_xero_account"),
+
+  // Fallback Xero revenue AccountCode applied to client-invoice line items that
+  // have no account on the line. Used by /api/xero/push-client-invoice pre-flight
+  // to avoid Xero 400 "Account code must be specified". Stored here (per company)
+  // — mirrors billDefaultXeroAccount. NB: the older systemConfiguration copy of
+  // this field was mislocated (global, and never persisted via /api/company-settings).
+  clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
+
+  documentStyle: text("document_style").notNull().default("style1"),
+  paymentDetails: text("payment_details"),
+
+  takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
+
+  // Proposals: payment-schedule templates and full proposal templates
+  paymentScheduleTemplates: jsonb("payment_schedule_templates").$type<Array<{
+    id: string;
+    name: string;
+    milestones: Array<{ name: string; percentage?: number; amountCents?: number; description?: string }>;
+  }>>().default([]),
+  proposalTemplates: jsonb("proposal_templates").$type<Array<{
+    id: string;
+    name: string;
+    sections: Array<{
+      sectionType: string;
+      name: string;
+      order: number;
+      content?: any;
+      description?: string | null;
+      descriptionHtml?: string | null;
+      isEnabled?: boolean;
+    }>;
+    layoutSettings?: Record<string, any>;
+  }>>().default([]),
+
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCompanySettingsSchema = createInsertSchema(companySettings, {
+  // Accept both number and string for numeric Postgres columns (frontend sends numbers)
+  taxRate: z.coerce.string(),
+  timesheetReminderThresholdHours: z.coerce.string(),
+  timesheetDefaultBreak: z.coerce.string(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
+export type CompanySettings = typeof companySettings.$inferSelect;
+
+// Payment Terms Options - configurable payment terms for bills and invoices
+export const paymentTermsOptions = pgTable("payment_terms_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Due on Receipt", "Net 7", "Net 14", "Net 30", "End of Month", etc.
+  dueValue: integer("due_value").notNull().default(0), // Number of days or day of month
+  dueType: text("due_type").notNull().default("days"), // "days" | "of_current_month" | "of_next_month"
+  isBillDefault: boolean("is_bill_default").notNull().default(false),
+  isInvoiceDefault: boolean("is_invoice_default").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPaymentTermsOptionSchema = createInsertSchema(paymentTermsOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPaymentTermsOption = z.infer<typeof insertPaymentTermsOptionSchema>;
+export type PaymentTermsOption = typeof paymentTermsOptions.$inferSelect;
+
+// System Configuration
+export const systemConfiguration = pgTable("system_configuration", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Regional Settings
+  language: text("language").notNull().default("en-AU"), // English (Australia)
+  measurementSystem: text("measurement_system").notNull().default("metric"), // metric | imperial
+  currency: text("currency").notNull().default("AUD"), // Australian Dollar
+  currencySymbol: text("currency_symbol").notNull().default("$"),
+  timezone: text("timezone").notNull().default("Australia/Sydney"),
+  
+  // Formatting
+  temperatureFormat: text("temperature_format").notNull().default("celsius"), // celsius | fahrenheit
+  dateFormat: text("date_format").notNull().default("DD/MM/YYYY"), // DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD
+  timeFormat: text("time_format").notNull().default("12h"), // 12h | 24h
+  
+  // Document Numbering Prefixes
+  estimatePrefix: text("estimate_prefix").notNull().default("EST-"),
+  variationPrefix: text("variation_prefix").notNull().default("VAR-"),
+  clientInvoicePrefix: text("client_invoice_prefix").notNull().default("INV-"),
+  billPrefix: text("bill_prefix").notNull().default("BILL-"),
+  purchaseOrderPrefix: text("purchase_order_prefix").notNull().default("PO-"),
+  rfqPrefix: text("rfq_prefix").notNull().default("RFQ-"),
+  rfiPrefix: text("rfi_prefix").notNull().default("RFI-"),
+  proposalPrefix: text("proposal_prefix").notNull().default("PROP-"),
+  
+  // Document Starting Numbers
+  estimateStartNumber: integer("estimate_start_number").notNull().default(1000),
+  variationStartNumber: integer("variation_start_number").notNull().default(1000),
+  clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
+  billStartNumber: integer("bill_start_number").notNull().default(1000),
+  purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
+  rfqStartNumber: integer("rfq_start_number").notNull().default(1000),
+  rfiStartNumber: integer("rfi_start_number").notNull().default(1000),
+  proposalStartNumber: integer("proposal_start_number").notNull().default(1000),
+  
+  // Business Settings
+  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // GST rate as percentage
+  fiscalYearStart: text("fiscal_year_start").notNull().default("07-01"), // MM-DD format (July 1 for Australia)
+  defaultPaymentTerms: text("default_payment_terms").notNull().default("Net 30"), // Net 30, Net 14, COD, etc.
+  
+  // Job Numbering Settings
+  jobNumberingMode: text("job_numbering_mode").notNull().default("financial_year"), // financial_year | calendar_year | custom
+  jobNumberFormat: text("job_number_format").default("{YY}{SEQ}"), // Template for job numbers, e.g., "{YY}{SEQ}" = 4501, "{PREFIX}-{YYYY}-{SEQ}" = LH-2025-001
+  
+  // System Phase Settings (which phases are active for this company)
+  phaseLeadActive: boolean("phase_lead_active").notNull().default(true),
+  phasePreConstructionActive: boolean("phase_pre_construction_active").notNull().default(false), // ECI - optional
+  phaseConstructionActive: boolean("phase_construction_active").notNull().default(true),
+  phasePostConstructionActive: boolean("phase_post_construction_active").notNull().default(true),
+  phaseArchiveActive: boolean("phase_archive_active").notNull().default(true),
+  
+  // Job Number Prefixes per Phase
+  leadPrefix: text("lead_prefix").default("L-"), // Lead phase prefix
+  preConstructionPrefix: text("pre_construction_prefix").default("PC-"), // Pre-construction prefix
+  constructionPrefix: text("construction_prefix").default(""), // Construction - typically no prefix (main job number)
+  
+  // Starting Numbers per Phase
+  leadStartNumber: integer("lead_start_number").notNull().default(1),
+  preConstructionStartNumber: integer("pre_construction_start_number").notNull().default(1),
+  constructionStartNumber: integer("construction_start_number").notNull().default(1),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemConfigurationSchema = createInsertSchema(systemConfiguration).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSystemConfiguration = z.infer<typeof insertSystemConfigurationSchema>;
+export type SystemConfiguration = typeof systemConfiguration.$inferSelect;
+
+// Job Number Counters (tracks sequential job numbers per company/phase/year)
+export const jobNumberCounters = pgTable("job_number_counters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  systemPhase: text("system_phase").notNull(), // lead | pre_construction | construction
+  yearKey: text("year_key").notNull(), // "2024-2025" for FY, "2025" for CY, "custom" for custom mode
+  lastNumber: integer("last_number").notNull().default(0), // Last used sequence number
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertJobNumberCounterSchema = createInsertSchema(jobNumberCounters).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertJobNumberCounter = z.infer<typeof insertJobNumberCounterSchema>;
+export type JobNumberCounter = typeof jobNumberCounters.$inferSelect;
+
+// Cost Categories (company-specific categories for cost codes)
+export const costCategories = pgTable("cost_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  code: text("code").notNull(), // e.g., "001", "002", "5,000"
+  title: text("title").notNull(), // e.g., "Preliminaries", "Site Services", "Finishing Trades"
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCostCategorySchema = createInsertSchema(costCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCostCategory = z.infer<typeof insertCostCategorySchema>;
+export type CostCategory = typeof costCategories.$inferSelect;
+
+// Cost Codes (company-specific cost codes that can belong to categories)
+export const costCodes = pgTable("cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  code: text("code").notNull(), // e.g., "FLRT", "100", "5,200"
+  title: text("title").notNull(), // e.g., "Flat rate", "Preliminaries", "Interior Trim"
+  categoryId: varchar("category_id").references(() => costCategories.id, { onDelete: "set null" }), // Nullable - can exist without category
+  availableInTimesheets: boolean("available_in_timesheets").notNull().default(true),
+  // When true, contract-estimate items referencing this cost code feed the
+  // project's labour-hours budget (sum of qty per cost code).
+  isLabour: boolean("is_labour").notNull().default(false),
+  isSynced: boolean("is_synced").notNull().default(false), // Synced with Xero tracking category
+  xeroTrackingCategoryId: text("xero_tracking_category_id"), // Xero tracking category ID (TC1 for cost codes)
+  xeroTrackingOptionId: text("xero_tracking_option_id"), // Mapped Xero tracking option within TC1
+  xeroTrackingOptionName: text("xero_tracking_option_name"), // Cached name for display
+  isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCostCodeSchema = createInsertSchema(costCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCostCode = z.infer<typeof insertCostCodeSchema>;
+export type CostCode = typeof costCodes.$inferSelect;
+
+// Field Categories (Buildern-style predefined categories)
+export const fieldCategories = pgTable("field_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Field Settings are PER COMPANY. They used to be global — one shared list of
+  // units / statuses / rooms for every company on the deployment, so a customer
+  // renaming an option renamed it for everyone. Migration 0056 cloned a set per
+  // company; `key` is now unique per company, not globally.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // e.g., "task.status", "task.priority"
+  label: text("label").notNull(), // Display name
+  entity: text("entity").notNull(), // "task" | "note" | "project"
+  description: text("description"),
+  isBuiltIn: boolean("is_built_in").notNull().default(true), // System-defined categories
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Composite unique: a category key is unique per company, not globally
+  companyKeyUnique: uniqueIndex("field_categories_company_key_unique").on(table.companyId, table.key),
+}));
+
+export const insertFieldCategorySchema = createInsertSchema(fieldCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFieldCategory = z.infer<typeof insertFieldCategorySchema>;
+export type FieldCategory = typeof fieldCategories.$inferSelect;
+
+// Field Options (configurable options for each category)
+export const fieldOptions = pgTable("field_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Denormalised from the parent category so option reads/writes can be
+  // company-scoped without a join. See migration 0056.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
+  // NOTE: this self-reference has no `(): AnyPgColumn` return type, so
+  // TypeScript can't infer the table while inferring the column and fieldOptions
+  // degrades to `any` (TS7022). Annotating it is the right fix, but it exposes
+  // ~17 latent errors in client code that the `any` was hiding — including
+  // reads of a non-existent `.label` on a field option. Left as-is here so that
+  // clean-up is its own change rather than a rider on the company-scoping work.
+  parentId: varchar("parent_id").references(() => fieldOptions.id, { onDelete: "cascade" }), // For hierarchical options (e.g., project sub-statuses)
+  key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
+  name: text("name").notNull(), // Display name (editable by user)
+  description: text("description"), // Long-form description of what this stage/status involves — surfaced in board column Info popover and Stage Guide
+  color: text("color"), // Hex color code (e.g., "#3b82f6")
+  systemPhase: text("system_phase"), // Maps to system lifecycle phase: lead | pre_construction | construction | post_construction | archive
+  isActive: boolean("is_active").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false), // Default selection for this category
+  isCompleted: boolean("is_completed").notNull().default(false), // Marks this option as the "completed" status
+  isActionable: boolean("is_actionable").notNull().default(false), // Marks this option as requiring action (for widgets/filtering)
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFieldOptionSchema = createInsertSchema(fieldOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFieldOption = z.infer<typeof insertFieldOptionSchema>;
+export type FieldOption = typeof fieldOptions.$inferSelect;
+
+// Hierarchical field option with children
+export type FieldOptionWithChildren = FieldOption & {
+  children?: FieldOptionWithChildren[];
+};
+
+// Combined type for category with its options
+export type FieldCategoryWithOptions = FieldCategory & {
+  options: FieldOption[];
+};
+
+// Selections (categories like "Kitchen Splashback Tiles")
+export const selections = pgTable("selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Kitchen Splashback Tiles"
+  category: text("category"), // "Tiles"
+  room: text("room"), // "Kitchen"
+  description: text("description"),
+  selectionType: text("selection_type").notNull().default("selection"), // "selection" or "design" - selections are project-specific, design are standard options
+  status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
+  deadline: timestamp("deadline"),
+  allowance: integer("allowance"), // Budget allowance in cents
+  // "PC" | "PS" | null. Mirrors selection_templates.allowance_type so /apply is
+  // a copy rather than a translation; before migration 0078 the template's
+  // answer was simply dropped. NOT the same vocabulary as
+  // estimate_items.allowance, which spells the long forms.
+  allowanceType: text("allowance_type"),
+  sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
+  clientCanChange: boolean("client_can_change").notNull().default(true),
+  clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
+  // Client may photograph something they like and add it as an option. Off by
+  // default and set per selection — sensible for "Kitchen splashback", not for
+  // "Structural steel finish". An option added this way is an idea, not a
+  // priced product; the team refines it at the desk.
+  clientCanAddOption: boolean("client_can_add_option").notNull().default(false),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
+  purchaseOrderId: varchar("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Set when converted to a PO
+  orderedAt: timestamp("ordered_at"), // Set when status becomes "ordered"
+  receivedAt: timestamp("received_at"), // Set when status becomes "received"
+  createdBy: varchar("created_by").references(() => users.id),
+  portalToken: varchar("portal_token").unique(), // UUID used for /portal/selections/:token, generated lazily
+  portalSentAt: timestamp("portal_sent_at"), // when portal link was last sent to client
+  notes: text("notes"), // Trades-facing notes (instructions, warnings, etc.)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionSchema = createInsertSchema(selections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelection = z.infer<typeof insertSelectionSchema>;
+export type Selection = typeof selections.$inferSelect;
+
+// Selection Options (individual products within selections)
+export const selectionOptions = pgTable("selection_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Zellige Lily"
+  description: text("description"),
+  sku: text("sku"), // Product code/SKU
+  brand: text("brand"), // Manufacturer/brand
+  category: text("category"), // "Concept Tile & Timber"
+  subcategory: text("subcategory"),
+  unitCost: integer("unit_cost"), // Cost in cents
+  unitTax: integer("unit_tax"), // Tax in cents
+  gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether unit cost includes GST
+  markupPercent: doublePrecision("markup_percent"), // Markup on COST, percent (e.g. 7.5). Never margin.
+  // What the client pays per unit, cents INC GST. Authoritative when set; null
+  // on options priced before it existed (see shared/selectionPricing.ts).
+  // 🚨 unitCost and markupPercent must never reach a client.
+  unitCharge: integer("unit_charge"),
+  totalCost: integer("total_cost"), // Final cost in cents
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("ea"), // "m2", "linear_m", "ea", etc.
+  url: text("url"), // Product URL
+  visibleToClient: boolean("visible_to_client").notNull().default(true),
+  isSelectedByClient: boolean("is_selected_by_client").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedBy: text("approved_by"),
+  lockedAt: timestamp("locked_at"),
+  productId: integer("product_id"), // Link to product library entry (set via save-to-library or add-from-library)
+  specifications: json("specifications").$type<Record<string, any>>(), // Structured product specs (dimensions, finish, material, etc.)
+  notes: text("notes"), // Internal notes for trades team
+  // Suggested by the client (selections.clientCanAddOption), and who by.
+  clientSuggested: boolean("client_suggested").notNull().default(false),
+  suggestedBy: text("suggested_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionOptionSchema = createInsertSchema(selectionOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelectionOption = z.infer<typeof insertSelectionOptionSchema>;
+export type SelectionOption = typeof selectionOptions.$inferSelect;
+
+// Option Attachments (images, spec sheets, etc.)
+export const optionAttachments = pgTable("option_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  optionId: varchar("option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type").notNull(), // "image", "document", "specification"
+  fileSize: integer("file_size"), // File size in bytes
+  mimeType: text("mime_type"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+  // Percent of "cover": 100 fills the square with the image's short side,
+  // below 100 fits more of the image in, above 100 crops tighter.
+  thumbnailZoom: integer("thumbnail_zoom").notNull().default(100),
+});
+
+export const insertOptionAttachmentSchema = createInsertSchema(optionAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertOptionAttachment = z.infer<typeof insertOptionAttachmentSchema>;
+export type OptionAttachment = typeof optionAttachments.$inferSelect;
+
+// Client Selections (track what clients have chosen)
+export const clientSelections = pgTable("client_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  optionId: varchar("option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => users.id),
+  notes: text("notes"), // Client notes about their selection
+  selectedAt: timestamp("selected_at").notNull().defaultNow(),
+});
+
+export const insertClientSelectionSchema = createInsertSchema(clientSelections).omit({
+  id: true,
+  selectedAt: true,
+});
+
+export type InsertClientSelection = z.infer<typeof insertClientSelectionSchema>;
+export type ClientSelection = typeof clientSelections.$inferSelect;
+
+// Selection Comments (conversation thread on a selection, visible to team + client portal)
+export const selectionComments = pgTable("selection_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isClientComment: boolean("is_client_comment").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionCommentSchema = createInsertSchema(selectionComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelectionComment = z.infer<typeof insertSelectionCommentSchema>;
+export type SelectionComment = typeof selectionComments.$inferSelect;
+
+// Combined types for selections with their options
+export type SelectionWithOptions = Selection & {
+  options: (SelectionOption & { attachments?: OptionAttachment[] })[];
+  clientSelection?: ClientSelection;
+  // Set by server/selectionVisibility.ts when the caller lacks
+  // `projects.selections.pending` and the selection isn't approved yet. The row
+  // arrives as a name-only stub with `options: []` — every option, and with it
+  // every attached photo, has been withheld. UI must say so rather than
+  // rendering an empty selection that reads as broken.
+  restricted?: boolean;
+};
+
+export type SelectionOptionWithAttachments = SelectionOption & {
+  attachments: OptionAttachment[];
+};
+
+// Bill-related enums
+export const billTypeEnum = pgEnum("bill_type", ["bill", "credit", "receipt"]);
+export const billStatusEnum = pgEnum("bill_status", ["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]);
+export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
+// "edited" is an activity row, not an approval decision: it records a change
+// made to a bill AFTER it was approved, so the approval history shows the full
+// story rather than an approval that silently stopped describing the bill.
+export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected", "edited"]);
+export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
+
+// Supplier type enum (supplier = hardware stores, trade = subcontractors)
+export const supplierTypeEnum = pgEnum("supplier_type", ["supplier", "trade"]);
+
+// Payment terms enum
+export const paymentTermsEnum = pgEnum("payment_terms_type", [
+  "on_receipt",
+  "net_7",
+  "net_14",
+  "net_30",
+  "eom",
+  "end_of_next_month"
+]);
+
+// Insurance type enum
+export const insuranceTypeEnum = pgEnum("insurance_type", [
+  "public_liability",
+  "workers_comp",
+  "other"
+]);
+
+// DEPRECATED: Legacy suppliers table - being replaced by contacts with contactType='supplier'
+// Bills, RFQs, and PriceListItems now reference contacts.id instead of suppliers.id
+// This table is kept for backward compatibility with supplierInsurances, supplierContacts, supplierLabelAssignments
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  name: text("name").notNull(),
+  supplierType: supplierTypeEnum("supplier_type").notNull().default("supplier"),
+  email: text("email"),
+  phone: text("phone"),
+  abn: text("abn"), // Australian Business Number
+  businessNumber: text("business_number"), // ACN or other business registration
+  address: text("address"),
+  xeroContactId: text("xero_contact_id"), // For Xero integration linking
+  
+  // Default settings for bills
+  paymentTerms: paymentTermsEnum("payment_terms"), // Payment terms
+  defaultCostCodeId: varchar("default_cost_code_id").references(() => costCodes.id), // Auto-applies to bill line items
+  xeroDefaultAccount: text("xero_default_account"), // Default Xero account code (e.g., "Purchase of Materials")
+  
+  // Trade-specific fields
+  tradeCategory: text("trade_category"), // e.g., Electrician, Plumber, Carpenter
+  licenseNumber: text("license_number"), // Trade license/registration number
+  insuranceExpiry: timestamp("insurance_expiry"), // Legacy - kept for backward compatibility
+  contactPerson: text("contact_person"), // Legacy - kept for backward compatibility
+  
+  // Additional info
+  notes: text("notes"), // Internal notes about supplier
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+
+// DEPRECATED: Supplier Labels - tied to legacy suppliers table
+// Future: Migrate to contact labels stored in contacts.labels JSON array
+export const supplierLabels = pgTable("supplier_labels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  color: text("color").default("#A890D4"), // Label color (lilac default)
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("supplier_labels_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertSupplierLabelSchema = createInsertSchema(supplierLabels).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplierLabel = z.infer<typeof insertSupplierLabelSchema>;
+export type SupplierLabel = typeof supplierLabels.$inferSelect;
+
+// DEPRECATED: Supplier Label Assignments - tied to legacy suppliers table
+export const supplierLabelAssignments = pgTable("supplier_label_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  labelId: varchar("label_id").notNull().references(() => supplierLabels.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueAssignment: uniqueIndex("supplier_label_unique").on(table.supplierId, table.labelId),
+}));
+
+export const insertSupplierLabelAssignmentSchema = createInsertSchema(supplierLabelAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSupplierLabelAssignment = z.infer<typeof insertSupplierLabelAssignmentSchema>;
+export type SupplierLabelAssignment = typeof supplierLabelAssignments.$inferSelect;
+
+// DEPRECATED: Supplier Insurances - tied to legacy suppliers table
+// Future: Create contactInsurances table that references contacts.id
+export const supplierInsurances = pgTable("supplier_insurances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  insuranceType: insuranceTypeEnum("insurance_type").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  policyNumber: text("policy_number"),
+  insurerName: text("insurer_name"),
+  documentUrl: text("document_url"), // Google Drive link or file reference
+  notes: text("notes"),
+  
+  // Reminder tracking
+  reminder30DaySent: boolean("reminder_30_day_sent").notNull().default(false),
+  reminder7DaySent: boolean("reminder_7_day_sent").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  supplierIdx: index("supplier_insurances_supplier_idx").on(table.supplierId),
+}));
+
+export const insertSupplierInsuranceSchema = createInsertSchema(supplierInsurances).omit({
+  id: true,
+  reminder30DaySent: true,
+  reminder7DaySent: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplierInsurance = z.infer<typeof insertSupplierInsuranceSchema>;
+export type SupplierInsurance = typeof supplierInsurances.$inferSelect;
+
+// DEPRECATED: Supplier Contacts - tied to legacy suppliers table
+// Future: Use contacts.firstName/lastName for main contact, and create contactTeamMembers for additional people
+export const supplierContacts = pgTable("supplier_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email"),
+  mobile: text("mobile"),
+  phone: text("phone"),
+  position: text("position"), // e.g., "Accounts", "Site Manager", "Director"
+  isPrimary: boolean("is_primary").notNull().default(false),
+  notifyFor: json("notify_for").default([]), // Array of notification types: ["invoices", "orders", "quotes"]
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  supplierIdx: index("supplier_contacts_supplier_idx").on(table.supplierId),
+}));
+
+export const insertSupplierContactSchema = createInsertSchema(supplierContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  notifyFor: z.array(z.string()).optional(),
+});
+
+export type InsertSupplierContact = z.infer<typeof insertSupplierContactSchema>;
+export type SupplierContact = typeof supplierContacts.$inferSelect;
+
+// Contact type enum
+export const contactTypeEnum = pgEnum("contact_type", ["team", "trade", "supplier", "client"]);
+
+// Primary contact enum (for clients with spouse)
+export const primaryContactEnum = pgEnum("primary_contact", ["self", "spouse"]);
+
+// Contact review status enum (for Quick Review feature)
+export const contactReviewStatusEnum = pgEnum("contact_review_status", ["pending", "reviewed", "skipped"]);
+
+// Contacts (Team, Suppliers, Clients)
+export const contacts = pgTable("contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  name: text("name").notNull(), // Full name (computed from firstName + lastName for display)
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  email: text("email"),
+  phone: text("phone"),
+  mobile: text("mobile"),
+  company: text("company"),
+  position: text("position"),
+  contactType: contactTypeEnum("contact_type").notNull(),
+  
+  // Client-specific spouse fields
+  spouseName: text("spouse_name"),
+  spousePhone: text("spouse_phone"),
+  spouseEmail: text("spouse_email"),
+  primaryContact: primaryContactEnum("primary_contact"),
+  
+  // Business fields (for suppliers)
+  abn: text("abn"), // Australian Business Number
+  businessNumber: text("business_number"), // ACN or other business registration
+  address: text("address"), // Legacy field - kept for backward compatibility
+  
+  // Structured address fields (for Google Maps integration)
+  addressStreet: text("address_street"),
+  addressCity: text("address_city"),
+  addressState: text("address_state"),
+  addressPostcode: text("address_postcode"),
+  addressCountry: text("address_country").default("Australia"),
+  addressLat: numeric("address_lat", { precision: 10, scale: 7 }), // Latitude for mapping
+  addressLng: numeric("address_lng", { precision: 10, scale: 7 }), // Longitude for mapping
+  addressFormatted: text("address_formatted"), // Full formatted address from Google
+  
+  paymentTerms: text("payment_terms"), // e.g., "Net 30", "COD", "EOM"
+  defaultCostCodeId: varchar("default_cost_code_id").references(() => costCodes.id),
+  
+  // Employment fields (for team)
+  role: text("role"), // Job title/role
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Cost to company per hour
+  hourlyPrice: numeric("hourly_price", { precision: 10, scale: 2 }), // Billable rate per hour
+  
+  // General fields
+  notes: text("notes"),
+  labels: json("labels").default([]), // Array of string tags
+  projectIds: json("project_ids").default([]), // Array of associated project IDs
+  avatarColor: text("avatar_color"), // Hex color for avatar background
+  avatarUrl: text("avatar_url"), // URL to uploaded avatar image (photo or logo)
+  scheduleColor: text("schedule_color"), // Hex color for trade/supplier color-coding in schedules
+  
+  // Xero integration
+  xeroContactId: text("xero_contact_id"), // Linked Xero contact ID
+  xeroDefaultAccountCode: text("xero_default_account_code"), // Default Xero account code for bills
+  
+  // Portal access (for clients - future feature)
+  portalEnabled: boolean("portal_enabled").notNull().default(false),
+  
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  
+  // Quick Review feature - track review progress for new contacts
+  reviewStatus: contactReviewStatusEnum("review_status").default("pending"),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+
+  // Suppress the in-bill "save as defaults" prompt for this supplier
+  suppressDefaultsPrompt: boolean("suppress_defaults_prompt").notNull().default(false),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Every read is scoped by company_id and getContacts() sorts by name; the FK
+  // alone does not index the referencing side. See migration 0057.
+  companyNameIdx: index("contacts_company_id_name_idx").on(table.companyId, table.name),
+}));
+
+export const insertContactSchema = createInsertSchema(contacts).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  contactType: z.enum(["team", "trade", "supplier", "client"]),
+  email: z.string().email().optional().or(z.literal("")),
+  spouseEmail: z.string().email().optional().or(z.literal("")),
+  hourlyRate: z.string().optional().or(z.literal("")).transform(val => val === "" ? null : val),
+  hourlyPrice: z.string().optional().or(z.literal("")).transform(val => val === "" ? null : val),
+  addressLat: z.string().optional().or(z.literal("")).transform(val => val === "" ? null : val),
+  addressLng: z.string().optional().or(z.literal("")).transform(val => val === "" ? null : val),
+  labels: z.array(z.string()).optional(),
+  projectIds: z.array(z.string()).optional(),
+  primaryContact: z.enum(["self", "spouse"]).optional(),
+  reviewStatus: z.enum(["pending", "reviewed", "skipped"]).optional(),
+  lastReviewedAt: z.coerce.date().optional(),
+});
+
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type Contact = typeof contacts.$inferSelect;
+
+// Contact Insurances (for contacts with contactType='supplier')
+export const contactInsurances = pgTable("contact_insurances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  insuranceType: insuranceTypeEnum("insurance_type").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  policyNumber: text("policy_number"),
+  insurerName: text("insurer_name"),
+  documentUrl: text("document_url"), // Google Drive link or file reference
+  notes: text("notes"),
+  
+  // Reminder tracking
+  reminder30DaySent: boolean("reminder_30_day_sent").notNull().default(false),
+  reminder7DaySent: boolean("reminder_7_day_sent").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  contactIdx: index("contact_insurances_contact_idx").on(table.contactId),
+}));
+
+export const insertContactInsuranceSchema = createInsertSchema(contactInsurances).omit({
+  id: true,
+  reminder30DaySent: true,
+  reminder7DaySent: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertContactInsurance = z.infer<typeof insertContactInsuranceSchema>;
+export type ContactInsurance = typeof contactInsurances.$inferSelect;
+
+// Bills
+export const bills = pgTable("bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billNumber: text("bill_number").notNull(), // Auto-generated number, unique per company (composite index below)
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }), // Nullable — bills can belong to the business (no project)
+  supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
+  billType: billTypeEnum("bill_type").notNull().default("bill"),
+  status: billStatusEnum("status").notNull().default("draft"),
+  billDate: timestamp("bill_date").notNull(),
+  dueDate: timestamp("due_date"),
+  billReference: text("bill_reference"), // Supplier's invoice/reference number
+  notes: text("notes"),
+  reminders: text("reminders"),
+  subtotal: integer("subtotal").notNull().default(0), // Amount in cents
+  tax: integer("tax").notNull().default(0), // Tax amount in cents
+  total: integer("total").notNull().default(0), // Total amount in cents
+  roundingCents: integer("rounding_cents").notNull().default(0), // Manual rounding adjustment (cents), applied to total to match supplier invoice
+  // The total printed on the supplier's invoice document (cents inc GST), as
+  // typed by the user or extracted by the AI reader. When set it is the ANCHOR:
+  // roundingCents is re-derived from it whenever lines/taxMode change, so the
+  // bill total tracks the document instead of drifting with a stale delta.
+  // Null = no anchor captured (totals are purely line-derived).
+  documentTotalCents: integer("document_total_cents"),
+  paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
+  taxMode: text("tax_mode").notNull().default("exclusive"), // "inclusive" or "exclusive" — line totals interpretation
+  sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
+  xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
+  xeroPaidStatus: text("xero_paid_status"), // Synced from Xero
+  // Held for the duration of a push to Xero so two concurrent pushes of the
+  // same bill cannot both reach the create and make two Xero bills
+  // (migration 0102). Claimed and released by storage.claimXeroPush /
+  // releaseXeroPush; a claim older than the stale timeout is reclaimable so a
+  // crash mid-push cannot wedge the bill forever.
+  xeroPushInFlightAt: timestamp("xero_push_in_flight_at"),
+  xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
+  xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'failed'
+  xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
+  // ── Xero review queue ──────────────────────────────────────────────────
+  // The nightly reconcile auto-applies safe drift (payments/status) but parks
+  // "surprises" here for a human: total changed, voided, or gone from Xero.
+  // Reason non-null = in the queue. See migrations/0044_bills_xero_review.sql.
+  xeroReviewReason: text("xero_review_reason"), // null | 'total_changed' | 'voided_in_xero' | 'missing_in_xero'
+  // Human-readable diff lines ("total $1,200.00 → $1,450.00"), so the modal
+  // renders with no Xero call. Left untyped: a $type<string[]> here makes the
+  // column incompatible with storage.ts's generated bill insert/update types.
+  xeroReviewChanges: jsonb("xero_review_changes"),
+  xeroReviewFingerprint: text("xero_review_fingerprint"), // Xero-side state that raised the flag
+  xeroReviewDetectedAt: timestamp("xero_review_detected_at"),
+  // Set on dismiss. The sweep only re-flags when the live fingerprint differs
+  // from this — that's what stops the same bill notifying every single night.
+  xeroReviewAckFingerprint: text("xero_review_ack_fingerprint"),
+  xeroReviewResolvedAt: timestamp("xero_review_resolved_at"),
+  xeroReviewResolvedBy: varchar("xero_review_resolved_by"),
+  // Deliberately outside the review lifecycle: a void stays visible on the bill
+  // after the queue entry is resolved. Cleared only if Xero un-voids or the
+  // bill is unlinked.
+  xeroVoidedAt: timestamp("xero_voided_at"),
+  attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
+  ocrProcessed: boolean("ocr_processed").notNull().default(false),
+  // Distinct from ocrProcessed, which only says the document was read at import.
+  // This says a human has run the price review over this bill's lines, which is
+  // what stops the same bill being reviewed twice.
+  priceReviewedAt: timestamp("price_reviewed_at"),
+  priceReviewedBy: varchar("price_reviewed_by"),
+  ocrData: json("ocr_data"), // Raw OCR results
+  gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
+  // Confirmed PO match (ID of purchase_orders row). Column name kept for back-compat
+  // but holds the linked PO of ANY type (main / site / supplier / labour), not site-only.
+  matchedSitePOId: varchar("matched_site_po_id"),
+  // Ranked PO suggestion IDs (any PO type). See server/services/poSuggestions.ts.
+  suggestedSitePOIds: json("suggested_site_po_ids").default([]),
+  // Reimbursement fields (used when billType === "receipt" and worker paid personally)
+  paidByEmployee: boolean("paid_by_employee").default(false),
+  reimbursementStatus: text("reimbursement_status"), // null | "pending" | "approved" | "paid" | "rejected"
+  reimbursedByUserId: varchar("reimbursed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reimbursementMethod: text("reimbursement_method"), // "bank_transfer" | "added_to_wages" | "cash"
+  reimbursementNotes: text("reimbursement_notes"),
+  reimbursedAt: timestamp("reimbursed_at"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: bill numbers must be unique per company
+  uniqueBillNumberPerCompany: uniqueIndex("bills_company_bill_number_unique").on(table.companyId, table.billNumber),
+  // A Xero invoice can only map to one bill per company — prevents duplicate
+  // imports of the same invoice (partial so the many null-xeroInvoiceId bills
+  // don't collide).
+  uniqueXeroInvoicePerCompany: uniqueIndex("bills_company_xero_invoice_unique")
+    .on(table.companyId, table.xeroInvoiceId)
+    .where(sql`${table.xeroInvoiceId} IS NOT NULL`),
+}));
+
+export const billAttachmentSchema = z.object({
+  objectPath: z.string(),
+  filename: z.string().optional(),
+  mimeType: z.string().optional(),
+  size: z.number().optional(),
+  uploadedAt: z.string().optional(),
+  uploadedBy: z.string().optional(),
+  source: z.enum(["manual", "ai_reader", "email", "xero"]).optional(),
+});
+export type BillAttachment = z.infer<typeof billAttachmentSchema>;
+
+export const insertBillSchema = createInsertSchema(bills).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  billType: z.enum(["bill", "credit", "receipt"]),
+  status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]),
+  billDate: z.coerce.date(),
+  dueDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  tax: z.number().default(0),
+  total: z.number().default(0),
+  paidAmount: z.number().default(0),
+  projectId: z.string().nullable().optional(),
+  companyId: z.string().nullable().optional(),
+  attachmentUrls: z.array(z.union([z.string(), billAttachmentSchema])).optional(),
+  xeroLastSyncAt: z.coerce.date().optional().nullable(),
+  xeroLastSyncStatus: z.string().optional().nullable(),
+  xeroLastSyncError: z.string().optional().nullable(),
+});
+
+export type InsertBill = z.infer<typeof insertBillSchema>;
+export type Bill = typeof bills.$inferSelect;
+
+// Bill Line Items
+export const billLineItems = pgTable("bill_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  lineType: billLineTypeEnum("line_type").notNull().default("custom"),
+  description: text("description").notNull(),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }), // Link to price list
+  quantity: doublePrecision("quantity").notNull().default(1),
+  unit: text("unit"), // Unit of measure, from Field Settings `estimate_item.unit`
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  tax: taxTypeEnum("tax").notNull().default("GST on expenses"),
+  account: text("account"), // Xero account code
+  total: integer("total").notNull().default(0), // Total in cents
+  order: integer("order").notNull().default(0), // For sorting
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillLineItemSchema = createInsertSchema(billLineItems).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  lineType: z.enum(["estimate", "item", "custom"]),
+  tax: z.enum(["GST on expenses", "No GST"]),
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  total: z.number().default(0),
+  order: z.number().default(0),
+  priceListItemId: z.string().nullable().optional(),
+});
+
+export type InsertBillLineItem = z.infer<typeof insertBillLineItemSchema>;
+export type BillLineItem = typeof billLineItems.$inferSelect;
+
+// Bill Payments (payment history for supplier bills) — mirrors
+// client_invoice_payments. Replaces the old free-text "Paid" status: marking a
+// bill paid now requires recording one or more payments here.
+export const billPayments = pgTable("bill_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(), // cents
+  paymentDate: timestamp("payment_date").notNull(),
+  paymentMethod: text("payment_method"),
+  reference: text("reference"),
+  notes: text("notes"),
+  isVoided: boolean("is_voided").notNull().default(false),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBillPaymentSchema = createInsertSchema(billPayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  amount: z.number(),
+  paymentDate: z.coerce.date(),
+});
+
+export type InsertBillPayment = z.infer<typeof insertBillPaymentSchema>;
+export type BillPayment = typeof billPayments.$inferSelect;
+
+// Bill Approvals
+export const billApprovals = pgTable("bill_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  approvedById: varchar("approved_by_id").notNull().references(() => users.id),
+  status: billApprovalStatusEnum("status").notNull(),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillApprovalSchema = createInsertSchema(billApprovals).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  status: z.enum(["approved", "rejected"]),
+});
+
+export type InsertBillApproval = z.infer<typeof insertBillApprovalSchema>;
+export type BillApproval = typeof billApprovals.$inferSelect;
+
+// Bill Line Item Allowance Allocations (link bill line items to estimate item allowances)
+export const billLineItemAllowances = pgTable("bill_line_item_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The allowance (PC/PS item)
+  amount: integer("amount").notNull().default(0), // Amount allocated to this allowance in cents
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillLineItemAllowanceSchema = createInsertSchema(billLineItemAllowances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  amount: z.number().default(0),
+});
+
+export type InsertBillLineItemAllowance = z.infer<typeof insertBillLineItemAllowanceSchema>;
+export type BillLineItemAllowance = typeof billLineItemAllowances.$inferSelect;
+
+// Timesheet Allowance Allocations (link timesheets to PS allowances)
+export const timesheetAllowances = pgTable("timesheet_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  timesheetId: varchar("timesheet_id").notNull().references(() => timesheets.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  // When a split timesheet is allocated one cost-code portion at a time, this
+  // points at the specific split; null = the whole timesheet was allocated.
+  timesheetCostCodeId: varchar("timesheet_cost_code_id").references((): any => timesheetCostCodes.id, { onDelete: "cascade" }),
+  hours: numeric("hours", { precision: 10, scale: 2 }).notNull().default("0"), // Hours allocated to this PS allowance
+  // PS timesheets bill the client, so amount = hours × chargeRateCents (EX GST).
+  // chargeRateCents auto-fills from users.chargeRate but is editable per row;
+  // costRateCents snapshots the labour cost rate so margin is recoverable.
+  chargeRateCents: integer("charge_rate_cents"), // Charge rate per hour, ex GST cents (editable)
+  costRateCents: integer("cost_rate_cents"),     // Cost rate per hour, ex GST cents (snapshot, for margin)
+  amount: integer("amount").notNull().default(0), // Allocation total in cents, EX GST — labour carries no GST
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTimesheetAllowanceSchema = createInsertSchema(timesheetAllowances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  hours: z.string().default("0"),
+  chargeRateCents: z.number().optional().nullable(),
+  costRateCents: z.number().optional().nullable(),
+  amount: z.number().default(0),
+});
+
+export type InsertTimesheetAllowance = z.infer<typeof insertTimesheetAllowanceSchema>;
+export type TimesheetAllowance = typeof timesheetAllowances.$inferSelect;
+
+// Allowance Items (custom line items for PS/PC allowances)
+export const allowanceItems = pgTable("allowance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  itemName: text("item_name"), // Short item label; description holds the detail
+  description: text("description").notNull(),
+  costCode: text("cost_code"), // Same convention as estimate_items.costCode
+  quantity: doublePrecision("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | hrs etc
+  // New-style costed rows: builder cost + optional markup, all derived amounts
+  // computed via shared/pricing.ts. Older rows have only unitPrice/totalPrice.
+  unitCostExTaxCents: integer("unit_cost_ex_tax_cents"), // Builder unit cost EX GST in cents
+  markupPercent: doublePrecision("markup_percent"), // Optional markup % (e.g. trade discount recovery on PC)
+  unitPrice: integer("unit_price").notNull().default(0), // Charge price per unit in cents INC GST
+  totalPrice: integer("total_price").notNull().default(0), // Line total in cents INC GST (authoritative)
+  // Set when this row was synced from a linked selection's chosen option —
+  // lets the sync upsert (one costed row per selection) instead of duplicating.
+  sourceSelectionId: varchar("source_selection_id").references(() => selections.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertAllowanceItemSchema = createInsertSchema(allowanceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  itemName: z.string().optional().nullable(),
+  costCode: z.string().optional().nullable(),
+  quantity: z.number().default(1),
+  unitType: z.string().default("each"),
+  unitCostExTaxCents: z.number().optional().nullable(),
+  markupPercent: z.number().optional().nullable(),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sourceSelectionId: z.string().optional().nullable(),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertAllowanceItem = z.infer<typeof insertAllowanceItemSchema>;
+export type AllowanceItem = typeof allowanceItems.$inferSelect;
+
+// Xero Connections
+export const xeroConnections = pgTable("xero_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  tenantId: text("tenant_id").notNull(),
+  tenantName: text("tenant_name").notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  tokenExpiresAt: timestamp("token_expires_at").notNull(),
+  trackingCategory1Id: text("tracking_category_1_id"), // TC1: Cost Codes tracking category ID
+  trackingCategory1Name: text("tracking_category_1_name"), // TC1: Cost Codes tracking category name
+  trackingCategory2Id: text("tracking_category_2_id"), // TC2: Jobs/Projects tracking category ID
+  trackingCategory2Name: text("tracking_category_2_name"), // TC2: Jobs/Projects tracking category name
+  isActive: boolean("is_active").notNull().default(true),
+  lastReconciledAt: timestamp("last_reconciled_at"), // last nightly bill reconciliation sweep
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertXeroConnectionSchema = createInsertSchema(xeroConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  tokenExpiresAt: z.coerce.date(),
+});
+
+export type InsertXeroConnection = z.infer<typeof insertXeroConnectionSchema>;
+export type XeroConnection = typeof xeroConnections.$inferSelect;
+
+// Outbox for Xero bill pushes — a durable queue so a failed push (Xero down,
+// 429, network) is retried in the background with backoff rather than lost.
+export const xeroPushQueue = pgTable("xero_push_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"), // pending | processing | done | failed
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(6),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // At most one active (pending/processing) job per bill.
+  uniqueActivePerBill: uniqueIndex("xero_push_queue_bill_active_unique")
+    .on(table.billId)
+    .where(sql`status IN ('pending','processing')`),
+}));
+
+export type XeroPushJob = typeof xeroPushQueue.$inferSelect;
+
+// Variations (change orders/variations to projects)
+export const variations = pgTable("variations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationNumber: text("variation_number").notNull(), // Auto-generated format like "4501-VO-017"
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  approvalDeadline: timestamp("approval_deadline"),
+  daysChanged: integer("days_changed"),
+  // Document-level markup applied once to the ex-GST value of everything being
+  // on-charged (cost lines + bills + labour, NOT allowance adjustments), on top
+  // of any per-line markup. Shown as its own row on the client document.
+  // null/0 = none. double precision so 12.5% doesn't truncate.
+  // Which columns/sections this document shows the client. null = inherit the
+  // company default. See shared/variationDocumentColumns.ts.
+  pdfColumns: jsonb("pdf_columns"),
+  globalMarkupPercent: doublePrecision("global_markup_percent"),
+  // Resulting ex-GST cents. Server-derived on every write and already inside
+  // `subtotal`; stored so the client document renders the banked figure rather
+  // than one recomputed at render time. Guarded against client writes.
+  globalMarkupAmount: integer("global_markup_amount").notNull().default(0),
+  subtotal: integer("subtotal").notNull().default(0), // Amount in cents (ex GST, INCLUDING global markup)
+  gstAmount: integer("gst_amount").notNull().default(0), // GST amount in cents
+  totalAmount: integer("total_amount").notNull().default(0), // Total amount in cents
+  paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
+  balanceAmount: integer("balance_amount").notNull().default(0), // Balance amount in cents
+  status: text("status").notNull().default("draft"), // "draft" | "action" | "pending" | "approved" | "rejected"
+  relatedTo: text("related_to"), // Reference to related item
+  isSeen: boolean("is_seen").notNull().default(false), // Whether the client has seen/acknowledged this variation
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedDate: timestamp("approved_date"),
+  rejectionReason: text("rejection_reason"),
+  termsAndConditions: text("terms_and_conditions"),
+  // Attachments (T002)
+  attachments: jsonb("attachments").default([]), // Array of {name, url, size?, type?}
+  // Client portal (T003)
+  portalToken: text("portal_token").unique(),
+  portalSentAt: timestamp("portal_sent_at"),
+  portalViewedAt: timestamp("portal_viewed_at"), // First time the client opened the portal link
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }), // Who raised the variation
+  clientSignedName: text("client_signed_name"),
+  clientSignedDate: timestamp("client_signed_date"),
+  clientSignedIp: text("client_signed_ip"), // Audit: request IP captured at portal sign time
+  clientSignedUserAgent: text("client_signed_user_agent"), // Audit: request user-agent at portal sign time
+  builderSignedName: text("builder_signed_name"),
+  builderSignedDate: timestamp("builder_signed_date"),
+  // Which archived send the client's signature belongs to. Null for anything
+  // signed before the archive shipped, and for variations never sent through
+  // the portal. See variationSends below.
+  signedSendId: varchar("signed_send_id"),
+  /** The variation this one revises, set by "Duplicate for revision". Reading
+   *  the other way — `WHERE supersedes_variation_id = me` — finds the revision
+   *  that replaced a rejected variation. Self-referencing, so a chain of
+   *  revisions walks naturally. Guarded against client writes; only the
+   *  duplicate route sets it. */
+  supersedesVariationId: varchar("supersedes_variation_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertVariationSchema = createInsertSchema(variations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
+  approvalDeadline: z.coerce.date().optional(),
+  approvedDate: z.coerce.date().optional(),
+  clientSignedDate: z.coerce.date().optional(),
+  builderSignedDate: z.coerce.date().optional(),
+  portalSentAt: z.coerce.date().optional(),
+  pdfColumns: z.record(z.boolean()).nullable().optional(),
+  globalMarkupPercent: z.number().min(0).max(1000).nullable().optional(),
+  // Optional, not .default(0): it is derived by recomputeVariationTotals and
+  // guarded out of the create/update schemas, so no caller should have to
+  // supply it just to satisfy the type.
+  globalMarkupAmount: z.number().optional(),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  paidAmount: z.number().default(0),
+  balanceAmount: z.number().default(0),
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    size: z.number().optional(),
+    type: z.string().optional(),
+  })).optional(),
+});
+
+export type InsertVariation = z.infer<typeof insertVariationSchema>;
+export type Variation = typeof variations.$inferSelect;
+
+/**
+ * One row per time a variation was emailed to a client — the archive.
+ *
+ * A row per send rather than columns on `variations`, which is where proposals
+ * put the equivalent (0069). Columns lose the first send the moment you send
+ * twice, and for a document someone signs that history IS the record: send v1,
+ * revise, send v2, they sign v2. The signature has to name which document it
+ * belongs to, and v1 has to stay provable.
+ *
+ * `sentTo`, `subject` and `body` are the only record of the message anywhere —
+ * `sendGenericEmail` persists nothing, across all eighteen of its call sites.
+ */
+/**
+ * Every email the app sends, and what became of it.
+ *
+ * Written inside `sendGenericEmail` — the single choke point all eighteen call
+ * sites go through — rather than per feature. Before this, "Sent" meant only
+ * that a provider had accepted the request: a variation went to an address that
+ * did not exist, the provider accepted it, Google bounced it asynchronously,
+ * and the app carried on showing Sent with no message id to look up and nothing
+ * listening for the bounce.
+ */
+export const emailDeliveries = pgTable("email_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  /** Nullable — onboarding and the reminder schedulers send with no company in
+   *  scope, and those sends still deserve a record. */
+  companyId: varchar("company_id"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  toAddresses: jsonb("to_addresses").$type<string[]>().notNull().default([]),
+  subject: text("subject"),
+
+  /** "gmail" when it went through the user's own account, "resend" otherwise. */
+  provider: text("provider"),
+  /** The provider's id. Without it a specific send cannot be looked up at all. */
+  providerMessageId: text("provider_message_id"),
+
+  /** sent · delivered · bounced · complained · failed — see EMAIL_DELIVERY_STATUS. */
+  status: text("status").notNull().default("sent"),
+  statusDetail: text("status_detail"),
+  statusUpdatedAt: timestamp("status_updated_at"),
+
+  /** What the email was about, so a document can show its own delivery history
+   *  without a join table per feature. */
+  contextType: text("context_type"),
+  contextId: varchar("context_id"),
+});
+
+export const insertEmailDeliverySchema = createInsertSchema(emailDeliveries).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertEmailDelivery = z.infer<typeof insertEmailDeliverySchema>;
+export type EmailDelivery = typeof emailDeliveries.$inferSelect;
+
+/**
+ * `sent` is the only status we can set ourselves — it means a provider accepted
+ * the request and nothing more. Everything past it arrives by webhook, which is
+ * the whole point: acceptance is not delivery.
+ */
+export const EMAIL_DELIVERY_STATUS = ["sent", "delivered", "bounced", "complained", "failed"] as const;
+export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUS)[number];
+
+export const variationSends = pgTable("variation_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull(),
+
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  sentById: varchar("sent_by_id").references(() => users.id, { onDelete: "set null" }),
+
+  /** Frozen at send time — the contact may be edited or deleted later. */
+  sentTo: jsonb("sent_to").$type<Array<{ name?: string; email: string }>>().notNull().default([]),
+  subject: text("subject"),
+  body: text("body"),
+
+  /** The document as it went out. `contentSnapshot` carries a `version` key —
+   *  proposals already needed a redactSnapshot helper "whose shape varies by
+   *  which route wrote it", which is the lesson not to learn twice. */
+  contentSnapshot: jsonb("content_snapshot"),
+  /** Object-storage path of the exact PDF emailed. Served back verbatim; never
+   *  re-rendered, because the variation can change afterwards. */
+  sentPdfPath: text("sent_pdf_path"),
+
+  /** Per-send engagement. `variations.portalViewedAt` is first-open only and
+   *  cannot tell one send from the next. */
+  firstViewedAt: timestamp("first_viewed_at"),
+  lastViewedAt: timestamp("last_viewed_at"),
+  viewCount: integer("view_count").notNull().default(0),
+
+  /** The email_deliveries row for this send, so the feed can say whether the
+   *  message arrived and not merely that it was handed to a provider.
+   *  Deliberately not a FK — a log line must never block deleting a send. */
+  emailDeliveryId: varchar("email_delivery_id"),
+});
+
+export const insertVariationSendSchema = createInsertSchema(variationSends).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertVariationSend = z.infer<typeof insertVariationSendSchema>;
+export type VariationSend = typeof variationSends.$inferSelect;
+
+/** Shape of `variationSends.contentSnapshot`. Versioned from day one. */
+export const VARIATION_SNAPSHOT_VERSION = 1 as const;
+
+// Variation Items (line items for variations)
+export const variationItems = pgTable("variation_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  name: text("name"), // Short item name shown in PDF/portal (e.g. "Decking Timber")
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0), // Client price per unit in cents (ex tax)
+  totalPrice: integer("total_price").notNull().default(0), // Client price total in cents (ex tax)
+  taxable: boolean("taxable").notNull().default(true), // For GST calculation
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering
+  itemType: text("item_type").notNull().default("cost_line"), // "cost_line" | "allowance"
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment"
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | "hr" etc
+  unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Builder cost per unit in dollars
+  markupPercent: integer("markup_percent"), // Item-level markup % (null = 0%)
+  costCode: text("cost_code"), // Free-text cost code label
+  showInPdf: boolean("show_in_pdf").notNull().default(true), // Whether this line appears in client PDF/portal
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertVariationItemSchema = createInsertSchema(variationItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().optional().nullable(),
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sortOrder: z.number().default(0),
+  unitCostExTax: z.number().default(0),
+  markupPercent: z.number().optional().nullable(),
+  showInPdf: z.boolean().default(true),
+});
+
+export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
+export type VariationItem = typeof variationItems.$inferSelect;
+
+// Junction table: Variation to Bills
+export const variationBills = pgTable("variation_bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertVariationBillSchema = createInsertSchema(variationBills).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVariationBill = z.infer<typeof insertVariationBillSchema>;
+export type VariationBill = typeof variationBills.$inferSelect;
+
+// Junction table: Variation to Timesheets
+export const variationTimesheets = pgTable("variation_timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  timesheetId: varchar("timesheet_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertVariationTimesheetSchema = createInsertSchema(variationTimesheets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVariationTimesheet = z.infer<typeof insertVariationTimesheetSchema>;
+export type VariationTimesheet = typeof variationTimesheets.$inferSelect;
+
+// Client Invoices
+export const clientInvoices = pgTable("client_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Unique per company (composite index below), NOT globally — two companies
+  // may both use "INV-1001". companyId is nullable only for legacy rows;
+  // ensureTenancyColumns backfills it from the owning project.
+  invoiceNumber: text("invoice_number"),
+  companyId: varchar("company_id").references(() => companies.id),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => users.id),
+  invoiceDate: timestamp("invoice_date").notNull(),
+  dueDate: timestamp("due_date"),
+  // The schedule item whose finish triggers this claim (migration 0096). A
+  // linked draft is forecast at the item's finish + pay days, so it moves
+  // with the schedule. Null = not linked.
+  scheduleItemId: varchar("schedule_item_id").references((): AnyPgColumn => scheduleItems.id, { onDelete: "set null" }),
+  // The invoice date was set by hand, so it no longer follows the schedule
+  // item (migration 0098). Drafts only — approval locks the dates anyway.
+  datePinned: boolean("date_pinned").notNull().default(false),
+  invoicingMethod: text("invoicing_method").notNull().default("progress_payments"),
+  markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  termsAndConditions: text("terms_and_conditions"),
+  subtotal: integer("subtotal").notNull().default(0),
+  markupAmount: integer("markup_amount").notNull().default(0),
+  gstAmount: integer("gst_amount").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
+  paidAmount: integer("paid_amount").notNull().default(0),
+  balanceAmount: integer("balance_amount").notNull().default(0),
+  status: text("status").notNull().default("draft"),
+  sentDate: timestamp("sent_date"),
+  notes: text("notes"),
+  sendToXero: boolean("send_to_xero").notNull().default(false),
+  xeroInvoiceId: text("xero_invoice_id"),
+  xeroInvoiceNumber: text("xero_invoice_number"),
+  lockedContractPrice: integer("locked_contract_price"), // Snapshot of estimate total when estimate is approved/locked
+  columnConfig: jsonb("column_config").default([]), // Array of { id, visible, order } for configurable invoice columns
+  showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference
+  lineItemClaims: jsonb("line_item_claims").default({}), // Record<estimateItemId, claimPercent> for per-line-item claiming
+  contractClaimRows: jsonb("contract_claim_rows").default([]), // Array of { id, name, description, claimPercent } for progress payment claims
+  // Persisted per-line money snapshot of the WHOLE invoice (contract claims,
+  // variations, allowances, labour, bills, selections, markup, custom lines) —
+  // written on every save by the client from the same math that renders the
+  // totals/PDF. This is the single source the Xero push materialises line items
+  // from, so the Xero total always equals what Morada displayed at save time.
+  // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
+  lineBreakdown: jsonb("line_breakdown"),
+  // Per-line Xero overrides, keyed by the stable line identity
+  // (`contract:<rowId>`, `variation:<id>`, `allowance:<estimateItemId>`,
+  // `bill:<id>`, `selection:<id>`, `labour`, `markup`). Custom lines carry
+  // their own account on client_invoice_items instead.
+  // Shape: Record<lineKey, { account?, taxable?, tracking?: Record<catId, optId> }>.
+  // An absent key means "company default account, GST charged, project's own
+  // tracking option" — see resolveClientInvoiceFallbackAccount.
+  lineXeroOverrides: jsonb("line_xero_overrides").notNull().default({}),
+  // Array of { name, url, size?, type?, includeInPdf? }. `url` is the
+  // object-storage path from /api/uploads/request-url. Mirrors
+  // variations.attachments so both documents carry files the same way.
+  attachments: jsonb("attachments").notNull().default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: invoice numbers must be unique per company
+  uniqueInvoiceNumberPerCompany: uniqueIndex("client_invoices_company_invoice_number_unique").on(table.companyId, table.invoiceNumber),
+}));
+
+// One line of the persisted invoice money snapshot. All amounts are integer
+// cents; amountExCents + gstCents must equal amountIncCents (validated).
+// `taxable: false` lines must carry gstCents 0. `accountCode` is the resolved
+// per-line Xero account: a custom line's own code, or the override recorded in
+// clientInvoices.lineXeroOverrides for every other source.
+export const invoiceLineBreakdownEntrySchema = z.object({
+  source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
+  description: z.string().min(1),
+  amountExCents: z.number().int(),
+  gstCents: z.number().int(),
+  amountIncCents: z.number().int(),
+  taxable: z.boolean(),
+  accountCode: z.string().optional().nullable(),
+  // The Xero TaxType this line posts under (OUTPUT, EXEMPTOUTPUT, …). Absent
+  // falls back to OUTPUT/NONE derived from `taxable`, which is what pre-tax-rate
+  // invoices carry.
+  taxType: z.string().optional().nullable(),
+  // Resolved per-line tracking, ready to hand to Xero. Empty/absent means the
+  // push falls back to the project's own tracking option.
+  tracking: z
+    .array(z.object({ categoryId: z.string(), optionId: z.string() }))
+    .optional()
+    .nullable(),
+}).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
+  message: "amountExCents + gstCents must equal amountIncCents",
+}).refine((l) => l.taxable || l.gstCents === 0, {
+  message: "non-taxable lines must have gstCents 0",
+});
+
+export type InvoiceLineBreakdownEntry = z.infer<typeof invoiceLineBreakdownEntrySchema>;
+
+export const clientInvoiceAttachmentSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+  size: z.number().optional(),
+  type: z.string().optional(),
+  /** Append this file to the rendered PDF instead of only linking to it. */
+  includeInPdf: z.boolean().optional(),
+});
+export type ClientInvoiceAttachment = z.infer<typeof clientInvoiceAttachmentSchema>;
+
+export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  attachments: z.array(clientInvoiceAttachmentSchema).optional(),
+  invoiceNumber: z.string().optional().nullable(),
+  name: z.string().min(1, "Name is required"),
+  invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
+  // Morada status -> Xero, so nothing is lost between the two systems:
+  //
+  //   draft     no Xero invoice yet (nothing is pushed until it is approved)
+  //   approved  AUTHORISED, SentToContact = false
+  //   sent      AUTHORISED, SentToContact = true
+  //   partial   AUTHORISED with payments applied (Xero keeps AUTHORISED)
+  //   paid      PAID
+  //   overdue   derived from the due date, never stored — Xero has no such
+  //             status either, it is a view over AUTHORISED
+  //
+  // Approved and sent both sit under Xero's single AUTHORISED status; the
+  // SentToContact flag is the only thing separating them, which is why emailing
+  // writes that flag back and pulling reads it.
+  status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
+  invoiceDate: z.coerce.date(),
+  dueDate: z.coerce.date().optional(),
+  sentDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  markupAmount: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  paidAmount: z.number().default(0),
+  balanceAmount: z.number().default(0),
+  sendToXero: z.boolean().default(false),
+  lockedContractPrice: z.number().optional().nullable(),
+  columnConfig: z.array(z.any()).optional().nullable(),
+  showAmountsIncTax: z.boolean().default(true),
+  lineItemClaims: z.record(z.string(), z.number()).optional().nullable(),
+  contractClaimRows: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    claimPercent: z.number(),
+  })).optional().nullable(),
+  lineBreakdown: z.array(invoiceLineBreakdownEntrySchema).optional().nullable(),
+});
+
+export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;
+export type ClientInvoice = typeof clientInvoices.$inferSelect;
+
+// Client Invoice Items (custom line items)
+export const clientInvoiceItems = pgTable("client_invoice_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  name: text("name"), // Short label for the line item
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0),
+  totalPrice: integer("total_price").notNull().default(0),
+  taxable: boolean("taxable").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  unit: text("unit"), // e.g. "hr", "m2", "unit"
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  xeroAccountCode: text("xero_account_code"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertClientInvoiceItemSchema = createInsertSchema(clientInvoiceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().optional().nullable(),
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertClientInvoiceItem = z.infer<typeof insertClientInvoiceItemSchema>;
+export type ClientInvoiceItem = typeof clientInvoiceItems.$inferSelect;
+
+// Client Invoice Payments (payment history)
+export const clientInvoicePayments = pgTable("client_invoice_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  paymentDate: timestamp("payment_date").notNull(),
+  paymentMethod: text("payment_method"),
+  reference: text("reference"),
+  notes: text("notes"),
+  isVoided: boolean("is_voided").notNull().default(false),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertClientInvoicePaymentSchema = createInsertSchema(clientInvoicePayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  amount: z.number(),
+  paymentDate: z.coerce.date(),
+});
+
+export type InsertClientInvoicePayment = z.infer<typeof insertClientInvoicePaymentSchema>;
+export type ClientInvoicePayment = typeof clientInvoicePayments.$inferSelect;
+
+// Junction table: Invoice to Estimates (for Progress Payments mode)
+export const invoiceEstimates = pgTable("invoice_estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  progressPercent: integer("progress_percent"), // Progress percentage 0-100
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceEstimateSchema = createInsertSchema(invoiceEstimates).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  progressPercent: z.number().int().min(0).max(100).optional(),
+});
+
+export type InsertInvoiceEstimate = z.infer<typeof insertInvoiceEstimateSchema>;
+export type InvoiceEstimate = typeof invoiceEstimates.$inferSelect;
+
+// Junction table: Invoice to Variations (for Progress Payments mode)
+export const invoiceVariations = pgTable("invoice_variations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  claimPercent: integer("claim_percent").notNull().default(100), // % of variation being claimed on this invoice
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceVariationSchema = createInsertSchema(invoiceVariations).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  claimPercent: z.number().int().min(0).max(100).default(100),
+});
+
+export type InsertInvoiceVariation = z.infer<typeof insertInvoiceVariationSchema>;
+export type InvoiceVariation = typeof invoiceVariations.$inferSelect;
+
+// Junction table: Invoice to Allowances (estimate items with PC/PS allowance types)
+export const invoiceAllowances = pgTable("invoice_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }),
+  claimPercent: integer("claim_percent").notNull().default(100), // % of allowance being claimed on this invoice
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceAllowanceSchema = createInsertSchema(invoiceAllowances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  claimPercent: z.number().int().min(0).max(100).default(100),
+});
+
+export type InsertInvoiceAllowance = z.infer<typeof insertInvoiceAllowanceSchema>;
+export type InvoiceAllowance = typeof invoiceAllowances.$inferSelect;
+
+// Junction table: Invoice to Bills (for Cost Plus mode)
+export const invoiceBills = pgTable("invoice_bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceBillSchema = createInsertSchema(invoiceBills).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceBill = z.infer<typeof insertInvoiceBillSchema>;
+export type InvoiceBill = typeof invoiceBills.$inferSelect;
+
+// Junction table: Invoice to Timesheets (for future use - Cost Plus mode)
+export const invoiceTimesheets = pgTable("invoice_timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  timesheetId: varchar("timesheet_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceTimesheetSchema = createInsertSchema(invoiceTimesheets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceTimesheet = z.infer<typeof insertInvoiceTimesheetSchema>;
+export type InvoiceTimesheet = typeof invoiceTimesheets.$inferSelect;
+
+// Invoice-Selection junction table
+export const invoiceSelections = pgTable("invoice_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  selectionOptionId: varchar("selection_option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceSelectionSchema = createInsertSchema(invoiceSelections).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceSelection = z.infer<typeof insertInvoiceSelectionSchema>;
+export type InvoiceSelection = typeof invoiceSelections.$inferSelect;
+
+// Proposals (client-facing proposals generated from estimates)
+export const proposals = pgTable("proposals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalNumber: text("proposal_number").notNull(), // Auto-generated number, unique per company (composite index below)
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  estimateId: varchar("estimate_id").references(() => estimates.id), // Source estimate
+  clientId: varchar("client_id").references(() => users.id),
+  
+  // Content and presentation
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  termsAndConditions: text("terms_and_conditions"),
+  
+  // Pricing
+  subtotal: integer("subtotal").notNull().default(0),
+  gstAmount: integer("gst_amount").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
+  
+  // Status and workflow
+  status: text("status").notNull().default("draft"), // "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired"
+  expiryDate: timestamp("expiry_date"),
+  sentDate: timestamp("sent_date"),
+  viewedDate: timestamp("viewed_date"), // When client first viewed it
+  
+  // Acceptance tracking
+  acceptedDate: timestamp("accepted_date"),
+  acceptedBy: varchar("accepted_by").references(() => users.id),
+  acceptedByName: text("accepted_by_name"),
+  acceptedByEmail: text("accepted_by_email"),
+  signature: text("signature"), // Base64 encoded signature image or signature text
+  
+  // Rejection tracking
+  rejectedDate: timestamp("rejected_date"),
+  rejectionReason: text("rejection_reason"),
+  
+  // Conversion tracking
+  convertedToInvoiceId: varchar("converted_to_invoice_id").references(() => clientInvoices.id),
+  convertedDate: timestamp("converted_date"),
+  
+  // Display options
+  showPricing: boolean("show_pricing").notNull().default(true), // Show/hide prices to client
+  allowClientOptions: boolean("allow_client_options").notNull().default(false), // Allow client to select from alternatives
+  
+  // Audit
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  notes: text("notes"), // Internal notes, not visible to client
+  isArchived: boolean("is_archived").notNull().default(false),
+
+  // Revisions
+  version: integer("version").notNull().default(1),
+  parentProposalId: varchar("parent_proposal_id").references((): AnyPgColumn => proposals.id), // Links all revisions back to the original (Rev A) proposal — mirrors parentEstimateId pattern
+
+  // Opaque random token used to authorise public /portal/proposal access without
+  // requiring a logged-in session. Required on /client-view and /acceptances.
+  shareToken: varchar("share_token").notNull().default(sql`gen_random_uuid()`).unique(),
+
+  // Snapshot of full proposal frozen at send-time (sections + items + milestones + totals + T&Cs)
+  contentSnapshot: jsonb("content_snapshot"),
+
+  // The exact PDF the client was emailed, stored at send time so the portal
+  // serves that document rather than re-deriving a lookalike from live data.
+  sentPdfPath: text("sent_pdf_path"),
+  // Who it went to, captured at send time — the contact may change later.
+  sentTo: jsonb("sent_to").$type<Array<{ name?: string; email: string }>>().default([]),
+
+  // Chase this client if they don't respond. Off unless switched on for this
+  // proposal: a homeowner should never be emailed because a default was left on.
+  remindersEnabled: boolean("reminders_enabled").notNull().default(false),
+
+  // View tracking (client-view endpoint)
+  viewCount: integer("view_count").notNull().default(0),
+  lastViewedAt: timestamp("last_viewed_at"),
+  viewerDevice: text("viewer_device"),
+
+  // Layout settings (Layout panel from task b)
+  layoutSettings: jsonb("layout_settings").$type<Record<string, any>>().default({}),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: proposal numbers must be unique per company
+  uniqueProposalNumberPerCompany: uniqueIndex("proposals_company_proposal_number_unique").on(table.companyId, table.proposalNumber),
+}));
+
+export const insertProposalSchema = createInsertSchema(proposals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired", "superseded"]).default("draft"),
+  // createInsertSchema infers jsonb loosely, which leaves `name` as unknown and
+  // stops the column's own $type from lining up. Declare the shape once here so
+  // the insert type and the column type agree.
+  sentTo: z.array(z.object({ name: z.string().optional(), email: z.string() })).optional(),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  expiryDate: z.coerce.date().optional(),
+  sentDate: z.coerce.date().optional(),
+  viewedDate: z.coerce.date().optional(),
+  acceptedDate: z.coerce.date().optional(),
+  rejectedDate: z.coerce.date().optional(),
+  convertedDate: z.coerce.date().optional(),
+});
+
+export type InsertProposal = z.infer<typeof insertProposalSchema>;
+export type Proposal = typeof proposals.$inferSelect;
+
+// Proposal Sections (organize proposal items into sections)
+export const proposalSections = pgTable("proposal_sections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  descriptionHtml: text("description_html"), // Rich text description
+  order: integer("order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  
+  // PDF Builder fields
+  sectionType: text("section_type").notNull().default('custom'), // 'cover_page' | 'cover_letter' | 'scope' | 'estimate' | 'summary' | 'allowances' | 'inclusions_exclusions' | 'payment_schedule' | 'closing' | 'closing_letter' | 'attachments' | 'terms_conditions' | 'signature' | 'custom'
+  templateId: varchar("template_id"), // Reference to section template
+  content: jsonb("content"), // Flexible JSON content for section data
+  
+  // Section-level pricing visibility
+  showPricing: boolean("show_pricing").notNull().default(true),
+  showSubtotal: boolean("show_subtotal").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalSectionSchema = createInsertSchema(proposalSections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertProposalSection = z.infer<typeof insertProposalSectionSchema>;
+export type ProposalSection = typeof proposalSections.$inferSelect;
+
+// Proposal Items (line items within sections)
+export const proposalItems = pgTable("proposal_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  sectionId: varchar("section_id").references(() => proposalSections.id, { onDelete: "set null" }),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id), // Source estimate item if imported
+  
+  // Item details
+  name: text("name").notNull(),
+  description: text("description"),
+  descriptionHtml: text("description_html"), // Rich text description
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("each"),
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  totalPrice: integer("total_price").notNull().default(0), // Total in cents
+  taxable: boolean("taxable").notNull().default(true),
+  
+  // Display options
+  showInProposal: boolean("show_in_proposal").notNull().default(true),
+  showPricing: boolean("show_pricing").notNull().default(true), // Override section/proposal setting
+  
+  // Client options (for alternative selections)
+  isOptional: boolean("is_optional").notNull().default(false), // Client can choose to include/exclude
+  isAlternative: boolean("is_alternative").notNull().default(false), // Part of an alternative group
+  alternativeGroupId: varchar("alternative_group_id"), // Group ID for alternatives
+  isClientSelected: boolean("is_client_selected"), // True if client selected this option
+  
+  // Attachments and images
+  attachments: json("attachments").default([]), // Array of attachment objects
+  imageUrl: text("image_url"), // Optional product/item image
+  
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalItemSchema = createInsertSchema(proposalItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertProposalItem = z.infer<typeof insertProposalItemSchema>;
+export type ProposalItem = typeof proposalItems.$inferSelect;
+
+// Proposal Acceptances (audit trail for client acceptance/rejection)
+export const proposalAcceptances = pgTable("proposal_acceptances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  
+  // Signer information
+  signedBy: varchar("signed_by").references(() => users.id),
+  signedByName: text("signed_by_name").notNull(),
+  signedByEmail: text("signed_by_email").notNull(),
+  signedByRole: text("signed_by_role"), // "client" | "contractor" | "project_manager" etc.
+  
+  // Acceptance/Rejection
+  status: text("status").notNull(), // "accepted" | "rejected"
+  signature: text("signature"), // Base64 encoded signature image or typed name
+  signatureMethod: text("signature_method"), // "drawn" | "typed" | "uploaded"
+  ipAddress: text("ip_address"), // IP address of signer for legal purposes
+  userAgent: text("user_agent"), // Browser/device info
+  
+  // Selected options (for proposals with client choices)
+  selectedItemIds: json("selected_item_ids").default([]), // Array of proposal_item IDs client selected
+  
+  // Rejection details
+  rejectionReason: text("rejection_reason"),
+  comments: text("comments"),
+  
+  // Timestamps
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProposalAcceptanceSchema = createInsertSchema(proposalAcceptances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  status: z.enum(["accepted", "rejected"]),
+  signatureMethod: z.enum(["drawn", "typed", "uploaded"]).optional(),
+  selectedItemIds: z.array(z.string()).optional(),
+  signedAt: z.coerce.date().optional(),
+});
+
+export type InsertProposalAcceptance = z.infer<typeof insertProposalAcceptanceSchema>;
+export type ProposalAcceptance = typeof proposalAcceptances.$inferSelect;
+
+// Proposal Payment Milestones (e.g. Deposit / Slab / Frame / Lock-up / Fit-off / PC)
+export const proposalPaymentMilestones = pgTable("proposal_payment_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  percentage: doublePrecision("percentage"), // null when amount-based
+  amountCents: integer("amount_cents"),       // null when percentage-based
+  description: text("description"),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalPaymentMilestoneSchema = createInsertSchema(proposalPaymentMilestones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  percentage: z.number().nullable().optional(),
+  amountCents: z.number().nullable().optional(),
+  order: z.number().default(0),
+});
+
+export type InsertProposalPaymentMilestone = z.infer<typeof insertProposalPaymentMilestoneSchema>;
+export type ProposalPaymentMilestone = typeof proposalPaymentMilestones.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Proposal reminders — chasing a client who hasn't responded.
+// ---------------------------------------------------------------------------
+export const proposalReminderTriggerEnum = pgEnum("proposal_reminder_trigger", [
+  "after_send",
+  "before_expiry",
+]);
+
+export const proposalReminderTemplates = pgTable("proposal_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(), // shown in the reminders list, e.g. "Gentle follow-up"
+  trigger: proposalReminderTriggerEnum("trigger").notNull().default("after_send"),
+  offsetDays: integer("offset_days").notNull(),
+
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalReminderTemplateSchema = createInsertSchema(proposalReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+
+export const updateProposalReminderTemplateSchema = insertProposalReminderTemplateSchema.partial();
+
+export type InsertProposalReminderTemplate = z.infer<typeof insertProposalReminderTemplateSchema>;
+export type ProposalReminderTemplate = typeof proposalReminderTemplates.$inferSelect;
+
+// What was actually sent, to whom, off which template.
+//
+// The unique (proposal, template, email) index is the concurrency control, not
+// just a record: a reminder is claimed by inserting its log row before the
+// email goes out, so a retry, an overlapping tick or a second app instance
+// hits the constraint rather than emailing a client twice.
+export const proposalReminderLog = pgTable("proposal_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => proposalReminderTemplates.id, { onDelete: "set null" }),
+
+  toEmail: text("to_email").notNull(),
+  subject: text("subject"),
+  body: text("body"),
+
+  status: text("status").notNull().default("sent"), // "sent" | "failed"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+}, (table) => ({
+  oncePerRecipient: uniqueIndex("proposal_reminder_log_once_idx")
+    .on(table.proposalId, table.templateId, table.toEmail),
+}));
+
+export const insertProposalReminderLogSchema = createInsertSchema(proposalReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertProposalReminderLog = z.infer<typeof insertProposalReminderLogSchema>;
+export type ProposalReminderLogEntry = typeof proposalReminderLog.$inferSelect;
+
+// Activity feed table
+export const activities = pgTable("activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // Optional for workspace activities
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }), // For workspace activities
+  userId: varchar("user_id").references(() => users.id),
+  userName: text("user_name"),
+  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", "proposal", "manual", etc.
+  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", "accepted", "note", etc.
+  description: text("description").notNull(),
+  entityId: varchar("entity_id"), // ID of the related entity (task, estimate, etc.)
+  entityName: text("entity_name"), // Name/title of the entity
+  metadata: json("metadata"), // Additional data about the activity (e.g., old/new values)
+  pinned: boolean("pinned").notNull().default(false), // Pin activity to top of feed
+  pinnedAt: timestamp("pinned_at"), // When the activity was pinned
+  pinnedBy: varchar("pinned_by").references(() => users.id), // Who pinned the activity
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertActivitySchema = createInsertSchema(activities).omit({
+  id: true,
+  createdAt: true,
+  pinnedAt: true,
+  pinnedBy: true,
+}).extend({
+  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "proposal", "project", "site_diary", "schedule", "manual", "other"]),
+  // "sent" covers a document leaving the business for a client or supplier —
+  // added for proposal send, which is neither a create nor a status change.
+  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "sent", "paid", "batch_updated", "note"]),
+  pinned: z.boolean().optional(),
+});
+
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type Activity = typeof activities.$inferSelect;
+
+// Site Diary Templates (company-wide, reusable across projects)
+export const siteDiaryTemplates = pgTable("site_diary_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").references(() => companies.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  fields: json("fields").notNull().default([]), // Array of field definitions: [{id, title, type, required, options, order}]
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isDefault: boolean("is_default").notNull().default(false), // Only one template per company can be default
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Field definition type for template fields
+export type TemplateFieldDefinition = {
+  id: string;
+  title: string;
+  type: "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file" | "photo-gallery";
+  required?: boolean;
+  options?: { label: string; value: string }[]; // For select type
+  order: number;
+  maxPhotos?: number; // For photo-gallery type (default 3)
+};
+
+export const insertSiteDiaryTemplateSchema = createInsertSchema(siteDiaryTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  fields: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    type: z.enum(["text", "textarea", "number", "date", "select", "checkbox", "file", "photo-gallery"]),
+    required: z.boolean().optional(),
+    options: z.array(z.object({
+      label: z.string(),
+      value: z.string(),
+    })).optional(),
+    order: z.number(),
+    maxPhotos: z.number().optional(),
+  })),
+  isDefault: z.boolean().optional(),
+  companyId: z.string().optional(),
+});
+
+export type InsertSiteDiaryTemplate = z.infer<typeof insertSiteDiaryTemplateSchema>;
+export type SiteDiaryTemplate = typeof siteDiaryTemplates.$inferSelect;
+
+// Site Diary Entries (project-specific diary entries based on templates)
+export const siteDiaryEntries = pgTable("site_diary_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => siteDiaryTemplates.id),
+  templateName: text("template_name"), // Cached for display
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  entryDateTime: timestamp("entry_date_time").notNull(),
+  groupId: varchar("group_id"), // Optional grouping/category
+  notifyUserIds: json("notify_user_ids").default([]), // Array of user IDs to notify
+  fieldValues: json("field_values").notNull().default({}), // Object keyed by fieldId with values
+  attachments: json("attachments").default([]), // Array of attachment URLs for field items
+  overallPhotos: json("overall_photos").default([]), // Unlimited photos at bottom
+  weather: json("weather"), // Weather data: {temp, condition, humidity, wind, etc}
+  labels: json("labels").default([]), // Array of label strings
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  shareWithClient: boolean("share_with_client").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSiteDiaryEntrySchema = createInsertSchema(siteDiaryEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  entryDateTime: z.coerce.date(),
+  notifyUserIds: z.array(z.string()).optional(),
+  fieldValues: z.record(z.any()),
+  attachments: z.array(z.any()).optional(),
+  overallPhotos: z.array(z.string()).optional(),
+  weather: z.object({
+    temp: z.number().optional(),
+    condition: z.string().optional(),
+    humidity: z.number().optional(),
+    wind: z.number().optional(),
+    precipitation: z.number().optional(),
+    icon: z.string().optional(),
+  }).optional(),
+  labels: z.array(z.string()).optional(),
+});
+
+export type InsertSiteDiaryEntry = z.infer<typeof insertSiteDiaryEntrySchema>;
+export type SiteDiaryEntry = typeof siteDiaryEntries.$inferSelect;
+
+// Checklist Templates (reusable checklists with groups and items)
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull(), // "Task" | "Job" | "Estimation" | "Lead"
+  companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  visibleToRoles: json("visible_to_roles").default([]), // Array of role IDs; empty = visible to all
+  defaultVisibility: text("default_visibility").notNull().default("everyone"), // "everyone" | "assignee_only"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({
+  id: true,
+  companyId: true, // Stamped server-side from the authenticated user's company
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["Task", "Job", "Estimation", "Lead"]),
+  visibleToRoles: z.array(z.string()).default([]),
+  defaultVisibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
+});
+
+export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;
+export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
+
+// Checklist Template Groups (grouping for checklist items)
+export const checklistTemplateGroups = pgTable("checklist_template_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateGroupSchema = createInsertSchema(checklistTemplateGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChecklistTemplateGroup = z.infer<typeof insertChecklistTemplateGroupSchema>;
+export type ChecklistTemplateGroup = typeof checklistTemplateGroups.$inferSelect;
+
+// Checklist Template Items (individual tasks within groups)
+export const checklistTemplateItems = pgTable("checklist_template_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().references(() => checklistTemplateGroups.id, { onDelete: "cascade" }),
+  description: text("description").notNull(), // The main task description
+  tooltip: text("tooltip"), // Additional description/notes shown underneath
+  order: integer("order").notNull().default(0),
+  responseType: text("response_type").notNull().default("checkbox"), // "checkbox" | "text" | "single_choice" | "multiple_choice"
+  responseOptions: json("response_options").default([]), // Array of option strings for single/multiple choice
+  assignedRoleId: varchar("assigned_role_id").references(() => userRoles.id, { onDelete: "set null" }), // Default role responsible for this item
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTemplateItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
+  responseOptions: z.array(z.string()).optional().default([]),
+  assignedRoleId: z.string().nullable().optional(),
+});
+
+export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
+export type ChecklistTemplateItem = typeof checklistTemplateItems.$inferSelect;
+
+// Checklist Instances (active checklists created from templates for projects)
+export const checklistInstances = pgTable("checklist_instances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").references(() => checklistTemplates.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed" | "cancelled"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
+  dueDate: timestamp("due_date"),
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  linkedTaskId: varchar("linked_task_id").references(() => notes.id, { onDelete: "set null" }),
+  linkedScheduleItemId: varchar("linked_schedule_item_id"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  triggeredByStatus: text("triggered_by_status"), // Which project status triggered this
+  visibility: text("visibility").notNull().default("everyone"), // "everyone" | "assignee_only"
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceSchema = createInsertSchema(checklistInstances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+  createdByName: true,
+}).extend({
+  companyId: z.string().optional(),
+  createdBy: z.string().optional(),
+  createdByName: z.string().optional(),
+  status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
+  dueDate: z.coerce.date().optional().nullable(),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
+  visibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
+  selectedGroupIds: z.array(z.string()).optional(),
+});
+
+export type InsertChecklistInstance = z.infer<typeof insertChecklistInstanceSchema>;
+export type ChecklistInstance = typeof checklistInstances.$inferSelect;
+
+// Checklist Instance Groups (individual checklists within a checklist group)
+// User terminology: checklistInstances = "Checklist Group", checklistInstanceGroups = "Checklist"
+export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").notNull().references(() => checklistInstances.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // Group name (e.g., "ITP013 - DILAPIDATION REPORT")
+  order: integer("order").notNull().default(0),
+  status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  dueDate: timestamp("due_date"),
+  linkedTaskId: varchar("linked_task_id"),
+  linkedScheduleItemId: varchar("linked_schedule_item_id"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistInstanceGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["active", "in_progress", "completed"]).default("active"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
+  dueDate: z.coerce.date().optional().nullable(),
+  linkedTaskId: z.string().nullish(),
+  linkedScheduleItemId: z.string().nullish(),
+  completedAt: z.coerce.date().nullish(),
+  completedBy: z.string().nullish(),
+  completedByName: z.string().nullish(),
+});
+
+export type InsertChecklistInstanceGroup = z.infer<typeof insertChecklistInstanceGroupSchema>;
+export type ChecklistInstanceGroup = typeof checklistInstanceGroups.$inferSelect;
+
+// Checklist Instance Items (individual items within an instance with completion tracking)
+export const checklistInstanceItems = pgTable("checklist_instance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").notNull().references(() => checklistInstances.id, { onDelete: "cascade" }),
+  groupId: varchar("group_id").references(() => checklistInstanceGroups.id, { onDelete: "cascade" }),
+  groupName: text("group_name"), // Group name (copied from template group) - kept for backwards compatibility
+  groupOrder: integer("group_order").notNull().default(0),
+  description: text("description").notNull(),
+  tooltip: text("tooltip"),
+  order: integer("order").notNull().default(0),
+  isRequired: boolean("is_required").notNull().default(false),
+  status: text("status").notNull().default("pending"), // "pending" | "completed" | "na"
+  responseType: text("response_type").notNull().default("checkbox"), // "checkbox" | "text" | "single_choice" | "multiple_choice"
+  responseOptions: json("response_options").default([]), // Array of option strings for single/multiple choice (copied from template)
+  textResponse: text("text_response"), // User's text response for "text" type
+  selectedResponses: json("selected_responses").default([]), // User's selected options for single/multiple choice
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  attachmentIds: json("attachment_ids").default([]), // Array of file IDs
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceItemSchema = createInsertSchema(checklistInstanceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["pending", "completed", "na"]).default("pending"),
+  responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
+  responseOptions: z.array(z.string()).optional().default([]),
+  textResponse: z.string().nullish(),
+  selectedResponses: z.array(z.string()).optional().default([]),
+  attachmentIds: z.array(z.string()).optional(),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
+  completedAt: z.coerce.date().nullish(),
+  completedBy: z.string().nullish(),
+  completedByName: z.string().nullish(),
+});
+
+export type InsertChecklistInstanceItem = z.infer<typeof insertChecklistInstanceItemSchema>;
+export type ChecklistInstanceItem = typeof checklistInstanceItems.$inferSelect;
+
+// Checklist Audit Log (tracks all changes to checklists)
+export const checklistAuditLog = pgTable("checklist_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id"),
+  instanceId: varchar("instance_id"),
+  groupId: varchar("group_id"),
+  itemId: varchar("item_id"),
+  action: text("action").notNull(),
+  details: text("details"),
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  userName: text("user_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("checklist_audit_company_idx").on(table.companyId),
+  instanceIdx: index("checklist_audit_instance_idx").on(table.instanceId),
+  createdAtIdx: index("checklist_audit_created_at_idx").on(table.createdAt),
+}));
+
+export const insertChecklistAuditLogSchema = createInsertSchema(checklistAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertChecklistAuditLog = z.infer<typeof insertChecklistAuditLogSchema>;
+export type ChecklistAuditLog = typeof checklistAuditLog.$inferSelect;
+
+// Checklist Status Triggers (which checklists to create when project moves to a status)
+export const checklistStatusTriggers = pgTable("checklist_status_triggers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectStatus: text("project_status").notNull(), // The status that triggers checklist creation
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistStatusTriggerSchema = createInsertSchema(checklistStatusTriggers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChecklistStatusTrigger = z.infer<typeof insertChecklistStatusTriggerSchema>;
+export type ChecklistStatusTrigger = typeof checklistStatusTriggers.$inferSelect;
+
+// Budgets (project budget tracking)
+export const budgets = pgTable("budgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(), // One budget per project
+  name: text("name").notNull().default("Project Budget"),
+  baselineAmount: integer("baseline_amount").notNull().default(0), // Original budget in cents (from estimates)
+  revisedAmount: integer("revised_amount").notNull().default(0), // Current budget after variations in cents
+  actualAmount: integer("actual_amount").notNull().default(0), // Actual spent in cents (from bills)
+  forecastAmount: integer("forecast_amount").notNull().default(0), // Projected final cost in cents
+  varianceAmount: integer("variance_amount").notNull().default(0), // Difference between revised and forecast in cents
+  profitAmount: integer("profit_amount").notNull().default(0), // Estimated profit in cents
+  profitPercent: integer("profit_percent").notNull().default(0), // Profit percentage (10 = 10%)
+  status: text("status").notNull().default("active"), // "active" | "completed" | "on_hold"
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBudgetSchema = createInsertSchema(budgets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  baselineAmount: z.number().default(0),
+  revisedAmount: z.number().default(0),
+  actualAmount: z.number().default(0),
+  forecastAmount: z.number().default(0),
+  varianceAmount: z.number().default(0),
+  profitAmount: z.number().default(0),
+  profitPercent: z.number().default(0),
+  status: z.enum(["active", "completed", "on_hold"]).default("active"),
+});
+
+export type InsertBudget = z.infer<typeof insertBudgetSchema>;
+export type Budget = typeof budgets.$inferSelect;
+
+export const updateBudgetSchema = insertBudgetSchema.partial();
+export type UpdateBudget = z.infer<typeof updateBudgetSchema>;
+
+// Budget Line Items (budget per cost code)
+export const budgetLineItems = pgTable("budget_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  budgetId: varchar("budget_id").notNull().references(() => budgets.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Nullable - can be uncategorized
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  categoryTitle: text("category_title"), // Cached category name for grouping
+  budgetedAmount: integer("budgeted_amount").notNull().default(0), // Budgeted amount in cents (from estimates)
+  actualAmount: integer("actual_amount").notNull().default(0), // Actual spent in cents (from bills)
+  variationAmount: integer("variation_amount").notNull().default(0), // Variation adjustments in cents
+  forecastAmount: integer("forecast_amount").notNull().default(0), // Projected final cost in cents
+  variance: integer("variance").notNull().default(0), // Difference between budgeted and forecast in cents
+  variancePercent: integer("variance_percent").notNull().default(0), // Variance as percentage (10 = 10%)
+  profitAmount: integer("profit_amount").notNull().default(0), // Profit on this cost code in cents
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  budgetedAmount: z.number().default(0),
+  actualAmount: z.number().default(0),
+  variationAmount: z.number().default(0),
+  forecastAmount: z.number().default(0),
+  variance: z.number().default(0),
+  variancePercent: z.number().default(0),
+  profitAmount: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
+export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
+
+export const updateBudgetLineItemSchema = insertBudgetLineItemSchema.partial();
+export type UpdateBudgetLineItem = z.infer<typeof updateBudgetLineItemSchema>;
+
+// Labour Hours Budget (tracking labour hours vs budget)
+export const labourHoursBudget = pgTable("labour_hours_budget", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  categoryTitle: text("category_title"), // Cached category name
+  budgetedHours: numeric("budgeted_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From flagged estimate items (rounded to 0.25)
+  pendingHours: numeric("pending_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From unapproved timesheets
+  approvedHours: numeric("approved_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From approved timesheets
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLabourHoursBudgetSchema = createInsertSchema(labourHoursBudget).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  budgetedHours: z.number().default(0),
+  pendingHours: z.number().default(0),
+  approvedHours: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertLabourHoursBudget = z.infer<typeof insertLabourHoursBudgetSchema>;
+export type LabourHoursBudget = typeof labourHoursBudget.$inferSelect;
+
+// Timesheets (time tracking for labour hours)
+export const timesheetStatusEnum = pgEnum("timesheet_status", ["draft", "submitted", "approved", "rejected"]);
+
+export const timesheets = pgTable("timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }), // Nullable for business-level timesheets
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  startTime: text("start_time"), // HH:mm format, nullable
+  endTime: text("end_time"), // HH:mm format, nullable
+  duration: numeric("duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours (e.g., 8.5)
+  breakDuration: numeric("break_duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours
+  breakStartTime: text("break_start_time"), // HH:mm format, nullable
+  breakEndTime: text("break_end_time"), // HH:mm format, nullable
+  description: text("description"),
+  status: timesheetStatusEnum("status").notNull().default("submitted"),
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
+  invoiced: boolean("invoiced").notNull().default(false),
+  workItemId: varchar("work_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Optional link to labour estimate item
+  isActive: boolean("is_active").notNull().default(false), // True when timer is running
+  clockInTime: timestamp("clock_in_time"), // Actual timestamp when clocked in (for real-time calculation)
+  actualStartTime: text("actual_start_time"), // Exact clock-in time HH:mm (permanent record, read-only after creation)
+  actualEndTime: text("actual_end_time"), // Exact clock-out time HH:mm (permanent record, read-only after creation)
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Cost code for clock-in widget
+  attachments: json("attachments").default([]), // Array of attachment URLs
+  labels: json("labels").default([]), // Array of label strings
+  
+  // Approval tracking
+  approvedById: varchar("approved_by_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+
+  // Subcontractor PO tracking
+  poStatus: text("po_status"), // null for employees, "awaiting_po" | "on_po" | "paid" for subcontractors
+  // FK with ON DELETE SET NULL: deleting a PO (including via the project
+  // cascade, which bypasses the route handler) must not leave timesheets
+  // pointing at a PO that no longer exists — that state is unrecoverable
+  // from the UI, since the approve flow refuses to re-queue a linked entry.
+  linkedPurchaseOrderId: varchar("linked_purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Reference to PO when status is on_po or paid
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Timesheet Cost Codes (for split timesheets - distributing hours across multiple cost codes)
+export const timesheetCostCodes = pgTable("timesheet_cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  timesheetId: varchar("timesheet_id").notNull().references(() => timesheets.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").notNull().references(() => costCodes.id, { onDelete: "cascade" }),
+  duration: numeric("duration", { precision: 10, scale: 2 }).notNull(), // Hours allocated to this cost code
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTimesheetSchema = createInsertSchema(timesheets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  duration: z.number().min(0),
+  breakDuration: z.number().min(0).default(0),
+  hourlyRate: z.number().min(0).default(0),
+  total: z.number().min(0).default(0),
+  status: z.enum(["draft", "submitted", "approved", "rejected"]).default("submitted"),
+  invoiced: z.boolean().default(false),
+});
+
+export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
+export type Timesheet = typeof timesheets.$inferSelect;
+
+export const insertTimesheetCostCodeSchema = createInsertSchema(timesheetCostCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  duration: z.number().min(0),
+  hourlyRate: z.number().min(0).default(0),
+  total: z.number().min(0).default(0),
+});
+
+export type InsertTimesheetCostCode = z.infer<typeof insertTimesheetCostCodeSchema>;
+export type TimesheetCostCode = typeof timesheetCostCodes.$inferSelect;
+
+// Schedules (project-level schedule with offline/online/locked states)
+export const schedules = pgTable("schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // A schedule belongs to EITHER a project OR a schedule template — never both,
+  // never neither (CHECK schedules_owner_check, migration 0095). A template's
+  // items are ordinary schedule_items, so the template page runs on the same
+  // routes, cascade and UI as a project schedule. Every query that walks
+  // schedules to projects must tolerate projectId being null.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references((): any => scheduleTemplates.id, { onDelete: "cascade" }),
+  scheduleCategory: text("schedule_category").notNull().default("construction"), // "construction" | "preconstruction"
+  name: text("name").notNull().default("Project Schedule"),
+  status: text("status").notNull().default("offline"), // "offline" | "online" | "locked"
+  isOnline: boolean("is_online").notNull().default(false), // visibility to external users (separate from lock state)
+  description: text("description"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  lockedBy: varchar("locked_by").references(() => users.id), // Who locked it
+  lockedByName: text("locked_by_name"), // Name of who locked it
+  lockedAt: timestamp("locked_at"), // When it was locked
+  isArchived: boolean("is_archived").notNull().default(false),
+  includeSaturday: boolean("include_saturday").notNull().default(false),
+  includeSunday: boolean("include_sunday").notNull().default(false),
+  clientVisibilityWeeks: integer("client_visibility_weeks").default(null),
+  businessAssignColor: text("business_assign_color"),
+  businessAssignStatus: text("business_assign_status"),
+  // Snapshot of all schedule items captured when an editing session begins.
+  // Used to revert-all on Discard. Null when not in an editing session.
+  editSnapshot: json("edit_snapshot"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleSchema = createInsertSchema(schedules).omit({
+  id: true,
+  // A template's schedule is created by the server alone
+  // (server/services/scheduleTemplates.ts); no request may attach one.
+  templateId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["offline", "online", "locked"]).default("offline"),
+  scheduleCategory: z.enum(["construction", "preconstruction"]).default("construction"),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  lockedAt: z.coerce.date().optional(),
+  includeSaturday: z.boolean().optional(),
+  includeSunday: z.boolean().optional(),
+  clientVisibilityWeeks: z.number().int().min(1).nullable().optional(),
+});
+
+export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
+export type Schedule = typeof schedules.$inferSelect;
+
+export const nonWorkingDays = pgTable("non_working_days", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  scheduleId: varchar("schedule_id"),
+  date: timestamp("date").notNull(),
+  name: text("name").notNull(),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertNonWorkingDaySchema = createInsertSchema(nonWorkingDays).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  date: z.coerce.date(),
+});
+
+export type InsertNonWorkingDay = z.infer<typeof insertNonWorkingDaySchema>;
+export type NonWorkingDay = typeof nonWorkingDays.$inferSelect;
+
+// Teams — on-site crew groups that can be assigned to schedule items (T006)
+export const teams = pgTable("teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#6b7280"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTeamSchema = createInsertSchema(teams).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTeam = z.infer<typeof insertTeamSchema>;
+export type Team = typeof teams.$inferSelect;
+
+// Schedule Items (individual tasks/activities in the schedule)
+export const scheduleItems = pgTable("schedule_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  
+  // Scope stage link (optional - for displaying schedule items in scope view)
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+  
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting" | "invoice"
+  status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold" | "cancelled"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
+  
+  // Date and duration
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  startTime: text("start_time"), // Optional time in HH:MM format (e.g., "09:00", "14:30")
+  endTime: text("end_time"), // Optional time in HH:MM format
+  duration: integer("duration").notNull().default(1), // Duration in days
+  actualStartDate: timestamp("actual_start_date"),
+  actualEndDate: timestamp("actual_end_date"),
+  
+  // Assignment and responsibility
+  assignedToId: varchar("assigned_to_id").references(() => contacts.id), // Contact/supplier assigned
+  assignedToName: text("assigned_to_name"), // Cached for performance
+  assignedToColor: text("assigned_to_color"), // Color from contact's scheduleColor
+  teamId: varchar("team_id").references(() => teams.id, { onDelete: "set null" }), // Team assignment (T006)
+  teamName: text("team_name"), // Cached team name for performance
+  
+  // Organization
+  groupId: varchar("group_id"), // For grouping items (phases, stages)
+  groupName: text("group_name"),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id), // Link to cost code
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  
+  // Dependencies - array of objects: [{id: string, type: "FS" | "SS" | "FF" | "SF"}]
+  // FS = Finish-to-Start (default), SS = Start-to-Start, FF = Finish-to-Finish, SF = Start-to-Finish
+  dependencies: json("dependencies").default([]), // Array of dependency objects
+  predecessorIds: json("predecessor_ids").default([]), // Legacy: Array of schedule item IDs that must complete first
+  
+  // Progress and completion
+  progressPercent: integer("progress_percent").notNull().default(0), // 0-100
+  completedAt: timestamp("completed_at"),
+  
+  // Rich content
+  notes: text("notes"),
+  notesHtml: text("notes_html"), // Rich text notes
+  checklistIds: json("checklist_ids").default([]), // Array of checklist template IDs linked
+  taskIds: json("task_ids").default([]), // Array of task IDs linked
+  taskLinkOffsets: json("task_link_offsets").default([]), // Array of offset objects [{taskId, offsetDays, offsetFrom}]
+  attachments: json("attachments").default([]), // Array of attachment objects [{url, name, type}]
+  
+  // Site diary integration
+  siteDiaryEntryIds: json("site_diary_entry_ids").default([]), // Linked site diary entries
+  
+  // Hierarchy (for nesting items as stages/subtasks in Gantt view)
+  parentItemId: varchar("parent_item_id").references(() => scheduleItems.id, { onDelete: "cascade" }),
+  
+  // Baseline tracking (for Gantt timeline comparison)
+  baselineStartDate: timestamp("baseline_start_date"),
+  baselineEndDate: timestamp("baseline_end_date"),
+  
+  // Display
+  color: text("color"), // Custom color override
+  sortOrder: integer("sort_order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  useWorkingDaysOverride: boolean("use_working_days_override").default(null),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // "invoice": a claim point — link the claim to it and its date follows this item.
+  type: z.enum(["task", "milestone", "inspection", "delivery", "meeting", "invoice"]).default("task"),
+  status: z.string().default("not_started"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  actualStartDate: z.coerce.date().optional(),
+  actualEndDate: z.coerce.date().optional(),
+  completedAt: z.coerce.date().optional(),
+  duration: z.number().default(1),
+  progressPercent: z.number().int().min(0).max(100).default(0),
+  dependencies: z.array(z.object({
+    id: z.string(),
+    type: z.enum(["FS", "SS", "FF", "SF"]).default("FS"),
+    lag: z.number().int().default(0),
+  })).optional(),
+  predecessorIds: z.array(z.string()).optional(),
+  checklistIds: z.array(z.string()).optional(),
+  taskIds: z.array(z.string()).optional(),
+  taskLinkOffsets: z.array(z.object({
+    taskId: z.string(),
+    offsetDays: z.number().int().default(0),
+    offsetFrom: z.enum(["start", "end"]).default("start"),
+    // Present when the link is a *time booking* rather than just a due date —
+    // "I'm at this inspection 09:00-10:00" — so the hour survives the item moving.
+    startTime: z.string().nullable().optional(),
+    endTime: z.string().nullable().optional(),
+  })).optional(),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+  siteDiaryEntryIds: z.array(z.string()).optional(),
+  sortOrder: z.number().default(0),
+  useWorkingDaysOverride: z.boolean().nullable().optional(),
+});
+
+export type InsertScheduleItem = z.infer<typeof insertScheduleItemSchema>;
+export type ScheduleItem = typeof scheduleItems.$inferSelect;
+
+export const scheduleItemSteps = pgTable("schedule_item_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleItemId: varchar("schedule_item_id").notNull().references(() => scheduleItems.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduleItemStepSchema = createInsertSchema(scheduleItemSteps).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  sortOrder: z.number().default(0),
+});
+
+export type InsertScheduleItemStep = z.infer<typeof insertScheduleItemStepSchema>;
+export type ScheduleItemStep = typeof scheduleItemSteps.$inferSelect;
+
+export const scheduleBaselines = pgTable("schedule_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduleBaselineSchema = createInsertSchema(scheduleBaselines).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertScheduleBaseline = z.infer<typeof insertScheduleBaselineSchema>;
+export type ScheduleBaseline = typeof scheduleBaselines.$inferSelect;
+
+export const scheduleBaselineItems = pgTable("schedule_baseline_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  baselineId: varchar("baseline_id").notNull().references(() => scheduleBaselines.id, { onDelete: "cascade" }),
+  scheduleItemId: varchar("schedule_item_id").notNull(),
+  name: text("name").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  duration: integer("duration").notNull().default(1),
+  progressPercent: integer("progress_percent").notNull().default(0),
+  status: text("status").notNull().default("not_started"),
+  parentItemId: varchar("parent_item_id"),
+});
+
+export const insertScheduleBaselineItemSchema = createInsertSchema(scheduleBaselineItems).omit({
+  id: true,
+}).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+});
+
+export type InsertScheduleBaselineItem = z.infer<typeof insertScheduleBaselineItemSchema>;
+export type ScheduleBaselineItem = typeof scheduleBaselineItems.$inferSelect;
+
+// Activity Notes for Schedule Items (manual notes + system-generated activity)
+export const activityNotes = pgTable("activity_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleItemId: varchar("schedule_item_id").notNull().references(() => scheduleItems.id, { onDelete: "cascade" }),
+  
+  // User info (null for system-generated notes)
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  userName: text("user_name"), // Cached for performance
+  
+  // Note type and content
+  type: text("type").notNull().default("user"), // "user" | "system"
+  content: text("content").notNull(),
+  
+  // System activity metadata
+  activityType: text("activity_type"), // "status_change" | "date_change" | "dependency_change" | "assignment_change" etc.
+  metadata: json("metadata"), // Store old/new values for system activities: {oldValue, newValue, field}
+  
+  // @Mentions support
+  mentionedUserIds: json("mentioned_user_ids").default([]), // Array of user IDs mentioned in the note
+  
+  // Edit tracking
+  editedAt: timestamp("edited_at"),
+  isEdited: boolean("is_edited").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("activity_notes_schedule_item_idx").on(table.scheduleItemId),
+  index("activity_notes_created_at_idx").on(table.createdAt),
+  index("activity_notes_user_idx").on(table.userId),
+]);
+
+export const insertActivityNoteSchema = createInsertSchema(activityNotes).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  type: z.enum(["user", "system"]).default("user"),
+  activityType: z.enum(["status_change", "date_change", "dependency_change", "assignment_change", "priority_change", "progress_change"]).optional(),
+  metadata: z.object({
+    field: z.string().optional(),
+    oldValue: z.any().optional(),
+    newValue: z.any().optional(),
+  }).optional(),
+  mentionedUserIds: z.array(z.string()).optional(),
+  editedAt: z.coerce.date().optional(),
+});
+
+export type InsertActivityNote = z.infer<typeof insertActivityNoteSchema>;
+export type ActivityNote = typeof activityNotes.$inferSelect;
+
+// Schedule Templates (reusable schedule templates)
+export const scheduleTemplates = pgTable("schedule_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }), // Multi-tenant isolation
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  // LEGACY. Items now live in schedule_items under the schedules row whose
+  // template_id points here. A template with no such row still has only this
+  // blob; it is converted on first open or apply (convertLegacyTemplate) and
+  // then left untouched as a backup.
+  templateData: json("template_data").notNull(),
+  isPublic: boolean("is_public").notNull().default(false), // Can other users use this template
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleTemplateSchema = createInsertSchema(scheduleTemplates).omit({
+  id: true,
+  companyId: true, // Set server-side only
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()), // Will contain schedule item objects without IDs
+});
+
+export type InsertScheduleTemplate = z.infer<typeof insertScheduleTemplateSchema>;
+export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
+
+// Estimate Templates (reusable estimate templates with hierarchical groups and line items)
+export const estimateTemplates = pgTable("estimate_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  templateData: json("template_data").notNull(), // Hierarchical structure with groups and line items
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateTemplateSchema = createInsertSchema(estimateTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()),
+});
+
+export type InsertEstimateTemplate = z.infer<typeof insertEstimateTemplateSchema>;
+export type EstimateTemplate = typeof estimateTemplates.$inferSelect;
+
+// The company-wide order of groups in the Details and Labour template libraries
+// (migration 0084). Group NAMES in order — a group has no id of its own, it is
+// its name on the template rows. See shared/templateGroupOrder.ts.
+export const templateGroupOrders = pgTable("template_group_orders", {
+  companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
+  groupNames: jsonb("group_names").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type TemplateGroupOrder = typeof templateGroupOrders.$inferSelect;
+
+// Selection Template Groups (user-defined groups for organizing templates e.g. Bathroom, Kitchen)
+export const selectionTemplateGroups = pgTable("selection_template_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSelectionTemplateGroupSchema = createInsertSchema(selectionTemplateGroups).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+});
+export type InsertSelectionTemplateGroup = z.infer<typeof insertSelectionTemplateGroupSchema>;
+export type SelectionTemplateGroup = typeof selectionTemplateGroups.$inferSelect;
+
+// Selection Templates (reusable selection templates with categories and items)
+export const selectionTemplates = pgTable("selection_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  templateData: json("template_data").notNull(), // Array of selection category objects with items
+  selectionType: text("selection_type").notNull().default("selection"), // "selection" = project-specific choices, "design" = standard design options
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  // groupId: deprecated — replaced by many-to-many junction table selection_template_group_memberships. Column kept in DB for backward compatibility but not used in application logic.
+  room: text("room"),
+  allowanceType: text("allowance_type"),
+  budgetAmount: integer("budget_amount"),
+  clientCanSeePrice: boolean("client_can_see_price").notNull().default(true),
+  clientCanChange: boolean("client_can_change").notNull().default(true),
+  deadline: text("deadline"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionTemplateSchema = createInsertSchema(selectionTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()),
+  groupIds: z.array(z.string()).optional(),
+});
+
+export type InsertSelectionTemplate = z.infer<typeof insertSelectionTemplateSchema>;
+export type SelectionTemplate = typeof selectionTemplates.$inferSelect;
+
+// Update schemas for estimate and selection templates
+export const updateEstimateTemplateSchema = insertEstimateTemplateSchema.partial();
+export type UpdateEstimateTemplate = z.infer<typeof updateEstimateTemplateSchema>;
+
+export const updateSelectionTemplateSchema = insertSelectionTemplateSchema.partial();
+export type UpdateSelectionTemplate = z.infer<typeof updateSelectionTemplateSchema>;
+
+// Selection Template Group Memberships (many-to-many: templates ↔ groups)
+export const selectionTemplateGroupMemberships = pgTable("selection_template_group_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => selectionTemplates.id, { onDelete: "cascade" }),
+  groupId: varchar("group_id").notNull().references(() => selectionTemplateGroups.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  templateGroupUnique: uniqueIndex("selection_template_group_memberships_template_group_unique").on(table.templateId, table.groupId),
+}));
+
+export const insertSelectionTemplateGroupMembershipSchema = createInsertSchema(selectionTemplateGroupMemberships).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertSelectionTemplateGroupMembership = z.infer<typeof insertSelectionTemplateGroupMembershipSchema>;
+export type SelectionTemplateGroupMembership = typeof selectionTemplateGroupMemberships.$inferSelect;
+
+// Update schemas for schedules
+export const updateScheduleSchema = insertScheduleSchema.partial();
+export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
+
+// Scope Stages (editable stage categories for scope organization)
+export const scopeStages = pgTable("scope_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(), // "Prelim", "Frame", "Custom Stage", etc.
+  displayOrder: integer("display_order").notNull().default(0), // Sort order
+  parentId: varchar("parent_id"), // For nested stages (optional)
+  
+  // Inline stage-specific checklist (simple yes/no items)
+  checklist: json("checklist").default([]), // Array of {id, text, completed} items
+  
+  // Stage completion
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+
+  // File attachments linked to this stage
+  attachments: jsonb("attachments").default([]), // Array of {id, name, url, objectPath, size, uploadedBy, uploadedAt}
+
+  // Labour trackers: cost codes pinned to this stage for hours monitoring
+  labourTrackers: jsonb("labour_trackers").default([]), // Array of { costCodeId: string }
+
+  // Generated column: lower(btrim(name)). Exists so the unique index below
+  // is purely column-based (no expression) — drizzle-kit's pg introspection
+  // chokes on expression-only index columns and breaks `db:push`.
+  // Never write to this column directly; postgres maintains it.
+  normalizedName: text("normalized_name").generatedAlwaysAs(
+    sql`lower(btrim(name))`,
+    { mode: "stored" },
+  ),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  // Enforce one stage per (project, normalized name) at the database layer.
+  // Normalization (lowercase + trim) keeps "Prelim", "prelim ", " PRELIM"
+  // from coexisting on the same project.
+  uniqueIndex("scope_stages_project_normalized_name_unique").on(
+    table.projectId,
+    table.normalizedName,
+  ),
+]);
+
+// Scope stage checklist item schema
+const scopeStageChecklistItemSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  completed: z.boolean(),
+});
+
+const scopeStageAttachmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  objectPath: z.string(),
+  size: z.number(),
+  uploadedAt: z.string(),
+}).passthrough();
+
+const labourTrackerSchema = z.object({
+  costCodeId: z.string(),
+});
+
+export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Stage name is required"),
+  checklist: z.array(scopeStageChecklistItemSchema).optional(),
+  attachments: z.array(scopeStageAttachmentSchema).optional(),
+  labourTrackers: z.array(labourTrackerSchema).optional(),
+});
+
+export type InsertScopeStage = z.infer<typeof insertScopeStageSchema>;
+export type ScopeStage = typeof scopeStages.$inferSelect;
+
+export const updateScopeStageSchema = insertScopeStageSchema.partial();
+export type UpdateScopeStage = z.infer<typeof updateScopeStageSchema>;
+
+// Scope Items (the DNA of every job - flows to Estimate, RFQ, PO, Schedule)
+export const scopeItems = pgTable("scope_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Hierarchy and organization
+  parentId: varchar("parent_id"), // For nesting items
+  stage: text("stage").notNull(), // "Prelim", "Frame", "Lockup", "Fixing", "Completion"
+  displayOrder: integer("display_order").notNull().default(0), // Order within stage/parent
+  
+  // Content (Tiptap rich text)
+  title: text("title").notNull(),
+  description: text("description"), // Rich text content from Tiptap
+  contentType: text("content_type").notNull().default("text"), // "text" | "bullet" | "table" | "image"
+  itemType: text("item_type").notNull().default("scope"), // "e-note" | "scope" | "note" | "tool" | "material" | "proposal"
+  
+  // Integration flags
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  needsRfi: boolean("needs_rfi").notNull().default(false),
+  needsRfq: boolean("needs_rfq").notNull().default(false),
+  
+  // Links to other entities
+  estimateItemId: varchar("estimate_item_id"), // Link to pushed estimate item
+  rfqId: varchar("rfq_id"), // Link to created RFQ
+  poId: varchar("po_id"), // Link to created PO
+  scheduleItemId: varchar("schedule_item_id"), // Link to synced schedule item
+  
+  // Gear checklist
+  gearList: jsonb("gear_list").default([]), // Array of gear items: [{name: string, checked: boolean, photoUrl: string}]
+  
+  // Checklist items (for itemType="checklist")
+  checklistItems: jsonb("checklist_items").default([]), // Array of checklist items: [{id: string, text: string, completed: boolean}]
+  
+  // Action / to-do flag
+  isTodo: boolean("is_todo").notNull().default(false), // Marks item as an action item (shown in orange)
+
+  // Completion tracking
+  isCompleted: boolean("is_completed").notNull().default(false), // Whether the scope item is marked complete
+  completedAt: timestamp("completed_at"), // When the item was completed
+  completedBy: varchar("completed_by").references(() => users.id), // Who completed it
+  
+  // Metadata
+  isTemplate: boolean("is_template").notNull().default(false), // Is this a template item
+  templateCategory: text("template_category"), // "Standard 4-Bed", "Slab Pour", etc.
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Checklist item schema for scope items with itemType="checklist"
+export const scopeChecklistItemSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  completed: z.boolean(),
+});
+
+export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  contentType: z.enum(["text", "bullet", "table", "image"]).default("text"),
+  itemType: z.string().min(1).default("scope"), // free-text to support custom type definitions
+  stage: z.string().min(1, "Stage is required"),
+  title: z.string().min(1, "Title is required"),
+  gearList: z.array(z.object({
+    name: z.string(),
+    checked: z.boolean().default(false),
+    photoUrl: z.string().optional(),
+  })).default([]),
+  checklistItems: z.array(scopeChecklistItemSchema).default([]),
+});
+
+export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
+export type ScopeItem = typeof scopeItems.$inferSelect;
+
+// Scope Templates (reusable scope configurations)
+export const scopeTemplates = pgTable("scope_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // "Standard 4-Bed", "Slab Pour", "Frame Package"
+  description: text("description"),
+  category: text("category"), // "Residential" | "Commercial" | "Stage-Specific"
+  templateData: jsonb("template_data").notNull(), // Array of scope item objects
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScopeTemplateSchema = createInsertSchema(scopeTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.union([
+    z.array(z.any()), // Legacy: Array of scope item objects
+    z.object({
+      stages: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        sortOrder: z.number(),
+      })),
+      items: z.array(z.any()),
+    }), // New: Object with stages and items
+  ]),
+});
+
+export type InsertScopeTemplate = z.infer<typeof insertScopeTemplateSchema>;
+export type ScopeTemplate = typeof scopeTemplates.$inferSelect;
+
+// Scope Gear Photos (photos for gear checklist items)
+export const scopeGearPhotos = pgTable("scope_gear_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  gearItemName: text("gear_item_name").notNull(), // Name of the gear from gearList
+  photoUrl: text("photo_url").notNull(), // Path to uploaded photo
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScopeGearPhotoSchema = createInsertSchema(scopeGearPhotos).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertScopeGearPhoto = z.infer<typeof insertScopeGearPhotoSchema>;
+export type ScopeGearPhoto = typeof scopeGearPhotos.$inferSelect;
+
+// Update schemas
+export const updateScopeItemSchema = insertScopeItemSchema.partial();
+export type UpdateScopeItem = z.infer<typeof updateScopeItemSchema>;
+
+export const updateScopeTemplateSchema = insertScopeTemplateSchema.partial();
+export type UpdateScopeTemplate = z.infer<typeof updateScopeTemplateSchema>;
+
+// Calendar Views (saved filter combinations and views for calendars)
+export const calendarViews = pgTable("calendar_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Owner of the view
+  name: text("name").notNull(), // e.g., "My Tasks", "Team Schedule", "Project X Only"
+  calendarType: text("calendar_type").notNull(), // "personal" | "business"
+  calendarMode: text("calendar_mode").notNull().default("month"), // "month" | "week" | "day"
+  
+  // Filters stored as JSON
+  filters: jsonb("filters").notNull().default({
+    projectIds: [],
+    statuses: [],
+    eventTypes: [],
+    assigneeIds: [],
+    dateRange: null,
+  }), // { projectIds: string[], statuses: string[], eventTypes: string[], assigneeIds: string[], dateRange: {start: Date, end: Date} | null }
+  
+  // Sharing
+  sharedWith: json("shared_with").default([]), // Array of user IDs or role IDs who can access this view
+  isDefault: boolean("is_default").notNull().default(false), // Is this the default view for the user
+  /**
+   * The company's default business view — one row per company, shown to everyone
+   * in it. Replaces the per-user "All Events" copy the page used to auto-create,
+   * which gave a company of fifteen fifteen private copies of the same view.
+   */
+  isCompanyDefault: boolean("is_company_default").notNull().default(false),
+  
+  // Metadata
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering tabs
+  isArchived: boolean("is_archived").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  calendarType: z.enum(["personal", "business"]),
+  calendarMode: z.enum(["month", "week", "day"]).default("month"),
+  filters: z.object({
+    projectIds: z.array(z.string()).optional(),
+    statuses: z.array(z.string()).optional(),
+    eventTypes: z.array(z.string()).optional(),
+    assigneeIds: z.array(z.string()).optional(),
+    dateRange: z.object({
+      start: z.coerce.date(),
+      end: z.coerce.date(),
+    }).optional().nullable(),
+  }).optional(),
+  sharedWith: z.array(z.string()).optional(),
+  isDefault: z.boolean().default(false),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertCalendarView = z.infer<typeof insertCalendarViewSchema>;
+export type CalendarView = typeof calendarViews.$inferSelect;
+
+export const updateScheduleItemSchema = insertScheduleItemSchema.partial();
+export type UpdateScheduleItem = z.infer<typeof updateScheduleItemSchema>;
+
+export const updateScheduleTemplateSchema = insertScheduleTemplateSchema.partial();
+export type UpdateScheduleTemplate = z.infer<typeof updateScheduleTemplateSchema>;
+
+// Defects (tracking construction defects and issues)
+export const defects = pgTable("defects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Core defect information
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"), // Room/area where defect is located
+  
+  // Categorization using field settings
+  type: text("type").notNull().default("builder"), // "builder" | "subcontractor" | "client" | "warranty" - from field settings
+  priority: text("priority").notNull().default("medium"), // "critical" | "high" | "medium" | "low" - from field settings
+  status: text("status").notNull().default("open"), // "open" | "in_progress" | "resolved" | "closed" - from field settings
+  trade: text("trade"), // Trade/category from field settings (e.g., "Carpentry", "Plumbing", etc.)
+  
+  // Assignment and responsibility
+  assignedContactId: varchar("assigned_contact_id").references(() => contacts.id),
+  assignedContactName: text("assigned_contact_name"), // Cached for performance
+  
+  // Dates
+  dateIdentified: timestamp("date_identified").notNull().defaultNow(),
+  dueDate: timestamp("due_date"),
+  dateResolved: timestamp("date_resolved"),
+  
+  // Additional information
+  notes: text("notes"),
+  costImpact: integer("cost_impact"), // Cost to fix in cents (optional)
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id), // Link to cost code if repair has budget impact
+  
+  // Photos/attachments (future feature)
+  attachments: json("attachments").default([]), // Array of attachment objects [{url, name, type}]
+  
+  // Audit
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolvedByName: text("resolved_by_name"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDefectSchema = createInsertSchema(defects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["builder", "subcontractor", "client", "warranty"]).default("builder"),
+  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
+  status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
+  dateIdentified: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
+  dateResolved: z.coerce.date().optional(),
+  costImpact: z.number().optional(),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertDefect = z.infer<typeof insertDefectSchema>;
+export type Defect = typeof defects.$inferSelect;
+
+// Meeting Minutes
+export const minutes = pgTable("minutes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  meetingDate: timestamp("meeting_date").notNull(),
+  location: text("location"), // Meeting location (physical or virtual link)
+  attendees: json("attendees").default([]), // Array of attendee names or {name, contactId} objects
+  contentHtml: text("content_html"), // Rich text HTML content
+  contentText: text("content_text"), // Plain text for searching
+  aiSummary: text("ai_summary"), // AI-generated summary
+  actionItems: json("action_items").default([]), // Array of action items [{description, assignee, dueDate, completed}]
+  recordingUrl: text("recording_url"), // External recording link (Zoom, Teams, etc.)
+  recordingFileName: text("recording_file_name"), // Uploaded file name
+  recordingFileUrl: text("recording_file_url"), // Path to uploaded recording
+  transcription: text("transcription"), // AI transcription of recording
+  transcriptionStatus: text("transcription_status"), // pending, processing, completed, failed
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  /**
+   * The meeting these minutes record, when they came from a scheduled one.
+   * SET NULL on delete: removing a meeting must never destroy the record of it.
+   */
+  meetingId: varchar("meeting_id"),
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"), // Cached for performance
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMinuteSchema = createInsertSchema(minutes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  meetingDate: z.coerce.date(),
+  contentHtml: z.string().optional(),
+  contentText: z.string().optional(),
+  aiSummary: z.string().optional(),
+  attendees: z.array(z.union([
+    z.string(), // Manual entry
+    z.object({ name: z.string(), contactId: z.string() }) // From contacts
+  ])).optional(),
+  actionItems: z.array(z.object({
+    description: z.string(),
+    assignee: z.string().optional(),
+    dueDate: z.coerce.date().optional(),
+    completed: z.boolean().default(false),
+  })).optional(),
+  recordingUrl: z.string().optional(),
+  recordingFileName: z.string().optional(),
+  recordingFileUrl: z.string().optional(),
+  transcription: z.string().optional(),
+  transcriptionStatus: z.enum(["pending", "processing", "completed", "failed"]).optional(),
+});
+
+export type InsertMinute = z.infer<typeof insertMinuteSchema>;
+export type Minute = typeof minutes.$inferSelect;
+
+// ============================================================
+// SYSTEMS LIBRARY - Company-wide processes and templates
+// ============================================================
+
+// System Folders - Hierarchical folder structure for organizing documents
+export const systemFolders = pgTable("system_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  parentId: varchar("parent_id").references((): any => systemFolders.id), // Self-reference for hierarchy
+  icon: text("icon").default("folder"), // Lucide icon name
+  color: text("color"), // Optional color coding
+  
+  // Role-based access control
+  roleIds: json("role_ids").default([]), // Array of role IDs that can access this folder
+  isPublic: boolean("is_public").default(true), // If true, all roles can view
+  
+  // Display ordering
+  displayOrder: integer("display_order").default(0),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemFolderSchema = createInsertSchema(systemFolders).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  roleIds: z.array(z.string()).optional(),
+  isPublic: z.boolean().optional(),
+  displayOrder: z.number().optional(),
+});
+
+export type InsertSystemFolder = z.infer<typeof insertSystemFolderSchema>;
+export type SystemFolder = typeof systemFolders.$inferSelect;
+
+// System Documents - Documents stored in folders
+export const systemDocuments = pgTable("system_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  folderId: varchar("folder_id").references(() => systemFolders.id, { onDelete: "cascade" }),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("document"), // "document" | "policy" | "procedure" | "template" | "reference"
+  
+  // File storage
+  fileUrl: text("file_url"), // External URL or path to file
+  fileName: text("file_name"),
+  fileSize: integer("file_size"), // Size in bytes
+  fileType: text("file_type"), // MIME type
+  
+  // Version control
+  version: text("version").default("1.0"),
+  
+  // Metadata
+  tags: json("tags").default([]), // Array of tags for searching
+  role: text("role"), // Role responsible for this document
+  status: text("status"), // Status from field settings
+  
+  // Task Template Link
+  taskTemplateId: varchar("task_template_id").references(() => taskTemplates.id, { onDelete: "set null" }),
+  taskTemplateName: text("task_template_name"), // Cached for performance
+  
+  // Display ordering
+  displayOrder: integer("display_order").default(0),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedByName: text("updated_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemDocumentSchema = createInsertSchema(systemDocuments).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+  taskTemplateName: true, // Server will populate this
+}).extend({
+  type: z.enum(["document", "policy", "procedure", "template", "reference"]).default("document"),
+  tags: z.array(z.string()).optional(),
+  fileSize: z.number().optional(),
+  role: z.string().optional(),
+  status: z.string().optional(),
+  taskTemplateId: z.string().optional(),
+});
+
+export type InsertSystemDocument = z.infer<typeof insertSystemDocumentSchema>;
+export type SystemDocument = typeof systemDocuments.$inferSelect;
+
+// Task Templates - Reusable task templates with scheduling
+export const taskTemplates = pgTable("task_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Scope - whether this template is for business-level or project-level tasks
+  scope: text("scope").default("business"), // "business" | "project"
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // Only set when scope is "project"
+  
+  title: text("title").notNull(),
+  goal: text("goal"), // Brief, to-the-point goal
+  description: text("description"), // Detailed description
+  
+  // Role assignment
+  defaultRoleId: varchar("default_role_id").references(() => userRoles.id), // Default role to assign
+  defaultRoleName: text("default_role_name"), // Cached for performance
+  
+  // Assignee - either a role, or one or more specific users
+  assigneeType: text("assignee_type").default("role"), // "role" | "user"
+  // Named users this template is assigned to. The generator already fans a
+  // role out to every user who holds it, one task each; this gives the "user"
+  // branch the same reach instead of a single name.
+  //
+  // assigneeUserId/Name below are the legacy single-user pair, still read as a
+  // one-element fallback when this array is empty — no backfill needed, and a
+  // template saved by an older client keeps working.
+  assigneeUserIds: text("assignee_user_ids").array().default([]),
+  assigneeUserId: varchar("assignee_user_id").references(() => users.id), // Legacy single-user assignment
+  assigneeUserName: text("assignee_user_name"), // Legacy cached name
+  
+  // Scheduling
+  frequency: text("frequency"), // "daily" | "weekly" | "monthly" | "yearly" | "once"
+  frequencyInterval: integer("frequency_interval").default(1), // Every N days/weeks/months
+  dueDayOfWeek: json("due_day_of_week"), // For weekly: array of 0-6 (Sun-Sat)
+  dueDayOfMonth: integer("due_day_of_month"), // For monthly: 1-31
+  dueTime: text("due_time"), // HH:MM format
+  dueOffsetDays: integer("due_offset_days").default(0), // Days relative to trigger
+  
+  // Recurring schedule (for "perfect week" templates)
+  isRecurringTemplate: boolean("is_recurring_template").default(false), // Whether this template auto-generates recurring tasks
+  recurringDays: json("recurring_days").default([]), // Days of week: array of 0-6 (Sun-Sat) when tasks should be created
+  recurringSchedule: json("recurring_schedule").default([]), // Array of {dayOfWeek: number, startTime: string, duration: number} for day-specific times
+  includeSaturday: boolean("include_saturday").default(false), // For daily frequency: include Saturday
+  includeSunday: boolean("include_sunday").default(false), // For daily frequency: include Sunday
+  recurringStartTime: text("recurring_start_time"), // DEPRECATED: Use recurringSchedule instead
+  recurringDuration: integer("recurring_duration"), // DEPRECATED: Use recurringSchedule instead
+  recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // DEPRECATED: Use defaultRoleId for role-based assignment
+  recurringAssigneeName: text("recurring_assignee_name"), // DEPRECATED: Cached for performance
+  
+  // Checklist
+  checklist: json("checklist").default([]), // Array of checklist items [{text, completed}]
+  
+  // Attachments and links
+  externalLinks: json("external_links").default([]), // Array of URLs
+  
+  // Status - now references task_template_statuses table
+  statusId: varchar("status_id").references(() => taskTemplateStatuses.id), // Reference to task template status
+  statusName: text("status_name"), // Cached status name for performance (e.g., "Active", "Draft", "Archived")
+  isActive: boolean("is_active").default(true),
+  
+  // Default task status - the status key that tasks created from this template should have
+  defaultTaskStatus: text("default_task_status").default("todo"), // e.g., "todo", "in-progress", "backlog"
+  
+  // Display color for calendar/diary views
+  color: text("color"), // Hex color code (e.g., "#3b82f6")
+  
+  // Metadata
+  category: text("category"), // Legacy text category for custom categorization
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  tagIds: json("tag_ids").default([]), // Array of task tag IDs from task_tags table
+  estimatedDuration: integer("estimated_duration"), // Estimated minutes to complete
+  
+  // Scope stage link
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+  statusName: true, // Server will populate this
+  defaultRoleName: true, // Server will populate this
+  recurringAssigneeName: true, // Server will populate this
+  assigneeUserName: true, // Server will populate this
+}).extend({
+  scope: z.enum(["business", "project"]).optional(),
+  projectId: z.string().nullable().optional(),
+  assigneeType: z.enum(["role", "user"]).optional(),
+  assigneeUserIds: z.array(z.string()).optional(),
+  assigneeUserId: z.string().nullable().optional(),
+  goal: z.string().optional(),
+  frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
+  frequencyInterval: z.number().optional(),
+  dueDayOfWeek: z.array(z.number().min(0).max(6)).optional(), // Array of 0-6 for Sun-Sat
+  dueDayOfMonth: z.number().min(1).max(31).optional(),
+  dueTime: z.string().optional(), // HH:MM format
+  dueOffsetDays: z.number().optional(),
+  // Recurring schedule fields
+  isRecurringTemplate: z.boolean().optional(),
+  recurringDays: z.array(z.number().min(0).max(6)).optional(), // Array of 0-6 for Sun-Sat
+  recurringSchedule: z.array(z.object({
+    dayOfWeek: z.number().min(0).max(6), // 0=Sunday, 6=Saturday
+    startTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/), // HH:MM format
+    duration: z.number().min(1), // Duration in minutes
+  })).optional(),
+  recurringStartTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).optional(), // DEPRECATED
+  recurringDuration: z.number().min(1).optional(), // DEPRECATED
+  recurringAssigneeId: z.string().optional(), // DEPRECATED
+  checklist: z.array(z.object({
+    text: z.string(),
+    completed: z.boolean().default(false),
+  })).optional(),
+  externalLinks: z.array(z.string().url()).optional(), // Array of valid URLs
+  tagIds: z.array(z.string()).optional(),
+  statusId: z.string().optional(),
+  estimatedDuration: z.number().optional(),
+  isActive: z.boolean().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code").nullable().optional(),
+  defaultTaskStatus: z.string().optional(), // Status key for tasks created from this template
+});
+
+export type InsertTaskTemplate = z.infer<typeof insertTaskTemplateSchema>;
+export type TaskTemplate = typeof taskTemplates.$inferSelect;
+
+// Task Template Attachments - File attachments for task templates
+export const taskTemplateAttachments = pgTable("task_template_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskTemplateId: varchar("task_template_id").notNull().references(() => taskTemplates.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  originalName: text("original_name").notNull(),
+  storageKey: text("storage_key").notNull(), // Path in object storage
+  mimeType: text("mime_type"),
+  byteSize: integer("byte_size"),
+  
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+});
+
+export const insertTaskTemplateAttachmentSchema = createInsertSchema(taskTemplateAttachments).omit({
+  id: true,
+  taskTemplateId: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertTaskTemplateAttachment = z.infer<typeof insertTaskTemplateAttachmentSchema>;
+export type TaskTemplateAttachment = typeof taskTemplateAttachments.$inferSelect;
+
+// Task Tags - Company-wide tag library for organizing tasks
+export const taskTags = pgTable("task_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  color: text("color").notNull(), // Hex color code (e.g., "#3b82f6")
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("task_tags_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code"),
+  displayOrder: z.number().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
+export type TaskTag = typeof taskTags.$inferSelect;
+
+// Task Template Statuses - Customizable statuses for task templates
+export const taskTemplateStatuses = pgTable("task_template_statuses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  color: text("color").notNull(), // Hex color code (e.g., "#10b981")
+  displayOrder: integer("display_order").notNull().default(0),
+  isDefault: boolean("is_default").notNull().default(false), // One status should be marked as default
+  isComplete: boolean("is_complete").notNull().default(false), // Marks status as a "completed" state (e.g., Done, Closed)
+  isActive: boolean("is_active").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("task_template_statuses_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertTaskTemplateStatusSchema = createInsertSchema(taskTemplateStatuses).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code"),
+  displayOrder: z.number().optional(),
+  isDefault: z.boolean().optional(),
+  isComplete: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertTaskTemplateStatus = z.infer<typeof insertTaskTemplateStatusSchema>;
+export type TaskTemplateStatus = typeof taskTemplateStatuses.$inferSelect;
+
+// Workflow Templates - Automation rules that trigger task creation
+export const workflowTemplates = pgTable("workflow_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  description: text("description"),
+  
+  // Trigger configuration
+  triggerType: text("trigger_type").notNull().default("stage_change"), // "stage_change" | "status_change" | "manual" | "date"
+  triggerStage: text("trigger_stage"), // Project stage that triggers this workflow
+  triggerStatus: text("trigger_status"), // Project status that triggers this workflow
+  
+  // Task templates to create
+  taskTemplateIds: json("task_template_ids").default([]), // Array of task template IDs to create
+  taskConfigs: json("task_configs").default([]), // Array of {templateId, offsetDays, assigneeRoleId} for customization
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  triggerType: z.enum(["stage_change", "status_change", "manual", "date"]).default("stage_change"),
+  taskTemplateIds: z.array(z.string()).optional(),
+  taskConfigs: z.array(z.object({
+    templateId: z.string(),
+    offsetDays: z.number().optional(),
+    assigneeRoleId: z.string().optional(),
+  })).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertWorkflowTemplate = z.infer<typeof insertWorkflowTemplateSchema>;
+export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
+
+// Project Workflows - Instances of workflows on specific projects
+export const projectWorkflows = pgTable("project_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workflowTemplateId: varchar("workflow_template_id").notNull().references(() => workflowTemplates.id),
+  
+  status: text("status").notNull().default("pending"), // "pending" | "in_progress" | "completed" | "cancelled"
+  
+  // Track created tasks
+  createdTaskIds: json("created_task_ids").default([]), // Array of task IDs created by this workflow
+  
+  // Execution details
+  triggeredAt: timestamp("triggered_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectWorkflowSchema = createInsertSchema(projectWorkflows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["pending", "in_progress", "completed", "cancelled"]).default("pending"),
+  createdTaskIds: z.array(z.string()).optional(),
+  triggeredAt: z.coerce.date().optional(),
+  completedAt: z.coerce.date().optional(),
+});
+
+export type InsertProjectWorkflow = z.infer<typeof insertProjectWorkflowSchema>;
+export type ProjectWorkflow = typeof projectWorkflows.$inferSelect;
+
+// ============================================================================
+// MESSAGING SYSTEM TABLES
+// ============================================================================
+
+// Channels for team communication (both project channels and direct messages)
+export const channels = pgTable("channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g., "general", "26-ocean", "dm-jed-smith"
+  type: text("type").notNull().default("channel"), // "channel" | "dm"
+  
+  // Project association (null for general/company-wide channels)
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  
+  // DM participants (for DMs only, stores user IDs as JSON array)
+  dmParticipants: json("dm_participants"), // ["user_id_1", "user_id_2"]
+  
+  // Channel settings
+  description: text("description"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  isClientFacing: boolean("is_client_facing").notNull().default(false),
+  
+  // Multi-tenant isolation
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChannelSchema = createInsertSchema(channels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["channel", "dm"]).default("channel"),
+  dmParticipants: z.array(z.string()).optional(),
+});
+
+export type InsertChannel = z.infer<typeof insertChannelSchema>;
+export type Channel = typeof channels.$inferSelect;
+
+// Channel members (who has access to which channels)
+export const channelMembers = pgTable("channel_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Member settings
+  role: text("role").notNull().default("member"), // "owner" | "admin" | "member"
+  isNotificationsMuted: boolean("is_notifications_muted").notNull().default(false),
+  isPinned: boolean("is_pinned").notNull().default(false), // Pinned/favorite channels appear at top
+  lastReadAt: timestamp("last_read_at"), // For unread badges
+  
+  joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Ensure user can't join same channel twice
+  uniqueChannelUser: uniqueIndex("channel_members_channel_user_unique").on(table.channelId, table.userId),
+}));
+
+export const insertChannelMemberSchema = createInsertSchema(channelMembers).omit({
+  id: true,
+  joinedAt: true,
+  updatedAt: true,
+}).extend({
+  role: z.enum(["owner", "admin", "member"]).default("member"),
+});
+
+export type InsertChannelMember = z.infer<typeof insertChannelMemberSchema>;
+export type ChannelMember = typeof channelMembers.$inferSelect;
+
+// Messages in channels
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  
+  // Message content
+  content: text("content").notNull(),
+  
+  // Threading. In use: a reply carries threadParentId, createMessage bumps the
+  // parent's threadCount, and the channel view hides replies from the main
+  // list and shows them under their parent. The comment here used to say
+  // "for future feature", which reads as dead schema it is safe to drop.
+  threadParentId: varchar("thread_parent_id").references(() => messages.id, { onDelete: "cascade" }),
+  threadCount: integer("thread_count").notNull().default(0),
+  
+  // Mentions and bot commands
+  mentions: json("mentions").default([]), // Array of user IDs mentioned
+  hasCommand: boolean("has_command").notNull().default(false), // True if message starts with /
+  commandType: text("command_type"), // "task", "remind", etc.
+  
+  // Scheduled message support
+  scheduledAt: timestamp("scheduled_at"),
+  scheduledStatus: text("scheduled_status"), // 'pending' | 'sent' | 'cancelled'
+
+  // Message metadata
+  isEdited: boolean("is_edited").notNull().default(false),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  isBot: boolean("is_bot").notNull().default(false), // True for system/bot messages
+  isPinned: boolean("is_pinned").notNull().default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedByUserId: varchar("pinned_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  
+  // Cached user info for performance
+  userFirstName: text("user_first_name"),
+  userLastName: text("user_last_name"),
+  userEmail: text("user_email"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Index for fast channel message queries
+  channelIdIndex: index("messages_channel_id_idx").on(table.channelId),
+  // Index for threading queries
+  threadParentIdIndex: index("messages_thread_parent_id_idx").on(table.threadParentId),
+}));
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  mentions: z.array(z.string()).optional(),
+  scheduledAt: z.union([z.string().datetime(), z.date()]).optional().nullable(),
+});
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+
+// Message Reactions — icon-based reactions on channel messages
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // Stored as a short text id e.g. "thumbs_up", "check", "eyes", "heart", "laugh", "fire"
+    emoji: varchar("emoji", { length: 30 }).notNull(),
+    userFirstName: text("user_first_name"),
+    userLastName: text("user_last_name"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueUserMessageEmoji: uniqueIndex("msg_reactions_user_msg_emoji_unique").on(
+      table.messageId, table.userId, table.emoji
+    ),
+    messageIdIndex: index("msg_reactions_message_id_idx").on(table.messageId),
+  })
+);
+
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
+export type MessageReaction = typeof messageReactions.$inferSelect;
+
+// Message Attachments — files/images shared in channel messages
+export const messageAttachments = pgTable("message_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),       // Served URL: /objects/company/:cid/...
+  fileName: text("file_name").notNull(),      // Original filename e.g. "photo.jpg"
+  fileSize: integer("file_size"),             // Bytes
+  mimeType: text("mime_type"),               // e.g. "image/jpeg", "application/pdf"
+  objectPath: text("object_path").notNull(), // Internal storage path
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+}, (table) => ({
+  messageIdIndex: index("msg_attachments_message_id_idx").on(table.messageId),
+}));
+
+export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+export type MessageAttachment = typeof messageAttachments.$inferSelect;
+
+// RFQ (Request for Quote) System
+export const rfqStatusEnum = pgEnum("rfq_status", ["draft", "sent", "confirmed", "quoted", "accepted", "declined", "expired"]);
+export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "reminder_3d", "reminder_7d", "reminder_14d"]);
+
+// RFQs table
+export const rfqs = pgTable("rfqs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqNumber: text("rfq_number").notNull(), // e.g., "RFQ-001"
+  // Nullable: the RFQ list is a company-wide registry, so a general supplier
+  // enquiry ("what would you charge for X?") can be logged and chased before
+  // there is a job to hang it off. Numbering is company-scoped, so an RFQ with
+  // no project still gets a stable number.
+  projectId: varchar("project_id").references(() => projects.id),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+
+  // Who is chasing this. Distinct from createdBy — the person who logs an RFQ
+  // is often not the person who owns getting an answer, and a registry the
+  // whole team reads needs a name against each row.
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+
+
+  title: text("title").notNull(), // e.g., "Concrete Pour - Slab"
+  description: text("description"), // Brief description
+  scope: text("scope"), // Wunderbuild-style rich-text scope of work (6-line auto-grow)
+  dueDate: timestamp("due_date"), // When responses are due
+  deadline: timestamp("deadline"), // Hard deadline for the work itself
+  
+  // Multi-supplier support (send to multiple suppliers at once)
+  supplierIds: text("supplier_ids").array().notNull().default(sql`'{}'`), // Array of supplier IDs
+  supplierNames: text("supplier_names").array().notNull().default(sql`'{}'`), // Array of supplier names
+  
+  status: rfqStatusEnum("status").notNull().default("draft"),
+  sentAt: timestamp("sent_at"),
+  
+  // File attachments (plans, specs)
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`), // Array of file URLs
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`), // Original file names
+  
+  // PDF generation
+  pdfUrl: text("pdf_url"), // Generated PDF URL
+  
+  // Terms and conditions
+  termsTemplateId: varchar("terms_template_id"), // Reference to RFQ template for terms
+  customTerms: text("custom_terms"), // Custom terms and conditions text
+  
+  // Internal notes (not shown to suppliers)
+  internalNotes: text("internal_notes"),
+  
+  // External tracking (for quotes requested outside the system)
+  isExternal: boolean("is_external").notNull().default(false),
+  externalNotes: text("external_notes"), // Notes about where RFQ was sent externally
+  
+  // Scheduled follow-up emails
+  followUpEnabled: boolean("follow_up_enabled").notNull().default(false),
+  followUpDaysBefore: integer("follow_up_days_before"), // Days before due date to send reminder
+  followUpSentAt: timestamp("follow_up_sent_at"), // When the follow-up was sent
+  
+  createdBy: varchar("created_by").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqSchema = createInsertSchema(rfqs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+  createdByName: true,
+  rfqNumber: true,
+  status: true,
+  sentAt: true,
+  pdfUrl: true,
+  followUpSentAt: true,
+}).extend({
+  title: z.string().min(1, "Title is required"),
+  // Optional so a registry entry can exist before there is a job. Empty string
+  // normalises to null — the project pickers emit "" for "no project", and a
+  // bare "" would fail the projects FK.
+  projectId: z.string().nullable().optional().transform((v) => v || null),
+  ownerId: z.string().nullable().optional().transform((v) => v || null),
+  ownerName: z.string().nullable().optional(),
+  description: z.string().optional().nullable(),
+  scope: z.string().optional().nullable(),
+  // Coerced, not z.string(): the clients all send ISO strings, and Drizzle's
+  // timestamp mapper calls .toISOString() on whatever it is handed — so a bare
+  // string reached the driver and threw, 500-ing every create/save that carried
+  // a date. Coercing here keeps the wire format and hands Drizzle a Date.
+  dueDate: z.coerce.date().optional().nullable(),
+  deadline: z.coerce.date().optional().nullable(),
+  supplierIds: z.array(z.string()).optional(),
+  supplierNames: z.array(z.string()).optional(),
+  attachmentUrls: z.array(z.string()).optional(),
+  attachmentFileNames: z.array(z.string()).optional(),
+  termsTemplateId: z.string().optional().nullable(),
+  customTerms: z.string().optional().nullable(),
+  internalNotes: z.string().optional().nullable(),
+  isExternal: z.boolean().optional(),
+  externalNotes: z.string().optional().nullable(),
+  followUpEnabled: z.boolean().optional(),
+  followUpDaysBefore: z.number().optional().nullable(),
+});
+
+// Update schema. insertRfqSchema deliberately omits the lifecycle fields so a
+// client can't set them at create time, but PATCH legitimately needs them —
+// and because Zod strips unknown keys rather than rejecting them, the send
+// flow's { status, sentAt } PATCH silently parsed to {} and every RFQ stayed
+// on "draft" forever.
+//
+// projectId IS accepted here, but the route only honours it when the RFQ does
+// not have one yet: attaching a registry enquiry to a job once it becomes real
+// is a normal move, whereas re-parenting an RFQ that suppliers have already
+// quoted against is not.
+export const updateRfqSchema = insertRfqSchema.partial().extend({
+  status: z.enum(rfqStatusEnum.enumValues).optional(),
+  sentAt: z.coerce.date().optional().nullable(),
+  followUpSentAt: z.coerce.date().optional().nullable(),
+  pdfUrl: z.string().optional().nullable(),
+});
+
+export type UpdateRfq = z.infer<typeof updateRfqSchema>;
+export type InsertRfq = z.infer<typeof insertRfqSchema>;
+export type Rfq = typeof rfqs.$inferSelect;
+
+// RFQ Items (line items from estimate)
+export const rfqItems = pgTable("rfq_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  unitPrice: integer("unit_price"), // In cents
+  notes: text("notes"),
+  
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // quantity is numeric(10,2), which drizzle-zod types as a string, but every
+  // caller sends a JS number (parseFloat from the add-item form,
+  // estimate_items.quantity from the bulk push). That mismatch 400'd every
+  // single item create. Accept both and normalise to the string the driver
+  // wants.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+// Line items supplied inline when creating an RFQ. The create page and the
+// estimate bulk-push both send these nested under the RFQ; previously they
+// were stripped by Zod and the user's items were silently discarded.
+export const insertRfqSchemaWithItems = insertRfqSchema.extend({
+  items: z.array(insertRfqItemSchema.omit({ rfqId: true })).optional(),
+});
+
+export type InsertRfqItem = z.infer<typeof insertRfqItemSchema>;
+export type RfqItem = typeof rfqItems.$inferSelect;
+
+// RFQ Quotes (supplier responses)
+export const rfqQuotes = pgTable("rfq_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
+  supplierName: text("supplier_name"),
+  supplierEmail: text("supplier_email"), // For portal submissions
+  
+  totalAmount: integer("total_amount").notNull(), // In cents
+  leadTime: text("lead_time"), // e.g., "2-3 weeks"
+  validUntil: timestamp("valid_until"), // Quote expiry
+  notes: text("notes"),
+  attachments: json("attachments").default([]), // Array of {name, url, size}
+  
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "declined"
+  acceptedAt: timestamp("accepted_at"),
+  declinedAt: timestamp("declined_at"),
+  
+  // Portal submission tracking
+  submittedViaPortal: boolean("submitted_via_portal").notNull().default(false),
+  submittedAt: timestamp("submitted_at"),
+  
+  // For conversion to PO
+  convertedToPurchaseOrderId: varchar("converted_to_purchase_order_id"),
+  
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    size: z.number().optional(),
+  })).optional(),
+  // Same ISO-string-vs-z.date() mismatch as the RFQ dates: the accept/decline
+  // actions send timestamps as strings, which failed validation outright and
+  // made both buttons return 400.
+  validUntil: z.coerce.date().optional().nullable(),
+  acceptedAt: z.coerce.date().optional().nullable(),
+  declinedAt: z.coerce.date().optional().nullable(),
+  submittedAt: z.coerce.date().optional().nullable(),
+});
+
+export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
+export type RfqQuote = typeof rfqQuotes.$inferSelect;
+
+// RFQ Follow-ups (scheduled emails)
+export const rfqFollowUps = pgTable("rfq_follow_ups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  followUpType: rfqFollowUpTypeEnum("follow_up_type").notNull(), // "initial" | "reminder_3d" | "reminder_7d" | "reminder_14d"
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  
+  emailSubject: text("email_subject"),
+  emailBody: text("email_body"),
+  
+  status: text("status").notNull().default("scheduled"), // "scheduled" | "sent" | "failed" | "cancelled"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  scheduledFor: z.coerce.date(),
+  sentAt: z.coerce.date().optional().nullable(),
+});
+
+export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
+export type RfqFollowUp = typeof rfqFollowUps.$inferSelect;
+
+// RFQ Portal Tokens (for external quote submission)
+export const rfqPortalTokens = pgTable("rfq_portal_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  // Per-supplier tokens for tracking who submitted
+  supplierId: varchar("supplier_id"), // Optional - for tracking which supplier this token is for
+  supplierEmail: text("supplier_email"), // Email to send portal link to
+  
+  token: text("token").notNull().unique(), // Unique token for portal URL
+  expiresAt: timestamp("expires_at"), // Optional expiry
+  
+  // Usage tracking
+  viewedAt: timestamp("viewed_at"), // When supplier first viewed the RFQ
+  quoteSubmittedId: varchar("quote_submitted_id"), // Link to submitted quote
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  expiresAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
+});
+
+export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
+export type RfqPortalToken = typeof rfqPortalTokens.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Recipients — one row per supplier per RFQ.
+//
+// Replaces the index-coupled rfqs.supplierIds[] / rfqs.supplierNames[] pair and
+// absorbs rfq_portal_tokens. A supplier's participation previously lived in
+// three places at once (two parallel arrays, an optional token row, an optional
+// quote row) with nothing tying them together but array position — so removing
+// a supplier matched by *name* desynced the arrays permanently whenever two
+// suppliers shared a name.
+//
+// This is also what makes "one RFQ, several requests under it" representable:
+// the RFQ is the document, each recipient is a request with its own state.
+// ---------------------------------------------------------------------------
+export const rfqRecipientStatusEnum = pgEnum("rfq_recipient_status", [
+  "not_sent",
+  "sent",
+  "viewed",
+  "quoted",
+  "declined",
+  "no_response",
+]);
+
+export const rfqRecipients = pgTable("rfq_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+
+  // supplierId is nullable so an ad-hoc recipient (someone not yet in Contacts)
+  // can still be tracked; supplierName is the display anchor either way.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
+  supplierName: text("supplier_name").notNull(),
+  supplierEmail: text("supplier_email"),
+
+  status: rfqRecipientStatusEnum("status").notNull().default("not_sent"),
+
+  // Recipient contacted outside Morada (phone, personal email). Never gets a
+  // portal token or an automated reminder; the user drives its status by hand.
+  isExternal: boolean("is_external").notNull().default(false),
+
+  sentAt: timestamp("sent_at"),
+  viewedAt: timestamp("viewed_at"),
+  respondedAt: timestamp("responded_at"),
+
+  // Portal access, absorbed from rfq_portal_tokens so a supplier's link lives
+  // with the rest of their state instead of in a side table nothing created.
+  portalToken: text("portal_token").unique(),
+  portalTokenExpiresAt: timestamp("portal_token_expires_at"),
+  portalTokenRevoked: boolean("portal_token_revoked").notNull().default(false),
+
+  quoteId: varchar("quote_id"), // set when this recipient submits a quote
+
+  // Reminder bookkeeping (the scheduler lands in PR 4).
+  lastRemindedAt: timestamp("last_reminded_at"),
+  remindersSent: integer("reminders_sent").notNull().default(0),
+
+  notes: text("notes"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqRecipientSchema = createInsertSchema(rfqRecipients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  portalToken: true,
+  portalTokenExpiresAt: true,
+  remindersSent: true,
+}).extend({
+  supplierName: z.string().min(1, "Supplier name is required"),
+  sentAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
+  respondedAt: z.coerce.date().optional().nullable(),
+  lastRemindedAt: z.coerce.date().optional().nullable(),
+});
+
+export const updateRfqRecipientSchema = insertRfqRecipientSchema.partial().omit({ rfqId: true });
+
+export type InsertRfqRecipient = z.infer<typeof insertRfqRecipientSchema>;
+export type UpdateRfqRecipient = z.infer<typeof updateRfqRecipientSchema>;
+export type RfqRecipient = typeof rfqRecipients.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Quote Items — a supplier's price against each line of the RFQ.
+//
+// rfq_quotes only ever carried a single totalAmount, so "compare quotes line by
+// line" was unimplementable and an accepted quote could not be written back to
+// the estimate per line. rfqItemId is nullable because a supplier can quote
+// something we didn't ask for, and because AI extraction from a quote PDF
+// won't always match a line confidently.
+//
+// Money: cents, matching rfq_items.unitPrice and the dominant convention.
+// ---------------------------------------------------------------------------
+export const rfqQuoteItems = pgTable("rfq_quote_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => rfqQuotes.id, { onDelete: "cascade" }),
+  rfqItemId: varchar("rfq_item_id").references(() => rfqItems.id, { onDelete: "set null" }),
+
+  description: text("description").notNull(), // as quoted, may differ from ours
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  unitPrice: integer("unit_price"), // cents
+  lineTotal: integer("line_total"), // cents; stored rather than derived so a
+                                    // supplier's own rounding survives intact
+  notes: text("notes"),
+
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqQuoteItemSchema = createInsertSchema(rfqQuoteItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Same numeric-column-vs-JS-number mismatch as rfq_items.quantity.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+export type InsertRfqQuoteItem = z.infer<typeof insertRfqQuoteItemSchema>;
+export type RfqQuoteItem = typeof rfqQuoteItems.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Reminder Templates — company-level, not per-RFQ.
+//
+// Every RFQ chases the same way, so the wording lives once per company and each
+// RFQ opts in or out. (The old design wrote four hard-coded follow-up rows per
+// RFQ at send time and nothing ever read them — there was no scheduler at all.)
+//
+// Two triggers, because both are natural: "chase 3 days after I sent it" works
+// even when there is no due date, and "chase 2 days before it's due" is how a
+// deadline actually gets managed.
+// ---------------------------------------------------------------------------
+export const rfqReminderTriggerEnum = pgEnum("rfq_reminder_trigger", ["after_send", "before_due"]);
+
+export const rfqReminderTemplates = pgTable("rfq_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(), // shown in the reminders list, e.g. "First chase"
+  trigger: rfqReminderTriggerEnum("trigger").notNull().default("after_send"),
+  offsetDays: integer("offset_days").notNull(),
+
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderTemplateSchema = createInsertSchema(rfqReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+
+export const updateRfqReminderTemplateSchema = insertRfqReminderTemplateSchema.partial();
+
+export type InsertRfqReminderTemplate = z.infer<typeof insertRfqReminderTemplateSchema>;
+export type RfqReminderTemplate = typeof rfqReminderTemplates.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Reminder Log — what was actually sent, to whom, off which template.
+//
+// The unique (recipient, template) index is what stops the scheduler double-
+// sending: a reminder is claimed by inserting its log row, so a second pass —
+// or a second process — hits the constraint instead of emailing twice.
+// ---------------------------------------------------------------------------
+export const rfqReminderLog = pgTable("rfq_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  recipientId: varchar("recipient_id").notNull().references(() => rfqRecipients.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => rfqReminderTemplates.id, { onDelete: "set null" }),
+
+  subject: text("subject"),
+  body: text("body"),
+  toEmail: text("to_email"),
+
+  status: text("status").notNull().default("sent"), // "sent" | "failed" | "skipped"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderLogSchema = createInsertSchema(rfqReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertRfqReminderLog = z.infer<typeof insertRfqReminderLogSchema>;
+export type RfqReminderLogEntry = typeof rfqReminderLog.$inferSelect;
+
+/** Placeholders offered as chips in the reminder editor, and substituted on send. */
+export const RFQ_REMINDER_PLACEHOLDERS = [
+  { token: "{{supplier_name}}", label: "Supplier name" },
+  { token: "{{rfq_number}}", label: "RFQ number" },
+  { token: "{{rfq_title}}", label: "RFQ title" },
+  { token: "{{due_date}}", label: "Response due" },
+  { token: "{{days_remaining}}", label: "Days remaining" },
+  { token: "{{portal_link}}", label: "Portal link" },
+  { token: "{{sender_name}}", label: "Your name" },
+  { token: "{{company_name}}", label: "Company name" },
+  { token: "{{project_name}}", label: "Project name" },
+] as const;
+
+/** Defaults seeded for a company the first time its reminders are opened. */
+export const DEFAULT_RFQ_REMINDER_TEMPLATES = [
+  {
+    name: "First chase",
+    trigger: "after_send" as const,
+    offsetDays: 3,
+    subject: "Following up: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "Just following up on the quote request we sent through for {{rfq_title}}.\n\n" +
+      "You can review it and send your price back here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 0,
+  },
+  {
+    name: "Due date approaching",
+    trigger: "before_due" as const,
+    offsetDays: 2,
+    subject: "Closing soon: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "A reminder that quotes for {{rfq_title}} close on {{due_date}} ({{days_remaining}} days away).\n\n" +
+      "Send your price through here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 1,
+  },
+  {
+    name: "Final chase",
+    trigger: "after_send" as const,
+    offsetDays: 14,
+    subject: "Last call: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "We haven't heard back on {{rfq_title}} and are about to award it.\n\n" +
+      "If you'd still like to quote, please send it through here: {{portal_link}}\n\n" +
+      "If it's not one for you, just let us know and we'll stop chasing.\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 2,
+  },
+];
+
+// ============================================
+// RFI (Request for Information) System
+// ============================================
+
+export const rfiStatusEnum = pgEnum("rfi_status", ["draft", "submitted", "under_review", "answered", "closed"]);
+
+// RFIs table
+export const rfis = pgTable("rfis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiNumber: text("rfi_number").notNull(), // e.g., "4504-RFI-001"
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  // RFI details
+  subject: text("subject").notNull(), // Brief subject line
+  question: text("question").notNull(), // The actual question/request (rich text)
+  
+  // Directed to (who needs to answer)
+  directedToType: text("directed_to_type").notNull(), // "client" | "architect" | "engineer" | "consultant" | "subcontractor" | "other"
+  directedToContactId: varchar("directed_to_contact_id").references(() => contacts.id),
+  directedToName: text("directed_to_name"), // Display name
+  directedToEmail: text("directed_to_email"), // For sending
+  
+  // Response
+  response: text("response"), // The answer (rich text)
+  respondedById: varchar("responded_by_id").references(() => users.id),
+  respondedByName: text("responded_by_name"),
+  respondedAt: timestamp("responded_at"),
+  
+  // Dates
+  dueDate: timestamp("due_date"),
+  closedAt: timestamp("closed_at"),
+  
+  // Priority and status
+  priority: text("priority").notNull().default("normal"), // "low" | "normal" | "high" | "urgent"
+  status: rfiStatusEnum("status").notNull().default("draft"),
+  
+  // File attachments
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Response attachments
+  responseAttachmentUrls: text("response_attachment_urls").array().notNull().default(sql`'{}'`),
+  responseAttachmentFileNames: text("response_attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Email tracking
+  sentAt: timestamp("sent_at"),
+  sentToEmail: text("sent_to_email"),
+  
+  // PDF generation
+  pdfUrl: text("pdf_url"),
+  
+  // Internal notes (not shared with external parties)
+  internalNotes: text("internal_notes"),
+  
+  // Creator
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("rfis_project_idx").on(table.projectId),
+  companyIdx: index("rfis_company_idx").on(table.companyId),
+  statusIdx: index("rfis_status_idx").on(table.status),
+}));
+
+export const insertRfiSchema = createInsertSchema(rfis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdById: true,
+  createdByName: true,
+  rfiNumber: true,
+}).extend({
+  subject: z.string().min(1, "Subject is required"),
+  question: z.string().min(10, "Question must be at least 10 characters"),
+  directedToType: z.enum(["client", "architect", "engineer", "consultant", "subcontractor", "other"]),
+  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+  attachmentUrls: z.array(z.string()).optional(),
+  attachmentFileNames: z.array(z.string()).optional(),
+  dueDate: z.coerce.date().optional(),
+});
+
+export type InsertRfi = z.infer<typeof insertRfiSchema>;
+export type Rfi = typeof rfis.$inferSelect;
+
+// RFI Comments/Activity (for conversation thread)
+export const rfiComments = pgTable("rfi_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiId: varchar("rfi_id").notNull().references(() => rfis.id, { onDelete: "cascade" }),
+  
+  content: text("content").notNull(),
+  
+  // Attachments
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Who posted
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  isExternalResponse: boolean("is_external_response").notNull().default(false), // If response came from external party
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfiCommentSchema = createInsertSchema(rfiComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRfiComment = z.infer<typeof insertRfiCommentSchema>;
+export type RfiComment = typeof rfiComments.$inferSelect;
+
+// Task Comments (conversation thread on a task; tasks are notes with type="task")
+export const taskComments = pgTable("task_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+  content: text("content").notNull(), // may contain @[Name](userId:uuid) mention markup
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(), // cached for display
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  editedAt: timestamp("edited_at"), // null until the author edits the comment
+});
+
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  editedAt: true,
+});
+
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+export type TaskComment = typeof taskComments.$inferSelect;
+
+// Task Activity — auto-generated audit lines merged into the task comment feed.
+// System-generated, not editable/deletable, no notifications. eventType examples:
+// "status" | "priority" | "title" | "due_date" | "assignee" |
+// "checklist_add" | "checklist_remove" | "checklist_complete" | "checklist_uncomplete"
+export const taskActivity = pgTable("task_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  actorId: varchar("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull(), // cached for display
+  eventType: text("event_type").notNull(),
+  summary: text("summary").notNull(), // server-rendered human phrasing (no actor prefix)
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  detail: text("detail"), // e.g. checklist item text
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdx: index("task_activity_task_idx").on(table.taskId),
+  createdAtIdx: index("task_activity_created_at_idx").on(table.createdAt),
+}));
+
+export const insertTaskActivitySchema = createInsertSchema(taskActivity).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTaskActivity = z.infer<typeof insertTaskActivitySchema>;
+export type TaskActivity = typeof taskActivity.$inferSelect;
+
+// ============================================
+// PURCHASE ORDERS
+// ============================================
+
+// Purchase Order type enum (main = office, site = quick field PO)
+export const purchaseOrderTypeEnum = pgEnum("purchase_order_type", ["main", "site"]);
+
+// Purchase Order status enum
+// Active set (task #296): draft, sent, invoiced, partially_paid, paid, cancelled.
+// The older receipt-flow values (pending_approval, acknowledged, accepted,
+// partially_received, completed, billed) are kept in the pg enum because
+// Postgres enums can't drop values cheaply; the startup migration in
+// `server/index.ts` collapses any rows still on those values into the
+// new set. No new code writes them.
+export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
+  "draft",
+  "pending_approval",
+  "sent",
+  "acknowledged",
+  "accepted",
+  "partially_received",
+  "completed",
+  "billed",
+  "cancelled",
+  "invoiced",
+  "partially_paid",
+  "paid",
+]);
+
+// Purchase Order GST mode
+export const purchaseOrderGstModeEnum = pgEnum("purchase_order_gst_mode", ["inclusive", "exclusive", "gst_free"]);
+
+// Purchase Orders table
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Scope stage link (optional - for displaying POs in scope view)
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+  
+  // PO identification
+  poNumber: text("po_number").notNull(), // Auto-generated: PO-2025-001 or SPO-2025-001
+  poType: purchaseOrderTypeEnum("po_type").notNull().default("main"),
+  
+  // Supplier — either a contact OR a team-member user flagged as subcontractor.
+  // Exactly one of supplierId / supplierUserId should be set; supplierName is the cached display label.
+  supplierId: varchar("supplier_id").references(() => contacts.id),
+  supplierUserId: varchar("supplier_user_id").references(() => users.id),
+  supplierName: text("supplier_name"), // Cached for display and quick POs without contact
+  
+  // Description & Scope
+  title: text("title"), // Brief title/description
+  description: text("description"), // Brief description
+  scope: text("scope"), // Detailed scope of work (rich text)
+  
+  // Terms & Conditions
+  termsAndConditionsId: varchar("terms_and_conditions_id"), // Reference to T&C template
+  termsAndConditions: text("terms_and_conditions"), // Actual T&C content
+  
+  // Dates
+  poDate: timestamp("po_date").notNull().defaultNow(),
+  requiredByDate: timestamp("required_by_date"),
+  
+  // Delivery
+  deliveryReference: text("delivery_reference"),
+  deliveryAttention: text("delivery_attention"),
+  deliveryContact: text("delivery_contact"),
+  deliveryAddress: text("delivery_address"),
+  deliveryInstructions: text("delivery_instructions"),
+  
+  // Financial
+  gstMode: purchaseOrderGstModeEnum("gst_mode").notNull().default("inclusive"),
+  subtotal: integer("subtotal").notNull().default(0), // In cents
+  gstAmount: integer("gst_amount").notNull().default(0), // In cents
+  total: integer("total").notNull().default(0), // In cents
+  
+  // Status & Workflow
+  status: purchaseOrderStatusEnum("status").notNull().default("draft"),
+  
+  // Approval (for site POs with thresholds)
+  requiresApproval: boolean("requires_approval").notNull().default(false),
+  approvalThreshold: integer("approval_threshold"), // Auto-approve below this amount (cents)
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  
+  // Sending
+  sentAt: timestamp("sent_at"),
+  sentToEmail: text("sent_to_email"),
+  
+  // Notes
+  internalNotes: text("internal_notes"), // Internal only, not on PDF
+  
+  // Source tracking (for imports)
+  sourceEstimateId: varchar("source_estimate_id").references(() => estimates.id),
+  sourceQuoteIds: json("source_quote_ids").default([]), // Array of RFQ quote IDs if converted from quotes
+
+  // Xero integration
+  xeroPurchaseOrderId: text("xero_purchase_order_id"), // Linked Xero PurchaseOrderID
+  xeroPurchaseOrderNumber: text("xero_purchase_order_number"), // Linked Xero PurchaseOrderNumber
+  xeroStatus: text("xero_status"), // Last status mirrored from Xero (DRAFT|SUBMITTED|AUTHORISED|BILLED|DELETED)
+  xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful Xero PO push or status pull
+
+  // Site PO — cost code link and bill matching
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  matchedBillId: varchar("matched_bill_id"), // ID of the matched bill (no FK constraint to avoid circular dep)
+  matchedAt: timestamp("matched_at"),
+
+  // Creator
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  
+  // Metadata
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("purchase_orders_company_idx").on(table.companyId),
+  projectIdx: index("purchase_orders_project_idx").on(table.projectId),
+  statusIdx: index("purchase_orders_status_idx").on(table.status),
+  poNumberIdx: index("purchase_orders_po_number_idx").on(table.poNumber),
+}));
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  poType: z.enum(["main", "site"]).default("main"),
+  status: z.enum(["draft", "sent", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
+  gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
+  poDate: z.coerce.date().default(() => new Date()),
+  requiredByDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  total: z.number().default(0),
+  sourceQuoteIds: z.array(z.string()).optional(),
+});
+
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+// Purchase Order Items (line items)
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  // Item details
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
+  unit: text("unit"), // e.g., "each", "m2", "lm", "hours"
+  unitPrice: integer("unit_price").notNull().default(0), // In cents
+  total: integer("total").notNull().default(0), // In cents (quantity * unitPrice)
+  
+  // GST
+  isGstFree: boolean("is_gst_free").notNull().default(false),
+  gstAmount: integer("gst_amount").notNull().default(0), // In cents
+  
+  // Cost tracking
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  
+  // Source tracking (if imported from estimate)
+  sourceEstimateItemId: varchar("source_estimate_item_id").references(() => estimateItems.id),
+  
+  // Source tracking (if generated from subcontractor timesheet)
+  sourceTimesheetId: varchar("source_timesheet_id"),
+
+  // Source tracking (if generated from a selection conversion)
+  selectionOptionId: varchar("selection_option_id").references(() => selectionOptions.id, { onDelete: "set null" }),
+  
+  // Order for drag-and-drop reordering
+  displayOrder: integer("display_order").notNull().default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.string().default("1"),
+  unitPrice: z.number().default(0),
+  total: z.number().default(0),
+  gstAmount: z.number().default(0),
+  displayOrder: z.number().default(0),
+});
+
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+
+// Purchase Order Attachments (photos, documents)
+export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type"), // MIME type
+  fileSize: integer("file_size"), // In bytes
+  
+  // For OCR receipts
+  isReceipt: boolean("is_receipt").notNull().default(false),
+  ocrData: json("ocr_data"), // Raw OCR results if processed
+  
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+});
+
+export const insertPurchaseOrderAttachmentSchema = createInsertSchema(purchaseOrderAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPurchaseOrderAttachment = z.infer<typeof insertPurchaseOrderAttachmentSchema>;
+export type PurchaseOrderAttachment = typeof purchaseOrderAttachments.$inferSelect;
+
+// Purchase Order Signatures (for supplier acceptance)
+export const purchaseOrderSignatures = pgTable("purchase_order_signatures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  // Signer details
+  signerName: text("signer_name").notNull(),
+  signerEmail: text("signer_email"),
+  signerRole: text("signer_role"), // e.g., "Supplier Representative"
+  
+  // Signature
+  signatureImageUrl: text("signature_image_url"), // Base64 or URL
+  signedAt: timestamp("signed_at").notNull(),
+  
+  // Audit trail
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Token for supplier portal link
+  signatureToken: text("signature_token").unique(),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderSignatureSchema = createInsertSchema(purchaseOrderSignatures).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  signedAt: z.coerce.date(),
+});
+
+export type InsertPurchaseOrderSignature = z.infer<typeof insertPurchaseOrderSignatureSchema>;
+export type PurchaseOrderSignature = typeof purchaseOrderSignatures.$inferSelect;
+
+// Purchase Order Templates (for quick reuse)
+export const purchaseOrderTemplates = pgTable("purchase_order_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  name: text("name").notNull(), // e.g., "Standard Framing Pack"
+  description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  
+  // Default values
+  scope: text("scope"),
+  termsAndConditionsId: varchar("terms_and_conditions_id"),
+  
+  // Template items stored as JSON
+  items: json("items").default([]), // Array of {description, quantity, unit, unitPrice, costCodeId}
+  
+  // Favorite cost codes for quick selection (for site POs)
+  favoriteCostCodeIds: json("favorite_cost_code_ids").default([]), // Array of cost code IDs
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * A saved proposal document: its sections and its layout, with no project,
+ * client or estimate attached.
+ *
+ * `sections` is deliberately the same shape as a row in proposal_sections
+ * minus the identifiers, so applying a template is an insert rather than a
+ * translation — and so a new section field appears in templates the moment it
+ * appears in proposals, without touching this table.
+ */
+export const proposalTemplates = pgTable("proposal_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(),
+  description: text("description"),
+
+  sections: jsonb("sections").$type<Array<{
+    sectionType: string;
+    name: string;
+    order: number;
+    content?: Record<string, unknown> | null;
+    description?: string | null;
+    descriptionHtml?: string | null;
+    isEnabled?: boolean;
+    showPricing?: boolean;
+    showSubtotal?: boolean;
+  }>>().notNull().default([]),
+
+  /** Stored exactly as proposals.layoutSettings, so the Layout panel is shared. */
+  layoutSettings: jsonb("layout_settings").$type<Record<string, any>>().notNull().default({}),
+
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyNameIdx: index("proposal_templates_company_idx").on(table.companyId, table.name),
+}));
+
+export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProposalTemplate = z.infer<typeof insertProposalTemplateSchema>;
+export type ProposalTemplate = typeof proposalTemplates.$inferSelect;
+
+export const insertPurchaseOrderTemplateSchema = createInsertSchema(purchaseOrderTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.string().optional(),
+    unit: z.string().optional(),
+    unitPrice: z.number().optional(),
+    costCodeId: z.string().optional(),
+  })).optional(),
+  favoriteCostCodeIds: z.array(z.string()).optional(),
+});
+
+export type InsertPurchaseOrderTemplate = z.infer<typeof insertPurchaseOrderTemplateSchema>;
+export type PurchaseOrderTemplate = typeof purchaseOrderTemplates.$inferSelect;
+
+// Template Categories (hierarchical categories for organizing templates)
+export const templateCategories = pgTable("template_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  parentId: varchar("parent_id"),
+  templateType: text("template_type").notNull(), // 'rfq', 'rfi', 'estimate', 'selection', 'po', etc.
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTemplateCategorySchema = createInsertSchema(templateCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateType: z.enum(["rfq", "rfi", "estimate", "selection", "po", "schedule", "scope"]),
+});
+
+export type InsertTemplateCategory = z.infer<typeof insertTemplateCategorySchema>;
+export type TemplateCategory = typeof templateCategories.$inferSelect;
+
+// RFQ Templates (reusable RFQ templates with line items)
+export const rfqTemplates = pgTable("rfq_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  
+  // Template content
+  introText: text("intro_text"),
+  scope: text("scope"),
+  termsAndConditions: text("terms_and_conditions"),
+  
+  // Template items stored as JSON (line items with full details)
+  items: json("items").default([]),
+  
+  // Trade link for filtering
+  tradeId: varchar("trade_id"),
+  tradeName: text("trade_name"),
+  
+  isPublic: boolean("is_public").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqTemplateSchema = createInsertSchema(rfqTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.string().optional(),
+    unit: z.string().optional(),
+    notes: z.string().optional(),
+    sortOrder: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertRfqTemplate = z.infer<typeof insertRfqTemplateSchema>;
+export type RfqTemplate = typeof rfqTemplates.$inferSelect;
+
+// RFI Templates (reusable RFI templates)
+export const rfiTemplates = pgTable("rfi_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  
+  // Template content
+  subjectTemplate: text("subject_template"),
+  questionTemplate: text("question_template"),
+  
+  // Directed to defaults
+  defaultDirectedToType: text("default_directed_to_type"),
+  defaultPriority: text("default_priority").default("normal"),
+  
+  isPublic: boolean("is_public").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfiTemplateSchema = createInsertSchema(rfiTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  defaultDirectedToType: z.enum(["client", "architect", "engineer", "consultant", "subcontractor", "other"]).optional(),
+  defaultPriority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+});
+
+export type InsertRfiTemplate = z.infer<typeof insertRfiTemplateSchema>;
+export type RfiTemplate = typeof rfiTemplates.$inferSelect;
+
+// Favorite Suppliers (for quick site PO creation)
+export const favoriteSuppliers = pgTable("favorite_suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  supplierId: varchar("supplier_id").references(() => contacts.id),
+  supplierName: text("supplier_name").notNull(), // For quick picks like "Bunnings"
+  
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("favorite_suppliers_user_idx").on(table.userId),
+}));
+
+export const insertFavoriteSupplierSchema = createInsertSchema(favoriteSuppliers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFavoriteSupplier = z.infer<typeof insertFavoriteSupplierSchema>;
+export type FavoriteSupplier = typeof favoriteSuppliers.$inferSelect;
+
+// Favorite Cost Codes (for quick site PO creation - user-specific)
+export const favoriteCostCodes = pgTable("favorite_cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  costCodeId: varchar("cost_code_id").notNull().references(() => costCodes.id),
+  
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("favorite_cost_codes_user_idx").on(table.userId),
+}));
+
+export const insertFavoriteCostCodeSchema = createInsertSchema(favoriteCostCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFavoriteCostCode = z.infer<typeof insertFavoriteCostCodeSchema>;
+export type FavoriteCostCode = typeof favoriteCostCodes.$inferSelect;
+
+// ==================== REMINDERS SYSTEM ====================
+
+// Business Reminders (company-wide recurring reminders set by admins)
+export const businessReminders = pgTable("business_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Reminder details
+  title: text("title").notNull(), // "Fill in your timesheet"
+  description: text("description"),
+  
+  // Target type - what this reminder is for
+  targetType: text("target_type").notNull(), // "timesheet" | "site_diary" | "custom"
+  
+  // Schedule - when to send
+  scheduleType: text("schedule_type").notNull().default("daily"), // "daily" | "weekly" | "monthly" | "custom"
+  scheduleTime: text("schedule_time").notNull(), // "16:30" (24hr format)
+  scheduleDays: json("schedule_days").default([]), // [1,2,3,4,5] for Mon-Fri, or [1,15] for monthly
+  
+  // Who receives it - like task templates, supports roles and/or specific users
+  targetUsers: text("target_users").notNull().default("all"), // "all" | "field" | "office" | "specific" | "roles"
+  targetRoleIds: json("target_role_ids").default([]), // Array of role IDs when targetUsers includes role targeting
+  specificUserIds: json("specific_user_ids").default([]), // Array of user IDs when targetUsers includes specific users
+  
+  // Delivery methods
+  sendInApp: boolean("send_in_app").notNull().default(true),
+  sendEmail: boolean("send_email").notNull().default(false),
+  sendPush: boolean("send_push").notNull().default(true),
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("business_reminders_company_idx").on(table.companyId),
+}));
+
+export const insertBusinessReminderSchema = createInsertSchema(businessReminders).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  scheduleDays: z.array(z.number()).optional(),
+  targetRoleIds: z.array(z.string()).optional(),
+  specificUserIds: z.array(z.string()).optional(),
+});
+
+export type InsertBusinessReminder = z.infer<typeof insertBusinessReminderSchema>;
+export type BusinessReminder = typeof businessReminders.$inferSelect;
+
+// Personal/Item Reminders (user-created reminders, can be attached to items)
+export const reminders = pgTable("reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Who created/owns it
+  
+  // Reminder details
+  title: text("title").notNull(),
+  description: text("description"),
+  
+  // Optional item linking - flexible polymorphic relation
+  linkedItemType: text("linked_item_type"), // "task" | "site_diary" | "timesheet" | "defect" | "invoice" | "schedule" | null
+  linkedItemId: varchar("linked_item_id"), // ID of the linked item
+  linkedProjectId: varchar("linked_project_id").references(() => projects.id), // Project context if applicable
+  
+  // Who gets reminded (for item-attached, defaults to assignee)
+  targetUserId: varchar("target_user_id").notNull().references(() => users.id),
+  
+  // Schedule
+  reminderType: text("reminder_type").notNull().default("one_time"), // "one_time" | "recurring"
+  dueAt: timestamp("due_at"), // For one-time reminders
+  scheduleTime: text("schedule_time"), // "16:30" for recurring
+  schedulePattern: text("schedule_pattern"), // "daily" | "weekly" | "weekdays" | "custom"
+  scheduleDays: json("schedule_days").default([]), // [1,2,3,4,5] for custom days
+  
+  // Delivery methods
+  sendInApp: boolean("send_in_app").notNull().default(true),
+  sendEmail: boolean("send_email").notNull().default(false),
+  sendPush: boolean("send_push").notNull().default(true),
+  
+  // "low" | "normal" | "high" — collected by both reminder forms and used to
+  // colour the row in User Workspace (migration 0101).
+  priority: text("priority").notNull().default("normal"),
+
+  // Status. The processor also uses "processing" while a tick is mid-flight.
+  status: text("status").notNull().default("active"), // "active" | "processing" | "snoozed" | "completed" | "cancelled"
+  snoozedUntil: timestamp("snoozed_until"),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("reminders_user_idx").on(table.userId),
+  targetUserIdx: index("reminders_target_user_idx").on(table.targetUserId),
+  linkedItemIdx: index("reminders_linked_item_idx").on(table.linkedItemType, table.linkedItemId),
+  dueAtIdx: index("reminders_due_at_idx").on(table.dueAt),
+}));
+
+export const insertReminderSchema = createInsertSchema(reminders).omit({
+  id: true,
+  companyId: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  targetUserId: z.string().optional(),
+  scheduleDays: z.array(z.number()).optional(),
+  dueAt: z.string().or(z.date()).optional(),
+  snoozedUntil: z.string().or(z.date()).optional(),
+});
+
+export type InsertReminder = z.infer<typeof insertReminderSchema>;
+export type Reminder = typeof reminders.$inferSelect;
+
+// Reminder Notifications (delivery tracking)
+export const reminderNotifications = pgTable("reminder_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Source - either a business reminder or personal reminder
+  businessReminderId: varchar("business_reminder_id").references(() => businessReminders.id, { onDelete: "cascade" }),
+  reminderId: varchar("reminder_id").references(() => reminders.id, { onDelete: "cascade" }),
+  
+  // Target user
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Delivery status
+  deliveryMethod: text("delivery_method").notNull().default("in_app"), // "in_app" | "email" | "push"
+  status: text("status").notNull().default("pending"), // "pending" | "sent" | "delivered" | "read" | "dismissed" | "snoozed"
+  
+  // Timestamps
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  readAt: timestamp("read_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  snoozedUntil: timestamp("snoozed_until"),
+  
+  // Message content (denormalized for history)
+  title: text("title").notNull(),
+  body: text("body"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("reminder_notifications_user_idx").on(table.userId),
+  statusIdx: index("reminder_notifications_status_idx").on(table.status),
+  scheduledForIdx: index("reminder_notifications_scheduled_for_idx").on(table.scheduledFor),
+}));
+
+export const insertReminderNotificationSchema = createInsertSchema(reminderNotifications).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  scheduledFor: z.string().or(z.date()),
+});
+
+export type InsertReminderNotification = z.infer<typeof insertReminderNotificationSchema>;
+export type ReminderNotification = typeof reminderNotifications.$inferSelect;
+
+// In-App Notifications (for task assignments, mentions, etc.)
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "task_assigned" | "task_mentioned" | "task_completed" etc.
+  title: text("title").notNull(),
+  message: text("message"),
+  link: text("link"), // URL to navigate to when clicked
+  entityType: text("entity_type"), // "task" | "project" | "message" etc.
+  entityId: varchar("entity_id"), // ID of the related entity
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+}, (table) => ({
+  userIdx: index("notifications_user_idx").on(table.userId),
+  companyIdx: index("notifications_company_idx").on(table.companyId),
+  isReadIdx: index("notifications_is_read_idx").on(table.isRead),
+  createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+}));
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+  readAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+// Device Push Tokens (Expo push notifications for the mobile app)
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull(), // Expo push token, e.g. ExponentPushToken[...]
+  platform: text("platform").notNull().default("ios"), // "ios" | "android"
+  deviceName: text("device_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("push_tokens_user_idx").on(table.userId),
+  tokenUnique: uniqueIndex("push_tokens_token_unique").on(table.token),
+}));
+
+export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
+export type PushToken = typeof pushTokens.$inferSelect;
+
+// Product suggestions / feedback. Submitted by any authenticated user, scoped
+// to their own company on submission, but reviewed across ALL companies by
+// BuildPro platform staff (isPlatformStaff). Identity/company are derived
+// server-side from the session — never trusted from the request body.
+export const suggestions = pgTable("suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  section: text("section").notNull(), // app area, e.g. "bills", "schedule", "general"
+  message: text("message").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "set null" }),
+  roleName: text("role_name"), // submitter's role name at time of submission
+  sourcePage: text("source_page"), // route/path the user was on when submitting
+  platform: text("platform").notNull().default("web"), // "web" | "mobile"
+  appVersion: text("app_version"),
+  status: text("status").notNull().default("new"), // new | reviewing | planned | done | declined
+  priority: text("priority"), // low | medium | high (null until triaged)
+  internalNote: text("internal_note"), // staff-only note
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  statusIdx: index("suggestions_status_idx").on(table.status),
+  sectionIdx: index("suggestions_section_idx").on(table.section),
+  companyIdx: index("suggestions_company_idx").on(table.companyId),
+}));
+
+// Client supplies only section/message/sourcePage/platform/appVersion; the
+// server attaches userId, companyId, roleName, status, priority, note.
+export const insertSuggestionSchema = createInsertSchema(suggestions).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  roleName: true,
+  status: true,
+  priority: true,
+  internalNote: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
+export type Suggestion = typeof suggestions.$inferSelect;
+
+// Enriched row returned to staff: includes submitter + company display fields.
+export type SuggestionWithMeta = Suggestion & {
+  userName: string | null;
+  userEmail: string | null;
+  companyName: string | null;
+};
+
+// Google Drive Folder Templates
+export const driveFolderTemplates = pgTable("drive_folder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // Template name e.g., "New Project Folders"
+  description: text("description"),
+  folders: json("folders").notNull().default([]), // Array of { name, subfolders: [] } for nested structure
+  isDefault: boolean("is_default").notNull().default(false), // Auto-apply to new projects
+  applyOnPhase: text("apply_on_phase"), // Optional: apply when project enters this phase
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDriveFolderTemplateSchema = createInsertSchema(driveFolderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDriveFolderTemplate = z.infer<typeof insertDriveFolderTemplateSchema>;
+export type DriveFolderTemplate = typeof driveFolderTemplates.$inferSelect;
+
+// Drive File Attachments (linking Drive files to tasks, notes, etc.)
+export const driveFileAttachments = pgTable("drive_file_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Google Drive file info
+  driveFileId: text("drive_file_id").notNull(), // Google Drive file ID
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type"),
+  webViewLink: text("web_view_link"), // Link to view in Google
+  thumbnailLink: text("thumbnail_link"),
+  fileSize: integer("file_size"), // Size in bytes
+  
+  // What this file is attached to
+  attachedToType: text("attached_to_type").notNull(), // "task" | "note" | "project" | "contact" | "bill" | "siteDiary"
+  attachedToId: varchar("attached_to_id").notNull(),
+  
+  // Metadata
+  attachedBy: varchar("attached_by").references(() => users.id),
+  attachedByName: text("attached_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  attachedToIdx: index("drive_file_attachments_attached_to_idx").on(table.attachedToType, table.attachedToId),
+  driveFileIdx: index("drive_file_attachments_drive_file_idx").on(table.driveFileId),
+}));
+
+export const insertDriveFileAttachmentSchema = createInsertSchema(driveFileAttachments).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertDriveFileAttachment = z.infer<typeof insertDriveFileAttachmentSchema>;
+export type DriveFileAttachment = typeof driveFileAttachments.$inferSelect;
+
+// Drive File Activity Log (track file operations)
+export const driveFileActivityLogs = pgTable("drive_file_activity_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  
+  // Action details
+  action: text("action").notNull(), // "upload" | "download" | "delete" | "create_folder" | "move" | "rename"
+  driveFileId: text("drive_file_id"), // Google Drive file ID (if applicable)
+  fileName: text("file_name"),
+  folderPath: text("folder_path"), // Human-readable path
+  
+  // Who did it
+  userId: varchar("user_id").references(() => users.id),
+  userName: text("user_name"),
+  
+  // Additional context
+  details: json("details").default({}), // Extra info like destination folder, old name, etc.
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("drive_file_activity_logs_company_idx").on(table.companyId),
+  projectIdx: index("drive_file_activity_logs_project_idx").on(table.projectId),
+  userIdx: index("drive_file_activity_logs_user_idx").on(table.userId),
+  createdAtIdx: index("drive_file_activity_logs_created_at_idx").on(table.createdAt),
+}));
+
+export const insertDriveFileActivityLogSchema = createInsertSchema(driveFileActivityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDriveFileActivityLog = z.infer<typeof insertDriveFileActivityLogSchema>;
+export type DriveFileActivityLog = typeof driveFileActivityLogs.$inferSelect;
+
+// Folder Templates - define standard folder structures for projects
+export const folderTemplates = pgTable("folder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(), // Template name like "Standard Project", "Renovation", etc.
+  description: text("description"),
+  
+  // Structure as JSON array of folder objects with nesting
+  // e.g. [{ name: "Plans", children: [{ name: "Drawings" }, { name: "Specs" }] }]
+  folderStructure: json("folder_structure").notNull().default([]),
+  
+  // When to auto-apply this template
+  autoApply: boolean("auto_apply").default(false), // Auto-create when new project is made
+  projectPhase: text("project_phase"), // Apply when project reaches this phase
+  
+  isDefault: boolean("is_default").default(false), // Company default template
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("folder_templates_company_idx").on(table.companyId),
+}));
+
+export const insertFolderTemplateSchema = createInsertSchema(folderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFolderTemplate = z.infer<typeof insertFolderTemplateSchema>;
+export type FolderTemplate = typeof folderTemplates.$inferSelect;
+
+// ============================================
+// PRICE LIST FEATURE
+// ============================================
+
+// A price list is a BOOK of items: one supplier's price book ("The Plaster Shop",
+// "Bunnings"), your own labour rate card, or your own internal/design catalogue.
+// `kind` drives which columns and form fields make sense — a labour rate has no
+// lead time, a supplier book is about what you PAY, an internal list about what
+// you CHARGE. Items live in exactly one list (Jed, 2026-08-18).
+export const priceListKindEnum = pgEnum("price_list_kind", [
+  "supplier",
+  "labour",
+  "internal",
+]);
+
+export const priceLists = pgTable("price_lists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: priceListKindEnum("kind").notNull().default("supplier"),
+  // Set when kind = 'supplier'. Points at contacts (contactType='supplier') — NOT the
+  // deprecated `suppliers` table.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
+  description: text("description"),
+  colour: text("colour"),
+  isDefault: boolean("is_default").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  // Supplier price books are dated — keep last quarter's list for audit.
+  effectiveFrom: timestamp("effective_from"),
+  effectiveTo: timestamp("effective_to"),
+  sourceNote: text("source_note"),
+  lastImportedAt: timestamp("last_imported_at"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_lists_company_idx").on(table.companyId),
+  supplierIdx: index("price_lists_supplier_idx").on(table.supplierId),
+  uniqueNamePerCompany: uniqueIndex("price_lists_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertPriceListSchema = createInsertSchema(priceLists).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  kind: z.enum(["supplier", "labour", "internal"]).default("supplier"),
+  supplierId: z.string().nullable().optional(),
+  effectiveFrom: z.coerce.date().nullable().optional(),
+  effectiveTo: z.coerce.date().nullable().optional(),
+  lastImportedAt: z.coerce.date().nullable().optional(),
+});
+
+export type InsertPriceList = z.infer<typeof insertPriceListSchema>;
+export type PriceList = typeof priceLists.$inferSelect;
+
+// A GROUP is a section INSIDE one price list — "Plasterboard", "Cornice",
+// "Compounds" belong to The Plaster Shop's book and nowhere else. This replaces the
+// old company-global `price_list_categories`, which sat outside any list and made the
+// layering ambiguous. Same shape as `estimate_groups`, so the grid can reuse its
+// reorder/collapse behaviour.
+export const priceListGroups = pgTable("price_list_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  colour: text("colour"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_groups_company_idx").on(table.companyId),
+  priceListIdx: index("price_list_groups_price_list_idx").on(table.priceListId),
+  uniqueNamePerList: uniqueIndex("price_list_groups_name_unique").on(table.priceListId, table.name),
+}));
+
+export const insertPriceListGroupSchema = createInsertSchema(priceListGroups).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  priceListId: z.string().min(1, "A price list is required"),
+  sortOrder: z.number().int().default(0),
+});
+
+export type InsertPriceListGroup = z.infer<typeof insertPriceListGroupSchema>;
+export type PriceListGroup = typeof priceListGroups.$inferSelect;
+
+// Unit of measure is FREE TEXT, deliberately. The canonical per-company list comes from
+// Field Settings (`estimate_item.unit`), and `shared/units.ts` reconciles spellings across
+// surfaces. This was a 14-value pgEnum while the form offered 19 options, so 12 of them
+// failed to insert. Matches `estimate_items.unitType`, which is also text.
+
+// Price List Items (main catalog of products/materials/services)
+export const priceListItems = pgTable("price_list_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // The book this item belongs to. Exactly one.
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+
+  // Core details
+  name: text("name").notNull(), // Official product name
+  nickname: text("nickname"), // What the team calls it
+  code: text("code"), // SKU / internal reference code
+  description: text("description"), // Detailed notes, specifications
+  // The section within the list. Null = ungrouped, shown under "Ungrouped".
+  groupId: varchar("group_id").references(() => priceListGroups.id, { onDelete: "set null" }),
+  // Carried onto an estimate line with the item, so provenance keeps its cost code.
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  unitType: text("unit_type").notNull().default("each"),
+  
+  // Pricing (stored in cents for accuracy)
+  costPrice: integer("cost_price").notNull().default(0), // What you pay (cents, ex GST)
+  sellPrice: integer("sell_price"), // What you charge (cents, ex GST) - optional, can be calculated
+  markupPercent: numeric("markup_percent", { precision: 10, scale: 2 }), // Markup percentage
+  gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether prices include GST
+  
+  // Supplier info (from contacts with contactType = 'supplier')
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
+  supplierCode: text("supplier_code"), // Supplier's product reference number
+  leadTimeDays: integer("lead_time_days"), // Typical delivery timeframe in days
+  
+  // Additional details
+  brand: text("brand"), // Manufacturer brand
+  imageUrl: text("image_url"), // Product photo
+  tags: json("tags").default([]), // Custom tags for filtering (string array)
+  notes: text("notes"), // Internal notes
+  
+  // Status
+  isActive: boolean("is_active").notNull().default(true),
+  
+  // Price tracking
+  lastPriceUpdate: timestamp("last_price_update"), // When price was last updated
+  priceHistory: json("price_history").default([]), // Array of { date, costPrice, sellPrice, source }
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_items_company_idx").on(table.companyId),
+  priceListIdx: index("price_list_items_price_list_idx").on(table.priceListId),
+  groupIdx: index("price_list_items_group_idx").on(table.groupId),
+  supplierIdx: index("price_list_items_supplier_idx").on(table.supplierId),
+  codeIdx: index("price_list_items_code_idx").on(table.companyId, table.code),
+}));
+
+export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  priceListId: z.string().min(1, "A price list is required"),
+  name: z.string().trim().min(1, "Name is required"),
+  groupId: z.string().nullable().optional(),
+  unitType: z.string().trim().min(1).default("each"),
+  costCodeId: z.string().nullable().optional(),
+  // CENTS, integer — never dollars. The form converts at the boundary.
+  costPrice: z.number().int("Cost must be a whole number of cents").default(0),
+  sellPrice: z.number().int("Sell must be a whole number of cents").nullable().optional(),
+  markupPercent: z.string().optional().transform(val => val === "" ? null : val),
+  tags: z.array(z.string()).optional(),
+  priceHistory: z.array(z.object({
+    date: z.string(),
+    costPrice: z.number(),
+    sellPrice: z.number().optional(),
+    source: z.string().optional(), // "manual" | "bill" | "import"
+  })).optional(),
+});
+
+export type InsertPriceListItem = z.infer<typeof insertPriceListItemSchema>;
+export type PriceListItem = typeof priceListItems.$inferSelect;
+
+// Bill Line Item to Price List Item link (for AI review tracking)
+// This tracks which bill line items have been reviewed and linked to price list
+export const billLineItemSkus = pgTable("bill_line_item_skus", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  sku: text("sku").notNull(),
+  /** Where the code came from, so a bad extraction run can be found and cleared. */
+  source: text("source").notNull().default("pdf"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lineUnique: uniqueIndex("bill_line_item_skus_line_unique").on(table.billLineItemId),
+  companyIdx: index("bill_line_item_skus_company_idx").on(table.companyId),
+  skuIdx: index("bill_line_item_skus_sku_idx").on(table.companyId, table.sku),
+}));
+
+export type BillLineItemSku = typeof billLineItemSkus.$inferSelect;
+
+export const billLineItemPriceLinks = pgTable("bill_line_item_price_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
+  reviewStatus: text("review_status").notNull().default("pending"), // "pending" | "linked" | "created" | "skipped"
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  billLineItemIdx: index("bill_line_item_price_links_bli_idx").on(table.billLineItemId),
+  priceListItemIdx: index("bill_line_item_price_links_pli_idx").on(table.priceListItemId),
+  statusIdx: index("bill_line_item_price_links_status_idx").on(table.reviewStatus),
+}));
+
+export const insertBillLineItemPriceLinkSchema = createInsertSchema(billLineItemPriceLinks).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  reviewStatus: z.enum(["pending", "linked", "created", "skipped"]).default("pending"),
+  reviewedAt: z.coerce.date().optional(),
+});
+
+export type InsertBillLineItemPriceLink = z.infer<typeof insertBillLineItemPriceLinkSchema>;
+export type BillLineItemPriceLink = typeof billLineItemPriceLinks.$inferSelect;
+
+// Dashboard View visibility enum
+export const dashboardViewVisibilityEnum = pgEnum("dashboard_view_visibility", [
+  "private",      // Only creator can see
+  "by_role",      // Specific roles can see
+  "by_user",      // Specific users can see
+  "everyone",     // Company-wide visibility
+]);
+
+// Dashboard View type enum
+export const dashboardViewTypeEnum = pgEnum("dashboard_view_type", [
+  "personal",     // User's personal workspace dashboard
+  "business",     // Company-wide business dashboard
+]);
+
+// Newer-style dashboard scope used by per-user workspace persistence.
+// Additive enum so existing `view_type` data remains untouched.
+export const dashboardTypeEnum = pgEnum("dashboard_type", [
+  "business",
+  "project",
+  "user_workspace",
+]);
+
+// Dashboard Views - shared across all projects for a company
+export const dashboardViews = pgTable("dashboard_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  creatorId: varchar("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  viewType: dashboardViewTypeEnum("view_type").notNull().default("personal"), // personal or business
+  // New nullable scope; user_workspace rows store per-user layout in `widgets`
+  dashboardType: dashboardTypeEnum("dashboard_type").notNull().default("business"),
+  // For user_workspace rows, the owning user (one row per user)
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  visibility: dashboardViewVisibilityEnum("visibility").notNull().default("private"),
+  widgets: jsonb("widgets").notNull().default([]), // Array of Widget objects
+  backgroundId: text("background_id").default("default"),
+  isDefault: boolean("is_default").notNull().default(false), // Default view for the company
+  isCompanyDefault: boolean("is_company_default").notNull().default(false), // Main view everyone sees
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("dashboard_views_company_idx").on(table.companyId),
+  creatorIdx: index("dashboard_views_creator_idx").on(table.creatorId),
+  viewTypeIdx: index("dashboard_views_view_type_idx").on(table.viewType),
+  dashboardTypeIdx: index("dashboard_views_dashboard_type_idx").on(table.dashboardType),
+  userIdx: index("dashboard_views_user_idx").on(table.userId),
+}));
+
+// Dashboard View Permissions - for role/user sharing
+export const dashboardViewPermissions = pgTable("dashboard_view_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  viewId: varchar("view_id").notNull().references(() => dashboardViews.id, { onDelete: "cascade" }),
+  roleId: varchar("role_id").references(() => userRoles.id, { onDelete: "cascade" }), // For by_role visibility
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }), // For by_user visibility
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  viewIdx: index("dashboard_view_permissions_view_idx").on(table.viewId),
+  roleIdx: index("dashboard_view_permissions_role_idx").on(table.roleId),
+  userIdx: index("dashboard_view_permissions_user_idx").on(table.userId),
+}));
+
+// User's active dashboard view preference (which view they're currently using)
+export const userDashboardPreferences = pgTable("user_dashboard_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  activeViewId: varchar("active_view_id").references(() => dashboardViews.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserCompany: uniqueIndex("user_dashboard_prefs_user_company_unique").on(table.userId, table.companyId),
+}));
+
+export const insertDashboardViewSchema = createInsertSchema(dashboardViews).omit({
+  id: true,
+  companyId: true,
+  creatorId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  viewType: z.enum(["personal", "business"]).default("personal"),
+  visibility: z.enum(["private", "by_role", "by_user", "everyone"]).default("private"),
+  widgets: z.array(z.any()).default([]),
+  isCompanyDefault: z.boolean().default(false),
+});
+
+export const insertDashboardViewPermissionSchema = createInsertSchema(dashboardViewPermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDashboardView = z.infer<typeof insertDashboardViewSchema>;
+export type DashboardView = typeof dashboardViews.$inferSelect;
+export type InsertDashboardViewPermission = z.infer<typeof insertDashboardViewPermissionSchema>;
+export type DashboardViewPermission = typeof dashboardViewPermissions.$inferSelect;
+export type UserDashboardPreference = typeof userDashboardPreferences.$inferSelect;
+
+// Pinned Items - for user's quick access favorites
+export const pinnedItems = pgTable("pinned_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // nullable — null = workspace pin, set = project-level pin
+  itemType: varchar("item_type", { length: 50 }).notNull(), // project | contact | document | page | variation | bill | checklist | defect | diary | link | note | folder
+  itemId: varchar("item_id", { length: 255 }).notNull(), // ID of the pinned item or path for pages or URL for links
+  itemName: varchar("item_name", { length: 255 }).notNull(), // Display name
+  itemIcon: varchar("item_icon", { length: 50 }), // Optional icon name
+  category: varchar("category", { length: 100 }), // Optional user-defined group label
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserItem: uniqueIndex("pinned_items_user_item_unique").on(table.userId, table.projectId, table.itemType, table.itemId),
+}));
+
+export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+}).extend({
+  itemType: z.enum([
+    "project", "contact", "document", "page",
+    "variation", "bill", "checklist", "defect", "diary", "link", "note", "folder",
+  ]),
+  projectId: z.string().nullish(),
+  category: z.string().max(100).nullish(),
+});
+
+export type InsertPinnedItem = z.infer<typeof insertPinnedItemSchema>;
+export type PinnedItem = typeof pinnedItems.$inferSelect;
+
+// User Memos - free-form notes pinned to the user workspace
+export const userMemos = pgTable("user_memos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  content: text("content").notNull().default(""),
+  pinned: boolean("pinned").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("user_memos_user_idx").on(table.userId),
+}));
+
+export const insertUserMemoSchema = createInsertSchema(userMemos).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserMemo = z.infer<typeof insertUserMemoSchema>;
+export type UserMemo = typeof userMemos.$inferSelect;
+
+export const businessScheduleProjects = pgTable("business_schedule_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  dateMode: text("date_mode").notNull().default("auto"),
+  customStartDate: timestamp("custom_start_date"),
+  customWeeks: integer("custom_weeks"),
+  isVisible: boolean("is_visible").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  contractStartDate: timestamp("contract_start_date"),
+  contractEndDate: timestamp("contract_end_date"),
+  milestoneStartItemId: varchar("milestone_start_item_id"),
+  milestoneEndItemId: varchar("milestone_end_item_id"),
+  // How the Gantt "Build End" divider date is calculated:
+  // 'auto' (project end → milestone-end item → last schedule item), 'project', 'milestone', 'lastItem'
+  buildEndMode: text("build_end_mode").notNull().default("auto"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectCompany: uniqueIndex("bsp_project_company_unique").on(table.projectId, table.companyId),
+}));
+
+export const insertBusinessScheduleProjectSchema = createInsertSchema(businessScheduleProjects).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertBusinessScheduleProject = z.infer<typeof insertBusinessScheduleProjectSchema>;
+export type BusinessScheduleProject = typeof businessScheduleProjects.$inferSelect;
+
+// ─── E-Notes: per-estimate scope checklist ────────────────────────────────────
+export const estimateEnotes = pgTable("estimate_enotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  groupName: text("group_name").notNull(), // collapsible group label
+  categoryName: text("category_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  required: boolean("required"), // null = not reviewed, true = required, false = not required
+  brainstormNotes: text("brainstorm_notes"),
+  /** Values for this company's own Details columns, keyed by detail_field_defs.id. */
+  customFields: jsonb("custom_fields").notNull().default({}),
+  rfiRequired: boolean("rfi_required").notNull().default(false),
+  rfqRequired: boolean("rfq_required").notNull().default(false),
+  rfqDate: text("rfq_date"), // stored as ISO string
+  labourRequired: boolean("labour_required").notNull().default(false),
+  estimatorNotes: text("estimator_notes"),
+  completed: boolean("completed").notNull().default(false),
+  takeOffReview: boolean("take_off_review").notNull().default(false),
+  revisit: boolean("revisit").notNull().default(false),
+  revisitReason: text("revisit_reason"),
+  isCustom: boolean("is_custom").notNull().default(false),
+  status: text("status"),
+});
+
+export const insertEstimateEnoteSchema = createInsertSchema(estimateEnotes).omit({ id: true });
+export type InsertEstimateEnote = z.infer<typeof insertEstimateEnoteSchema>;
+export type EstimateEnote = typeof estimateEnotes.$inferSelect;
+
+// ─── E-Note Attachments ───────────────────────────────────────────────────────
+export const enoteAttachments = pgTable("enote_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enoteId: varchar("enote_id").notNull().references(() => estimateEnotes.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+});
+
+export const insertEnoteAttachmentSchema = createInsertSchema(enoteAttachments).omit({ id: true, uploadedAt: true });
+export type InsertEnoteAttachment = z.infer<typeof insertEnoteAttachmentSchema>;
+export type EnoteAttachment = typeof enoteAttachments.$inferSelect;
+
+// ─── Labour Estimating ────────────────────────────────────────────────────────
+export const labourEstimates = pgTable("labour_estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default("Labour Estimate"),
+  labourRatePerHour: doublePrecision("labour_rate_per_hour").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLabourEstimateSchema = createInsertSchema(labourEstimates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLabourEstimate = z.infer<typeof insertLabourEstimateSchema>;
+export type LabourEstimate = typeof labourEstimates.$inferSelect;
+
+export const labourEstimateCategories = pgTable("labour_estimate_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  labourEstimateId: varchar("labour_estimate_id").notNull().references(() => labourEstimates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("not_complete"), // "not_required" | "not_complete" | "complete"
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLabourEstimateCategorySchema = createInsertSchema(labourEstimateCategories).omit({ id: true });
+export type InsertLabourEstimateCategory = z.infer<typeof insertLabourEstimateCategorySchema>;
+export type LabourEstimateCategory = typeof labourEstimateCategories.$inferSelect;
+
+// ── HBCF / DBI Project Tracker ──────────────────────────────────────────────
+export const hbcfProjects = pgTable("hbcf_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Optional link to a system project. Null for pipeline work that has not been
+  // set up as a project yet — the whole point of forward planning.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  // The job's HBCF commitment in DOLLARS (numeric — Drizzle returns a string).
+  // Named max_value by the original toggle grid; it is the amount this job
+  // contributes to open-job exposure, not a cap.
+  maxValue: numeric("max_value", { precision: 15, scale: 2 }).notNull().default("0"),
+  // H01..H05 under icare (NSW). Selects which of company_settings'
+  // hwiConstructionLimits entries caps this one job.
+  jobType: text("job_type"),
+  // The window this job is open for, ISO "YYYY-MM-DD". The weeks a row occupies
+  // are derived from these — see basis for how firm they are.
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  // "predicted" — expected work, priced off the live estimate
+  // "actual"    — contracted, priced off the frozen contract sum
+  basis: text("basis").notNull().default("predicted"),
+  // SUPERSEDED by startDate/endDate: a map of { "2026-01-05": true } marking the
+  // Mondays a job was hand-toggled ACTIVE. Migration 0082 converted these into a
+  // date range and nothing reads it now. Kept one release as the only copy of
+  // that data, since the conversion flattens gaps; droppable once the timeline
+  // has been checked against reality.
+  statuses: jsonb("statuses").$type<Record<string, boolean>>().default({}),
+  color: text("color"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * GET /api/hbcf-projects/contract-values — what each linked project's contract
+ * is worth NOW, so a tracker row can be compared against it. Only projects with
+ * a frozen contract sum appear.
+ */
+export type HbcfContractValue = {
+  projectId: string;
+  originalContractPriceIncGstCents: number;
+  approvedVariationsIncGstCents: number;
+  revisedContractPriceIncGstCents: number;
+};
+
+/** One row of company_settings.hwiConstructionLimits. `limit` is dollars. */
+export type HbcfConstructionLimit = { code: string; label: string; limit: string };
+export type HbcfProject = typeof hbcfProjects.$inferSelect;
+export const insertHbcfProjectSchema = createInsertSchema(hbcfProjects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertHbcfProject = z.infer<typeof insertHbcfProjectSchema>;
+
+// ── Home Warranty Insurance certificates (per job) ──────────────────────────
+// Deliberately insurer-agnostic: no scheme thresholds or warranty periods are
+// hard-coded, so the same row works for HBCF (NSW), DBI/VMIA (VIC), QBCC (QLD)
+// or any private cover. `hbcfProjects` above tracks aggregate eligibility
+// exposure week by week; this tracks the actual certificate for one job.
+export const hbcfCertificates = pgTable("hbcf_certificates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Optional link to a system project. Nullable so jobs that predate the app
+  // (or never got a project record) can still be registered.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  // Label used when there is no linked project; also the editable display name.
+  jobName: text("job_name").notNull().default(""),
+  siteAddress: text("site_address"),
+  insurer: text("insurer"),
+  policyNumber: text("policy_number"),
+  certificateNumber: text("certificate_number"),
+  // not_required | not_applied | applied | issued | cancelled
+  status: text("status").notNull().default("not_applied"),
+  // Dollars, matching hbcf_projects. Drizzle returns numeric as STRINGS.
+  contractValue: numeric("contract_value", { precision: 15, scale: 2 }),
+  premium: numeric("premium", { precision: 15, scale: 2 }),
+  // ISO date strings ("YYYY-MM-DD"), matching the compliance fields on
+  // company_settings rather than the timestamp columns used elsewhere.
+  dateApplied: text("date_applied"),
+  dateIssued: text("date_issued"),
+  coverStart: text("cover_start"),
+  // Entered by hand — the warranty period differs by scheme and by year, so
+  // deriving these from coverStart would bake in rules that go stale.
+  structuralExpiry: text("structural_expiry"),
+  nonStructuralExpiry: text("non_structural_expiry"),
+  certificateUrl: text("certificate_url"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("hbcf_certificates_company_idx").on(table.companyId),
+}));
+export type HbcfCertificate = typeof hbcfCertificates.$inferSelect;
+export const insertHbcfCertificateSchema = createInsertSchema(hbcfCertificates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertHbcfCertificate = z.infer<typeof insertHbcfCertificateSchema>;
+
+export const labourEstimateTasks = pgTable("labour_estimate_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => labourEstimateCategories.id, { onDelete: "cascade" }),
+  description: text("description").notNull().default(""),
+  subHeading: text("sub_heading"),
+  numMen: doublePrecision("num_men").notNull().default(1),
+  hoursPerMan: doublePrecision("hours_per_man").notNull().default(0),
+  totalHours: doublePrecision("total_hours").notNull().default(0), // = numMen * hoursPerMan
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLabourEstimateTaskSchema = createInsertSchema(labourEstimateTasks).omit({ id: true });
+export type InsertLabourEstimateTask = z.infer<typeof insertLabourEstimateTaskSchema>;
+export type LabourEstimateTask = typeof labourEstimateTasks.$inferSelect;
+
+/**
+ * A named Labour template. The Details equivalent (enoteTemplateSets) already
+ * existed; labour had no container, so a company could only ever have one
+ * labour template. See migration 0065.
+ */
+export const labourTemplateSets = pgTable("labour_template_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertLabourTemplateSetSchema = createInsertSchema(labourTemplateSets).omit({ id: true, createdAt: true });
+export type InsertLabourTemplateSet = z.infer<typeof insertLabourTemplateSetSchema>;
+export type LabourTemplateSet = typeof labourTemplateSets.$inferSelect;
+
+export const labourTaskTemplates = pgTable("labour_task_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  categoryName: text("category_name").notNull(),
+  description: text("description").notNull().default(""),
+  subHeading: text("sub_heading"),
+  numMen: doublePrecision("num_men").notNull().default(1),
+  hoursPerMan: doublePrecision("hours_per_man").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+  /** NULL = the unnamed working list this table has always been. */
+  templateSetId: varchar("template_set_id").references(() => labourTemplateSets.id, { onDelete: "cascade" }),
+});
+
+export const insertLabourTaskTemplateSchema = createInsertSchema(labourTaskTemplates).omit({ id: true });
+export type InsertLabourTaskTemplate = z.infer<typeof insertLabourTaskTemplateSchema>;
+export type LabourTaskTemplate = typeof labourTaskTemplates.$inferSelect;
+
+export const enoteTemplates = pgTable("enote_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  groupName: text("group_name").notNull().default("General"),
+  categoryName: text("category_name").notNull(),
+  brainstormNotes: text("brainstorm_notes"),
+  isRequired: boolean("is_required").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  templateSetId: varchar("template_set_id"),
+  /** Values for this company's own Details columns, keyed by detail_field_defs.id. */
+  customFields: jsonb("custom_fields").notNull().default({}),
+});
+
+export const insertEnoteTemplateSchema = createInsertSchema(enoteTemplates).omit({ id: true });
+export type InsertEnoteTemplate = z.infer<typeof insertEnoteTemplateSchema>;
+export type EnoteTemplate = typeof enoteTemplates.$inferSelect;
+
+/**
+ * A company's own columns on the Details list.
+ *
+ * Applies to both an estimate's Details rows and the template rows they are
+ * built from, so a column added once is there wherever Details appears. Values
+ * live in each row's `customFields`, keyed by the definition id.
+ *
+ * Deliberately NOT the existing custom_field_defs table: that one has no
+ * company_id and a globally unique `key`, so every company would share one set.
+ */
+export const detailFieldDefs = pgTable("detail_field_defs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  /** "text" | "checkbox" | "date" | "select" — anything else renders as text. */
+  type: text("type").notNull().default("text"),
+  /** Choices for `select` only. */
+  options: jsonb("options").notNull().default([]),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("detail_field_defs_company_idx").on(table.companyId, table.displayOrder),
+}));
+
+export const insertDetailFieldDefSchema = createInsertSchema(detailFieldDefs).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertDetailFieldDef = z.infer<typeof insertDetailFieldDefSchema>;
+export type DetailFieldDef = typeof detailFieldDefs.$inferSelect;
+
+export const enoteTemplateSets = pgTable("enote_template_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEnoteTemplateSetSchema = createInsertSchema(enoteTemplateSets).omit({ id: true, createdAt: true });
+export type InsertEnoteTemplateSet = z.infer<typeof insertEnoteTemplateSetSchema>;
+export type EnoteTemplateSet = typeof enoteTemplateSets.$inferSelect;
+
+// Scope Item Type Definitions — company-level custom type names and role visibility
+export const scopeItemTypeDefinitions = pgTable("scope_item_type_definitions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g. "Scope", "Proposal", "Costings"
+  displayOrder: integer("display_order").notNull().default(0),
+  visibleToRoles: jsonb("visible_to_roles").default([]), // Array of role IDs — empty means visible to everyone
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScopeItemTypeDefinitionSchema = createInsertSchema(scopeItemTypeDefinitions).omit({ id: true, createdAt: true }).extend({
+  visibleToRoles: z.array(z.string()).default([]),
+});
+export type InsertScopeItemTypeDefinition = z.infer<typeof insertScopeItemTypeDefinitionSchema>;
+export type ScopeItemTypeDefinition = typeof scopeItemTypeDefinitions.$inferSelect;
+
+// ── Business Overheads ────────────────────────────────────────────────────────
+
+export const overheadCategories = pgTable("overhead_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOverheadCategorySchema = createInsertSchema(overheadCategories).omit({ id: true, createdAt: true });
+export type InsertOverheadCategory = z.infer<typeof insertOverheadCategorySchema>;
+export type OverheadCategory = typeof overheadCategories.$inferSelect;
+
+export const frequencyEnum = pgEnum("oh_frequency", ["weekly", "monthly", "quarterly", "annual"]);
+
+export const overheadItems = pgTable("overhead_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => overheadCategories.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  frequency: frequencyEnum("frequency").notNull().default("monthly"),
+  budgetCents: integer("budget_cents").notNull().default(0),
+  xeroAccountCode: text("xero_account_code"),
+  xeroAccountType: text("xero_account_type"),
+  xeroSynced: boolean("xero_synced").notNull().default(false),
+  buildproGroup: text("buildpro_group"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOverheadItemSchema = createInsertSchema(overheadItems).omit({ id: true, createdAt: true });
+export type InsertOverheadItem = z.infer<typeof insertOverheadItemSchema>;
+export type OverheadItem = typeof overheadItems.$inferSelect;
+
+export const overheadMonthActuals = pgTable("overhead_month_actuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => overheadItems.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  actualCents: integer("actual_cents").notNull().default(0),
+  xeroImported: boolean("xero_imported").notNull().default(false),
+  driftedSinceConfirmed: boolean("drifted_since_confirmed").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueItemMonth: uniqueIndex("overhead_month_actuals_item_year_month_unique").on(table.itemId, table.year, table.month),
+}));
+
+export const insertOverheadMonthActualSchema = createInsertSchema(overheadMonthActuals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOverheadMonthActual = z.infer<typeof insertOverheadMonthActualSchema>;
+export type OverheadMonthActual = typeof overheadMonthActuals.$inferSelect;
+
+export const companyIncomeActuals = pgTable("company_income_actuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  incomeCents: integer("income_cents").notNull().default(0),
+  breakdown: jsonb("breakdown").$type<Record<string, number>>(),
+  xeroImported: boolean("xero_imported").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("company_income_actuals_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export const insertCompanyIncomeActualSchema = createInsertSchema(companyIncomeActuals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyIncomeActual = z.infer<typeof insertCompanyIncomeActualSchema>;
+export type CompanyIncomeActual = typeof companyIncomeActuals.$inferSelect;
+
+export const companyDirectCostActuals = pgTable("company_direct_cost_actuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  directCostCents: integer("direct_cost_cents").notNull().default(0),
+  breakdown: jsonb("breakdown").$type<Record<string, number>>(),
+  xeroImported: boolean("xero_imported").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("company_direct_cost_actuals_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export const insertCompanyDirectCostActualSchema = createInsertSchema(companyDirectCostActuals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyDirectCostActual = z.infer<typeof insertCompanyDirectCostActualSchema>;
+export type CompanyDirectCostActual = typeof companyDirectCostActuals.$inferSelect;
+
+export const overheadMonthStatus = pgTable("overhead_month_status", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedByUserId: varchar("confirmed_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("overhead_month_status_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export const insertOverheadMonthStatusSchema = createInsertSchema(overheadMonthStatus).omit({ id: true, createdAt: true });
+export type InsertOverheadMonthStatus = z.infer<typeof insertOverheadMonthStatusSchema>;
+export type OverheadMonthStatus = typeof overheadMonthStatus.$inferSelect;
+
+export const companyOhSettings = pgTable("company_oh_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }).unique(),
+  targetOhPercent: numeric("target_oh_percent", { precision: 5, scale: 2 }).notNull().default("15"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Per-month reconciliation of what the Xero sync STORED against what Xero's own
+// P&L section totals said at the moment of the sync. This is the audit trail the
+// Monthly Actuals banner reads: if a sync dies partway (or a confirmed month is
+// silently left frozen at a stale value) the stored figures drift from the
+// report and nothing else in the schema would ever notice.
+//
+// Deliberately its own table rather than columns on company_income_actuals: a
+// table this app has not yet migrated only breaks the banner (the query is
+// wrapped and degrades to "no banner"), whereas a missing column on a hot table
+// would 500 every Overheads request.
+export const overheadSyncReconciliation = pgTable("overhead_sync_reconciliation", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  // What Xero's report said (ex-GST cents)
+  xeroIncomeCents: integer("xero_income_cents").notNull().default(0),
+  xeroDirectCostCents: integer("xero_direct_cost_cents").notNull().default(0),
+  xeroExpenseCents: integer("xero_expense_cents").notNull().default(0),
+  // What we actually have stored for that month
+  storedIncomeCents: integer("stored_income_cents").notNull().default(0),
+  storedDirectCostCents: integer("stored_direct_cost_cents").notNull().default(0),
+  storedExpenseCents: integer("stored_expense_cents").notNull().default(0),
+  checkedAt: timestamp("checked_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("overhead_sync_reconciliation_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export type OverheadSyncReconciliation = typeof overheadSyncReconciliation.$inferSelect;
+
+export const insertCompanyOhSettingsSchema = createInsertSchema(companyOhSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyOhSettings = z.infer<typeof insertCompanyOhSettingsSchema>;
+export type CompanyOhSettings = typeof companyOhSettings.$inferSelect;
+
+// Pipeline jobs for OH Predictor
+export const ohPipelineJobs = pgTable("oh_pipeline_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  estimatedValue: integer("estimated_value").notNull().default(0), // cents
+  probabilityPercent: integer("probability_percent").notNull().default(100), // 0-100
+  expectedStartDate: date("expected_start_date"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOhPipelineJobSchema = createInsertSchema(ohPipelineJobs).omit({ id: true, createdAt: true });
+export type InsertOhPipelineJob = z.infer<typeof insertOhPipelineJobSchema>;
+export type OhPipelineJob = typeof ohPipelineJobs.$inferSelect;
+
+// Manual forecast overrides — per item per future month
+export const overheadForecastOverrides = pgTable("overhead_forecast_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => overheadItems.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  forecastCents: integer("forecast_cents").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueItemMonth: uniqueIndex("overhead_forecast_overrides_item_year_month_unique").on(table.itemId, table.year, table.month),
+}));
+
+export const insertOverheadForecastOverrideSchema = createInsertSchema(overheadForecastOverrides).omit({ id: true, updatedAt: true });
+export type InsertOverheadForecastOverride = z.infer<typeof insertOverheadForecastOverrideSchema>;
+export type OverheadForecastOverride = typeof overheadForecastOverrides.$inferSelect;
+
+// ── Cashflow forecast ─────────────────────────────────────────────────────────
+// Whole-business forecast of cash in and out (engine: shared/cashflow). Money
+// is integer cents inc GST; dates are 'YYYY-MM-DD' text, like the calendar-day
+// columns on projects, so no time zone can move them.
+//
+// Settings live in their own table rather than on company_settings: that
+// table is read with select * on a hot path, and a column missing on a
+// lagging database takes every page down with it.
+
+
+export const cashflowSettings = pgTable("cashflow_settings", {
+  companyId: varchar("company_id").primaryKey().references(() => companies.id, { onDelete: "cascade" }),
+  bufferCents: integer("buffer_cents").notNull().default(5_000_000),
+  clientPayDays: integer("client_pay_days").notNull().default(14),
+  supplierPayDays: integer("supplier_pay_days").notNull().default(30),
+  // Estimates a job's remaining cost when it has no budget: cost = sell × (1 − margin).
+  defaultMarginPercent: integer("default_margin_percent").notNull().default(20),
+  defaultPeriod: text("default_period").notNull().default("month"), // "month" | "fortnight"
+  fortnightAnchor: text("fortnight_anchor"), // 'YYYY-MM-DD' pay-cycle start; null = counted from 2024-01-01
+  // Xero bank account ids that make up the opening balance; null = every bank account.
+  bankAccountIds: text("bank_account_ids").array(),
+  // Used when Xero isn't connected. Ignored while Xero supplies a balance.
+  manualOpeningBalanceCents: integer("manual_opening_balance_cents"),
+  gstBasis: text("gst_basis").notNull().default("cash"), // only "cash" is modelled in v1
+  basFrequency: text("bas_frequency").notNull().default("quarterly"), // "quarterly" | "monthly"
+  basViaAgent: boolean("bas_via_agent").notNull().default(false),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const updateCashflowSettingsSchema = z.object({
+  bufferCents: z.number().int().min(0),
+  clientPayDays: z.number().int().min(0).max(365),
+  supplierPayDays: z.number().int().min(0).max(365),
+  defaultMarginPercent: z.number().int().min(0).max(99),
+  defaultPeriod: z.enum(["month", "fortnight"]),
+  fortnightAnchor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  bankAccountIds: z.array(z.string()).nullable(),
+  manualOpeningBalanceCents: z.number().int().nullable(),
+  basFrequency: z.enum(["quarterly", "monthly"]),
+  basViaAgent: z.boolean(),
+}).partial();
+export type CashflowSettings = typeof cashflowSettings.$inferSelect;
+
+// One row per job, created the first time someone changes how it shows.
+// No row = the defaults for its phase (Pre-construction/Construction included
+// at 100%, leads left out).
+export const projectCashflowSettings = pgTable("project_cashflow_settings", {
+  projectId: varchar("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  included: boolean("included"), // null = default for the job's phase
+  mode: text("mode").notNull().default("even"), // JOB_MODES in shared/cashflow/types
+  winPercent: integer("win_percent"), // null = 100 for signed work, 50 for leads
+  clientPayDays: integer("client_pay_days"), // null = cashflow_settings.client_pay_days
+  // The builder's own figures for a job that isn't set up yet (migration 0094).
+  // Value is used only while the job has no contract; dates win over the
+  // schedule and the project's proposed dates.
+  forecastValueCents: integer("forecast_value_cents"),
+  forecastStart: text("forecast_start"), // 'YYYY-MM-DD'
+  forecastEnd: text("forecast_end"), // 'YYYY-MM-DD'
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("project_cashflow_settings_company_idx").on(table.companyId),
+}));
+
+export const updateProjectCashflowSettingsSchema = z.object({
+  included: z.boolean().nullable(),
+  mode: z.enum(JOB_MODES),
+  winPercent: z.number().int().min(0).max(100).nullable(),
+  clientPayDays: z.number().int().min(0).max(365).nullable(),
+  forecastValueCents: z.number().int().min(0).nullable(),
+  forecastStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  forecastEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+}).partial().refine(
+  (v) => !v.forecastStart || !v.forecastEnd || v.forecastStart <= v.forecastEnd,
+  { message: "Finish must be on or after start", path: ["forecastEnd"] },
+);
+export type ProjectCashflowSettings = typeof projectCashflowSettings.$inferSelect;
+
+// Manual-mode claims: what the builder expects to be paid per month.
+export const projectCashflowManual = pgTable("project_cashflow_manual", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  month: text("month").notNull(), // 'YYYY-MM-01'
+  amountCents: integer("amount_cents").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectMonth: uniqueIndex("project_cashflow_manual_project_month_unique").on(table.projectId, table.month),
+}));
+
+export const putProjectCashflowManualSchema = z.object({
+  amounts: z.array(z.object({
+    month: z.string().regex(/^\d{4}-\d{2}-01$/),
+    amountCents: z.number().int(),
+  })).max(120),
+});
+export type ProjectCashflowManual = typeof projectCashflowManual.$inferSelect;
+
+// The business expenses register: everything the business pays that isn't a
+// job cost, with WHEN it's paid. Separate from overhead_items on purpose —
+// that register is accrual budgeting mirrored from the Xero chart of
+// accounts; this one is cash, with dates. overheadItemId optionally links the two.
+export const businessExpenses = pgTable("business_expenses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category"),
+  amountCents: integer("amount_cents").notNull().default(0), // each payment, inc GST
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull().default("monthly"), // FREQUENCIES in shared/cashflow/recurrence
+  nextDate: text("next_date").notNull(), // 'YYYY-MM-DD' of the next payment
+  endDate: text("end_date"), // 'YYYY-MM-DD' of the last payment; null = ongoing
+  source: text("source").notNull().default("manual"), // "manual" | "suggestion" | "pnl" | "pnl_remainder"
+  xeroContactId: text("xero_contact_id"),
+  // The Xero P&L account an imported line came from (migration 0097) — how the
+  // register shows what share of each overhead account it accounts for.
+  xeroAccountCode: text("xero_account_code"),
+  overheadItemId: varchar("overhead_item_id").references(() => overheadItems.id, { onDelete: "set null" }),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("business_expenses_company_idx").on(table.companyId),
+}));
+
+const dateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+// companyId stays on the insert schema (routes .omit() it at the call site
+// and take it from the session, per scripts/check-route-tenancy.mjs).
+export const insertBusinessExpenseSchema = createInsertSchema(businessExpenses).omit({
+  id: true,
+  source: true,
+  xeroContactId: true,
+  // Set only by the P&L import, which checks it against Xero.
+  xeroAccountCode: true,
+  // A parent id must never come from the client; linking to an overhead item
+  // needs an ownership check and arrives with the UI that sets it.
+  overheadItemId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1),
+  amountCents: z.number().int().min(0),
+  frequency: z.enum(FREQUENCIES),
+  nextDate: dateKeySchema,
+  endDate: dateKeySchema.nullable().optional(),
+});
+export const updateBusinessExpenseSchema = insertBusinessExpenseSchema.omit({ companyId: true }).partial();
+export type InsertBusinessExpense = z.infer<typeof insertBusinessExpenseSchema>;
+export type BusinessExpense = typeof businessExpenses.$inferSelect;
+
+// What-ifs: decisions tried on the forecast (engine: shared/cashflow/whatifs).
+// A template plus its inputs in `params`; the template's payments are worked
+// out when the forecast runs, never stored. Only lines the user adds by hand
+// live in what_if_lines.
+export const whatIfs = pgTable("what_ifs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  template: text("template").notNull(), // WHAT_IF_TEMPLATES in shared/cashflow/whatifs
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  params: jsonb("params").notNull().default({}),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("what_ifs_company_idx").on(table.companyId),
+}));
+export type WhatIf = typeof whatIfs.$inferSelect;
+
+export const whatIfLines = pgTable("what_if_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  whatIfId: varchar("what_if_id").notNull().references(() => whatIfs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  direction: text("direction").notNull().default("out"), // "in" | "out"
+  amountCents: integer("amount_cents").notNull().default(0), // each payment, inc GST
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull().default("monthly"),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => ({
+  whatIfIdx: index("what_if_lines_what_if_idx").on(table.whatIfId),
+}));
+export type WhatIfLineRow = typeof whatIfLines.$inferSelect;
+
+const cents = z.number().int().min(0);
+const pct = z.number().min(0).max(100);
+export const whatIfParamSchemas = {
+  employee: z.object({
+    role: z.string(),
+    payType: z.enum(["salary", "hourly"]),
+    annualSalaryCents: cents,
+    hourlyRateCents: cents,
+    hoursPerWeek: z.number().min(0).max(100),
+    payCycle: z.enum(["weekly", "fortnightly", "monthly"]),
+    startDate: dateKeySchema,
+    endDate: dateKeySchema.nullable(),
+    superPercent: pct,
+    workcoverPercent: pct,
+    payrollTaxPercent: pct,
+  }),
+  vehicle: z.object({
+    priceCents: cents,
+    purchaseDate: dateKeySchema,
+    payWith: z.enum(["cash", "finance"]),
+    depositCents: cents,
+    termMonths: z.number().int().min(1).max(120),
+    ratePercent: z.number().min(0).max(50),
+    balloonCents: cents,
+    regoInsuranceYearlyCents: cents,
+    runningMonthlyCents: cents,
+    savingsMonthlyCents: cents,
+  }),
+  win_job: z.object({
+    valueCents: cents,
+    startDate: dateKeySchema,
+    months: z.number().int().min(1).max(60),
+    winPercent: pct,
+    marginPercent: z.number().min(0).max(99),
+  }),
+  one_off: z.object({
+    amountCents: cents,
+    date: dateKeySchema,
+    hasGst: z.boolean(),
+    direction: z.enum(["in", "out"]),
+  }),
+  custom: z.object({}),
+} as const;
+
+export const whatIfLineInputSchema = z.object({
+  name: z.string().trim().min(1),
+  direction: z.enum(["in", "out"]),
+  amountCents: cents,
+  hasGst: z.boolean(),
+  frequency: z.enum(FREQUENCIES),
+  startDate: dateKeySchema,
+  endDate: dateKeySchema.nullable(),
+});
+
+const whatIfBase = z.object({
+  name: z.string().trim().min(1).max(120),
+  isEnabled: z.boolean(),
+  lines: z.array(whatIfLineInputSchema).max(50),
+});
+// One schema per template, so params are checked against the right shape.
+export const saveWhatIfSchema = z.discriminatedUnion("template", [
+  whatIfBase.extend({ template: z.literal("employee"), params: whatIfParamSchemas.employee }),
+  whatIfBase.extend({ template: z.literal("vehicle"), params: whatIfParamSchemas.vehicle }),
+  whatIfBase.extend({ template: z.literal("win_job"), params: whatIfParamSchemas.win_job }),
+  whatIfBase.extend({ template: z.literal("one_off"), params: whatIfParamSchemas.one_off }),
+  whatIfBase.extend({ template: z.literal("custom"), params: whatIfParamSchemas.custom }),
+]);
+export type SaveWhatIf = z.infer<typeof saveWhatIfSchema>;
+
+// A job's claim schedule for the forecast. Seeded from the accepted proposal's
+// payment milestones, then edited on the job. A stage is claimed by invoices
+// (the cashflow loader consumes stages in order by the claim % invoiced), so
+// nothing here needs updating when an invoice goes out.
+export const projectClaimStages = pgTable("project_claim_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // One of these two: a % of the original contract, or a fixed amount (cents inc GST).
+  percent: doublePrecision("percent"),
+  amountCents: integer("amount_cents"),
+  // Lands when this schedule item finishes; plannedDate is the fallback.
+  scheduleItemId: varchar("schedule_item_id").references((): AnyPgColumn => scheduleItems.id, { onDelete: "set null" }),
+  plannedDate: text("planned_date"), // 'YYYY-MM-DD'
+  sourceMilestoneId: varchar("source_milestone_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_claim_stages_project_idx").on(table.projectId),
+}));
+export type ProjectClaimStage = typeof projectClaimStages.$inferSelect;
+
+// Business expenses Morada found in Xero, waiting for the builder to check.
+// One row per supplier (contact_key). A decision — added, it's a job cost,
+// ignore — sticks across re-scans; only pending rows are refreshed.
+export const expenseSuggestions = pgTable("expense_suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  contactKey: text("contact_key").notNull(), // Xero ContactID, or name:<lowercased name>
+  xeroContactId: text("xero_contact_id"),
+  contactName: text("contact_name").notNull(),
+  name: text("name").notNull(), // suggested display name, e.g. "Yard rent"
+  category: text("category"),
+  aiKind: text("ai_kind"), // "business" | "job_cost" | "not_expense" | null when AI didn't run
+  amountCents: integer("amount_cents").notNull(),
+  hasGst: boolean("has_gst").notNull().default(true),
+  frequency: text("frequency").notNull(),
+  nextDate: text("next_date").notNull(),
+  confidence: text("confidence").notNull(), // "high" | "medium" | "low"
+  lapsed: boolean("lapsed").notNull().default(false),
+  reason: text("reason").notNull(),
+  evidence: jsonb("evidence"), // { count, firstDate, lastDate, amounts, accounts, jobShare }
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "job_cost" | "ignored"
+  businessExpenseId: varchar("business_expense_id").references(() => businessExpenses.id, { onDelete: "set null" }),
+  scannedAt: timestamp("scanned_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyContactUnique: uniqueIndex("expense_suggestions_company_contact_unique").on(table.companyId, table.contactKey),
+}));
+export type ExpenseSuggestion = typeof expenseSuggestions.$inferSelect;
+
+export const acceptExpenseSuggestionSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  category: z.string().trim().max(60).nullable(),
+  amountCents: z.number().int().min(0),
+  hasGst: z.boolean(),
+  frequency: z.enum(FREQUENCIES),
+  nextDate: dateKeySchema,
+}).partial();
+
+export const decideExpenseSuggestionSchema = z.object({
+  status: z.enum(["job_cost", "ignored", "pending"]),
+});
+
+export const putClaimStagesSchema = z.object({
+  stages: z
+    .array(
+      z
+        .object({
+          name: z.string().trim().min(1).max(120),
+          percent: z.number().min(0).max(100).nullable(),
+          amountCents: z.number().int().min(0).nullable(),
+          scheduleItemId: z.string().nullable(),
+          plannedDate: dateKeySchema.nullable(),
+        })
+        .refine((st) => (st.percent == null) !== (st.amountCents == null), {
+          message: "Give each claim a % or an amount, not both",
+        }),
+    )
+    .max(60),
+});
+
+// ── Focus Blocks (Motion-style time-blocking) ─────────────────────────────────
+
+export const focusBlocks = pgTable("focus_blocks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  color: text("color").notNull().default("#6366f1"),
+  startTime: text("start_time").notNull(), // "HH:MM" format
+  endTime: text("end_time").notNull(), // "HH:MM" format
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  daysOfWeek: integer("days_of_week").array().default([]), // [0-6] for Sun-Sat when recurring
+  specificDate: date("specific_date"), // For one-off blocks
+  categoryType: text("category_type").notNull().default("general"), // "project" | "business" | "tag" | "general"
+  categoryId: varchar("category_id"), // nullable: projectId for project-linked blocks, tag for tag-linked blocks
+  pinnedTaskIds: text("pinned_task_ids").array().default([]), // manually pinned task IDs
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * Someone is away.
+ *
+ * Deliberately *marking* leave, not managing it — there is no request, no
+ * approval, no balance and no accrual here. Those are a separate product
+ * decision; what a shared calendar needs is "who is not in this week", and
+ * building the rest first would have delayed the part people actually asked for.
+ *
+ * Day-granular and inclusive. The UI posts a plain `yyyy-MM-dd`, which coerces to
+ * UTC midnight, so the date part round-trips exactly and every consumer compares
+ * `String(date).slice(0, 10)`. That is deliberately NOT the local-midnight
+ * convention `notes.dueDate` uses: a day-granular field has no business carrying a
+ * timezone, and posting a local-midnight ISO string here would store the previous
+ * day east of UTC.
+ *
+ * A half day carries a period rather than a time, because "Tuesday afternoon off"
+ * is what people say — nobody books leave from 13:00 to 17:00.
+ */
+export const leaveEntries = pgTable("leave_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Inclusive. A single day has startDate === endDate. */
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  /** Only meaningful on a single-day entry; a half day across a range is not a thing. */
+  isHalfDay: boolean("is_half_day").notNull().default(false),
+  halfDayPeriod: text("half_day_period"), // "am" | "pm", null unless isHalfDay
+  /**
+   * A `field_options.key` from the `leave.type` category — annual, sick, unpaid,
+   * rdo, public_holiday — so the list is editable in Field Settings rather than
+   * needing a migration to add "long service".
+   */
+  leaveType: text("leave_type").notNull(),
+  note: text("note"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("leave_entries_company_idx").on(table.companyId),
+  // The calendar's only query shape: this company, overlapping this range.
+  companyRangeIdx: index("leave_entries_company_range_idx").on(table.companyId, table.startDate, table.endDate),
+  userIdx: index("leave_entries_user_idx").on(table.userId),
+}));
+
+/** The shape, without the cross-field rules — `.refine` returns a ZodEffects, which
+ *  cannot be `.partial()`ed, and PATCH needs the partial. */
+export const leaveEntryFieldsSchema = createInsertSchema(leaveEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  halfDayPeriod: z.enum(["am", "pm"]).nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
+/**
+ * The cross-field rules, applied to a whole entry.
+ *
+ * PATCH validates the *merged* entry rather than the patch body: changing only
+ * the end date still has to be checked against the stored start date, and a
+ * partial body can't answer that on its own.
+ */
+const withLeaveRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endDate >= v.startDate, {
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  })
+  .refine((v: any) => !v.isHalfDay || v.startDate.getTime() === v.endDate.getTime(), {
+    message: "A half day has to be a single day",
+    path: ["isHalfDay"],
+  })
+  .refine((v: any) => !v.isHalfDay || !!v.halfDayPeriod, {
+    message: "Say whether the half day is morning or afternoon",
+    path: ["halfDayPeriod"],
+  });
+
+/**
+ * A meeting you have scheduled.
+ *
+ * Distinct from `minutes`, which records a meeting that has already happened, and
+ * from a `schedule_item` of type "meeting", which is a Gantt row inside a project
+ * schedule. A Tuesday management meeting is neither.
+ *
+ * `minutes.meetingId` points back here, so writing up a meeting attaches the
+ * record to the thing it was a record of.
+ */
+export const meetings = pgTable("meetings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  /** Real timestamps, unlike leave's day-granular dates: a meeting is a time. */
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  location: text("location"),
+  videoUrl: text("video_url"),
+  agenda: text("agenda"),
+  /** Optional — a management meeting belongs to no job. */
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  attendeeUserIds: text("attendee_user_ids").array().notNull().default(sql`'{}'`),
+  attendeeContactIds: text("attendee_contact_ids").array().notNull().default(sql`'{}'`),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("meetings_company_idx").on(table.companyId),
+  companyRangeIdx: index("meetings_company_range_idx").on(table.companyId, table.startsAt, table.endsAt),
+  projectIdx: index("meetings_project_idx").on(table.projectId),
+}));
+
+export const meetingFieldsSchema = createInsertSchema(meetings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdBy: true,
+}).extend({
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  location: z.string().nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
+  agenda: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  attendeeUserIds: z.array(z.string()).default([]),
+  attendeeContactIds: z.array(z.string()).default([]),
+});
+
+/** Same shape/rules split as leave: `.refine` yields a ZodEffects, which PATCH cannot `.partial()`. */
+const withMeetingRules = <T extends z.ZodTypeAny>(schema: T) => schema
+  .refine((v: any) => v.endsAt >= v.startsAt, {
+    message: "A meeting cannot end before it starts",
+    path: ["endsAt"],
+  });
+
+export const insertMeetingSchema = withMeetingRules(meetingFieldsSchema);
+export const patchMeetingSchema = meetingFieldsSchema.partial();
+export const meetingRulesSchema = withMeetingRules(meetingFieldsSchema);
+
+export type Meeting = typeof meetings.$inferSelect;
+export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
+
+export const insertLeaveEntrySchema = withLeaveRules(leaveEntryFieldsSchema);
+export const patchLeaveEntrySchema = leaveEntryFieldsSchema.partial();
+export const leaveEntryRulesSchema = withLeaveRules(leaveEntryFieldsSchema);
+
+export type LeaveEntry = typeof leaveEntries.$inferSelect;
+export type InsertLeaveEntry = z.infer<typeof insertLeaveEntrySchema>;
+
+export const insertFocusBlockSchema = createInsertSchema(focusBlocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  userId: true,
+  companyId: true,
+}).extend({
+  daysOfWeek: z.array(z.number()).default([]),
+  pinnedTaskIds: z.array(z.string()).default([]),
+  specificDate: z.string().nullable().optional(),
+  categoryId: z.string().nullable().optional(),
+  categoryType: z.enum(["general", "project", "business", "tag"]).default("general"),
+});
+
+export type FocusBlock = typeof focusBlocks.$inferSelect;
+export type InsertFocusBlock = z.infer<typeof insertFocusBlockSchema>;
+export type InsertFocusBlockWithOwner = InsertFocusBlock & { userId: string; companyId: string };
+
+// ─── TAKEOFF ────────────────────────────────────────────────────────────────
+
+export const takeoffPlans = pgTable("takeoff_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  objectPath: text("object_path").notNull(),
+  pageCount: integer("page_count").notNull().default(1),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffPlanSchema = createInsertSchema(takeoffPlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffPlan = z.infer<typeof insertTakeoffPlanSchema>;
+export type TakeoffPlan = typeof takeoffPlans.$inferSelect;
+
+export const takeoffPlanPages = pgTable("takeoff_plan_pages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  pageNumber: integer("page_number").notNull().default(1),
+  name: text("name"),
+  isScaled: boolean("is_scaled").notNull().default(false),
+  scaleRatio: doublePrecision("scale_ratio"),
+  calibrationPixelLength: doublePrecision("calibration_pixel_length"),
+  calibrationRealDistance: doublePrecision("calibration_real_distance"),
+  calibrationUnit: text("calibration_unit").default("mm"),
+  rotation: integer("rotation").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  planPageUnique: uniqueIndex("takeoff_plan_pages_plan_page_uq").on(table.planId, table.pageNumber),
+}));
+export const insertTakeoffPlanPageSchema = createInsertSchema(takeoffPlanPages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffPlanPage = z.infer<typeof insertTakeoffPlanPageSchema>;
+export type TakeoffPlanPage = typeof takeoffPlanPages.$inferSelect;
+
+export const takeoffCategories = pgTable("takeoff_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffCategorySchema = createInsertSchema(takeoffCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffCategory = z.infer<typeof insertTakeoffCategorySchema>;
+export type TakeoffCategory = typeof takeoffCategories.$inferSelect;
+
+export const takeoffMeasurements = pgTable("takeoff_measurements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  pageId: varchar("page_id").notNull().references(() => takeoffPlanPages.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  categoryId: varchar("category_id").references(() => takeoffCategories.id),
+  name: text("name").notNull(),
+  measurementType: text("measurement_type").notNull(),
+  color: text("color").notNull().default("#A890D4"),
+  geometry: json("geometry").notNull().default([]),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  unit: text("unit").notNull().default("m²"),
+  // Wall height in MILLIMETRES for a linear item measured as a run (wall
+  // linings, tiles): length x height = m². Null means no height, so the item
+  // stays in lm. See migration 0087.
+  heightMm: doublePrecision("height_mm"),
+  multiplier: doublePrecision("multiplier").notNull().default(1),
+  wastePercent: doublePrecision("waste_percent").notNull().default(0),
+  fillPattern: text("fill_pattern").notNull().default("solid"),
+  lineType: text("line_type").notNull().default("solid"),
+  lineSize: integer("line_size").notNull().default(2),
+  isVisible: boolean("is_visible").notNull().default(true),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
+export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+/**
+ * Which estimate lines depend on which take-off measurement.
+ *
+ * Derived from estimate_items.quantity_formula and rewritten whenever a line is
+ * saved. It exists so re-measuring on the plan finds the lines to re-price in
+ * one indexed query, and so the take-off list can warn "used by 3 estimate
+ * lines" before an item is deleted. See migration 0088.
+ */
+export const estimateItemTakeoffRefs = pgTable("estimate_item_takeoff_refs", {
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }),
+  measurementId: varchar("measurement_id").notNull().references(() => takeoffMeasurements.id, { onDelete: "cascade" }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.estimateItemId, table.measurementId] }),
+  measurementIdx: index("estimate_item_takeoff_refs_measurement_idx").on(table.measurementId),
+}));
+export type EstimateItemTakeoffRef = typeof estimateItemTakeoffRefs.$inferSelect;
+
+export const takeoffMarkups = pgTable("takeoff_markups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull().default(1),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  markupType: text("markup_type").notNull(),
+  color: text("color").notNull().default("#E85D04"),
+  geometry: json("geometry").notNull().default([]),
+  label: text("label"),
+  fontSize: integer("font_size").notNull().default(14),
+  strokeWidth: integer("stroke_width").notNull().default(2),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffMarkupSchema = createInsertSchema(takeoffMarkups).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMarkup = z.infer<typeof insertTakeoffMarkupSchema>;
+export type TakeoffMarkup = typeof takeoffMarkups.$inferSelect;
+
+// ── Supplier Name Mappings ─────────────────────────────────────────────────────
+// Remembers which supplier a given invoice name string maps to, so future bills
+// from the same supplier auto-match without needing user confirmation again.
+export const supplierNameMappings = pgTable("supplier_name_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNameString: text("invoice_name_string").notNull(),
+  supplierId: varchar("supplier_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertSupplierNameMappingSchema = createInsertSchema(supplierNameMappings).omit({ id: true, createdAt: true });
+export type InsertSupplierNameMapping = z.infer<typeof insertSupplierNameMappingSchema>;
+export type SupplierNameMapping = typeof supplierNameMappings.$inferSelect;
+
+// ── Product Library ────────────────────────────────────────────────────────────
+// Fixtures, tapware, tiles, appliances — company-level product catalogue
+// used to populate selection options without re-entering data each time.
+export const products = pgTable("products", {
+  id:                serial("id").primaryKey(),
+  companyId:         varchar("company_id").notNull().references(() => companies.id),
+  name:              text("name").notNull(),
+  brand:             text("brand"),
+  sku:               text("sku"),
+  description:       text("description"),
+  // Superseded by groupId. Kept for one release so nothing reading them breaks
+  // while the backfill runs; drop once the UI reads groups everywhere.
+  category:          text("category"),
+  subcategory:       text("subcategory"),
+  groupId:           varchar("group_id").references(() => productGroups.id, { onDelete: "set null" }),
+  // "library"         a real product someone put in the library.
+  // "template_shadow" a row the templateData write-through had to mint because
+  //                   an option described a product instead of referencing one.
+  //
+  // Only shadows are hidden from the library. Testing found the earlier
+  // NOT EXISTS(selection_template_options) test hid any product a template
+  // merely REFERENCED — so adding the Colorbond colours to "Gutter colour"
+  // emptied the Product Library.
+  source:            text("source").notNull().default("library"),
+  supplierContactId: varchar("supplier_contact_id").references(() => contacts.id),
+  defaultUnitCost:   integer("default_unit_cost"),   // cents; inc GST when gstInclusive, else ex GST (legacy rows)
+  gstInclusive:      boolean("gst_inclusive").notNull().default(false),
+  // Markup on cost (percent) and what the client pays per unit (cents INC GST).
+  // Copied onto a selection option when the product is picked; the option can
+  // then be re-priced for that job without touching the library.
+  defaultMarkupPercent: doublePrecision("default_markup_percent"),
+  defaultUnitCharge: integer("default_unit_charge"),
+  unitType:          text("unit_type"),
+  url:               text("url"),
+  notes:             text("notes"),
+  isActive:          boolean("is_active").default(true),
+  // The spec, and only the spec. How a particular template USES a product —
+  // quantity, markup, whether the client may see it — lives on
+  // selectionTemplateOptions below, because those answers differ per use and a
+  // library product is meant to be shared between them.
+  specifications:    json("specifications").$type<Record<string, any>>(),
+  createdAt:         timestamp("created_at").defaultNow(),
+  updatedAt:         timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  // Every read is scoped by company and ordered by name — getProducts() is
+  // WHERE company_id = $1 [AND is_active] ORDER BY name. Postgres does not index
+  // the referencing side of an FK, so without this it is a seq scan plus a sort.
+  companyNameIdx: index("products_company_id_name_idx").on(table.companyId, table.name),
+  groupIdx: index("products_group_id_idx").on(table.groupId),
+}));
+
+export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type Product = typeof products.$inferSelect;
+
+export const productImages = pgTable("product_images", {
+  id:        serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  filePath:  text("file_path").notNull(),
+  fileName:  text("file_name"),
+  mimeType:  text("mime_type"),
+  fileSize:  integer("file_size"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  // Thumbnail crop, same meaning as on option_attachments. Copied both ways
+  // when a product is picked into a selection or saved back to the library.
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
+  thumbnailZoom: integer("thumbnail_zoom").notNull().default(100),
+});
+
+export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });
+export type InsertProductImage = z.infer<typeof insertProductImageSchema>;
+export type ProductImage = typeof productImages.$inferSelect;
+
+// ── Product Groups ────────────────────────────────────────────────────────────
+// Where a product LIVES. Replaces the free-text `category` / `subcategory` pair,
+// which enforced no spelling — "Tapware", "tapware" and "Tap ware" were three
+// different groups — and could never be renamed.
+//
+// `parentId` is nullable and self-referencing, so the existing two levels
+// (category → subcategory) migrate straight across and a third can be added
+// later without another migration. Precedent: system_folders, field_options.
+export const productGroups = pgTable("product_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  parentId: varchar("parent_id").references((): any => productGroups.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  colour: text("colour"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("product_groups_company_idx").on(table.companyId),
+  parentIdx: index("product_groups_parent_idx").on(table.parentId),
+  // Two branches may each hold a "Colours"; only siblings must differ.
+  uniqueSibling: uniqueIndex("product_groups_sibling_name_unique").on(table.companyId, table.parentId, table.name),
+}));
+
+// companyId is NOT omitted here — routes omit it at the parse site so the
+// omission is visible where req.body is read. See insertProductSchema.
+export const insertProductGroupSchema = createInsertSchema(productGroups).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProductGroup = z.infer<typeof insertProductGroupSchema>;
+export type ProductGroup = typeof productGroups.$inferSelect;
+
+// ── Product Tags ──────────────────────────────────────────────────────────────
+// What a product BELONGS TO. A group is one place; tags are many, and they carry
+// the cross-cutting facts a single tree cannot: "colorbond-standard",
+// "hamptons", "accessible".
+//
+// Real rows rather than a JSON string array (the shape price_list_items.tags
+// uses) because a tag here doubles as a SET — "add every product tagged
+// colorbond-standard to this selection". A set one typo away from fragmenting is
+// not one you would build a client-facing selection from, and free-text tags
+// cannot be renamed. Modelled on task_tags.
+export const productTags = pgTable("product_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  colour: text("colour"),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("product_tags_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertProductTagSchema = createInsertSchema(productTags).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProductTag = z.infer<typeof insertProductTagSchema>;
+export type ProductTag = typeof productTags.$inferSelect;
+
+// Many-to-many. A junction table rather than an id array on the product, so
+// "every product tagged X" is an indexed lookup — which is what makes bulk-add
+// from a tag cheap.
+export const productTagAssignments = pgTable("product_tag_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tagId: varchar("tag_id").notNull().references(() => productTags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePair: uniqueIndex("product_tag_assignments_unique").on(table.productId, table.tagId),
+  tagIdx: index("product_tag_assignments_tag_idx").on(table.tagId),
+}));
+
+export type ProductTagAssignment = typeof productTagAssignments.$inferSelect;
+
+// ── Selection Template Options ────────────────────────────────────────────────
+// The Option level of the Product Library hierarchy:
+//
+//   selection_template_groups   Category   "Roofing"
+//   └── selection_templates     Selection  "Gutter profile"
+//       └── THIS TABLE          Option     "Quad", "Half round"
+//
+// Options currently live inside `selection_templates.templateData` as a JSON
+// blob, which is why they cannot be searched, cannot be linked to from a job,
+// and give "save to library" nowhere to write. These rows shadow that blob
+// until it is retired.
+//
+// The split from `products` is deliberate. A product is a SPEC — a Colorbond
+// quad gutter is the same object wherever it is specified. These columns are
+// how one template USES that product, and the answers differ per use: the same
+// tapware may be 2 units and client-visible in one selection and 6 units and
+// hidden in another. Putting them on the product would make sharing a product
+// between templates impossible, which is the point of a library.
+export const selectionTemplateOptions = pgTable("selection_template_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => selectionTemplates.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  // Denormalised from selectionTemplates so every read can be scoped by tenant
+  // without a join. Same convention as the rest of the schema.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  // How THIS template uses the product. Names and defaults match
+  // selection_options exactly, because /apply copies them straight across.
+  quantity:        integer("quantity"),
+  unitCostOverride: integer("unit_cost_override"),  // cents; null = use the product's defaultUnitCost
+  markupPercent:   doublePrecision("markup_percent"),
+  // Client charge per unit, cents INC GST. Authoritative when set, exactly as
+  // on selection_options.unit_charge.
+  unitCharge:      integer("unit_charge"),
+  totalCost:       integer("total_cost"),           // cents
+  visibleToClient: boolean("visible_to_client"),
+  gstInclusive:    boolean("gst_inclusive"),
+  // The option's OWN category, null when the blob did not give it one. The
+  // product's category may have been inherited from the item or template so the
+  // library can file it; that inheritance must not leak back into an applied
+  // selection option, which previously had no category at all.
+  optionCategory:  text("option_category"),
+  // NULLABLE on purpose. /apply defaults an absent sortOrder differently per
+  // format — 0 for legacy, the option's index for flat — so storing 0 for
+  // "absent" would make the flat default unreproducible from a row. Order reads
+  // with NULLS LAST.
+  sortOrder:       integer("sort_order"),
+
+  // Provenance, and the backfill's idempotency key.
+  //
+  // The option's `id` inside templateData where it has one. Many do not: ids
+  // were minted at read time into a React ref and persisted only on an explicit
+  // save, so an id is neither guaranteed nor reproducible from the blob alone.
+  // The fallback is positional — `idx:0` for a flat option, `idx:2/1` for
+  // items[2].options[1] in the legacy `itemName` format.
+  templateOptionId: text("template_option_id"),
+
+  // The legacy `itemName` format nests options under items, and an item is a
+  // SELECTION that has no table of its own. Until those are promoted, this
+  // preserves which item an option belonged to so the grouping is not lost.
+  legacyItemIndex: integer("legacy_item_index"),
+  legacyItemName:  text("legacy_item_name"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  templateIdx: index("selection_template_options_template_idx").on(table.templateId, table.sortOrder),
+  productIdx: index("selection_template_options_product_idx").on(table.productId),
+  companyIdx: index("selection_template_options_company_idx").on(table.companyId),
+  // One row per option, so the backfill updates rather than duplicates on a
+  // re-run. Partial because templateOptionId is nullable for rows created by
+  // hand later.
+  templateOptionUnique: uniqueIndex("selection_template_options_template_option_unique")
+    .on(table.templateId, table.templateOptionId)
+    .where(sql`template_option_id IS NOT NULL`),
+}));
+
+export const insertSelectionTemplateOptionSchema = createInsertSchema(selectionTemplateOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertSelectionTemplateOption = z.infer<typeof insertSelectionTemplateOptionSchema>;
+export type SelectionTemplateOption = typeof selectionTemplateOptions.$inferSelect;
+
+// ── Circuit Sessions ────────────────────────────────
+// Live business snapshot the AI uses when building circuit sessions or answering queries.
+export interface CircuitContext {
+  activeProjects: Array<{
+    id: string; name: string; status: string; subStatus: string;
+    percentComplete: number; startDate: string | null; endDate: string | null;
+    clientName: string | null; contractCost: number | null;
+  }>;
+  overdueTasks: Array<{
+    id: string; title: string; dueDate: string; assigneeName: string | null;
+    projectName: string | null; status: string;
+  }>;
+  tasksDueThisWeek: Array<{
+    id: string; title: string; dueDate: string; assigneeName: string | null;
+    projectName: string | null;
+  }>;
+  unpaidBills: Array<{
+    id: string; billNumber: string; supplierName: string | null;
+    total: number; dueDate: string | null; projectName: string | null;
+    daysOverdue: number;
+  }>;
+  overdueClientInvoices: Array<{
+    id: string; invoiceNumber: string | null; name: string;
+    totalAmount: number; dueDate: string | null; projectName: string;
+    daysSinceSent: number;
+  }>;
+  openBlockedItems: AiBlockedItem[];
+  leadProjects: Array<{ id: string; name: string; subStatus: string; }>;
+}
+
+// ── Morada AI Assistant ──────────────────────────────
+export const aiConversations = pgTable("ai_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title"),
+  circuitMode: boolean("circuit_mode").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const aiMessages = pgTable("ai_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => aiConversations.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // "user" | "assistant"
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const aiBlockedItems = pgTable("ai_blocked_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => aiConversations.id),
+  description: text("description").notNull(),
+  reason: text("reason"),
+  ownedBy: text("owned_by"),
+  relatedProjectId: varchar("related_project_id").references(() => projects.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type AiConversation = typeof aiConversations.$inferSelect;
+export type AiMessage = typeof aiMessages.$inferSelect;
+export type AiBlockedItem = typeof aiBlockedItems.$inferSelect;
+export type InsertAiConversation = typeof aiConversations.$inferInsert;
+export type InsertAiMessage = typeof aiMessages.$inferInsert;
+export type InsertAiBlockedItem = typeof aiBlockedItems.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLIENT REVIEW & APPROVALS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A builder pushes documents (plans, sub-trade quotes, selections, specs) to a
+// reviewer, who reads them and either approves, asks for changes, or rejects.
+// Asking for changes cycles: the builder issues a new revision and it goes back
+// out. Every revision, comment and decision is kept, so the client can always
+// see what they were shown and what they agreed to.
+//
+// REVIEWER IS DELIBERATELY GENERIC. V1 ships client review only, but nothing
+// below says "client": an item names a `reviewerType` plus one of two refs
+// (contact or user). Phase 2 — an admin pushing an estimate to a PM and back —
+// sets reviewerType = 'user' and populates reviewerUserId. No migration, no
+// rearchitecture. Server-side resolution lives in server/reviews/reviewerResolver.ts.
+//
+// Vocabularies (status, decision, cost impact, revision labels) live in
+// shared/reviewCostImpact.ts so the server and client cannot drift.
+
+/** Cost impact is ONE field with three states — never a set of booleans. */
+export const reviewCostImpactEnum = pgEnum("review_cost_impact", ["none", "possible", "confirmed"]);
+
+/** A reviewer's decision on one revision. */
+export const reviewDecisionEnum = pgEnum("review_decision", ["approved", "changes_requested", "rejected"]);
+
+export const reviewItems = pgTable("review_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Tenancy. `variations` scopes through projectId alone; reviews carry the
+  // company explicitly so every query can be company-scoped without a join.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(),
+  description: text("description"),
+
+  // "draft" | "awaiting_review" | "changes_requested" | "approved" | "rejected" | "closed"
+  // See REVIEW_ITEM_STATUSES in shared/reviewCostImpact.ts.
+  status: text("status").notNull().default("draft"),
+
+  // Overdue is a DATE comparison in the company's local day — see isOverdue().
+  dueDate: timestamp("due_date"),
+
+  // ── Cost impact ──────────────────────────────────────────────────────────
+  costImpact: reviewCostImpactEnum("cost_impact").notNull().default("none"),
+  // Estimated impact: prompted (optional) when costImpact === 'confirmed'.
+  // "amount" | "range" | "tbc" | null — null means the builder skipped it.
+  costImpactEstimateMode: text("cost_impact_estimate_mode"),
+  costImpactAmountCents: integer("cost_impact_amount_cents"),
+  costImpactMinCents: integer("cost_impact_min_cents"),
+  costImpactMaxCents: integer("cost_impact_max_cents"),
+  costImpactNote: text("cost_impact_note"),
+
+  // Opt-in downstream hook (implemented in PR5). When true, approving this item
+  // raises a draft variation linked back to the approval. The PR2 composer
+  // auto-ticks this for 'confirmed' and leaves it off otherwise; the builder can
+  // always override, so this is NOT derivable from costImpact.
+  createVariationOnApproval: boolean("create_variation_on_approval").notNull().default(false),
+
+  // Denormalised pointer to the revision currently out for review. Nullable
+  // because an item exists before its first revision is issued.
+  //
+  // No .references() here: reviewItems and reviewRevisions point at each other,
+  // and declaring both in Drizzle is a circular initialisation. The real FK
+  // (ON DELETE SET NULL) is added in migration 0045 once both tables exist.
+  currentRevisionId: varchar("current_revision_id"),
+
+  // ── Reviewer (generic; see the header note) ───────────────────────────────
+  // "client" in V1. Phase 2 adds "user" for internal review.
+  reviewerType: text("reviewer_type").notNull().default("client"),
+  // V1: defaults to the project's assigned client (projects.clientId).
+  reviewerContactId: varchar("reviewer_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  // Phase-2 seam. Always null in V1 — present so phase 2 needs no migration.
+  reviewerUserId: varchar("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+
+  // ── Direct-link access (emailed notification) ─────────────────────────────
+  // Same lazily-minted-token model as selections.portalToken / variations.portalToken.
+  // One token per ITEM, so the emailed link is stable across revisions.
+  portalToken: varchar("portal_token").unique(),
+  portalSentAt: timestamp("portal_sent_at"),
+  portalViewedAt: timestamp("portal_viewed_at"), // first time the reviewer opened the link
+
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  closedAt: timestamp("closed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("review_items_company_idx").on(table.companyId),
+  projectStatusIdx: index("review_items_project_status_idx").on(table.projectId, table.status),
+  dueDateIdx: index("review_items_due_date_idx").on(table.dueDate),
+  reviewerContactIdx: index("review_items_reviewer_contact_idx").on(table.reviewerContactId),
+}));
+
+export const insertReviewItemSchema = createInsertSchema(reviewItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Coerce strings to dates for JSON compatibility — a JSON client sends an
+  // ISO string, and the raw Drizzle timestamp schema only accepts a Date.
+  dueDate: z.coerce.date().nullable().optional(),
+});
+
+export type InsertReviewItem = z.infer<typeof insertReviewItemSchema>;
+export type ReviewItem = typeof reviewItems.$inferSelect;
+
+/**
+ * One issuance of an item to its reviewer. Re-issuing after a change-request
+ * creates the next revision rather than mutating the last one, so the client's
+ * revision history is a real record of what they were shown.
+ */
+export const reviewRevisions = pgTable("review_revisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+
+  revisionNumber: integer("revision_number").notNull(), // 1, 2, 3…
+  // STORED, not derived — relabelling the scheme must never rewrite history.
+  // Default comes from defaultRevisionLabel() ("Rev A", "Rev B"…).
+  revisionLabel: text("revision_label").notNull(),
+
+  // Client-visible covering note: what changed since the last revision.
+  // Builder-internal chatter belongs in review_comments with isInternal = true.
+  notes: text("notes"),
+
+  issuedById: varchar("issued_by_id").references(() => users.id, { onDelete: "set null" }),
+  // Null until the builder issues it. A revision is created unissued with the
+  // review item so drawings can be attached while it is still a draft —
+  // documents hang off a revision, so without one there was nothing to attach
+  // to and the builder had to issue to the client before adding the files.
+  // 🚨 Anything client-facing must filter these out: see the portal route.
+  issuedAt: timestamp("issued_at"),
+  supersededAt: timestamp("superseded_at"), // set when the next revision is issued
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index("review_revisions_item_idx").on(table.reviewItemId),
+  itemNumberUnique: uniqueIndex("review_revisions_item_number_unique").on(table.reviewItemId, table.revisionNumber),
+}));
+
+export const insertReviewRevisionSchema = createInsertSchema(reviewRevisions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewRevision = z.infer<typeof insertReviewRevisionSchema>;
+export type ReviewRevision = typeof reviewRevisions.$inferSelect;
+
+/**
+ * A document attached to a REVISION (not to the item) — that is what makes the
+ * revision history meaningful: each revision carries the exact set of documents
+ * the reviewer saw at the time.
+ *
+ * `filePath` is an object-storage path (/objects/company/<cid>/uploads/<uuid>),
+ * matching option_attachments / purchase_order_attachments. NOT
+ * drive_file_attachments: those rows are Google Drive pointers needing the
+ * company's Drive OAuth, which a reviewer on a token link does not have.
+ *
+ * V1 is team-upload only — uploadedById is a user, and there is no client
+ * upload route.
+ */
+export const reviewDocuments = pgTable("review_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Denormalised so listing every document on an item needs no join.
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  revisionId: varchar("revision_id").notNull().references(() => reviewRevisions.id, { onDelete: "cascade" }),
+
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type"), // "image" | "document" | "specification"
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"), // bytes
+  sortOrder: integer("sort_order").notNull().default(0),
+
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  revisionIdx: index("review_documents_revision_idx").on(table.revisionId),
+  itemIdx: index("review_documents_item_idx").on(table.reviewItemId),
+}));
+
+export const insertReviewDocumentSchema = createInsertSchema(reviewDocuments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewDocument = z.infer<typeof insertReviewDocumentSchema>;
+export type ReviewDocument = typeof reviewDocuments.$inferSelect;
+
+/**
+ * The conversation on a review item. One level of threading (parentCommentId),
+ * which is new — selection_comments / rfi_comments / task_comments are all flat.
+ *
+ * `isInternal` comments are builder-only and must never appear in a reviewer
+ * projection; the portal/client read paths filter them out server-side.
+ */
+export const reviewComments = pgTable("review_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  // Which revision was on screen when this was written. Set null (not cascade)
+  // so deleting a revision never silently deletes the conversation about it.
+  revisionId: varchar("revision_id").references(() => reviewRevisions.id, { onDelete: "set null" }),
+  // One level only: a reply points at a top-level comment, never at another reply.
+  parentCommentId: varchar("parent_comment_id").references((): AnyPgColumn => reviewComments.id, { onDelete: "set null" }),
+
+  content: text("content").notNull(),
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+
+  // "team" | "client" | "system" — generic, so a phase-2 internal reviewer fits.
+  authorType: text("author_type").notNull().default("team"),
+  // Null for a reviewer arriving on a portal token (no session user).
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name").notNull(), // cached for display, as elsewhere
+
+  // Builder-only note; stripped from every reviewer-facing projection.
+  isInternal: boolean("is_internal").notNull().default(false),
+  // Auto-generated audit line (issued Rev B, reopened, decision recorded…).
+  isSystem: boolean("is_system").notNull().default(false),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  editedAt: timestamp("edited_at"), // null until the author edits
+}, (table) => ({
+  itemCreatedIdx: index("review_comments_item_created_idx").on(table.reviewItemId, table.createdAt),
+  parentIdx: index("review_comments_parent_idx").on(table.parentCommentId),
+}));
+
+export const insertReviewCommentSchema = createInsertSchema(reviewComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  editedAt: true,
+});
+
+export type InsertReviewComment = z.infer<typeof insertReviewCommentSchema>;
+export type ReviewComment = typeof reviewComments.$inferSelect;
+
+/**
+ * An immutable decision record. APPEND-ONLY — never UPDATEd. Mirrors
+ * bill_approvals, plus the audit columns variations gained in migration 0029.
+ *
+ * THE SNAPSHOT IS THE POINT. The cost-impact state AND the exact banner wording
+ * shown at decision time are frozen here, so rewording the banner copy later
+ * cannot change what a historic approval says the client agreed to. This is the
+ * same freeze-on-event pattern as projects.contractedTotal*. The server derives
+ * the text from shared/reviewCostImpact.ts at write time; it is never accepted
+ * from the client.
+ */
+export const reviewApprovals = pgTable("review_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  // An approval must always name the revision it was given against.
+  revisionId: varchar("revision_id").notNull().references(() => reviewRevisions.id, { onDelete: "cascade" }),
+
+  decision: reviewDecisionEnum("decision").notNull(),
+  comment: text("comment"),
+
+  // ── Frozen at decision time ──────────────────────────────────────────────
+  snapshotCostImpact: reviewCostImpactEnum("snapshot_cost_impact").notNull(),
+  snapshotBannerText: text("snapshot_banner_text"), // null when impact was 'none'
+  snapshotBannerVersion: text("snapshot_banner_version"), // REVIEW_BANNER_VERSION at the time
+  snapshotEstimateMode: text("snapshot_estimate_mode"),
+  snapshotEstimateAmountCents: integer("snapshot_estimate_amount_cents"),
+  snapshotEstimateMinCents: integer("snapshot_estimate_min_cents"),
+  snapshotEstimateMaxCents: integer("snapshot_estimate_max_cents"),
+  snapshotEstimateNote: text("snapshot_estimate_note"),
+
+  // The red gate: 'confirmed' items cannot be approved until this is ticked.
+  // Enforced server-side; persisted so the audit trail proves it was shown.
+  acknowledgedVariationRequired: boolean("acknowledged_variation_required").notNull().default(false),
+
+  // ── Who decided (generic; phase-2 ready) ──────────────────────────────────
+  decidedByType: text("decided_by_type").notNull().default("client"), // "client" | "user"
+  decidedByUserId: varchar("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  decidedByContactId: varchar("decided_by_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  decidedByName: text("decided_by_name").notNull(), // as typed/known at the time
+  decidedVia: text("decided_via").notNull().default("portal_login"), // "portal_login" | "portal_token"
+  decidedIp: text("decided_ip"),
+  decidedUserAgent: text("decided_user_agent"),
+
+  // Set by the PR5 hook when this approval raised a draft variation.
+  // Also the idempotency guard: already set means do not raise a second one.
+  createdVariationId: varchar("created_variation_id").references(() => variations.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  itemCreatedIdx: index("review_approvals_item_created_idx").on(table.reviewItemId, table.createdAt),
+  revisionIdx: index("review_approvals_revision_idx").on(table.revisionId),
+  variationIdx: index("review_approvals_variation_idx").on(table.createdVariationId),
+}));
+
+export const insertReviewApprovalSchema = createInsertSchema(reviewApprovals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewApproval = z.infer<typeof insertReviewApprovalSchema>;
+export type ReviewApproval = typeof reviewApprovals.$inferSelect;
+
+/** An item with everything a detail view needs, in one shape. */
+export type ReviewItemWithDetail = ReviewItem & {
+  revisions: (ReviewRevision & { documents: ReviewDocument[] })[];
+  comments: ReviewComment[];
+  approvals: ReviewApproval[];
+};
