@@ -2691,13 +2691,13 @@ export const emailDeliveries = pgTable("email_deliveries", {
   contextType: text("context_type"),
   contextId: varchar("context_id"),
 
-  // ── 0118: the email log ──────────────────────────────────────────────────
+  // ── 0120: the email log ──────────────────────────────────────────────────
   /** Resolved at write time from the context document. */
   projectId: varchar("project_id"),
 
   fromAddress: text("from_address"),
   replyTo: text("reply_to"),
-  /** The rendered HTML exactly as sent. Null when redacted or pre-0118. */
+  /** The rendered HTML exactly as sent. Null when redacted or pre-0120. */
   htmlBody: text("html_body"),
   /** Body deliberately not kept — it carried a live sign-in link. */
   bodyRedacted: boolean("body_redacted").notNull().default(false),
