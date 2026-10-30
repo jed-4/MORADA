@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Asset } from "@shared/schema";
 import { METER_UNIT, VEHICLE_COST_CATEGORIES, VEHICLE_COST_CATEGORY_LABELS, type MeterType, type VehicleCostCategory } from "@shared/assets";
-import { errorText, money, shortDate } from "./assetsShared";
+import { CHIP_BUTTON, SectionHeader, errorText, money, shortDate } from "./assetsShared";
 
 interface CostLine {
   lineId: string;
@@ -55,7 +55,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="min-w-0">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold tabular-nums">{value}</div>
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
       {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   );
@@ -84,28 +84,21 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
 
   return (
     <Card className="overflow-hidden min-w-0 lg:col-span-2" data-testid="card-asset-costs">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
-          <Receipt className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Running costs</h3>
-            <p className="text-xs text-muted-foreground">From bills linked to this asset, inc GST. Link fuel, servicing, rego and insurance as they come in.</p>
-          </div>
-        </div>
+      <SectionHeader icon={Receipt} title="Running costs" hint="From linked bills, inc GST">
         {canEdit && (
-          <Button size="sm" variant="outline" className="h-6 px-2 text-xs shrink-0" onClick={() => setFinding(true)} data-testid="button-find-bills">
-            <Search className="w-3.5 h-3.5 mr-1" />Find bills
-          </Button>
+          <button type="button" className={CHIP_BUTTON} onClick={() => setFinding(true)} data-testid="button-find-bills">
+            <Search className="w-3 h-3" />Find bills
+          </button>
         )}
-      </div>
+      </SectionHeader>
 
       {isLoading ? (
         <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : error || !s ? (
-        <p className="px-4 py-6 text-xs text-muted-foreground text-center">Couldn't load the costs.</p>
+        <p className="px-3 py-4 text-xs text-muted-foreground text-center">Couldn't load the costs.</p>
       ) : (
         <div className="flex flex-col">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-4 py-3 border-b border-border">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-3 py-2 border-b border-border">
             <Tile label="Last 12 months" value={money(s.billsLast12Cents + s.loggedLast12Cents)} sub={s.loggedLast12Cents ? `${money(s.loggedLast12Cents)} logged by hand` : "from bills"} />
             <Tile
               label={`Cost per ${unit || "unit"}`}
@@ -117,12 +110,12 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
           </div>
 
           {data!.lines.length === 0 ? (
-            <p className="px-4 py-6 text-xs text-muted-foreground text-center">
+            <p className="px-3 py-4 text-xs text-muted-foreground text-center">
               No bills linked yet. {canEdit ? "Use Find bills — it looks for the rego on bill lines." : ""}
             </p>
           ) : (
             <div className="grid md:grid-cols-[280px_1fr] divide-y md:divide-y-0 md:divide-x divide-border">
-              <div className="px-4 py-3 flex flex-col gap-2">
+              <div className="px-3 py-2 flex flex-col gap-1.5">
                 <div className="text-[11px] font-medium text-muted-foreground">Last 12 months by type</div>
                 {VEHICLE_COST_CATEGORIES.filter((c) => s.byCategoryLast12[c]).map((c) => (
                   <div key={c} className="text-xs">
@@ -149,7 +142,7 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
               </div>
               <ul className="divide-y divide-border max-h-[360px] overflow-y-auto">
                 {data!.lines.map((l) => (
-                  <li key={l.lineId} className="flex items-center gap-3 px-4 py-2" data-testid={`row-cost-${l.lineId}`}>
+                  <li key={l.lineId} className="flex items-center gap-3 px-3 py-1.5" data-testid={`row-cost-${l.lineId}`}>
                     <span className="text-[11px] text-muted-foreground tabular-nums w-16 shrink-0">{shortDate(dateKey(l.billDate))}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">{l.description || "—"}</div>

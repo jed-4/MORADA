@@ -79,3 +79,39 @@ export function errorText(err: unknown, fallback: string): string {
 
 /** Dollars typed in a form → integer cents, or null for an empty field. */
 export const toCents = (dollars: number | null) => (dollars == null ? null : Math.round(dollars * 100));
+
+// ---- house tokens (Tasks/Timesheets card header) -------------------------
+// Every asset screen uses these so the buttons match the rest of the app.
+export const CHIP_BUTTON =
+  "h-6 w-auto px-2 text-xs border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1 shrink-0 disabled:opacity-50";
+export const PRIMARY_BUTTON =
+  "h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 shrink-0 disabled:opacity-50";
+export const ICON_BUTTON =
+  "h-6 w-6 border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center justify-center shrink-0";
+
+/**
+ * One-line section header: h-9, small icon + title, an optional hint inline
+ * (truncates rather than wrapping to a second line), actions on the right.
+ */
+export function SectionHeader({
+  icon: Icon,
+  title,
+  hint,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  hint?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="h-9 flex items-center justify-between gap-2 px-3 border-b border-border">
+      <div className="flex items-center gap-1.5 min-w-0" title={hint}>
+        <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <h3 className="text-xs font-semibold shrink-0">{title}</h3>
+        {hint && <span className="text-[11px] text-muted-foreground truncate">· {hint}</span>}
+      </div>
+      {children && <div className="flex items-center gap-1 shrink-0">{children}</div>}
+    </div>
+  );
+}

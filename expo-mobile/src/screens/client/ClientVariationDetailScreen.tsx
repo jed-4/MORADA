@@ -24,6 +24,7 @@ import { formatMoney } from '../../lib/selections';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { PORTAL_KEYS, formatDay, formatDaysChanged, variationStatus } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
+import DocumentViewer, { type ViewableDocument } from '../../components/DocumentViewer';
 
 /**
  * One variation, as the document the client was sent, with the signature.
@@ -114,6 +115,7 @@ export default function ClientVariationDetailScreen() {
   const [missing, setMissing] = useState(false);
   const [signing, setSigning] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
   const [reason, setReason] = useState('');
 
   const load = useCallback(async () => {
@@ -302,17 +304,39 @@ export default function ClientVariationDetailScreen() {
             </ClientCard>
           )}
 
+          {/* The PDF they were emailed, served verbatim from the archive — after
+              signing, the copy their signature belongs to. */}
+          <Pressable
+            onPress={() => setOpenDoc({
+              path: `/api/variations/${variationId}/client-document`,
+              name: `${v.variationNumber || 'Variation'}.pdf`,
+              notFoundMessage: "There's no PDF for this variation yet — your builder hasn't emailed one. Everything in it is shown on this screen.",
+            })}
+            style={({ pressed }) => [styles.pdfButton, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+          >
+            <Ionicons name="document-text-outline" size={18} color={theme.primary} />
+            <Text style={[styles.pdfButtonText, { color: theme.primary }]}>
+              {v.clientSignedName ? 'View signed copy (PDF)' : 'View PDF'}
+            </Text>
+          </Pressable>
+
           {!!data?.attachments?.length && (
             <>
               <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ATTACHMENTS</Text>
-              <ClientCard style={{ gap: 8 }}>
+              <ClientCard style={{ gap: 4 }}>
                 {data.attachments.map((a) => (
-                  <View key={a.index} style={styles.attachment}>
-                    <Ionicons name="document-outline" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.body, { color: theme.textPrimary, flex: 1 }]} numberOfLines={1}>{a.name}</Text>
-                  </View>
+                  <Pressable
+                    key={a.index}
+                    onPress={() => setOpenDoc({ path: `/api/variations/${variationId}/client-attachments/${a.index}`, name: a.name })}
+                    style={({ pressed }) => [styles.attachment, pressed && { opacity: 0.6 }]}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="document-outline" size={16} color={theme.primary} />
+                    <Text style={[styles.body, { color: theme.primary, flex: 1, marginTop: 0 }]} numberOfLines={1}>{a.name}</Text>
+                    <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
+                  </Pressable>
                 ))}
-                <Text style={[styles.note, { color: theme.textMuted }]}>Open the web portal to download attachments and the PDF.</Text>
               </ClientCard>
             </>
           )}
@@ -363,6 +387,8 @@ export default function ClientVariationDetailScreen() {
           </Pressable>
         </View>
       )}
+
+      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} />
 
       <Modal visible={rejectOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setRejectOpen(false)}>
         <KeyboardAvoidingView style={[styles.container, { backgroundColor: theme.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -468,7 +494,9 @@ const styles = StyleSheet.create({
   totalStrong: { fontSize: fontSize.base, fontWeight: fontWeight.bold },
   totalStrongValue: { fontSize: fontSize.xl, fontWeight: fontWeight.bold },
   totalDivider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
-  attachment: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  pdfButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: radius.lg, paddingVertical: 12, marginTop: 16 },
+  pdfButtonText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   note: { fontSize: fontSize.xs },
   signedRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },

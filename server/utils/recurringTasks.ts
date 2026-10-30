@@ -100,7 +100,11 @@ export function generateRecurringTaskInstances(
         priority: template.priority,
         assigneeId: effectiveAssigneeId,
         tagIds: template.tagIds,
-        category: template.category,
+        // notes.category is NOT NULL. A template saved without one (the
+        // editor always sends "", the API need not) failed the insert, and
+        // the daily run is per company, so one such template stopped every
+        // recurring task that company had from being generated.
+        category: template.category ?? "",
         dueDate: new Date(currentDate),
       };
 
@@ -246,7 +250,7 @@ export function generateNextRecurringInstance(
     priority: template.priority,
     assigneeId: effectiveAssigneeId,
     tagIds: template.tagIds,
-    category: template.category,
+    category: template.category ?? "",
     dueDate: nextDueDate,
   };
 

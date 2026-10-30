@@ -391,6 +391,11 @@ export interface IStorage {
   createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
   updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
   deleteDocFolder(id: string): Promise<void>;
+  // Library sign-off (0118)
+  setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined>;
+  approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined>;
+  getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]>;
+  getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined>;
 
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
@@ -1774,7 +1779,7 @@ function getDefaultActionsForRole(
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
       'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
-      'business.assets', 'assets.prestart',
+      'business.assets', 'business.asset_costs', 'assets.prestart',
       'operations.tasks', 'operations.library', 'operations.workflows',
     ];
     for (const key of keys) grantAll(key);
@@ -2029,6 +2034,7 @@ export class MemStorage implements IStorage {
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7271,6 +7277,7 @@ export class DbStorage implements IStorage {
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7355,6 +7362,52 @@ export class DbStorage implements IStorage {
     await this.backfillAssetRegisterGrants(createdKeys);
     await this.backfillOperationsGrants(createdKeys);
     await this.backfillPrestartGrants(createdKeys);
+    await this.backfillAssetCostGrants(createdKeys);
+  }
+
+  /**
+   * Asset costs used to come with viewing the register. The key that splits
+   * them out is given to every role that can view the register today, so
+   * nobody loses sight of anything on deploy; an admin then unticks it for
+   * whoever shouldn't see the money. Once only, like the other backfills.
+   */
+  private async backfillAssetCostGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("business.asset_costs")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const costsId = allPermissions.find((p) => p.key === "business.asset_costs")?.id;
+      const assetsId = allPermissions.find((p) => p.key === "business.assets")?.id;
+      if (!costsId || !assetsId) return;
+
+      const sourceGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, assetsId));
+      if (sourceGrants.length === 0) return;
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, costsId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of sourceGrants) {
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        if (!held.includes("view")) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: costsId,
+          allowedActions: ["view"] as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] business.asset_costs granted to ${granted} role(s), mirroring business.assets view`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillAssetCostGrants:", error);
+    }
   }
 
   /**
@@ -30667,6 +30720,88 @@ export class DbStorage implements IStorage {
       await db.delete(schema.docFolders).where(eq(schema.docFolders.id, id));
     } catch (error) {
       console.error("Database error in deleteDocFolder:", error);
+      throw error;
+    }
+  }
+
+  // Sign-off fields are not in InsertDoc on purpose (an edit must never set
+  // them), so the review routes write them through here instead.
+  async setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined> {
+    try {
+      const [doc] = await db.update(schema.docs)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+        .returning();
+      return doc;
+    } catch (error) {
+      console.error("Database error in setDocReviewState:", error);
+      throw error;
+    }
+  }
+
+  // Snapshot the doc's current text as the next version and mark it approved,
+  // in one transaction so a version number is never taken twice or skipped.
+  async approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined> {
+    try {
+      return await db.transaction(async (tx) => {
+        const [doc] = await tx.select().from(schema.docs)
+          .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+          .for("update");
+        if (!doc) return undefined;
+        const version = (doc.currentVersion ?? 0) + 1;
+        const now = new Date();
+        await tx.insert(schema.docVersions).values({
+          companyId,
+          docId: id,
+          version,
+          title: doc.title || "Untitled",
+          contentHtml: doc.contentHtml || "",
+          approvedById: approver.id,
+          approvedByName: approver.name,
+          approvedAt: now,
+        });
+        const [updated] = await tx.update(schema.docs)
+          .set({
+            status: "approved",
+            currentVersion: version,
+            approvedAt: now,
+            approvedById: approver.id,
+            approvedByName: approver.name,
+            reviewNote: null,
+            updatedAt: now,
+          })
+          .where(eq(schema.docs.id, id))
+          .returning();
+        return updated;
+      });
+    } catch (error) {
+      console.error("Database error in approveDoc:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]> {
+    try {
+      return await db.select().from(schema.docVersions)
+        .where(and(eq(schema.docVersions.docId, docId), eq(schema.docVersions.companyId, companyId)))
+        .orderBy(desc(schema.docVersions.version));
+    } catch (error) {
+      console.error("Database error in getDocVersions:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined> {
+    try {
+      const [row] = await db.select().from(schema.docVersions)
+        .where(and(
+          eq(schema.docVersions.docId, docId),
+          eq(schema.docVersions.companyId, companyId),
+          eq(schema.docVersions.version, version),
+        ));
+      return row;
+    } catch (error) {
+      console.error("Database error in getDocVersion:", error);
       throw error;
     }
   }
