@@ -3413,6 +3413,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Which task templates point at this doc — "Used by" in the Library.
+  app.get("/api/docs/:id/usage", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
+      const templates = await storage.getTaskTemplates((req.user as any).companyId);
+      res.json(templates
+        .filter((t) => t.sopDocId === owned.id)
+        .map((t) => ({ id: t.id, title: t.title, isActive: t.isActive, frequency: t.frequency })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch usage" });
+    }
+  });
+
   app.get("/api/docs/:id/versions", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
@@ -40962,6 +40976,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The SOP behind a task, for the "View SOP" link on a generated To-Do. Only
+  // a summary: the reader opens the doc itself in the Library.
+  app.get("/api/systems/task-templates/:id/sop", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId;
+      const template = await storage.getTaskTemplate(req.params.id, companyId);
+      if (!template) return res.status(404).json({ error: "Task template not found" });
+      const doc = template.sopDocId ? await storage.getDoc(template.sopDocId) : undefined;
+      if (!doc || doc.companyId !== companyId) return res.json(null);
+      res.json({ id: doc.id, title: doc.title, docType: doc.docType, status: doc.status, currentVersion: doc.currentVersion });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP" });
+    }
+  });
+
   app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, requirePermission("operations.tasks", "view"), async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
@@ -40991,6 +41020,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (has(data.scopeStageId)) {
       const stage = await storage.getScopeStage(data.scopeStageId);
       if (!stage || (stage as any).companyId !== companyId) return "Scope stage";
+    }
+    if (has(data.sopDocId)) {
+      const doc = await storage.getDoc(data.sopDocId);
+      if (!doc || doc.companyId !== companyId) return "SOP";
     }
     if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
       const tags = await Promise.all(data.tagIds.map((id: string) => storage.getTaskTag(id, companyId)));
