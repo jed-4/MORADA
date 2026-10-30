@@ -21,6 +21,7 @@ import {
   NO_CONFIRMATION_AFTER_MS,
   emailTypeKey,
   isPlausibleEmail,
+  hideBearerLinks,
   type EmailLogDetail,
   type EmailLogListResponse,
   type EmailLogRow,
