@@ -23,17 +23,17 @@ const fmt = (iso: string) => format(new Date(iso), "d MMM yyyy, h:mm a");
 
 const DOT: Record<EmailTimelineEvent["kind"], string> = {
   sent: "bg-muted-foreground/40",
-  failed: "bg-status-danger-fg",
-  delayed: "bg-status-warning-fg",
-  delivered: "bg-status-success-fg",
-  opened: "bg-status-info-fg",
-  clicked: "bg-status-info-fg",
-  bounced: "bg-status-danger-fg",
-  complained: "bg-status-danger-fg",
+  failed: "bg-status-danger",
+  delayed: "bg-status-warning",
+  delivered: "bg-status-success",
+  opened: "bg-status-info",
+  clicked: "bg-status-info",
+  bounced: "bg-status-danger",
+  complained: "bg-status-danger",
   portal_viewed: "bg-primary",
-  signed: "bg-status-success-fg",
-  rejected: "bg-status-danger-fg",
-  quote_submitted: "bg-status-success-fg",
+  signed: "bg-status-success",
+  rejected: "bg-status-danger",
+  quote_submitted: "bg-status-success",
   resent: "bg-muted-foreground/40",
 };
 
@@ -128,8 +128,8 @@ export function EmailDetailSheet({
                 className={cn(
                   "mx-6 mt-4 rounded-md border px-3 py-2 text-xs",
                   health.tone === "negative"
-                    ? "border-status-danger-bg bg-status-danger-bg/40 text-status-danger-fg"
-                    : "border-status-warning-bg bg-status-warning-bg/40 text-status-warning-fg",
+                    ? "border-status-danger-bg bg-status-danger-bg/40 text-status-danger"
+                    : "border-status-warning-bg bg-status-warning-bg/40 text-status-warning",
                 )}
                 data-testid="callout-email-problem"
               >

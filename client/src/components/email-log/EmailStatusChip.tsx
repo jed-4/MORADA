@@ -4,11 +4,11 @@ import { deliveryHealth, type DeliveryHealthInput, type DeliveryTone } from "@sh
 import { AlertTriangle, CheckCheck, Check, Clock, Eye, Mail, XCircle } from "lucide-react";
 
 const TONE_CLASS: Record<DeliveryTone, string> = {
-  positive: "bg-status-success-bg text-status-success-fg",
-  info: "bg-status-info-bg text-status-info-fg",
+  positive: "bg-status-success-bg text-status-success",
+  info: "bg-status-info-bg text-status-info",
   neutral: "bg-muted text-muted-foreground",
-  warning: "bg-status-warning-bg text-status-warning-fg",
-  negative: "bg-status-danger-bg text-status-danger-fg",
+  warning: "bg-status-warning-bg text-status-warning",
+  negative: "bg-status-danger-bg text-status-danger",
 };
 
 const ICON = {

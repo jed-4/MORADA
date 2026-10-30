@@ -242,7 +242,7 @@ export default function EmailLog() {
                   <span
                     className={cn(
                       "min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-semibold text-center",
-                      t.alert ? "bg-status-danger-bg text-status-danger-fg" : "bg-muted text-muted-foreground",
+                      t.alert ? "bg-status-danger-bg text-status-danger" : "bg-muted text-muted-foreground",
                     )}
                   >
                     {t.count}
@@ -320,7 +320,7 @@ export default function EmailLog() {
           </div>
         </div>
         {!trackingEnabled && (
-          <div className="px-3 py-1.5 border-t border-border bg-status-warning-bg/40 text-xs text-status-warning-fg" data-testid="banner-tracking-off">
+          <div className="px-3 py-1.5 border-t border-border bg-status-warning-bg/40 text-xs text-status-warning" data-testid="banner-tracking-off">
             Delivery tracking isn't switched on yet, so emails show as Sent with no way to tell whether they arrived. Bounces will
             appear here once the Resend webhook is connected.
           </div>
