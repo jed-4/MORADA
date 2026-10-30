@@ -33,6 +33,7 @@ import { haptic } from '../lib/haptics';
 import { useToast } from '../components/ui/Toast';
 import StatusPill from '../components/selections/StatusPill';
 import CroppedImage from '../components/selections/CroppedImage';
+import DocumentViewer, { type ViewableDocument } from '../components/DocumentViewer';
 import {
   clientPriceCents,
   formatMoney,
@@ -102,6 +103,8 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const [commentText, setCommentText] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  // Spec sheets for the chosen product — what a trade on site actually needs.
+  const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
   const [uploading, setUploading] = useState(false);
 
   // What this person may DO here. The server enforces the same rules; these
@@ -596,6 +599,22 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           )}
 
+          {(chosen?.attachments ?? [])
+            .filter((a) => a.fileType?.toLowerCase() !== 'image')
+            .map((doc) => (
+              <TouchableOpacity
+                key={doc.id}
+                onPress={() => setOpenDoc({ path: doc.filePath, name: doc.fileName || 'Specification' })}
+                style={[styles.linkRow, { backgroundColor: theme.card, borderColor: theme.border }]}
+                accessibilityLabel={`Open ${doc.fileName || 'document'}`}
+              >
+                <Ionicons name="document-text-outline" size={16} color={theme.primary} />
+                <Text style={[styles.linkText, { color: theme.primary }]} numberOfLines={1}>
+                  {doc.fileName || 'Specification'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
           {chosen && canEdit && (
             <TouchableOpacity
               onPress={addPhoto}
@@ -748,6 +767,8 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
           )}
         </View>
       </Modal>
+
+      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} />
     </KeyboardAvoidingView>
   );
 }
