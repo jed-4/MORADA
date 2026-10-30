@@ -3,7 +3,7 @@ import {
   FolderPlus,
   GitBranch,
   HelpCircle,
-  Upload,
+  BookOpen,
   UserPlus,
   FileText,
   type LucideIcon,
@@ -20,7 +20,7 @@ const ACTIONS: QuickAction[] = [
   { label: "New Project", icon: FolderPlus, path: "/projects" },
   { label: "New Variation", icon: GitBranch, path: "/variations" },
   { label: "New RFI", icon: HelpCircle, path: "/rfis" },
-  { label: "Upload Document", icon: Upload, path: "/docs" },
+  { label: "Library", icon: BookOpen, path: "/systems?tab=library" },
   { label: "Add Contact", icon: UserPlus, path: "/contacts" },
   { label: "New Quote", icon: FileText, path: "/proposals" },
 ];

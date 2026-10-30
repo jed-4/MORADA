@@ -391,6 +391,11 @@ export interface IStorage {
   createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
   updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
   deleteDocFolder(id: string): Promise<void>;
+  // Library sign-off (0118)
+  setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined>;
+  approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined>;
+  getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]>;
+  getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined>;
 
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
@@ -1774,6 +1779,8 @@ function getDefaultActionsForRole(
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
       'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
+      'business.assets', 'business.asset_costs', 'assets.prestart',
+      'operations.tasks', 'operations.library', 'operations.workflows',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1800,6 +1807,11 @@ function getDefaultActionsForRole(
     grant('dashboard.project_health', ['view']);
     grant('business.messages', ['view', 'add', 'send']);
     grant('business.team', ['view']);
+    // View only: the calendar reads task templates to draw recurring tasks,
+    // and anyone handed a task should be able to open its SOP.
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
+    grant('assets.prestart', ['view', 'add']);
     return result;
   }
 
@@ -1815,6 +1827,8 @@ function getDefaultActionsForRole(
       'timesheets.manage', 'timesheets.rates',
     ];
     for (const key of keys) grantAll(key);
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
     return result;
   }
 
@@ -1842,6 +1856,8 @@ function getDefaultActionsForRole(
     grant('files.manage', ['view']);
     grant('tasks.manage', ['view']);
     grant('tasks.project', ['view']);
+    grant('operations.tasks', ['view']);
+    grant('operations.library', ['view']);
     return result;
   }
 
@@ -1997,6 +2013,11 @@ export class MemStorage implements IStorage {
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Operations screen (/systems). Before these existed every team member
+      // could read and change all of it; see backfillOperationsGrants.
+      { key: "operations.tasks", name: "Operational Tasks", description: "Recurring task templates that generate the team's To-Dos", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "operations.library", name: "Library", description: "SOPs, policies, templates and other company documents", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "operations.workflows", name: "Workflows", description: "Automations that create tasks when something happens", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -2010,6 +2031,9 @@ export class MemStorage implements IStorage {
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7230,6 +7254,11 @@ export class DbStorage implements IStorage {
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Operations screen (/systems). Before these existed every team member
+      // could read and change all of it; see backfillOperationsGrants.
+      { key: "operations.tasks", name: "Operational Tasks", description: "Recurring task templates that generate the team's To-Dos", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "operations.library", name: "Library", description: "SOPs, policies, templates and other company documents", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "operations.workflows", name: "Workflows", description: "Automations that create tasks when something happens", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -7243,6 +7272,9 @@ export class DbStorage implements IStorage {
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       // Owners and admins only by default: not in any non-admin role's default list.
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7323,6 +7355,204 @@ export class DbStorage implements IStorage {
     await this.backfillClientPortalGrants(createdKeys);
     await this.backfillMinutesGrants(createdKeys);
     await this.backfillClientPortalAccessGrants(createdKeys);
+    await this.backfillAssetRegisterGrants(createdKeys);
+    await this.backfillOperationsGrants(createdKeys);
+    await this.backfillPrestartGrants(createdKeys);
+    await this.backfillAssetCostGrants(createdKeys);
+  }
+
+  /**
+   * Asset costs used to come with viewing the register. The key that splits
+   * them out is given to every role that can view the register today, so
+   * nobody loses sight of anything on deploy; an admin then unticks it for
+   * whoever shouldn't see the money. Once only, like the other backfills.
+   */
+  private async backfillAssetCostGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("business.asset_costs")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const costsId = allPermissions.find((p) => p.key === "business.asset_costs")?.id;
+      const assetsId = allPermissions.find((p) => p.key === "business.assets")?.id;
+      if (!costsId || !assetsId) return;
+
+      const sourceGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, assetsId));
+      if (sourceGrants.length === 0) return;
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, costsId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of sourceGrants) {
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        if (!held.includes("view")) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: costsId,
+          allowedActions: ["view"] as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] business.asset_costs granted to ${granted} role(s), mirroring business.assets view`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillAssetCostGrants:", error);
+    }
+  }
+
+  /**
+   * Pre-starts are done by whoever drives the ute, so the new key mirrors the
+   * people who already log their own hours: any non-client role holding
+   * timesheets.manage "add" gets assets.prestart view + add. Same once-only
+   * rule as the other backfills.
+   */
+  private async backfillPrestartGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("assets.prestart")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const prestartId = allPermissions.find((p) => p.key === "assets.prestart")?.id;
+      const timesheetsId = allPermissions.find((p) => p.key === "timesheets.manage")?.id;
+      if (!prestartId || !timesheetsId) return;
+
+      const sourceGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, timesheetsId));
+      if (sourceGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, sourceGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, prestartId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of sourceGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        if (!held.includes("add")) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: prestartId,
+          allowedActions: ["view", "add"] as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] assets.prestart granted to ${granted} role(s), mirroring timesheets.manage`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillPrestartGrants:", error);
+    }
+  }
+
+  /**
+   * Who sees the new asset register on existing companies. New companies get
+   * it from getDefaultActionsForRole (project/office managers); existing roles
+   * only ever get a key through a backfill on the boot that creates it.
+   *
+   * Mirrors business.contacts: the same office audience already trusted with
+   * the company's other register of suppliers and people. View/add/edit only;
+   * deleting an asset takes its history with it, so that stays with admins
+   * until someone ticks it. Admin-like roles bypass checks and need nothing.
+   * Client roles are excluded.
+   */
+  private async backfillAssetRegisterGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("business.assets")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const assetsId = allPermissions.find((p) => p.key === "business.assets")?.id;
+      const contactsId = allPermissions.find((p) => p.key === "business.contacts")?.id;
+      if (!assetsId || !contactsId) return;
+
+      const contactsGrants = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, contactsId));
+      if (contactsGrants.length === 0) return;
+
+      const roles = await db.select().from(schema.userRoles)
+        .where(inArray(schema.userRoles.id, contactsGrants.map((g) => g.roleId)));
+      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, assetsId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      let granted = 0;
+      for (const grant of contactsGrants) {
+        if (categoryByRole.get(grant.roleId) === "client") continue;
+        if (alreadyHeld.has(grant.roleId)) continue;
+        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
+        const actions = ["view", "add", "edit"].filter((a) => held.includes(a));
+        if (actions.length === 0) continue;
+        await db.insert(schema.rolePermissions).values({
+          roleId: grant.roleId,
+          permissionId: assetsId,
+          allowedActions: actions as any,
+        });
+        alreadyHeld.add(grant.roleId);
+        granted++;
+      }
+      if (granted > 0) {
+        console.log(`[permissions] business.assets granted to ${granted} role(s), mirroring business.contacts`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillAssetRegisterGrants:", error);
+    }
+  }
+
+  /**
+   * The Operations keys arrived after the screen did. Until then every route
+   * behind it checked only requireTeamMember, so every team role could read
+   * and change everything there. On the boot that creates a key, hand each
+   * existing team role exactly that — so nobody loses anything on deploy and
+   * admins tighten it from Roles & Permissions. Library "approve" is new
+   * (sign-off didn't exist), so it is not handed out; admins bypass anyway.
+   * Runs only on the creating boot, so a later untick is never re-granted.
+   */
+  private async backfillOperationsGrants(createdKeys: Set<string>): Promise<void> {
+    const wanted: Record<string, string[]> = {
+      "operations.tasks": ["view", "add", "edit", "delete"],
+      "operations.library": ["view", "add", "edit", "delete"],
+      "operations.workflows": ["view", "add", "edit", "delete"],
+    };
+    const keys = Object.keys(wanted).filter((k) => createdKeys.has(k));
+    if (keys.length === 0) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const teamRoles = (await db.select().from(schema.userRoles))
+        .filter((r) => (r.userCategory || "team") === "team");
+      if (teamRoles.length === 0) return;
+
+      for (const key of keys) {
+        const permissionId = allPermissions.find((p) => p.key === key)?.id;
+        if (!permissionId) continue;
+        const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+          .from(schema.rolePermissions)
+          .where(eq(schema.rolePermissions.permissionId, permissionId));
+        const alreadyHeld = new Set(existing.map((e) => e.roleId));
+        const rows = teamRoles
+          .filter((r) => !alreadyHeld.has(r.id))
+          .map((r) => ({ roleId: r.id, permissionId, allowedActions: wanted[key] as any }));
+        if (rows.length === 0) continue;
+        await db.insert(schema.rolePermissions).values(rows);
+        console.log(`[permissions] ${key} granted to ${rows.length} team role(s) — matches pre-permission access`);
+      }
+    } catch (error) {
+      console.error("Database error in backfillOperationsGrants:", error);
+    }
   }
 
   /**
@@ -30486,6 +30716,88 @@ export class DbStorage implements IStorage {
       await db.delete(schema.docFolders).where(eq(schema.docFolders.id, id));
     } catch (error) {
       console.error("Database error in deleteDocFolder:", error);
+      throw error;
+    }
+  }
+
+  // Sign-off fields are not in InsertDoc on purpose (an edit must never set
+  // them), so the review routes write them through here instead.
+  async setDocReviewState(id: string, companyId: string, patch: Partial<schema.Doc>): Promise<schema.Doc | undefined> {
+    try {
+      const [doc] = await db.update(schema.docs)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+        .returning();
+      return doc;
+    } catch (error) {
+      console.error("Database error in setDocReviewState:", error);
+      throw error;
+    }
+  }
+
+  // Snapshot the doc's current text as the next version and mark it approved,
+  // in one transaction so a version number is never taken twice or skipped.
+  async approveDoc(id: string, companyId: string, approver: { id: string; name: string }): Promise<schema.Doc | undefined> {
+    try {
+      return await db.transaction(async (tx) => {
+        const [doc] = await tx.select().from(schema.docs)
+          .where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)))
+          .for("update");
+        if (!doc) return undefined;
+        const version = (doc.currentVersion ?? 0) + 1;
+        const now = new Date();
+        await tx.insert(schema.docVersions).values({
+          companyId,
+          docId: id,
+          version,
+          title: doc.title || "Untitled",
+          contentHtml: doc.contentHtml || "",
+          approvedById: approver.id,
+          approvedByName: approver.name,
+          approvedAt: now,
+        });
+        const [updated] = await tx.update(schema.docs)
+          .set({
+            status: "approved",
+            currentVersion: version,
+            approvedAt: now,
+            approvedById: approver.id,
+            approvedByName: approver.name,
+            reviewNote: null,
+            updatedAt: now,
+          })
+          .where(eq(schema.docs.id, id))
+          .returning();
+        return updated;
+      });
+    } catch (error) {
+      console.error("Database error in approveDoc:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersions(docId: string, companyId: string): Promise<schema.DocVersion[]> {
+    try {
+      return await db.select().from(schema.docVersions)
+        .where(and(eq(schema.docVersions.docId, docId), eq(schema.docVersions.companyId, companyId)))
+        .orderBy(desc(schema.docVersions.version));
+    } catch (error) {
+      console.error("Database error in getDocVersions:", error);
+      throw error;
+    }
+  }
+
+  async getDocVersion(docId: string, version: number, companyId: string): Promise<schema.DocVersion | undefined> {
+    try {
+      const [row] = await db.select().from(schema.docVersions)
+        .where(and(
+          eq(schema.docVersions.docId, docId),
+          eq(schema.docVersions.companyId, companyId),
+          eq(schema.docVersions.version, version),
+        ));
+      return row;
+    } catch (error) {
+      console.error("Database error in getDocVersion:", error);
       throw error;
     }
   }

@@ -29,7 +29,6 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 import { clientAware } from "@/components/client/clientAware";
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Notes = lazy(() => import("@/pages/Notes"));
-const Docs = lazy(() => import("@/pages/Docs"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
 const MinuteDetail = lazy(() => import("@/pages/MinuteDetail"));
 const Templates = lazy(() => import("@/pages/Templates"));
@@ -185,7 +184,8 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/messages" component={Messages} />
       <Route path="/notes" component={Notes} />
-      <Route path="/docs" component={Docs} />
+      {/* Docs now live in Operations → Library. */}
+      <Route path="/docs">{() => <Redirect to="/systems?tab=library" />}</Route>
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />
@@ -221,6 +221,8 @@ function Router() {
       <Route path="/business/files" component={Business} />
       <Route path="/business/overheads" component={Business} />
       <Route path="/business/cashflow" component={Business} />
+      <Route path="/business/assets" component={Business} />
+      <Route path="/business/assets/:id" component={Business} />
       <Route path="/business/timesheets" component={Business} />
       <Route path="/business/minutes" component={Business} />
       <Route path="/business/minutes/:id" component={MinuteDetail} />

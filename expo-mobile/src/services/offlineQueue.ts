@@ -8,7 +8,7 @@ const MAX_RETRIES = 5;
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'submit-prestart';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -169,6 +169,17 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
       case 'complete-checklist': {
         const { id, ...data } = action.payload;
         await apiRequest(`/api/checklist-instances/${id}`, 'PATCH', data);
+        return 'success';
+      }
+      case 'submit-prestart': {
+        // Done on site without signal: photos are still device-local URIs and
+        // checkedAt carries when it was really done.
+        const { assetId, photos, ...body } = action.payload;
+        const uploaded: string[] = [];
+        for (const uri of photos || []) {
+          uploaded.push(isLocalUri(uri) ? (await uploadPhoto(uri)).objectPath : uri);
+        }
+        await apiRequest(`/api/assets/${assetId}/prestarts`, 'POST', { ...body, photos: uploaded });
         return 'success';
       }
       default:

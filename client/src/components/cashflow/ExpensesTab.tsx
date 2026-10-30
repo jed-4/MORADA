@@ -27,6 +27,7 @@ import { FREQUENCIES, TIMES_PER_YEAR, toDateKey, type Frequency } from "@shared/
 import { EXPENSES_KEY, invalidateCashflow, money, shortDate } from "./cashflowShared";
 import { SuggestionsBanner, SuggestionsPanel, useExpenseSuggestions } from "./ExpenseSuggestions";
 import { PnlPanel } from "./PnlImport";
+import { AssetRenewalsPanel } from "./AssetRenewalsPanel";
 
 const FREQUENCY_LABELS: Record<Frequency, string> = {
   once: "Once",
@@ -568,6 +569,7 @@ export function ExpensesTab() {
   return (
     <div className="flex flex-col gap-4">
       <PnlPanel />
+      <AssetRenewalsPanel />
       {suggestions && <SuggestionsBanner data={suggestions} />}
       {/* Side by side only when there's room for the register's columns; otherwise the suggestions sit above it. */}
       <div className={cn("grid gap-4 items-start", hasPanel && "2xl:grid-cols-[1fr_380px]")}>
