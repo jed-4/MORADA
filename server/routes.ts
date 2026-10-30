@@ -30219,7 +30219,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // carry into the address book; anything else is left alone.
       let addressBook = null;
       const original = row.toAddresses ?? [];
-      if (req.body?.updateAddressBook && original.length === 1 && to.length === 1
+      // Only a FAILED address is replaced: resending a delivered email to a
+      // second person must never overwrite a good address on file.
+      if (req.body?.updateAddressBook && ["bounced", "complained", "failed"].includes(row.status)
+          && original.length === 1 && to.length === 1
           && original[0].trim().toLowerCase() !== to[0].trim().toLowerCase()) {
         addressBook = await replaceAddressInAddressBook(scope.companyId, original[0], to[0]);
       }
