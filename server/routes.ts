@@ -3427,6 +3427,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Operations starter pack (server/services/operationsStarterPack.ts): what
+  // the company hasn't been given yet, and the button that copies it in.
+  // Installing writes both Library docs and task templates, so it needs add on
+  // both.
+  app.get("/api/operations/starter-pack", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const { getStarterPackStatus } = await import("./services/operationsStarterPack");
+      res.json(await getStarterPackStatus((req.user as any).companyId));
+    } catch (error) {
+      console.error("[StarterPack] status failed:", error);
+      res.status(500).json({ error: "Failed to fetch starter pack" });
+    }
+  });
+
+  app.post("/api/operations/starter-pack", requireAuth, requireTeamMember, requirePermission("operations.library", "add"), requirePermission("operations.tasks", "add"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { installStarterPack } = await import("./services/operationsStarterPack");
+      const added = await installStarterPack(user.companyId, { id: user.id, name: user.name || user.username });
+      res.status(201).json(added);
+    } catch (error) {
+      console.error("[StarterPack] install failed:", error);
+      res.status(500).json({ error: "Failed to add starter pack" });
+    }
+  });
+
   app.get("/api/docs/:id/versions", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
@@ -12842,6 +12868,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .then(({ seedLennyDemo }) => seedLennyDemo(company.id, userId))
         .then((result) => console.log(`[demo] seeded demo data for new company ${company.id}:`, JSON.stringify(result)))
         .catch((seedErr) => console.error(`[demo] failed to seed demo data for new company ${company.id}:`, seedErr));
+
+      // Operations starter pack, if ticked at signup: generic draft SOPs and
+      // inactive operational tasks, copied into this company only.
+      if (body.starterPack === true) {
+        try {
+          const { installStarterPack } = await import("./services/operationsStarterPack");
+          const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || (user as any).username || user.email || "";
+          await installStarterPack(company.id, { id: userId, name });
+        } catch (packErr) {
+          console.error(`[StarterPack] install at signup failed for company ${company.id}:`, packErr);
+        }
+      }
 
       // Day-0 welcome email. Background + once-only (unique index on
       // company/email key), so a failure here never blocks signup and the

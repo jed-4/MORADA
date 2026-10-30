@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Building2, LogOut, User, Check } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -87,6 +88,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<1 | 2 | 3>(needsProfile ? 1 : 2);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>("builder");
+  const [starterPack, setStarterPack] = useState(true);
   const totalSteps = needsProfile ? 3 : 2;
   const displayStep = needsProfile ? step : step - 1;
   
@@ -133,7 +135,7 @@ export default function OnboardingPage() {
       // Pass along a saved referral code (captured from a ?ref= signup link)
       // so the new company is linked to whoever referred them.
       const referralCode = localStorage.getItem('morada_referral_code') || undefined;
-      return await apiRequest('/api/companies', 'POST', { ...values, referralCode });
+      return await apiRequest('/api/companies', 'POST', { ...values, referralCode, starterPack });
     },
     onSuccess: () => {
       localStorage.removeItem('morada_referral_code');
@@ -413,6 +415,22 @@ export default function OnboardingPage() {
                       </FormItem>
                     )}
                   />
+
+                  <label className="flex items-start gap-3 rounded-md border p-3 cursor-pointer" data-testid="label-starter-pack">
+                    <Checkbox
+                      checked={starterPack}
+                      onCheckedChange={(v) => setStarterPack(v === true)}
+                      className="mt-0.5"
+                      data-testid="checkbox-starter-pack"
+                    />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">Add the Operations starter pack</p>
+                      <p className="text-xs text-muted-foreground">
+                        Draft SOPs (bills review, timesheets, site inspections, toolbox talks, client updates and more) and matching weekly tasks.
+                        Tasks start switched off, so nothing is assigned until you turn them on. Edit or delete any of it.
+                      </p>
+                    </div>
+                  </label>
 
                   <div className={`flex ${needsProfile ? "justify-between" : "justify-end"} pt-4`}>
                     {needsProfile && (
