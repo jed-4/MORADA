@@ -1143,7 +1143,7 @@ export const estimateItems = pgTable("estimate_items", {
   requestForQuote: boolean("request_for_quote").notNull().default(false),
   isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
   proposalVisible: boolean("proposal_visible").notNull().default(true), // Show/hide in proposal (renamed from visibleInProposal)
-  shownAs: text("shown_as"), // Custom text to display in proposal instead of item name
+  shownAs: text("shown_as"), // Proposal display mode: 'empty' | 'price' | 'included' | 'excluded' (null = price) — NOT a display name
   trackLabourHours: boolean("track_labour_hours").notNull().default(false), // Include in labour hours budget tracking
   order: integer("order").notNull().default(0), // For sorting within groups
   createdAt: timestamp("created_at").notNull().defaultNow(),
