@@ -6521,6 +6521,28 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
   displayOrder: z.number().default(0),
 });
 
+// What a client may change on an existing PO. A whitelist: companyId, poNumber,
+// totals, Xero ids and approval stamps are the server's. Totals are a cache of
+// the lines and projectId has no UI, so neither is here.
+export const updatePurchaseOrderSchema = insertPurchaseOrderSchema.pick({
+  title: true, description: true, scope: true,
+  termsAndConditionsId: true, termsAndConditions: true,
+  requiredByDate: true,
+  deliveryReference: true, deliveryAttention: true, deliveryContact: true,
+  deliveryAddress: true, deliveryInstructions: true,
+  supplierId: true, supplierUserId: true, supplierName: true,
+  scopeStageId: true, costCodeId: true,
+  status: true, gstMode: true, internalNotes: true,
+}).partial();
+
+// A line stays on its PO and keeps its provenance.
+export const updatePurchaseOrderItemSchema = insertPurchaseOrderItemSchema.omit({
+  purchaseOrderId: true,
+  sourceTimesheetId: true,
+  sourceEstimateItemId: true,
+  selectionOptionId: true,
+}).partial();
+
 export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
 export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 
