@@ -46,6 +46,19 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     enabled: !!currentProject,
   });
 
+  // POs, for the stale-commitment check. Optional: someone who can't see POs
+  // just doesn't get that alert, rather than an error.
+  const { data: purchaseOrders = [] } = useQuery<any[]>({
+    queryKey: ["/api/purchase-orders", { projectId: currentProject?.id }],
+    queryFn: async () => {
+      const response = await fetch(`/api/purchase-orders?projectId=${currentProject!.id}`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!currentProject,
+    retry: false,
+  });
+
   if (!currentProject) {
     return (
       <div className="text-center py-4 text-sm text-muted-foreground">
@@ -181,8 +194,31 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     });
   }
 
-  // Overdue tasks
+  // A PO still Sent or Accepted 60+ days on, with no bill against it, is
+  // usually a bill that never got matched to it rather than money still to
+  // come — and until it's sorted it sits in Committed forever.
   const now = new Date();
+  const STALE_PO_DAYS = 60;
+  const stalePOs = purchaseOrders.filter((po: any) => {
+    if (po.status !== "sent" && po.status !== "accepted") return false;
+    const since = po.sentAt || po.poDate || po.createdAt;
+    if (!since) return false;
+    return now.getTime() - new Date(since).getTime() > STALE_PO_DAYS * 24 * 60 * 60 * 1000;
+  });
+  if (stalePOs.length > 0) {
+    alerts.push({
+      id: "stale-pos",
+      type: "warning",
+      category: "Purchase Orders",
+      message:
+        stalePOs.length === 1
+          ? `${stalePOs[0].poNumber} sent over ${STALE_PO_DAYS} days ago with no bill. Match its bill, or cancel it`
+          : `${stalePOs.length} POs sent over ${STALE_PO_DAYS} days ago with no bill. Match their bills, or cancel them`,
+      icon: FileWarning,
+    });
+  }
+
+  // Overdue tasks
   const overdueTasks = tasks.filter((t: any) => {
     // Task statuses are "todo" | "in-progress" | "done"
     if (t.status === 'done' || t.status === 'complete' || t.status === 'completed') return false;

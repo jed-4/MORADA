@@ -19,22 +19,34 @@ type ChartStyle = "segments" | "bullet";
 
 type BudgetWithLabour = Budget & { labourActualAmount?: number };
 
-// Spend composition bar: bills (amber) + labour (teal) against the budget.
-// When over budget the scale stretches to the spend, the budget tick stays
-// where the budget is, and the overage past it gets coral stripes.
+// Committed (promised, not spent) is hatched so it reads as "still to come"
+// rather than spend.
+const COMMITTED_FILL = {
+  backgroundColor: "hsl(var(--amber) / 0.18)",
+  backgroundImage:
+    "repeating-linear-gradient(45deg, hsl(var(--amber) / 0.55) 0, hsl(var(--amber) / 0.55) 2px, transparent 2px, transparent 5px)",
+};
+
+// Spend composition bar: bills (amber) + labour (teal) against the budget,
+// then committed (hatched). When over budget the scale stretches to the
+// spend, the budget tick stays where the budget is, and the overage past it
+// gets coral stripes.
 function SegmentedBar({
   budget,
   bills,
   labour,
+  committed,
 }: {
   budget: number;
   bills: number;
   labour: number;
+  committed: number;
 }) {
   const actual = bills + labour;
-  const scale = Math.max(budget, actual) || 1;
+  const scale = Math.max(budget, actual + committed) || 1;
   const billsPct = (bills / scale) * 100;
   const labourPct = (labour / scale) * 100;
+  const committedPct = (committed / scale) * 100;
   const budgetPct = Math.min(100, (budget / scale) * 100);
   const over = actual > budget && budget > 0;
 
@@ -45,6 +57,7 @@ function SegmentedBar({
           <div className="absolute inset-0 flex">
             <div style={{ width: `${billsPct}%`, backgroundColor: "hsl(var(--amber))" }} />
             <div style={{ width: `${labourPct}%`, backgroundColor: "hsl(var(--teal))" }} />
+            <div style={{ width: `${committedPct}%`, ...COMMITTED_FILL }} data-testid="bar-committed" />
           </div>
           {over && (
             <div
@@ -78,6 +91,12 @@ function SegmentedBar({
             <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "hsl(var(--teal))" }} />
             <span>Labour {formatCurrency(labour)}</span>
           </div>
+          {committed > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-3 rounded-sm" style={COMMITTED_FILL} />
+              <span>Committed {formatCurrency(committed)}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-3 w-0.5 bg-foreground/80" />
             <span>Budget {formatCurrency(budget)}</span>
@@ -164,6 +183,19 @@ export default function ProjectBudgetVsActualWidget({
       return r.json();
     },
     enabled: !!currentProject?.id && allowed,
+  });
+
+  // Open POs not yet billed + subbie hours waiting for a PO. If it can't be
+  // read (no budget_actuals permission) the widget just shows spend.
+  const { data: committedData } = useQuery<{ committedExGstCents: number }>({
+    queryKey: ["/api/projects", currentProject?.id, "committed-costs"],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${currentProject!.id}/committed-costs`, { credentials: "include" });
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json();
+    },
+    enabled: !!currentProject?.id && allowed,
+    retry: false,
   });
 
   // The title itself is the way through to the full page.
@@ -260,8 +292,11 @@ export default function ProjectBudgetVsActualWidget({
   const labour = Math.min(Math.max(0, data.labourActualAmount || 0), Math.max(0, actual));
   const bills = actual - labour;
 
+  const committed = Math.max(0, committedData?.committedExGstCents ?? 0);
+
   const hasBudget = budget > 0;
-  const remaining = budget - actual;
+  // Same as the Budget page: what's left once promised money is counted too.
+  const remaining = budget - actual - committed;
   const pct = hasBudget ? Math.round((actual / budget) * 100) : 0;
   const overBudget = hasBudget && actual > budget;
   const nearLimit = hasBudget && !overBudget && pct >= 90;
@@ -298,7 +333,13 @@ export default function ProjectBudgetVsActualWidget({
     <div className="flex flex-col h-full gap-3" data-testid="widget-budget-vs-actual">
       <div>
         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {hasBudget ? (remaining >= 0 ? "Remaining" : "Over budget") : "Spent"}
+          {hasBudget
+            ? remaining >= 0
+              ? "Remaining"
+              : actual > budget
+                ? "Over budget"
+                : "Over budget once committed is spent"
+            : "Spent"}
         </p>
         <div className="flex items-baseline gap-1.5">
           <p
@@ -332,7 +373,7 @@ export default function ProjectBudgetVsActualWidget({
             bands={bands}
           />
         ) : (
-          <SegmentedBar budget={budget} bills={bills} labour={labour} />
+          <SegmentedBar budget={budget} bills={bills} labour={labour} committed={committed} />
         )}
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground" data-testid="text-actual-amount">
@@ -362,6 +403,13 @@ export default function ProjectBudgetVsActualWidget({
           dot={DOT.teal}
           testId="row-labour"
         />
+        {committed > 0 && (
+          <LedgerRow
+            label="Committed"
+            value={formatCurrency(committed)}
+            testId="row-committed"
+          />
+        )}
         <LedgerRow
           label={remaining >= 0 ? "Remaining" : "Over"}
           value={formatCurrency(Math.abs(remaining))}
