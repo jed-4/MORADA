@@ -6675,6 +6675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Project Team API Routes
   app.get("/api/projects/:projectId/team", requireAuth, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const teamMembers = await storage.getProjectTeamMembers(req.params.projectId);
       // Sanitize user data to remove sensitive fields
       const safeTeamMembers = teamMembers.map(user => toSafeUser(user));
@@ -9133,9 +9134,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/cost-codes", async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      // The company is the caller's, never the body's: a body companyId used
+      // to put the cost code into another company.
       const validationResult = insertCostCodeSchema.safeParse({
         ...req.body,
-        projectId: req.params.projectId
+        companyId: (req.user as any)?.companyId,
       });
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -13352,13 +13356,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validationResult = insertUserSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const user = await storage.createUser(validationResult.data);
+      // The new user always joins the caller's own company. The body used to
+      // choose: an admin in one company could create a user (with a password
+      // they set) inside another, or make one platform staff.
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const data: any = { ...validationResult.data, companyId };
+      delete data.isPlatformStaff;
+      if (data.roleId) {
+        const [role] = await db
+          .select({ companyId: schema.userRoles.companyId })
+          .from(schema.userRoles)
+          .where(eq(schema.userRoles.id, data.roleId))
+          .limit(1);
+        if (role?.companyId !== companyId) return res.status(400).json({ error: "Invalid role" });
+      }
+
+      const user = await storage.createUser(data);
       // Use safe user helper to remove password
       res.status(201).json(toSafeUser(user));
     } catch (error) {
@@ -16060,10 +16080,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/invitations/:id", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const invitation = await storage.getUserInvitation(req.params.id);
-      if (!invitation) {
+      // Another company's invitation is "not found"; and the token never goes
+      // out here: whoever holds it can accept the invitation into an account.
+      if (!invitation || (invitation as any).companyId !== (req.user as any)?.companyId) {
         return res.status(404).json({ error: "Invitation not found" });
       }
-      res.json(invitation);
+      const { inviteToken: _token, ...safe } = invitation as any;
+      res.json(safe);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch invitation" });
     }
@@ -16838,6 +16861,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (validationResult.data.name !== undefined && !validationResult.data.name?.trim()) {
         return res.status(400).json({ error: "An option needs a name" });
+      }
+      // An option stays in its selection. Accepting a new selectionId let an
+      // option be moved into another company's selection (and its costing then
+      // synced into their allowance on approve).
+      if (validationResult.data.selectionId !== undefined && validationResult.data.selectionId !== existing.selectionId) {
+        return res.status(400).json({ error: "An option can't be moved to another selection" });
       }
       const viewer = await resolveSelectionViewer(req);
       const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = withOptionLineTotal(
@@ -22918,6 +22947,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Both ends of an allowance charge must be the caller's: the bill line (via
+  // its bill) and the PC/PS item (via its estimate). Unchecked, a body could
+  // charge spend against another company's allowance.
+  const allowanceRefsOwned = async (
+    req: any, res: any, refs: { billLineItemId?: string; estimateItemId?: string },
+  ): Promise<boolean> => {
+    if (refs.billLineItemId) {
+      const [line] = await db.select({ billId: schema.billLineItems.billId })
+        .from(schema.billLineItems).where(eq(schema.billLineItems.id, refs.billLineItemId)).limit(1);
+      if (!line) { res.status(400).json({ error: "Invalid bill line" }); return false; }
+      if (!(await getOwnedBill(req, res, line.billId, "Invalid bill line"))) return false;
+    }
+    if (refs.estimateItemId) {
+      const [item] = await db.select({ estimateId: schema.estimateItems.estimateId })
+        .from(schema.estimateItems).where(eq(schema.estimateItems.id, refs.estimateItemId)).limit(1);
+      if (!item) { res.status(400).json({ error: "Invalid allowance item" }); return false; }
+      if (!(await getOwnedEstimate(req, res, item.estimateId))) return false;
+    }
+    return true;
+  };
+
   app.post("/api/bill-line-item-allowances", async (req, res) => {
     try {
       const validationResult = insertBillLineItemAllowanceSchema.safeParse(req.body);
@@ -22927,6 +22977,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      if (!(await allowanceRefsOwned(req, res, validationResult.data))) return;
 
       const allowance = await storage.createBillLineItemAllowance(validationResult.data);
       res.status(201).json(allowance);
@@ -22954,6 +23005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await allowanceRefsOwned(req, res, validationResult.data))) return;
       const allowance = await storage.updateBillLineItemAllowance(req.params.id, validationResult.data);
       if (!allowance) {
         return res.status(404).json({ error: "Bill line item allowance not found" });
@@ -28072,7 +28124,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { proposalNumber: _ignored, ...rest } = validationResult.data;
+      const { proposalNumber: _ignored, shareToken: _token, ...body } = validationResult.data as any;
+      // The project (which decides the proposal's company) and any estimate
+      // must be the caller's. Both came from the body unchecked, so a proposal
+      // could be created inside another company. A new proposal is a draft.
+      if (!(await enforceProjectCompany(req, res, body.projectId, "Project not found"))) return;
+      if (body.estimateId && !(await getOwnedEstimate(req, res, body.estimateId))) return;
+      const rest = { ...body, status: "draft" };
+      delete rest.companyId;
       let proposal;
       try {
         proposal = await storage.createProposalAtomic(rest);
@@ -34214,6 +34273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Budget routes
   app.get("/api/projects/:projectId/budget", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       // Recompute the budget on read so the Budget page reflects current bills
       // live — including ex-GST bill actuals — matching the recalc that already
       // runs on bill mutations. Without this, budgets persisted before a pricing
@@ -34312,6 +34372,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Budget Line Items routes
   app.get("/api/budgets/:budgetId/line-items", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      const [budgetRow] = await db.select({ projectId: schema.budgets.projectId })
+        .from(schema.budgets).where(eq(schema.budgets.id, req.params.budgetId)).limit(1);
+      if (!budgetRow) return res.status(404).json({ error: "Budget not found" });
+      if (!(await enforceProjectCompany(req, res, budgetRow.projectId, "Budget not found"))) return;
       const lineItems = await storage.getBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
     } catch (error: any) {
@@ -34363,6 +34427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Labour Hours Budget routes
   app.get("/api/projects/:projectId/labour-hours-budget", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.getLabourHoursBudget(req.params.projectId);
       res.json(labourHours);
     } catch (error: any) {
@@ -35181,6 +35246,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId, costCodeId } = req.body;
       // projectId may be null for business-level (overhead) timesheets
       const resolvedProjectId = projectId || null;
+      // Both must be the clocker's own company's: unchecked, hours could be
+      // filed against another company's project and count in its budget.
+      if (resolvedProjectId && !(await enforceProjectCompany(req, res, resolvedProjectId, "Project not found"))) return;
+      if (costCodeId) {
+        const [cc] = await db.select({ companyId: schema.costCodes.companyId })
+          .from(schema.costCodes).where(eq(schema.costCodes.id, costCodeId)).limit(1);
+        if (!cc || cc.companyId !== (req.user as any).companyId) return res.status(400).json({ error: "Invalid cost code" });
+      }
       const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId);
       res.status(201).json(timesheet);
     } catch (error) {
