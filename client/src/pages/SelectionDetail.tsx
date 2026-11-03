@@ -135,6 +135,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAttachment; onDelete: (id: string) => void; selectionId: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
@@ -2550,6 +2551,11 @@ export default function SelectionDetail() {
                 value={sendTo}
                 onChange={(e) => setSendTo(e.target.value)}
                 data-testid="input-send-to"
+              />
+              <BouncedAddressWarning
+                emails={[sendTo]}
+                onUseSuggestion={(bad, fix) => setSendTo(sendTo.replace(bad, fix))}
+                className="mt-2"
               />
             </div>
             <div>

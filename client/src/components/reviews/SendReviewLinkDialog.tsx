@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 /**
  * Email the review link to the client.
@@ -82,6 +83,10 @@ export function SendReviewLinkDialog({
                 This project has no client contact assigned, so an address is required.
               </p>
             )}
+            <BouncedAddressWarning
+              emails={[to.trim() || defaultTo]}
+              onUseSuggestion={(bad, fix) => setTo((to.trim() || defaultTo || "").replace(bad, fix))}
+            />
           </div>
 
           <div className="space-y-1.5">

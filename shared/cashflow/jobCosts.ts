@@ -21,6 +21,7 @@ import { addDays, daysBetween, maxKey, monthEnd, minKey, toDateKey, type DateKey
 import { gstOfInc } from "./gst";
 import { dollarsToCents, incGstFromEx } from "../money";
 import { monthlyClaimDates, splitEvenly } from "./spread";
+import { poLineExCents } from "../poTotals";
 
 export interface CostBudgetLine {
   key: string;
@@ -227,6 +228,8 @@ export interface JobCostData {
   labourExByKey: Record<string, number>;
   committedPos: CommittedPo[];
   awaitingPoLabourExCents: number;
+  /** The same awaiting-PO hours, by the timesheet's cost code. */
+  awaitingPoLabourExByKey: Record<string, number>;
   scheduleItems: CostScheduleItem[];
 }
 
@@ -242,13 +245,21 @@ export interface JobCostRows {
     total: number;
     gstAmount: number;
   }[];
-  poItemRows: { purchaseOrderId: string; costCodeId: string | null; total: number; gstAmount: number; gstMode: string }[];
+  poItemRows: {
+    purchaseOrderId: string;
+    costCodeId: string | null;
+    total: number;
+    quantity?: string | number | null;
+    unitPrice?: number | null;
+    isGstFree?: boolean | null;
+    gstMode: string;
+  }[];
   linkedBillRows: { poId: string | null; total: number; tax: number; billType: string | null }[];
   /** Employee timesheets (approved, not subbie). `total` is dollars ex GST as numeric text. */
   labourRows: { id: string; projectId: string | null; costCodeId: string | null; total: string | number }[];
   splitRows: { timesheetId: string; costCodeId: string; total: string | number }[];
   /** Subbie hours approved but not on a PO: hours and the subbie's profile rate (dollars). */
-  awaitingRows: { projectId: string | null; duration: string | number; rate: string | number | null }[];
+  awaitingRows: { projectId: string | null; costCodeId?: string | null; duration: string | number; rate: string | number | null }[];
   itemRows: { projectId: string; costCodeId: string | null; startDate: Date | string; endDate: Date | string; status: string }[];
 }
 
@@ -258,7 +269,7 @@ export function assembleJobCostInputs(rows: JobCostRows): Map<string, JobCostDat
   const get = (projectId: string) => {
     let d = out.get(projectId);
     if (!d) {
-      d = { budgetLines: [], labourExByKey: {}, committedPos: [], awaitingPoLabourExCents: 0, scheduleItems: [] };
+      d = { budgetLines: [], labourExByKey: {}, committedPos: [], awaitingPoLabourExCents: 0, awaitingPoLabourExByKey: {}, scheduleItems: [] };
       out.set(projectId, d);
     }
     return d;
@@ -289,7 +300,11 @@ export function assembleJobCostInputs(rows: JobCostRows): Map<string, JobCostDat
   }
 
   for (const r of awaitingRows) {
-    get(r.projectId!).awaitingPoLabourExCents += Math.round(Number(r.duration || 0) * dollarsToCents(r.rate));
+    const d = get(r.projectId!);
+    const cents = Math.round(Number(r.duration || 0) * dollarsToCents(r.rate));
+    const key = costKey(r.costCodeId ?? null);
+    d.awaitingPoLabourExCents += cents;
+    d.awaitingPoLabourExByKey[key] = (d.awaitingPoLabourExByKey[key] ?? 0) + cents;
   }
 
   // Committed POs, split across codes pro rata by each item's ex-GST value.
@@ -302,7 +317,7 @@ export function assembleJobCostInputs(rows: JobCostRows): Map<string, JobCostDat
   const itemsByPo = new Map<string, { key: string; exCents: number }[]>();
   for (const it of poItemRows) {
     // Item totals are inc GST only on an inclusive PO (COMMITTED_COST_PLAN.md §5a).
-    const ex = it.gstMode === "inclusive" ? (it.total || 0) - (it.gstAmount || 0) : it.total || 0;
+    const ex = poLineExCents(it, it.gstMode);
     const list = itemsByPo.get(it.purchaseOrderId) ?? [];
     list.push({ key: costKey(it.costCodeId), exCents: ex });
     itemsByPo.set(it.purchaseOrderId, list);

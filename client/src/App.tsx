@@ -30,6 +30,7 @@ import { clientAware } from "@/components/client/clientAware";
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
+const EmailLog = lazy(() => import("@/pages/EmailLog"));
 const MinuteDetail = lazy(() => import("@/pages/MinuteDetail"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -124,6 +125,7 @@ const Messages = lazy(() => import("@/pages/Messages"));
 const RFQs = lazy(() => import("@/pages/RFQs"));
 const RFQDetail = lazy(() => import("@/pages/RFQDetail"));
 const RFQPortal = lazy(() => import("@/pages/RFQPortal"));
+const POPortal = lazy(() => import("@/pages/POPortal"));
 const VariationPortal = lazy(() => import("@/pages/VariationPortal"));
 const ProposalPortal = lazy(() => import("@/pages/ProposalPortal"));
 const SelectionPortal = lazy(() => import("@/pages/SelectionPortal"));
@@ -158,6 +160,7 @@ function Router() {
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfService} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
+      <Route path="/portal/po/:token" component={POPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
       <Route path="/portal/selections/:token" component={SelectionPortal} />
@@ -383,7 +386,7 @@ function Router() {
         <Route path="/suggestions-review" component={SuggestionsReview} />
       )}
       <Route path="/checklists">{() => <ComingSoonPage section="checklists" />}</Route>
-      <Route path="/emails">{() => <ComingSoonPage section="emails" />}</Route>
+      <Route path="/emails" component={EmailLog} />
       <Route path="/crm">{() => <ComingSoonPage section="crm" />}</Route>
       <Route path="/business-team">{() => <ComingSoonPage section="business-team" />}</Route>
 
@@ -403,6 +406,7 @@ function UnauthenticatedRoutes() {
         <Route path="/terms" component={TermsOfService} />
         <Route path="/accept-invite/:token" component={AcceptInvitation} />
         <Route path="/portal/rfq/:token" component={RFQPortal} />
+      <Route path="/portal/po/:token" component={POPortal} />
         <Route path="/portal/variation/:token" component={VariationPortal} />
         <Route path="/portal/proposal/:id" component={ProposalPortal} />
         <Route path="/portal/selections/:token" component={SelectionPortal} />

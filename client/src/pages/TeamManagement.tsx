@@ -27,6 +27,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type UserInvitation } from "@shared/schema";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 export default function TeamManagement() {
   const [, navigate] = useLocation();
@@ -215,6 +216,9 @@ export default function TeamManagement() {
                   <Clock className="w-3.5 h-3.5" />
                   Pending Invitations ({teamInvitations.length})
                 </h3>
+                {/* One check for all of them — resending to an address that
+                    already bounced will bounce again. */}
+                <BouncedAddressWarning emails={teamInvitations.map((i) => i.email)} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {teamInvitations.map((invitation) => (
                     <PendingInvitationCard

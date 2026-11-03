@@ -58,7 +58,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, Search, X, Building2, Users, Shield, Calendar, ChevronRight, Link2, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, Search, X, Building2, Users, Shield, Mail, Calendar, ChevronRight, Link2, Loader2 } from "lucide-react";
+import { EmailHistoryList } from "@/components/email-log/EmailHistoryList";
 import { z } from "zod";
 import { BulkXeroContactMappingDialog } from "@/components/BulkXeroMappingDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -1149,7 +1150,7 @@ export default function Trades() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-4">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="details" className="text-xs">
                     <Building2 className="h-3.5 w-3.5 mr-1.5" />
                     Details
@@ -1161,6 +1162,10 @@ export default function Trades() {
                   <TabsTrigger value="insurance" className="text-xs">
                     <Shield className="h-3.5 w-3.5 mr-1.5" />
                     Insurance ({selectedTradeInsurances.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="emails" className="text-xs" data-testid="tab-supplier-emails">
+                    <Mail className="h-3.5 w-3.5 mr-1.5" />
+                    Emails
                   </TabsTrigger>
                 </TabsList>
 
@@ -1308,6 +1313,14 @@ export default function Trades() {
                       ))}
                     </div>
                   )}
+                </TabsContent>
+
+                <TabsContent value="emails" className="mt-4">
+                  {/* The business address plus every contact's — RFQs and POs go to either. */}
+                  <EmailHistoryList
+                    addresses={[selectedTrade.email, ...selectedTradeContacts.map((c) => c.email)]}
+                    emptyHint="No email address on file for this supplier or its contacts."
+                  />
                 </TabsContent>
 
                 <TabsContent value="insurance" className="mt-4">

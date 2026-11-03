@@ -27,6 +27,8 @@ export async function loadRecharges(companyId: string, opts: LoadRechargeOptions
     .from(schema.assets)
     .where(and(
       eq(schema.assets.companyId, companyId),
+      // Only charge-out assets (the excavator); a ute that's "just used" is never charged.
+      eq(schema.assets.chargeOut, true),
       gt(schema.assets.dayRateCents, 0),
       ...(opts.assetId ? [eq(schema.assets.id, opts.assetId)] : []),
     ));

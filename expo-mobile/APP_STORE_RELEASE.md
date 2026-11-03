@@ -9,10 +9,11 @@ everything else is a portal step only the account holder can do.
 | Apple guideline | What changed |
 |---|---|
 | 4.8 Login services | **Sign in with Apple** on the login screen (iOS only), above Google. Sign-in only: an Apple ID is linked to an existing Morada user by Apple-verified email on first use, then by Apple's user id. "Hide my email" can't match anyone and is refused with an explanation. Route `POST /api/auth/apple/mobile`; table `user_apple_identities` (migration **0113**, also created on first use). |
-| 5.1.1(v) Account deletion | **Settings → Account → Delete account**, and on the client screen. Wipes login, name, email, phone, photo, Google/Apple links, calendar tokens, sessions and push tokens; keeps the user row as "Deleted user" so their timesheets/bills/diary entries keep an owner. The only Owner of a company that still has a team is refused until they hand over. Route `POST /api/auth/delete-account`. Restore is blocked for deleted accounts. |
+| 5.1.1(v) Account deletion | **Settings → Account → Delete account** (team), and **Account → Delete account** in client mode. Wipes login, name, email, phone, photo, Google/Apple links, calendar tokens, sessions and push tokens; keeps the user row as "Deleted user" so their timesheets/bills/diary entries keep an owner. The only Owner of a company that still has a team is refused until they hand over. Route `POST /api/auth/delete-account`. Restore is blocked for deleted accounts. |
 | 5.1.1 Purpose strings | Camera and photo prompts now say what they are used for. |
 | 2.1 / iPad | `supportsTablet: false` — iPhone only until the layouts are tested on iPad. |
-| 2.1 Completeness | A **client** login gets a holding screen (open the web portal, sign out, delete account) instead of builder screens the server refuses. |
+| 2.1 Completeness | A **client** login gets **client mode** (#333): Home, Schedule, Selections, Money (variations + progress claims), Messages — each tab gated by the client role's `portal.*` permissions. |
+| — | **Documents open in the app** (react-native-webview + expo-sharing): selection spec sheets (client and team), a variation's emailed/signed PDF and its attachments. Downloaded with the session, shown in-app on iOS, with Share for save/print/AirDrop. |
 | — | Version **1.1.0 (17)**. The version bump is required: a new native module was added, and OTA updates are matched by version. |
 
 ## Before the build
@@ -40,14 +41,17 @@ Check the entitlement in the IPA before submitting:
 - [ ] Sign in with Apple using an Apple ID whose email matches a Morada user → lands in the app.
 - [ ] Sign in with Apple choosing "Hide my email" → clear refusal, no crash.
 - [ ] Delete a throwaway team account → signed out; on web the person shows as "Deleted user" under Archived.
-- [ ] Log in as a client → holding screen, "Open client portal" opens the browser.
+- [ ] Log in as a client → client mode. Walk every tab; choose a selection option; open a variation, **View PDF**, then approve or decline a TEST variation (it writes for real).
+- [ ] Open documents: a selection spec sheet (as client and as team), a variation attachment, a variation PDF → each opens; Share → Save to Files works. A never-emailed variation's PDF button explains there's no PDF.
 
 ## App Store Connect (account holder)
 
 - [ ] **Reviewer demo account.** Make a separate company on the web (e.g.
       "Morada App Review"), load demo data, and add a team login with a
-      password. Put the email and password in App Review Information → Sign-in
-      required. Without seeded data the reviewer sees empty screens (2.1).
+      password, **plus a client login** on one of its projects (with a sent
+      variation, a selection to choose and a progress claim). Put both in App
+      Review Information → Sign-in required / Notes. Without seeded data the
+      reviewer sees empty screens (2.1).
 - [ ] App Privacy labels: Contact info (name, email, phone), Photos, Identifiers
       (user id), Diagnostics (crash data via Sentry). Linked to the user, not
       used for tracking.
@@ -57,8 +61,9 @@ Check the entitlement in the IPA before submitting:
       questionnaire.
 - [ ] Screenshots: 6.9" iPhone (1320 × 2868) is the one required size.
 - [ ] Review notes: "Business app for residential builders. Accounts are
-      created by a building company on the web; clients use the web portal. Sign
-      in with the demo account provided."
+      created by a building company on the web. Clients of the builder use the
+      same app in client mode. Sign in with the team demo account, and with
+      the client demo account to see client mode."
 - [ ] No subscribe/upgrade buttons or links anywhere in the app — Australia is
       not eligible for external purchase links (3.1.1).
 

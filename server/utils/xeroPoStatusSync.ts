@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { xeroService } from "../services/xeroService";
+import { poStatusRank } from "@shared/poStatus";
 
 export type XeroPoStatus =
   | "DRAFT"
@@ -11,6 +12,7 @@ export type XeroPoStatus =
 export type BuildProPoStatus =
   | "draft"
   | "sent"
+  | "accepted"
   | "invoiced"
   | "partially_paid"
   | "paid"
@@ -80,18 +82,8 @@ async function applyXeroPoStatusToLocal(po: any, xeroPo: any): Promise<SyncResul
     // endpoint still reports BILLED (Xero doesn't track payment state
     // on the PO itself). 'sent' is NOT protected so the natural
     // sent→invoiced promotion from Xero BILLED still flows through.
-    const rank: Record<string, number> = {
-      draft: 0,
-      sent: 1,
-      invoiced: 2,
-      partially_paid: 3,
-      paid: 4,
-      cancelled: 99,
-    };
     const xeroForcesOverride = mapped === "cancelled";
-    const currentRank = rank[current] ?? 0;
-    const mappedRank = rank[mapped] ?? 0;
-    const canPromote = mappedRank > currentRank;
+    const canPromote = current !== "cancelled" && poStatusRank(mapped) > Math.max(0, poStatusRank(current));
     if (mapped !== current && (xeroForcesOverride || canPromote)) {
       updates.status = mapped;
       changed = true;

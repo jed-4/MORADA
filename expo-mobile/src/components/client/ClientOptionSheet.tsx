@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import DocumentViewer, { type ViewableDocument } from '../DocumentViewer';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,9 +15,9 @@ import { ClientStatusPill } from './ClientUI';
  * action: "Select this option" (wording kept from the web: it's a pick, the
  * builder confirms it).
  *
- * Documents are listed but open on the web: they're served behind the
- * session, and opening a PDF in the app needs a native viewer the build
- * doesn't include yet.
+ * Documents (spec sheets, brochures) open in the in-app DocumentViewer,
+ * fetched with the client's session — clientObjectAccess serves a client only
+ * the files of options the builder made visible.
  */
 
 const prettyUrl = (url: string) => {
@@ -47,6 +48,7 @@ export default function ClientOptionSheet({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [page, setPage] = useState(0);
+  const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
 
   useEffect(() => setPage(0), [option?.id]);
 
@@ -142,12 +144,17 @@ export default function ClientOptionSheet({
                 <View style={styles.docs}>
                   <Text style={[styles.docsTitle, { color: theme.textMuted }]}>DOCUMENTS</Text>
                   {documents.map((doc) => (
-                    <View key={doc.id} style={styles.doc}>
-                      <Ionicons name="document-outline" size={16} color={theme.textSecondary} />
-                      <Text style={[styles.docName, { color: theme.textPrimary }]} numberOfLines={1}>{doc.fileName || 'Specification'}</Text>
-                    </View>
+                    <Pressable
+                      key={doc.id}
+                      onPress={() => setOpenDoc({ path: doc.filePath, name: doc.fileName || 'Specification' })}
+                      style={({ pressed }) => [styles.doc, pressed && { opacity: 0.6 }]}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name="document-text-outline" size={18} color={theme.primary} />
+                      <Text style={[styles.docName, { color: theme.primary }]} numberOfLines={1}>{doc.fileName || 'Specification'}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
+                    </Pressable>
                   ))}
-                  <Text style={[styles.docsNote, { color: theme.textMuted }]}>Open the web portal to download documents.</Text>
                 </View>
               )}
             </View>
@@ -175,6 +182,8 @@ export default function ClientOptionSheet({
           )}
         </View>
       )}
+      {/* Inside this Modal: iOS only presents a second modal from within the first. */}
+      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} />
     </Modal>
   );
 }
@@ -202,9 +211,8 @@ const styles = StyleSheet.create({
   linkText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, flex: 1 },
   docs: { gap: 6, marginTop: 4 },
   docsTitle: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
-  doc: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  doc: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   docName: { fontSize: fontSize.sm, flex: 1 },
-  docsNote: { fontSize: fontSize.xs },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   choose: { borderRadius: radius.lg, paddingVertical: 15, alignItems: 'center' },
   chooseText: { color: '#FFFFFF', fontSize: fontSize.base, fontWeight: fontWeight.semibold },

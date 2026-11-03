@@ -7,6 +7,7 @@ import { JOB_MODES } from "./cashflow/types";
 import { FREQUENCIES } from "./cashflow/recurrence";
 import {
   ASSET_TYPES,
+  FINANCE_FREQUENCIES,
   ASSET_STATUSES,
   METER_TYPES,
   COMPLIANCE_KINDS,
@@ -669,12 +670,12 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Nullable for the same reason startTime/endTime are: the column is nullable
   // and a due date has to be removable. Note the `.nullable()` has to wrap the
   // coercion — z.coerce.date() alone turns null into new Date(null), the epoch.
-  dueDate: z.coerce.date().optional().nullable(), // Coerce strings to dates for JSON compatibility
+  dueDate: z.coerce.date().nullable().optional().nullable(), // Coerce strings to dates for JSON compatibility
   // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
   // columns are nullable in the DB; without null here the value cannot be cleared.
   startTime: z.string().nullable().optional(), // HH:MM format
   endTime: z.string().nullable().optional(), // HH:MM format
-  completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  completedAt: z.coerce.date().nullable().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
   checklist: z.array(z.object({
@@ -695,12 +696,12 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringDays: z.array(z.number()).optional(),
   includeSaturday: z.boolean().optional(),
   includeSunday: z.boolean().optional(),
-  recurringStartDate: z.coerce.date().optional(),
-  recurringEndDate: z.coerce.date().optional(),
+  recurringStartDate: z.coerce.date().nullable().optional(),
+  recurringEndDate: z.coerce.date().nullable().optional(),
   templateId: z.string().optional(),
-  occurrenceDate: z.coerce.date().optional(), // Original scheduled date from template
+  occurrenceDate: z.coerce.date().nullable().optional(), // Original scheduled date from template
   isModified: z.boolean().optional(), // True if user moved/rescheduled from template time
-  lastRecurringDate: z.coerce.date().optional(),
+  lastRecurringDate: z.coerce.date().nullable().optional(),
   // Reference fields for system-generated tasks
   referenceType: z.string().optional(),
   referenceId: z.string().optional(),
@@ -1161,7 +1162,7 @@ export const estimateItems = pgTable("estimate_items", {
   requestForQuote: boolean("request_for_quote").notNull().default(false),
   isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
   proposalVisible: boolean("proposal_visible").notNull().default(true), // Show/hide in proposal (renamed from visibleInProposal)
-  shownAs: text("shown_as"), // Custom text to display in proposal instead of item name
+  shownAs: text("shown_as"), // Proposal display mode: 'empty' | 'price' | 'included' | 'excluded' (null = price) — NOT a display name
   trackLabourHours: boolean("track_labour_hours").notNull().default(false), // Include in labour hours budget tracking
   order: integer("order").notNull().default(0), // For sorting within groups
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2166,7 +2167,7 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
   projectIds: z.array(z.string()).optional(),
   primaryContact: z.enum(["self", "spouse"]).optional(),
   reviewStatus: z.enum(["pending", "reviewed", "skipped"]).optional(),
-  lastReviewedAt: z.coerce.date().optional(),
+  lastReviewedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -2316,7 +2317,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   billType: z.enum(["bill", "credit", "receipt"]),
   status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]),
   billDate: z.coerce.date(),
-  dueDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
   subtotal: z.number().default(0),
   tax: z.number().default(0),
   total: z.number().default(0),
@@ -2324,7 +2325,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   projectId: z.string().nullable().optional(),
   companyId: z.string().nullable().optional(),
   attachmentUrls: z.array(z.union([z.string(), billAttachmentSchema])).optional(),
-  xeroLastSyncAt: z.coerce.date().optional().nullable(),
+  xeroLastSyncAt: z.coerce.date().nullable().optional().nullable(),
   xeroLastSyncStatus: z.string().optional().nullable(),
   xeroLastSyncError: z.string().optional().nullable(),
 });
@@ -2633,11 +2634,11 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
   updatedAt: true,
 }).extend({
   status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
-  approvalDeadline: z.coerce.date().optional(),
-  approvedDate: z.coerce.date().optional(),
-  clientSignedDate: z.coerce.date().optional(),
-  builderSignedDate: z.coerce.date().optional(),
-  portalSentAt: z.coerce.date().optional(),
+  approvalDeadline: z.coerce.date().nullable().optional(),
+  approvedDate: z.coerce.date().nullable().optional(),
+  clientSignedDate: z.coerce.date().nullable().optional(),
+  builderSignedDate: z.coerce.date().nullable().optional(),
+  portalSentAt: z.coerce.date().nullable().optional(),
   pdfColumns: z.record(z.boolean()).nullable().optional(),
   globalMarkupPercent: z.number().min(0).max(1000).nullable().optional(),
   // Optional, not .default(0): it is derived by recomputeVariationTotals and
@@ -2708,7 +2709,46 @@ export const emailDeliveries = pgTable("email_deliveries", {
    *  without a join table per feature. */
   contextType: text("context_type"),
   contextId: varchar("context_id"),
-});
+
+  // ── 0120: the email log ──────────────────────────────────────────────────
+  /** Resolved at write time from the context document. */
+  projectId: varchar("project_id"),
+
+  fromAddress: text("from_address"),
+  replyTo: text("reply_to"),
+  /** The rendered HTML exactly as sent. Null when redacted or pre-0120. */
+  htmlBody: text("html_body"),
+  /** Body deliberately not kept — it carried a live sign-in link. */
+  bodyRedacted: boolean("body_redacted").notNull().default(false),
+  attachments: jsonb("attachments").$type<EmailDeliveryAttachment[]>().notNull().default([]),
+
+  /** Opens are approximate (Apple Mail prefetches images) and never move `status`. */
+  deliveredAt: timestamp("delivered_at"),
+  firstOpenedAt: timestamp("first_opened_at"),
+  lastOpenedAt: timestamp("last_opened_at"),
+  openCount: integer("open_count").notNull().default(0),
+  firstClickedAt: timestamp("first_clicked_at"),
+  clickCount: integer("click_count").notNull().default(0),
+
+  /** Set once the sender has been told it bounced — webhooks retry. */
+  senderNotifiedAt: timestamp("sender_notified_at"),
+  /** On a "fix and resend" copy, the row it replaced. */
+  resentFromId: varchar("resent_from_id"),
+}, (table) => ({
+  contextIdx: index("email_deliveries_context_idx").on(table.contextType, table.contextId, table.sentAt),
+  messageIdx: index("email_deliveries_message_idx").on(table.providerMessageId),
+  companyIdx: index("email_deliveries_company_idx").on(table.companyId, table.sentAt),
+  projectIdx: index("email_deliveries_project_idx").on(table.companyId, table.projectId, table.sentAt),
+}));
+
+/** One attachment as recorded on an email_deliveries row. `objectPath` is null
+ *  when the bytes were not kept (no company to scope the upload, or too big). */
+export interface EmailDeliveryAttachment {
+  filename: string;
+  contentType: string | null;
+  size: number;
+  objectPath: string | null;
+}
 
 export const insertEmailDeliverySchema = createInsertSchema(emailDeliveries).omit({
   id: true,
@@ -2722,7 +2762,7 @@ export type EmailDelivery = typeof emailDeliveries.$inferSelect;
  * the request and nothing more. Everything past it arrives by webhook, which is
  * the whole point: acceptance is not delivery.
  */
-export const EMAIL_DELIVERY_STATUS = ["sent", "delivered", "bounced", "complained", "failed"] as const;
+export const EMAIL_DELIVERY_STATUS = ["sent", "delayed", "delivered", "bounced", "complained", "failed"] as const;
 export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUS)[number];
 
 export const variationSends = pgTable("variation_sends", {
@@ -2994,8 +3034,8 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   // writes that flag back and pulling reads it.
   status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),
-  dueDate: z.coerce.date().optional(),
-  sentDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
+  sentDate: z.coerce.date().nullable().optional(),
   subtotal: z.number().default(0),
   markupAmount: z.number().default(0),
   gstAmount: z.number().default(0),
@@ -3284,12 +3324,12 @@ export const insertProposalSchema = createInsertSchema(proposals).omit({
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),
-  expiryDate: z.coerce.date().optional(),
-  sentDate: z.coerce.date().optional(),
-  viewedDate: z.coerce.date().optional(),
-  acceptedDate: z.coerce.date().optional(),
-  rejectedDate: z.coerce.date().optional(),
-  convertedDate: z.coerce.date().optional(),
+  expiryDate: z.coerce.date().nullable().optional(),
+  sentDate: z.coerce.date().nullable().optional(),
+  viewedDate: z.coerce.date().nullable().optional(),
+  acceptedDate: z.coerce.date().nullable().optional(),
+  rejectedDate: z.coerce.date().nullable().optional(),
+  convertedDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertProposal = z.infer<typeof insertProposalSchema>;
@@ -3774,7 +3814,7 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   createdByName: z.string().optional(),
   status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
   visibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
@@ -3815,7 +3855,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
   linkedTaskId: z.string().nullish(),
   linkedScheduleItemId: z.string().nullish(),
   completedAt: z.coerce.date().nullish(),
@@ -4165,9 +4205,9 @@ export const insertScheduleSchema = createInsertSchema(schedules).omit({
 }).extend({
   status: z.enum(["offline", "online", "locked"]).default("offline"),
   scheduleCategory: z.enum(["construction", "preconstruction"]).default("construction"),
-  startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().optional(),
-  lockedAt: z.coerce.date().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  lockedAt: z.coerce.date().nullable().optional(),
   includeSaturday: z.boolean().optional(),
   includeSunday: z.boolean().optional(),
   clientVisibilityWeeks: z.number().int().min(1).nullable().optional(),
@@ -4297,9 +4337,9 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date(),
-  actualStartDate: z.coerce.date().optional(),
-  actualEndDate: z.coerce.date().optional(),
-  completedAt: z.coerce.date().optional(),
+  actualStartDate: z.coerce.date().nullable().optional(),
+  actualEndDate: z.coerce.date().nullable().optional(),
+  completedAt: z.coerce.date().nullable().optional(),
   duration: z.number().default(1),
   progressPercent: z.number().int().min(0).max(100).default(0),
   dependencies: z.array(z.object({
@@ -4436,7 +4476,7 @@ export const insertActivityNoteSchema = createInsertSchema(activityNotes).omit({
     newValue: z.any().optional(),
   }).optional(),
   mentionedUserIds: z.array(z.string()).optional(),
-  editedAt: z.coerce.date().optional(),
+  editedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertActivityNote = z.infer<typeof insertActivityNoteSchema>;
@@ -4947,8 +4987,8 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
   status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
   dateIdentified: z.coerce.date().optional(),
-  dueDate: z.coerce.date().optional(),
-  dateResolved: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
+  dateResolved: z.coerce.date().nullable().optional(),
   costImpact: z.number().optional(),
   attachments: z.array(z.object({
     url: z.string(),
@@ -5010,7 +5050,7 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
   actionItems: z.array(z.object({
     description: z.string(),
     assignee: z.string().optional(),
-    dueDate: z.coerce.date().optional(),
+    dueDate: z.coerce.date().nullable().optional(),
     completed: z.boolean().default(false),
   })).optional(),
   recordingUrl: z.string().optional(),
@@ -5420,7 +5460,7 @@ export const insertProjectWorkflowSchema = createInsertSchema(projectWorkflows).
   status: z.enum(["pending", "in_progress", "completed", "cancelled"]).default("pending"),
   createdTaskIds: z.array(z.string()).optional(),
   triggeredAt: z.coerce.date().optional(),
-  completedAt: z.coerce.date().optional(),
+  completedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertProjectWorkflow = z.infer<typeof insertProjectWorkflowSchema>;
@@ -5699,8 +5739,8 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   // timestamp mapper calls .toISOString() on whatever it is handed — so a bare
   // string reached the driver and threw, 500-ing every create/save that carried
   // a date. Coercing here keeps the wire format and hands Drizzle a Date.
-  dueDate: z.coerce.date().optional().nullable(),
-  deadline: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
+  deadline: z.coerce.date().nullable().optional().nullable(),
   supplierIds: z.array(z.string()).optional(),
   supplierNames: z.array(z.string()).optional(),
   attachmentUrls: z.array(z.string()).optional(),
@@ -5726,8 +5766,8 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
 // quoted against is not.
 export const updateRfqSchema = insertRfqSchema.partial().extend({
   status: z.enum(rfqStatusEnum.enumValues).optional(),
-  sentAt: z.coerce.date().optional().nullable(),
-  followUpSentAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
+  followUpSentAt: z.coerce.date().nullable().optional().nullable(),
   pdfUrl: z.string().optional().nullable(),
 });
 
@@ -5823,10 +5863,10 @@ export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
   // Same ISO-string-vs-z.date() mismatch as the RFQ dates: the accept/decline
   // actions send timestamps as strings, which failed validation outright and
   // made both buttons return 400.
-  validUntil: z.coerce.date().optional().nullable(),
-  acceptedAt: z.coerce.date().optional().nullable(),
-  declinedAt: z.coerce.date().optional().nullable(),
-  submittedAt: z.coerce.date().optional().nullable(),
+  validUntil: z.coerce.date().nullable().optional().nullable(),
+  acceptedAt: z.coerce.date().nullable().optional().nullable(),
+  declinedAt: z.coerce.date().nullable().optional().nullable(),
+  submittedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
@@ -5853,7 +5893,7 @@ export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
   createdAt: true,
 }).extend({
   scheduledFor: z.coerce.date(),
-  sentAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
@@ -5883,8 +5923,8 @@ export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).om
   id: true,
   createdAt: true,
 }).extend({
-  expiresAt: z.coerce.date().optional().nullable(),
-  viewedAt: z.coerce.date().optional().nullable(),
+  expiresAt: z.coerce.date().nullable().optional().nullable(),
+  viewedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
@@ -5959,10 +5999,10 @@ export const insertRfqRecipientSchema = createInsertSchema(rfqRecipients).omit({
   remindersSent: true,
 }).extend({
   supplierName: z.string().min(1, "Supplier name is required"),
-  sentAt: z.coerce.date().optional().nullable(),
-  viewedAt: z.coerce.date().optional().nullable(),
-  respondedAt: z.coerce.date().optional().nullable(),
-  lastRemindedAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
+  viewedAt: z.coerce.date().nullable().optional().nullable(),
+  respondedAt: z.coerce.date().nullable().optional().nullable(),
+  lastRemindedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export const updateRfqRecipientSchema = insertRfqRecipientSchema.partial().omit({ rfqId: true });
@@ -6227,7 +6267,7 @@ export const insertRfiSchema = createInsertSchema(rfis).omit({
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   attachmentUrls: z.array(z.string()).optional(),
   attachmentFileNames: z.array(z.string()).optional(),
-  dueDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertRfi = z.infer<typeof insertRfiSchema>;
@@ -6440,10 +6480,14 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   updatedAt: true,
 }).extend({
   poType: z.enum(["main", "site"]).default("main"),
-  status: z.enum(["draft", "sent", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
+  status: z.enum(["draft", "sent", "accepted", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
   gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
   poDate: z.coerce.date().default(() => new Date()),
-  requiredByDate: z.coerce.date().optional(),
+  // nullable() must wrap the coerce: new Date(null) is 1 Jan 1970, which is how
+  // a blank date was being saved. A date at or before epoch is that same blank
+  // coming back from an old row, so it clears rather than saves again.
+  requiredByDate: z.coerce.date().nullable().optional()
+    .transform((d) => (d && d.getTime() <= 0 ? null : d)),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   total: z.number().default(0),
@@ -6499,6 +6543,28 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
   gstAmount: z.number().default(0),
   displayOrder: z.number().default(0),
 });
+
+// What a client may change on an existing PO. A whitelist: companyId, poNumber,
+// totals, Xero ids and approval stamps are the server's. Totals are a cache of
+// the lines and projectId has no UI, so neither is here.
+export const updatePurchaseOrderSchema = insertPurchaseOrderSchema.pick({
+  title: true, description: true, scope: true,
+  termsAndConditionsId: true, termsAndConditions: true,
+  requiredByDate: true,
+  deliveryReference: true, deliveryAttention: true, deliveryContact: true,
+  deliveryAddress: true, deliveryInstructions: true,
+  supplierId: true, supplierUserId: true, supplierName: true,
+  scopeStageId: true, costCodeId: true,
+  status: true, gstMode: true, internalNotes: true,
+}).partial();
+
+// A line stays on its PO and keeps its provenance.
+export const updatePurchaseOrderItemSchema = insertPurchaseOrderItemSchema.omit({
+  purchaseOrderId: true,
+  sourceTimesheetId: true,
+  sourceEstimateItemId: true,
+  selectionOptionId: true,
+}).partial();
 
 export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
 export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
@@ -7415,7 +7481,7 @@ export const insertBillLineItemPriceLinkSchema = createInsertSchema(billLineItem
   createdAt: true,
 }).extend({
   reviewStatus: z.enum(["pending", "linked", "created", "skipped"]).default("pending"),
-  reviewedAt: z.coerce.date().optional(),
+  reviewedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertBillLineItemPriceLink = z.infer<typeof insertBillLineItemPriceLinkSchema>;
@@ -9396,6 +9462,15 @@ export const assets = pgTable("assets", {
   // What a day of use charges a job, ex GST (an internal cost, like labour).
   // 0/null = never charged. See shared/assetRecharge.ts (migration 0116).
   dayRateCents: integer("day_rate_cents"),
+  // Charged out to jobs (an excavator) vs just used (a ute). Only charge-out
+  // assets are ever charged, at dayRateCents (migration 0122).
+  chargeOut: boolean("charge_out").notNull().default(false),
+  // Finance repayments, as paid: amount per FINANCE_FREQUENCIES period from
+  // the first repayment to the last (blank = still running). Migration 0122.
+  financeRepaymentCents: integer("finance_repayment_cents"),
+  financeFrequency: text("finance_frequency"), // FINANCE_FREQUENCIES
+  financeStartDate: text("finance_start_date"), // 'YYYY-MM-DD'
+  financeEndDate: text("finance_end_date"), // 'YYYY-MM-DD'
   meterType: text("meter_type").notNull().default("km"), // METER_TYPES
   currentMeter: integer("current_meter"),
   currentMeterDate: text("current_meter_date"), // 'YYYY-MM-DD' of that reading
@@ -9426,6 +9501,11 @@ export const insertAssetSchema = createInsertSchema(assets).omit({
   gvmKg: nonNegInt.nullable().optional(),
   purchaseCents: nonNegInt.nullable().optional(),
   dayRateCents: nonNegInt.nullable().optional(),
+  chargeOut: z.boolean().optional(),
+  financeRepaymentCents: nonNegInt.nullable().optional(),
+  financeFrequency: z.enum(FINANCE_FREQUENCIES).nullable().optional(),
+  financeStartDate: assetDateKey.nullable().optional(),
+  financeEndDate: assetDateKey.nullable().optional(),
   purchaseDate: assetDateKey.nullable().optional(),
   photoUrl: z.string().startsWith("/objects/").nullable().optional(),
 });

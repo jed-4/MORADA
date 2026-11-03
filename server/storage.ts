@@ -1960,6 +1960,8 @@ export class MemStorage implements IStorage {
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
+      // Without view, a user sees only the emails they sent themselves. "send" is resend from the log.
+      { key: "admin.email_log", name: "Email log", description: "See every email the company has sent, and resend ones that did not arrive", category: "admin", actions: ["view", "send"], isBuiltIn: true },
 
       // Projects category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7201,6 +7203,8 @@ export class DbStorage implements IStorage {
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
+      // Without view, a user sees only the emails they sent themselves. "send" is resend from the log.
+      { key: "admin.email_log", name: "Email log", description: "See every email the company has sent, and resend ones that did not arrive", category: "admin", actions: ["view", "send"], isBuiltIn: true },
 
       // Projects category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },

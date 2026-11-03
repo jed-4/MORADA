@@ -124,6 +124,55 @@ export function addMonthsKey(key: string, months: number): string {
   return target.toISOString().slice(0, 10);
 }
 
+// ---- finance repayments --------------------------------------------------
+
+export const FINANCE_FREQUENCIES = ["weekly", "fortnightly", "monthly"] as const;
+export type FinanceFrequency = (typeof FINANCE_FREQUENCIES)[number];
+export const FINANCE_FREQUENCY_LABELS: Record<FinanceFrequency, string> = {
+  weekly: "Weekly",
+  fortnightly: "Fortnightly",
+  monthly: "Monthly",
+};
+
+export interface FinanceTerms {
+  financeRepaymentCents: number | null;
+  financeFrequency: string | null;
+  financeStartDate: string | null;
+  financeEndDate: string | null;
+}
+
+/**
+ * Repayments falling in (after, upTo] — e.g. the last 12 months is
+ * (a year ago, today]. Each date is stepped from the FIRST repayment, so a
+ * monthly loan from 31 Jan pays 28 Feb, 31 Mar (it never drifts to the 28th).
+ */
+export function repaymentsBetween(f: FinanceTerms, after: string, upTo: string): { count: number; cents: number } {
+  const amount = f.financeRepaymentCents ?? 0;
+  const freq = f.financeFrequency as FinanceFrequency | null;
+  if (amount <= 0 || !f.financeStartDate || !freq || !FINANCE_FREQUENCIES.includes(freq)) return { count: 0, cents: 0 };
+  const last = f.financeEndDate && f.financeEndDate < upTo ? f.financeEndDate : upTo;
+  let count = 0;
+  // 30 years of weekly repayments is plenty; stops a typo'd date spinning.
+  for (let n = 0; n < 1600; n++) {
+    const date = freq === "monthly" ? addMonthsKey(f.financeStartDate, n) : addDaysKey(f.financeStartDate, n * (freq === "weekly" ? 7 : 14));
+    if (date > last) break;
+    if (date > after) count++;
+  }
+  return { count, cents: count * amount };
+}
+
+/** One year of repayments at the asset's frequency (for "a year of this costs"). */
+export function annualRepaymentCents(f: FinanceTerms): number {
+  const amount = f.financeRepaymentCents ?? 0;
+  if (amount <= 0) return 0;
+  switch (f.financeFrequency) {
+    case "weekly": return amount * 52;
+    case "fortnightly": return amount * 26;
+    case "monthly": return amount * 12;
+    default: return 0;
+  }
+}
+
 // ---- due status ----------------------------------------------------------
 
 export type DueState = "overdue" | "due_soon" | "ok";
@@ -538,7 +587,15 @@ export function renewalPayments(
 export const ASSET_COSTS_PERMISSION = "business.asset_costs";
 
 /** Fields on an asset that are money. */
-const ASSET_MONEY_FIELDS = ["purchaseCents", "financeProvider", "dayRateCents"] as const;
+const ASSET_MONEY_FIELDS = [
+  "purchaseCents",
+  "financeProvider",
+  "financeRepaymentCents",
+  "financeFrequency",
+  "financeStartDate",
+  "financeEndDate",
+  "dayRateCents",
+] as const;
 
 /** A copy of an asset (list row or detail) with every money field blanked. */
 export function redactAssetMoney<T extends Record<string, any>>(asset: T): T {
@@ -552,6 +609,6 @@ export function redactAssetMoney<T extends Record<string, any>>(asset: T): T {
 /** Drop money fields from a write by someone who can't see them, so they can neither set nor wipe them. */
 export function withoutMoneyFields<T extends Record<string, any>>(data: T): T {
   const out: Record<string, any> = { ...data };
-  for (const f of [...ASSET_MONEY_FIELDS, "amountCents", "costCents"]) delete out[f];
+  for (const f of [...ASSET_MONEY_FIELDS, "chargeOut", "amountCents", "costCents"]) delete out[f];
   return out as T;
 }

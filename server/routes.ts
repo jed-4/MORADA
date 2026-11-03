@@ -9,6 +9,9 @@ import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
+import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
+import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
+import { poAcceptUrl, readPoAcceptToken } from "./utils/poAcceptToken";
 import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
 import { db, pool } from "./db";
 import { google } from "googleapis";
@@ -17,7 +20,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
-import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
 import { isProposalEditable, blockedFieldsWhenLocked, proposalLockMessage, READY_STATUS } from "@shared/proposalLock";
@@ -31,7 +34,8 @@ import {
   localUploadName,
 } from "./replit_integrations/object_storage/localObjectStorage";
 import { renderClientEmail } from "./services/clientEmailShell";
-import { verifyResendSignature, parseResendEvent } from "./services/resendWebhook";
+import { verifyResendSignature, parseResendEvent, deliveryPatch } from "./services/resendWebhook";
+import { listEmailDeliveries, getEmailDelivery, getEmailDeliveryDetail, findAddressProblems, resendDelivery, replaceAddressInAddressBook, ResendRefused, type EmailLogScope } from "./services/emailLog";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
@@ -86,6 +90,8 @@ import {
   insertContactSchema,
   insertContactInsuranceSchema,
   insertBillSchema,
+  updatePurchaseOrderSchema,
+  updatePurchaseOrderItemSchema,
   insertBillLineItemSchema,
   insertBillApprovalSchema,
   insertBillLineItemAllowanceSchema,
@@ -296,6 +302,7 @@ import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateS
 import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
+import { PO_MOUNT, PO_MOUNTS, PO_SERVER_MANAGED_FIELDS, decidePOAccess, narrowPOList, poActionFor } from "./poAccessPolicy";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
@@ -445,6 +452,34 @@ type PushBillResult = {
  * matching Xero invoice via the Attachments endpoint. Idempotent — files
  * whose filename already exists on the Xero invoice are skipped.
  */
+// Roll a PO's lines up into its header after a line changes. Site and RFQ POs
+// are header-only, so a PO with no priced lines keeps its header: otherwise a
+// blank line added to one would wipe its amount. The exception is when this
+// change took away the last priced line, which is what linesHadValue says.
+//
+// Runs one at a time per PO. Two line edits close together each recalc the
+// header; unqueued, the first recalc could read the lines before the second
+// edit landed and finish after the second recalc, writing a stale total last.
+// Queued, each one reads the lines after every earlier one has finished.
+// (One server process, so an in-memory queue is enough.)
+const poTotalsQueue = new Map<string, Promise<unknown>>();
+function syncPOTotals(poId: string, linesHadValue = false) {
+  const run = async () => {
+    const po = await storage.getPurchaseOrder(poId);
+    if (!po) return undefined;
+    const lines = await storage.getPurchaseOrderItems(poId);
+    if (!hasPricedLine(lines) && !linesHadValue) return po;
+    return storage.updatePurchaseOrder(poId, computePOTotalsCents(lines, po.gstMode));
+  };
+  const prev = poTotalsQueue.get(poId) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(run);
+  poTotalsQueue.set(poId, next);
+  next.finally(() => {
+    if (poTotalsQueue.get(poId) === next) poTotalsQueue.delete(poId);
+  }).catch(() => undefined);
+  return next;
+}
+
 // Recompute a project's budget totals AND its per-cost-code line items so the
 // Budget page reflects bill changes immediately ("live"), without the user
 // having to press the manual recalculate button. Best-effort: a failure here
@@ -2304,6 +2339,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // it gets nothing but the onboarding surface — this closes the list endpoints
   // that silently skipped their company filter when companyId was undefined.
   app.use('/api', requireCompany);
+
+  // Purchase orders: one gate in front of every PO route, so a route added
+  // later cannot miss it. The policy and its exceptions are in poAccessPolicy.
+  app.use(PO_MOUNTS, async (req, res, next) => {
+    try {
+      const action = poActionFor(req.method, req.baseUrl, req.path);
+      const user = req.user as any;
+      if (!action || !user?.companyId) return next();
+      const segs = req.path.split("/").filter(Boolean);
+      const namesPO = req.baseUrl === PO_MOUNT && segs.length > 0 && segs[0] !== "next-number";
+      const [hasPOPermission, hasBillView] = await Promise.all([
+        userHasPermission(user, "financial.purchase_orders", action),
+        action === "view" ? userHasPermission(user, "financial.bills", "view") : Promise.resolve(false),
+      ]);
+      const needPO = !hasPOPermission && !hasBillView && namesPO;
+      const po = needPO ? await storage.getPurchaseOrder(segs[0]) : undefined;
+      const result = decidePOAccess({
+        action, baseUrl: req.baseUrl, path: req.path, body: req.body, user,
+        hasPOPermission, hasBillView, po: po as any,
+      });
+      if (result === "deny") {
+        return res.status(403).json({ error: "You don't have permission to do that on purchase orders" });
+      }
+      (req as any).poAccess = result;
+      next();
+    } catch (error) {
+      console.error("Purchase order permission check failed:", error);
+      res.status(500).json({ error: "Permission check failed" });
+    }
+  });
 
   // ---- Billing: select a plan (starts the 14-day trial) ----
   // Called at the end of onboarding once the company exists. Sets the chosen
@@ -5773,6 +5838,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("[GET /api/projects/:id/actual-costs] Error:", error);
         res.status(500).json({ error: "Failed to compute actual costs" });
+      }
+    },
+  );
+
+  // Committed cost: money promised but not yet incurred, ex GST cents.
+  //   - open POs (sent / accepted / invoiced / partially paid) less their
+  //     non-credit bills, never below zero per PO;
+  //   - subbie hours approved but still waiting for a PO, at the subbie's rate.
+  // A separate figure from actual costs: it never enters gross profit. Same
+  // numbers the cash flow forecast uses (shared/cashflow/jobCosts.ts).
+  app.get(
+    "/api/projects/:id/committed-costs",
+    requireAuth,
+    requirePermission("financial.budget_actuals", "view"),
+    async (req, res) => {
+      try {
+        const projectId = req.params.id;
+        const companyId = (req as any).user?.companyId;
+        const project = await storage.getProject(projectId);
+        if (!project || !companyId || (project as any).companyId !== companyId) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+
+        const { loadJobCostInputs } = await import("./services/cashflowService");
+        const data = (await loadJobCostInputs(companyId, projectId)).get(projectId);
+        const pos = data?.committedPos ?? [];
+        const labourByKey = data?.awaitingPoLabourExByKey ?? {};
+
+        // Keys are a cost code id, or "other:<title>" for no code.
+        const byKey = new Map<string, { po: number; labour: number }>();
+        const add = (key: string, field: "po" | "labour", cents: number) => {
+          const e = byKey.get(key) ?? { po: 0, labour: 0 };
+          e[field] += cents;
+          byKey.set(key, e);
+        };
+        for (const po of pos) for (const k of po.byKey) add(k.key, "po", k.exCents);
+        for (const [key, cents] of Object.entries(labourByKey)) add(key, "labour", cents);
+
+        const poCommittedExGstCents = pos.reduce((s, p) => s + p.unbilledExCents, 0);
+        const labourCommittedExGstCents = data?.awaitingPoLabourExCents ?? 0;
+        res.json({
+          projectId,
+          poCommittedExGstCents,
+          labourCommittedExGstCents,
+          committedExGstCents: poCommittedExGstCents + labourCommittedExGstCents,
+          byCostCode: Array.from(byKey.entries()).map(([key, e]) => ({
+            costCodeId: key.startsWith("other:") ? null : key,
+            poExGstCents: e.po,
+            labourExGstCents: e.labour,
+            committedExGstCents: e.po + e.labour,
+          })),
+          purchaseOrders: pos.map((p) => ({ id: p.id, label: p.label, unbilledExGstCents: p.unbilledExCents })),
+        });
+      } catch (error) {
+        console.error("[GET /api/projects/:id/committed-costs] Error:", error);
+        res.status(500).json({ error: "Failed to compute committed costs" });
       }
     },
   );
@@ -16479,6 +16600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         supplierName: supplierName ?? null,
         title: `Selections Order — ${itemCount} item${itemCount !== 1 ? "s" : ""}`,
         status: "draft" as const,
+        gstMode: "exclusive" as const, // the lines below are ex GST
         subtotal,
         gstAmount: gstTotal,
         total,
@@ -21365,6 +21487,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       billData.billNumber = await storage.getNextBillNumber(billData.companyId);
 
       const validationResult = insertBillSchema.safeParse(billData);
+      if (validationResult.success && validationResult.data.matchedSitePOId
+        && !await verifyPOOwnership(validationResult.data.matchedSitePOId, billData.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -21435,6 +21561,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
+      }
+      // Linking recomputes the PO's status, so a foreign id would rewrite
+      // another company's PO.
+      const linkedPOId = validationResult.data.matchedSitePOId;
+      if (linkedPOId && !await verifyPOOwnership(linkedPOId, (req as any).user?.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
       }
 
       const previous = await getOwnedBill(req, res, req.params.id);
@@ -23129,6 +23261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validStatuses = [
         "draft",
         "sent",
+        "accepted",
         "invoiced",
         "partially_paid",
         "paid",
@@ -23139,18 +23272,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Per-record company ownership check: reject mixed/foreign IDs.
-      const existing = await Promise.all(
+      const found = await Promise.all(
         ids.map((id: string) => storage.getPurchaseOrder(id)),
       );
-      for (let i = 0; i < existing.length; i++) {
-        const po = existing[i];
+      for (let i = 0; i < found.length; i++) {
+        const po = found[i];
         if (!po || po.companyId !== req.user.companyId) {
           return res.status(404).json({ error: `Purchase order not found: ${ids[i]}` });
         }
       }
 
+      // POs that would go backwards are left as they are and reported back.
+      const existing = found.filter((po) => po && canMovePOStatus(po.status, status) && po.status !== status);
+      const skipped = found.length - existing.length;
+
       await Promise.all(
-        ids.map((id: string) => storage.updatePurchaseOrder(id, { status })),
+        existing.map((po) => storage.updatePurchaseOrder(po!.id, { status })),
       );
 
       // Mirror the single-PATCH side-effect: when transitioning into "paid",
@@ -23192,7 +23329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ updated: ids.length });
+      res.json({ updated: existing.length, skipped });
     } catch (error) {
       console.error("[PO bulk-status]", error);
       res.status(500).json({ error: "Failed to bulk update purchase orders" });
@@ -24785,7 +24922,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         poType as string | undefined,
         workerUserId
       );
-      res.json(purchaseOrders);
+      res.json((req as any).poAccess === "limited" ? narrowPOList(purchaseOrders, req.user.id) : purchaseOrders);
     } catch (error) {
       console.error("Failed to fetch purchase orders:", error);
       res.status(500).json({ error: "Failed to fetch purchase orders" });
@@ -24805,7 +24942,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (po.companyId !== req.user.companyId) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
-      res.json(po);
+      const ownSite = po.poType === "site" && po.createdById === req.user.id;
+      res.json((req as any).poAccess === "limited" && !ownSite ? { ...po, internalNotes: null } : po);
     } catch (error) {
       console.error("Failed to fetch purchase order:", error);
       res.status(500).json({ error: "Failed to fetch purchase order" });
@@ -24886,13 +25024,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.body.requiresApproval = false;
       }
 
-      const poData = {
+      const poData: any = {
         ...req.body,
         poNumber,
         poType,
+        status: "draft",
         companyId: req.user.companyId,
         createdById: req.user.id
       };
+      for (const field of PO_SERVER_MANAGED_FIELDS) delete poData[field];
 
       // Mutual exclusivity: a PO supplier is either a contact OR a team-member user, never both.
       if (poData.supplierUserId && poData.supplierId) {
@@ -24907,6 +25047,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const po = await storage.createPurchaseOrder(validationResult.data);
       res.status(201).json(po);
@@ -24945,7 +25088,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order not found" });
       }
 
-      const validationResult = insertPurchaseOrderSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -24953,14 +25096,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
+      const nextStatus = validationResult.data.status;
+      if (nextStatus && !canMovePOStatus(existingPo.status, nextStatus)) {
+        return res.status(409).json({ error: poStatusMoveError(existingPo.status, nextStatus) });
+      }
+
       // Mutual exclusivity: when one supplier ref is being set, clear the other so a PO never points at both.
       const patch: any = { ...validationResult.data };
       if (patch.supplierUserId) patch.supplierId = null;
       else if (patch.supplierId) patch.supplierUserId = null;
 
-      const po = await storage.updatePurchaseOrder(req.params.id, patch);
+      let po = await storage.updatePurchaseOrder(req.params.id, patch);
       if (!po) {
         return res.status(404).json({ error: "Purchase order not found" });
+      }
+      if (patch.gstMode && patch.gstMode !== existingPo.gstMode) {
+        po = (await syncPOTotals(po.id)) ?? po;
       }
 
       if (po.status === "paid" && existingPo.status !== "paid") {
@@ -25030,12 +25184,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // A paid PO is settled — deleting it would drag already-paid timesheets
       // back into the Sub PO queue, where they could be pushed onto a second PO
-      // and paid twice. Unmark the payment first if it genuinely needs removing.
+      // and paid twice. Status never moves backwards, so this is permanent.
       // partially_paid counts: money has already moved against it.
       if (existingPo.status === "paid" || existingPo.status === "partially_paid") {
         return res.status(409).json({
           error: "Purchase order is paid",
-          message: `${existingPo.poNumber} is marked ${existingPo.status === "paid" ? "paid" : "partially paid"} and cannot be deleted. Change its status first if it really needs to be removed.`,
+          message: `${existingPo.poNumber} is ${existingPo.status === "paid" ? "paid" : "partially paid"} and cannot be deleted.`,
         });
       }
 
@@ -25068,17 +25222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const existingItems = await storage.getPurchaseOrderItems(req.params.id);
-      const allPos = await storage.getPurchaseOrders(req.user.companyId);
-      const poNumbers = allPos.map((p: any) => p.poNumber);
-      let nextNum = 1;
-      for (const num of poNumbers) {
-        const match = num.match(/PO-(\d+)/);
-        if (match) {
-          const n = parseInt(match[1], 10);
-          if (n >= nextNum) nextNum = n + 1;
-        }
-      }
-      const newPoNumber = `PO-${String(nextNum).padStart(4, "0")}`;
+      const newPoNumber = await storage.getNextPONumber(req.user.companyId, existingPo.poType);
 
       const newPo = await storage.createPurchaseOrder({
         companyId: existingPo.companyId,
@@ -25090,7 +25234,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         title: existingPo.title ? `${existingPo.title} (Copy)` : "Copy",
         description: existingPo.description,
         status: "draft",
-        type: existingPo.type || "standard",
+        poType: existingPo.poType,
+        costCodeId: existingPo.costCodeId,
+        scopeStageId: existingPo.scopeStageId,
         scope: existingPo.scope,
         termsAndConditions: existingPo.termsAndConditions,
         deliveryAddress: existingPo.deliveryAddress,
@@ -25099,7 +25245,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deliveryAttention: existingPo.deliveryAttention,
         deliveryContact: existingPo.deliveryContact,
         requiredByDate: existingPo.requiredByDate,
-        createdBy: req.user.id,
+        createdById: req.user.id,
+        gstMode: existingPo.gstMode,
         subtotal: existingPo.subtotal,
         gstAmount: existingPo.gstAmount,
         total: existingPo.total,
@@ -25150,11 +25297,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (to) {
         const settings = await storage.getCompanySettings(req.user.companyId);
         const fromName = settings?.companyName || "Morada";
+        let html = body ? escapeHtml(body).replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`;
+        // Trades accept main POs from this link; sub POs (from timesheets) don't.
+        if (po.poType === "main" && (po.status === "draft" || po.status === "sent") && !(await poIsFromTimesheets(po.id))) {
+          const url = poAcceptUrl(requestBaseUrl(req), po.id);
+          html += `<p style="margin:24px 0"><a href="${url}" style="background:#87749A;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Accept this purchase order</a></p>`
+            + `<p style="color:#6B6561;font-size:13px">Or open: ${escapeHtml(url)}</p>`;
+        }
 
         await sendGenericEmail({
           to,
           subject: subject || `Purchase Order ${(po as any).poNumber}`,
-          html: body ? body.replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
+          html,
           from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
@@ -25167,8 +25321,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Re-sending only re-sends: a PO that's further along keeps its status.
       const updatedPo = await storage.updatePurchaseOrder(req.params.id, {
-        status: "sent",
+        ...(po.status === "draft" ? { status: "sent" } : {}),
         sentAt: new Date(),
         sentToEmail: to || undefined,
       } as any);
@@ -25181,6 +25336,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Helper to verify PO ownership
+  // Ids a PO or its lines point at must be this company's. A row carrying
+  // another tenant's id would otherwise be written straight through.
+  async function firstForeignPOReference(
+    data: { projectId?: string | null; supplierId?: string | null; supplierUserId?: string | null;
+      costCodeId?: string | null; scopeStageId?: string | null; sourceEstimateId?: string | null;
+      sourceTimesheetId?: string | null },
+    companyId: string,
+  ): Promise<string | null> {
+    const inCompany = async (table: any, id: string) =>
+      (await db.select({ id: table.id }).from(table)
+        .where(and(eq(table.id, id), eq(table.companyId, companyId))).limit(1)).length > 0;
+    if (data.projectId && !await inCompany(schema.projects, data.projectId)) return "project";
+    if (data.supplierId && !await inCompany(schema.contacts, data.supplierId)) return "supplier";
+    if (data.supplierUserId && !await inCompany(schema.users, data.supplierUserId)) return "supplier";
+    if (data.costCodeId && !await inCompany(schema.costCodes, data.costCodeId)) return "cost code";
+    if (data.scopeStageId && !await inCompany(schema.scopeStages, data.scopeStageId)) return "scope stage";
+    if (data.sourceEstimateId) {
+      // Estimates have no companyId: they belong to their project's company.
+      const [row] = await db.select({ companyId: schema.projects.companyId }).from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(eq(schema.estimates.id, data.sourceEstimateId)).limit(1);
+      if (row?.companyId !== companyId) return "estimate";
+    }
+    if (data.sourceTimesheetId) {
+      // Timesheets have no companyId: they belong to their user's company.
+      const [row] = await db.select({ companyId: schema.users.companyId }).from(schema.timesheets)
+        .innerJoin(schema.users, eq(schema.timesheets.userId, schema.users.id))
+        .where(eq(schema.timesheets.id, data.sourceTimesheetId)).limit(1);
+      if (row?.companyId !== companyId) return "timesheet";
+    }
+    return null;
+  }
+
   async function verifyPOOwnership(poId: string, companyId: string): Promise<boolean> {
     const po = await storage.getPurchaseOrder(poId);
     return po !== undefined && po.companyId === companyId;
@@ -25229,7 +25417,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
       const item = await storage.createPurchaseOrderItem(validationResult.data);
+      await syncPOTotals(req.params.poId);
       res.status(201).json(item);
     } catch (error) {
       console.error("Failed to create purchase order item:", error);
@@ -25252,7 +25444,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items must be an array" });
       }
 
-      const createdItems = [];
+      const validItems = [];
       for (const item of items) {
         const validationResult = insertPurchaseOrderItemSchema.safeParse({
           ...item,
@@ -25266,9 +25458,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const created = await storage.createPurchaseOrderItem(validationResult.data);
-        createdItems.push(created);
+        const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+        if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+        validItems.push(validationResult.data);
       }
+
+      const createdItems = [];
+      for (const item of validItems) {
+        createdItems.push(await storage.createPurchaseOrderItem(item));
+      }
+      await syncPOTotals(req.params.poId);
 
       res.status(201).json(createdItems);
     } catch (error) {
@@ -25294,7 +25493,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
-      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -25302,10 +25501,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
+      const before = await storage.getPurchaseOrderItem(req.params.id);
       const item = await storage.updatePurchaseOrderItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(item.purchaseOrderId, !!before && poLineCents(before) !== 0);
       res.json(item);
     } catch (error) {
       console.error("Failed to update purchase order item:", error);
@@ -25323,10 +25527,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
+      const before = await storage.getPurchaseOrderItem(req.params.id);
       const deleted = await storage.deletePurchaseOrderItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      if (before) await syncPOTotals(before.purchaseOrderId, poLineCents(before) !== 0);
       res.status(204).send();
     } catch (error) {
       console.error("Failed to delete purchase order item:", error);
@@ -25348,6 +25554,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemIds = req.body.itemIds || req.body.updates?.map((u: any) => u.id);
       if (!Array.isArray(itemIds)) {
         return res.status(400).json({ error: "itemIds must be an array" });
+      }
+
+      const ownIds = new Set((await storage.getPurchaseOrderItems(req.params.poId)).map((i) => i.id));
+      if (!itemIds.every((id: string) => ownIds.has(id))) {
+        return res.status(400).json({ error: "Items must belong to this purchase order" });
       }
 
       const updates = itemIds.map((id: string, index: number) => ({
@@ -25379,7 +25590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
-      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -25387,10 +25598,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
       const item = await storage.updatePurchaseOrderItem(req.params.itemId, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(req.params.poId, poLineCents(existingItem) !== 0);
       res.json(item);
     } catch (error) {
       console.error("Failed to update purchase order item:", error);
@@ -25418,6 +25633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(req.params.poId, poLineCents(existingItem) !== 0);
 
       // Pulling a timesheet line off a PO releases that timesheet back to the
       // queue, same as deleting the whole PO. Scoped to this PO so a timesheet
@@ -25555,107 +25771,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
-  // PURCHASE ORDER SIGNATURES API ROUTES
+  // PURCHASE ORDER ACCEPTANCE (trade accepts via an emailed link)
   // ============================================
+  // Replaces the old signing flow, which never worked: it wrote a status that
+  // doesn't exist and never stored the signature. Acceptances are kept in
+  // purchase_order_signatures (one row per acceptance, signed_at = when).
 
-  // Get signatures for a purchase order
-  app.get("/api/purchase-orders/:poId/signatures", async (req, res) => {
+  // Sub POs (made from timesheets) are paid on the timesheet, not accepted.
+  const poIsFromTimesheets = async (poId: string) =>
+    (await storage.getPurchaseOrderItems(poId)).some((i) => i.sourceTimesheetId);
+
+  const requestBaseUrl = (req: any) =>
+    (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+    `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+
+  // Who accepted, and the link to send if it can still be accepted.
+  app.get("/api/purchase-orders/:poId/acceptance", async (req, res) => {
     try {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+      const po = await storage.getPurchaseOrder(req.params.poId);
+      if (!po || po.companyId !== req.user.companyId) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
-      const signatures = await storage.getPurchaseOrderSignatures(req.params.poId);
-      res.json(signatures);
+      const [acceptance] = await storage.getPurchaseOrderSignatures(po.id);
+      const canAccept = po.poType === "main" && !(await poIsFromTimesheets(po.id));
+      res.json({
+        acceptance: acceptance
+          ? { name: acceptance.signerName, email: acceptance.signerEmail, acceptedAt: acceptance.signedAt }
+          : null,
+        acceptUrl: canAccept ? poAcceptUrl(requestBaseUrl(req), po.id) : null,
+      });
     } catch (error) {
-      console.error("Failed to fetch purchase order signatures:", error);
-      res.status(500).json({ error: "Failed to fetch purchase order signatures" });
+      console.error("Failed to fetch purchase order acceptance:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order acceptance" });
     }
   });
 
-  // Create signature request (generate token for supplier portal)
-  app.post("/api/purchase-orders/:poId/request-signature", async (req, res) => {
-    try {
-      if (!req.user?.companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
-        return res.status(404).json({ error: "Purchase order not found" });
-      }
+  // Public: the PO as the trade sees it. Only what's on the PDF — no internal
+  // notes, cost codes or links.
+  const loadPortalPO = async (token: string) => {
+    const poId = readPoAcceptToken(token);
+    if (!poId) return null;
+    const po = await storage.getPurchaseOrder(poId);
+    if (!po || po.poType !== "main") return null;
+    return po;
+  };
 
-      const signatureToken = randomUUID();
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+  app.get("/api/portal/po/:token", async (req, res) => {
+    try {
+      const po = await loadPortalPO(req.params.token);
+      if (!po || (await poIsFromTimesheets(po.id))) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      const [items, settings, project, signatures] = await Promise.all([
+        storage.getPurchaseOrderItems(po.id),
+        storage.getCompanySettings(po.companyId),
+        storage.getProject(po.projectId),
+        storage.getPurchaseOrderSignatures(po.id),
+      ]);
+      const acceptance = signatures[0];
+      res.json({
+        purchaseOrder: {
+          poNumber: po.poNumber,
+          title: po.title,
+          description: po.description,
+          scope: po.scope,
+          termsAndConditions: po.termsAndConditions,
+          poDate: po.poDate,
+          requiredByDate: po.requiredByDate,
+          deliveryAddress: po.deliveryAddress,
+          deliveryInstructions: po.deliveryInstructions,
+          supplierName: po.supplierName,
+          gstMode: po.gstMode,
+          subtotal: po.subtotal,
+          gstAmount: po.gstAmount,
+          total: po.total,
+          status: po.status,
+        },
+        items: items.map((i) => ({
+          description: i.description,
+          quantity: i.quantity,
+          unit: i.unit,
+          unitPrice: i.unitPrice,
+          total: i.total,
+        })),
+        companyName: settings?.companyName || null,
+        projectName: project?.name || null,
+        projectAddress: (project as any)?.location || null,
+        acceptance: acceptance ? { name: acceptance.signerName, acceptedAt: acceptance.signedAt } : null,
+      });
+    } catch (error) {
+      console.error("Failed to load portal purchase order:", error);
+      res.status(500).json({ error: "Failed to load purchase order" });
+    }
+  });
+
+  // No session: the signed token names the PO, and the PO carries its own
+  // companyId, so nothing here can reach another tenant.
+  app.post("/api/portal/po/:token/accept", async (req, res) => {
+    try {
+      const po = await loadPortalPO(req.params.token);
+      if (!po || (await poIsFromTimesheets(po.id))) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      const name = String(req.body?.name ?? "").trim().slice(0, 200);
+      const email = String(req.body?.email ?? "").trim().slice(0, 200) || null;
+      if (!name) return res.status(400).json({ error: "Please enter your name" });
+
+      const [existing] = await storage.getPurchaseOrderSignatures(po.id);
+      if (existing) {
+        return res.json({ acceptance: { name: existing.signerName, acceptedAt: existing.signedAt } });
+      }
+      // Only a PO that has been sent and not moved on can be accepted.
+      if (po.status !== "sent") {
+        return res.status(409).json({
+          error: po.status === "cancelled"
+            ? "This purchase order has been cancelled."
+            : po.status === "draft"
+              ? "This purchase order hasn't been issued yet."
+              : "This purchase order can no longer be accepted online.",
+        });
+      }
 
       const signature = await storage.createPurchaseOrderSignature({
-        purchaseOrderId: req.params.poId,
-        signatureToken,
-        signerType: "supplier",
-        signerName: req.body.signerName || null,
-        signerEmail: req.body.signerEmail || null,
-        expiresAt
-      });
+        purchaseOrderId: po.id,
+        signerName: name,
+        signerEmail: email,
+        signerRole: "Supplier",
+        signedAt: new Date(),
+        ipAddress: req.ip || null,
+        userAgent: String(req.get("user-agent") || "").slice(0, 500) || null,
+      } as any);
+      await storage.updatePurchaseOrder(po.id, { status: "accepted" } as any);
 
-      const signatureUrl = `/sign-po/${signatureToken}`;
-
-      res.status(201).json({ 
-        signature, 
-        signatureUrl,
-        expiresAt 
-      });
+      res.json({ acceptance: { name: signature.signerName, acceptedAt: signature.signedAt } });
     } catch (error) {
-      console.error("Failed to create signature request:", error);
-      res.status(500).json({ error: "Failed to create signature request" });
-    }
-  });
-
-  // Public route: Get PO for signing (via token)
-  app.get("/api/purchase-orders/sign/:token", async (req, res) => {
-    try {
-      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
-      if (!po) {
-        return res.status(404).json({ error: "Purchase order not found or link expired" });
-      }
-
-      // Get items
-      const items = await storage.getPurchaseOrderItems(po.id);
-
-      res.json({ purchaseOrder: po, items });
-    } catch (error) {
-      console.error("Failed to fetch purchase order for signing:", error);
-      res.status(500).json({ error: "Failed to fetch purchase order" });
-    }
-  });
-
-  // Public route: Submit signature
-  app.post("/api/purchase-orders/sign/:token", async (req, res) => {
-    try {
-      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
-      if (!po) {
-        return res.status(404).json({ error: "Purchase order not found or link expired" });
-      }
-
-      // Find the pending signature by token
-      const signatures = await storage.getPurchaseOrderSignatures(po.id);
-      const pendingSignature = signatures.find(s => s.signatureToken === req.params.token && !s.signedAt);
-      
-      if (!pendingSignature) {
-        return res.status(400).json({ error: "Signature already submitted or expired" });
-      }
-
-      // Update the signature with the actual signature data
-      // Note: We'd need an update method - for now, we'll update the PO status
-      await storage.updatePurchaseOrder(po.id, {
-        status: "approved",
-        approvedAt: new Date()
-      });
-
-      res.json({ success: true, message: "Purchase order signed successfully" });
-    } catch (error) {
-      console.error("Failed to sign purchase order:", error);
-      res.status(500).json({ error: "Failed to sign purchase order" });
+      console.error("Failed to accept purchase order:", error);
+      res.status(500).json({ error: "Failed to accept purchase order" });
     }
   });
 
@@ -25944,6 +26198,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
+      if (!await userHasPermission(req.user, "financial.purchase_orders", "add")) {
+        return res.status(403).json({ error: "You don't have permission to do that on purchase orders" });
+      }
       const allTimesheets = await storage.getTimesheets(undefined, { companyId: req.user.companyId });
 
       // Strict: only timesheets explicitly flagged as awaiting_po appear
@@ -26042,7 +26299,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
       
-      let subtotalCents = 0;
       const lineItems: Array<{
         description: string;
         quantity: string;
@@ -26107,11 +26363,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sourceTimesheetId: ts.id,
           displayOrder: i,
         });
-        subtotalCents += lineTotal;
       }
 
-      const gstAmount = Math.round(subtotalCents * 0.1);
-      const totalCents = subtotalCents + gstAmount;
+      const headerTotals = computePOTotalsCents(lineItems, "exclusive");
 
       const po = await storage.createPurchaseOrder({
         companyId: req.user.companyId,
@@ -26128,9 +26382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : "Subcontractor labour",
         poDate: new Date(),
         gstMode: "exclusive",
-        subtotal: subtotalCents,
-        gstAmount,
-        total: totalCents,
+        ...headerTotals,
         status: "draft",
         createdById: req.user.id,
       });
@@ -30257,28 +30509,201 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!event) return res.json({ ok: true, ignored: true });
 
       const { emailDeliveries } = await import("@shared/schema");
-      const updated = await db
-        .update(emailDeliveries)
-        .set({
-          status: event.status,
-          statusDetail: event.detail ?? null,
-          statusUpdatedAt: event.occurredAt ?? new Date(),
+      // Only what deliveryPatch reads — opens and clicks multiply event
+      // volume, and the row carries the whole email body.
+      const [row] = await db
+        .select({
+          id: emailDeliveries.id,
+          status: emailDeliveries.status,
+          deliveredAt: emailDeliveries.deliveredAt,
+          firstOpenedAt: emailDeliveries.firstOpenedAt,
+          firstClickedAt: emailDeliveries.firstClickedAt,
+          openCount: emailDeliveries.openCount,
+          clickCount: emailDeliveries.clickCount,
         })
+        .from(emailDeliveries)
         .where(eq(emailDeliveries.providerMessageId, event.messageId))
-        .returning({ id: emailDeliveries.id });
+        .limit(1);
 
-      if (updated.length === 0) {
+      if (!row) {
         // Emails sent before this shipped have no row. Worth a log line — a
         // flood of these means the message ids are not being stored.
-        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.status})`);
-      } else if (event.status === "bounced" || event.status === "complained") {
-        console.warn(`[resend-webhook] ${event.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+        console.warn(`[resend-webhook] no delivery row for message ${event.messageId} (${event.kind})`);
+        return res.json({ ok: true, matched: 0 });
       }
 
-      res.json({ ok: true, matched: updated.length });
+      // Read-then-write, not a blind SET: events arrive out of order and are
+      // retried, and deliveryPatch is what stops a late "delivered" erasing a
+      // bounce. Opens increment from the value read, so two opens landing in
+      // the same instant can count once — acceptable for an approximate number.
+      const patch = deliveryPatch(row, event);
+      if (patch) {
+        await db.update(emailDeliveries).set(patch as any).where(eq(emailDeliveries.id, row.id));
+      }
+
+      if (patch?.status === "bounced" || patch?.status === "complained") {
+        console.warn(`[resend-webhook] ${patch.status}: ${event.messageId} — ${event.detail ?? "no detail"}`);
+        await notifySenderOfProblem(row.id);
+      }
+
+      res.json({ ok: true, matched: 1 });
     } catch (error) {
       console.error("[resend-webhook] error:", error);
       res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // ── Email log ────────────────────────────────────────────────────────────
+  // Every email the app sent, from email_deliveries. Company-scoped always;
+  // without admin.email_log a user sees the emails they sent themselves —
+  // "did my variation arrive?" should not need an admin.
+  /** The viewer's IANA zone, so a "From 1 Oct" filter means their 1 October. */
+  function validTimeZone(tz: unknown): string | null {
+    if (typeof tz !== "string" || !tz || tz.length > 64) return null;
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: tz });
+      return tz;
+    } catch {
+      return null;
+    }
+  }
+
+  async function emailLogScope(req: any): Promise<EmailLogScope | null> {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) return null;
+    const all = await userHasPermission(req.user, "admin.email_log", "view");
+    return { companyId, onlyUserId: all ? null : req.user.id };
+  }
+
+  app.get("/api/email-deliveries", requireAuth, requireTeamMember, async (req: any, res) => {
+    // Tenancy: emailLogScope takes companyId from the session (getSessionCompanyId)
+    // and every query in services/emailLog.ts filters email_deliveries.company_id
+    // by it — plus user_id for someone without admin.email_log.
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const q = req.query as Record<string, string | undefined>;
+      const statuses = ["attention", "delivered", "opened", "problem", "unconfirmed"] as const;
+      res.json(await listEmailDeliveries(scope, {
+        status: statuses.includes(q.status as any) ? (q.status as (typeof statuses)[number]) : null,
+        type: q.type || null,
+        projectId: q.projectId || null,
+        senderId: q.senderId || null,
+        addresses: q.addresses ? q.addresses.split(",") : null,
+        q: q.q || null,
+        from: q.from && /^\d{4}-\d{2}-\d{2}$/.test(q.from) ? q.from : null,
+        to: q.to && /^\d{4}-\d{2}-\d{2}$/.test(q.to) ? q.to : null,
+        cursor: q.cursor || null,
+        limit: Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined,
+        timeZone: validTimeZone(q.tz),
+      }));
+    } catch (error) {
+      console.error("Error listing email deliveries:", error);
+      res.status(500).json({ error: "Failed to load the email log" });
+    }
+  });
+
+  /**
+   * "Has this address bounced before?" — for the send dialogs, before the
+   * email goes. Any team member: it says only that an address failed, which
+   * they are about to find out the hard way otherwise. Registered before
+   * /:id so the literal path is not read as an id.
+   */
+  app.get("/api/email-deliveries/address-check", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const emails = String(req.query.emails ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+      res.json({ problems: await findAddressProblems(companyId, emails) });
+    } catch (error) {
+      console.error("Error checking email addresses:", error);
+      // A warning that cannot load must not block a send.
+      res.json({ problems: [] });
+    }
+  });
+
+  app.get("/api/email-deliveries/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    // Tenancy: emailLogScope takes companyId from the session (getSessionCompanyId)
+    // and every query in services/emailLog.ts filters email_deliveries.company_id
+    // by it — plus user_id for someone without admin.email_log.
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const detail = await getEmailDeliveryDetail(scope, req.params.id);
+      if (!detail) return res.status(404).json({ error: "Email not found" });
+      res.json(detail);
+    } catch (error) {
+      console.error("Error loading email delivery:", error);
+      res.status(500).json({ error: "Failed to load the email" });
+    }
+  });
+
+  /**
+   * Fix and resend: the stored copy, attachments included, to a corrected
+   * address. Your own emails always; anyone else's needs admin.email_log:send.
+   */
+  app.post("/api/email-deliveries/:id/resend", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const row = await getEmailDelivery(scope, req.params.id);
+      if (!row) return res.status(404).json({ error: "Email not found" });
+      if (row.userId !== req.user.id && !(await userHasPermission(req.user, "admin.email_log", "send"))) {
+        return res.status(403).json({ error: "You can resend only the emails you sent" });
+      }
+
+      const to: string[] = Array.isArray(req.body?.to) ? req.body.to.map(String) : [];
+      const result = await resendDelivery(scope, row.id, { to, actorUserId: req.user.id });
+
+      // One bad address swapped for one good one is unambiguous enough to
+      // carry into the address book; anything else is left alone.
+      let addressBook = null;
+      const original = row.toAddresses ?? [];
+      // Only a FAILED address is replaced: resending a delivered email to a
+      // second person must never overwrite a good address on file.
+      if (req.body?.updateAddressBook && ["bounced", "complained", "failed"].includes(row.status)
+          && original.length === 1 && to.length === 1
+          && original[0].trim().toLowerCase() !== to[0].trim().toLowerCase()) {
+        addressBook = await replaceAddressInAddressBook(scope.companyId, original[0], to[0]);
+      }
+      res.json({ ...result, addressBook });
+    } catch (error: any) {
+      if (error instanceof ResendRefused) return res.status(error.status).json({ error: error.message });
+      console.error("Error resending email:", error);
+      res.status(502).json({ error: "The email could not be resent", detail: error?.message });
+    }
+  });
+
+  /** The attachment exactly as it went out — served from the copy stored at send time. */
+  app.get("/api/email-deliveries/:id/attachments/:index", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const scope = await emailLogScope(req);
+      if (!scope) return res.status(403).json({ error: "No company context" });
+      const row = await getEmailDelivery(scope, req.params.id);
+      const attachment = row?.attachments?.[Number(req.params.index)];
+      if (!row || !attachment) return res.status(404).json({ error: "Attachment not found" });
+      if (!attachment.objectPath) return res.status(404).json({ error: "No copy of this attachment was kept" });
+      // The stored path names its company; refuse one that is not the caller's,
+      // whatever the row says.
+      if (!attachment.objectPath.startsWith(`/objects/company/${scope.companyId}/`)) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const oss = new ObjectStorageService();
+      const normalisedPath = attachment.objectPath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await oss.getObjectEntityFile(normalisedPath);
+      // setHeader throws on anything above U+00FF, and proposal PDFs are named
+      // after the project ("Smith – Reno.pdf"): ASCII fallback + RFC 5987 name.
+      const asciiName = attachment.filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+      res.setHeader(
+        "Content-Disposition",
+        `${req.query.download ? "attachment" : "inline"}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      );
+      await oss.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      console.error("Email attachment error:", error);
+      res.status(500).json({ error: "Failed to load the attachment" });
     }
   });
 
@@ -44704,7 +45129,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Push BuildPro purchase order as Xero PurchaseOrder (DRAFT)
-  app.post("/api/xero/push-purchase-order", requireAuth, async (req, res) => {
+  app.post("/api/xero/push-purchase-order", requireAuth, requirePermission("financial.purchase_orders", "send"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -45004,7 +45429,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
   // Xero: Pull current Xero status for one PO and mirror it back into BuildPro.
   // Used both by the per-PO "Refresh from Xero" button and by the polling job.
-  app.post("/api/xero/sync-purchase-order/:id", requireAuth, async (req, res) => {
+  app.post("/api/xero/sync-purchase-order/:id", requireAuth, requirePermission("financial.purchase_orders", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -50293,7 +50718,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     // editor's save, which can't see the column.
     const { bills: billsTable, billLineItems: billLinesTable, contacts: contactsTable } = await import("@shared/schema");
     const { splitLineGstCents } = await import("@shared/billTotals");
-    const { categoriseVehicleCost, mentionsRego, VEHICLE_COST_CATEGORIES } = await import("@shared/assets");
+    const { categoriseVehicleCost, mentionsRego, repaymentsBetween, VEHICLE_COST_CATEGORIES } = await import("@shared/assets");
 
     type CostLine = {
       lineId: string;
@@ -50304,6 +50729,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       supplierName: string | null;
       description: string;
       incGstCents: number;
+      exGstCents: number;
       category: string;
       billStatus: string;
     };
@@ -50338,6 +50764,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         supplierName: r.supplierName ?? null,
         description: r.line.description,
         incGstCents: sign * (ex + gst),
+        exGstCents: sign * ex,
         category: categoriseVehicleCost(r.line.description, r.supplierName),
         billStatus: r.billStatus,
       };
@@ -50370,7 +50797,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 
         const byCategory = Object.fromEntries(VEHICLE_COST_CATEGORIES.map((c) => [c, 0])) as Record<string, number>;
-        for (const l of lines) if (inLast12(l.billDate)) byCategory[l.category] += l.incGstCents;
+        // Ex GST throughout: GST is claimed back, and charge-outs to jobs are ex GST.
+        for (const l of lines) if (inLast12(l.billDate)) byCategory[l.category] += l.exGstCents;
 
         // Australian financial year (1 July – 30 June), labelled by the year it ends: FY26.
         const fyOf = (iso: string) => {
@@ -50378,10 +50806,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           return `FY${String((m >= 7 ? y + 1 : y) % 100).padStart(2, "0")}`;
         };
         const byFinancialYear: Record<string, number> = {};
-        for (const l of lines) byFinancialYear[fyOf(l.billDate)] = (byFinancialYear[fyOf(l.billDate)] ?? 0) + l.incGstCents;
+        for (const l of lines) byFinancialYear[fyOf(l.billDate)] = (byFinancialYear[fyOf(l.billDate)] ?? 0) + l.exGstCents;
 
         const loggedLast12 = sum(logged.filter((e) => e.date > yearAgo).map((e) => e.costCents ?? 0));
-        const billsLast12 = sum(lines.filter((l) => inLast12(l.billDate)).map((l) => l.incGstCents));
+        const billsLast12 = sum(lines.filter((l) => inLast12(l.billDate)).map((l) => l.exGstCents));
+        // Finance repayments are paying off the purchase: shown beside the
+        // running costs, never added to cost of ownership (that has the price).
+        const repaymentsLast12 = repaymentsBetween(asset, yearAgo, today);
+        const repaymentsToDate = repaymentsBetween(asset, "0000-00-00", today);
 
         // Distance over the last 12 months, from every reading we have. Needs
         // at least a month between first and last reading to mean anything.
@@ -50402,10 +50834,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         res.json({
           lines,
           summary: {
-            billsAllTimeCents: sum(lines.map((l) => l.incGstCents)),
+            billsAllTimeCents: sum(lines.map((l) => l.exGstCents)),
             billsLast12Cents: billsLast12,
             loggedAllTimeCents: sum(logged.map((e) => e.costCents ?? 0)),
             loggedLast12Cents: loggedLast12,
+            repaymentsLast12Cents: repaymentsLast12.cents,
+            repaymentsLast12Count: repaymentsLast12.count,
+            repaymentsToDateCents: repaymentsToDate.cents,
             purchaseCents: asset.purchaseCents,
             byCategoryLast12: byCategory,
             byFinancialYear,

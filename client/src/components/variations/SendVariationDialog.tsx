@@ -17,6 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { VariationDocument } from "./pdf/VariationDocument";
 import { type VariationDocumentColumns } from "@shared/variationDocumentColumns";
 import type { Variation, VariationItem } from "@shared/schema";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 interface Company {
   name: string;
@@ -171,6 +172,11 @@ export function SendVariationDialog({
               placeholder="client@example.com"
               className="mt-1"
               data-testid="input-send-to"
+            />
+            <BouncedAddressWarning
+              emails={to.split(/[,;\s]+/)}
+              onUseSuggestion={(bad, fix) => setTo(to.replace(bad, fix))}
+              className="mt-2"
             />
           </div>
           <div>

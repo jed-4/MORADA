@@ -105,7 +105,8 @@ export function VariationActivityFeed({
       // actual outcome earns a row.
       const d = s.delivery;
       const outcomeAt = toDate(d?.updatedAt);
-      if (d && d.status && d.status !== "sent" && outcomeAt) {
+      // "delayed" is not an outcome either — delivered or bounced follows it.
+      if (d && d.status && d.status !== "sent" && d.status !== "delayed" && outcomeAt) {
         const bad = d.status === "bounced" || d.status === "failed" || d.status === "complained";
         out.push({
           at: outcomeAt,

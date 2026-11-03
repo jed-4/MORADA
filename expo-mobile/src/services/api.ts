@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
+import { uploadAsync, FileSystemUploadType, downloadAsync, cacheDirectory, makeDirectoryAsync } from 'expo-file-system/legacy';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://buildpro4.replit.app';
 
@@ -190,6 +190,43 @@ export const uploadPhotoViaServer = async (localUri: string): Promise<{ objectPa
   }
   const body = JSON.parse(result.body);
   return { objectPath: body.objectPath };
+};
+
+/** Thrown by downloadToCache when the server has no such file (404). */
+export class FileNotFoundError extends Error {}
+
+/**
+ * Download a session-protected file (an /objects/... path or an /api/...
+ * route) into the app's cache and return its local URI. The session header
+ * goes only to our own API host, same rule as getAuthedImageSource.
+ *
+ * Documents are fetched fresh on every open rather than served from a cache:
+ * a variation's archived PDF changes when it is signed, and a stale copy of
+ * a document someone is about to rely on is worse than a short wait.
+ */
+export const downloadToCache = async (pathOrUrl: string, fileName: string): Promise<string> => {
+  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE_URL}${pathOrUrl}`;
+  const headers: Record<string, string> = { 'X-Client': 'mobile' };
+  if (sessionId && url.startsWith(API_BASE_URL)) headers['X-Session-ID'] = sessionId;
+
+  const dir = `${cacheDirectory}documents/`;
+  await makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+  // A unique folder per download keeps the real file name (the share sheet and
+  // "Save to Files" use it) without two documents overwriting each other.
+  const folder = `${dir}${Date.now()}-${Math.random().toString(36).slice(2, 8)}/`;
+  await makeDirectoryAsync(folder, { intermediates: true });
+  const safeName = fileName.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'document';
+
+  const result = await downloadAsync(url, `${folder}${safeName}`, { headers });
+  if (result.status === 404) throw new FileNotFoundError('This document is no longer available.');
+  if (result.status === 401) {
+    onUnauthorized?.();
+    throw new Error('Your session has expired. Please sign in again.');
+  }
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Couldn't download the document (${result.status}).`);
+  }
+  return result.uri;
 };
 
 export const uploadPhoto = (localUri: string) =>

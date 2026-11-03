@@ -6,6 +6,8 @@ import { PurchaseOrderDocument } from "@/components/purchase-orders/pdf/Purchase
 import { SendPurchaseOrderDialog } from "@/components/purchase-orders/SendPurchaseOrderDialog";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { format, formatDistanceToNow } from "date-fns";
+import { computePOTotalsCents, hasPricedLine } from "@shared/poTotals";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
@@ -28,8 +30,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  ArrowLeft,
-  Plus,
   Save,
   Send,
   Eye,
@@ -40,11 +40,11 @@ import {
   Mail,
   Phone,
   Copy,
+  MoreVertical,
+  CheckCircle2,
+  Link2,
   Calendar as CalendarIcon,
   Download,
-  ChevronDown,
-  ChevronUp,
-  MoreHorizontal,
   Loader2,
   AlertCircle,
   Package,
@@ -61,9 +61,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -87,6 +84,12 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { SiXero } from "react-icons/si";
+import { DocumentHeader } from "@/components/detail/DocumentHeader";
+import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSection";
+import { MoneySummary } from "@/components/detail/MoneySummary";
+import { AddLineRow } from "@/components/detail/AddLineRow";
+import { StatusBadge } from "@/components/StatusBadge";
+import { ImportProjectScopeDialog } from "@/components/purchase-orders/ImportProjectScopeDialog";
 import type {
   PurchaseOrder,
   PurchaseOrderItem,
@@ -97,6 +100,9 @@ import type {
   CostCode,
 } from "@shared/schema";
 
+// Same field label as the variation page.
+const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
+
 interface RouteParams {
   id?: string;
   poId?: string;
@@ -104,34 +110,36 @@ interface RouteParams {
 }
 
 // ---------- design tokens ----------
+// The app's own colours, so the page follows the theme (and dark mode).
 const TOKENS = {
-  purple: "#a890d4",
-  green: "#68b088",
-  amber: "#e8952a",
-  coral: "#e85b5b",
-  blue: "#4a90d4",
-  muted: "#9b9b9b",
-  pageBg: "#fafaf8",
-  cardBg: "#ffffff",
-  border: "#eaeae8",
-  ghost: "#f5f4f0",
-  darkGreen: "#2d7a4f",
+  purple: "hsl(var(--primary))",
+  green: "hsl(var(--sage))",
+  amber: "hsl(var(--amber))",
+  coral: "hsl(var(--coral))",
+  blue: "hsl(var(--teal))",
+  muted: "hsl(var(--muted-foreground))",
+  pageBg: "hsl(var(--muted) / 0.4)",
+  cardBg: "hsl(var(--card))",
+  border: "hsl(var(--border))",
+  ghost: "hsl(var(--muted) / 0.5)",
+  darkGreen: "hsl(var(--sage))",
 };
 
-const STEPS = ["Draft", "Sent", "Invoiced", "Paid"] as const;
-const STEP_INDEX: Record<string, number> = {
-  draft: 0,
-  pending_approval: 0,
-  sent: 1,
-  acknowledged: 1,
-  accepted: 1,
-  partially_received: 1,
-  completed: 1,
-  invoiced: 2,
-  billed: 2,
-  partially_paid: 2,
-  paid: 3,
+// Accepted only shows for POs a trade can accept (not site or sub POs).
+const stepsFor = (withAccepted: boolean) =>
+  withAccepted ? ["Draft", "Sent", "Accepted", "Invoiced", "Paid"] : ["Draft", "Sent", "Invoiced", "Paid"];
+const STEP_KEYS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  accepted: "Accepted",
+  invoiced: "Invoiced",
+  partially_paid: "Invoiced",
+  paid: "Paid",
 };
+
+const htmlToText = (html: string) =>
+  new DOMParser().parseFromString(html || "", "text/html").body.textContent || "";
+const plainText = (s: string) => s.replace(/\s+/g, " ").trim();
 
 function formatCurrency(cents: number): string {
   return new Intl.NumberFormat("en-AU", {
@@ -226,8 +234,9 @@ function getInitials(name: string): string {
 // ---------- Status stepper ----------
 interface StatusStepperProps {
   status: string;
+  withAccepted: boolean;
 }
-function StatusStepper({ status }: StatusStepperProps) {
+function StatusStepper({ status, withAccepted }: StatusStepperProps) {
   if (status === "cancelled") {
     return (
       <Badge
@@ -239,10 +248,11 @@ function StatusStepper({ status }: StatusStepperProps) {
       </Badge>
     );
   }
-  const idx = STEP_INDEX[status] ?? 0;
+  const steps = stepsFor(withAccepted || status === "accepted");
+  const idx = Math.max(0, steps.indexOf(STEP_KEYS[status] ?? "Draft"));
   return (
     <div className="flex items-center gap-2" data-testid="status-stepper">
-      {STEPS.map((label, i) => {
+      {steps.map((label, i) => {
         const isActive = i === idx;
         const isPast = i < idx;
         const dotColor = isActive
@@ -250,11 +260,7 @@ function StatusStepper({ status }: StatusStepperProps) {
           : isPast
           ? TOKENS.purple
           : TOKENS.border;
-        const labelColor = isActive
-          ? "#222"
-          : isPast
-          ? "#444"
-          : TOKENS.muted;
+        const labelColor = isActive || isPast ? "hsl(var(--foreground))" : TOKENS.muted;
         return (
           <div key={label} className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -274,7 +280,7 @@ function StatusStepper({ status }: StatusStepperProps) {
                 {label}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <span
                 className="inline-block"
                 style={{
@@ -361,7 +367,7 @@ function SortableItemRow({
         value={item.description}
         onChange={(e) => onUpdate(item.id, { description: e.target.value })}
         placeholder="Item description"
-        className="h-8 text-sm border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
+        className="h-8 text-sm border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-description-${item.id}`}
       />
@@ -376,7 +382,7 @@ function SortableItemRow({
           });
         }}
         placeholder="1"
-        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
+        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         testId={`po-item-qty-${item.id}`}
       />
@@ -385,7 +391,7 @@ function SortableItemRow({
         value={item.unit || ""}
         onChange={(e) => onUpdate(item.id, { unit: e.target.value })}
         placeholder="each"
-        className="h-8 text-sm border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
+        className="h-8 text-sm border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-unit-${item.id}`}
       />
@@ -400,14 +406,13 @@ function SortableItemRow({
           });
         }}
         placeholder="0.00"
-        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
+        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         testId={`po-item-price-${item.id}`}
       />
 
       <div
-        className="text-sm text-right font-semibold"
-        style={{ color: "#111" }}
+        className="text-sm text-right font-semibold text-foreground"
         data-testid={`po-item-total-${item.id}`}
       >
         {formatCurrency(lineTotal)}
@@ -547,7 +552,7 @@ function ChangeSupplierDialog({
                     key={`u-${u.id}`}
                     onClick={() => onSelect({ kind: "user", id: u.id })}
                     className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
-                      u.id === currentSupplierUserId ? "bg-[#f5f4f0]" : ""
+                      u.id === currentSupplierUserId ? "bg-muted/50" : ""
                     }`}
                     data-testid={`option-supplier-user-${u.id}`}
                   >
@@ -584,7 +589,7 @@ function ChangeSupplierDialog({
                   key={`c-${c.id}`}
                   onClick={() => onSelect({ kind: "contact", id: c.id })}
                   className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
-                    c.id === currentSupplierId ? "bg-[#f5f4f0]" : ""
+                    c.id === currentSupplierId ? "bg-muted/50" : ""
                   }`}
                   data-testid={`option-supplier-${c.id}`}
                 >
@@ -748,11 +753,7 @@ export default function PurchaseOrderDetail() {
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
   const [scopeText, setScopeText] = useState("");
-  const [scopeSection, setScopeSection] = useState<
-    "inclusions" | "exclusions" | "special"
-  >("inclusions");
   const [termsAndConditions, setTermsAndConditions] = useState("");
-  const [isTermsOpen, setIsTermsOpen] = useState(false);
   const [requiredByDate, setRequiredByDate] = useState("");
   const [deliveryReference, setDeliveryReference] = useState("");
   const [deliveryAttention, setDeliveryAttention] = useState("");
@@ -820,6 +821,15 @@ export default function PurchaseOrderDetail() {
 
   const { data: attachments = [] } = useQuery<PurchaseOrderAttachment[]>({
     queryKey: ["/api/purchase-orders", poId, "attachments"],
+    enabled: !!poId,
+  });
+
+  // acceptUrl is null for POs a trade doesn't accept (site and sub POs).
+  const { data: acceptanceInfo } = useQuery<{
+    acceptance: { name: string; email: string | null; acceptedAt: string } | null;
+    acceptUrl: string | null;
+  }>({
+    queryKey: ["/api/purchase-orders", poId, "acceptance"],
     enabled: !!poId,
   });
 
@@ -897,9 +907,13 @@ export default function PurchaseOrderDetail() {
       setDeliveryContact(purchaseOrder.deliveryContact || "");
       setDeliveryAddress(purchaseOrder.deliveryAddress || "");
       setDeliveryInstructions(purchaseOrder.deliveryInstructions || "");
+      // A date at or before epoch is a blank that was saved as 1 Jan 1970.
+      const savedRequiredBy = purchaseOrder.requiredByDate
+        ? new Date(purchaseOrder.requiredByDate)
+        : null;
       setRequiredByDate(
-        purchaseOrder.requiredByDate
-          ? new Date(purchaseOrder.requiredByDate).toISOString().split("T")[0]
+        savedRequiredBy && savedRequiredBy.getTime() > 0
+          ? savedRequiredBy.toISOString().split("T")[0]
           : "",
       );
     }
@@ -911,6 +925,22 @@ export default function PurchaseOrderDetail() {
   }, [rawPoItems]);
 
   // ---------- mutations ----------
+  const gstModeMutation = useMutation({
+    mutationFn: async (nextMode: string) => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { gstMode: nextMode });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update GST",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const updatePoMutation = useMutation({
     mutationFn: async (data: Partial<PurchaseOrder>) => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", data);
@@ -920,9 +950,10 @@ export default function PurchaseOrderDetail() {
         queryKey: ["/api/purchase-orders", poId],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      // Stays on the page, like the variation page: the button turning to
+      // "Saved" is the confirmation.
       setHasUnsavedChanges(false);
       toast({ title: "Purchase order saved" });
-      handleGoBack();
     },
     onError: (error: any) => {
       toast({
@@ -975,9 +1006,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
   });
 
@@ -992,9 +1021,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "Item deleted" });
     },
   });
@@ -1007,9 +1034,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "Item added" });
     },
   });
@@ -1026,9 +1051,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       const count = Array.isArray(data) ? data.length : 0;
       toast({ title: `${count} item${count === 1 ? "" : "s"} added` });
       setIsImportTimesheetsOpen(false);
@@ -1225,6 +1248,18 @@ export default function PurchaseOrderDetail() {
     },
     onError: (err: any) => {
       toast({ title: "Failed to unlink bill", description: err?.message, variant: "destructive" });
+    },
+  });
+
+  // For when the trade accepts by phone or email instead of the link.
+  const markAcceptedMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { status: "accepted" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Marked as accepted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -1453,25 +1488,19 @@ export default function PurchaseOrderDetail() {
   };
 
   // ---------- derived ----------
-  const subtotal = useMemo(() => {
-    return items.reduce((sum, item) => {
-      const qty = parseFloat(item.quantity || "0");
-      const price = item.unitPrice || 0;
-      return sum + Math.round(qty * price);
-    }, 0);
-  }, [items]);
-
-  const gstAmount = useMemo(() => {
-    return items.reduce((sum, item) => {
-      if (item.isGstFree) return sum;
-      const qty = parseFloat(item.quantity || "0");
-      const price = item.unitPrice || 0;
-      const lineTotal = Math.round(qty * price);
-      return sum + Math.round(lineTotal * 0.1);
-    }, 0);
-  }, [items]);
-
-  const total = subtotal + gstAmount;
+  const gstMode = purchaseOrder?.gstMode ?? "inclusive";
+  const hasLineValue = hasPricedLine(items);
+  const { subtotal, gstAmount, total } = useMemo(
+    () => (hasLineValue
+      ? computePOTotalsCents(items, gstMode)
+      // Site and RFQ POs have no priced lines, so the header holds the amount.
+      : {
+          subtotal: purchaseOrder?.subtotal ?? 0,
+          gstAmount: purchaseOrder?.gstAmount ?? 0,
+          total: purchaseOrder?.total ?? 0,
+        }),
+    [items, gstMode, hasLineValue, purchaseOrder],
+  );
 
   const totalHours = useMemo(() => {
     return items
@@ -1514,13 +1543,13 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const handleImportProjectScope = () => {
-    if (project?.scope) {
-      setScope(project.scope);
-      setHasUnsavedChanges(true);
-      setIsImportScopeDialogOpen(false);
-      toast({ title: "Scope imported from project" });
-    }
+  // Adds the picked project scope items after whatever the PO already says.
+  const handleImportProjectScope = (html: string, count: number) => {
+    const current = scope && htmlToText(scope).trim() ? scope : "";
+    setScope(current + html);
+    setHasUnsavedChanges(true);
+    setIsImportScopeDialogOpen(false);
+    toast({ title: `Added ${count} scope item${count === 1 ? "" : "s"} from the project` });
   };
 
   const handleDownloadPdf = async () => {
@@ -1578,957 +1607,667 @@ export default function PurchaseOrderDetail() {
   }
 
   // ---------- render ----------
-  return (
-    <div
-      className="h-full flex flex-col"
-      style={{ backgroundColor: TOKENS.pageBg }}
-    >
-      {/* Top bar */}
-      <div
-        className="flex-none border-b sticky top-0 z-10"
-        style={{ backgroundColor: TOKENS.cardBg, borderColor: TOKENS.border }}
-      >
-        <div className="h-12 px-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleGoBack}
-              data-testid="button-back"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
+  const isTimesheetPO = items.some((i) => !!(i as any).sourceTimesheetId);
+  const headerStrip = [
+    { label: "Supplier", value: supplier?.name || "—" },
+    {
+      label: "Required by",
+      value: requiredByDate ? format(new Date(requiredByDate), "d MMM yyyy") : "—",
+    },
+    { label: "Subtotal ex GST", value: formatCurrency(subtotal) },
+    { label: "GST (10%)", value: formatCurrency(gstAmount) },
+  ];
+  const btn = "h-7 px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0";
+  const btnPrimary = `${btn} bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2`;
+  const btnQuiet = `${btn} bg-card hover-elevate active-elevate-2`;
 
-            <div className="flex items-center gap-3 min-w-0">
-              <h1
-                className="text-lg font-semibold truncate"
-                data-testid="text-po-number"
-              >
-                {purchaseOrder.poNumber}
-              </h1>
+  return (
+    <div className="flex h-full flex-col" data-testid="page-po-detail">
+      {/* ── Header ── */}
+      <div className="mx-3 mt-3 flex-shrink-0">
+        <DocumentHeader
+          onBack={handleGoBack}
+          title={purchaseOrder.poNumber}
+          status={
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <StatusBadge status={purchaseOrder.status} />
               {purchaseOrder.poType === "site" && (
-                <Badge variant="outline" className="text-xs">
-                  Site PO
-                </Badge>
+                <Badge variant="outline" className="text-xs">Site PO</Badge>
+              )}
+              {isTimesheetPO && (
+                <Badge variant="outline" className="text-xs">Sub PO</Badge>
               )}
               {(purchaseOrder as any).xeroPurchaseOrderId && (
-                <Badge
-                  variant="outline"
-                  className="text-xs gap-1"
-                  data-testid="badge-in-xero"
-                >
+                <Badge variant="outline" className="text-xs gap-1" data-testid="badge-in-xero">
                   <SiXero className="w-3 h-3" />
                   In Xero
                 </Badge>
               )}
-              <div className="hidden md:flex">
-                <StatusStepper status={purchaseOrder.status} />
-              </div>
-              <Badge
-                variant="outline"
-                className="md:hidden text-xs capitalize"
-                data-testid="badge-status-mobile"
-              >
-                {purchaseOrder.status.replace(/_/g, " ")}
-              </Badge>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || isLocked}
-              data-testid="button-save-po"
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-1" />
-              ) : (
-                <Save className="w-4 h-4 mr-1" />
-              )}
-              Save
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-po-actions"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => setPoPreviewOpen(true)}
-                  data-testid="action-preview-po"
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  Preview PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleDownloadPdf}
-                  disabled={pdfGenerating}
-                  data-testid="action-print-po"
-                >
-                  {pdfGenerating ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4 mr-2" />
-                  )}
-                  Download PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem
+          }
+          context={project?.name}
+          strip={headerStrip}
+          headline={{ label: "Total inc GST", value: formatCurrency(total) }}
+          data-testid="header-po"
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setPoPreviewOpen(true)}
+                className={btnQuiet}
+                data-testid="button-preview-po"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+              {/* The next step is the one button that stands out. */}
+              {purchaseOrder.status === "draft" && (
+                <button
+                  type="button"
                   onClick={() => setIsSendDialogOpen(true)}
-                  data-testid="action-email-po"
+                  className={btnQuiet}
+                  data-testid="button-send-po"
                 >
-                  <Mail className="w-4 h-4 mr-2" />
-                  Email to Supplier
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {purchaseOrder.status === "sent" && (
-                  <DropdownMenuItem
-                    onClick={() => markInvoicedMutation.mutate()}
-                    data-testid="action-mark-invoiced"
-                  >
-                    <Package className="w-4 h-4 mr-2" />
-                    Mark as Invoiced
-                  </DropdownMenuItem>
-                )}
-                {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
-                  <DropdownMenuItem
-                    onClick={() => markPaidMutation.mutate()}
-                    data-testid="action-mark-paid"
-                  >
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Mark as Paid
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={() => duplicatePoMutation.mutate()}
-                  data-testid="action-duplicate-po"
+                  <Send className="w-3 h-3" />
+                  <span>Send to Supplier</span>
+                </button>
+              )}
+              {(purchaseOrder.status === "sent" || purchaseOrder.status === "accepted") && (
+                <button
+                  type="button"
+                  onClick={() => markInvoicedMutation.mutate()}
+                  disabled={markInvoicedMutation.isPending}
+                  className={btnQuiet}
+                  data-testid="button-mark-invoiced"
                 >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Duplicate
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => pushToXeroMutation.mutate(undefined)}
-                  disabled={pushToXeroMutation.isPending}
-                  data-testid="action-push-po-to-xero"
+                  {markInvoicedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Package className="w-3 h-3" />}
+                  <span>Mark Invoiced</span>
+                </button>
+              )}
+              {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
+                <button
+                  type="button"
+                  onClick={() => markPaidMutation.mutate()}
+                  disabled={markPaidMutation.isPending}
+                  className={btnQuiet}
+                  data-testid="button-mark-paid"
                 >
-                  {pushToXeroMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <SiXero className="w-4 h-4 mr-2" />
-                  )}
-                  {(purchaseOrder as any).xeroPurchaseOrderId
-                    ? "Re-push to Xero"
-                    : "Push to Xero (Draft)"}
-                </DropdownMenuItem>
-                {(purchaseOrder as any).xeroPurchaseOrderId && (
-                  <DropdownMenuItem
-                    onClick={() => refreshFromXeroMutation.mutate()}
-                    disabled={refreshFromXeroMutation.isPending}
-                    data-testid="action-refresh-po-from-xero"
+                  {markPaidMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+                  <span>Mark Paid</span>
+                </button>
+              )}
+            </>
+          }
+          primaryAction={
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Filled only when there is something to save. */}
+              {!isLocked && (
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving || !hasUnsavedChanges}
+                  className={hasUnsavedChanges ? btnPrimary : `${btn} border-border text-muted-foreground bg-card cursor-default`}
+                  data-testid="button-save-po"
+                >
+                  {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  <span>{hasUnsavedChanges ? "Save Changes" : "Saved"}</span>
+                </button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                    aria-label="More actions"
+                    data-testid="button-po-actions"
                   >
-                    {refreshFromXeroMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                    )}
-                    Refresh status from Xero
+                    <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={handleDownloadPdf} disabled={pdfGenerating} data-testid="action-print-po">
+                    {pdfGenerating ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
+                    Download PDF
                   </DropdownMenuItem>
-                )}
-                {purchaseOrder.status === "draft" && (
-                  <>
-                    <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setIsSendDialogOpen(true)} data-testid="action-email-po">
+                    <Mail className="w-3.5 h-3.5 mr-2" />
+                    Email to Supplier
+                  </DropdownMenuItem>
+                  {acceptanceInfo?.acceptUrl && (purchaseOrder.status === "draft" || purchaseOrder.status === "sent") && (
                     <DropdownMenuItem
-                      onClick={() => setIsDeleteDialogOpen(true)}
-                      className="text-status-danger"
-                      data-testid="action-delete-po"
+                      onClick={() => {
+                        navigator.clipboard.writeText(acceptanceInfo.acceptUrl!);
+                        toast({ title: "Accept link copied", description: "The trade can open it to accept this PO." });
+                      }}
+                      data-testid="action-copy-accept-link"
                     >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
+                      <Link2 className="w-3.5 h-3.5 mr-2" />
+                      Copy accept link
                     </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {purchaseOrder.status === "draft" && (
-              <Button
-                size="sm"
-                className="text-white hover:opacity-90"
-                style={{
-                  backgroundColor: TOKENS.purple,
-                  borderColor: TOKENS.purple,
-                }}
-                onClick={() => setIsSendDialogOpen(true)}
-                data-testid="button-send-po"
-              >
-                <Send className="w-4 h-4 mr-1" />
-                Send to Supplier
-              </Button>
-            )}
-
-            {purchaseOrder.status === "sent" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => markInvoicedMutation.mutate()}
-                disabled={markInvoicedMutation.isPending}
-                data-testid="button-mark-invoiced"
-              >
-                {markInvoicedMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                ) : (
-                  <Package className="w-4 h-4 mr-1" />
-                )}
-                Mark Invoiced
-              </Button>
-            )}
-            {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => markPaidMutation.mutate()}
-                disabled={markPaidMutation.isPending}
-                data-testid="button-mark-paid"
-              >
-                {markPaidMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                ) : (
-                  <CreditCard className="w-4 h-4 mr-1" />
-                )}
-                Mark Paid
-              </Button>
-            )}
-          </div>
-        </div>
+                  )}
+                  <DropdownMenuSeparator />
+                  {acceptanceInfo?.acceptUrl && purchaseOrder.status === "sent" && (
+                    <DropdownMenuItem onClick={() => markAcceptedMutation.mutate()} data-testid="action-mark-accepted">
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
+                      Mark as Accepted
+                    </DropdownMenuItem>
+                  )}
+                  {(purchaseOrder.status === "sent" || purchaseOrder.status === "accepted") && (
+                    <DropdownMenuItem onClick={() => markInvoicedMutation.mutate()} data-testid="action-mark-invoiced">
+                      <Package className="w-3.5 h-3.5 mr-2" />
+                      Mark as Invoiced
+                    </DropdownMenuItem>
+                  )}
+                  {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
+                    <DropdownMenuItem onClick={() => markPaidMutation.mutate()} data-testid="action-mark-paid">
+                      <CreditCard className="w-3.5 h-3.5 mr-2" />
+                      Mark as Paid
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => duplicatePoMutation.mutate()} data-testid="action-duplicate-po">
+                    <Copy className="w-3.5 h-3.5 mr-2" />
+                    Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => pushToXeroMutation.mutate(undefined)}
+                    disabled={pushToXeroMutation.isPending}
+                    data-testid="action-push-po-to-xero"
+                  >
+                    {pushToXeroMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <SiXero className="w-3.5 h-3.5 mr-2" />}
+                    {(purchaseOrder as any).xeroPurchaseOrderId ? "Re-push to Xero" : "Push to Xero (Draft)"}
+                  </DropdownMenuItem>
+                  {(purchaseOrder as any).xeroPurchaseOrderId && (
+                    <DropdownMenuItem
+                      onClick={() => refreshFromXeroMutation.mutate()}
+                      disabled={refreshFromXeroMutation.isPending}
+                      data-testid="action-refresh-po-from-xero"
+                    >
+                      {refreshFromXeroMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
+                      Refresh status from Xero
+                    </DropdownMenuItem>
+                  )}
+                  {purchaseOrder.status === "draft" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                        className="text-status-danger"
+                        data-testid="action-delete-po"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          }
+        />
       </div>
 
-      {/* Body */}
+      {/* ── Body ── */}
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-6 grid grid-cols-3 gap-6">
-          {/* Left column */}
-          <div className="col-span-2 space-y-6">
-            {/* Supplier hero */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardContent className="p-5">
+        <div className="max-w-6xl mx-auto px-3 py-3 space-y-3">
+          {/* ── Progress ── */}
+          <DocumentCard data-testid="section-progress">
+            <DocumentSection
+              title="Progress"
+              role={purchaseOrder.status === "cancelled" ? "exception" : "supplier"}
+              collapsible={false}
+              divider={false}
+              tint
+            >
+              <div className="px-3.5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/60">
+                <StatusStepper status={purchaseOrder.status} withAccepted={!!acceptanceInfo?.acceptUrl} />
+                <span className="flex-1" />
+                {(purchaseOrder as any).sentAt && (
+                  <span className="doc-body-muted" data-testid="text-sent-at">
+                    Sent {format(new Date((purchaseOrder as any).sentAt), "d MMM yyyy")}
+                    {(purchaseOrder as any).sentToEmail ? ` to ${(purchaseOrder as any).sentToEmail}` : ""}
+                  </span>
+                )}
+                {acceptanceInfo?.acceptance && (
+                  <span className="doc-body-muted" data-testid="text-accepted-by">
+                    Accepted by <span className="text-foreground font-medium">{acceptanceInfo.acceptance.name}</span>
+                    {" · "}
+                    {format(new Date(acceptanceInfo.acceptance.acceptedAt), "d MMM yyyy, h:mm a")}
+                  </span>
+                )}
+              </div>
+            </DocumentSection>
+          </DocumentCard>
+
+          {/* ── Supplier + details ── */}
+          <DocumentCard>
+            <DocumentSection title="Supplier" role="supplier" collapsible={false} data-testid="section-supplier">
+              <div className="px-3.5 py-3">
                 {supplier ? (
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-3">
                     <div
-                      className="rounded-full flex items-center justify-center font-bold flex-shrink-0"
-                      style={{
-                        width: 60,
-                        height: 60,
-                        backgroundColor: "rgba(168,144,212,0.12)",
-                        color: TOKENS.purple,
-                        fontSize: 18,
-                      }}
+                      className="h-10 w-10 rounded-full bg-primary/10 text-primary font-semibold text-sm flex items-center justify-center flex-shrink-0"
                       data-testid="supplier-avatar"
                     >
                       {getInitials(supplier.name || "?")}
                     </div>
-                    <div className="flex-1 min-w-0 space-y-1.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p
-                            className="font-semibold truncate"
-                            style={{ fontSize: 17 }}
-                            data-testid="text-supplier-name"
-                          >
-                            {supplier.name}
-                          </p>
-                          {(supplier as any).abn && (
-                            <p className="text-xs text-muted-foreground">
-                              ABN {(supplier as any).abn}
-                            </p>
-                          )}
-                        </div>
-                        {!isLocked && (
-                          <button
-                            onClick={() => setIsChangeSupplierOpen(true)}
-                            className="text-xs font-medium hover:underline flex-shrink-0"
-                            style={{ color: TOKENS.purple }}
-                            data-testid="button-change-supplier"
-                          >
-                            Change supplier
-                          </button>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold truncate" data-testid="text-supplier-name">{supplier.name}</span>
+                        {(supplier as any).abn && (
+                          <span className="doc-body-muted">ABN {(supplier as any).abn}</span>
+                        )}
+                        {(supplier as any).paymentTerms && (
+                          <Badge variant="secondary" className="text-[11px]" data-testid="badge-payment-terms">
+                            {(supplier as any).paymentTerms}
+                          </Badge>
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                         {supplier.email && (
-                          <a
-                            href={`mailto:${supplier.email}`}
-                            className="inline-flex items-center gap-1.5 hover:underline"
-                            style={{ color: TOKENS.blue }}
-                            data-testid="link-supplier-email"
-                          >
+                          <a href={`mailto:${supplier.email}`} className="inline-flex items-center gap-1.5 text-primary hover:underline" data-testid="link-supplier-email">
                             <Mail className="w-3.5 h-3.5" />
                             {supplier.email}
                           </a>
                         )}
                         {supplier.phone && (
-                          <a
-                            href={`tel:${supplier.phone}`}
-                            className="inline-flex items-center gap-1.5 hover:underline"
-                            style={{ color: TOKENS.blue }}
-                            data-testid="link-supplier-phone"
-                          >
+                          <a href={`tel:${supplier.phone}`} className="inline-flex items-center gap-1.5 text-primary hover:underline" data-testid="link-supplier-phone">
                             <Phone className="w-3.5 h-3.5" />
                             {supplier.phone}
                           </a>
                         )}
                       </div>
-                      {(supplier as any).paymentTerms && (
-                        <span
-                          className="inline-block text-[11px] font-medium rounded-full px-2 py-0.5 mt-1"
-                          style={{
-                            backgroundColor: TOKENS.ghost,
-                            color: "#444",
-                          }}
-                          data-testid="badge-payment-terms"
-                        >
-                          {(supplier as any).paymentTerms}
-                        </span>
-                      )}
                     </div>
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => setIsChangeSupplierOpen(true)}
+                        className="text-xs font-medium text-primary hover:underline flex-shrink-0"
+                        data-testid="button-change-supplier"
+                      >
+                        Change
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-6 gap-3">
-                    <Building2
-                      className="w-8 h-8"
-                      style={{ color: TOKENS.muted }}
-                    />
-                    <p className="text-sm text-muted-foreground">
-                      No supplier selected
-                    </p>
-                    <Button
+                  <div className="flex items-center gap-3">
+                    <Building2 className="w-5 h-5 text-muted-foreground" />
+                    <span className="doc-body-muted flex-1">No supplier selected</span>
+                    <button
+                      type="button"
                       onClick={() => setIsChangeSupplierOpen(true)}
                       disabled={isLocked}
-                      className="text-white hover:opacity-90"
-                      style={{
-                        backgroundColor: TOKENS.purple,
-                        borderColor: TOKENS.purple,
-                      }}
+                      className={btnPrimary}
                       data-testid="button-select-supplier"
                     >
                       Select Supplier
-                    </Button>
+                    </button>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </DocumentSection>
 
-            {/* Attached Bills */}
-            {linkedBills.length > 0 && (
-              <Card style={{ borderColor: TOKENS.border }} data-testid="card-attached-bills">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">
-                    Attached Bills ({linkedBills.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 space-y-2">
-                  {linkedBills.map((b) => {
-                    const paidPct = b.total > 0 ? Math.min(100, Math.round((b.paidAmount / b.total) * 100)) : 0;
-                    return (
-                      <div
-                        key={b.id}
-                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 hover-elevate"
-                        style={{ borderColor: TOKENS.border }}
-                        data-testid={`row-attached-bill-${b.id}`}
-                      >
+            <DocumentSection title="Details" role="manual" collapsible={false} divider={false} data-testid="section-details">
+              <div className="p-3.5 space-y-3 border-t border-border/60">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-2 space-y-1">
+                    <div className={labelCls}>PO name</div>
+                    <Input
+                      className="doc-input"
+                      value={title}
+                      onChange={(e) => { setTitle(e.target.value); setHasUnsavedChanges(true); }}
+                      placeholder="e.g. Kitchen materials"
+                      disabled={isLocked}
+                      data-testid="input-po-title"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className={labelCls}>Required by</div>
+                    <Popover>
+                      <PopoverTrigger asChild>
                         <button
-                          onClick={() => setLocation(`/bills/${b.id}`)}
-                          className="flex-1 min-w-0 text-left"
-                          data-testid={`button-open-bill-${b.id}`}
+                          type="button"
+                          disabled={isLocked}
+                          className="doc-input w-full h-9 px-3 border rounded-md flex items-center justify-between gap-2 text-sm text-left bg-card disabled:opacity-60"
+                          data-testid="input-required-by-date"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                            <span className="font-mono text-sm font-semibold truncate">
-                              {b.billNumber || "—"}
-                            </span>
-                            {b.billReference && (
-                              <span className="text-xs text-muted-foreground truncate">
-                                · Ref {b.billReference}
-                              </span>
-                            )}
-                            <Badge variant="outline" className="text-[10px] capitalize ml-1">
-                              {b.status.replace(/_/g, " ")}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {formatCurrency(b.paidAmount)} of {formatCurrency(b.total)} paid · {paidPct}%
-                          </div>
+                          <span className={requiredByDate ? "" : "text-muted-foreground"}>
+                            {requiredByDate ? format(new Date(requiredByDate), "d MMM yyyy") : "Pick a date"}
+                          </span>
+                          <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
                         </button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => unlinkBillMutation.mutate(b.id)}
-                          disabled={unlinkBillMutation.isPending}
-                          data-testid={`button-unlink-bill-${b.id}`}
-                          title="Unlink bill from PO"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* PO Details */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">PO Details</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-2">
-                <div className="flex items-center gap-2 py-1.5">
-                  <Label
-                    className="text-[11px] font-medium text-muted-foreground w-24 flex-shrink-0"
-                  >
-                    PO Name
-                  </Label>
-                  <Input
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="e.g., Kitchen Materials, Bathroom Fixtures"
-                    disabled={isLocked}
-                    className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
-                    data-testid="input-po-title"
-                  />
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="end">
+                        <Calendar
+                          mode="single"
+                          selected={requiredByDate ? new Date(requiredByDate) : undefined}
+                          onSelect={(d) => {
+                            if (d) {
+                              setRequiredByDate(format(d, "yyyy-MM-dd"));
+                              setHasUnsavedChanges(true);
+                            }
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
-                <Separator />
-                <div className="flex items-center gap-2 py-1.5">
-                  <Label
-                    className="text-[11px] font-medium text-muted-foreground w-24 flex-shrink-0"
-                  >
-                    Description
-                  </Label>
+                <div className="space-y-1">
+                  <div className={labelCls}>Description</div>
                   <Input
+                    className="doc-input"
                     value={description}
-                    onChange={(e) => {
-                      setDescription(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
+                    onChange={(e) => { setDescription(e.target.value); setHasUnsavedChanges(true); }}
                     placeholder="Brief description"
                     disabled={isLocked}
-                    className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
                     data-testid="input-po-description"
                   />
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Scope of Work */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <CardTitle className="text-base">Scope of Work</CardTitle>
-                  <div className="flex items-center gap-1">
-                    {(
-                      [
-                        ["inclusions", "Inclusions"],
-                        ["exclusions", "Exclusions"],
-                        ["special", "Special Conditions"],
-                      ] as const
-                    ).map(([value, label]) => {
-                      const active = scopeSection === value;
-                      return (
-                        <button
-                          key={value}
-                          onClick={() => setScopeSection(value)}
-                          className={`rounded-md text-xs px-3 py-1.5 transition-colors ${
-                            active
-                              ? "font-medium"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                          style={
-                            active
-                              ? {
-                                  backgroundColor: TOKENS.ghost,
-                                  color: "#222",
-                                }
-                              : undefined
-                          }
-                          data-testid={`button-scope-${value}`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    { label: "Reference", value: deliveryReference, set: setDeliveryReference, placeholder: "Your reference", testid: "input-delivery-reference" },
+                    { label: "Attention", value: deliveryAttention, set: setDeliveryAttention, placeholder: "Name or department", testid: "input-delivery-attention" },
+                    { label: "Site contact", value: deliveryContact, set: setDeliveryContact, placeholder: "Phone / email", testid: "input-delivery-contact" },
+                  ].map((row) => (
+                    <div key={row.label} className="space-y-1">
+                      <div className={labelCls}>{row.label}</div>
+                      <Input
+                        className="doc-input"
+                        value={row.value}
+                        onChange={(e) => { row.set(e.target.value); setHasUnsavedChanges(true); }}
+                        placeholder={row.placeholder}
+                        disabled={isLocked}
+                        data-testid={row.testid}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className={labelCls}>Delivery address</div>
+                    <Textarea
+                      className="doc-input min-h-[60px]"
+                      value={deliveryAddress}
+                      onChange={(e) => { setDeliveryAddress(e.target.value); setHasUnsavedChanges(true); }}
+                      placeholder={project?.location || "Site address for delivery"}
+                      rows={2}
+                      disabled={isLocked}
+                      data-testid="textarea-delivery-address"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className={labelCls}>Delivery instructions</div>
+                    <Textarea
+                      className="doc-input min-h-[60px]"
+                      value={deliveryInstructions}
+                      onChange={(e) => { setDeliveryInstructions(e.target.value); setHasUnsavedChanges(true); }}
+                      placeholder="Access, times, where to drop"
+                      rows={2}
+                      disabled={isLocked}
+                      data-testid="textarea-delivery-instructions"
+                    />
                   </div>
                 </div>
-                {project?.scope && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsImportScopeDialogOpen(true)}
-                    disabled={isLocked}
-                    data-testid="button-import-scope"
-                  >
-                    <Download className="w-3 h-3 mr-1" />
-                    Import from Project
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent>
-                <RichTextEditor
-                  content={scope}
-                  onChange={(html, text) => {
-                    setScope(html);
-                    setScopeText(text);
-                    setHasUnsavedChanges(true);
-                  }}
-                  placeholder="Describe the scope of work for this order..."
-                  disabled={isLocked}
-                  data-testid="editor-po-scope"
-                />
-              </CardContent>
-            </Card>
+              </div>
+            </DocumentSection>
+          </DocumentCard>
 
-            {/* Line Items */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Line Items</CardTitle>
-                <Button
-                  size="sm"
-                  onClick={handleAddItem}
-                  disabled={isLocked || addItemMutation.isPending}
-                  data-testid="button-add-item"
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Add Item
-                </Button>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div
-                  className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-3 py-2 text-[11px] font-semibold text-muted-foreground"
-                  style={{ backgroundColor: TOKENS.ghost }}
-                >
+          {/* ── Line items + totals ── */}
+          <DocumentCard>
+            <DocumentSection
+              title="Line Items"
+              role="manual"
+              count={items.length}
+              summary={formatCurrency(subtotal)}
+              collapsible={false}
+              data-testid="section-line-items"
+              actions={
+                <>
+                  {!!supplier && !isLocked && (
+                    <button
+                      type="button"
+                      onClick={() => setIsImportTimesheetsOpen(true)}
+                      className={btnQuiet}
+                      data-testid="button-import-timesheets"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                      <span>Import timesheets</span>
+                    </button>
+                  )}
+                  <Select
+                    value={gstMode}
+                    onValueChange={(value) => {
+                      if (value && value !== gstMode) gstModeMutation.mutate(value);
+                    }}
+                    disabled={isLocked}
+                  >
+                    <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="select-gst-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exclusive">Prices exclude GST</SelectItem>
+                      <SelectItem value="inclusive">Prices include GST</SelectItem>
+                      <SelectItem value="gst_free">GST free</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              }
+            >
+              <div className="border-t border-border/60">
+                <div className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-3 py-2 bg-muted/40 border-b border-border/60">
                   <div></div>
-                  <div>DESCRIPTION</div>
-                  <div className="text-right">QTY</div>
-                  <div>UNIT</div>
-                  <div className="text-right">PRICE</div>
-                  <div className="text-right">TOTAL</div>
-                  <div className="text-center">GST FREE</div>
-                  <div>COST CODE</div>
+                  <div className={labelCls}>Description</div>
+                  <div className={`${labelCls} justify-end`}>Qty</div>
+                  <div className={labelCls}>Unit</div>
+                  <div className={`${labelCls} justify-end`}>Price</div>
+                  <div className={`${labelCls} justify-end`}>Total</div>
+                  <div className={`${labelCls} justify-center`}>GST free</div>
+                  <div className={labelCls}>Cost code</div>
                   <div></div>
                 </div>
 
                 {itemsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                   </div>
-                ) : items.length === 0 ? (
-                  <EmptyState
-                    variant="inline"
-                    icon={FileText}
-                    title="No items yet"
-                    action={!isLocked ? {
-                      label: "Add First Item",
-                      onClick: handleAddItem,
-                      icon: Plus,
-                      "data-testid": "button-add-first-item",
-                    } : undefined}
-                  />
                 ) : (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragStart={handleDragStart}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={items.map((item) => item.id)}
-                      strategy={verticalListSortingStrategy}
+                  items.length > 0 && (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
                     >
-                      {items.map((item, index) => (
-                        <SortableItemRow
-                          key={item.id}
-                          item={item}
-                          index={index}
-                          onUpdate={handleItemUpdate}
-                          onDelete={handleItemDelete}
-                          costCodes={costCodes}
-                          disabled={isLocked}
-                        />
-                      ))}
-                    </SortableContext>
-                  </DndContext>
+                      <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+                        {items.map((item, index) => (
+                          <SortableItemRow
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            onUpdate={handleItemUpdate}
+                            onDelete={handleItemDelete}
+                            costCodes={costCodes}
+                            disabled={isLocked}
+                          />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  )
                 )}
 
-                {/* Chips row */}
-                {(totalHours > 0 || (!!supplier && !isLocked)) && (
-                  <div
-                    className="flex items-center gap-2 px-3 py-2 flex-wrap border-t"
-                    style={{ borderColor: TOKENS.border }}
-                  >
-                    {totalHours > 0 && (
-                      <span
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1"
-                        style={{
-                          backgroundColor: "rgba(104,176,136,0.10)",
-                          color: TOKENS.darkGreen,
-                        }}
-                        data-testid="chip-total-hours"
-                      >
-                        <Clock className="w-3 h-3" />
-                        {totalHours.toFixed(1)} hrs total
-                      </span>
-                    )}
-                    {!!supplier && !isLocked && (
-                      <button
-                        onClick={() => setIsImportTimesheetsOpen(true)}
-                        className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
-                        style={{ color: TOKENS.purple }}
-                        data-testid="button-import-timesheets"
-                      >
-                        <ArrowUp className="w-3 h-3" />
-                        Import from timesheets
-                      </button>
-                    )}
+                {!isLocked && (
+                  <AddLineRow
+                    onClick={handleAddItem}
+                    busy={addItemMutation.isPending}
+                    data-testid="button-add-item"
+                  />
+                )}
+
+                {totalHours > 0 && (
+                  <div className="px-3.5 py-2 border-t border-border/60">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1 bg-teal/10 text-foreground" data-testid="chip-total-hours">
+                      <Clock className="w-3 h-3" />
+                      {totalHours.toFixed(1)} hrs total
+                    </span>
                   </div>
                 )}
+              </div>
+            </DocumentSection>
 
-                {/* Subtotal strip */}
-                <div
-                  className="flex items-center justify-between px-4 py-3 border-t"
-                  style={{
-                    backgroundColor: TOKENS.ghost,
-                    borderColor: TOKENS.border,
-                  }}
-                  data-testid="strip-items-subtotal"
-                >
-                  <span className="text-xs text-muted-foreground">
-                    Subtotal (ex GST)
-                  </span>
-                  <span className="text-base font-bold">
-                    {formatCurrency(subtotal)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Terms & Conditions (collapsible) */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <button
-                onClick={() => setIsTermsOpen((v) => !v)}
-                className="w-full flex items-center justify-between gap-3 px-6 py-4 text-left hover-elevate rounded-t-lg"
-                data-testid="button-toggle-terms"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-semibold">Terms & Conditions</p>
-                  {!isTermsOpen && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {termsAndConditions
-                        ? termsAndConditions.slice(0, 80) +
-                          (termsAndConditions.length > 80 ? "…" : "")
-                        : "No terms set."}
-                    </p>
-                  )}
-                </div>
-                {isTermsOpen ? (
-                  <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                )}
-              </button>
-              {isTermsOpen && (
-                <CardContent className="pt-0">
-                  <Textarea
-                    value={termsAndConditions}
-                    onChange={(e) => {
-                      setTermsAndConditions(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Standard terms and conditions for this purchase order..."
-                    rows={4}
-                    disabled={isLocked}
-                    data-testid="textarea-po-terms"
-                  />
-                </CardContent>
-              )}
-            </Card>
-          </div>
-
-          {/* Right sidebar */}
-          <div className="space-y-6">
-            {/* Totals */}
-            <Card
-              className="overflow-hidden"
-              style={{ borderColor: TOKENS.border }}
-            >
-              <div
-                className="h-1 w-full"
-                style={{ backgroundColor: TOKENS.purple }}
+            <DocumentSection title="Summary" role="supplier" collapsible={false} divider={false} tint data-testid="section-summary">
+              <MoneySummary
+                rows={[
+                  { label: "Subtotal ex GST", cents: subtotal, testId: "text-subtotal" },
+                  { label: "GST (10%)", cents: gstAmount, tone: gstAmount === 0 ? "zero" : "normal", testId: "text-gst" },
+                ]}
+                total={{ label: "Total inc GST", cents: total }}
               />
-              <CardContent className="pt-4 space-y-2">
-                <p className="text-sm font-semibold">Purchase Order Total</p>
+            </DocumentSection>
+          </DocumentCard>
 
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium" data-testid="text-subtotal">
-                    {formatCurrency(subtotal)}
-                  </span>
+          {/* ── Everything else ── */}
+          <DocumentCard>
+            <DocumentSection
+              title="Bills"
+              role="supplier"
+              count={linkedBills.length}
+              summary={
+                linkedBills.length > 0
+                  ? `${formatCurrency(linkedBills.reduce((s, b) => s + b.paidAmount, 0))} of ${formatCurrency(linkedBills.reduce((s, b) => s + b.total, 0))} paid`
+                  : undefined
+              }
+              defaultOpen={linkedBills.length > 0}
+              isEmpty={linkedBills.length === 0}
+              data-testid="card-attached-bills"
+            >
+              {linkedBills.length > 0 && (
+                <div className="divide-y divide-border/60 border-t border-border/60">
+                  {linkedBills.map((b) => {
+                    const paidPct = b.total > 0 ? Math.min(100, Math.round((b.paidAmount / b.total) * 100)) : 0;
+                    return (
+                      <div key={b.id} className="flex items-center gap-3 px-3.5 py-2 hover-elevate" data-testid={`row-attached-bill-${b.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => setLocation(`/bills/${b.id}`)}
+                          className="flex-1 min-w-0 text-left flex items-center gap-2"
+                          data-testid={`button-open-bill-${b.id}`}
+                        >
+                          <FileText className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                          <span className="text-sm font-medium truncate">{b.billNumber || "—"}</span>
+                          {b.billReference && <span className="doc-body-muted truncate">Ref {b.billReference}</span>}
+                          <StatusBadge status={b.status} />
+                          <span className="flex-1" />
+                          <span className="doc-body-muted tabular-nums">
+                            {formatCurrency(b.paidAmount)} of {formatCurrency(b.total)} · {paidPct}%
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => unlinkBillMutation.mutate(b.id)}
+                          disabled={unlinkBillMutation.isPending}
+                          className="h-6 w-6 rounded-md hover-elevate flex items-center justify-center"
+                          data-testid={`button-unlink-bill-${b.id}`}
+                          title="Unlink bill from PO"
+                        >
+                          <X className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">GST (10%)</span>
-                  <span
-                    className="text-muted-foreground"
-                    data-testid="text-gst"
+              )}
+            </DocumentSection>
+
+            <DocumentSection
+              title="Scope of Work"
+              role="client"
+              defaultOpen={!!scopeText?.trim() || !isLocked}
+              isEmpty={!scopeText?.trim() && isLocked}
+              data-testid="section-scope"
+              actions={
+                !isLocked ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsImportScopeDialogOpen(true)}
+                    className={btnQuiet}
+                    data-testid="button-import-scope"
                   >
-                    {formatCurrency(gstAmount)}
-                  </span>
-                </div>
+                    <Download className="w-3 h-3" />
+                    <span>Add from project scope</span>
+                  </button>
+                ) : undefined
+              }
+            >
+              <div className="p-3.5 border-t border-border/60">
+                <RichTextEditor
+                  content={scope}
+                  onChange={(html, text) => {
+                    setScope(html);
+                    setScopeText(text);
+                    // The editor re-emits its content after loading, with its
+                    // own markup. Only a change to the words counts as an edit.
+                    if (plainText(text) !== plainText(htmlToText(scope))) setHasUnsavedChanges(true);
+                  }}
+                  placeholder="Describe the scope of work for this order..."
+                  disabled={isLocked}
+                  data-testid="editor-po-scope"
+                />
+              </div>
+            </DocumentSection>
 
-                <Separator />
+            <DocumentSection
+              title="Terms & Conditions"
+              role="client"
+              summary={termsAndConditions ? undefined : "None set"}
+              isEmpty={!termsAndConditions}
+              data-testid="section-terms"
+            >
+              <div className="p-3.5 border-t border-border/60">
+                <Textarea
+                  className="doc-input"
+                  value={termsAndConditions}
+                  onChange={(e) => { setTermsAndConditions(e.target.value); setHasUnsavedChanges(true); }}
+                  placeholder="Standard terms and conditions for this purchase order..."
+                  rows={5}
+                  disabled={isLocked}
+                  data-testid="textarea-po-terms"
+                />
+              </div>
+            </DocumentSection>
 
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-sm font-semibold">
-                    Total (inc GST)
-                  </span>
-                  <span
-                    className="text-2xl font-bold"
-                    data-testid="text-total"
-                  >
-                    {formatCurrency(total)}
-                  </span>
-                </div>
-
-                {project &&
-                  (project as any).contractPrice &&
-                  (project as any).contractPrice > 0 && (
-                    <div
-                      className="rounded-lg px-3 py-2 mt-2"
-                      style={{ backgroundColor: "rgba(104,176,136,0.08)" }}
-                      data-testid="chip-contract-health"
-                    >
-                      <p
-                        className="text-xs font-medium"
-                        style={{ color: TOKENS.darkGreen }}
-                      >
-                        ✓ Within contract budget
-                      </p>
-                    </div>
-                  )}
-              </CardContent>
-            </Card>
-
-            {/* Delivery */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Delivery</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                {/* Required By with Calendar popover */}
-                <div className="flex items-center gap-2 py-1">
-                  <Label className="text-[11px] font-medium text-muted-foreground w-28 flex-shrink-0">
-                    Required By
-                  </Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
+            <DocumentSection
+              title="Attachments"
+              role="meta"
+              count={attachments.length}
+              defaultOpen={attachments.length > 0}
+              isEmpty={attachments.length === 0 && isLocked}
+              data-testid="section-attachments"
+            >
+              <div className="p-3.5 space-y-2 border-t border-border/60">
+                {attachments.map((att) => (
+                  <div key={att.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted/40 text-xs" data-testid={`attachment-${att.id}`}>
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    <a href={att.fileUrl} target="_blank" rel="noreferrer" className="flex-1 truncate text-primary hover:underline">
+                      {att.fileName}
+                    </a>
+                    {!isLocked && (
                       <button
-                        disabled={isLocked}
-                        className="flex-1 flex items-center justify-between gap-2 text-sm rounded px-2 py-1 hover:bg-[#f5f4f0] focus:outline-none disabled:opacity-60 text-left"
-                        data-testid="input-required-by-date"
+                        type="button"
+                        onClick={() => deleteAttachmentMutation.mutate(att.id)}
+                        className="p-0.5 hover:bg-destructive/10 rounded text-destructive"
+                        data-testid={`button-delete-attachment-${att.id}`}
                       >
-                        <span className={requiredByDate ? "" : "text-muted-foreground"}>
-                          {requiredByDate
-                            ? format(new Date(requiredByDate), "dd MMM yyyy")
-                            : "Pick a date"}
-                        </span>
-                        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="end">
-                      <Calendar
-                        mode="single"
-                        selected={
-                          requiredByDate ? new Date(requiredByDate) : undefined
-                        }
-                        onSelect={(d) => {
-                          if (d) {
-                            setRequiredByDate(d.toISOString().split("T")[0]);
-                            setHasUnsavedChanges(true);
-                          }
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {[
-                  {
-                    label: "Reference",
-                    value: deliveryReference,
-                    set: setDeliveryReference,
-                    placeholder: "PO reference number",
-                    testid: "input-delivery-reference",
-                  },
-                  {
-                    label: "Attention",
-                    value: deliveryAttention,
-                    set: setDeliveryAttention,
-                    placeholder: "Name or department",
-                    testid: "input-delivery-attention",
-                  },
-                  {
-                    label: "Contact",
-                    value: deliveryContact,
-                    set: setDeliveryContact,
-                    placeholder: "Phone / email",
-                    testid: "input-delivery-contact",
-                  },
-                ].map((row) => (
-                  <div key={row.label} className="flex items-center gap-2 py-1">
-                    <Label className="text-[11px] font-medium text-muted-foreground w-28 flex-shrink-0">
-                      {row.label}
-                    </Label>
-                    <Input
-                      value={row.value}
-                      onChange={(e) => {
-                        row.set(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                      placeholder={row.placeholder}
-                      disabled={isLocked}
-                      className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
-                      data-testid={row.testid}
-                    />
+                    )}
                   </div>
                 ))}
-
-                <div className="space-y-1 py-1">
-                  <Label className="text-[11px] font-medium text-muted-foreground">
-                    Delivery Address
-                  </Label>
-                  <Textarea
-                    value={deliveryAddress}
-                    onChange={(e) => {
-                      setDeliveryAddress(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Site address for delivery"
-                    rows={2}
-                    disabled={isLocked}
-                    data-testid="textarea-delivery-address"
-                  />
-                </div>
-                <div className="space-y-1 py-1">
-                  <Label className="text-[11px] font-medium text-muted-foreground">
-                    Instructions
-                  </Label>
-                  <Textarea
-                    value={deliveryInstructions}
-                    onChange={(e) => {
-                      setDeliveryInstructions(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Special delivery instructions"
-                    rows={2}
-                    disabled={isLocked}
-                    data-testid="textarea-delivery-instructions"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Project */}
-            {project && (
-              <Card style={{ borderColor: TOKENS.border }}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Project</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p
-                    className="font-medium text-sm"
-                    data-testid="text-project-name"
-                  >
-                    {project.name}
-                  </p>
-                  {project.address && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {project.address}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Attachments */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Paperclip className="w-4 h-4" />
-                  Attachments
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {attachments.length > 0 && (
-                  <div className="space-y-1.5">
-                    {attachments.map((att) => (
-                      <div
-                        key={att.id}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs"
-                        style={{ backgroundColor: TOKENS.ghost }}
-                        data-testid={`attachment-${att.id}`}
-                      >
-                        <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <a
-                          href={att.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex-1 truncate hover:underline"
-                          style={{ color: TOKENS.blue }}
-                        >
-                          {att.fileName}
-                        </a>
-                        {!isLocked && (
-                          <button
-                            onClick={() =>
-                              deleteAttachmentMutation.mutate(att.id)
-                            }
-                            className="p-0.5 hover:bg-destructive/10 rounded text-destructive"
-                            data-testid={`button-delete-attachment-${att.id}`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {!isLocked && (
                   <div
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={handleFileDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors"
-                    style={{
-                      borderColor: TOKENS.border,
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.borderColor =
-                        TOKENS.purple;
-                      (e.currentTarget as HTMLDivElement).style.backgroundColor =
-                        TOKENS.ghost;
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.borderColor =
-                        TOKENS.border;
-                      (e.currentTarget as HTMLDivElement).style.backgroundColor =
-                        "transparent";
-                    }}
+                    className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer transition-colors hover:border-primary hover:bg-muted/40"
                     data-testid="dropzone-attachments"
                   >
                     {isUploading ? (
@@ -2542,91 +2281,50 @@ export default function PurchaseOrderDetail() {
                         Drop files or click to attach
                       </p>
                     )}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={handleFileSelect}
-                      data-testid="input-attachment-file"
-                    />
+                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} data-testid="input-attachment-file" />
                   </div>
                 )}
-                {isLocked && attachments.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No attachments</p>
-                )}
-              </CardContent>
-            </Card>
+              </div>
+            </DocumentSection>
 
-            {/* Activity */}
-            <Card style={{ borderColor: TOKENS.border }}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Activity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {activityItems.length === 0 ? (
-                  <EmptyState variant="inline" title="No activity yet." className="py-4" />
-                ) : (
-                  <ul className="space-y-2.5">
-                    {activityItems.map((a, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-2.5"
-                        data-testid={`activity-item-${i}`}
-                      >
-                        <span
-                          className="inline-block rounded-full mt-1.5 flex-shrink-0"
-                          style={{
-                            width: 8,
-                            height: 8,
-                            backgroundColor: a.color,
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm leading-tight">{a.label}</p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            {a.time
-                              ? formatDistanceToNow(new Date(a.time), {
-                                  addSuffix: true,
-                                })
-                              : ""}
-                          </p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+            <DocumentSection
+              title="Activity"
+              role="meta"
+              count={activityItems.length}
+              divider={false}
+              isEmpty={activityItems.length === 0}
+              data-testid="section-activity"
+            >
+              {activityItems.length > 0 && (
+                <ul className="p-3.5 space-y-2.5 border-t border-border/60">
+                  {activityItems.map((a, i) => (
+                    <li key={i} className="flex items-start gap-2.5" data-testid={`activity-item-${i}`}>
+                      <span className="inline-block rounded-full mt-1.5 flex-shrink-0 w-2 h-2" style={{ backgroundColor: a.color }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-tight">{a.label}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {a.time ? formatDistanceToNow(new Date(a.time), { addSuffix: true }) : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DocumentSection>
+          </DocumentCard>
         </div>
       </div>
 
       {/* ---------- Dialogs ---------- */}
 
       {/* Import Scope */}
-      <Dialog
+      <ImportProjectScopeDialog
         open={isImportScopeDialogOpen}
         onOpenChange={setIsImportScopeDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Scope from Project</DialogTitle>
-            <DialogDescription>
-              This will replace the current scope with the project's scope content.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsImportScopeDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleImportProjectScope}>Import Scope</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        projectId={purchaseOrder.projectId}
+        poCostCodeIds={Array.from(new Set(items.map((i) => i.costCodeId).filter((c): c is string => !!c)))}
+        onImport={handleImportProjectScope}
+      />
 
       {/* Preview PO PDF */}
       {purchaseOrder && (

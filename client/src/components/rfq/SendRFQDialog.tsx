@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Rfq, RfqRecipient } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { BouncedAddressWarning } from "@/components/email-log/BouncedAddressWarning";
 
 /**
  * Sends the RFQ. Actually sends it.
@@ -185,6 +186,8 @@ export function SendRFQDialog({
               </div>
             )}
           </div>
+
+          <BouncedAddressWarning emails={selected.map((r) => r.supplierEmail)} />
 
           {(missingEmail.length > 0 || externals.length > 0) && (
             <div className="flex items-start gap-2 p-3 rounded-md bg-muted/40 border border-border/50">

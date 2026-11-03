@@ -153,12 +153,12 @@ export default function BudgetPage() {
 
   const { data: allCostCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
-    enabled: canViewLabour,
+    enabled: canViewLabour || canViewActuals,
   });
 
   const { data: allCostCategories = [] } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
-    enabled: canViewLabour,
+    enabled: canViewLabour || canViewActuals,
   });
 
   const { data: contractMetrics } = useQuery<ContractMetrics>({
@@ -177,6 +177,20 @@ export default function BudgetPage() {
   }>({
     queryKey: ["/api/projects", projectId, "actual-costs"],
     queryFn: () => apiRequest(`/api/projects/${projectId}/actual-costs`, "GET"),
+    enabled: !!projectId && canViewActuals,
+  });
+
+  // Committed: open POs net of their bills, plus subbie hours waiting for a PO
+  // (ex-GST cents). Kept apart from actual costs, so it never touches margin.
+  const { data: committedCosts } = useQuery<{
+    poCommittedExGstCents: number;
+    labourCommittedExGstCents: number;
+    committedExGstCents: number;
+    byCostCode: Array<{ costCodeId: string | null; committedExGstCents: number }>;
+    purchaseOrders: Array<{ id: string; label: string; unbilledExGstCents: number }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "committed-costs"],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/committed-costs`, "GET"),
     enabled: !!projectId && canViewActuals,
   });
 
@@ -430,6 +444,8 @@ export default function BudgetPage() {
     bills: number;
     internal: number;
     total: number;
+    /** Promised, not yet incurred. Not part of total. */
+    committed: number;
   };
 
   // Merge persisted budget line items (budget + bills) with the labour
@@ -475,6 +491,7 @@ export default function BudgetPage() {
         bills,
         internal,
         total: labour + bills + internal,
+        committed: 0,
       });
     });
 
@@ -495,6 +512,7 @@ export default function BudgetPage() {
         bills: 0,
         internal,
         total: b.labourCents + internal,
+        committed: 0,
       });
     });
 
@@ -511,14 +529,52 @@ export default function BudgetPage() {
         bills: 0,
         internal: b.internalCents,
         total: b.internalCents,
+        committed: 0,
+      });
+    });
+
+    // Committed by cost code. Uncoded commitments sit with "Uncategorized".
+    const committedByKey = new Map<string, number>();
+    (committedCosts?.byCostCode ?? []).forEach((c) => {
+      const key = c.costCodeId ? `cc:${c.costCodeId}` : "uncategorized";
+      committedByKey.set(key, (committedByKey.get(key) ?? 0) + c.committedExGstCents);
+    });
+    const itemKey = (i: CostItem) =>
+      i.costCodeId ? `cc:${i.costCodeId}` : i.costCodeTitle === "Uncategorized" ? "uncategorized" : `id:${i.id}`;
+    const usedCommittedKeys = new Set<string>();
+    items.forEach((i) => {
+      const key = itemKey(i);
+      if (usedCommittedKeys.has(key)) return; // one row per code carries it
+      const cents = committedByKey.get(key);
+      if (cents) {
+        i.committed = cents;
+        usedCommittedKeys.add(key);
+      }
+    });
+    committedByKey.forEach((cents, key) => {
+      if (usedCommittedKeys.has(key) || cents === 0) return;
+      const costCodeId = key.startsWith("cc:") ? key.slice(3) : null;
+      const code = costCodeId ? allCostCodes.find((c) => c.id === costCodeId) : undefined;
+      const category = code?.categoryId ? allCostCategories.find((c) => c.id === code.categoryId) : undefined;
+      items.push({
+        id: `committed-${key}`,
+        costCodeId,
+        costCodeTitle: code?.title || "Uncategorized",
+        categoryTitle: category?.title || "Uncategorized",
+        budgeted: 0,
+        labour: 0,
+        bills: 0,
+        internal: 0,
+        total: 0,
+        committed: cents,
       });
     });
 
     return items;
-  }, [lineItems, labourBreakdown, internalBreakdown]);
+  }, [lineItems, labourBreakdown, internalBreakdown, committedCosts, allCostCodes, allCostCategories]);
 
   type CostRow =
-    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; labour: number; bills: number; internal: number; total: number }
+    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; labour: number; bills: number; internal: number; total: number; committed: number }
     | { kind: "item"; id: string; item: CostItem; categoryTitle: string; zebra: boolean };
 
   const costRows = useMemo<CostRow[]>(() => {
@@ -545,6 +601,7 @@ export default function BudgetPage() {
       const bills = items.reduce((s, i) => s + i.bills, 0);
       const internal = items.reduce((s, i) => s + i.internal, 0);
       const total = items.reduce((s, i) => s + i.total, 0);
+      const committed = items.reduce((s, i) => s + i.committed, 0);
       rows.push({
         kind: "category",
         id: `cat-${categoryTitle}`,
@@ -555,6 +612,7 @@ export default function BudgetPage() {
         bills,
         internal,
         total,
+        committed,
       });
       const isCollapsed = collapsedCategories.has(categoryTitle);
       if (!isCollapsed) {
@@ -573,7 +631,9 @@ export default function BudgetPage() {
     const bills = costItems.reduce((s, i) => s + i.bills, 0);
     const internal = costItems.reduce((s, i) => s + i.internal, 0);
     const total = costItems.reduce((s, i) => s + i.total, 0);
-    return { budgeted, labour, bills, internal, total, difference: budgeted - total };
+    const committed = costItems.reduce((s, i) => s + i.committed, 0);
+    // What's left once promised money is counted too.
+    return { budgeted, labour, bills, internal, total, committed, difference: budgeted - total - committed };
   }, [costItems]);
 
   const allCategoryTitles = useMemo(() => {
@@ -736,16 +796,39 @@ export default function BudgetPage() {
       meta: { defaultWidth: 120, align: "right", headerLabel: "Total" },
     },
     {
+      // Open POs not yet billed + subbie hours waiting for a PO. Promised, not
+      // spent, so it sits beside Total rather than inside it.
+      id: "committed",
+      header: "Committed",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.committed : r.item.committed;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
+        return (
+          <span
+            className={cn("text-xs tabular-nums", value === 0 ? "text-muted-foreground" : "text-[hsl(var(--amber))] font-medium")}
+            data-testid={`text-committed-${r.id}`}
+          >
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Committed" },
+    },
+    {
       id: "variance",
       header: "Difference",
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
         const budgeted = r.kind === "category" ? r.budgeted : r.item.budgeted;
-        const total = r.kind === "category" ? r.total : r.item.total;
+        // Spent plus promised: what's left to spend on this code.
+        const used = (r.kind === "category" ? r.total + r.committed : r.item.total + r.item.committed);
         return (
           <span data-testid={`text-difference-${r.id}`}>
-            {renderVarianceChip(formatCurrency(budgeted - total), budgeted, total)}
+            {renderVarianceChip(formatCurrency(budgeted - used), budgeted, used)}
           </span>
         );
       },
@@ -759,8 +842,8 @@ export default function BudgetPage() {
       cell: ({ row }) => {
         const r = row.original;
         const budgeted = r.kind === "category" ? r.budgeted : r.item.budgeted;
-        const total = r.kind === "category" ? r.total : r.item.total;
-        return renderStatusChip(budgeted, total);
+        const used = r.kind === "category" ? r.total + r.committed : r.item.total + r.item.committed;
+        return renderStatusChip(budgeted, used);
       },
       size: 90,
       meta: { defaultWidth: 90, align: "right", headerLabel: "Status" },
@@ -1259,7 +1342,10 @@ export default function BudgetPage() {
   const actualCostCents = actualCosts?.actualCostExGstCents ?? 0;
   const grossProfitCents = revisedContractCents - actualCostCents;
   const marginPct = revisedContractCents > 0 ? (grossProfitCents / revisedContractCents) * 100 : 0;
-  const remainingCents = (budgetData.revisedAmount ?? 0) - spentActualCents;
+  // Committed never enters margin: gross profit compares incurred revenue with
+  // incurred cost. It only reduces what's left to spend.
+  const committedCents = committedCosts?.committedExGstCents ?? 0;
+  const remainingCents = (budgetData.revisedAmount ?? 0) - spentActualCents - committedCents;
 
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
@@ -1334,6 +1420,7 @@ export default function BudgetPage() {
                       { id: "bills", label: "Bills" },
                       { id: "internal", label: "Internal" },
                       { id: "total", label: "Total" },
+                      { id: "committed", label: "Committed" },
                       { id: "variance", label: "Difference" },
                       { id: "status", label: "Status" },
                     ]}
@@ -1383,6 +1470,7 @@ export default function BudgetPage() {
               <div className="flex items-center gap-6 min-w-0 flex-wrap">
                 {[
                   { label: "Revised Contract", value: formatCurrency(revisedContractCents), color: "text-foreground" },
+                  { label: "Committed", value: formatCurrency(committedCents), color: "text-foreground" },
                   { label: "Actual Costs", value: formatCurrency(actualCostCents), color: "text-foreground" },
                   { label: "Gross Profit", value: formatCurrency(grossProfitCents), color: getVarianceColor(grossProfitCents) },
                 ].map((stat) => (
@@ -1508,6 +1596,7 @@ export default function BudgetPage() {
               {[
                 { label: "Budget", value: budgetData.baselineAmount, color: "text-foreground", testid: "stat-budget" },
                 { label: "Spent", value: spentActualCents, color: "text-muted-foreground", testid: "stat-spent" },
+                { label: "Committed", value: committedCents, color: "text-muted-foreground", testid: "stat-committed" },
                 { label: "Remaining", value: remainingCents, color: getVarianceColor(remainingCents), testid: "stat-remaining" },
               ].map((stat) => (
                 <div key={stat.label} className="flex items-center gap-1.5" data-testid={stat.testid}>
@@ -1620,6 +1709,7 @@ export default function BudgetPage() {
                         { label: "Bills", value: formatCurrency(costTotals.bills) },
                         { label: "Internal", value: formatCurrency(costTotals.internal) },
                         { label: "Total", value: formatCurrency(costTotals.total) },
+                        { label: "Committed", value: formatCurrency(costTotals.committed) },
                         {
                           label: "Difference",
                           value: formatCurrency(costTotals.difference),
