@@ -25222,7 +25222,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (data.supplierUserId && !await inCompany(schema.users, data.supplierUserId)) return "supplier";
     if (data.costCodeId && !await inCompany(schema.costCodes, data.costCodeId)) return "cost code";
     if (data.scopeStageId && !await inCompany(schema.scopeStages, data.scopeStageId)) return "scope stage";
-    if (data.sourceEstimateId && !await inCompany(schema.estimates, data.sourceEstimateId)) return "estimate";
+    if (data.sourceEstimateId) {
+      // Estimates have no companyId: they belong to their project's company.
+      const [row] = await db.select({ companyId: schema.projects.companyId }).from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(eq(schema.estimates.id, data.sourceEstimateId)).limit(1);
+      if (row?.companyId !== companyId) return "estimate";
+    }
     if (data.sourceTimesheetId) {
       // Timesheets have no companyId: they belong to their user's company.
       const [row] = await db.select({ companyId: schema.users.companyId }).from(schema.timesheets)
