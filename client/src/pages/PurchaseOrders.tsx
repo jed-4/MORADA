@@ -71,6 +71,7 @@ const STATUS_OPTIONS = [
   { key: "all", label: "All Statuses" },
   { key: "draft", label: "Draft" },
   { key: "sent", label: "Sent" },
+  { key: "accepted", label: "Accepted" },
   { key: "invoiced", label: "Invoiced" },
   { key: "partially_paid", label: "Partially Paid" },
   { key: "paid", label: "Paid" },
@@ -80,6 +81,7 @@ const STATUS_OPTIONS = [
 const SELECT_COL_WIDTH = 32;
 const BULK_STATUSES: Array<{ key: string; label: string; icon?: typeof CheckCheck; className?: string }> = [
   { key: "sent", label: "Sent" },
+  { key: "accepted", label: "Accepted" },
   { key: "invoiced", label: "Invoiced", className: "text-status-warning" },
   { key: "partially_paid", label: "Partially Paid", className: "text-status-warning" },
   { key: "paid", label: "Paid", icon: CheckCheck, className: "text-status-success" },

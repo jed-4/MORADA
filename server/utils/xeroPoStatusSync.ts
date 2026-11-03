@@ -12,6 +12,7 @@ export type XeroPoStatus =
 export type BuildProPoStatus =
   | "draft"
   | "sent"
+  | "accepted"
   | "invoiced"
   | "partially_paid"
   | "paid"

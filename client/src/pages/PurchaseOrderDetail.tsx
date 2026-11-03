@@ -42,6 +42,8 @@ import {
   Mail,
   Phone,
   Copy,
+  CheckCircle2,
+  Link2,
   Calendar as CalendarIcon,
   Download,
   ChevronDown,
@@ -120,19 +122,16 @@ const TOKENS = {
   darkGreen: "#2d7a4f",
 };
 
-const STEPS = ["Draft", "Sent", "Invoiced", "Paid"] as const;
-const STEP_INDEX: Record<string, number> = {
-  draft: 0,
-  pending_approval: 0,
-  sent: 1,
-  acknowledged: 1,
-  accepted: 1,
-  partially_received: 1,
-  completed: 1,
-  invoiced: 2,
-  billed: 2,
-  partially_paid: 2,
-  paid: 3,
+// Accepted only shows for POs a trade can accept (not site or sub POs).
+const stepsFor = (withAccepted: boolean) =>
+  withAccepted ? ["Draft", "Sent", "Accepted", "Invoiced", "Paid"] : ["Draft", "Sent", "Invoiced", "Paid"];
+const STEP_KEYS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  accepted: "Accepted",
+  invoiced: "Invoiced",
+  partially_paid: "Invoiced",
+  paid: "Paid",
 };
 
 function formatCurrency(cents: number): string {
@@ -228,8 +227,9 @@ function getInitials(name: string): string {
 // ---------- Status stepper ----------
 interface StatusStepperProps {
   status: string;
+  withAccepted: boolean;
 }
-function StatusStepper({ status }: StatusStepperProps) {
+function StatusStepper({ status, withAccepted }: StatusStepperProps) {
   if (status === "cancelled") {
     return (
       <Badge
@@ -241,10 +241,11 @@ function StatusStepper({ status }: StatusStepperProps) {
       </Badge>
     );
   }
-  const idx = STEP_INDEX[status] ?? 0;
+  const steps = stepsFor(withAccepted || status === "accepted");
+  const idx = Math.max(0, steps.indexOf(STEP_KEYS[status] ?? "Draft"));
   return (
     <div className="flex items-center gap-2" data-testid="status-stepper">
-      {STEPS.map((label, i) => {
+      {steps.map((label, i) => {
         const isActive = i === idx;
         const isPast = i < idx;
         const dotColor = isActive
@@ -276,7 +277,7 @@ function StatusStepper({ status }: StatusStepperProps) {
                 {label}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <span
                 className="inline-block"
                 style={{
@@ -825,6 +826,15 @@ export default function PurchaseOrderDetail() {
     enabled: !!poId,
   });
 
+  // acceptUrl is null for POs a trade doesn't accept (site and sub POs).
+  const { data: acceptanceInfo } = useQuery<{
+    acceptance: { name: string; email: string | null; acceptedAt: string } | null;
+    acceptUrl: string | null;
+  }>({
+    queryKey: ["/api/purchase-orders", poId, "acceptance"],
+    enabled: !!poId,
+  });
+
   const project = useMemo(() => {
     const pid = purchaseOrder?.projectId || projectIdFromUrl;
     return projects.find((p) => p.id === pid);
@@ -1242,6 +1252,18 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  // For when the trade accepts by phone or email instead of the link.
+  const markAcceptedMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { status: "accepted" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Marked as accepted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update", description: error?.message, variant: "destructive" });
+    },
+  });
+
   const markInvoicedMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
@@ -1630,8 +1652,14 @@ export default function PurchaseOrderDetail() {
                 </Badge>
               )}
               <div className="hidden md:flex">
-                <StatusStepper status={purchaseOrder.status} />
+                <StatusStepper status={purchaseOrder.status} withAccepted={!!acceptanceInfo?.acceptUrl} />
               </div>
+              {acceptanceInfo?.acceptance && (
+                <span className="hidden xl:inline text-xs text-muted-foreground whitespace-nowrap" data-testid="text-accepted-by">
+                  Accepted by {acceptanceInfo.acceptance.name} ·{" "}
+                  {format(new Date(acceptanceInfo.acceptance.acceptedAt), "d MMM yyyy, h:mm a")}
+                </span>
+              )}
               <Badge
                 variant="outline"
                 className="md:hidden text-xs capitalize"
@@ -1696,7 +1724,28 @@ export default function PurchaseOrderDetail() {
                   Email to Supplier
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {purchaseOrder.status === "sent" && (
+                {acceptanceInfo?.acceptUrl && (purchaseOrder.status === "draft" || purchaseOrder.status === "sent") && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      navigator.clipboard.writeText(acceptanceInfo.acceptUrl!);
+                      toast({ title: "Accept link copied", description: "The trade can open it to accept this PO." });
+                    }}
+                    data-testid="action-copy-accept-link"
+                  >
+                    <Link2 className="w-4 h-4 mr-2" />
+                    Copy accept link
+                  </DropdownMenuItem>
+                )}
+                {acceptanceInfo?.acceptUrl && purchaseOrder.status === "sent" && (
+                  <DropdownMenuItem
+                    onClick={() => markAcceptedMutation.mutate()}
+                    data-testid="action-mark-accepted"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Mark as Accepted
+                  </DropdownMenuItem>
+                )}
+                {(purchaseOrder.status === "sent" || purchaseOrder.status === "accepted") && (
                   <DropdownMenuItem
                     onClick={() => markInvoicedMutation.mutate()}
                     data-testid="action-mark-invoiced"
@@ -1782,7 +1831,7 @@ export default function PurchaseOrderDetail() {
               </Button>
             )}
 
-            {purchaseOrder.status === "sent" && (
+            {(purchaseOrder.status === "sent" || purchaseOrder.status === "accepted") && (
               <Button
                 size="sm"
                 variant="outline"

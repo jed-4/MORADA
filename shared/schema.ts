@@ -6461,7 +6461,7 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   updatedAt: true,
 }).extend({
   poType: z.enum(["main", "site"]).default("main"),
-  status: z.enum(["draft", "sent", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
+  status: z.enum(["draft", "sent", "accepted", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
   gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
   poDate: z.coerce.date().default(() => new Date()),
   // nullable() must wrap the coerce: new Date(null) is 1 Jan 1970, which is how
