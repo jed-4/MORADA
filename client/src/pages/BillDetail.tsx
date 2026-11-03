@@ -526,6 +526,14 @@ export default function BillDetail() {
   });
 
   // Payment history is the source of truth for how much of a bill is paid.
+  // Xero-style view mode: an approved bill opens read-only and the Edit button
+  // unlocks it. Screen-level only — the server still accepts edits (logged as
+  // "Edited after approval"), exactly as Xero lets you edit an approved bill.
+  const [editUnlocked, setEditUnlocked] = useState(false);
+  useEffect(() => { setEditUnlocked(false); }, [id]);
+  const isApprovedBill = bill?.status === "awaiting_payment" || bill?.status === "paid";
+  const isViewOnly = isEditMode && isApprovedBill && !editUnlocked;
+
   const { data: billPayments = [] } = useQuery<BillPayment[]>({
     queryKey: ["/api/bills", id, "payments"],
     enabled: isEditMode,
@@ -1593,6 +1601,7 @@ export default function BillDetail() {
     },
     onSuccess: async (_updatedBill, variables) => {
       const stayOnPage = !!variables.__stayOnPage;
+      setEditUnlocked(false);
       // Content is now persisted — drop the baseline so it re-captures the
       // saved state (prevents a false "unsaved changes" prompt when the flow
       // stays on the page, e.g. the Xero-unmapped or update-defaults prompts).
@@ -2622,7 +2631,9 @@ export default function BillDetail() {
             </Button>
             <div className="w-[3px] h-5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--amber))" }} aria-hidden="true" />
             <h1 className="text-lg font-semibold" data-testid="text-page-title">
-              {isEditMode
+              {isViewOnly
+                ? (form.watch("billType") === "credit" ? "Credit Note" : "Bill")
+                : isEditMode
                 ? (form.watch("billType") === "credit" ? "Edit Credit Note" : "Edit Bill")
                 : (form.watch("billType") === "credit" ? "Create Credit Note" : "Create Bill")}
             </h1>
@@ -2832,6 +2843,10 @@ export default function BillDetail() {
               </div>
             )}
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
+              {/* A disabled fieldset disables every native control and Radix
+                  trigger inside it — that is the whole of view mode for the
+                  bill's own fields. Attachments and payments stay live. */}
+              <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-bill-header">
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <FormField
@@ -3324,6 +3339,7 @@ export default function BillDetail() {
                   />
                 </div>
               </Card>
+              </fieldset>
 
               <div className="space-y-3">
                 <Card className="p-3">
@@ -3440,7 +3456,7 @@ export default function BillDetail() {
                               // that came back empty still sets that flag, and
                               // greying the button out left those bills with no way
                               // to try again.
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
+                              disabled={isViewOnly || !firstProcessable || ocrFromAttachmentMutation.isPending}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >
@@ -3561,6 +3577,7 @@ export default function BillDetail() {
               </div>
             </div>
 
+            <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-bill-lines">
             <Card className="p-0 overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                 <h3 className="text-xs font-semibold">Cost Lines</h3>
@@ -4121,6 +4138,7 @@ export default function BillDetail() {
                 </div>
               </div>
             </Card>
+            </fieldset>
 
                 {isEditMode && approvals.length > 0 && (
                   <Card className="p-3">
@@ -4417,6 +4435,18 @@ export default function BillDetail() {
                         </Button>
                       );
                     })()}
+                    {isViewOnly ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setEditUnlocked(true)}
+                        className="gap-1"
+                        data-testid="button-edit-bill"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                    ) : (
                     <Button
                       type="submit"
                       size="sm"
@@ -4439,6 +4469,7 @@ export default function BillDetail() {
                         ? "Uploading..."
                         : "Save"}
                     </Button>
+                    )}
                   </div>
                 </div>
           </form>

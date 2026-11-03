@@ -187,10 +187,10 @@ async function projections() {
 
   await check("allowance row carries no money, bills, timesheets or costs", () => {
     const out: any = projectClientAllowance({
-      item: { id: "e1", estimateId: "est1", name: "Tiles", shownAs: "Floor tiles", allowance: "Prime Cost", allowanceStatus: "finalized", unitCostExTax: 40, markupPercent: 15, priceIncTax: 440000, notes: "internal" },
+      item: { id: "e1", estimateId: "est1", name: "Tiles", shownAs: "price", allowance: "Prime Cost", allowanceStatus: "finalized", unitCostExTax: 40, markupPercent: 15, priceIncTax: 440000, notes: "internal" },
       actualCost: 500000, billCostIncGst: 500000, timesheetCostExGst: 0, variance: 60000,
     });
-    assert.strictEqual(out.item.name, "Floor tiles");
+    assert.strictEqual(out.item.name, "Tiles"); // shownAs is a mode, never the name
     assert.strictEqual(out.finalised, true);
     for (const key of ["unitCostExTax", "markupPercent", "priceIncTax", "notes"]) {
       assert.ok(!(key in out.item), `${key} leaked`);
