@@ -6,6 +6,8 @@ import { PurchaseOrderDocument } from "@/components/purchase-orders/pdf/Purchase
 import { SendPurchaseOrderDialog } from "@/components/purchase-orders/SendPurchaseOrderDialog";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { format, formatDistanceToNow } from "date-fns";
+import { computePOTotalsCents, hasPricedLine } from "@shared/poTotals";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
@@ -897,9 +899,13 @@ export default function PurchaseOrderDetail() {
       setDeliveryContact(purchaseOrder.deliveryContact || "");
       setDeliveryAddress(purchaseOrder.deliveryAddress || "");
       setDeliveryInstructions(purchaseOrder.deliveryInstructions || "");
+      // A date at or before epoch is a blank that was saved as 1 Jan 1970.
+      const savedRequiredBy = purchaseOrder.requiredByDate
+        ? new Date(purchaseOrder.requiredByDate)
+        : null;
       setRequiredByDate(
-        purchaseOrder.requiredByDate
-          ? new Date(purchaseOrder.requiredByDate).toISOString().split("T")[0]
+        savedRequiredBy && savedRequiredBy.getTime() > 0
+          ? savedRequiredBy.toISOString().split("T")[0]
           : "",
       );
     }
@@ -911,6 +917,22 @@ export default function PurchaseOrderDetail() {
   }, [rawPoItems]);
 
   // ---------- mutations ----------
+  const gstModeMutation = useMutation({
+    mutationFn: async (nextMode: string) => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { gstMode: nextMode });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update GST",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const updatePoMutation = useMutation({
     mutationFn: async (data: Partial<PurchaseOrder>) => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", data);
@@ -975,9 +997,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
   });
 
@@ -992,9 +1012,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "Item deleted" });
     },
   });
@@ -1007,9 +1025,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "Item added" });
     },
   });
@@ -1026,9 +1042,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({
         queryKey: ["/api/purchase-orders", poId, "items"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       const count = Array.isArray(data) ? data.length : 0;
       toast({ title: `${count} item${count === 1 ? "" : "s"} added` });
       setIsImportTimesheetsOpen(false);
@@ -1453,25 +1467,19 @@ export default function PurchaseOrderDetail() {
   };
 
   // ---------- derived ----------
-  const subtotal = useMemo(() => {
-    return items.reduce((sum, item) => {
-      const qty = parseFloat(item.quantity || "0");
-      const price = item.unitPrice || 0;
-      return sum + Math.round(qty * price);
-    }, 0);
-  }, [items]);
-
-  const gstAmount = useMemo(() => {
-    return items.reduce((sum, item) => {
-      if (item.isGstFree) return sum;
-      const qty = parseFloat(item.quantity || "0");
-      const price = item.unitPrice || 0;
-      const lineTotal = Math.round(qty * price);
-      return sum + Math.round(lineTotal * 0.1);
-    }, 0);
-  }, [items]);
-
-  const total = subtotal + gstAmount;
+  const gstMode = purchaseOrder?.gstMode ?? "inclusive";
+  const hasLineValue = hasPricedLine(items);
+  const { subtotal, gstAmount, total } = useMemo(
+    () => (hasLineValue
+      ? computePOTotalsCents(items, gstMode)
+      // Site and RFQ POs have no priced lines, so the header holds the amount.
+      : {
+          subtotal: purchaseOrder?.subtotal ?? 0,
+          gstAmount: purchaseOrder?.gstAmount ?? 0,
+          total: purchaseOrder?.total ?? 0,
+        }),
+    [items, gstMode, hasLineValue, purchaseOrder],
+  );
 
   const totalHours = useMemo(() => {
     return items
@@ -2275,8 +2283,28 @@ export default function PurchaseOrderDetail() {
               <CardContent className="pt-4 space-y-2">
                 <p className="text-sm font-semibold">Purchase Order Total</p>
 
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Line prices</span>
+                  <Select
+                    value={gstMode}
+                    onValueChange={(value) => {
+                      if (value && value !== gstMode) gstModeMutation.mutate(value);
+                    }}
+                    disabled={isLocked}
+                  >
+                    <SelectTrigger className="h-7 w-[130px] text-xs" data-testid="select-gst-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exclusive">Exclude GST</SelectItem>
+                      <SelectItem value="inclusive">Include GST</SelectItem>
+                      <SelectItem value="gst_free">GST free</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">Subtotal (ex GST)</span>
                   <span className="font-medium" data-testid="text-subtotal">
                     {formatCurrency(subtotal)}
                   </span>
