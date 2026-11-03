@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Check, ChevronDown, ChevronRight, Filter, Loader2, Plus, Search, Truck } from "lucide-react";
+import { Check, Filter, Loader2, Plus, Search, Truck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -41,6 +41,12 @@ import {
 
 type Row = AssetListRow & { due: AssetDueSummary };
 type TypeFilter = "all" | AssetGroupId;
+
+const GROUP_BY = {
+  key: (r: Row) => groupOf(r.assetType),
+  order: ASSET_GROUPS.map((g) => g.id) as string[],
+  label: (id: string) => ASSET_GROUPS.find((g) => g.id === id)?.label ?? id,
+};
 
 const groupOf = (type: string) => ASSET_GROUPS.find((g) => (g.types as readonly string[]).includes(type))?.id ?? "equipment";
 
@@ -99,20 +105,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     return c;
   }, [withDue, showInactive]);
 
-  // Vehicles (with trailers), Plant, Equipment — each its own section; an
-  // empty group isn't shown.
-  const groups = useMemo(
-    () => ASSET_GROUPS.map((g) => ({ ...g, rows: rows.filter((r) => groupOf(r.assetType) === g.id) })).filter((g) => g.rows.length > 0),
-    [rows],
-  );
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const columns = useMemo<ColumnDef<Row, unknown>[]>(
     () => [
@@ -306,34 +298,17 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
             {rows.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">Nothing matches.</p>
             ) : (
-              groups.map((g, i) => {
-                const open = !collapsed.has(g.id);
-                return (
-                  <section key={g.id} className={cn(i > 0 && "border-t border-border")} data-testid={`group-assets-${g.id}`}>
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(g.id)}
-                      className="w-full h-8 flex items-center gap-1.5 px-3 text-left bg-muted/30 hover:bg-muted/50"
-                      aria-expanded={open}
-                    >
-                      {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
-                      <span className="text-xs font-semibold">{g.label}</span>
-                      <span className="text-[11px] text-muted-foreground">{g.rows.length}</span>
-                    </button>
-                    {open && (
-                      <DataTable
-                        data={g.rows}
-                        columns={columns}
-                        storageKey="business-assets"
-                        rowKey={(r) => r.id}
-                        rowHeight={44}
-                        rowClassName={(r) => cn("cursor-pointer", INACTIVE.includes(r.status) && "opacity-50")}
-                        onRowClick={(r) => onOpen(r.id)}
-                      />
-                    )}
-                  </section>
-                );
-              })
+              <DataTable
+                data={rows}
+                columns={columns}
+                storageKey="business-assets"
+                rowKey={(r) => r.id}
+                rowHeight={44}
+                rowClassName={(r) => cn("cursor-pointer", INACTIVE.includes(r.status) && "opacity-50")}
+                onRowClick={(r) => onOpen(r.id)}
+                // One list, with Vehicles (and trailers), Plant, Equipment sub-headers.
+                groupBy={GROUP_BY}
+              />
             )}
           </>
         )}

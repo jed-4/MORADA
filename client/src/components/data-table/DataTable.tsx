@@ -127,6 +127,16 @@ export interface DataTableProps<TData> {
    * row has no sub-rows regardless.
    */
   isRowExpandable?: (row: TData) => boolean;
+  /**
+   * Split the rows into labelled groups inside ONE table: a sub-header row,
+   * styled like the column headers, opens each group. Groups follow `order`
+   * (unlisted keys go last); sorting still works within each group.
+   */
+  groupBy?: {
+    key: (row: TData) => string;
+    order: string[];
+    label: (key: string) => string;
+  };
 }
 
 interface LegacyColumnConfigEntry { id: string; visible: boolean; order: number }
@@ -273,6 +283,7 @@ export function DataTable<TData>({
   getSubRows,
   renderExpandedPanel,
   isRowExpandable,
+  groupBy,
 }: DataTableProps<TData>) {
   // One-time migration of legacy `[{id,visible,order}]` storage into the new keys.
   useMemo(() => migrateLegacyConfig(storageKey, legacyConfigKey), [storageKey, legacyConfigKey]);
@@ -679,8 +690,29 @@ export function DataTable<TData>({
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.flatMap((row, index) => {
-                const nodes: React.ReactNode[] = [
+              // Not with nested rows: regrouping would pull children away from their parent.
+              groupedRows(table.getRowModel().rows, getSubRows ? undefined : groupBy).flatMap(({ row, group }, index) => {
+                const nodes: React.ReactNode[] = [];
+                if (group) {
+                  nodes.push(
+                    <tr key={`__group_${group.key}`} data-testid={`group-row-${group.key}`}>
+                      <td
+                        colSpan={visibleLeafColumns.length + 1}
+                        className={cn(
+                          "px-2 uppercase tracking-wide border-b border-border select-none",
+                          plainHeader ? "h-6 text-[9px] font-semibold text-muted-foreground bg-card" : "h-7 text-data font-medium text-muted-foreground/70 bg-muted",
+                          headerClassName,
+                        )}
+                      >
+                        <span className="sticky left-2">
+                          {group.label}
+                          <span className="ml-1.5 normal-case tracking-normal opacity-70">{group.count}</span>
+                        </span>
+                      </td>
+                    </tr>,
+                  );
+                }
+                nodes.push(
                   <DataTableRow
                     key={row.id}
                     row={row}
@@ -698,7 +730,7 @@ export function DataTable<TData>({
                     style={rowStyle?.(row.original, index)}
                     selected={isRowSelected?.(row.original)}
                   />,
-                ];
+                );
                 // Panel mode: render the custom panel beneath an expanded row.
                 if (renderExpandedPanel && row.depth === 0 && row.getIsExpanded()) {
                   nodes.push(
@@ -717,6 +749,30 @@ export function DataTable<TData>({
       </DndContext>
     </div>
   );
+}
+
+/**
+ * Rows in group order (a stable sort, so the table's own sort holds inside
+ * each group), each group's first row carrying the sub-header to draw.
+ */
+function groupedRows<TData>(
+  rows: Row<TData>[],
+  groupBy: DataTableProps<TData>["groupBy"],
+): { row: Row<TData>; group: { key: string; label: string; count: number } | null }[] {
+  if (!groupBy) return rows.map((row) => ({ row, group: null }));
+  const rank = (k: string) => {
+    const i = groupBy.order.indexOf(k);
+    return i === -1 ? groupBy.order.length : i;
+  };
+  const sorted = rows
+    .map((row, i) => ({ row, i, key: groupBy.key(row.original) }))
+    .sort((a, b) => rank(a.key) - rank(b.key) || a.i - b.i);
+  const counts = new Map<string, number>();
+  for (const r of sorted) counts.set(r.key, (counts.get(r.key) ?? 0) + 1);
+  return sorted.map((r, n) => ({
+    row: r.row,
+    group: n === 0 || sorted[n - 1].key !== r.key ? { key: r.key, label: groupBy.label(r.key), count: counts.get(r.key)! } : null,
+  }));
 }
 
 function DataTableRow<TData>({
