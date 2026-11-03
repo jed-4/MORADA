@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Check, Filter, Loader2, Plus, Search, Truck } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Filter, Loader2, Plus, Search, Truck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -25,8 +25,8 @@ import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { AssetListRow } from "@shared/schema";
 import {
+  ASSET_GROUPS,
   ASSET_STATUS_LABELS,
-  ASSET_TYPES,
   ASSET_TYPE_LABELS,
   assetDueSummary,
   isHeavyVehicle,
@@ -35,11 +35,14 @@ import {
   type MeterType,
   type AssetDueSummary,
   type AssetStatus,
+  type AssetGroupId,
   type AssetType,
 } from "@shared/assets";
 
 type Row = AssetListRow & { due: AssetDueSummary };
-type TypeFilter = "all" | AssetType;
+type TypeFilter = "all" | AssetGroupId;
+
+const groupOf = (type: string) => ASSET_GROUPS.find((g) => (g.types as readonly string[]).includes(type))?.id ?? "equipment";
 
 const INACTIVE: string[] = ["archived", "sold"];
 
@@ -80,7 +83,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     const q = search.trim().toLowerCase();
     return withDue
       .filter((a) => showInactive || !INACTIVE.includes(a.status))
-      .filter((a) => typeFilter === "all" || a.assetType === typeFilter)
+      .filter((a) => typeFilter === "all" || groupOf(a.assetType) === typeFilter)
       .filter((a) => !q || [a.name, a.rego, a.make, a.model, a.vin, nameOf(a.assignedUserId)].some((v) => v?.toLowerCase().includes(q)))
       // Overdue first, then due soon, then A–Z.
       .sort((a, b) => {
@@ -90,11 +93,26 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withDue, showInactive, typeFilter, search, people]);
 
-  const typeCounts = useMemo(() => {
+  const groupCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[a.assetType] = (c[a.assetType] ?? 0) + 1;
+    for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[groupOf(a.assetType)] = (c[groupOf(a.assetType)] ?? 0) + 1;
     return c;
   }, [withDue, showInactive]);
+
+  // Vehicles (with trailers), Plant, Equipment — each its own section; an
+  // empty group isn't shown.
+  const groups = useMemo(
+    () => ASSET_GROUPS.map((g) => ({ ...g, rows: rows.filter((r) => groupOf(r.assetType) === g.id) })).filter((g) => g.rows.length > 0),
+    [rows],
+  );
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const columns = useMemo<ColumnDef<Row, unknown>[]>(
     () => [
@@ -209,7 +227,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
 
   const filterButtons: { id: TypeFilter; label: string }[] = [
     { id: "all", label: "All" },
-    ...ASSET_TYPES.filter((t) => typeCounts[t] || typeFilter === t).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
+    ...ASSET_GROUPS.filter((g) => groupCounts[g.id] || typeFilter === g.id).map((g) => ({ id: g.id as TypeFilter, label: g.label })),
   ];
 
   const activeFilters = (typeFilter !== "all" ? 1 : 0) + (showInactive ? 1 : 0);
@@ -288,15 +306,34 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
             {rows.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">Nothing matches.</p>
             ) : (
-              <DataTable
-                data={rows}
-                columns={columns}
-                storageKey="business-assets"
-                rowKey={(r) => r.id}
-                rowHeight={44}
-                rowClassName={(r) => cn("cursor-pointer", INACTIVE.includes(r.status) && "opacity-50")}
-                onRowClick={(r) => onOpen(r.id)}
-              />
+              groups.map((g, i) => {
+                const open = !collapsed.has(g.id);
+                return (
+                  <section key={g.id} className={cn(i > 0 && "border-t border-border")} data-testid={`group-assets-${g.id}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(g.id)}
+                      className="w-full h-8 flex items-center gap-1.5 px-3 text-left bg-muted/30 hover:bg-muted/50"
+                      aria-expanded={open}
+                    >
+                      {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                      <span className="text-xs font-semibold">{g.label}</span>
+                      <span className="text-[11px] text-muted-foreground">{g.rows.length}</span>
+                    </button>
+                    {open && (
+                      <DataTable
+                        data={g.rows}
+                        columns={columns}
+                        storageKey="business-assets"
+                        rowKey={(r) => r.id}
+                        rowHeight={44}
+                        rowClassName={(r) => cn("cursor-pointer", INACTIVE.includes(r.status) && "opacity-50")}
+                        onRowClick={(r) => onOpen(r.id)}
+                      />
+                    )}
+                  </section>
+                );
+              })
             )}
           </>
         )}

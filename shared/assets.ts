@@ -11,8 +11,17 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   vehicle: "Vehicle",
   trailer: "Trailer",
   plant: "Plant",
-  tool: "Tool",
+  // Stored as "tool"; shown as Equipment (generators, compactors, lasers…).
+  tool: "Equipment",
 };
+
+/** How the register groups its list: vehicles and trailers together. */
+export const ASSET_GROUPS = [
+  { id: "vehicles", label: "Vehicles", types: ["vehicle", "trailer"] },
+  { id: "plant", label: "Plant", types: ["plant"] },
+  { id: "equipment", label: "Equipment", types: ["tool"] },
+] as const satisfies readonly { id: string; label: string; types: readonly AssetType[] }[];
+export type AssetGroupId = (typeof ASSET_GROUPS)[number]["id"];
 
 // Archived is the normal way out. Delete exists, but it takes the history with it.
 export const ASSET_STATUSES = ["active", "off_road", "sold", "archived"] as const;
@@ -419,7 +428,7 @@ export const PRESTART_TEMPLATES: Record<PrestartTemplateKey, { label: string; it
     ],
   },
   tool: {
-    label: "Tool",
+    label: "Equipment",
     items: [
       { key: "leads", label: "Leads & plug undamaged", critical: true },
       { key: "guards", label: "Guards in place", critical: true },
