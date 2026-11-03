@@ -22984,10 +22984,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const approval = await storage.createBillApproval(validationResult.data);
-      
-      await storage.updateBill(req.params.id, { 
-        status: "awaiting_payment" 
+
+      await storage.updateBill(req.params.id, {
+        status: "awaiting_payment"
       });
+
+      // A bill approved here that never reached Xero (approved straight from
+      // review, with no edit to trigger the save-time push) used to stay out of
+      // Xero for good. Send it now. It still arrives as "Awaiting Approval":
+      // approving happens in Xero (Jed, 20 Oct, confirmed 3 Nov), so a bill
+      // already in Xero is left alone.
+      const approverCompanyId = (req as any).user?.companyId;
+      if (!ownedBill.xeroInvoiceId && approverCompanyId) {
+        scheduleAutoPushBill(req.params.id, approverCompanyId);
+      }
 
       // Log activity if comments were added
       if (req.body.comments && req.body.comments.trim()) {
