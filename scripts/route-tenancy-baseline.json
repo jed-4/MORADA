@@ -133,7 +133,6 @@
     "PATCH /api/proposal-milestones/:id — insertProposalPaymentMilestoneSchema",
     "PATCH /api/proposals/:id — insertProposalSchema",
     "PATCH /api/purchase-order-templates/:id — insertPurchaseOrderTemplateSchema",
-    "PATCH /api/purchase-orders/:id — insertPurchaseOrderSchema",
     "PATCH /api/reminders/:id — insertReminderSchema",
     "PATCH /api/rfi-templates/:id — insertRfiTemplateSchema",
     "PATCH /api/rfis/:id — insertRfiSchema",

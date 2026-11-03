@@ -87,6 +87,8 @@ import {
   insertContactSchema,
   insertContactInsuranceSchema,
   insertBillSchema,
+  updatePurchaseOrderSchema,
+  updatePurchaseOrderItemSchema,
   insertBillLineItemSchema,
   insertBillApprovalSchema,
   insertBillLineItemAllowanceSchema,
@@ -297,6 +299,7 @@ import { appendPoint, copyScheduleItems, createTemplateSchedule, ensureTemplateS
 import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
+import { PO_MOUNT, PO_MOUNTS, PO_SERVER_MANAGED_FIELDS, decidePOAccess, narrowPOList, poActionFor } from "./poAccessPolicy";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
@@ -2305,6 +2308,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // it gets nothing but the onboarding surface — this closes the list endpoints
   // that silently skipped their company filter when companyId was undefined.
   app.use('/api', requireCompany);
+
+  // Purchase orders: one gate in front of every PO route, so a route added
+  // later cannot miss it. The policy and its exceptions are in poAccessPolicy.
+  app.use(PO_MOUNTS, async (req, res, next) => {
+    try {
+      const action = poActionFor(req.method, req.baseUrl, req.path);
+      const user = req.user as any;
+      if (!action || !user?.companyId) return next();
+      const segs = req.path.split("/").filter(Boolean);
+      const namesPO = req.baseUrl === PO_MOUNT && segs.length > 0 && segs[0] !== "next-number";
+      const [hasPOPermission, hasBillView] = await Promise.all([
+        userHasPermission(user, "financial.purchase_orders", action),
+        action === "view" ? userHasPermission(user, "financial.bills", "view") : Promise.resolve(false),
+      ]);
+      const needPO = !hasPOPermission && !hasBillView && namesPO;
+      const po = needPO ? await storage.getPurchaseOrder(segs[0]) : undefined;
+      const result = decidePOAccess({
+        action, baseUrl: req.baseUrl, path: req.path, body: req.body, user,
+        hasPOPermission, hasBillView, po: po as any,
+      });
+      if (result === "deny") {
+        return res.status(403).json({ error: "You don't have permission to do that on purchase orders" });
+      }
+      (req as any).poAccess = result;
+      next();
+    } catch (error) {
+      console.error("Purchase order permission check failed:", error);
+      res.status(500).json({ error: "Permission check failed" });
+    }
+  });
 
   // ---- Billing: select a plan (starts the 14-day trial) ----
   // Called at the end of onboarding once the company exists. Sets the chosen
@@ -21328,6 +21361,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       billData.billNumber = await storage.getNextBillNumber(billData.companyId);
 
       const validationResult = insertBillSchema.safeParse(billData);
+      if (validationResult.success && validationResult.data.matchedSitePOId
+        && !await verifyPOOwnership(validationResult.data.matchedSitePOId, billData.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -21398,6 +21435,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
+      }
+      // Linking recomputes the PO's status, so a foreign id would rewrite
+      // another company's PO.
+      const linkedPOId = validationResult.data.matchedSitePOId;
+      if (linkedPOId && !await verifyPOOwnership(linkedPOId, (req as any).user?.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
       }
 
       const previous = await getOwnedBill(req, res, req.params.id);
@@ -24748,7 +24791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         poType as string | undefined,
         workerUserId
       );
-      res.json(purchaseOrders);
+      res.json((req as any).poAccess === "limited" ? narrowPOList(purchaseOrders, req.user.id) : purchaseOrders);
     } catch (error) {
       console.error("Failed to fetch purchase orders:", error);
       res.status(500).json({ error: "Failed to fetch purchase orders" });
@@ -24768,7 +24811,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (po.companyId !== req.user.companyId) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
-      res.json(po);
+      const ownSite = po.poType === "site" && po.createdById === req.user.id;
+      res.json((req as any).poAccess === "limited" && !ownSite ? { ...po, internalNotes: null } : po);
     } catch (error) {
       console.error("Failed to fetch purchase order:", error);
       res.status(500).json({ error: "Failed to fetch purchase order" });
@@ -24849,13 +24893,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.body.requiresApproval = false;
       }
 
-      const poData = {
+      const poData: any = {
         ...req.body,
         poNumber,
         poType,
+        status: "draft",
         companyId: req.user.companyId,
         createdById: req.user.id
       };
+      for (const field of PO_SERVER_MANAGED_FIELDS) delete poData[field];
 
       // Mutual exclusivity: a PO supplier is either a contact OR a team-member user, never both.
       if (poData.supplierUserId && poData.supplierId) {
@@ -24870,6 +24916,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const po = await storage.createPurchaseOrder(validationResult.data);
       res.status(201).json(po);
@@ -24908,13 +24957,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order not found" });
       }
 
-      const validationResult = insertPurchaseOrderSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       // Mutual exclusivity: when one supplier ref is being set, clear the other so a PO never points at both.
       const patch: any = { ...validationResult.data };
@@ -25117,7 +25169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await sendGenericEmail({
           to,
           subject: subject || `Purchase Order ${(po as any).poNumber}`,
-          html: body ? body.replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
+          html: body ? escapeHtml(body).replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
           from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
@@ -25144,6 +25196,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Helper to verify PO ownership
+  // Ids a PO or its lines point at must be this company's. A row carrying
+  // another tenant's id would otherwise be written straight through.
+  async function firstForeignPOReference(
+    data: { projectId?: string | null; supplierId?: string | null; supplierUserId?: string | null;
+      costCodeId?: string | null; scopeStageId?: string | null; sourceEstimateId?: string | null;
+      sourceTimesheetId?: string | null },
+    companyId: string,
+  ): Promise<string | null> {
+    const inCompany = async (table: any, id: string) =>
+      (await db.select({ id: table.id }).from(table)
+        .where(and(eq(table.id, id), eq(table.companyId, companyId))).limit(1)).length > 0;
+    if (data.projectId && !await inCompany(schema.projects, data.projectId)) return "project";
+    if (data.supplierId && !await inCompany(schema.contacts, data.supplierId)) return "supplier";
+    if (data.supplierUserId && !await inCompany(schema.users, data.supplierUserId)) return "supplier";
+    if (data.costCodeId && !await inCompany(schema.costCodes, data.costCodeId)) return "cost code";
+    if (data.scopeStageId && !await inCompany(schema.scopeStages, data.scopeStageId)) return "scope stage";
+    if (data.sourceEstimateId && !await inCompany(schema.estimates, data.sourceEstimateId)) return "estimate";
+    if (data.sourceTimesheetId) {
+      // Timesheets have no companyId: they belong to their user's company.
+      const [row] = await db.select({ companyId: schema.users.companyId }).from(schema.timesheets)
+        .innerJoin(schema.users, eq(schema.timesheets.userId, schema.users.id))
+        .where(eq(schema.timesheets.id, data.sourceTimesheetId)).limit(1);
+      if (row?.companyId !== companyId) return "timesheet";
+    }
+    return null;
+  }
+
   async function verifyPOOwnership(poId: string, companyId: string): Promise<boolean> {
     const po = await storage.getPurchaseOrder(poId);
     return po !== undefined && po.companyId === companyId;
@@ -25192,6 +25271,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
       const item = await storage.createPurchaseOrderItem(validationResult.data);
       res.status(201).json(item);
     } catch (error) {
@@ -25215,7 +25297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items must be an array" });
       }
 
-      const createdItems = [];
+      const validItems = [];
       for (const item of items) {
         const validationResult = insertPurchaseOrderItemSchema.safeParse({
           ...item,
@@ -25229,8 +25311,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const created = await storage.createPurchaseOrderItem(validationResult.data);
-        createdItems.push(created);
+        const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+        if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+        validItems.push(validationResult.data);
+      }
+
+      const createdItems = [];
+      for (const item of validItems) {
+        createdItems.push(await storage.createPurchaseOrderItem(item));
       }
 
       res.status(201).json(createdItems);
@@ -25257,13 +25345,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
-      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const item = await storage.updatePurchaseOrderItem(req.params.id, validationResult.data);
       if (!item) {
@@ -25313,6 +25404,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "itemIds must be an array" });
       }
 
+      const ownIds = new Set((await storage.getPurchaseOrderItems(req.params.poId)).map((i) => i.id));
+      if (!itemIds.every((id: string) => ownIds.has(id))) {
+        return res.status(400).json({ error: "Items must belong to this purchase order" });
+      }
+
       const updates = itemIds.map((id: string, index: number) => ({
         id,
         displayOrder: index,
@@ -25342,13 +25438,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
-      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      const validationResult = updatePurchaseOrderItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
+      if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const item = await storage.updatePurchaseOrderItem(req.params.itemId, validationResult.data);
       if (!item) {
@@ -25906,6 +26005,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await userHasPermission(req.user, "financial.purchase_orders", "add")) {
+        return res.status(403).json({ error: "You don't have permission to do that on purchase orders" });
       }
       const allTimesheets = await storage.getTimesheets(undefined, { companyId: req.user.companyId });
 
@@ -44840,7 +44942,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Push BuildPro purchase order as Xero PurchaseOrder (DRAFT)
-  app.post("/api/xero/push-purchase-order", requireAuth, async (req, res) => {
+  app.post("/api/xero/push-purchase-order", requireAuth, requirePermission("financial.purchase_orders", "send"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -45140,7 +45242,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
   // Xero: Pull current Xero status for one PO and mirror it back into BuildPro.
   // Used both by the per-PO "Refresh from Xero" button and by the polling job.
-  app.post("/api/xero/sync-purchase-order/:id", requireAuth, async (req, res) => {
+  app.post("/api/xero/sync-purchase-order/:id", requireAuth, requirePermission("financial.purchase_orders", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
