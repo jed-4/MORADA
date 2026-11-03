@@ -1485,6 +1485,9 @@ export type PaymentTermsOption = typeof paymentTermsOptions.$inferSelect;
 // System Configuration
 export const systemConfiguration = pgTable("system_configuration", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // One row per company (migration 0124). The row with no company is the
+  // global fallback for a company that has never saved its own.
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
   
   // Regional Settings
   language: text("language").notNull().default("en-AU"), // English (Australia)
@@ -1550,6 +1553,7 @@ export const systemConfiguration = pgTable("system_configuration", {
 
 export const insertSystemConfigurationSchema = createInsertSchema(systemConfiguration).omit({
   id: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 });

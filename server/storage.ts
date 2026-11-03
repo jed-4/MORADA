@@ -685,8 +685,10 @@ export interface IStorage {
   getAllCompanySettings(): Promise<CompanySettings[]>;
 
   // System Configuration
-  getSystemConfiguration(): Promise<SystemConfiguration | undefined>;
-  updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
+  /** The company's own settings row, else the global fallback row. */
+  getSystemConfiguration(companyId?: string | null): Promise<SystemConfiguration | undefined>;
+  /** Writes the company's own row, creating it from the global row first. */
+  updateSystemConfiguration(companyId: string, config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
 
   // Field Categories CRUD (Buildern-style)
   // Field Settings are per company (migration 0056) — companyId is REQUIRED on
@@ -1895,7 +1897,7 @@ export class MemStorage implements IStorage {
   // Keyed by companyId. A single shared row here would make the in-memory
   // store behave exactly like the cross-tenant bug this replaced.
   private companySettings: Map<string, CompanySettings> = new Map();
-  private systemConfiguration: SystemConfiguration | undefined;
+  private systemConfigurations = new Map<string, SystemConfiguration>();
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
   private selections: Map<string, Selection>;
@@ -5964,15 +5966,18 @@ export class MemStorage implements IStorage {
   }
 
   // System Configuration
-  async getSystemConfiguration(): Promise<SystemConfiguration | undefined> {
-    return this.systemConfiguration;
+  async getSystemConfiguration(companyId?: string | null): Promise<SystemConfiguration | undefined> {
+    return (companyId && this.systemConfigurations.get(companyId)) || undefined;
   }
 
-  async updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
-    if (!this.systemConfiguration) {
+  async updateSystemConfiguration(companyId: string, config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
+    const current = this.systemConfigurations.get(companyId);
+    let next: SystemConfiguration;
+    if (!current) {
       // Create new system configuration if none exist
-      this.systemConfiguration = {
+      next = {
         id: randomUUID(),
+        companyId,
         language: "en-AU",
         measurementSystem: "metric",
         currency: "AUD",
@@ -6003,16 +6008,17 @@ export class MemStorage implements IStorage {
         createdAt: new Date(),
         updatedAt: new Date(),
         ...config,
-      };
+      } as SystemConfiguration;
     } else {
       // Update existing configuration
-      this.systemConfiguration = {
-        ...this.systemConfiguration,
+      next = {
+        ...current,
         ...config,
         updatedAt: new Date(),
       };
     }
-    return this.systemConfiguration;
+    this.systemConfigurations.set(companyId, next);
+    return next;
   }
 
   // Field Categories CRUD (Buildern-style)
@@ -15625,30 +15631,45 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getSystemConfiguration(): Promise<SystemConfiguration | undefined> {
-    // Get first (and only) system configuration record
-    const [config] = await db.select().from(schema.systemConfiguration).limit(1);
-    return config;
+  // System configuration is per company (migration 0124). It used to be one
+  // global row that every company read and any company admin could rewrite.
+  // The row with no company is kept as the fallback for a company that has
+  // never saved its own, so reads never come back empty after the migration.
+  async getSystemConfiguration(companyId?: string | null): Promise<SystemConfiguration | undefined> {
+    if (companyId) {
+      const [own] = await db.select().from(schema.systemConfiguration)
+        .where(eq(schema.systemConfiguration.companyId, companyId))
+        .limit(1);
+      if (own) return own;
+    }
+    const [global] = await db.select().from(schema.systemConfiguration)
+      .where(isNull(schema.systemConfiguration.companyId))
+      .orderBy(asc(schema.systemConfiguration.createdAt))
+      .limit(1);
+    return global;
   }
-  
-  async updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
-    // Get existing config
-    const existing = await this.getSystemConfiguration();
-    
-    if (existing) {
-      // Update existing record
+
+  async updateSystemConfiguration(companyId: string, config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
+    const [own] = await db.select().from(schema.systemConfiguration)
+      .where(eq(schema.systemConfiguration.companyId, companyId))
+      .limit(1);
+
+    if (own) {
       const [updated] = await db.update(schema.systemConfiguration)
         .set({ ...config, updatedAt: new Date() })
-        .where(eq(schema.systemConfiguration.id, existing.id))
+        .where(eq(schema.systemConfiguration.id, own.id))
         .returning();
       return updated;
-    } else {
-      // Create new record with defaults
-      const [created] = await db.insert(schema.systemConfiguration)
-        .values(config as InsertSystemConfiguration)
-        .returning();
-      return created;
     }
+
+    // First save for this company: start from the global row so the fields
+    // the form didn't send keep the values the company was already seeing.
+    const fallback = await this.getSystemConfiguration(null);
+    const { id: _id, companyId: _companyId, createdAt: _createdAt, updatedAt: _updatedAt, ...inherited } = (fallback ?? {}) as Partial<SystemConfiguration>;
+    const [created] = await db.insert(schema.systemConfiguration)
+      .values({ ...inherited, ...config, companyId } as any)
+      .returning();
+    return created;
   }
   // ── Field Settings (per company — migration 0056) ──────────────────────────
   // Every method takes companyId and filters on it. Before 0056 these tables
@@ -17608,11 +17629,9 @@ export class DbStorage implements IStorage {
       const jobNumber = project?.jobNumber || "";
 
       // Get system config for prefix
-      const config = await db.select()
-        .from(schema.systemConfiguration)
-        .limit(1);
-      const rfiPrefix = config[0]?.rfiPrefix || "RFI-";
-      const startNumber = config[0]?.rfiStartNumber || 1000;
+      const config = await this.getSystemConfiguration(companyId);
+      const rfiPrefix = config?.rfiPrefix || "RFI-";
+      const startNumber = config?.rfiStartNumber || 1000;
 
       // Get count of RFIs for this project
       const existingRfis = await db.select()
@@ -18079,7 +18098,7 @@ export class DbStorage implements IStorage {
 
   async getNextBillNumber(companyId: string): Promise<string> {
     try {
-      const sysConfig = await this.getSystemConfiguration();
+      const sysConfig = await this.getSystemConfiguration(companyId);
       const prefix = sysConfig?.billPrefix || "BILL-";
       const startNumber = sysConfig?.billStartNumber || 1000;
 
@@ -23542,6 +23561,15 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // The company whose settings (timezone) apply to this user's clock.
+  private async companyIdOfUser(userId: string): Promise<string | null> {
+    const [row] = await db.select({ companyId: schema.users.companyId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    return row?.companyId ?? null;
+  }
+
   async clockIn(projectId: string | null, userId: string, costCodeId?: string): Promise<Timesheet> {
     try {
       // First, clock out any existing active timesheet
@@ -23552,7 +23580,7 @@ export class DbStorage implements IStorage {
 
       // Create new active timesheet — record HH:mm and date in the company timezone
       const now = new Date();
-      const cfg = await this.getSystemConfiguration();
+      const cfg = await this.getSystemConfiguration(await this.companyIdOfUser(userId));
       const tz = cfg?.timezone || "Australia/Sydney";
       const startTime = formatHHmmInTz(now, tz);
       const dateInTz = calendarDateMidnightUtcInTz(now, tz);
@@ -23600,7 +23628,7 @@ export class DbStorage implements IStorage {
       }
 
       const now = new Date();
-      const cfg = await this.getSystemConfiguration();
+      const cfg = await this.getSystemConfiguration(await this.companyIdOfUser(timesheet.userId));
       const tz = cfg?.timezone || "Australia/Sydney";
       const endTime = formatHHmmInTz(now, tz);
 
