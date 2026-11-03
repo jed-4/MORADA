@@ -192,6 +192,29 @@ export async function notifyTaskAssignment(params: {
   }
 }
 
+// A workflow's "notify" step (server/services/workflowEngine.ts). The message
+// is the company's own words; the title is the workflow's name.
+export async function notifyWorkflowMessage(params: {
+  userId: string;
+  companyId: string;
+  title: string;
+  message: string;
+  link: string;
+  createdByUserId: string | null;
+}): Promise<void> {
+  await safeCreate({
+    userId: params.userId,
+    companyId: params.companyId,
+    type: "workflow_message",
+    title: params.title,
+    message: params.message,
+    link: params.link,
+    entityType: "workflow",
+    entityId: null,
+    createdByUserId: params.createdByUserId,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Timesheets
 // ---------------------------------------------------------------------------
