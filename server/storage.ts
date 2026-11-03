@@ -696,7 +696,7 @@ export interface IStorage {
   getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined>;
   getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined>;
   getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined>;
-  seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }>;
+  seedMissingBuiltInCategories(onlyCompanyId?: string): Promise<{ addedCategories: string[]; addedOptions: string[] }>;
   createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory>;
   updateFieldCategory(id: string, category: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined>;
   deleteFieldCategory(id: string, companyId: string): Promise<boolean>;
@@ -6043,7 +6043,7 @@ export class MemStorage implements IStorage {
     };
   }
 
-  async seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
+  async seedMissingBuiltInCategories(_onlyCompanyId?: string): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
     // MemStorage doesn't need this - it's only for database migrations
     return { addedCategories: [], addedOptions: [] };
   }
@@ -8592,9 +8592,13 @@ export class DbStorage implements IStorage {
   }
 
   /** Copy one company's field categories + options to another, with fresh ids. */
+  //
+  // Built-in categories only. The source is another real company, so its own
+  // custom categories (and their options) are its data: they used to be copied
+  // into every new signup.
   private async cloneFieldSettings(fromCompanyId: string, toCompanyId: string, now: Date): Promise<void> {
     const categories = await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.companyId, fromCompanyId));
+      .where(and(eq(schema.fieldCategories.companyId, fromCompanyId), eq(schema.fieldCategories.isBuiltIn, true)));
     if (categories.length === 0) return;
 
     const categoryIdMap = new Map<string, string>();
@@ -8608,8 +8612,9 @@ export class DbStorage implements IStorage {
       updatedAt: now,
     })));
 
-    const options = await db.select().from(schema.fieldOptions)
-      .where(eq(schema.fieldOptions.companyId, fromCompanyId));
+    const options = (await db.select().from(schema.fieldOptions)
+      .where(eq(schema.fieldOptions.companyId, fromCompanyId)))
+      .filter((o) => categoryIdMap.has(o.categoryId));
     if (options.length === 0) return;
 
     // Remap ids first so parentId can point at the CLONE, not the source.
@@ -8699,7 +8704,8 @@ export class DbStorage implements IStorage {
   // seeding for every other company — which is how companies created after
   // 0056 ended up with no field settings at all. Missing keys are now resolved
   // per company, and a company holding nothing gets the whole canonical set.
-  async seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
+  /** `onlyCompanyId`: seed just that company (the HTTP route). Omitted: every company (startup/migrations). */
+  async seedMissingBuiltInCategories(onlyCompanyId?: string): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
     const now = new Date();
     const addedCategories: string[] = [];
     const addedOptions: string[] = [];
@@ -8736,7 +8742,9 @@ export class DbStorage implements IStorage {
       keysByCompany.set(row.companyId, set);
     }
     
-    const companies = await db.select({ id: schema.companies.id }).from(schema.companies);
+    const companies = onlyCompanyId
+      ? [{ id: onlyCompanyId }]
+      : await db.select({ id: schema.companies.id }).from(schema.companies);
     
     for (const company of companies) {
       const existingKeys = keysByCompany.get(company.id);

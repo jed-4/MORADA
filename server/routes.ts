@@ -4866,11 +4866,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Seed missing built-in field categories (for production databases that predate new categories)
   app.post("/api/field-categories/seed-missing", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const result = await storage.seedMissingBuiltInCategories();
+      // The caller's company only; it used to seed (and list) every company.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const result = await storage.seedMissingBuiltInCategories(companyId);
       res.json({
         message: "Seeding complete",
-        addedCategories: result.addedCategories,
-        addedOptions: result.addedOptions,
+        addedCategories: result.addedCategories.length,
+        addedOptions: result.addedOptions.length,
       });
     } catch (error) {
       console.error("Error seeding missing categories:", error);
@@ -13506,7 +13509,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const updatedUser = await storage.updateUser(targetUserId, { timezone });
-      res.json(updatedUser);
+      // The raw row carries the password hash.
+      res.json(updatedUser ? toSafeUser(updatedUser) : updatedUser);
     } catch (error) {
       console.error("Error updating user timezone:", error);
       res.status(500).json({ error: "Failed to update timezone" });
@@ -14322,7 +14326,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getTasks(undefined, undefined, undefined, undefined, undefined, companyId).catch(() => []),
         db.select().from(billsTbl),
         db.select().from(budgetsTbl),
-        db.select().from(timesheetsTbl),
+        // Only timesheets by this company's people. Every company's used to be
+        // loaded, so other companies' project-less timesheets counted here.
+        db.select().from(timesheetsTbl).where(inArray(
+          timesheetsTbl.userId,
+          db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.companyId, companyId)),
+        )),
       ]);
 
       const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
@@ -14394,7 +14403,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
   app.get("/api/business/kpis", requireAuth, legacyKpisHandler);
-  app.get("/api/business/kpis_legacy_removed", requireAuth, legacyKpisHandler);
 
   // ============================================================
   // BuildPro KPI endpoints (task #248)
@@ -15936,7 +15944,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/permissions", requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
+  // The permission catalogue is shared by every company, so only platform staff
+  // can add to it.
+  app.post("/api/permissions", requireAuth, requirePlatformStaff, async (req, res) => {
     try {
       const validationResult = insertPermissionSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -15956,6 +15966,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Role-Permission Matrix Routes
   app.get("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
+      const [role] = await db.select({ companyId: schema.userRoles.companyId })
+        .from(schema.userRoles).where(eq(schema.userRoles.id, req.params.roleId)).limit(1);
+      if (!role || role.companyId !== (req.user as any)?.companyId) return res.status(404).json({ error: "Role not found" });
       const rolePermissions = await storage.getRolePermissions(req.params.roleId);
       res.json(rolePermissions);
     } catch (error) {
@@ -26289,7 +26302,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Updates must be an array" });
       }
 
-      await storage.reorderFavoriteSuppliers(updates);
+      // Only the caller's own favourites can be reordered.
+      const ids = updates.map((u: any) => u?.id).filter((x: any) => typeof x === "string");
+      const mine = ids.length
+        ? new Set((await db.select({ id: schema.favoriteSuppliers.id }).from(schema.favoriteSuppliers)
+            .where(and(inArray(schema.favoriteSuppliers.id, ids), eq(schema.favoriteSuppliers.userId, (req.user as any)?.id ?? "")))).map((r) => r.id))
+        : new Set<string>();
+      await storage.reorderFavoriteSuppliers(updates.filter((u: any) => mine.has(u?.id)));
       res.status(200).json({ success: true });
     } catch (error) {
       console.error("Failed to reorder favorite suppliers:", error);
@@ -26346,6 +26365,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Remove favorite cost code
   app.delete("/api/favorite-cost-codes/:id", async (req, res) => {
     try {
+      const [fav] = await db.select({ userId: schema.favoriteCostCodes.userId })
+        .from(schema.favoriteCostCodes).where(eq(schema.favoriteCostCodes.id, req.params.id)).limit(1);
+      if (!fav || fav.userId !== (req.user as any)?.id) return res.status(404).json({ error: "Favorite cost code not found" });
       const deleted = await storage.deleteFavoriteCostCode(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Favorite cost code not found" });
@@ -26365,7 +26387,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Updates must be an array" });
       }
 
-      await storage.reorderFavoriteCostCodes(updates);
+      // Only the caller's own favourites can be reordered.
+      const ids = updates.map((u: any) => u?.id).filter((x: any) => typeof x === "string");
+      const mine = ids.length
+        ? new Set((await db.select({ id: schema.favoriteCostCodes.id }).from(schema.favoriteCostCodes)
+            .where(and(inArray(schema.favoriteCostCodes.id, ids), eq(schema.favoriteCostCodes.userId, (req.user as any)?.id ?? "")))).map((r) => r.id))
+        : new Set<string>();
+      await storage.reorderFavoriteCostCodes(updates.filter((u: any) => mine.has(u?.id)));
       res.status(200).json({ success: true });
     } catch (error) {
       console.error("Failed to reorder favorite cost codes:", error);
@@ -31121,7 +31149,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/site-diary-templates/:id", async (req, res) => {
     try {
       const template = await storage.getSiteDiaryTemplate(req.params.id);
-      if (!template) {
+      // Shared system templates have no company; anything else must be ours.
+      if (!template || ((template as any).companyId && (template as any).companyId !== (req.user as any)?.companyId)) {
         return res.status(404).json({ error: "Template not found" });
       }
       res.json(template);
