@@ -41,13 +41,15 @@ export const PUSH_NOTIFICATION_GROUPS: PushNotificationGroup[] = [
   {
     key: "tasks",
     label: "Tasks & checklists",
-    description: "When a task or checklist is assigned to you, completed, or mentions you.",
+    description: "When a task or checklist is assigned to you, completed, or mentions you, and messages from workflows.",
     types: [
       "task_assigned",
       "task_completed",
       "task_mentioned",
       "checklist_assigned",
       "checklist_item_assigned",
+      // An Operations workflow's "notify" step.
+      "workflow_message",
     ],
   },
   {

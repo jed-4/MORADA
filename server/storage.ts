@@ -25555,6 +25555,9 @@ export class DbStorage implements IStorage {
       const existingTaskKeys = new Set<string>();
       for (const task of existingTasks) {
         const taskData = task as any;
+        // A one-off a workflow made from this template is not this week's
+        // recurring instance, so it mustn't stop that being generated.
+        if (taskData.referenceType === "workflow_run") continue;
         if (taskData.templateId && (taskData.occurrenceDate || taskData.dueDate)) {
           // Include assigneeId in the key for per-user duplicate detection
           // Use occurrenceDate if available (for moved tasks), fallback to dueDate for legacy tasks
@@ -26012,6 +26015,8 @@ export class DbStorage implements IStorage {
   async createNextRecurringTask(completedTask: Task, companyId: string): Promise<Task | null> {
     try {
       if (!completedTask.templateId || !completedTask.dueDate) return null;
+      // A workflow's one-off from a recurring template doesn't roll forward.
+      if ((completedTask as any).referenceType === "workflow_run") return null;
       
       const template = await this.getTaskTemplate(completedTask.templateId, companyId);
       if (!template || !template.isRecurringTemplate) return null;

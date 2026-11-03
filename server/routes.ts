@@ -345,6 +345,7 @@ import { promises as fsPromises } from "node:fs";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, emitMessagesRead, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
+import { fireWorkflowEvent, fireProjectChangeWorkflows, runWorkflowManually, actorFrom, normaliseWorkflow } from "./services/workflowEngine";
 import { getWeatherForProject } from "./services/weather";
 import {
   notifyTaskCompleted,
@@ -3429,6 +3430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as any;
       const doc = await storage.approveDoc(owned.id, user.companyId, { id: user.id, name: userDisplayName(user) });
       if (!doc) return res.status(404).json({ error: "Doc not found" });
+      fireWorkflowEvent({ type: "doc_approved", companyId: user.companyId, docId: doc.id, docTitle: doc.title, docType: doc.docType, version: doc.currentVersion, actor: actorFrom(user) });
       res.json(doc);
     } catch (error) {
       res.status(500).json({ error: "Failed to approve" });
@@ -3933,6 +3935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? `${user.firstName} ${user.lastName}`
           : user.email || "Someone";
         await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
+        fireWorkflowEvent({ type: "task_completed", companyId: user.companyId, taskId: task.id, taskTitle: task.title, templateId: task.templateId ?? null, projectId: task.projectId ?? null, actor: actorFrom(user) });
       }
 
       // Create notification when task is assigned to a different user
@@ -4006,6 +4009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? `${user.firstName} ${user.lastName}`
           : user.email || "Someone";
         await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
+        fireWorkflowEvent({ type: "task_completed", companyId: user.companyId, taskId: task.id, taskTitle: task.title, templateId: task.templateId ?? null, projectId: task.projectId ?? null, actor: actorFrom(user) });
       }
 
       // Record auto-activity for the status change (best-effort).
@@ -4088,6 +4092,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const updatedBulkTask = await storage.updateTask(taskId, { status });
               if (existingBulkTask && updatedBulkTask) {
                 await recordTaskActivity(req, existingBulkTask, updatedBulkTask);
+                if (existingBulkTask.status !== "done" && updatedBulkTask.status === "done" && (updatedBulkTask as any).companyId === user.companyId) {
+                  fireWorkflowEvent({ type: "task_completed", companyId: user.companyId, taskId: updatedBulkTask.id, taskTitle: updatedBulkTask.title, templateId: (updatedBulkTask as any).templateId ?? null, projectId: (updatedBulkTask as any).projectId ?? null, actor: actorFrom(user) });
+                }
               }
               success++;
               break;
@@ -6203,6 +6210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[PATCH /api/projects/:id] Project not found:", req.params.id);
         return res.status(404).json({ error: "Project not found" });
       }
+      fireProjectChangeWorkflows(projectBefore, project as any, actorFrom(req.user));
 
       try {
         const activityUser = req.user as any;
@@ -6614,6 +6622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ];
       
       const updatedProject = await storage.updateProject(req.params.id, updateData);
+      if (updatedProject) fireProjectChangeWorkflows(project as any, updatedProject as any, actorFrom(user));
       
       // Create phase-specific folder in Google Drive if connected
       try {
@@ -13264,6 +13273,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // this route does not filter inactive roles out itself, so without the
         // field the role picker is empty and WITH it the filter is meaningful.
         isActive: role.isActive !== false,
+        // team | client | supplier — lets internal pickers (Operations
+        // workflows) leave out client and trade roles.
+        userCategory: role.userCategory ?? null,
       }));
       res.json(assignableRoles);
     } catch (error) {
@@ -41688,21 +41700,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // A workflow names the task templates and roles it will use. Nothing fires
   // workflows yet, but the executor will trust these ids, so check them now.
+  // Every id a workflow points at — task templates, roles, people, a trigger's
+  // template or document — must be this company's, or a workflow could make
+  // tasks from (or notify) another company's records.
   const foreignWorkflowTemplateRef = async (companyId: string, data: Record<string, any>): Promise<string | null> => {
+    const actions: any[] = Array.isArray(data.actions) ? data.actions : [];
+    const assignees = actions.map((a) => a?.assignee ?? a?.recipient).filter(Boolean);
     const templateIds = new Set<string>([
       ...(Array.isArray(data.taskTemplateIds) ? data.taskTemplateIds : []),
       ...(Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.templateId) : []),
+      ...actions.map((a) => a?.taskTemplateId),
+      data.triggerConfig?.taskTemplateId,
     ].filter((id): id is string => typeof id === "string" && id !== ""));
-    const roleIds = new Set<string>(
-      (Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.assigneeRoleId) : [])
-        .filter((id: unknown): id is string => typeof id === "string" && id !== ""),
-    );
-    const [templates, roles] = await Promise.all([
+    const roleIds = new Set<string>([
+      ...(Array.isArray(data.taskConfigs) ? data.taskConfigs.map((c: any) => c?.assigneeRoleId) : []),
+      ...assignees.filter((a) => a.type === "role").map((a) => a.roleId),
+    ].filter((id: unknown): id is string => typeof id === "string" && id !== ""));
+    const userIds = new Set<string>(assignees.filter((a) => a.type === "user").map((a) => a.userId));
+    const docId = data.triggerConfig?.docId;
+    const [templates, roles, users, doc] = await Promise.all([
       Promise.all(Array.from(templateIds).map((id) => storage.getTaskTemplate(id, companyId))),
       Promise.all(Array.from(roleIds).map((id) => storage.getUserRole(id, companyId))),
+      Promise.all(Array.from(userIds).map((id) => storage.getUser(id))),
+      docId ? storage.getDoc(docId) : Promise.resolve(null),
     ]);
     if (templates.some((t) => !t)) return "Task template";
     if (roles.some((r) => !r)) return "Role";
+    if (users.some((u) => !u || u.companyId !== companyId)) return "Person";
+    // Workflow steps are internal: they create the team's To-Dos and send the
+    // team messages, so a client or trade role/person isn't a valid target.
+    // (Only the new `actions` are checked; legacy taskConfigs keep loading.)
+    const actionRoleIds = new Set(assignees.filter((a) => a.type === "role").map((a) => a.roleId));
+    if (roles.some((r: any) => actionRoleIds.has(r.id) && r.userCategory && r.userCategory !== "team")) return "Team role";
+    if (users.some((u: any) => u.userCategory && u.userCategory !== "team")) return "Team member";
+    if (docId && (!doc || doc.companyId !== companyId)) return "Document";
+    return null;
+  };
+
+  // What the engine needs to be able to fire: the trigger's own setting, and
+  // at least one step. Checked on the row as it will be after the save.
+  const workflowShapeError = (w: Record<string, any>): string | null => {
+    const c = w.triggerConfig ?? {};
+    const hasLegacy = (Array.isArray(w.taskTemplateIds) && w.taskTemplateIds.length > 0) || (Array.isArray(w.taskConfigs) && w.taskConfigs.length > 0);
+    if (["stage_change", "status_change", "date"].includes(w.triggerType)) return hasLegacy ? null : "Choose what starts this workflow";
+    if (w.triggerType === "project_status" && !c.statusKey) return "Choose the project status";
+    if (w.triggerType === "project_phase" && !c.phase) return "Choose the project phase";
+    if (w.triggerType === "task_completed" && !c.taskTemplateId) return "Choose the task";
+    if (!(Array.isArray(w.actions) && w.actions.length > 0) && !hasLegacy) return "Add at least one step";
     return null;
   };
 
@@ -41722,6 +41766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
       if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
+      const shapeError = workflowShapeError(validationResult.data);
+      if (shapeError) return res.status(400).json({ error: shapeError });
 
       const template = await storage.createWorkflowTemplate({
         ...validationResult.data,
@@ -41748,6 +41794,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId!;
       const foreignRef = await foreignWorkflowTemplateRef(companyId, validationResult.data);
       if (foreignRef) return res.status(400).json({ error: `${foreignRef} not found` });
+      const existing = await storage.getWorkflowTemplate(req.params.id, companyId);
+      if (!existing) return res.status(404).json({ error: "Workflow template not found" });
+      const shapeError = workflowShapeError({ ...existing, ...validationResult.data });
+      if (shapeError) return res.status(400).json({ error: shapeError });
       const template = await storage.updateWorkflowTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Workflow template not found" });
@@ -41755,6 +41805,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(template);
     } catch (error) {
       res.status(500).json({ error: "Failed to update workflow template" });
+    }
+  });
+
+  // The run log: the latest firings of one workflow, newest first.
+  app.get("/api/systems/workflow-templates/:id/runs", requireAuth, requireTeamMember, requirePermission("operations.workflows", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId;
+      const workflow = await storage.getWorkflowTemplate(req.params.id, companyId);
+      if (!workflow) return res.status(404).json({ error: "Workflow template not found" });
+      const { rows } = await pool.query(
+        `SELECT r.id, r.trigger_type AS "triggerType", r.summary, r.status, r.result, r.project_id AS "projectId",
+                p.name AS "projectName", r.fired_by_name AS "firedByName",
+                -- timestamp columns hold UTC; raw pg would read them as server-local
+                r.created_at AT TIME ZONE 'UTC' AS "createdAt", r.finished_at AT TIME ZONE 'UTC' AS "finishedAt"
+         FROM workflow_runs r LEFT JOIN projects p ON p.id = r.project_id AND p.company_id = r.company_id
+         WHERE r.workflow_id = $1 AND r.company_id = $2
+         ORDER BY r.created_at DESC LIMIT 50`,
+        [workflow.id, companyId],
+      );
+      res.json(rows);
+    } catch (error) {
+      console.error("[Workflows] runs failed:", error);
+      res.status(500).json({ error: "Failed to fetch runs" });
+    }
+  });
+
+  // Run a workflow now, on a project or for the business. Any workflow can be
+  // run by hand, whatever its trigger — useful for a project that was already
+  // past the status when the workflow was made.
+  app.post("/api/systems/workflow-templates/:id/run", requireAuth, requireTeamMember, requirePermission("operations.workflows", "edit"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const workflow = await storage.getWorkflowTemplate(req.params.id, user.companyId);
+      if (!workflow) return res.status(404).json({ error: "Workflow template not found" });
+      if (!normaliseWorkflow(workflow)) return res.status(400).json({ error: "This workflow has no steps to run" });
+      const projectId = typeof req.body?.projectId === "string" && req.body.projectId ? req.body.projectId : null;
+      let projectName: string | null = null;
+      if (projectId) {
+        if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+        projectName = (await storage.getProject(projectId))?.name ?? null;
+      }
+      const runId = await runWorkflowManually(workflow, { projectId, projectName, actor: actorFrom(user) });
+      const { rows } = await pool.query(`SELECT status, result FROM workflow_runs WHERE id = $1`, [runId]);
+      res.status(201).json({ id: runId, ...rows[0] });
+    } catch (error) {
+      console.error("[Workflows] manual run failed:", error);
+      res.status(500).json({ error: "Failed to run workflow" });
     }
   });
 

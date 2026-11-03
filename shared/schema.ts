@@ -3,6 +3,10 @@ import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnu
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import {
+  WORKFLOW_TRIGGER_TYPES, workflowTriggerConfigSchema, workflowActionsSchema,
+  type WorkflowTriggerConfig, type WorkflowAction, type WorkflowRunResult,
+} from "./workflows";
 import { JOB_MODES } from "./cashflow/types";
 import { FREQUENCIES } from "./cashflow/recurrence";
 import {
@@ -5402,8 +5406,13 @@ export const workflowTemplates = pgTable("workflow_templates", {
   triggerStatus: text("trigger_status"), // Project status that triggers this workflow
   
   // Task templates to create
-  taskTemplateIds: json("task_template_ids").default([]), // Array of task template IDs to create
-  taskConfigs: json("task_configs").default([]), // Array of {templateId, offsetDays, assigneeRoleId} for customization
+  taskTemplateIds: json("task_template_ids").default([]), // LEGACY: read only when `actions` is empty
+  taskConfigs: json("task_configs").default([]), // LEGACY: Array of {templateId, offsetDays, assigneeRoleId}
+
+  // The engine's shape (0124, shared/workflows.ts): what the trigger matches
+  // on, and the ordered actions a firing runs.
+  triggerConfig: jsonb("trigger_config").$type<WorkflowTriggerConfig>().notNull().default({}),
+  actions: jsonb("actions").$type<WorkflowAction[]>().notNull().default([]),
   
   // Status
   isActive: boolean("is_active").default(true),
@@ -5420,7 +5429,10 @@ export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplates
   createdAt: true,
   updatedAt: true,
 }).extend({
-  triggerType: z.enum(["stage_change", "status_change", "manual", "date"]).default("stage_change"),
+  // Legacy types still load; the builder only writes the engine's.
+  triggerType: z.enum([...WORKFLOW_TRIGGER_TYPES, "stage_change", "status_change", "date"]).default("manual"),
+  triggerConfig: workflowTriggerConfigSchema.optional(),
+  actions: workflowActionsSchema.optional(),
   taskTemplateIds: z.array(z.string()).optional(),
   taskConfigs: z.array(z.object({
     templateId: z.string(),
@@ -5432,6 +5444,29 @@ export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplates
 
 export type InsertWorkflowTemplate = z.infer<typeof insertWorkflowTemplateSchema>;
 export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
+
+// One row per firing of a workflow. (workflowId, eventKey) is unique: the
+// engine claims the row before running anything, so the same event — a retry,
+// a double click, two servers — runs once. See WORKFLOW_TRIGGERS for keys.
+export const workflowRuns = pgTable("workflow_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  workflowId: varchar("workflow_id").notNull().references(() => workflowTemplates.id, { onDelete: "cascade" }),
+  eventKey: text("event_key").notNull(),
+  triggerType: text("trigger_type").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  summary: text("summary"), // human line: "Smith St moved to Construction"
+  status: text("status").notNull().default("running"), // running | done | partial | failed
+  result: jsonb("result").$type<WorkflowRunResult>(),
+  firedById: varchar("fired_by_id").references(() => users.id, { onDelete: "set null" }),
+  firedByName: text("fired_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+}, (t) => ({
+  workflowEventUnique: uniqueIndex("workflow_runs_workflow_event_uq").on(t.workflowId, t.eventKey),
+  companyCreatedIdx: index("workflow_runs_company_created_idx").on(t.companyId, t.createdAt),
+}));
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
 
 // Project Workflows - Instances of workflows on specific projects
 export const projectWorkflows = pgTable("project_workflows", {
