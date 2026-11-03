@@ -7251,6 +7251,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // --- direct companyId ---
   const getOwnedDocFolder = makeOwnedByCompany(loadDocFolder, "Folder not found");
   const getOwnedEnoteTemplateSet = makeOwnedByCompany(loadEnoteTemplateSet, "Template set not found");
+  const getOwnedLabourTaskTemplate = makeOwnedByCompany(async (id: string) => {
+    const [row] = await db.select().from(schema.labourTaskTemplates).where(eq(schema.labourTaskTemplates.id, id)).limit(1);
+    return row;
+  }, "Template not found");
+  const loadById = (table: any) => async (id: string) => {
+    const [row] = await db.select().from(table).where(eq(table.id, id)).limit(1);
+    return row;
+  };
+  const getOwnedTeam = makeOwnedByCompany(loadById(schema.teams), "Team not found");
+  const getOwnedSupplierLabel = makeOwnedByCompany(loadById(schema.supplierLabels), "Supplier label not found");
+  // Activities belong to a company directly (workspace) or through a project.
+  const getOwnedActivity = async (req: any, res: any, id: string, notFound = "Activity not found") => {
+    const row: any = await loadById(schema.activities)(id);
+    if (!row) { res.status(404).json({ error: notFound }); return null; }
+    if (row.companyId) {
+      if (row.companyId !== req.user?.companyId) { res.status(404).json({ error: notFound }); return null; }
+      return row;
+    }
+    if (!row.projectId) { res.status(404).json({ error: notFound }); return null; }
+    return (await enforceProjectCompany(req, res, row.projectId, notFound)) ? row : null;
+  };
+  const getOwnedEnoteTemplate = makeOwnedByCompany(async (id: string) => {
+    const [row] = await db.select().from(schema.enoteTemplates).where(eq(schema.enoteTemplates.id, id)).limit(1);
+    return row;
+  }, "Template not found");
   const getOwnedSiteDiaryTemplate = makeOwnedByCompany(
     (id) => storage.getSiteDiaryTemplate(id), "Template not found");
 
@@ -7286,6 +7311,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     loadScheduleItemStep, (st) => st?.scheduleItemId, getOwnedScheduleItem as any, "Step not found");
   const getOwnedActivityNote = makeOwnedViaParent(
     loadActivityNote, (n) => n?.scheduleItemId, getOwnedScheduleItem as any, "Note not found");
+
+  /** labour estimate → project → company */
+  const getOwnedLabourEstimate = async (req: any, res: any, id: string, notFound = "Labour estimate not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const [est] = await db.select().from(schema.labourEstimates)
+      .where(eq(schema.labourEstimates.id, id)).limit(1);
+    if (!est) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (est as any).projectId, notFound))) return null;
+    return est;
+  };
+
+  // A reorder is a list of {id, sortOrder}: keep only the ids that really sit
+  // under the parent the caller owns, so a foreign id is ignored, not moved.
+  const ownedSortUpdates = async (
+    updates: unknown, table: any, parentCol: any, parentId: string,
+  ): Promise<{ id: string; sortOrder: number }[]> => {
+    if (!Array.isArray(updates) || updates.length === 0) return [];
+    const ids = updates.map((u: any) => u?.id).filter((x: any) => typeof x === "string");
+    if (ids.length === 0) return [];
+    const rows = await db.select({ id: table.id }).from(table)
+      .where(and(inArray(table.id, ids), eq(parentCol, parentId)));
+    const allowed = new Set(rows.map((r: any) => r.id));
+    return updates.filter((u: any) => allowed.has(u?.id)) as any;
+  };
 
   /** category → labour estimate → project → company */
   const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
@@ -9492,6 +9541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized" });
       }
       
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const note = await storage.createEstimateNote({
         estimateId: req.params.id,
         userId,
@@ -9506,6 +9556,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a note
   app.delete("/api/estimate-notes/:noteId", requireAuth, async (req, res) => {
     try {
+      // note → estimate → project → company
+      const [note] = await db.select({ estimateId: schema.estimateNotes.estimateId })
+        .from(schema.estimateNotes).where(eq(schema.estimateNotes.id, req.params.noteId)).limit(1);
+      if (!note) return res.status(404).json({ error: "Note not found" });
+      if (!(await getOwnedEstimate(req, res, note.estimateId, "Note not found"))) return;
       const success = await storage.deleteEstimateNote(req.params.noteId);
       if (success) {
         res.status(204).send();
@@ -9535,6 +9590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const existing = await storage.getEstimateEnotes(req.params.id);
       const row = await storage.createEstimateEnote({
         ...req.body,
@@ -9549,7 +9605,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateEstimateEnote(req.params.categoryId, req.body);
+      const enote = await getOwnedEnote(req, res, req.params.categoryId, "Row not found");
+      if (!enote) return;
+      if (enote.estimateId !== req.params.id) return res.status(404).json({ error: "Row not found" });
+      // A row stays on its estimate: the body can't re-parent it.
+      const { id: _id, estimateId: _est, ...changes } = req.body ?? {};
+      const updated = await storage.updateEstimateEnote(req.params.categoryId, changes);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update e-note" });
@@ -9558,6 +9619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimate-enotes/:rowId", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEnote(req, res, req.params.rowId, "Row not found"))) return;
       const result = await storage.deleteEstimateEnote(req.params.rowId);
       if (!result.success) {
         if (result.reason === "not_found") return res.status(404).json({ error: "Row not found" });
@@ -9572,6 +9634,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/enotes/rows", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const existing = await storage.getEstimateEnotes(req.params.id);
       const { groupName } = req.body;
       if (!groupName) return res.status(400).json({ error: "groupName is required" });
@@ -9590,6 +9653,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
     try {
+      const enote = await getOwnedEnote(req, res, req.params.categoryId, "Row not found");
+      if (!enote) return;
+      if (enote.estimateId !== req.params.id) return res.status(404).json({ error: "Row not found" });
       const result = await storage.deleteEstimateEnote(req.params.categoryId);
       if (!result.success) {
         if (result.reason === "not_found") return res.status(404).json({ error: "Row not found" });
@@ -9621,6 +9687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimates/:id/enotes/attachment-counts", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const counts = await storage.getEnoteAttachmentCounts(req.params.id);
       res.json(counts);
     } catch (error) {
@@ -9694,6 +9761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/projects/:projectId/labour-estimate", requireAuth, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const user = (req as any).user;
       let estimate = await storage.getLabourEstimate(req.params.projectId, user.companyId);
       if (!estimate) {
@@ -9712,6 +9780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/labour-estimate", requireAuth, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const user = (req as any).user;
       const estimate = await storage.createLabourEstimate({
         projectId: req.params.projectId,
@@ -9727,7 +9796,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/labour-estimates/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateLabourEstimate(req.params.id, req.body);
+      if (!(await getOwnedLabourEstimate(req, res, req.params.id))) return;
+      // Only these are editable; the body used to be written whole, so it
+      // could move the estimate to another company or project.
+      const changes: any = {};
+      if (req.body?.title !== undefined) changes.title = req.body.title;
+      if (req.body?.labourRatePerHour !== undefined) changes.labourRatePerHour = req.body.labourRatePerHour;
+      const updated = await storage.updateLabourEstimate(req.params.id, changes);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update labour estimate" });
@@ -9736,6 +9811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/labour-estimates/:id/categories", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedLabourEstimate(req, res, req.params.id))) return;
       const categories = await storage.getLabourEstimateCategories(req.params.id);
       res.json(categories);
     } catch (error) {
@@ -9745,6 +9821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/labour-estimates/:id/categories", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedLabourEstimate(req, res, req.params.id))) return;
       const category = await storage.createLabourEstimateCategory(req.params.id, req.body.name || "New Category");
       res.status(201).json(category);
     } catch (error) {
@@ -9765,7 +9842,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/labour-estimates/:id/categories/reorder", requireAuth, async (req, res) => {
     try {
-      await storage.reorderLabourEstimateCategories(req.body.updates);
+      if (!(await getOwnedLabourEstimate(req, res, req.params.id))) return;
+      const updates = await ownedSortUpdates(
+        req.body?.updates, schema.labourEstimateCategories, schema.labourEstimateCategories.labourEstimateId, req.params.id);
+      await storage.reorderLabourEstimateCategories(updates);
       res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to reorder categories" });
@@ -9774,7 +9854,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/labour-estimate-categories/:catId/tasks/reorder", requireAuth, async (req, res) => {
     try {
-      await storage.reorderLabourEstimateTasks(req.body.updates);
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
+      const updates = await ownedSortUpdates(
+        req.body?.updates, schema.labourEstimateTasks, schema.labourEstimateTasks.categoryId, req.params.catId);
+      await storage.reorderLabourEstimateTasks(updates);
       res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to reorder tasks" });
@@ -9955,9 +10038,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Registered before /:id: Express serves the first match, and "reorder"
+  // used to be swallowed as an id, so reordering templates never worked.
+  app.patch("/api/labour-task-templates/reorder", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const updates = await ownedSortUpdates(
+        req.body?.updates, schema.labourTaskTemplates, schema.labourTaskTemplates.companyId, companyId);
+      await storage.reorderLabourTaskTemplates(updates);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder templates" });
+    }
+  });
+
   app.patch("/api/labour-task-templates/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateLabourTaskTemplate(req.params.id, req.body);
+      if (!(await getOwnedLabourTaskTemplate(req, res, req.params.id))) return;
+      const { id: _id, companyId: _co, ...changes } = req.body ?? {};
+      const updated = await storage.updateLabourTaskTemplate(req.params.id, changes);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update template" });
@@ -9966,19 +10066,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/labour-task-templates/:id", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedLabourTaskTemplate(req, res, req.params.id))) return;
       await storage.deleteLabourTaskTemplate(req.params.id);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete template" });
-    }
-  });
-
-  app.patch("/api/labour-task-templates/reorder", requireAuth, async (req, res) => {
-    try {
-      await storage.reorderLabourTaskTemplates(req.body.updates);
-      res.json({ ok: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to reorder templates" });
     }
   });
 
@@ -10170,7 +10262,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/enote-templates/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateEnoteTemplate(req.params.id, req.body);
+      if (!(await getOwnedEnoteTemplate(req, res, req.params.id))) return;
+      const { id: _id, companyId: _co, ...changes } = req.body ?? {};
+      const updated = await storage.updateEnoteTemplate(req.params.id, changes);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update enote template" });
@@ -10179,6 +10273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/enote-templates/:id", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEnoteTemplate(req, res, req.params.id))) return;
       await storage.deleteEnoteTemplate(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -10214,6 +10309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { name } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "Name required" });
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.id))) return;
       const set = await storage.renameEnoteTemplateSet(req.params.id, name.trim());
       res.json(set);
     } catch (error) {
@@ -10278,7 +10374,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);
+      const cat = await getOwnedLabourEstimateCategory(req, res, req.params.catId);
+      if (!cat) return;
+      if ((cat as any).labourEstimateId !== req.params.id) return res.status(404).json({ error: "Category not found" });
+      // A category stays in its labour estimate: the body can't re-parent it.
+      const { id: _id, labourEstimateId: _le, ...changes } = req.body ?? {};
+      const updated = await storage.updateLabourEstimateCategory(req.params.catId, changes);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update category" });
@@ -18010,6 +18111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await getOwnedSupplierLabel(req, res, req.params.id))) return;
       const label = await storage.updateSupplierLabel(req.params.id, validationResult.data);
       res.json(label);
     } catch (error) {
@@ -18022,6 +18124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/supplier-labels/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!(await getOwnedSupplierLabel(req, res, req.params.id))) return;
       await storage.deleteSupplierLabel(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -21212,6 +21315,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/rfi-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // comment → RFI → company
+      const [comment] = await db.select({ rfiId: schema.rfiComments.rfiId })
+        .from(schema.rfiComments).where(eq(schema.rfiComments.id, req.params.id)).limit(1);
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+      if (!(await getOwnedRFI(req, res, comment.rfiId, "Comment not found"))) return;
       const deleted = await storage.deleteRFIComment(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Comment not found" });
@@ -24088,6 +24196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/teams/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await getOwnedTeam(req, res, req.params.id))) return;
       const { name, color } = req.body;
       const team = await storage.updateTeam(req.params.id, { name, color });
       if (!team) return res.status(404).json({ error: "Team not found" });
@@ -24100,6 +24209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/teams/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await getOwnedTeam(req, res, req.params.id))) return;
       const deleted = await storage.deleteTeam(req.params.id);
       if (!deleted) return res.status(404).json({ error: "Team not found" });
       res.json({ success: true });
@@ -30958,6 +31068,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.pinnedBy = pinned ? user.id : null;
       }
 
+      if (!(await getOwnedActivity(req, res, req.params.id))) return;
       const activity = await storage.updateActivity(req.params.id, updateData);
       if (!activity) {
         return res.status(404).json({ error: "Activity not found" });
@@ -42407,10 +42518,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/messages/:id", requireAuth, async (req, res) => {
     try {
-      const message = await storage.getMessage(req.params.id);
-      if (!message) {
-        return res.status(404).json({ error: "Message not found" });
-      }
+      // message → channel → company
+      const message = await getOwnedMessage(req, res, req.params.id);
+      if (!message) return;
       res.json(message);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch message" });
