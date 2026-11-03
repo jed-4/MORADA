@@ -465,6 +465,7 @@
     "server/routes.ts GET /api/projects",
     "server/routes.ts GET /api/projects/:id",
     "server/routes.ts GET /api/projects/:id/actual-costs",
+    "server/routes.ts GET /api/projects/:id/committed-costs",
     "server/routes.ts GET /api/projects/:id/contract-metrics",
     "server/routes.ts GET /api/projects/:id/internal-costs",
     "server/routes.ts GET /api/projects/:id/trades-portal-token",

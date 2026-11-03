@@ -167,10 +167,10 @@ const noRows = (): JobCostRows => ({
 check("a PO's unbilled value is split across its codes pro rata by item value", () => {
   const rows = noRows();
   rows.poRows.push({ id: "po", projectId: "p", poNumber: "PO-1", supplierName: "Bluey", requiredByDate: null, total: 1_100_000, gstAmount: 100_000 });
-  // Inclusive PO: item totals are inc GST, so ex = total − gst.
+  // Inclusive PO: item totals are inc GST, so the GST is backed out of each.
   rows.poItemRows.push(
-    { purchaseOrderId: "po", costCodeId: "frame", total: 825_000, gstAmount: 75_000, gstMode: "inclusive" },
-    { purchaseOrderId: "po", costCodeId: "roof", total: 275_000, gstAmount: 25_000, gstMode: "inclusive" },
+    { purchaseOrderId: "po", costCodeId: "frame", total: 825_000, gstMode: "inclusive" },
+    { purchaseOrderId: "po", costCodeId: "roof", total: 275_000, gstMode: "inclusive" },
   );
   rows.linkedBillRows.push({ poId: "po", total: 550_000, tax: 50_000, billType: "bill" });
   const po = assembleJobCostInputs(rows).get("p")!.committedPos[0];
@@ -201,6 +201,36 @@ check("uncoded budget rows key by title; completed schedule items are left out",
   assert.strictEqual(d.budgetLines[0].key, "other:Variations");
   assert.strictEqual(d.scheduleItems.length, 1);
   assert.strictEqual(d.awaitingPoLabourExCents, 45_000);
+});
+
+check("a GST-free line on an inclusive PO keeps its full value; GST comes off the rest", () => {
+  const rows = noRows();
+  rows.poRows.push({ id: "po", projectId: "p", poNumber: "PO-2", supplierName: null, requiredByDate: null, total: 210_000, gstAmount: 10_000 });
+  rows.poItemRows.push(
+    { purchaseOrderId: "po", costCodeId: "frame", total: 110_000, gstMode: "inclusive" },
+    { purchaseOrderId: "po", costCodeId: "fees", total: 100_000, isGstFree: true, gstMode: "inclusive" },
+  );
+  const po = assembleJobCostInputs(rows).get("p")!.committedPos[0];
+  assert.strictEqual(po.unbilledExCents, 200_000);
+  assert.deepStrictEqual(po.byKey, [{ key: "frame", exCents: 100_000 }, { key: "fees", exCents: 100_000 }]);
+});
+
+check("a line priced as quantity × price (no stored total) still counts", () => {
+  const rows = noRows();
+  rows.poRows.push({ id: "po", projectId: "p", poNumber: "PO-3", supplierName: null, requiredByDate: null, total: 110_000, gstAmount: 10_000 });
+  rows.poItemRows.push({ purchaseOrderId: "po", costCodeId: "frame", total: 0, quantity: "4", unitPrice: 25_000, gstMode: "exclusive" });
+  assert.deepStrictEqual(assembleJobCostInputs(rows).get("p")!.committedPos[0].byKey, [{ key: "frame", exCents: 100_000 }]);
+});
+
+check("subbie hours waiting for a PO are also kept by cost code", () => {
+  const rows = noRows();
+  rows.awaitingRows.push(
+    { projectId: "p", costCodeId: "frame", duration: "8", rate: "70.00" },
+    { projectId: "p", costCodeId: null, duration: "2", rate: "70.00" },
+  );
+  const d = assembleJobCostInputs(rows).get("p")!;
+  assert.strictEqual(d.awaitingPoLabourExCents, 70_000);
+  assert.deepStrictEqual(d.awaitingPoLabourExByKey, { frame: 56_000, "other:Uncategorized": 14_000 });
 });
 
 console.log(`\ncashflow-jobcosts: ${passed} passed`);

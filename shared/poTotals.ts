@@ -39,3 +39,11 @@ export function computePOTotalsCents(
   }
   return { subtotal, gstAmount, total: subtotal + gstAmount };
 }
+
+/** One line's ex-GST value. On an inclusive PO the stored line total contains
+ *  the GST; the line's own gst_amount column isn't kept up to date, so it's
+ *  worked out here rather than read. */
+export function poLineExCents(line: POTotalsLine, gstMode: string | null | undefined): number {
+  const taxable = gstMode !== "gst_free" && !line.isGstFree;
+  return splitLineGstCents(poLineCents(line), taxable, gstMode === "inclusive" ? "inclusive" : "exclusive").ex;
+}
