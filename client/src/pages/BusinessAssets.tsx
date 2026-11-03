@@ -25,8 +25,8 @@ import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { AssetListRow } from "@shared/schema";
 import {
+  ASSET_GROUPS,
   ASSET_STATUS_LABELS,
-  ASSET_TYPES,
   ASSET_TYPE_LABELS,
   assetDueSummary,
   isHeavyVehicle,
@@ -35,11 +35,20 @@ import {
   type MeterType,
   type AssetDueSummary,
   type AssetStatus,
+  type AssetGroupId,
   type AssetType,
 } from "@shared/assets";
 
 type Row = AssetListRow & { due: AssetDueSummary };
-type TypeFilter = "all" | AssetType;
+type TypeFilter = "all" | AssetGroupId;
+
+const GROUP_BY = {
+  key: (r: Row) => groupOf(r.assetType),
+  order: ASSET_GROUPS.map((g) => g.id) as string[],
+  label: (id: string) => ASSET_GROUPS.find((g) => g.id === id)?.label ?? id,
+};
+
+const groupOf = (type: string) => ASSET_GROUPS.find((g) => (g.types as readonly string[]).includes(type))?.id ?? "equipment";
 
 const INACTIVE: string[] = ["archived", "sold"];
 
@@ -80,7 +89,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     const q = search.trim().toLowerCase();
     return withDue
       .filter((a) => showInactive || !INACTIVE.includes(a.status))
-      .filter((a) => typeFilter === "all" || a.assetType === typeFilter)
+      .filter((a) => typeFilter === "all" || groupOf(a.assetType) === typeFilter)
       .filter((a) => !q || [a.name, a.rego, a.make, a.model, a.vin, nameOf(a.assignedUserId)].some((v) => v?.toLowerCase().includes(q)))
       // Overdue first, then due soon, then A–Z.
       .sort((a, b) => {
@@ -90,11 +99,12 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withDue, showInactive, typeFilter, search, people]);
 
-  const typeCounts = useMemo(() => {
+  const groupCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[a.assetType] = (c[a.assetType] ?? 0) + 1;
+    for (const a of withDue) if (showInactive || !INACTIVE.includes(a.status)) c[groupOf(a.assetType)] = (c[groupOf(a.assetType)] ?? 0) + 1;
     return c;
   }, [withDue, showInactive]);
+
 
   const columns = useMemo<ColumnDef<Row, unknown>[]>(
     () => [
@@ -209,7 +219,7 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
 
   const filterButtons: { id: TypeFilter; label: string }[] = [
     { id: "all", label: "All" },
-    ...ASSET_TYPES.filter((t) => typeCounts[t] || typeFilter === t).map((t) => ({ id: t as TypeFilter, label: `${ASSET_TYPE_LABELS[t]}s` })),
+    ...ASSET_GROUPS.filter((g) => groupCounts[g.id] || typeFilter === g.id).map((g) => ({ id: g.id as TypeFilter, label: g.label })),
   ];
 
   const activeFilters = (typeFilter !== "all" ? 1 : 0) + (showInactive ? 1 : 0);
@@ -296,6 +306,8 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
                 rowHeight={44}
                 rowClassName={(r) => cn("cursor-pointer", INACTIVE.includes(r.status) && "opacity-50")}
                 onRowClick={(r) => onOpen(r.id)}
+                // One list, with Vehicles (and trailers), Plant, Equipment sub-headers.
+                groupBy={GROUP_BY}
               />
             )}
           </>
