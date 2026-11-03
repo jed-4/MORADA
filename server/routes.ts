@@ -456,12 +456,28 @@ type PushBillResult = {
 // are header-only, so a PO with no priced lines keeps its header: otherwise a
 // blank line added to one would wipe its amount. The exception is when this
 // change took away the last priced line, which is what linesHadValue says.
-async function syncPOTotals(poId: string, linesHadValue = false) {
-  const po = await storage.getPurchaseOrder(poId);
-  if (!po) return undefined;
-  const lines = await storage.getPurchaseOrderItems(poId);
-  if (!hasPricedLine(lines) && !linesHadValue) return po;
-  return storage.updatePurchaseOrder(poId, computePOTotalsCents(lines, po.gstMode));
+//
+// Runs one at a time per PO. Two line edits close together each recalc the
+// header; unqueued, the first recalc could read the lines before the second
+// edit landed and finish after the second recalc, writing a stale total last.
+// Queued, each one reads the lines after every earlier one has finished.
+// (One server process, so an in-memory queue is enough.)
+const poTotalsQueue = new Map<string, Promise<unknown>>();
+function syncPOTotals(poId: string, linesHadValue = false) {
+  const run = async () => {
+    const po = await storage.getPurchaseOrder(poId);
+    if (!po) return undefined;
+    const lines = await storage.getPurchaseOrderItems(poId);
+    if (!hasPricedLine(lines) && !linesHadValue) return po;
+    return storage.updatePurchaseOrder(poId, computePOTotalsCents(lines, po.gstMode));
+  };
+  const prev = poTotalsQueue.get(poId) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(run);
+  poTotalsQueue.set(poId, next);
+  next.finally(() => {
+    if (poTotalsQueue.get(poId) === next) poTotalsQueue.delete(poId);
+  }).catch(() => undefined);
+  return next;
 }
 
 // Recompute a project's budget totals AND its per-cost-code line items so the
