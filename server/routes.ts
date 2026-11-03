@@ -9,6 +9,7 @@ import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
+import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
 import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
 import { db, pool } from "./db";
 import { google } from "googleapis";
@@ -449,6 +450,18 @@ type PushBillResult = {
  * matching Xero invoice via the Attachments endpoint. Idempotent — files
  * whose filename already exists on the Xero invoice are skipped.
  */
+// Roll a PO's lines up into its header after a line changes. Site and RFQ POs
+// are header-only, so a PO with no priced lines keeps its header: otherwise a
+// blank line added to one would wipe its amount. The exception is when this
+// change took away the last priced line, which is what linesHadValue says.
+async function syncPOTotals(poId: string, linesHadValue = false) {
+  const po = await storage.getPurchaseOrder(poId);
+  if (!po) return undefined;
+  const lines = await storage.getPurchaseOrderItems(poId);
+  if (!hasPricedLine(lines) && !linesHadValue) return po;
+  return storage.updatePurchaseOrder(poId, computePOTotalsCents(lines, po.gstMode));
+}
+
 // Recompute a project's budget totals AND its per-cost-code line items so the
 // Budget page reflects bill changes immediately ("live"), without the user
 // having to press the manual recalculate button. Best-effort: a failure here
@@ -16475,6 +16488,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         supplierName: supplierName ?? null,
         title: `Selections Order — ${itemCount} item${itemCount !== 1 ? "s" : ""}`,
         status: "draft" as const,
+        gstMode: "exclusive" as const, // the lines below are ex GST
         subtotal,
         gstAmount: gstTotal,
         total,
@@ -24973,9 +24987,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (patch.supplierUserId) patch.supplierId = null;
       else if (patch.supplierId) patch.supplierUserId = null;
 
-      const po = await storage.updatePurchaseOrder(req.params.id, patch);
+      let po = await storage.updatePurchaseOrder(req.params.id, patch);
       if (!po) {
         return res.status(404).json({ error: "Purchase order not found" });
+      }
+      if (patch.gstMode && patch.gstMode !== existingPo.gstMode) {
+        po = (await syncPOTotals(po.id)) ?? po;
       }
 
       if (po.status === "paid" && existingPo.status !== "paid") {
@@ -25115,6 +25132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deliveryContact: existingPo.deliveryContact,
         requiredByDate: existingPo.requiredByDate,
         createdBy: req.user.id,
+        gstMode: existingPo.gstMode,
         subtotal: existingPo.subtotal,
         gstAmount: existingPo.gstAmount,
         total: existingPo.total,
@@ -25275,6 +25293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const item = await storage.createPurchaseOrderItem(validationResult.data);
+      await syncPOTotals(req.params.poId);
       res.status(201).json(item);
     } catch (error) {
       console.error("Failed to create purchase order item:", error);
@@ -25320,6 +25339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const item of validItems) {
         createdItems.push(await storage.createPurchaseOrderItem(item));
       }
+      await syncPOTotals(req.params.poId);
 
       res.status(201).json(createdItems);
     } catch (error) {
@@ -25356,10 +25376,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
+      const before = await storage.getPurchaseOrderItem(req.params.id);
       const item = await storage.updatePurchaseOrderItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(item.purchaseOrderId, !!before && poLineCents(before) !== 0);
       res.json(item);
     } catch (error) {
       console.error("Failed to update purchase order item:", error);
@@ -25377,10 +25399,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
 
+      const before = await storage.getPurchaseOrderItem(req.params.id);
       const deleted = await storage.deletePurchaseOrderItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      if (before) await syncPOTotals(before.purchaseOrderId, poLineCents(before) !== 0);
       res.status(204).send();
     } catch (error) {
       console.error("Failed to delete purchase order item:", error);
@@ -25453,6 +25477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!item) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(req.params.poId, poLineCents(existingItem) !== 0);
       res.json(item);
     } catch (error) {
       console.error("Failed to update purchase order item:", error);
@@ -25480,6 +25505,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+      await syncPOTotals(req.params.poId, poLineCents(existingItem) !== 0);
 
       // Pulling a timesheet line off a PO releases that timesheet back to the
       // queue, same as deleting the whole PO. Scoped to this PO so a timesheet
@@ -26107,7 +26133,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
       
-      let subtotalCents = 0;
       const lineItems: Array<{
         description: string;
         quantity: string;
@@ -26172,11 +26197,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sourceTimesheetId: ts.id,
           displayOrder: i,
         });
-        subtotalCents += lineTotal;
       }
 
-      const gstAmount = Math.round(subtotalCents * 0.1);
-      const totalCents = subtotalCents + gstAmount;
+      const headerTotals = computePOTotalsCents(lineItems, "exclusive");
 
       const po = await storage.createPurchaseOrder({
         companyId: req.user.companyId,
@@ -26193,9 +26216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : "Subcontractor labour",
         poDate: new Date(),
         gstMode: "exclusive",
-        subtotal: subtotalCents,
-        gstAmount,
-        total: totalCents,
+        ...headerTotals,
         status: "draft",
         createdById: req.user.id,
       });

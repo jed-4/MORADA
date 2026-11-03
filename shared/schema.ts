@@ -6464,7 +6464,11 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   status: z.enum(["draft", "sent", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
   gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
   poDate: z.coerce.date().default(() => new Date()),
-  requiredByDate: z.coerce.date().optional(),
+  // nullable() must wrap the coerce: new Date(null) is 1 Jan 1970, which is how
+  // a blank date was being saved. A date at or before epoch is that same blank
+  // coming back from an old row, so it clears rather than saves again.
+  requiredByDate: z.coerce.date().nullable().optional()
+    .transform((d) => (d && d.getTime() <= 0 ? null : d)),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   total: z.number().default(0),

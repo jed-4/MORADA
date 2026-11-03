@@ -139,7 +139,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   });
 
   const createPoMutation = useMutation({
-    mutationFn: async (data: { projectId: string; type: string }) => {
+    mutationFn: async (data: { projectId: string; type: string; gstMode: string }) => {
       return apiRequest("/api/purchase-orders", "POST", data);
     },
     onSuccess: (newPO: PurchaseOrder) => {
@@ -479,6 +479,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       createPoMutation.mutate({
         projectId: projectIdFromUrl,
         type: "main",
+        gstMode: "exclusive",
       });
     } else {
       setNewPOProjectId(projects.length > 0 ? projects[0].id : "");
@@ -498,6 +499,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
     createPoMutation.mutate({
       projectId: newPOProjectId,
       type: "main",
+      gstMode: "exclusive",
     });
   };
 
