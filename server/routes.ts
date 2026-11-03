@@ -5800,6 +5800,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Committed cost: money promised but not yet incurred, ex GST cents.
+  //   - open POs (sent / accepted / invoiced / partially paid) less their
+  //     non-credit bills, never below zero per PO;
+  //   - subbie hours approved but still waiting for a PO, at the subbie's rate.
+  // A separate figure from actual costs: it never enters gross profit. Same
+  // numbers the cash flow forecast uses (shared/cashflow/jobCosts.ts).
+  app.get(
+    "/api/projects/:id/committed-costs",
+    requireAuth,
+    requirePermission("financial.budget_actuals", "view"),
+    async (req, res) => {
+      try {
+        const projectId = req.params.id;
+        const companyId = (req as any).user?.companyId;
+        const project = await storage.getProject(projectId);
+        if (!project || !companyId || (project as any).companyId !== companyId) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+
+        const { loadJobCostInputs } = await import("./services/cashflowService");
+        const data = (await loadJobCostInputs(companyId, projectId)).get(projectId);
+        const pos = data?.committedPos ?? [];
+        const labourByKey = data?.awaitingPoLabourExByKey ?? {};
+
+        // Keys are a cost code id, or "other:<title>" for no code.
+        const byKey = new Map<string, { po: number; labour: number }>();
+        const add = (key: string, field: "po" | "labour", cents: number) => {
+          const e = byKey.get(key) ?? { po: 0, labour: 0 };
+          e[field] += cents;
+          byKey.set(key, e);
+        };
+        for (const po of pos) for (const k of po.byKey) add(k.key, "po", k.exCents);
+        for (const [key, cents] of Object.entries(labourByKey)) add(key, "labour", cents);
+
+        const poCommittedExGstCents = pos.reduce((s, p) => s + p.unbilledExCents, 0);
+        const labourCommittedExGstCents = data?.awaitingPoLabourExCents ?? 0;
+        res.json({
+          projectId,
+          poCommittedExGstCents,
+          labourCommittedExGstCents,
+          committedExGstCents: poCommittedExGstCents + labourCommittedExGstCents,
+          byCostCode: Array.from(byKey.entries()).map(([key, e]) => ({
+            costCodeId: key.startsWith("other:") ? null : key,
+            poExGstCents: e.po,
+            labourExGstCents: e.labour,
+            committedExGstCents: e.po + e.labour,
+          })),
+          purchaseOrders: pos.map((p) => ({ id: p.id, label: p.label, unbilledExGstCents: p.unbilledExCents })),
+        });
+      } catch (error) {
+        console.error("[GET /api/projects/:id/committed-costs] Error:", error);
+        res.status(500).json({ error: "Failed to compute committed costs" });
+      }
+    },
+  );
+
   app.post("/api/projects", async (req, res) => {
     try {
       const userId = (req.session as any).userId;

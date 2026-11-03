@@ -207,7 +207,9 @@ const NOT_COMMITTED_PO_STATUSES = ["draft", "pending_approval", "cancelled", "pa
  * Budget and billed figures come from budget_line_items — what the Budget
  * page shows, as of its last recalculation (every bill change triggers one).
  */
-export async function loadJobCostInputs(companyId: string): Promise<Map<string, JobCostData>> {
+/** Pass `projectId` to load one job only (the Budget page's Committed figure). */
+export async function loadJobCostInputs(companyId: string, projectId?: string): Promise<Map<string, JobCostData>> {
+  const oneProject = projectId ? eq(projects.id, projectId) : undefined;
   const [lineRows, poRows, poItemRows, linkedBillRows, labourRows, splitRows, awaitingRows, itemRows] = await Promise.all([
     db
       .select({
@@ -220,7 +222,7 @@ export async function loadJobCostInputs(companyId: string): Promise<Map<string, 
       .from(budgetLineItems)
       .innerJoin(budgets, eq(budgetLineItems.budgetId, budgets.id))
       .innerJoin(projects, eq(budgets.projectId, projects.id))
-      .where(eq(projects.companyId, companyId)),
+      .where(and(eq(projects.companyId, companyId), oneProject)),
     db
       .select({
         id: purchaseOrders.id,
@@ -232,41 +234,58 @@ export async function loadJobCostInputs(companyId: string): Promise<Map<string, 
         gstAmount: purchaseOrders.gstAmount,
       })
       .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.companyId, companyId), notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]))),
+      .where(and(
+        eq(purchaseOrders.companyId, companyId),
+        notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]),
+        projectId ? eq(purchaseOrders.projectId, projectId) : undefined,
+      )),
     db
       .select({
         purchaseOrderId: purchaseOrderItems.purchaseOrderId,
         costCodeId: purchaseOrderItems.costCodeId,
         total: purchaseOrderItems.total,
-        gstAmount: purchaseOrderItems.gstAmount,
+        quantity: purchaseOrderItems.quantity,
+        unitPrice: purchaseOrderItems.unitPrice,
+        isGstFree: purchaseOrderItems.isGstFree,
         gstMode: purchaseOrders.gstMode,
       })
       .from(purchaseOrderItems)
       .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
-      .where(and(eq(purchaseOrders.companyId, companyId), notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]))),
+      .where(and(
+        eq(purchaseOrders.companyId, companyId),
+        notInArray(purchaseOrders.status, [...NOT_COMMITTED_PO_STATUSES]),
+        projectId ? eq(purchaseOrders.projectId, projectId) : undefined,
+      )),
     db
       .select({ poId: bills.matchedSitePOId, total: bills.total, tax: bills.tax, billType: bills.billType })
       .from(bills)
-      .where(and(eq(bills.companyId, companyId), sql`${bills.matchedSitePOId} is not null`)),
+      .where(and(
+        eq(bills.companyId, companyId),
+        sql`${bills.matchedSitePOId} is not null`,
+        // By the PO's project: a linked bill can carry no project, or another.
+        projectId
+          ? inArray(bills.matchedSitePOId, db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.projectId, projectId)))
+          : undefined,
+      )),
     // Employee labour (subcontractors are paid through POs and bills).
     db
       .select({ id: timesheets.id, projectId: timesheets.projectId, costCodeId: timesheets.costCodeId, total: timesheets.total })
       .from(timesheets)
       .innerJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
     db
       .select({ timesheetId: timesheetCostCodes.timesheetId, costCodeId: timesheetCostCodes.costCodeId, total: timesheetCostCodes.total })
       .from(timesheetCostCodes)
       .innerJoin(timesheets, eq(timesheetCostCodes.timesheetId, timesheets.id))
       .innerJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
     // Subbie hours approved but not on a PO yet: hours × the subbie's profile rate.
     db
-      .select({ projectId: timesheets.projectId, duration: timesheets.duration, rate: users.hourlyRate })
+      .select({ projectId: timesheets.projectId, costCodeId: timesheets.costCodeId, duration: timesheets.duration, rate: users.hourlyRate })
       .from(timesheets)
       .innerJoin(projects, eq(timesheets.projectId, projects.id))
       .innerJoin(users, eq(timesheets.userId, users.id))
-      .where(and(eq(projects.companyId, companyId), eq(timesheets.status, "approved"), eq(timesheets.poStatus, "awaiting_po"))),
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), eq(timesheets.poStatus, "awaiting_po"))),
     db
       .select({
         projectId: projects.id, // same value via the inner join; never null
@@ -278,7 +297,7 @@ export async function loadJobCostInputs(companyId: string): Promise<Map<string, 
       .from(scheduleItems)
       .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
       .innerJoin(projects, eq(schedules.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), eq(schedules.isArchived, false), sql`${scheduleItems.costCodeId} is not null`)),
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(schedules.isArchived, false), sql`${scheduleItems.costCodeId} is not null`)),
   ]);
 
   return assembleJobCostInputs({ lineRows, poRows, poItemRows, linkedBillRows, labourRows, splitRows, awaitingRows, itemRows });
