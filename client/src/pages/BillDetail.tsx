@@ -533,6 +533,10 @@ export default function BillDetail() {
   useEffect(() => { setEditUnlocked(false); }, [id]);
   const isApprovedBill = bill?.status === "awaiting_payment" || bill?.status === "paid";
   const isViewOnly = isEditMode && isApprovedBill && !editUnlocked;
+  // A locked bill can't have its lines changed, so no selection carries into it.
+  useEffect(() => {
+    if (isViewOnly) setSelectedLineIndices(new Set());
+  }, [isViewOnly]);
 
   const { data: billPayments = [] } = useQuery<BillPayment[]>({
     queryKey: ["/api/bills", id, "payments"],
@@ -765,6 +769,7 @@ export default function BillDetail() {
       const billChanged = lastHydratedLinesBillIdRef.current !== id;
       if (!billChanged && hasUnsavedChangesRef.current) return;
       lastHydratedLinesBillIdRef.current = id ?? null;
+      setSelectedLineIndices(new Set());
       setLineItems(
         existingLineItems.map((item) => {
           const allowance = existingAllowances.find(a => a.billLineItemId === item.id);
@@ -1242,9 +1247,26 @@ export default function BillDetail() {
     setLineItems(updated);
   };
 
-  const deleteLineItem = (index: number) => {
-    setLineItems(lineItems.filter((_, i) => i !== index));
+  // Selection is kept by row position, so removing rows has to move the ticks
+  // with them: drop the removed rows' ticks and shift the ones below up.
+  // Without this, deleting a line left the ticks where they were and the next
+  // lines slid up into them.
+  const deleteLineItems = (indices: Iterable<number>) => {
+    const removed = new Set(indices);
+    if (removed.size === 0) return;
+    setLineItems(lineItems.filter((_, i) => !removed.has(i)));
+    setSelectedLineIndices((prev) => {
+      const next = new Set<number>();
+      prev.forEach((i) => {
+        if (removed.has(i)) return;
+        let shift = 0;
+        removed.forEach((r) => { if (r < i) shift++; });
+        next.add(i - shift);
+      });
+      return next;
+    });
   };
+  const deleteLineItem = (index: number) => deleteLineItems([index]);
 
   // Totals come from the shared helper, in cents, and are shown as dollars.
   //
@@ -2199,6 +2221,7 @@ export default function BillDetail() {
           allowanceItemId: undefined,
         }));
         setLineItems(newLineItems);
+        setSelectedLineIndices(new Set());
       }
       // Anchor the document's printed total — rounding is derived from it and
       // keeps the bill total pinned to the invoice through later edits.
@@ -2475,6 +2498,7 @@ export default function BillDetail() {
         allowanceItemId: undefined,
       }));
       setLineItems(newLineItems);
+      setSelectedLineIndices(new Set());
     }
 
     // After AI extraction the bill goes straight to the approver's queue
@@ -4929,6 +4953,17 @@ export default function BillDetail() {
             {label}
           </Button>
         ))}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs text-destructive hover:text-destructive"
+          onClick={() => deleteLineItems(selectedLineIndices)}
+          data-testid="button-bulk-delete-lines"
+        >
+          <Trash2 className="h-3.5 w-3.5 mr-1" />
+          Delete
+        </Button>
       </BulkActionBar>
 
       {/* One bulk-edit dialog for every field — the control and the property it
