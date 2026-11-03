@@ -25100,17 +25100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const existingItems = await storage.getPurchaseOrderItems(req.params.id);
-      const allPos = await storage.getPurchaseOrders(req.user.companyId);
-      const poNumbers = allPos.map((p: any) => p.poNumber);
-      let nextNum = 1;
-      for (const num of poNumbers) {
-        const match = num.match(/PO-(\d+)/);
-        if (match) {
-          const n = parseInt(match[1], 10);
-          if (n >= nextNum) nextNum = n + 1;
-        }
-      }
-      const newPoNumber = `PO-${String(nextNum).padStart(4, "0")}`;
+      const newPoNumber = await storage.getNextPONumber(req.user.companyId, existingPo.poType);
 
       const newPo = await storage.createPurchaseOrder({
         companyId: existingPo.companyId,
@@ -25122,7 +25112,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         title: existingPo.title ? `${existingPo.title} (Copy)` : "Copy",
         description: existingPo.description,
         status: "draft",
-        type: existingPo.type || "standard",
+        poType: existingPo.poType,
+        costCodeId: existingPo.costCodeId,
+        scopeStageId: existingPo.scopeStageId,
         scope: existingPo.scope,
         termsAndConditions: existingPo.termsAndConditions,
         deliveryAddress: existingPo.deliveryAddress,
@@ -25131,7 +25123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deliveryAttention: existingPo.deliveryAttention,
         deliveryContact: existingPo.deliveryContact,
         requiredByDate: existingPo.requiredByDate,
-        createdBy: req.user.id,
+        createdById: req.user.id,
         gstMode: existingPo.gstMode,
         subtotal: existingPo.subtotal,
         gstAmount: existingPo.gstAmount,
@@ -25230,7 +25222,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (data.supplierUserId && !await inCompany(schema.users, data.supplierUserId)) return "supplier";
     if (data.costCodeId && !await inCompany(schema.costCodes, data.costCodeId)) return "cost code";
     if (data.scopeStageId && !await inCompany(schema.scopeStages, data.scopeStageId)) return "scope stage";
-    if (data.sourceEstimateId && !await inCompany(schema.estimates, data.sourceEstimateId)) return "estimate";
+    if (data.sourceEstimateId) {
+      // Estimates have no companyId: they belong to their project's company.
+      const [row] = await db.select({ companyId: schema.projects.companyId }).from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(eq(schema.estimates.id, data.sourceEstimateId)).limit(1);
+      if (row?.companyId !== companyId) return "estimate";
+    }
     if (data.sourceTimesheetId) {
       // Timesheets have no companyId: they belong to their user's company.
       const [row] = await db.select({ companyId: schema.users.companyId }).from(schema.timesheets)

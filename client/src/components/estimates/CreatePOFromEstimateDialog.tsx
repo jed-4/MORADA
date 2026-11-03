@@ -38,7 +38,9 @@ import {
   Trash2,
   Building2,
 } from "lucide-react";
-import type { EstimateItem, Contact } from "@shared/schema";
+import type { EstimateItem, Contact, CostCode } from "@shared/schema";
+import { estimateLineToPOLine } from "@shared/estimateToPO";
+import { computePOTotalsCents } from "@shared/poTotals";
 
 interface CreatePOFromEstimateDialogProps {
   open: boolean;
@@ -71,7 +73,7 @@ export function CreatePOFromEstimateDialog({
   const [supplierName, setSupplierName] = useState<string>("");
   const [orderDate, setOrderDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [deliveryDate, setDeliveryDate] = useState("");
-  const [gstMode, setGstMode] = useState<"inclusive" | "exclusive" | "gst_free">("inclusive");
+  const [gstMode, setGstMode] = useState<"inclusive" | "exclusive" | "gst_free">("exclusive");
   const [deliveryReference, setDeliveryReference] = useState("");
   const [deliveryAttention, setDeliveryAttention] = useState("");
   const [deliveryContact, setDeliveryContact] = useState("");
@@ -100,27 +102,23 @@ export function CreatePOFromEstimateDialog({
     }
   };
 
-  const calculateItemTotal = (item: EstimateItem) => {
-    const qty = parseFloat(item.quantity?.toString() || "1");
-    const rate = item.rate || 0;
-    return Math.round(qty * rate);
-  };
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+    enabled: open,
+  });
 
-  const subtotal = useMemo(() => {
-    return selectedEstimateItems.reduce((sum, item) => sum + calculateItemTotal(item), 0);
-  }, [selectedEstimateItems]);
+  const poLines = useMemo(
+    () => selectedEstimateItems.map((item) => ({
+      item,
+      line: estimateLineToPOLine(item, gstMode),
+    })),
+    [selectedEstimateItems, gstMode],
+  );
 
-  const gstAmount = useMemo(() => {
-    if (gstMode === "gst_free") return 0;
-    if (gstMode === "inclusive") return Math.round(subtotal / 11);
-    return Math.round(subtotal * 0.1);
-  }, [subtotal, gstMode]);
-
-  const total = useMemo(() => {
-    if (gstMode === "gst_free") return subtotal;
-    if (gstMode === "inclusive") return subtotal;
-    return subtotal + gstAmount;
-  }, [subtotal, gstAmount, gstMode]);
+  const { subtotal, gstAmount, total } = useMemo(
+    () => computePOTotalsCents(poLines.map(({ line }) => line), gstMode),
+    [poLines, gstMode],
+  );
 
   const createPOMutation = useMutation({
     mutationFn: async () => {
@@ -145,15 +143,14 @@ export function CreatePOFromEstimateDialog({
         sourceEstimateId: estimateId,
       });
 
-      const poItems = selectedEstimateItems.map((item, index) => ({
-        description: item.description || "Untitled item",
-        quantity: item.quantity?.toString() || "1",
-        unit: item.unit || "each",
-        unitPrice: item.rate || 0,
-        total: calculateItemTotal(item),
+      // estimate_items.costCode is free text that usually holds a cost code id.
+      // Only send a real one: the server refuses the whole batch over a bad id.
+      const knownCostCodes = new Set(costCodes.map((code) => code.id));
+      const poItems = poLines.map(({ item, line }, index) => ({
+        ...line,
         isGstFree: gstMode === "gst_free",
-        gstAmount: gstMode === "gst_free" ? 0 : (gstMode === "inclusive" ? Math.round(calculateItemTotal(item) / 11) : Math.round(calculateItemTotal(item) * 0.1)),
-        costCodeId: item.costCodeId || undefined,
+        gstAmount: computePOTotalsCents([line], gstMode).gstAmount,
+        costCodeId: item.costCode && knownCostCodes.has(item.costCode) ? item.costCode : undefined,
         sourceEstimateItemId: item.id,
         displayOrder: index,
       }));
@@ -190,7 +187,7 @@ export function CreatePOFromEstimateDialog({
     setSupplierName("");
     setOrderDate(format(new Date(), "yyyy-MM-dd"));
     setDeliveryDate("");
-    setGstMode("inclusive");
+    setGstMode("exclusive");
     setDeliveryReference("");
     setDeliveryAttention("");
     setDeliveryContact("");
@@ -345,16 +342,16 @@ export function CreatePOFromEstimateDialog({
                 <span className="text-right">Total</span>
               </div>
               <div className="max-h-[200px] overflow-y-auto">
-                {selectedEstimateItems.map((item) => (
+                {poLines.map(({ item, line }) => (
                   <div
                     key={item.id}
                     className="grid grid-cols-[1fr_80px_60px_90px] gap-2 px-3 py-2 border-t text-sm"
                   >
-                    <span className="truncate">{item.description || "Untitled"}</span>
-                    <span className="text-right tabular-nums">{item.quantity || 1}</span>
-                    <span className="text-right text-muted-foreground">{item.unit || "-"}</span>
+                    <span className="truncate">{line.description}</span>
+                    <span className="text-right tabular-nums">{line.quantity}</span>
+                    <span className="text-right text-muted-foreground">{line.unit}</span>
                     <span className="text-right tabular-nums font-medium">
-                      {formatCurrency(calculateItemTotal(item))}
+                      {formatCurrency(line.total)}
                     </span>
                   </div>
                 ))}
@@ -364,10 +361,8 @@ export function CreatePOFromEstimateDialog({
 
           <div className="space-y-1 text-sm">
             <div className="flex justify-between px-1">
-              <span className="text-muted-foreground">Subtotal {gstMode === "inclusive" ? "(ex GST)" : ""}</span>
-              <span className="tabular-nums font-medium">
-                {formatCurrency(gstMode === "inclusive" ? subtotal - gstAmount : subtotal)}
-              </span>
+              <span className="text-muted-foreground">Subtotal (ex GST)</span>
+              <span className="tabular-nums font-medium">{formatCurrency(subtotal)}</span>
             </div>
             {gstMode !== "gst_free" && (
               <div className="flex justify-between px-1">
@@ -377,7 +372,7 @@ export function CreatePOFromEstimateDialog({
             )}
             <Separator />
             <div className="flex justify-between px-1 font-medium">
-              <span>Total {gstMode === "inclusive" ? "(inc GST)" : ""}</span>
+              <span>Total (inc GST)</span>
               <span className="tabular-nums">{formatCurrency(total)}</span>
             </div>
           </div>
