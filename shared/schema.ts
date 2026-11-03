@@ -808,7 +808,7 @@ export const docVersions = pgTable("doc_versions", {
 }));
 export type DocVersion = typeof docVersions.$inferSelect;
 
-// Operations starter pack (0120): one row per pack item a company has been
+// Operations starter pack (0123): one row per pack item a company has been
 // given. The unique key is what makes "Add starter pack" safe to press twice,
 // and a row stays after the company deletes the copy, so a deleted SOP never
 // comes back. targetId is the company's own copy (docs / doc_folders /
