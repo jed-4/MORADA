@@ -1365,7 +1365,7 @@ export default function Settings() {
                       <FormLabel>Company Name *</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Lighthouse Projects & Construction Pty Ltd"
+                          placeholder="Dundee Building Co Pty Ltd"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-name-input"
@@ -1384,7 +1384,7 @@ export default function Settings() {
                       <FormLabel>Display Name</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Lighthouse projects"
+                          placeholder="Dundee Building"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-nickname-input"
@@ -1406,7 +1406,7 @@ export default function Settings() {
                       <FormLabel>Company Email</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="jed@lighthouseprojects.com.au"
+                          placeholder="mick@dundeebuilding.com.au"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-email-input"
@@ -1425,7 +1425,7 @@ export default function Settings() {
                       <FormLabel>Company Phone Number</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="0439345723"
+                          placeholder="0400 123 456"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-phone-input"
@@ -1444,7 +1444,7 @@ export default function Settings() {
                       <FormLabel>Company Website</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="https://lighthouseprojects.com.au/"
+                          placeholder="https://dundeebuilding.com.au"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-website-input"
@@ -1464,7 +1464,7 @@ export default function Settings() {
                     <FormLabel>Address</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Enter your company address"
+                        placeholder="1 Walkabout Creek Rd, McKinlay NT 0851"
                         {...field}
                         disabled={!isEditing}
                         data-testid="company-address-input"

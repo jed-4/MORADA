@@ -12,6 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { markWelcomeEmailBannerPending } from "@/components/WelcomeEmailBanner";
 
 const userProfileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -160,6 +161,9 @@ export default function OnboardingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      // Arm the "check your inbox" banner for the first app load. Set only
+      // here, so it can only ever fire for a brand-new signup.
+      markWelcomeEmailBannerPending();
       toast({
         title: "You're all set!",
         description: "Your 14-day free trial has started.",

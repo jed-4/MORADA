@@ -1093,6 +1093,7 @@
     "server/routes.ts POST /api/notifications/register-device",
     "server/routes.ts POST /api/notifications/unregister-device",
     "server/routes.ts POST /api/ocr/process-invoice",
+    "server/routes.ts POST /api/onboarding/resend-welcome",
     "server/routes.ts POST /api/overheads/actuals/bulk",
     "server/routes.ts POST /api/overheads/categories",
     "server/routes.ts POST /api/overheads/items",
