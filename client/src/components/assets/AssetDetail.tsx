@@ -9,7 +9,6 @@ import {
   FileText,
   Gauge,
   History,
-  Info,
   Loader2,
   MoreVertical,
   Paperclip,
@@ -112,9 +111,9 @@ function Empty({ children }: { children: React.ReactNode }) {
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   if (children == null || children === "" || children === false) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 px-3 py-1.5">
-      <span className="text-[11px] text-muted-foreground shrink-0">{label}</span>
-      <span className="text-xs font-medium truncate text-right">{children}</span>
+    <div className="min-w-0">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-xs font-medium truncate">{children}</div>
     </div>
   );
 }
@@ -387,7 +386,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <h2 className="text-sm font-semibold truncate" data-testid="text-asset-name">{asset.name}</h2>
-          {asset.rego && <Badge variant="outline" className="font-mono text-[11px] no-default-active-elevate shrink-0">{asset.rego}{asset.regoState ? ` · ${asset.regoState}` : ""}</Badge>}
+          {asset.rego && <Badge variant="outline" className="font-mono text-[11px] no-default-active-elevate shrink-0">{asset.rego}</Badge>}
           <Badge variant="secondary" className="text-[11px] no-default-active-elevate shrink-0">{ASSET_STATUS_LABELS[asset.status as AssetStatus] ?? asset.status}</Badge>
           {heavy && <Badge variant="outline" className="text-[11px] no-default-active-elevate shrink-0" title="Over 4.5t GVM — NHVR daily checks and Chain of Responsibility apply">Heavy</Badge>}
           <span className="text-xs text-muted-foreground truncate hidden md:inline">
@@ -435,6 +434,42 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       </div>
 
       <PrestartDefectBanner asset={asset} prestarts={asset.prestarts ?? []} canEdit={canEdit} />
+
+      {/* Details: only what's filled in */}
+      <Card className="px-3 py-2.5" data-testid="card-asset-details">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
+          <Fact label="Assigned to">{nameOf(asset.assignedUserId) ?? "Nobody (pool)"}</Fact>
+          {asset.meterType !== "none" && (
+            <Fact label={asset.meterType === "hours" ? "Engine hours" : "Odometer"}>
+              {asset.currentMeter != null ? (
+                <>
+                  {meter(asset.currentMeter, asset.meterType)}
+                  {asset.currentMeterDate && <span className="text-muted-foreground font-normal"> · {shortDate(asset.currentMeterDate)}</span>}
+                </>
+              ) : canEdit ? (
+                <button type="button" className="text-primary hover:underline font-normal" onClick={() => setEventPreset({ kind: "meter" })} data-testid="button-enter-meter">
+                  Enter reading
+                </button>
+              ) : null}
+            </Fact>
+          )}
+          {isRoad && <Fact label="Registered in">{asset.regoState}</Fact>}
+          <Fact label={isRoad ? "VIN" : "Serial number"}>{asset.vin && <span className="font-mono">{asset.vin}</span>}</Fact>
+          {isRoad && <Fact label="GVM">{asset.gvmKg != null ? `${asset.gvmKg.toLocaleString("en-AU")} kg` : null}</Fact>}
+          <Fact label="Colour">{asset.colour}</Fact>
+          <Fact label="Purchased">
+            {[asset.purchaseDate ? shortDate(asset.purchaseDate) : null, seeCosts && asset.purchaseCents != null ? money(asset.purchaseCents) : null].filter(Boolean).join(" · ") || null}
+          </Fact>
+          {seeCosts && <Fact label="Finance">{asset.financeProvider}</Fact>}
+          {seeCosts && <Fact label="Charged out">{asset.chargeOut ? (asset.dayRateCents ? `${money(asset.dayRateCents)}/day` : "Yes, no day rate") : null}</Fact>}
+          {canEdit && missingDetails && (
+            <button type="button" className="ml-auto text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)} data-testid="button-add-details">
+              + Add {missingDetails}
+            </button>
+          )}
+        </div>
+        {asset.notes && <p className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{asset.notes}</p>}
+      </Card>
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
         <div className="flex flex-col gap-3 min-w-0">
@@ -547,42 +582,6 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         </div>
 
         <div className="flex flex-col gap-3 min-w-0">
-          {/* Details: only what's filled in */}
-          <Card className="overflow-hidden min-w-0" data-testid="card-asset-details">
-            <SectionHeader icon={Info} title="Details" />
-            <div className="divide-y divide-border">
-              <Fact label="Assigned to">{nameOf(asset.assignedUserId) ?? "Nobody (pool)"}</Fact>
-              {asset.meterType !== "none" && (
-                <Fact label={asset.meterType === "hours" ? "Engine hours" : "Odometer"}>
-                  {asset.currentMeter != null ? (
-                    <>
-                      {meter(asset.currentMeter, asset.meterType)}
-                      {asset.currentMeterDate && <span className="text-muted-foreground font-normal"> · {shortDate(asset.currentMeterDate)}</span>}
-                    </>
-                  ) : canEdit ? (
-                    <button type="button" className="text-primary hover:underline font-normal" onClick={() => setEventPreset({ kind: "meter" })} data-testid="button-enter-meter">
-                      Enter reading
-                    </button>
-                  ) : null}
-                </Fact>
-              )}
-              <Fact label={isRoad ? "VIN" : "Serial number"}>{asset.vin && <span className="font-mono">{asset.vin}</span>}</Fact>
-              {isRoad && <Fact label="GVM">{asset.gvmKg != null ? `${asset.gvmKg.toLocaleString("en-AU")} kg` : null}</Fact>}
-              <Fact label="Colour">{asset.colour}</Fact>
-              <Fact label="Purchased">
-                {[asset.purchaseDate ? shortDate(asset.purchaseDate) : null, seeCosts && asset.purchaseCents != null ? money(asset.purchaseCents) : null].filter(Boolean).join(" · ") || null}
-              </Fact>
-              {seeCosts && <Fact label="Finance">{asset.financeProvider}</Fact>}
-              {seeCosts && <Fact label="Charged out">{asset.chargeOut ? (asset.dayRateCents ? `${money(asset.dayRateCents)}/day` : "Yes, no day rate") : null}</Fact>}
-            </div>
-            {asset.notes && <p className="px-3 py-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{asset.notes}</p>}
-            {canEdit && missingDetails && (
-              <button type="button" className="w-full px-3 py-1.5 border-t border-border text-left text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/40" onClick={() => setEditing(true)}>
-                + Add {missingDetails}
-              </button>
-            )}
-          </Card>
-
           <PrestartsSection asset={asset} prestarts={asset.prestarts ?? []} />
 
           {/* Documents */}
