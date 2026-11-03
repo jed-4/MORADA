@@ -10,6 +10,7 @@ import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
+import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
 import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
 import { db, pool } from "./db";
 import { google } from "googleapis";
@@ -23159,18 +23160,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Per-record company ownership check: reject mixed/foreign IDs.
-      const existing = await Promise.all(
+      const found = await Promise.all(
         ids.map((id: string) => storage.getPurchaseOrder(id)),
       );
-      for (let i = 0; i < existing.length; i++) {
-        const po = existing[i];
+      for (let i = 0; i < found.length; i++) {
+        const po = found[i];
         if (!po || po.companyId !== req.user.companyId) {
           return res.status(404).json({ error: `Purchase order not found: ${ids[i]}` });
         }
       }
 
+      // POs that would go backwards are left as they are and reported back.
+      const existing = found.filter((po) => po && canMovePOStatus(po.status, status) && po.status !== status);
+      const skipped = found.length - existing.length;
+
       await Promise.all(
-        ids.map((id: string) => storage.updatePurchaseOrder(id, { status })),
+        existing.map((po) => storage.updatePurchaseOrder(po!.id, { status })),
       );
 
       // Mirror the single-PATCH side-effect: when transitioning into "paid",
@@ -23212,7 +23217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ updated: ids.length });
+      res.json({ updated: existing.length, skipped });
     } catch (error) {
       console.error("[PO bulk-status]", error);
       res.status(500).json({ error: "Failed to bulk update purchase orders" });
@@ -24982,6 +24987,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
+      const nextStatus = validationResult.data.status;
+      if (nextStatus && !canMovePOStatus(existingPo.status, nextStatus)) {
+        return res.status(409).json({ error: poStatusMoveError(existingPo.status, nextStatus) });
+      }
+
       // Mutual exclusivity: when one supplier ref is being set, clear the other so a PO never points at both.
       const patch: any = { ...validationResult.data };
       if (patch.supplierUserId) patch.supplierId = null;
@@ -25062,12 +25072,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // A paid PO is settled — deleting it would drag already-paid timesheets
       // back into the Sub PO queue, where they could be pushed onto a second PO
-      // and paid twice. Unmark the payment first if it genuinely needs removing.
+      // and paid twice. Status never moves backwards, so this is permanent.
       // partially_paid counts: money has already moved against it.
       if (existingPo.status === "paid" || existingPo.status === "partially_paid") {
         return res.status(409).json({
           error: "Purchase order is paid",
-          message: `${existingPo.poNumber} is marked ${existingPo.status === "paid" ? "paid" : "partially paid"} and cannot be deleted. Change its status first if it really needs to be removed.`,
+          message: `${existingPo.poNumber} is ${existingPo.status === "paid" ? "paid" : "partially paid"} and cannot be deleted.`,
         });
       }
 
@@ -25192,8 +25202,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Re-sending only re-sends: a PO that's further along keeps its status.
       const updatedPo = await storage.updatePurchaseOrder(req.params.id, {
-        status: "sent",
+        ...(po.status === "draft" ? { status: "sent" } : {}),
         sentAt: new Date(),
         sentToEmail: to || undefined,
       } as any);
