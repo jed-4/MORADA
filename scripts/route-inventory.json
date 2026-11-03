@@ -237,7 +237,6 @@
     "server/routes.ts GET /api/business/activity",
     "server/routes.ts GET /api/business/financial-summary",
     "server/routes.ts GET /api/business/kpis",
-    "server/routes.ts GET /api/business/kpis_legacy_removed",
     "server/routes.ts GET /api/business/pnl",
     "server/routes.ts GET /api/business/project-profitability",
     "server/routes.ts GET /api/business/revenue-trends",
