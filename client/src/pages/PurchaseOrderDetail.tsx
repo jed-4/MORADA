@@ -89,6 +89,7 @@ import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSecti
 import { MoneySummary } from "@/components/detail/MoneySummary";
 import { AddLineRow } from "@/components/detail/AddLineRow";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ImportProjectScopeDialog } from "@/components/purchase-orders/ImportProjectScopeDialog";
 import type {
   PurchaseOrder,
   PurchaseOrderItem,
@@ -1542,13 +1543,13 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const handleImportProjectScope = () => {
-    if (project?.scope) {
-      setScope(project.scope);
-      setHasUnsavedChanges(true);
-      setIsImportScopeDialogOpen(false);
-      toast({ title: "Scope imported from project" });
-    }
+  // Adds the picked project scope items after whatever the PO already says.
+  const handleImportProjectScope = (html: string, count: number) => {
+    const current = scope && htmlToText(scope).trim() ? scope : "";
+    setScope(current + html);
+    setHasUnsavedChanges(true);
+    setIsImportScopeDialogOpen(false);
+    toast({ title: `Added ${count} scope item${count === 1 ? "" : "s"} from the project` });
   };
 
   const handleDownloadPdf = async () => {
@@ -2184,7 +2185,7 @@ export default function PurchaseOrderDetail() {
               isEmpty={!scopeText?.trim() && isLocked}
               data-testid="section-scope"
               actions={
-                project?.scope && !isLocked ? (
+                !isLocked ? (
                   <button
                     type="button"
                     onClick={() => setIsImportScopeDialogOpen(true)}
@@ -2192,7 +2193,7 @@ export default function PurchaseOrderDetail() {
                     data-testid="button-import-scope"
                   >
                     <Download className="w-3 h-3" />
-                    <span>Import from project</span>
+                    <span>Add from project scope</span>
                   </button>
                 ) : undefined
               }
@@ -2317,28 +2318,13 @@ export default function PurchaseOrderDetail() {
       {/* ---------- Dialogs ---------- */}
 
       {/* Import Scope */}
-      <Dialog
+      <ImportProjectScopeDialog
         open={isImportScopeDialogOpen}
         onOpenChange={setIsImportScopeDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Scope from Project</DialogTitle>
-            <DialogDescription>
-              This will replace the current scope with the project's scope content.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsImportScopeDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleImportProjectScope}>Import Scope</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        projectId={purchaseOrder.projectId}
+        poCostCodeIds={Array.from(new Set(items.map((i) => i.costCodeId).filter((c): c is string => !!c)))}
+        onImport={handleImportProjectScope}
+      />
 
       {/* Preview PO PDF */}
       {purchaseOrder && (
