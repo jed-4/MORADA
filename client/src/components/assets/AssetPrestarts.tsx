@@ -145,11 +145,13 @@ export function PrestartsSection({ asset, prestarts }: { asset: Asset; prestarts
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <Card className="overflow-hidden min-w-0" data-testid="card-asset-prestarts">
-      <SectionHeader icon={ClipboardCheck} title="Pre-starts" hint="On the phone: More → Pre-start, or scan the sticker">
+      <SectionHeader icon={ClipboardCheck} title="Pre-starts">
         <QrStickerButton asset={asset} />
       </SectionHeader>
       {prestarts.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-muted-foreground text-center">No pre-starts yet.</p>
+        <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+          None yet. Drivers do them on the phone (More → Pre-start) or by scanning the sticker.
+        </p>
       ) : (
         <ul className="divide-y divide-border max-h-[420px] overflow-y-auto">
           {prestarts.map((p) => {

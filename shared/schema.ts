@@ -7,6 +7,7 @@ import { JOB_MODES } from "./cashflow/types";
 import { FREQUENCIES } from "./cashflow/recurrence";
 import {
   ASSET_TYPES,
+  FINANCE_FREQUENCIES,
   ASSET_STATUSES,
   METER_TYPES,
   COMPLIANCE_KINDS,
@@ -9443,6 +9444,15 @@ export const assets = pgTable("assets", {
   // What a day of use charges a job, ex GST (an internal cost, like labour).
   // 0/null = never charged. See shared/assetRecharge.ts (migration 0116).
   dayRateCents: integer("day_rate_cents"),
+  // Charged out to jobs (an excavator) vs just used (a ute). Only charge-out
+  // assets are ever charged, at dayRateCents (migration 0122).
+  chargeOut: boolean("charge_out").notNull().default(false),
+  // Finance repayments, as paid: amount per FINANCE_FREQUENCIES period from
+  // the first repayment to the last (blank = still running). Migration 0122.
+  financeRepaymentCents: integer("finance_repayment_cents"),
+  financeFrequency: text("finance_frequency"), // FINANCE_FREQUENCIES
+  financeStartDate: text("finance_start_date"), // 'YYYY-MM-DD'
+  financeEndDate: text("finance_end_date"), // 'YYYY-MM-DD'
   meterType: text("meter_type").notNull().default("km"), // METER_TYPES
   currentMeter: integer("current_meter"),
   currentMeterDate: text("current_meter_date"), // 'YYYY-MM-DD' of that reading
@@ -9473,6 +9483,11 @@ export const insertAssetSchema = createInsertSchema(assets).omit({
   gvmKg: nonNegInt.nullable().optional(),
   purchaseCents: nonNegInt.nullable().optional(),
   dayRateCents: nonNegInt.nullable().optional(),
+  chargeOut: z.boolean().optional(),
+  financeRepaymentCents: nonNegInt.nullable().optional(),
+  financeFrequency: z.enum(FINANCE_FREQUENCIES).nullable().optional(),
+  financeStartDate: assetDateKey.nullable().optional(),
+  financeEndDate: assetDateKey.nullable().optional(),
   purchaseDate: assetDateKey.nullable().optional(),
   photoUrl: z.string().startsWith("/objects/").nullable().optional(),
 });

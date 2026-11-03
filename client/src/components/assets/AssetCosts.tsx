@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link2, Loader2, Receipt, Search, Unlink } from "lucide-react";
+import { CalendarPlus, Link2, Loader2, Receipt, Search, Unlink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,9 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import type { Asset } from "@shared/schema";
 import { METER_UNIT, VEHICLE_COST_CATEGORIES, VEHICLE_COST_CATEGORY_LABELS, type MeterType, type VehicleCostCategory } from "@shared/assets";
 import { CHIP_BUTTON, SectionHeader, errorText, money, shortDate } from "./assetsShared";
+import { BookingDialog, ChargeOutJobs, rechargesKey, type RechargeResponse } from "./AssetRecharge";
 
 interface CostLine {
   lineId: string;
@@ -21,6 +23,7 @@ interface CostLine {
   supplierName: string | null;
   description: string;
   incGstCents: number;
+  exGstCents: number;
   category: VehicleCostCategory;
   billStatus: string;
 }
@@ -32,6 +35,9 @@ interface CostsResponse {
     billsLast12Cents: number;
     loggedAllTimeCents: number;
     loggedLast12Cents: number;
+    repaymentsLast12Cents: number;
+    repaymentsLast12Count: number;
+    repaymentsToDateCents: number;
     purchaseCents: number | null;
     byCategoryLast12: Record<VehicleCostCategory, number>;
     byFinancialYear: Record<string, number>;
@@ -51,24 +57,37 @@ function invalidateCosts(id: string) {
 
 const dateKey = (iso: string) => iso.slice(0, 10);
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" }) {
   return (
     <div className="min-w-0">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
-      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+      <div
+        className={cn(
+          "text-sm font-semibold tabular-nums",
+          tone === "good" && "text-[hsl(var(--status-success-fg))]",
+          tone === "bad" && "text-[hsl(var(--status-danger-fg))]",
+        )}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-[11px] text-muted-foreground truncate">{sub}</div>}
     </div>
   );
 }
 
+const FREQ_SHORT: Record<string, string> = { weekly: "week", fortnightly: "fortnight", monthly: "month" };
+
 /**
- * What this asset actually costs, from the bills already in Morada — fuel
- * statements, servicing, rego, insurance — plus anything logged by hand.
+ * Everything the asset costs, in one card, ex GST: running costs from the
+ * bills already in Morada, finance repayments, and — for a charge-out asset
+ * like an excavator — what it has charged to jobs against all of that.
  */
 export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: boolean }) {
   const { toast } = useToast();
   const { data, isLoading, error } = useQuery<CostsResponse>({ queryKey: costsKey(asset.id) });
+  const { data: recharge } = useQuery<RechargeResponse>({ queryKey: rechargesKey(asset.id), enabled: asset.chargeOut });
   const [finding, setFinding] = useState(false);
+  const [booking, setBooking] = useState(false);
 
   const unlink = useMutation({
     mutationFn: (lineId: string) => apiRequest(`/api/assets/${asset.id}/bill-lines/${lineId}`, "DELETE"),
@@ -79,12 +98,41 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
   const s = data?.summary;
   const unit = METER_UNIT[asset.meterType as MeterType] ?? "";
   const maxCategory = s ? Math.max(1, ...VEHICLE_COST_CATEGORIES.map((c) => Math.abs(s.byCategoryLast12[c] ?? 0))) : 1;
-  const tco = s ? (s.purchaseCents ?? 0) + s.billsAllTimeCents + s.loggedAllTimeCents : 0;
   const years = s ? Object.entries(s.byFinancialYear).sort((a, b) => b[0].localeCompare(a[0])) : [];
+  const financed = !!asset.financeRepaymentCents && !!asset.financeFrequency;
+  const runningLast12 = s ? s.billsLast12Cents + s.loggedLast12Cents : 0;
+  const costLast12 = s ? runningLast12 + s.repaymentsLast12Cents : 0;
+  const tco = s ? (s.purchaseCents ?? 0) + s.billsAllTimeCents + s.loggedAllTimeCents : 0;
+  const lineCount = data?.lines.length ?? 0;
+
+  const costSplit = s
+    ? [runningLast12 ? `${money(runningLast12)} running` : null, s.repaymentsLast12Cents ? `${money(s.repaymentsLast12Cents)} repayments` : null]
+        .filter(Boolean)
+        .join(" · ") || "nothing linked yet"
+    : undefined;
+  const perUnit = s && (
+    <Tile
+      label={`Cost per ${unit || "unit"}`}
+      value={s.costPerUnitCents != null ? `$${(s.costPerUnitCents / 100).toFixed(2)}` : "—"}
+      sub={s.distanceLast12 ? `${s.distanceLast12.amount.toLocaleString("en-AU")} ${unit} in 12 months` : "needs readings a month apart"}
+    />
+  );
+  const repaymentTile = financed && s && (
+    <Tile
+      label="Repayments"
+      value={`${money(asset.financeRepaymentCents)}/${FREQ_SHORT[asset.financeFrequency!] ?? "period"}`}
+      sub={`${money(s.repaymentsLast12Cents)} in 12 months${asset.financeEndDate ? ` · ends ${shortDate(asset.financeEndDate)}` : ""}`}
+    />
+  );
 
   return (
-    <Card className="overflow-hidden min-w-0 lg:col-span-2" data-testid="card-asset-costs">
-      <SectionHeader icon={Receipt} title="Running costs" hint="From linked bills, inc GST">
+    <Card className="overflow-hidden min-w-0" data-testid="card-asset-costs">
+      <SectionHeader icon={Receipt} title="Costs" hint="Last 12 months, ex GST">
+        {canEdit && asset.chargeOut && (
+          <button type="button" className={CHIP_BUTTON} onClick={() => setBooking(true)} data-testid="button-book-asset">
+            <CalendarPlus className="w-3 h-3" />Book to job
+          </button>
+        )}
         {canEdit && (
           <button type="button" className={CHIP_BUTTON} onClick={() => setFinding(true)} data-testid="button-find-bills">
             <Search className="w-3 h-3" />Find bills
@@ -99,22 +147,49 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
       ) : (
         <div className="flex flex-col">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-3 py-2 border-b border-border">
-            <Tile label="Last 12 months" value={money(s.billsLast12Cents + s.loggedLast12Cents)} sub={s.loggedLast12Cents ? `${money(s.loggedLast12Cents)} logged by hand` : "from bills"} />
-            <Tile
-              label={`Cost per ${unit || "unit"}`}
-              value={s.costPerUnitCents != null ? `$${(s.costPerUnitCents / 100).toFixed(2)}` : "—"}
-              sub={s.distanceLast12 ? `${s.distanceLast12.amount.toLocaleString("en-AU")} ${unit} since ${shortDate(s.distanceLast12.from)}` : "needs readings a month apart"}
-            />
-            <Tile label="All bills" value={money(s.billsAllTimeCents)} sub={`${data!.lines.length} line${data!.lines.length === 1 ? "" : "s"}`} />
-            <Tile label="Cost of ownership" value={money(tco)} sub={s.purchaseCents != null ? `inc ${money(s.purchaseCents)} purchase` : "purchase price not set"} />
+            {asset.chargeOut ? (
+              <>
+                <Tile
+                  label="Charged out"
+                  value={recharge ? money(recharge.totalCents) : "—"}
+                  sub={
+                    recharge
+                      ? `${recharge.days} day${recharge.days === 1 ? "" : "s"}${asset.dayRateCents ? ` at ${money(asset.dayRateCents)}` : ""}`
+                      : asset.dayRateCents ? undefined : "no day rate set"
+                  }
+                />
+                <Tile label="Cost" value={money(costLast12)} sub={costSplit} />
+                <Tile
+                  label="Net"
+                  value={recharge ? money(recharge.totalCents - costLast12) : "—"}
+                  tone={recharge && costLast12 > 0 ? (recharge.totalCents >= costLast12 ? "good" : "bad") : undefined}
+                  sub={recharge && costLast12 > 0 ? `${Math.round((recharge.totalCents / costLast12) * 100)}% of its cost recovered` : undefined}
+                />
+                {repaymentTile || perUnit}
+              </>
+            ) : (
+              <>
+                <Tile label="Cost" value={money(costLast12)} sub={costSplit} />
+                {perUnit}
+                {repaymentTile || <Tile label="All bills" value={money(s.billsAllTimeCents)} sub={`${lineCount} line${lineCount === 1 ? "" : "s"}`} />}
+                <Tile label="Cost of ownership" value={money(tco)} sub={s.purchaseCents != null ? `inc ${money(s.purchaseCents)} purchase` : "purchase price not set"} />
+              </>
+            )}
           </div>
 
-          {data!.lines.length === 0 ? (
-            <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-              No bills linked yet. {canEdit ? "Use Find bills — it looks for the rego on bill lines." : ""}
+          {asset.chargeOut && recharge && (
+            <div className="border-b border-border">
+              <div className="px-3 pt-2 text-[11px] font-medium text-muted-foreground">Jobs</div>
+              <ChargeOutJobs asset={asset} data={recharge} canEdit={canEdit} />
+            </div>
+          )}
+
+          {lineCount === 0 ? (
+            <p className="px-3 py-3 text-xs text-muted-foreground text-center">
+              No bills linked yet.{canEdit ? " Find bills looks for the rego on bill lines." : ""}
             </p>
           ) : (
-            <div className="grid md:grid-cols-[280px_1fr] divide-y md:divide-y-0 md:divide-x divide-border">
+            <div className="grid md:grid-cols-[240px_1fr] divide-y md:divide-y-0 md:divide-x divide-border">
               <div className="px-3 py-2 flex flex-col gap-1.5">
                 <div className="text-[11px] font-medium text-muted-foreground">Last 12 months by type</div>
                 {VEHICLE_COST_CATEGORIES.filter((c) => s.byCategoryLast12[c]).map((c) => (
@@ -152,7 +227,7 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
                         <a href={`/bills/${l.billId}`} className="hover:underline">{l.billReference || l.billNumber}</a>
                       </div>
                     </div>
-                    <span className="text-xs tabular-nums shrink-0">{money(l.incGstCents)}</span>
+                    <span className="text-xs tabular-nums shrink-0">{money(l.exGstCents)}</span>
                     {canEdit && (
                       <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label="Unlink from this asset" onClick={() => unlink.mutate(l.lineId)}>
                         <Unlink className="w-3 h-3" />
@@ -167,6 +242,7 @@ export function AssetCostsSection({ asset, canEdit }: { asset: Asset; canEdit: b
       )}
 
       <FindBillsDialog asset={asset} open={finding} onClose={() => setFinding(false)} />
+      {asset.chargeOut && <BookingDialog asset={asset} open={booking} onClose={() => setBooking(false)} />}
     </Card>
   );
 }
