@@ -13,7 +13,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { TYPE_COLORS } from "@/lib/taskColors";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
 import * as workingDaysLib from "@/lib/workingDays";
-import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
+import { ScheduleViewProvider, matchesAssigneeFilter, BUSINESS_ASSIGNEE_PREFIX } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact, type CompanySettings } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
@@ -1583,7 +1583,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
       }
       
       if (filters.status !== "all" && item.status !== filters.status) return false;
-      if (filters.assignee !== "all" && item.assignedToId !== filters.assignee) return false;
+      if (!matchesAssigneeFilter(item, filters.assignee)) return false;
       if (filters.type !== "all" && item.type !== filters.type) return false;
       
       // Date range filtering
@@ -1909,6 +1909,11 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Assignees</SelectItem>
+                          {user?.companyId && (
+                            <SelectItem value={`${BUSINESS_ASSIGNEE_PREFIX}${user.companyId}`}>
+                              {(user as any).companyNickname || "The Business"}
+                            </SelectItem>
+                          )}
                           {contacts.map((contact) => (
                             <SelectItem key={contact.id} value={contact.id}>
                               {contact.name}

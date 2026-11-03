@@ -15,7 +15,7 @@ import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useScheduleView } from "@/contexts/ScheduleViewContext";
+import { useScheduleView, matchesAssigneeFilter } from "@/contexts/ScheduleViewContext";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay, parseISO } from "date-fns";
 import { TEMPLATE_ANCHOR_DAY, isWorkingDay as isTemplateWorkingDay, templateDayNumber } from "@shared/scheduleTemplateDates";
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
@@ -957,7 +957,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
     // Assignee filter
     if (filters.assignee && filters.assignee !== 'all') {
-      filteredItems = filteredItems.filter(item => item.assignedTo === filters.assignee);
+      filteredItems = filteredItems.filter(item => matchesAssigneeFilter(item, filters.assignee));
     }
 
     // Date range filter
