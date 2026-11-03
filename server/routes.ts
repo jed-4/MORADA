@@ -11,6 +11,7 @@ import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from 
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
 import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
+import { poAcceptUrl, readPoAcceptToken } from "./utils/poAcceptToken";
 import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
 import { db, pool } from "./db";
 import { google } from "googleapis";
@@ -23150,6 +23151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validStatuses = [
         "draft",
         "sent",
+        "accepted",
         "invoiced",
         "partially_paid",
         "paid",
@@ -25185,11 +25187,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (to) {
         const settings = await storage.getCompanySettings(req.user.companyId);
         const fromName = settings?.companyName || "Morada";
+        let html = body ? escapeHtml(body).replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`;
+        // Trades accept main POs from this link; sub POs (from timesheets) don't.
+        if (po.poType === "main" && (po.status === "draft" || po.status === "sent") && !(await poIsFromTimesheets(po.id))) {
+          const url = poAcceptUrl(requestBaseUrl(req), po.id);
+          html += `<p style="margin:24px 0"><a href="${url}" style="background:#87749A;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Accept this purchase order</a></p>`
+            + `<p style="color:#6B6561;font-size:13px">Or open: ${escapeHtml(url)}</p>`;
+        }
 
         await sendGenericEmail({
           to,
           subject: subject || `Purchase Order ${(po as any).poNumber}`,
-          html: body ? escapeHtml(body).replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
+          html,
           from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
@@ -25652,107 +25661,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
-  // PURCHASE ORDER SIGNATURES API ROUTES
+  // PURCHASE ORDER ACCEPTANCE (trade accepts via an emailed link)
   // ============================================
+  // Replaces the old signing flow, which never worked: it wrote a status that
+  // doesn't exist and never stored the signature. Acceptances are kept in
+  // purchase_order_signatures (one row per acceptance, signed_at = when).
 
-  // Get signatures for a purchase order
-  app.get("/api/purchase-orders/:poId/signatures", async (req, res) => {
+  // Sub POs (made from timesheets) are paid on the timesheet, not accepted.
+  const poIsFromTimesheets = async (poId: string) =>
+    (await storage.getPurchaseOrderItems(poId)).some((i) => i.sourceTimesheetId);
+
+  const requestBaseUrl = (req: any) =>
+    (process.env.APP_BASE_URL || process.env.APP_URL || "").replace(/\/$/, "") ||
+    `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+
+  // Who accepted, and the link to send if it can still be accepted.
+  app.get("/api/purchase-orders/:poId/acceptance", async (req, res) => {
     try {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+      const po = await storage.getPurchaseOrder(req.params.poId);
+      if (!po || po.companyId !== req.user.companyId) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
-      const signatures = await storage.getPurchaseOrderSignatures(req.params.poId);
-      res.json(signatures);
+      const [acceptance] = await storage.getPurchaseOrderSignatures(po.id);
+      const canAccept = po.poType === "main" && !(await poIsFromTimesheets(po.id));
+      res.json({
+        acceptance: acceptance
+          ? { name: acceptance.signerName, email: acceptance.signerEmail, acceptedAt: acceptance.signedAt }
+          : null,
+        acceptUrl: canAccept ? poAcceptUrl(requestBaseUrl(req), po.id) : null,
+      });
     } catch (error) {
-      console.error("Failed to fetch purchase order signatures:", error);
-      res.status(500).json({ error: "Failed to fetch purchase order signatures" });
+      console.error("Failed to fetch purchase order acceptance:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order acceptance" });
     }
   });
 
-  // Create signature request (generate token for supplier portal)
-  app.post("/api/purchase-orders/:poId/request-signature", async (req, res) => {
-    try {
-      if (!req.user?.companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
-        return res.status(404).json({ error: "Purchase order not found" });
-      }
+  // Public: the PO as the trade sees it. Only what's on the PDF — no internal
+  // notes, cost codes or links.
+  const loadPortalPO = async (token: string) => {
+    const poId = readPoAcceptToken(token);
+    if (!poId) return null;
+    const po = await storage.getPurchaseOrder(poId);
+    if (!po || po.poType !== "main") return null;
+    return po;
+  };
 
-      const signatureToken = randomUUID();
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+  app.get("/api/portal/po/:token", async (req, res) => {
+    try {
+      const po = await loadPortalPO(req.params.token);
+      if (!po || (await poIsFromTimesheets(po.id))) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      const [items, settings, project, signatures] = await Promise.all([
+        storage.getPurchaseOrderItems(po.id),
+        storage.getCompanySettings(po.companyId),
+        storage.getProject(po.projectId),
+        storage.getPurchaseOrderSignatures(po.id),
+      ]);
+      const acceptance = signatures[0];
+      res.json({
+        purchaseOrder: {
+          poNumber: po.poNumber,
+          title: po.title,
+          description: po.description,
+          scope: po.scope,
+          termsAndConditions: po.termsAndConditions,
+          poDate: po.poDate,
+          requiredByDate: po.requiredByDate,
+          deliveryAddress: po.deliveryAddress,
+          deliveryInstructions: po.deliveryInstructions,
+          supplierName: po.supplierName,
+          gstMode: po.gstMode,
+          subtotal: po.subtotal,
+          gstAmount: po.gstAmount,
+          total: po.total,
+          status: po.status,
+        },
+        items: items.map((i) => ({
+          description: i.description,
+          quantity: i.quantity,
+          unit: i.unit,
+          unitPrice: i.unitPrice,
+          total: i.total,
+        })),
+        companyName: settings?.companyName || null,
+        projectName: project?.name || null,
+        projectAddress: (project as any)?.location || null,
+        acceptance: acceptance ? { name: acceptance.signerName, acceptedAt: acceptance.signedAt } : null,
+      });
+    } catch (error) {
+      console.error("Failed to load portal purchase order:", error);
+      res.status(500).json({ error: "Failed to load purchase order" });
+    }
+  });
+
+  // No session: the signed token names the PO, and the PO carries its own
+  // companyId, so nothing here can reach another tenant.
+  app.post("/api/portal/po/:token/accept", async (req, res) => {
+    try {
+      const po = await loadPortalPO(req.params.token);
+      if (!po || (await poIsFromTimesheets(po.id))) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      const name = String(req.body?.name ?? "").trim().slice(0, 200);
+      const email = String(req.body?.email ?? "").trim().slice(0, 200) || null;
+      if (!name) return res.status(400).json({ error: "Please enter your name" });
+
+      const [existing] = await storage.getPurchaseOrderSignatures(po.id);
+      if (existing) {
+        return res.json({ acceptance: { name: existing.signerName, acceptedAt: existing.signedAt } });
+      }
+      // Only a PO that has been sent and not moved on can be accepted.
+      if (po.status !== "sent") {
+        return res.status(409).json({
+          error: po.status === "cancelled"
+            ? "This purchase order has been cancelled."
+            : po.status === "draft"
+              ? "This purchase order hasn't been issued yet."
+              : "This purchase order can no longer be accepted online.",
+        });
+      }
 
       const signature = await storage.createPurchaseOrderSignature({
-        purchaseOrderId: req.params.poId,
-        signatureToken,
-        signerType: "supplier",
-        signerName: req.body.signerName || null,
-        signerEmail: req.body.signerEmail || null,
-        expiresAt
-      });
+        purchaseOrderId: po.id,
+        signerName: name,
+        signerEmail: email,
+        signerRole: "Supplier",
+        signedAt: new Date(),
+        ipAddress: req.ip || null,
+        userAgent: String(req.get("user-agent") || "").slice(0, 500) || null,
+      } as any);
+      await storage.updatePurchaseOrder(po.id, { status: "accepted" } as any);
 
-      const signatureUrl = `/sign-po/${signatureToken}`;
-
-      res.status(201).json({ 
-        signature, 
-        signatureUrl,
-        expiresAt 
-      });
+      res.json({ acceptance: { name: signature.signerName, acceptedAt: signature.signedAt } });
     } catch (error) {
-      console.error("Failed to create signature request:", error);
-      res.status(500).json({ error: "Failed to create signature request" });
-    }
-  });
-
-  // Public route: Get PO for signing (via token)
-  app.get("/api/purchase-orders/sign/:token", async (req, res) => {
-    try {
-      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
-      if (!po) {
-        return res.status(404).json({ error: "Purchase order not found or link expired" });
-      }
-
-      // Get items
-      const items = await storage.getPurchaseOrderItems(po.id);
-
-      res.json({ purchaseOrder: po, items });
-    } catch (error) {
-      console.error("Failed to fetch purchase order for signing:", error);
-      res.status(500).json({ error: "Failed to fetch purchase order" });
-    }
-  });
-
-  // Public route: Submit signature
-  app.post("/api/purchase-orders/sign/:token", async (req, res) => {
-    try {
-      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
-      if (!po) {
-        return res.status(404).json({ error: "Purchase order not found or link expired" });
-      }
-
-      // Find the pending signature by token
-      const signatures = await storage.getPurchaseOrderSignatures(po.id);
-      const pendingSignature = signatures.find(s => s.signatureToken === req.params.token && !s.signedAt);
-      
-      if (!pendingSignature) {
-        return res.status(400).json({ error: "Signature already submitted or expired" });
-      }
-
-      // Update the signature with the actual signature data
-      // Note: We'd need an update method - for now, we'll update the PO status
-      await storage.updatePurchaseOrder(po.id, {
-        status: "approved",
-        approvedAt: new Date()
-      });
-
-      res.json({ success: true, message: "Purchase order signed successfully" });
-    } catch (error) {
-      console.error("Failed to sign purchase order:", error);
-      res.status(500).json({ error: "Failed to sign purchase order" });
+      console.error("Failed to accept purchase order:", error);
+      res.status(500).json({ error: "Failed to accept purchase order" });
     }
   });
 

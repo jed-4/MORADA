@@ -16,8 +16,9 @@ import { and, eq, ne } from "drizzle-orm";
  * - Linked vendor credits (billType "credit") are ignored entirely — they are a
  *   negative document and must not drive a PO toward invoiced/paid. A PO whose
  *   only link is a credit therefore counts as having 0 linked bills.
- * - With 0 linked bills, an "invoiced/partially_paid/paid" PO drops back to "sent"
- *   (i.e. previously linked bill was removed/unlinked).
+ * - With 0 linked bills, an "invoiced/partially_paid/paid" PO drops back to
+ *   "accepted" if the trade accepted it, otherwise "sent" (i.e. previously
+ *   linked bill was removed/unlinked).
  *
  * Returns the new status the PO was set to (or its current status if unchanged).
  */
@@ -52,9 +53,15 @@ export async function recomputePOStatusFromBills(poId: string): Promise<string |
 
   let nextStatus: string;
   if (linkedBills.length === 0) {
-    // Used to be linked but the bill was removed/unlinked → back to sent.
+    // Used to be linked but the bill was removed/unlinked → back to where it
+    // was before the bill: accepted if the trade accepted it, else sent.
     if (po.status === "invoiced" || po.status === "partially_paid" || po.status === "paid") {
-      nextStatus = "sent";
+      const [acceptance] = await db
+        .select({ id: schema.purchaseOrderSignatures.id })
+        .from(schema.purchaseOrderSignatures)
+        .where(eq(schema.purchaseOrderSignatures.purchaseOrderId, poId))
+        .limit(1);
+      nextStatus = acceptance ? "accepted" : "sent";
     } else {
       return po.status;
     }

@@ -96,6 +96,7 @@ export async function suggestPOsForBill(
     eq(schema.purchaseOrders.companyId, companyId),
     or(
       eq(schema.purchaseOrders.status, "sent" as any),
+      eq(schema.purchaseOrders.status, "accepted" as any),
       eq(schema.purchaseOrders.status, "invoiced" as any),
       eq(schema.purchaseOrders.status, "partially_paid" as any),
     ),
@@ -107,7 +108,7 @@ export async function suggestPOsForBill(
     ),
   );
 
-  const OPEN_STATUSES = ["sent", "invoiced", "partially_paid"] as const;
+  const OPEN_STATUSES = ["sent", "accepted", "invoiced", "partially_paid"] as const;
   const openPOs = await db.select().from(schema.purchaseOrders).where(openConditions);
   let detectedPOs: typeof openPOs = [];
   if (detectedNumbers.length > 0) {

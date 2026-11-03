@@ -20,17 +20,16 @@ export const PO_MOUNTS = [
   "/api/purchase-order-templates",
 ];
 
-/** The action a request needs, or null for a path the gate leaves alone. */
+/** The action a request needs. (The trade's accept link lives under /api/portal/po.) */
 export function poActionFor(method: string, baseUrl: string, path: string): POAction | null {
   const segs = path.split("/").filter(Boolean);
-  if (method === "GET" || method === "HEAD") return segs[0] === "sign" ? null : "view";
+  if (method === "GET" || method === "HEAD") return "view";
   if (baseUrl !== PO_MOUNT) return "edit";
-  if (segs[0] === "sign") return null;
   if (method === "DELETE") return segs.length === 1 ? "delete" : "edit";
   if (method === "POST") {
     if (segs.length === 0 || segs[0] === "generate-from-timesheets") return "add";
     if (segs[1] === "duplicate") return "add";
-    if (segs[1] === "send" || segs[1] === "request-signature") return "send";
+    if (segs[1] === "send") return "send";
   }
   return "edit";
 }
