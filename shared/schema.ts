@@ -669,12 +669,12 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Nullable for the same reason startTime/endTime are: the column is nullable
   // and a due date has to be removable. Note the `.nullable()` has to wrap the
   // coercion — z.coerce.date() alone turns null into new Date(null), the epoch.
-  dueDate: z.coerce.date().optional().nullable(), // Coerce strings to dates for JSON compatibility
+  dueDate: z.coerce.date().nullable().optional().nullable(), // Coerce strings to dates for JSON compatibility
   // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
   // columns are nullable in the DB; without null here the value cannot be cleared.
   startTime: z.string().nullable().optional(), // HH:MM format
   endTime: z.string().nullable().optional(), // HH:MM format
-  completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  completedAt: z.coerce.date().nullable().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
   checklist: z.array(z.object({
@@ -695,12 +695,12 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringDays: z.array(z.number()).optional(),
   includeSaturday: z.boolean().optional(),
   includeSunday: z.boolean().optional(),
-  recurringStartDate: z.coerce.date().optional(),
-  recurringEndDate: z.coerce.date().optional(),
+  recurringStartDate: z.coerce.date().nullable().optional(),
+  recurringEndDate: z.coerce.date().nullable().optional(),
   templateId: z.string().optional(),
-  occurrenceDate: z.coerce.date().optional(), // Original scheduled date from template
+  occurrenceDate: z.coerce.date().nullable().optional(), // Original scheduled date from template
   isModified: z.boolean().optional(), // True if user moved/rescheduled from template time
-  lastRecurringDate: z.coerce.date().optional(),
+  lastRecurringDate: z.coerce.date().nullable().optional(),
   // Reference fields for system-generated tasks
   referenceType: z.string().optional(),
   referenceId: z.string().optional(),
@@ -2148,7 +2148,7 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
   projectIds: z.array(z.string()).optional(),
   primaryContact: z.enum(["self", "spouse"]).optional(),
   reviewStatus: z.enum(["pending", "reviewed", "skipped"]).optional(),
-  lastReviewedAt: z.coerce.date().optional(),
+  lastReviewedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -2298,7 +2298,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   billType: z.enum(["bill", "credit", "receipt"]),
   status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]),
   billDate: z.coerce.date(),
-  dueDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
   subtotal: z.number().default(0),
   tax: z.number().default(0),
   total: z.number().default(0),
@@ -2306,7 +2306,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   projectId: z.string().nullable().optional(),
   companyId: z.string().nullable().optional(),
   attachmentUrls: z.array(z.union([z.string(), billAttachmentSchema])).optional(),
-  xeroLastSyncAt: z.coerce.date().optional().nullable(),
+  xeroLastSyncAt: z.coerce.date().nullable().optional().nullable(),
   xeroLastSyncStatus: z.string().optional().nullable(),
   xeroLastSyncError: z.string().optional().nullable(),
 });
@@ -2615,11 +2615,11 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
   updatedAt: true,
 }).extend({
   status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
-  approvalDeadline: z.coerce.date().optional(),
-  approvedDate: z.coerce.date().optional(),
-  clientSignedDate: z.coerce.date().optional(),
-  builderSignedDate: z.coerce.date().optional(),
-  portalSentAt: z.coerce.date().optional(),
+  approvalDeadline: z.coerce.date().nullable().optional(),
+  approvedDate: z.coerce.date().nullable().optional(),
+  clientSignedDate: z.coerce.date().nullable().optional(),
+  builderSignedDate: z.coerce.date().nullable().optional(),
+  portalSentAt: z.coerce.date().nullable().optional(),
   pdfColumns: z.record(z.boolean()).nullable().optional(),
   globalMarkupPercent: z.number().min(0).max(1000).nullable().optional(),
   // Optional, not .default(0): it is derived by recomputeVariationTotals and
@@ -3015,8 +3015,8 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   // writes that flag back and pulling reads it.
   status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),
-  dueDate: z.coerce.date().optional(),
-  sentDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
+  sentDate: z.coerce.date().nullable().optional(),
   subtotal: z.number().default(0),
   markupAmount: z.number().default(0),
   gstAmount: z.number().default(0),
@@ -3305,12 +3305,12 @@ export const insertProposalSchema = createInsertSchema(proposals).omit({
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),
-  expiryDate: z.coerce.date().optional(),
-  sentDate: z.coerce.date().optional(),
-  viewedDate: z.coerce.date().optional(),
-  acceptedDate: z.coerce.date().optional(),
-  rejectedDate: z.coerce.date().optional(),
-  convertedDate: z.coerce.date().optional(),
+  expiryDate: z.coerce.date().nullable().optional(),
+  sentDate: z.coerce.date().nullable().optional(),
+  viewedDate: z.coerce.date().nullable().optional(),
+  acceptedDate: z.coerce.date().nullable().optional(),
+  rejectedDate: z.coerce.date().nullable().optional(),
+  convertedDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertProposal = z.infer<typeof insertProposalSchema>;
@@ -3795,7 +3795,7 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   createdByName: z.string().optional(),
   status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
   visibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
@@ -3836,7 +3836,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
   linkedTaskId: z.string().nullish(),
   linkedScheduleItemId: z.string().nullish(),
   completedAt: z.coerce.date().nullish(),
@@ -4186,9 +4186,9 @@ export const insertScheduleSchema = createInsertSchema(schedules).omit({
 }).extend({
   status: z.enum(["offline", "online", "locked"]).default("offline"),
   scheduleCategory: z.enum(["construction", "preconstruction"]).default("construction"),
-  startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().optional(),
-  lockedAt: z.coerce.date().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  lockedAt: z.coerce.date().nullable().optional(),
   includeSaturday: z.boolean().optional(),
   includeSunday: z.boolean().optional(),
   clientVisibilityWeeks: z.number().int().min(1).nullable().optional(),
@@ -4318,9 +4318,9 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date(),
-  actualStartDate: z.coerce.date().optional(),
-  actualEndDate: z.coerce.date().optional(),
-  completedAt: z.coerce.date().optional(),
+  actualStartDate: z.coerce.date().nullable().optional(),
+  actualEndDate: z.coerce.date().nullable().optional(),
+  completedAt: z.coerce.date().nullable().optional(),
   duration: z.number().default(1),
   progressPercent: z.number().int().min(0).max(100).default(0),
   dependencies: z.array(z.object({
@@ -4457,7 +4457,7 @@ export const insertActivityNoteSchema = createInsertSchema(activityNotes).omit({
     newValue: z.any().optional(),
   }).optional(),
   mentionedUserIds: z.array(z.string()).optional(),
-  editedAt: z.coerce.date().optional(),
+  editedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertActivityNote = z.infer<typeof insertActivityNoteSchema>;
@@ -4968,8 +4968,8 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
   status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
   dateIdentified: z.coerce.date().optional(),
-  dueDate: z.coerce.date().optional(),
-  dateResolved: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
+  dateResolved: z.coerce.date().nullable().optional(),
   costImpact: z.number().optional(),
   attachments: z.array(z.object({
     url: z.string(),
@@ -5031,7 +5031,7 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
   actionItems: z.array(z.object({
     description: z.string(),
     assignee: z.string().optional(),
-    dueDate: z.coerce.date().optional(),
+    dueDate: z.coerce.date().nullable().optional(),
     completed: z.boolean().default(false),
   })).optional(),
   recordingUrl: z.string().optional(),
@@ -5441,7 +5441,7 @@ export const insertProjectWorkflowSchema = createInsertSchema(projectWorkflows).
   status: z.enum(["pending", "in_progress", "completed", "cancelled"]).default("pending"),
   createdTaskIds: z.array(z.string()).optional(),
   triggeredAt: z.coerce.date().optional(),
-  completedAt: z.coerce.date().optional(),
+  completedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertProjectWorkflow = z.infer<typeof insertProjectWorkflowSchema>;
@@ -5720,8 +5720,8 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   // timestamp mapper calls .toISOString() on whatever it is handed — so a bare
   // string reached the driver and threw, 500-ing every create/save that carried
   // a date. Coercing here keeps the wire format and hands Drizzle a Date.
-  dueDate: z.coerce.date().optional().nullable(),
-  deadline: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().nullable().optional().nullable(),
+  deadline: z.coerce.date().nullable().optional().nullable(),
   supplierIds: z.array(z.string()).optional(),
   supplierNames: z.array(z.string()).optional(),
   attachmentUrls: z.array(z.string()).optional(),
@@ -5747,8 +5747,8 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
 // quoted against is not.
 export const updateRfqSchema = insertRfqSchema.partial().extend({
   status: z.enum(rfqStatusEnum.enumValues).optional(),
-  sentAt: z.coerce.date().optional().nullable(),
-  followUpSentAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
+  followUpSentAt: z.coerce.date().nullable().optional().nullable(),
   pdfUrl: z.string().optional().nullable(),
 });
 
@@ -5844,10 +5844,10 @@ export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
   // Same ISO-string-vs-z.date() mismatch as the RFQ dates: the accept/decline
   // actions send timestamps as strings, which failed validation outright and
   // made both buttons return 400.
-  validUntil: z.coerce.date().optional().nullable(),
-  acceptedAt: z.coerce.date().optional().nullable(),
-  declinedAt: z.coerce.date().optional().nullable(),
-  submittedAt: z.coerce.date().optional().nullable(),
+  validUntil: z.coerce.date().nullable().optional().nullable(),
+  acceptedAt: z.coerce.date().nullable().optional().nullable(),
+  declinedAt: z.coerce.date().nullable().optional().nullable(),
+  submittedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
@@ -5874,7 +5874,7 @@ export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
   createdAt: true,
 }).extend({
   scheduledFor: z.coerce.date(),
-  sentAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
@@ -5904,8 +5904,8 @@ export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).om
   id: true,
   createdAt: true,
 }).extend({
-  expiresAt: z.coerce.date().optional().nullable(),
-  viewedAt: z.coerce.date().optional().nullable(),
+  expiresAt: z.coerce.date().nullable().optional().nullable(),
+  viewedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
@@ -5980,10 +5980,10 @@ export const insertRfqRecipientSchema = createInsertSchema(rfqRecipients).omit({
   remindersSent: true,
 }).extend({
   supplierName: z.string().min(1, "Supplier name is required"),
-  sentAt: z.coerce.date().optional().nullable(),
-  viewedAt: z.coerce.date().optional().nullable(),
-  respondedAt: z.coerce.date().optional().nullable(),
-  lastRemindedAt: z.coerce.date().optional().nullable(),
+  sentAt: z.coerce.date().nullable().optional().nullable(),
+  viewedAt: z.coerce.date().nullable().optional().nullable(),
+  respondedAt: z.coerce.date().nullable().optional().nullable(),
+  lastRemindedAt: z.coerce.date().nullable().optional().nullable(),
 });
 
 export const updateRfqRecipientSchema = insertRfqRecipientSchema.partial().omit({ rfqId: true });
@@ -6248,7 +6248,7 @@ export const insertRfiSchema = createInsertSchema(rfis).omit({
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   attachmentUrls: z.array(z.string()).optional(),
   attachmentFileNames: z.array(z.string()).optional(),
-  dueDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertRfi = z.infer<typeof insertRfiSchema>;
@@ -7462,7 +7462,7 @@ export const insertBillLineItemPriceLinkSchema = createInsertSchema(billLineItem
   createdAt: true,
 }).extend({
   reviewStatus: z.enum(["pending", "linked", "created", "skipped"]).default("pending"),
-  reviewedAt: z.coerce.date().optional(),
+  reviewedAt: z.coerce.date().nullable().optional(),
 });
 
 export type InsertBillLineItemPriceLink = z.infer<typeof insertBillLineItemPriceLinkSchema>;
