@@ -2386,7 +2386,7 @@ export default function PurchaseOrderDetail() {
                         }
                         onSelect={(d) => {
                           if (d) {
-                            setRequiredByDate(d.toISOString().split("T")[0]);
+                            setRequiredByDate(format(d, "yyyy-MM-dd"));
                             setHasUnsavedChanges(true);
                           }
                         }}
