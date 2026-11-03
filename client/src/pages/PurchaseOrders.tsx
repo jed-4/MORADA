@@ -65,6 +65,7 @@ import { SiXero } from "react-icons/si";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { PurchaseOrder, Project, Contact, CostCode } from "@shared/schema";
+import { PO_STATUS_LABELS } from "@shared/poStatus";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All Statuses" },
@@ -78,7 +79,6 @@ const STATUS_OPTIONS = [
 
 const SELECT_COL_WIDTH = 32;
 const BULK_STATUSES: Array<{ key: string; label: string; icon?: typeof CheckCheck; className?: string }> = [
-  { key: "draft", label: "Draft", className: "text-muted-foreground" },
   { key: "sent", label: "Sent" },
   { key: "invoiced", label: "Invoiced", className: "text-status-warning" },
   { key: "partially_paid", label: "Partially Paid", className: "text-status-warning" },
@@ -338,11 +338,15 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
       apiRequest("/api/purchase-orders/bulk-status", "POST", { ids, status }),
-    onSuccess: (_, vars) => {
+    onSuccess: (result: { updated: number; skipped: number }, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       setSelectedIds(new Set());
+      const label = PO_STATUS_LABELS[vars.status] ?? vars.status;
       toast({
-        title: `${vars.ids.length} purchase order${vars.ids.length !== 1 ? "s" : ""} updated to ${vars.status}`,
+        title: `${result.updated} purchase order${result.updated !== 1 ? "s" : ""} updated to ${label}`,
+        description: result.skipped > 0
+          ? `${result.skipped} left as ${result.skipped !== 1 ? "they were" : "it was"}: already ${label}, further along, paid or cancelled.`
+          : undefined,
       });
     },
     onError: (err: Error) => toast({
