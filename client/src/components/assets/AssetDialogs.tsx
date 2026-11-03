@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -19,6 +20,8 @@ import {
   ASSET_TYPES,
   ASSET_TYPE_LABELS,
   AU_STATES,
+  FINANCE_FREQUENCIES,
+  FINANCE_FREQUENCY_LABELS,
   COMPLIANCE_KINDS,
   COMPLIANCE_KIND_LABELS,
   HEAVY_VEHICLE_GVM_KG,
@@ -42,7 +45,11 @@ const NONE = "__none__";
 // NumericInput is a bare <input>: it carries no field styling of its own, so
 // without this it rendered as a white browser box (invisible text in dark mode).
 const NUMBER_FIELD =
-  "flex h-8 w-full rounded-md border border-input bg-background px-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35 disabled:opacity-50";
+  "flex h-8 w-full rounded-md border border-border bg-background px-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/35 disabled:opacity-50";
+
+// The app's --input border is almost the dialog's own colour in dark mode, so
+// the boxes vanished. Every asset form outlines its fields with --border.
+const FORM_FIELDS = "[&_input]:border-border [&_textarea]:border-border [&_button[role=combobox]]:border-border";
 
 function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
@@ -117,7 +124,13 @@ interface AssetForm {
   purchaseDate: string;
   purchaseDollars: number | null;
   financeProvider: string;
+  repaymentDollars: number | null;
+  financeFrequency: string;
+  financeStartDate: string;
+  financeEndDate: string;
+  chargeOut: boolean;
   dayRateDollars: number | null;
+  meterReading: number | null;
   notes: string;
 }
 
@@ -139,7 +152,13 @@ function blankAsset(): AssetForm {
     purchaseDate: "",
     purchaseDollars: null,
     financeProvider: "",
+    repaymentDollars: null,
+    financeFrequency: "monthly",
+    financeStartDate: "",
+    financeEndDate: "",
+    chargeOut: false,
     dayRateDollars: null,
+    meterReading: null,
     notes: "",
   };
 }
@@ -184,7 +203,13 @@ export function AssetDialog({
             purchaseDate: asset.purchaseDate ?? "",
             purchaseDollars: asset.purchaseCents == null ? null : asset.purchaseCents / 100,
             financeProvider: asset.financeProvider ?? "",
+            repaymentDollars: asset.financeRepaymentCents == null ? null : asset.financeRepaymentCents / 100,
+            financeFrequency: asset.financeFrequency ?? "monthly",
+            financeStartDate: asset.financeStartDate ?? "",
+            financeEndDate: asset.financeEndDate ?? "",
+            chargeOut: asset.chargeOut,
             dayRateDollars: asset.dayRateCents == null ? null : asset.dayRateCents / 100,
+            meterReading: asset.currentMeter,
             notes: asset.notes ?? "",
           }
         : blankAsset(),
@@ -194,7 +219,7 @@ export function AssetDialog({
   const isRoadAsset = f.assetType === "vehicle" || f.assetType === "trailer";
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body = {
         assetType: f.assetType,
         name: f.name.trim() || defaultAssetName({ year: f.year, make: f.make, model: f.model, rego: f.rego }),
@@ -214,12 +239,23 @@ export function AssetDialog({
           ? {
               purchaseCents: toCents(f.purchaseDollars),
               financeProvider: f.financeProvider.trim() || null,
+              financeRepaymentCents: toCents(f.repaymentDollars),
+              financeFrequency: f.repaymentDollars ? f.financeFrequency : null,
+              financeStartDate: f.financeStartDate || null,
+              financeEndDate: f.financeEndDate || null,
+              chargeOut: f.chargeOut,
               dayRateCents: toCents(f.dayRateDollars),
             }
           : {}),
         notes: f.notes.trim() || null,
       };
-      return asset ? apiRequest(`/api/assets/${asset.id}`, "PATCH", body) : apiRequest("/api/assets", "POST", body);
+      const row: Asset = asset ? await apiRequest(`/api/assets/${asset.id}`, "PATCH", body) : await apiRequest("/api/assets", "POST", body);
+      // The meter only moves through a logged reading, so the history and the
+      // number on the asset can't disagree: a changed reading here logs one.
+      if (f.meterType !== "none" && f.meterReading != null && f.meterReading !== (asset?.currentMeter ?? null)) {
+        await apiRequest(`/api/assets/${row.id}/events`, "POST", { kind: "meter", date: todayKey(), meter: f.meterReading });
+      }
+      return row;
     },
     onSuccess: (row: Asset) => {
       invalidateAssets(asset?.id);
@@ -231,7 +267,7 @@ export function AssetDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className={cn("max-w-2xl", FORM_FIELDS)}>
         <DialogHeader>
           <DialogTitle>{asset ? "Edit asset" : "Add asset"}</DialogTitle>
           <DialogDescription>
@@ -320,6 +356,19 @@ export function AssetDialog({
                 options={METER_TYPES.map((m) => ({ value: m, label: m === "none" ? "No meter" : m === "km" ? "Kilometres" : "Engine hours" }))}
               />
             </Field>
+            {f.meterType !== "none" && (
+              <Field label={f.meterType === "hours" ? "Engine hours now" : "Odometer now"} hint="Saved as today's reading">
+                <NumericInput
+                  className={NUMBER_FIELD}
+                  integer
+                  min={0}
+                  value={f.meterReading}
+                  onCommit={(v) => set("meterReading", v)}
+                  placeholder={f.meterType === "hours" ? "1,250" : "48,000"}
+                  data-testid="input-asset-meter"
+                />
+              </Field>
+            )}
             <Field label="Status">
               <PlainSelect
                 value={f.status}
@@ -343,13 +392,47 @@ export function AssetDialog({
           </div>
 
           {seeCosts && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Charge to jobs ($/day, ex GST)" hint="Blank = never charged to jobs" className="sm:col-span-1">
-                <NumericInput className={NUMBER_FIELD} min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="95" data-testid="input-asset-day-rate" />
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <Field label="Repayment">
+                <NumericInput className={NUMBER_FIELD} min={0} value={f.repaymentDollars} onCommit={(v) => set("repaymentDollars", v)} placeholder="1,250" data-testid="input-asset-repayment" />
               </Field>
-              <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
-                Charged to a job on any day it's booked there, or its driver has approved hours there (split by hours across jobs).
-              </p>
+              <Field label="Every">
+                <PlainSelect
+                  value={f.financeFrequency}
+                  onChange={(v) => set("financeFrequency", v)}
+                  options={FINANCE_FREQUENCIES.map((x) => ({ value: x, label: FINANCE_FREQUENCY_LABELS[x] }))}
+                />
+              </Field>
+              <Field label="First repayment">
+                <Input type="date" className="h-8 text-xs" value={f.financeStartDate} onChange={(e) => set("financeStartDate", e.target.value)} />
+              </Field>
+              <Field label="Last repayment">
+                <Input type="date" className="h-8 text-xs" value={f.financeEndDate} onChange={(e) => set("financeEndDate", e.target.value)} />
+              </Field>
+            </div>
+          )}
+
+          {seeCosts && (
+            <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <Switch checked={f.chargeOut} onCheckedChange={(v) => set("chargeOut", v)} className="mt-0.5" data-testid="switch-asset-charge-out" />
+                <span className="flex flex-col">
+                  <span className="text-xs font-medium">Charge out to jobs</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    For plant like an excavator or tipper. Leave off for a ute that's just used — it's never charged.
+                  </span>
+                </span>
+              </label>
+              {f.chargeOut && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Field label="Day rate ($, ex GST)">
+                    <NumericInput className={NUMBER_FIELD} min={0} value={f.dayRateDollars} onCommit={(v) => set("dayRateDollars", v)} placeholder="650" data-testid="input-asset-day-rate" />
+                  </Field>
+                  <p className="sm:col-span-2 self-end text-[11px] text-muted-foreground pb-1">
+                    A job is charged on any day it's booked there, or its driver has approved hours there (split by hours).
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -425,7 +508,7 @@ export function ComplianceDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={cn("max-w-lg", FORM_FIELDS)}>
         <DialogHeader>
           <DialogTitle>{item ? "Edit due date" : "Add due date"}</DialogTitle>
           <DialogDescription>
@@ -534,7 +617,7 @@ export function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={cn("max-w-lg", FORM_FIELDS)}>
         <DialogHeader>
           <DialogTitle>{schedule ? "Edit service schedule" : "Add service schedule"}</DialogTitle>
           <DialogDescription>
@@ -643,7 +726,7 @@ export function EventDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={cn("max-w-lg", FORM_FIELDS)}>
         <DialogHeader>
           <DialogTitle>Log {ASSET_EVENT_KIND_LABELS[kind].toLowerCase()}</DialogTitle>
           <DialogDescription>

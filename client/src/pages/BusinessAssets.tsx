@@ -122,7 +122,6 @@ function AssetRegister({ onOpen }: { onOpen: (id: string) => void }) {
         cell: ({ row }) => (
           <span className="text-xs font-mono">
             {row.original.rego ?? "—"}
-            {row.original.rego && row.original.regoState && <span className="text-muted-foreground font-sans"> {row.original.regoState}</span>}
           </span>
         ),
         size: 110,

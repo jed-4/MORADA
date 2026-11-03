@@ -7,6 +7,8 @@
  */
 import assert from "node:assert/strict";
 import {
+  annualRepaymentCents,
+  repaymentsBetween,
   addDaysKey,
   addMonthsKey,
   assetDueSummary,
@@ -230,6 +232,41 @@ check("asset costs: every money field is blanked for someone without the permiss
 check("asset costs: a write without the permission can't set or wipe money", () => {
   const w = withoutMoneyFields({ name: "Hilux", purchaseCents: null, dayRateCents: 1, financeProvider: "x", amountCents: 5, costCents: 7, meter: 3 });
   assert.deepEqual(w, { name: "Hilux", meter: 3 });
+});
+
+check("repayments: monthly from the 31st never drifts, and the window is (after, upTo]", () => {
+  const loan = { financeRepaymentCents: 125000, financeFrequency: "monthly", financeStartDate: "2026-01-31", financeEndDate: null };
+  // 31 Jan, 28 Feb, 31 Mar — all three counted up to 31 Mar.
+  assert.deepEqual(repaymentsBetween(loan, "2026-01-01", "2026-03-31"), { count: 3, cents: 375000 });
+  // A repayment ON the "after" day belongs to the earlier window.
+  assert.equal(repaymentsBetween(loan, "2026-01-31", "2026-03-31").count, 2);
+  // Nothing before the first repayment.
+  assert.equal(repaymentsBetween(loan, "2025-01-01", "2026-01-30").count, 0);
+});
+
+check("repayments stop at the last repayment; weekly and fortnightly step in days", () => {
+  const ended = { financeRepaymentCents: 50000, financeFrequency: "fortnightly", financeStartDate: "2026-01-05", financeEndDate: "2026-02-02" };
+  // 5 Jan, 19 Jan, 2 Feb — then the loan ends.
+  assert.equal(repaymentsBetween(ended, "2025-12-31", "2026-12-31").count, 3);
+  const weekly = { financeRepaymentCents: 10000, financeFrequency: "weekly", financeStartDate: "2026-01-01", financeEndDate: null };
+  assert.equal(repaymentsBetween(weekly, "2025-12-31", "2026-01-31").count, 5);
+  assert.equal(annualRepaymentCents(weekly), 520000);
+});
+
+check("no amount, no frequency or no start date: no repayments", () => {
+  assert.equal(repaymentsBetween({ financeRepaymentCents: null, financeFrequency: "monthly", financeStartDate: "2026-01-01", financeEndDate: null }, "2025-01-01", "2026-12-31").cents, 0);
+  assert.equal(repaymentsBetween({ financeRepaymentCents: 100, financeFrequency: null, financeStartDate: "2026-01-01", financeEndDate: null }, "2025-01-01", "2026-12-31").cents, 0);
+  assert.equal(repaymentsBetween({ financeRepaymentCents: 100, financeFrequency: "monthly", financeStartDate: null, financeEndDate: null }, "2025-01-01", "2026-12-31").cents, 0);
+});
+
+check("finance terms and the charge-out switch are money: redacted on read, dropped on write", () => {
+  const r = redactAssetMoney({ name: "Excavator", financeRepaymentCents: 1, financeFrequency: "monthly", financeStartDate: "2026-01-01", financeEndDate: null, chargeOut: true });
+  assert.equal(r.financeRepaymentCents, null);
+  assert.equal(r.financeFrequency, null);
+  assert.equal(r.financeStartDate, null);
+  assert.equal(r.chargeOut, true); // visible: it's not a number
+  const w = withoutMoneyFields({ name: "Excavator", chargeOut: true, financeRepaymentCents: 1, financeFrequency: "weekly" });
+  assert.deepEqual(w, { name: "Excavator" });
 });
 
 console.log(`assets-due-check: ok (${n} checks)`);

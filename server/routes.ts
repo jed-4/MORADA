@@ -50664,7 +50664,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     // editor's save, which can't see the column.
     const { bills: billsTable, billLineItems: billLinesTable, contacts: contactsTable } = await import("@shared/schema");
     const { splitLineGstCents } = await import("@shared/billTotals");
-    const { categoriseVehicleCost, mentionsRego, VEHICLE_COST_CATEGORIES } = await import("@shared/assets");
+    const { categoriseVehicleCost, mentionsRego, repaymentsBetween, VEHICLE_COST_CATEGORIES } = await import("@shared/assets");
 
     type CostLine = {
       lineId: string;
@@ -50675,6 +50675,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       supplierName: string | null;
       description: string;
       incGstCents: number;
+      exGstCents: number;
       category: string;
       billStatus: string;
     };
@@ -50709,6 +50710,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         supplierName: r.supplierName ?? null,
         description: r.line.description,
         incGstCents: sign * (ex + gst),
+        exGstCents: sign * ex,
         category: categoriseVehicleCost(r.line.description, r.supplierName),
         billStatus: r.billStatus,
       };
@@ -50741,7 +50743,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 
         const byCategory = Object.fromEntries(VEHICLE_COST_CATEGORIES.map((c) => [c, 0])) as Record<string, number>;
-        for (const l of lines) if (inLast12(l.billDate)) byCategory[l.category] += l.incGstCents;
+        // Ex GST throughout: GST is claimed back, and charge-outs to jobs are ex GST.
+        for (const l of lines) if (inLast12(l.billDate)) byCategory[l.category] += l.exGstCents;
 
         // Australian financial year (1 July – 30 June), labelled by the year it ends: FY26.
         const fyOf = (iso: string) => {
@@ -50749,10 +50752,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           return `FY${String((m >= 7 ? y + 1 : y) % 100).padStart(2, "0")}`;
         };
         const byFinancialYear: Record<string, number> = {};
-        for (const l of lines) byFinancialYear[fyOf(l.billDate)] = (byFinancialYear[fyOf(l.billDate)] ?? 0) + l.incGstCents;
+        for (const l of lines) byFinancialYear[fyOf(l.billDate)] = (byFinancialYear[fyOf(l.billDate)] ?? 0) + l.exGstCents;
 
         const loggedLast12 = sum(logged.filter((e) => e.date > yearAgo).map((e) => e.costCents ?? 0));
-        const billsLast12 = sum(lines.filter((l) => inLast12(l.billDate)).map((l) => l.incGstCents));
+        const billsLast12 = sum(lines.filter((l) => inLast12(l.billDate)).map((l) => l.exGstCents));
+        // Finance repayments are paying off the purchase: shown beside the
+        // running costs, never added to cost of ownership (that has the price).
+        const repaymentsLast12 = repaymentsBetween(asset, yearAgo, today);
+        const repaymentsToDate = repaymentsBetween(asset, "0000-00-00", today);
 
         // Distance over the last 12 months, from every reading we have. Needs
         // at least a month between first and last reading to mean anything.
@@ -50773,10 +50780,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         res.json({
           lines,
           summary: {
-            billsAllTimeCents: sum(lines.map((l) => l.incGstCents)),
+            billsAllTimeCents: sum(lines.map((l) => l.exGstCents)),
             billsLast12Cents: billsLast12,
             loggedAllTimeCents: sum(logged.map((e) => e.costCents ?? 0)),
             loggedLast12Cents: loggedLast12,
+            repaymentsLast12Cents: repaymentsLast12.cents,
+            repaymentsLast12Count: repaymentsLast12.count,
+            repaymentsToDateCents: repaymentsToDate.cents,
             purchaseCents: asset.purchaseCents,
             byCategoryLast12: byCategory,
             byFinancialYear,
