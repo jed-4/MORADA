@@ -194,7 +194,8 @@ export default function POPortal() {
               <CardTitle className="text-base">Terms and conditions</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(po.termsAndConditions) }} />
+              {/* Terms are typed into a plain textarea, so keep their line breaks. */}
+              <p className="text-sm whitespace-pre-line">{po.termsAndConditions}</p>
             </CardContent>
           </Card>
         )}
