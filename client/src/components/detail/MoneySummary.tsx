@@ -44,12 +44,16 @@ export interface MoneySummaryProps {
   rows: MoneyRow[];
   /** The one number the document exists to state. */
   total: { label: string; cents: number };
+  /** Show cents on whole-dollar figures too ($240.00, not $240). Bills and
+   *  invoices want it so every figure matches the supplier's document. */
+  alwaysShowDecimals?: boolean;
   className?: string;
   "data-testid"?: string;
 }
 
-export function MoneySummary({ rows, total, className, "data-testid": testId }: MoneySummaryProps) {
+export function MoneySummary({ rows, total, alwaysShowDecimals, className, "data-testid": testId }: MoneySummaryProps) {
   const visible = rows.filter((r) => !r.hidden);
+  const fmt = (cents: number) => formatCents(cents, { alwaysShowDecimals });
 
   return (
     <div
@@ -73,7 +77,7 @@ export function MoneySummary({ rows, total, className, "data-testid": testId }: 
                 row's figure out of the column the other figures sit in. */}
             <span className="w-[58px] flex items-baseline flex-shrink-0">{row.adornment}</span>
             <span className={cn(TONE_CLASS[row.tone ?? "normal"], "w-[104px]")}>
-              {formatCents(row.cents)}
+              {fmt(row.cents)}
             </span>
           </div>
         ))}
@@ -83,7 +87,7 @@ export function MoneySummary({ rows, total, className, "data-testid": testId }: 
       <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
         <span className="doc-field-label">{total.label}</span>
         <span className="money-total" data-testid="text-total">
-          {formatCents(total.cents)}
+          {fmt(total.cents)}
         </span>
       </div>
     </div>
