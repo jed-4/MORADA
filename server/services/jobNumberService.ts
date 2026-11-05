@@ -134,17 +134,13 @@ export class JobNumberService {
     }
   }
 
-  static async generateJobNumber(
-    companyId: string,
-    phase: SystemPhase
-  ): Promise<string> {
-    // Get company's system configuration with proper companyId scoping
-    const configs = await db.select()
-      .from(schema.systemConfiguration)
-      .where(eq(schema.systemConfiguration.companyId, companyId))
-      .limit(1);
-    
-    const config = configs[0] || {
+  // The company's own settings, else the global row, else the built-in
+  // defaults. This used to filter on a system_configuration.company_id column
+  // that didn't exist until migration 0124.
+  private static async getConfig(companyId: string): Promise<schema.SystemConfiguration> {
+    const { storage } = await import("../storage");
+    const config = await storage.getSystemConfiguration(companyId);
+    return config || ({
       companyId,
       jobNumberingMode: "financial_year",
       leadPrefix: "L-",
@@ -153,7 +149,14 @@ export class JobNumberService {
       leadStartNumber: 1,
       preConstructionStartNumber: 1,
       constructionStartNumber: 1,
-    } as schema.SystemConfiguration;
+    } as unknown as schema.SystemConfiguration);
+  }
+
+  static async generateJobNumber(
+    companyId: string,
+    phase: SystemPhase
+  ): Promise<string> {
+    const config = await this.getConfig(companyId);
 
     const { formattedJobNumber } = await this.getNextNumber(companyId, phase, config);
     return formattedJobNumber;
@@ -163,22 +166,7 @@ export class JobNumberService {
     companyId: string,
     phase: SystemPhase
   ): Promise<string> {
-    // Get company's system configuration with proper companyId scoping
-    const configs = await db.select()
-      .from(schema.systemConfiguration)
-      .where(eq(schema.systemConfiguration.companyId, companyId))
-      .limit(1);
-    
-    const config = configs[0] || {
-      companyId,
-      jobNumberingMode: "financial_year",
-      leadPrefix: "L-",
-      preConstructionPrefix: "PC-",
-      constructionPrefix: "",
-      leadStartNumber: 1,
-      preConstructionStartNumber: 1,
-      constructionStartNumber: 1,
-    } as schema.SystemConfiguration;
+    const config = await this.getConfig(companyId);
 
     const mode = config.jobNumberingMode || "financial_year";
     const yearKey = this.getYearKey(mode);

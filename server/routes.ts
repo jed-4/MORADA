@@ -19275,7 +19275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // spans projects. The counter never goes backwards, so deleting an RFQ
       // does not free its number the way the old count-based scheme did.
       const generateRfqNumber = async (): Promise<string> => {
-        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const config = await storage.getSystemConfiguration(companyId).catch(() => undefined);
         const prefix = (config as any)?.rfqPrefix || "RFQ-";
         const startNumber = (config as any)?.rfqStartNumber ?? 1;
         const seq = await storage.allocateRfqNumber(companyId, startNumber);
@@ -23391,7 +23391,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // max-existing-suffix + 1, so deleting a variation never reuses its number.
   // `bump` is the retry offset when a concurrent create wins the unique index.
   const nextVariationNumber = async (projectId: string, bump: number): Promise<string> => {
-    const config = await storage.getSystemConfiguration().catch(() => undefined);
+    const project = await storage.getProject(projectId).catch(() => undefined);
+    const config = await storage.getSystemConfiguration((project as any)?.companyId).catch(() => undefined);
     const prefix = (config as any)?.variationPrefix || "VAR-";
     const startNumber = (config as any)?.variationStartNumber ?? 1;
     const existing = await storage.getVariations(projectId);
@@ -30116,7 +30117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ...(process.env.NODE_ENV !== 'development' ? [requireAuth] : []),
     async (req, res) => {
       try {
-        const config = await storage.getSystemConfiguration();
+        const config = await storage.getSystemConfiguration((req.user as any)?.companyId);
         res.json(config || {});
       } catch (error) {
         res.status(500).json({ error: "Failed to fetch system configuration" });
@@ -30136,7 +30137,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const config = await storage.updateSystemConfiguration(validationResult.data);
+      // Each company writes its own row. This used to rewrite the one global
+      // row, so any company's admin changed every company's numbering and timezone.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Company not found" });
+      const config = await storage.updateSystemConfiguration(companyId, validationResult.data);
       res.json(config);
     } catch (error) {
       res.status(500).json({ error: "Failed to update system configuration" });
@@ -35292,7 +35297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "User not found in database" });
       }
 
-      const cfg = await storage.getSystemConfiguration();
+      const cfg = await storage.getSystemConfiguration(user.companyId);
       const tz = cfg?.timezone || "Australia/Sydney";
 
       const schema = await import("@shared/schema");
@@ -35493,11 +35498,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the company timezone — the same convention clock-in uses. A raw
   // `new Date("2026-07-20T00:00:00+10:00")` otherwise stores 19 Jul 14:00 UTC
   // and the entry lands on the previous day.
-  const normaliseTimesheetDate = async (raw: unknown): Promise<Date | undefined> => {
+  const normaliseTimesheetDate = async (raw: unknown, companyId: string | null | undefined): Promise<Date | undefined> => {
     if (!raw) return undefined;
     const parsed = raw instanceof Date ? raw : new Date(String(raw));
     if (isNaN(parsed.getTime())) return undefined;
-    const cfg = await storage.getSystemConfiguration();
+    const cfg = await storage.getSystemConfiguration(companyId);
     const tz = cfg?.timezone || "Australia/Sydney";
     return calendarDateMidnightUtcInTz(parsed, tz);
   };
@@ -35507,7 +35512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const body = { ...req.body };
       for (const field of TIMESHEET_PROTECTED_FIELDS) delete body[field];
       if (body.date) {
-        const normalised = await normaliseTimesheetDate(body.date);
+        const normalised = await normaliseTimesheetDate(body.date, (req.user as any)?.companyId);
         if (!normalised) {
           return res.status(400).json({ error: "Invalid date" });
         }
@@ -35847,7 +35852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       if (body.date) {
-        const normalised = await normaliseTimesheetDate(body.date);
+        const normalised = await normaliseTimesheetDate(body.date, (req.user as any)?.companyId);
         if (!normalised) {
           return res.status(400).json({ error: "Invalid date" });
         }

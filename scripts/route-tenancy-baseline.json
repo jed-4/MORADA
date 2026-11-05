@@ -38,7 +38,6 @@
     "server/routes.ts GET /api/reminder-notifications/unread-count",
     "server/routes.ts GET /api/selection-options/:id/attachments",
     "server/routes.ts GET /api/suggestions",
-    "server/routes.ts GET /api/system-configuration",
     "server/routes.ts GET /api/timesheets/active",
     "server/routes.ts GET /api/xero/bills/import",
     "server/routes.ts GET /api/xero/bills/import-preview",
@@ -72,8 +71,7 @@
     "server/routes.ts POST /api/proposals/:id/revision",
     "server/routes.ts POST /api/proposals/:id/view",
     "server/routes.ts POST /api/reminder-notifications/:id/read",
-    "server/routes.ts POST /api/timesheets/clock-out",
-    "server/routes.ts PUT /api/system-configuration"
+    "server/routes.ts POST /api/timesheets/clock-out"
   ],
   "createSchemasAcceptingFks": [
     "PATCH /api/bills/:id — insertBillSchema",
@@ -154,6 +152,7 @@
     "POST /api/task-views — insertTaskViewSchema",
     "POST /api/template-categories — insertTemplateCategorySchema",
     "POST /api/user-memos — insertUserMemoSchema",
-    "POST /api/users — insertUserSchema"
+    "POST /api/users — insertUserSchema",
+    "PUT /api/system-configuration — insertSystemConfigurationSchema"
   ]
 }

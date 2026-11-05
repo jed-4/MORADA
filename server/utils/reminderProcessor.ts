@@ -37,14 +37,23 @@ export async function processReminders() {
     // Reminders are scheduled against the configured wall clock, not the
     // server's. The processor used to compare `new Date().toTimeString()` — the
     // server's local time — so on a UTC host a 16:30 Australian reminder fired
-    // at 03:30 the next morning. Read once per tick; it is a single global row.
-    let timeZone = "Australia/Sydney";
-    try {
-      const cfg = await storage.getSystemConfiguration();
-      if (cfg?.timezone) timeZone = cfg.timezone;
-    } catch {
-      // Fall back to the default rather than skip every reminder this tick.
-    }
+    // at 03:30 the next morning. The timezone is each company's own setting
+    // (migration 0124), read once per company per tick.
+    const timeZones = new Map<string, string>();
+    const timeZoneFor = async (companyId: string | null | undefined): Promise<string> => {
+      const key = companyId ?? "";
+      const cached = timeZones.get(key);
+      if (cached) return cached;
+      let tz = "Australia/Sydney";
+      try {
+        const cfg = await storage.getSystemConfiguration(companyId);
+        if (cfg?.timezone) tz = cfg.timezone;
+      } catch {
+        // Fall back to the default rather than skip the reminder.
+      }
+      timeZones.set(key, tz);
+      return tz;
+    };
 
     const dueReminders = await storage.getDueReminders(now);
     console.log(`[ReminderProcessor] Found ${dueReminders.length} due reminders`);
@@ -112,7 +121,7 @@ export async function processReminders() {
                 scheduleTime: (reminder as any).scheduleTime,
               },
               reminder.dueAt,
-              timeZone,
+              await timeZoneFor(reminder.companyId),
             )
           : null;
 
@@ -131,6 +140,7 @@ export async function processReminders() {
 
     for (const businessReminder of activeBusinessReminders) {
       try {
+        const timeZone = await timeZoneFor(businessReminder.companyId);
         const zoned = zonedNow(now, timeZone);
 
         // Once per company-local day. Asking the notification rows rather than

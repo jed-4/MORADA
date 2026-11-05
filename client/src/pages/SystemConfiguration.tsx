@@ -137,7 +137,8 @@ export default function SystemConfigurationPage() {
   // Reset form when config data loads
   useEffect(() => {
     if (config) {
-      form.reset(config);
+      const { id: _id, companyId: _companyId, createdAt: _createdAt, updatedAt: _updatedAt, ...values } = config;
+      form.reset(values);
     }
   }, [config, form]);
 
