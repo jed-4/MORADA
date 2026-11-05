@@ -30106,10 +30106,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // System Configuration routes (protected - admin access only in production)
+  // System Configuration routes. Reading is open to any signed-in user: every
+  // page reads the timezone (useTimezone) and the phase dialog reads the job
+  // numbering mode, and the row holds only regional/numbering settings. An
+  // admin-only GET 403'd for every non-admin and silently fell back to defaults.
+  // Writing stays admin-only.
   // Note: Development bypass is handled by global middleware at line 82-85
   app.get("/api/system-configuration", 
-    ...(process.env.NODE_ENV !== 'development' ? [requireAuth, requireAdmin] : []),
+    ...(process.env.NODE_ENV !== 'development' ? [requireAuth] : []),
     async (req, res) => {
       try {
         const config = await storage.getSystemConfiguration();
