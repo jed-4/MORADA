@@ -2496,7 +2496,18 @@ function ClientInvoiceDetailInner() {
                     <span>Email</span>
                   </button>
                 )}
-                {isViewOnly ? (
+                {isViewOnly && (invoice?.paidAmount ?? 0) > 0 ? (
+                  // Paid or part-paid: locked, as in Xero. The server refuses a
+                  // save that moves the total, number or date (INVOICE_HAS_PAYMENTS).
+                  <span
+                    className="h-6 px-2 text-xs border rounded-md text-muted-foreground flex items-center gap-1"
+                    title="A payment is recorded on this invoice. Remove the payment to edit it."
+                    data-testid="text-invoice-paid-locked"
+                  >
+                    <Lock className="w-3 h-3" />
+                    <span>Paid — locked</span>
+                  </span>
+                ) : isViewOnly ? (
                   <button
                     key="edit"
                     type="button"

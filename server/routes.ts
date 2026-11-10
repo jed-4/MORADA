@@ -27089,6 +27089,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
 
+      // A payment locks what the client was billed, as in Xero: the total, the
+      // number and the date can't move while money has been received against
+      // them. An invoice save rebuilds its figures from the project's LIVE
+      // contract/variations/bills, so an unguarded re-save of a part-paid
+      // invoice could leave it owing less than was already paid (dev INV-1003
+      // went $174,084.66 → $41,499.70 with $87,042.33 paid).
+      if (((owned as any).paidAmount ?? 0) > 0) {
+        // Calendar day in Sydney, as for bills (paidBillLock): the stored
+        // instant and the form's value for the same day needn't be equal.
+        const day = (v: unknown) =>
+          v ? new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(v as any)) : null;
+        const sameDay = (a: unknown, b: unknown) => day(a) === day(b);
+        const changed: string[] = [];
+        if ("totalAmount" in data && data.totalAmount !== (owned as any).totalAmount) changed.push("total");
+        if ("invoiceNumber" in data && (data.invoiceNumber || null) !== ((owned as any).invoiceNumber || null)) changed.push("invoice number");
+        if ("invoiceDate" in data && !sameDay(data.invoiceDate, (owned as any).invoiceDate)) changed.push("invoice date");
+        if (changed.length) {
+          return res.status(409).json({
+            error: `A payment is recorded on this invoice, so its ${changed.join(", ")} can't change. Remove the payment first.`,
+            code: "INVOICE_HAS_PAYMENTS",
+            fields: changed,
+          });
+        }
+      }
+
       /* Issuing a claim needs "send", not merely "edit".
          The Send Invoice button does not email anything — it PATCHes
          status:"sent" straight through this route. So "edit" alone was enough
