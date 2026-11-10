@@ -38450,7 +38450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   startDate: scheduleDayUTC(newChildStart),
                   endDate: scheduleDayUTC(newChildEnd),
                   updatedAt: new Date(),
-                });
+                } as any);
                 if (movedChild) cascadedItems.push(movedChild);
                 const cidx = allItems.findIndex((si: any) => si.id === child.id);
                 if (cidx >= 0) {
