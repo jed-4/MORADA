@@ -60,13 +60,13 @@ const REASON_META: Record<XeroReviewReason, { label: string; blurb: string; tone
     tone: "amber",
   },
   voided_in_xero: {
-    label: "Xero copy voided",
-    blurb: "The Xero copy of this bill was voided or deleted. Nothing is sent to Xero until you re-create it.",
+    label: "Voided or deleted in Xero",
+    blurb: "Someone voided or deleted this bill in Xero, but it's still in Morada. Nothing more is sent to Xero for it. Re-create it in Xero if it should be there, unlink it to keep it in Morada only, or delete it.",
     tone: "coral",
   },
   missing_in_xero: {
-    label: "Missing from Xero",
-    blurb: "This bill is linked to a Xero invoice that Xero no longer returns.",
+    label: "Can't find it in Xero",
+    blurb: "This bill is linked to a Xero bill that Xero no longer returns at all — usually because Xero was reconnected to a different organisation, or the bill was archived there. Open it in Xero to check, then unlink it if it's gone.",
     tone: "coral",
   },
 };
