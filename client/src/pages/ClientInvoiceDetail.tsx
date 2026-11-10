@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
+import { InvoiceDocumentView, type InvoiceDocumentLine } from "@/components/invoices/InvoiceDocumentView";
 import { invoiceDateMode, itemClaimDate, scheduleMovedSinceLock } from "@shared/invoiceScheduleDates";
 import { hasSharedAmountDrift, isClaimIssued, isClaimShared, sharedAmountDrift } from "@shared/claimSchedule";
 import { EmptyState } from "@/components/EmptyState";
@@ -1982,9 +1983,35 @@ function ClientInvoiceDetailInner() {
     );
   }
 
-  const total = calculateTotal();
+  // View mode shows what was ISSUED: the saved line snapshot and the stored
+  // totals. The live breakdown re-reads the project's current contract,
+  // variations and bills, so an issued invoice could otherwise show a total
+  // the client never received (INV-1003 on dev read $0 against $174,084.66).
+  const savedSnapshot = Array.isArray((invoice as any)?.lineBreakdown) && (invoice as any).lineBreakdown.length > 0
+    ? ((invoice as any).lineBreakdown as Array<{ description?: string; label?: string; amountExCents?: number; gstCents?: number; amountIncCents?: number }>)
+    : null;
+  const showIssued = isViewOnly && !!savedSnapshot;
+  const total = showIssued ? (invoice?.totalAmount ?? 0) / 100 : calculateTotal();
   const paid = invoice?.paidAmount ? invoice.paidAmount / 100 : 0;
   const due = total - paid;
+
+  const documentLines: InvoiceDocumentLine[] = !isViewOnly
+    ? []
+    : savedSnapshot
+    ? savedSnapshot.map((l, i) => ({
+        key: String(i),
+        description: l.label || l.description || "",
+        amountExCents: l.amountExCents ?? 0,
+        gstCents: l.gstCents ?? 0,
+        amountIncCents: l.amountIncCents ?? 0,
+      }))
+    : buildInvoiceLineBreakdown().map((l, i) => ({
+        key: String(i),
+        description: l.label || l.description,
+        amountExCents: l.amountExCents,
+        gstCents: l.gstCents,
+        amountIncCents: l.amountIncCents,
+      }));
   const contractTotal = calculateContractPrice() / 100;
 
   // T004: Build PDF line items from current invoice state
@@ -2738,7 +2765,45 @@ function ClientInvoiceDetailInner() {
                 {/* A disabled fieldset disables every native control and Radix
                     trigger in the invoice's own content — that is view mode.
                     Payments and attachments sit outside it and stay live. */}
-                <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-invoice-content">
+                {isViewOnly ? (
+                  <InvoiceDocumentView
+                    fields={[
+                      { label: "Invoice", value: form.getValues("name"), testId: "text-invoice-name" },
+                      { label: "Invoice no.", value: invoice?.invoiceNumber, testId: "text-invoice-number" },
+                      { label: "To", value: clientContact?.name, testId: "text-invoice-client" },
+                      { label: "Project", value: (currentProject as any)?.name, testId: "text-invoice-project" },
+                      { label: "Date", value: invoice?.invoiceDate ? format(new Date(invoice.invoiceDate), "d MMM yyyy") : "", testId: "text-invoice-date" },
+                      { label: "Due date", value: invoice?.dueDate ? format(new Date(invoice.dueDate), "d MMM yyyy") : "", testId: "text-invoice-due-date" },
+                      { label: "Type", value: invoiceType === "cost_plus" ? "Cost plus" : "Progress claim" },
+                      {
+                        label: "Xero",
+                        value: invoice?.xeroInvoiceId
+                          ? `Sent${(invoice as any).xeroInvoiceNumber ? ` (${(invoice as any).xeroInvoiceNumber})` : ""}`
+                          : "Not sent",
+                        testId: "text-invoice-xero",
+                      },
+                    ]}
+                    introductionHtml={invoice?.introductionText}
+                    lines={documentLines}
+                    totals={
+                      savedSnapshot
+                        ? {
+                            subtotalCents: (invoice?.subtotal ?? 0) + ((invoice as any)?.markupAmount ?? 0),
+                            gstCents: invoice?.gstAmount ?? 0,
+                            totalCents: invoice?.totalAmount ?? 0,
+                            paidCents: invoice?.paidAmount ?? 0,
+                          }
+                        : {
+                            subtotalCents: Math.round(amountExTax() * 100),
+                            gstCents: Math.round(amountTax() * 100),
+                            totalCents: Math.round(amountIncTax() * 100),
+                            paidCents: invoice?.paidAmount ?? 0,
+                          }
+                    }
+                    rebuiltLive={!savedSnapshot}
+                  />
+                ) : (
+                <fieldset className="contents" data-testid="fieldset-invoice-content">
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
@@ -4300,6 +4365,7 @@ function ClientInvoiceDetailInner() {
               </div>{/* end summary-panel */}
               </div>{/* end Act 2: Money */}
                 </fieldset>
+                )}
 
                 {/* Payments — money, so it sits with the financials, not adrift
                    at the bottom of the page. */}
