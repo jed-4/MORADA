@@ -38408,6 +38408,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updatedEnd.set(succId, newSuccEnd);
             allPredIds.add(succId);
             workQueue.push(succId);
+
+            // A successor that is a stage carries its sub-items with it. A
+            // stage's bar is DRAWN from its children (Gantt getEffectiveDates)
+            // and its row is re-spanned from them after this cascade, so moving
+            // only the stage's own row moved nothing anyone could see — and the
+            // roll-up then put it straight back. Each descendant keeps its
+            // working-day offset from the stage start and its own working-day
+            // length, mirroring computeMoveCascade on the client. They join the
+            // work list so anything hanging off them moves too.
+            const descendants: any[] = [];
+            const collect = (parentId: string) => {
+              for (const ci of allItems as any[]) {
+                if (String(ci.parentItemId ?? "") !== parentId) continue;
+                if (descendants.includes(ci)) continue;
+                descendants.push(ci);
+                collect(String(ci.id));
+              }
+            };
+            collect(succId);
+            // Measure from where the stage is DRAWN — its earliest child — not its
+            // stored row, which may have drifted from the children.
+            const refStart = descendants.reduce<Date>((min, d) => {
+              const ds = d.startDate ? new Date(d.startDate) : null;
+              return ds && ds < min ? ds : min;
+            }, succStart);
+            for (const child of descendants) {
+              const childId = String(child.id);
+              if (allPredIds.has(childId)) continue;
+              if (!child.startDate || !child.endDate) continue;
+              const childStart = new Date(child.startDate);
+              const childEnd = new Date(child.endDate);
+              const relWD = countWD(refStart, childStart);
+              const childWD = countWD(childStart, childEnd);
+              const newChildStart = addWD(requiredStart, relWD);
+              const newChildEnd = addWD(newChildStart, childWD);
+              const sameStart = scheduleDayUTC(newChildStart).getTime() === scheduleDayUTC(childStart).getTime();
+              const sameEnd = scheduleDayUTC(newChildEnd).getTime() === scheduleDayUTC(childEnd).getTime();
+              if (!(sameStart && sameEnd)) {
+                const movedChild = await storage.updateScheduleItem(child.id, {
+                  startDate: scheduleDayUTC(newChildStart),
+                  endDate: scheduleDayUTC(newChildEnd),
+                  updatedAt: new Date(),
+                });
+                if (movedChild) cascadedItems.push(movedChild);
+                const cidx = allItems.findIndex((si: any) => si.id === child.id);
+                if (cidx >= 0) {
+                  (allItems[cidx] as any).startDate = newChildStart;
+                  (allItems[cidx] as any).endDate = newChildEnd;
+                  allById.set(childId, allItems[cidx]);
+                }
+              }
+              updatedStart.set(childId, newChildStart);
+              updatedEnd.set(childId, newChildEnd);
+              allPredIds.add(childId);
+              workQueue.push(childId);
+            }
           }
         }
       };

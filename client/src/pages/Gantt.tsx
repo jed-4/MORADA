@@ -2036,6 +2036,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 newEnd: stageEnd,
                 allItems: currentItems,
                 isNonWorking: isNonWorkingDayRef.current,
+                childMoves: writes
+                  .filter(w => w.id !== String(drag.id))
+                  .map(w => ({ id: w.id, startDate: w.updates.startDate, endDate: w.updates.endDate })),
               }).filter(u => !inPhase.has(String(u.id)));
 
               for (const u of outward) {
