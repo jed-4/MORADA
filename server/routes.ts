@@ -1953,10 +1953,14 @@ async function reconcileBillsWithXero(
 
   const localByXeroId = new Map(linkedBills.map((b) => [b.xeroInvoiceId as string, b]));
 
-  // Bulk pull — include VOIDED/DRAFT so voids and reversions are caught too.
+  // Bulk pull — include VOIDED/DELETED/DRAFT so voids, deletes and
+  // reversions are caught too. DELETED matters most: Morada sends bills as
+  // SUBMITTED (Awaiting Approval), and Xero only lets you delete those, not
+  // void them. Leaving DELETED out made every such bill fall through to the
+  // vague "Missing from Xero" with no Re-create action.
   const xeroBills = await xeroService.listAllBills(connection.id, {
     modifiedSince: opts.modifiedSince,
-    statuses: ["AUTHORISED", "PAID", "SUBMITTED", "VOIDED", "DRAFT"],
+    statuses: ["AUTHORISED", "PAID", "SUBMITTED", "VOIDED", "DELETED", "DRAFT"],
   });
 
   const seenXeroIds = new Set<string>();
@@ -1990,7 +1994,12 @@ async function reconcileBillsWithXero(
       // Suppressed until Xero's state actually moves off what was dismissed.
       const dismissed = local.xeroReviewAckFingerprint === fingerprint;
       if (!dismissed) {
-        toFlag.set(local.id, { reason: reviewReason, fingerprint, changes: diffBillVsXero(local, xInv), voided: isVoided });
+        // Say which it was — "Deleted in Xero" and "Voided in Xero" mean
+        // different things to whoever did it.
+        const voidLine = isVoided
+          ? [String(xInv.Status || "").toUpperCase() === "DELETED" ? "Deleted in Xero" : "Voided in Xero"]
+          : [];
+        toFlag.set(local.id, { reason: reviewReason, fingerprint, changes: [...voidLine, ...diffBillVsXero(local, xInv)], voided: isVoided });
       } else if (isVoided && !local.xeroVoidedAt) {
         // Dismissed, but the void badge is still owed.
         toFlag.set(local.id, { reason: reviewReason, fingerprint, changes: [], voided: true });
