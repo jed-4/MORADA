@@ -7142,6 +7142,21 @@ export class MemStorage implements IStorage {
 }
 
 // Database-backed storage implementation
+/**
+ * Fired reminders are bell notifications again (type "reminder_due") — that is
+ * also what pushes them to the phone. In April 2026 they were hidden from the
+ * bell and the processor stopped creating them, so until 10 Nov 2026 every
+ * reminder went off silently. Rows from before April are stale unread alarms,
+ * so they stay hidden rather than land in everyone's bell.
+ */
+const REMINDERS_BACK_IN_BELL = new Date("2026-11-10T00:00:00Z");
+function notReminderFiredBeforeFix() {
+  return or(
+    ne(schema.notifications.type, "reminder_due"),
+    gte(schema.notifications.createdAt, REMINDERS_BACK_IN_BELL),
+  );
+}
+
 export class DbStorage implements IStorage {
   private initialized = false;
 
@@ -29736,7 +29751,7 @@ export class DbStorage implements IStorage {
         .where(and(
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
-          ne(schema.notifications.type, "reminder_due"),
+          notReminderFiredBeforeFix(),
           ...(options?.unreadOnly ? [eq(schema.notifications.isRead, false)] : [])
         ))
         .orderBy(desc(schema.notifications.createdAt));
@@ -29851,7 +29866,7 @@ export class DbStorage implements IStorage {
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
           eq(schema.notifications.isRead, false),
-          ne(schema.notifications.type, "reminder_due")
+          notReminderFiredBeforeFix()
         ));
       return Number(result?.count || 0);
     } catch (error) {
