@@ -33,7 +33,6 @@ export interface BillDocumentLine {
   tax: string;
   account?: string;
   allowance?: string;
-  vehicle?: string;
   /** The line amount as entered (inc or ex GST per the bill's tax mode). */
   amountCents: number;
 }
@@ -80,11 +79,10 @@ export function BillDocumentFields({ fields, notes }: Pick<BillDocumentViewProps
 
 export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentViewProps, "fields" | "notes">) {
   // Optional columns only appear when a line uses them — most bills have no
-  // allowance or vehicle, and an empty column of dashes is noise.
+  // allowance, and an empty column of dashes is noise.
   const showCostCode = lines.some((l) => l.costCode);
   const showAccount = lines.some((l) => l.account);
   const showAllowance = lines.some((l) => l.allowance);
-  const showVehicle = lines.some((l) => l.vehicle);
   const incl = taxMode === "inclusive";
 
   return (
@@ -106,7 +104,6 @@ export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentV
               <th className="doc-col-label text-left px-3 py-2">Tax</th>
               {showAccount && <th className="doc-col-label text-left px-3 py-2">Account</th>}
               {showAllowance && <th className="doc-col-label text-left px-3 py-2">Allowance</th>}
-              {showVehicle && <th className="doc-col-label text-left px-3 py-2">Vehicle</th>}
               <th className="doc-col-label text-right px-3 py-2">Amount</th>
             </tr>
           </thead>
@@ -128,7 +125,6 @@ export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentV
                   <td className="px-3 py-2 text-muted-foreground">{l.tax === "GST on expenses" ? "GST" : "No GST"}</td>
                   {showAccount && <td className="px-3 py-2">{l.account || <Dash />}</td>}
                   {showAllowance && <td className="px-3 py-2">{l.allowance || <Dash />}</td>}
-                  {showVehicle && <td className="px-3 py-2">{l.vehicle || <Dash />}</td>}
                   <td className="px-3 py-2 money-figure">{formatCents(l.amountCents, { alwaysShowDecimals: true })}</td>
                 </tr>
               ))

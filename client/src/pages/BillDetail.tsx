@@ -37,6 +37,7 @@ import {
   Link2,
   Search,
   Pencil,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { rankedCommandFilter } from "@/components/ui/searchable-select";
@@ -548,6 +549,11 @@ export default function BillDetail() {
   });
   const activePayments = billPayments.filter((p) => !p.isVoided);
   const paidDollars = activePayments.reduce((s, p) => s + (p.amount || 0), 0) / 100;
+  // A payment locks the bill's money, supplier, number and dates, as in Xero.
+  // Cost code, allowance and project stay editable (Jed, 10 Nov) — that's job
+  // costing, not what was paid. The server enforces the same rule (paidBillLock).
+  const isPaidLocked = isEditMode && activePayments.length > 0;
+  const PAID_EDITABLE_COLUMNS = new Set(["costCode", "allowance"]);
 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
@@ -1362,29 +1368,12 @@ export default function BillDetail() {
     account: 80,
     unitCost: 120,
     allowance: 140,
-    vehicle: 140,
     exTax: 90,
     amtTax: 80,
     incTax: 90,
   };
 
   const getColWidth = (key: string) => defaultColWidths[key] || 100;
-
-  // The vehicle column only appears once the company has an asset register.
-  const { data: assetOptions = [] } = useQuery<{ id: string; name: string; rego: string | null; status: string }[]>({
-    queryKey: ["/api/asset-options"],
-  });
-  const setLineAsset = async (index: number, lineId: string, assetId: string | null) => {
-    const previous = lineItems[index]?.assetId ?? null;
-    setLineItems((prev) => prev.map((l, i) => (i === index ? { ...l, assetId } : l)));
-    try {
-      await apiRequest(`/api/bill-line-items/${lineId}/asset`, "PATCH", { assetId });
-      queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
-    } catch {
-      setLineItems((prev) => prev.map((l, i) => (i === index ? { ...l, assetId: previous } : l)));
-      toast({ title: "Couldn't link that line to the vehicle", variant: "destructive" });
-    }
-  };
 
   const createMutation = useMutation({
     mutationFn: async (data: BillFormData) => {
@@ -2690,7 +2679,6 @@ export default function BillDetail() {
     const allowance = item.appliesToAllowances
       ? allowances.find((a: any) => a.id === item.allowanceItemId)
       : undefined;
-    const asset = assetOptions.find((a) => a.id === item.assetId);
     return {
       key: item.id ?? String(i),
       description: item.description,
@@ -2701,7 +2689,6 @@ export default function BillDetail() {
       tax: item.tax,
       account: acc ? `${acc.code} - ${acc.name}` : item.account,
       allowance: allowance ? (allowance.name || allowance.description) : undefined,
-      vehicle: asset ? asset.name : undefined,
       amountCents: Math.round(item.total * 100),
     };
   });
@@ -2932,6 +2919,22 @@ export default function BillDetail() {
                 </div>
               </div>
             )}
+            {isPaidLocked && !isViewOnly && (
+              <div
+                className="flex items-start gap-2 rounded-md border p-3 text-sm"
+                style={{ backgroundColor: "hsl(var(--amber-light))", borderColor: "hsl(var(--amber))" }}
+                data-testid="banner-paid-locked"
+              >
+                <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                <div>
+                  <p className="font-medium">A payment is recorded on this bill</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Amounts, lines, supplier, number and dates are locked, as in Xero. You can still change
+                    cost codes, allowances and the project. Remove the payment to change anything else.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               {/* A disabled fieldset disables every native control and Radix
                   trigger inside it — that is the whole of view mode for the
@@ -2942,6 +2945,7 @@ export default function BillDetail() {
               <fieldset className="contents" data-testid="fieldset-bill-header">
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="billNumber"
@@ -2960,7 +2964,9 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+                  </fieldset>
 
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="billType"
@@ -3021,6 +3027,7 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+                  </fieldset>
 
                   <FormField
                     control={form.control}
@@ -3090,6 +3097,7 @@ export default function BillDetail() {
                     }}
                   />
 
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="supplierId"
@@ -3208,7 +3216,9 @@ export default function BillDetail() {
                       );
                     }}
                   />
+                  </fieldset>
 
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="billDate"
@@ -3228,7 +3238,9 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+                  </fieldset>
 
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="dueDate"
@@ -3302,7 +3314,9 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+                  </fieldset>
 
+                  <fieldset disabled={isPaidLocked} className="contents">
                   <FormField
                     control={form.control}
                     name="billReference"
@@ -3321,6 +3335,7 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+                  </fieldset>
 
                   {/* ── Purchase Order field ──────────────────────────────── */}
                   {isEditMode && (() => {
@@ -3729,7 +3744,7 @@ export default function BillDetail() {
                         every figure on the bill includes GST. It reads as the
                         app's primary colour now, because getting this wrong is a
                         10% error on the whole bill. */}
-                    <div className="inline-flex rounded-md border bg-muted/30 p-0.5" data-testid="select-tax-mode">
+                    <fieldset disabled={isPaidLocked} className="inline-flex rounded-md border bg-muted/30 p-0.5 disabled:opacity-60" data-testid="select-tax-mode">
                       {(["exclusive", "inclusive"] as const).map((mode) => (
                         <button
                           key={mode}
@@ -3746,7 +3761,7 @@ export default function BillDetail() {
                           {mode === "exclusive" ? "Exclusive" : "Inclusive"}
                         </button>
                       ))}
-                    </div>
+                    </fieldset>
                     <span className="text-table text-muted-foreground">of tax</span>
                   </div>
                 </div>
@@ -4086,37 +4101,22 @@ export default function BillDetail() {
                         </Select>
                       ),
                     });
-                    if (assetOptions.length > 0) {
-                      cols.push({
-                        key: "vehicle", header: "Vehicle", width: getColWidth("vehicle"), truncate: false,
-                        cell: (item, index) =>
-                          item.id ? (
-                            <Select
-                              value={item.assetId || "none"}
-                              onValueChange={(value) => value && setLineAsset(index, item.id!, value === "none" ? null : value)}
-                            >
-                              <SelectTrigger className="text-table border-0 shadow-none bg-transparent" data-testid={`select-vehicle-${index}`}>
-                                <SelectValue placeholder="None" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">None</SelectItem>
-                                {assetOptions
-                                  .filter((a) => a.id === item.assetId || (a.status !== "archived" && a.status !== "sold"))
-                                  .map((a) => (
-                                    <SelectItem key={a.id} value={a.id}>
-                                      {a.name}{a.rego ? ` (${a.rego})` : ""}
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-table text-muted-foreground px-2">Save first</span>
-                          ),
-                      });
-                    }
-                    return cols;
+                    // Paid: every money column renders inside a disabled
+                    // fieldset, so its controls are inert but still readable.
+                    return isPaidLocked
+                      ? cols.map((c) =>
+                          PAID_EDITABLE_COLUMNS.has(c.key) || !c.cell
+                            ? c
+                            : {
+                                ...c,
+                                cell: (item: LineItem, index: number) => (
+                                  <fieldset disabled className="contents">{c.cell!(item, index)}</fieldset>
+                                ),
+                              },
+                        )
+                      : cols;
                   })()}
-                  actions={(_item, index) => (
+                  actions={isPaidLocked ? undefined : (_item, index) => (
                     <button
                       type="button"
                       onClick={() => deleteLineItem(index)}
@@ -4129,6 +4129,7 @@ export default function BillDetail() {
                 />
               </div>
 
+              {!isPaidLocked && (
               <div className="px-3 py-1.5 border-t">
                 <button
                   type="button"
@@ -4140,6 +4141,7 @@ export default function BillDetail() {
                   Add line
                 </button>
               </div>
+              )}
 
               <div className="border-t px-3 py-2">
                 <div className="flex justify-end">
@@ -4212,6 +4214,7 @@ export default function BillDetail() {
                         <button
                           type="button"
                           onClick={() => { setInvoiceTotalInput(total.toFixed(2)); setEditingInvoiceTotal(true); }}
+                          disabled={isPaidLocked}
                           className="group flex items-center gap-1.5 text-sm font-bold underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground"
                           title="Adjust rounding — set the total printed on the supplier's invoice"
                           aria-label="Adjust rounding to match the supplier invoice total"
@@ -5034,7 +5037,7 @@ export default function BillDetail() {
           { field: "account" as const, label: "Account", Icon: Landmark, testId: "button-bulk-change-account" },
           { field: "tax" as const, label: "Tax", Icon: Percent, testId: "button-bulk-change-tax" },
           { field: "unit" as const, label: "Unit", Icon: Ruler, testId: "button-bulk-change-unit" },
-        ]).map(({ field, label, Icon, testId }) => (
+        ]).filter(({ field }) => !isPaidLocked || field === "costCode").map(({ field, label, Icon, testId }) => (
           <Button
             key={field}
             type="button"
@@ -5048,6 +5051,7 @@ export default function BillDetail() {
             {label}
           </Button>
         ))}
+        {!isPaidLocked && (
         <Button
           type="button"
           size="sm"
@@ -5059,6 +5063,7 @@ export default function BillDetail() {
           <Trash2 className="h-3.5 w-3.5 mr-1" />
           Delete
         </Button>
+        )}
       </BulkActionBar>
 
       {/* One bulk-edit dialog for every field — the control and the property it

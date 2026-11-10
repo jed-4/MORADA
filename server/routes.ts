@@ -243,9 +243,15 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
 
-// Bill statuses that need a due date: going for approval, approved, or paid.
-// Drafts and "needs review" may have none — email and AI-read bills arrive that way.
-const DUE_DATE_REQUIRED_STATUSES = new Set(["awaiting_approval", "awaiting_payment", "paid"]);
+import {
+  PAID_BILL_LOCK_MESSAGE,
+  activePaidCents,
+  lockedHeaderChanges,
+  stripDerivedTotals,
+  lockedLineChanges,
+  lockedLineFieldChanges,
+} from "./services/paidBillLock";
+
 import { buildRoundingLine } from "./services/xeroBillRounding";
 import { isLockedInXero, messageLooksLocked } from "./services/xeroLockedBill";
 import { findDuplicateBlocker, pushToXeroTarget, xeroStatusForPush } from "./services/xeroPushTarget";
@@ -2209,6 +2215,12 @@ function escapeHtml(s: unknown): string {
 
 // ── Morada AI ─────────────────────────────────────────
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Bill statuses that need a due date: going for approval, approved, or paid.
+// Drafts and "needs review" may have none — email and AI-read bills arrive that way.
+const DUE_DATE_REQUIRED_STATUSES = new Set(["awaiting_approval", "awaiting_payment", "paid"]);
+const billIsPaidLocked = async (billId: string) =>
+  activePaidCents(await storage.getBillPayments(billId)) > 0;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Client-side error reporting (used by index.html startup error handler).
@@ -21842,6 +21854,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // A payment locks the bill's money and identity (like Xero). Totals are
+      // derived from the lines, so they're dropped rather than compared.
+      if (await billIsPaidLocked(req.params.id)) {
+        const changed = lockedHeaderChanges(previous as any, validationResult.data as any);
+        if (changed.length) {
+          return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS", fields: changed });
+        }
+        stripDerivedTotals(validationResult.data as any);
+      }
+
       // A bill going for approval, or already past it, must keep a due date:
       // without one it can't be approved and Xero rejects it. Drafts and bills
       // still in review may have none (email and AI-read bills arrive that way).
@@ -22624,6 +22646,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (await billIsPaidLocked(req.params.billId)) {
+        return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS" });
+      }
+
       // Pin the line to the URL's (ownership-checked) bill — a different
       // billId smuggled in the body must never win.
       const lineItem = await storage.createBillLineItem({
@@ -22679,6 +22705,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const existing = await storage.getBillLineItems(billId);
       const existingIds = new Set(existing.map((l) => l.id));
+
+      // Paid bill: only re-allocation (cost code / allowance) gets through.
+      if (await billIsPaidLocked(billId)) {
+        const why = lockedLineChanges(
+          existing as any,
+          parsed.map((p) => ({ id: p.id, ...p.data })),
+        );
+        if (why) {
+          return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS", detail: why });
+        }
+      }
 
       // Same IDOR guard the single-line routes apply: an id in the request must
       // already belong to THIS bill. Checked for every line up front so a bad
@@ -22756,6 +22793,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (
+        (await billIsPaidLocked(parentBillId)) &&
+        lockedLineFieldChanges(existing as any, validationResult.data as any).length
+      ) {
+        return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS" });
+      }
+
       const lineItem = await storage.updateBillLineItem(req.params.id, validationResult.data);
       void maybeAutoPushParentBill(parentBillId, (req as any).user?.companyId);
       await recalcBudgetForBill(parentBillId);
@@ -22780,6 +22824,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parentBillId = (existing as any).billId as string;
       const ownedBill = await getOwnedBill(req, res, parentBillId, "Bill line item not found");
       if (!ownedBill) return;
+      if (await billIsPaidLocked(parentBillId)) {
+        return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS" });
+      }
       await storage.deleteBillLineItem(req.params.id);
       void maybeAutoPushParentBill(parentBillId, (req as any).user?.companyId);
       await recalcBudgetForBill(parentBillId);
