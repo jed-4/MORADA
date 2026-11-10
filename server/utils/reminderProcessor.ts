@@ -2,6 +2,8 @@ import { storage } from "../storage";
 import { sendReminderEmail } from "./email";
 import { addDays, addWeeks, addMonths, differenceInMinutes, differenceInHours, startOfDay, format } from "date-fns";
 import { emitNotification } from "../socketManager";
+import { db } from "../db";
+import { notifications } from "@shared/schema";
 import {
   zonedNow,
   businessReminderDue,
@@ -78,9 +80,22 @@ export async function processReminders() {
           });
         }
 
-        // Reminders are displayed in the Reminders tab of the notification bell via the
-        // reminders table. No need to also create a duplicate entry in the
-        // notifications table, which would put them in the Notifications tab too.
+        // The reminder_notifications row above is a delivery log — nothing on
+        // the web or the phone reads it. The bell's Notifications list, the live
+        // socket update and the phone push all run off `notifications`, so a
+        // reminder that only wrote the log went off silently (10 Nov 2026).
+        if (reminder.companyId) {
+          await notifyReminderFired({
+            userId: recipientId,
+            companyId: reminder.companyId,
+            title: reminder.title,
+            message: reminder.description,
+            link: `/users/${recipientId}/reminders`,
+            entityId: reminder.id,
+            inApp: reminder.sendInApp !== false,
+            push: reminder.sendPush !== false,
+          });
+        }
 
         if (reminder.sendEmail) {
           const user = await storage.getUser(recipientId);
@@ -178,6 +193,17 @@ export async function processReminders() {
             });
           }
 
+          await notifyReminderFired({
+            userId: user.id,
+            companyId: businessReminder.companyId,
+            title: businessReminder.title,
+            message: businessReminder.description,
+            link: businessReminder.targetType === "timesheet" ? "/timesheets" : null,
+            entityId: businessReminder.id,
+            inApp: businessReminder.sendInApp !== false,
+            push: businessReminder.sendPush !== false,
+          });
+
           if (businessReminder.sendEmail && user.email) {
             try {
               await sendReminderEmail({
@@ -236,6 +262,56 @@ export async function processReminders() {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
     isProcessorRunning = false;
+  }
+}
+
+/**
+ * Put a fired reminder where people see it, honouring the reminder's own
+ * In-app and Push switches (`sendPush` was a column and a toggle in the form
+ * that nothing read).
+ *
+ * - In-app: a bell notification plus a live update for any open tab.
+ * - Push: the phone banner, skipped if the person has muted the Reminders
+ *   group in their notification settings.
+ *
+ * Never throws — a failed notification must not stop the reminder being
+ * rescheduled.
+ */
+async function notifyReminderFired(n: {
+  userId: string;
+  companyId: string;
+  title: string;
+  message?: string | null;
+  link?: string | null;
+  entityId: string;
+  inApp: boolean;
+  push: boolean;
+}) {
+  if (!n.inApp && !n.push) return;
+  const row = {
+    userId: n.userId,
+    companyId: n.companyId,
+    type: "reminder_due",
+    title: `Reminder: ${n.title}`,
+    message: n.message || null,
+    link: n.link || null,
+    entityType: "reminder",
+    entityId: n.entityId,
+  };
+  try {
+    if (n.inApp && n.push) {
+      // storage.createNotification pushes to the phone as a side effect.
+      const notification = await storage.createNotification(row);
+      emitNotification(n.userId, notification);
+    } else if (n.inApp) {
+      const [notification] = await db.insert(notifications).values(row).returning();
+      emitNotification(n.userId, notification);
+    } else {
+      const { sendPushForNotification } = await import("./pushNotifications");
+      await sendPushForNotification({ ...row, id: n.entityId, isRead: false, readAt: null, createdAt: new Date(), createdByUserId: null } as any);
+    }
+  } catch (err) {
+    console.error(`[ReminderProcessor] Failed to notify ${n.userId} of reminder ${n.entityId}:`, err);
   }
 }
 

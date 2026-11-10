@@ -227,10 +227,14 @@ export function NotificationBell() {
     setIsOpen(false);
   };
 
-  const activeReminders = reminders.filter(r => r.status === "pending" || r.status === "sent" || r.status === "snoozed");
+  // The server sends upcoming reminders with status "active"; this used to keep
+  // only "pending"/"sent"/"snoozed", none of which it ever sends, so the tab was
+  // always empty. Upcoming reminders don't count towards the badge — a reminder
+  // that has gone off arrives as a notification and counts there.
+  const activeReminders = reminders.filter(r => r.status === "active" || r.status === "snoozed");
   const unreadNotifications = notifications.filter(n => !n.isRead);
-  const hasUnread = unreadCount.count > 0 || activeReminders.length > 0;
-  const totalCount = unreadCount.count + activeReminders.length;
+  const hasUnread = unreadCount.count > 0;
+  const totalCount = unreadCount.count;
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.isRead) {
