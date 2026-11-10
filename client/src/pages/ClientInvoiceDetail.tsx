@@ -1459,6 +1459,9 @@ function ClientInvoiceDetailInner() {
         accountCode: l.accountCode ?? null,
         taxType: l.taxType ?? null,
         tracking: l.tracking ?? null,
+        label: l.label ?? null,
+        pdfDescription: l.pdfDescription ?? null,
+        claimPct: l.claimPct ?? null,
       })),
       columnConfig: columnConfig,
       showAmountsIncTax: showAmountsIncTax,
@@ -1988,7 +1991,7 @@ function ClientInvoiceDetailInner() {
   // variations and bills, so an issued invoice could otherwise show a total
   // the client never received (INV-1003 on dev read $0 against $174,084.66).
   const savedSnapshot = Array.isArray((invoice as any)?.lineBreakdown) && (invoice as any).lineBreakdown.length > 0
-    ? ((invoice as any).lineBreakdown as Array<{ description?: string; label?: string; amountExCents?: number; gstCents?: number; amountIncCents?: number }>)
+    ? ((invoice as any).lineBreakdown as Array<{ description?: string; label?: string | null; pdfDescription?: string | null; claimPct?: number | null; amountExCents?: number; gstCents?: number; amountIncCents?: number }>)
     : null;
   const showIssued = isViewOnly && !!savedSnapshot;
   const total = showIssued ? (invoice?.totalAmount ?? 0) / 100 : calculateTotal();
@@ -2019,22 +2022,46 @@ function ClientInvoiceDetailInner() {
   // so every line whose money is in the total appears on the PDF (previously
   // cost-plus labour, selections, and markup were omitted while their amounts
   // stayed in the totals) and per-line `taxable` is honoured.
+  //
+  // An issued invoice in view mode prints what was ISSUED — the saved snapshot
+  // and stored totals — not the project's live figures, or the PDF the client
+  // gets could disagree with the invoice and with Xero. Once unlocked for
+  // editing it prints what's on screen, which Save then snapshots.
   const buildInvoicePdfLineItems = () =>
-    buildInvoiceLineBreakdown().map((l) => ({
-      label: l.label || l.description,
-      description: l.pdfDescription,
-      claimPct: l.claimPct,
-      amountExTax: l.amountExCents,
-      gst: l.gstCents,
-      amountIncTax: l.amountIncCents,
-    }));
+    showIssued
+      ? savedSnapshot!.map((l) => ({
+          label: l.label || l.description || "",
+          description: l.pdfDescription ?? undefined,
+          claimPct: l.claimPct ?? undefined,
+          amountExTax: l.amountExCents ?? 0,
+          gst: l.gstCents ?? 0,
+          amountIncTax: l.amountIncCents ?? 0,
+        }))
+      : buildInvoiceLineBreakdown().map((l) => ({
+          label: l.label || l.description,
+          description: l.pdfDescription,
+          claimPct: l.claimPct,
+          amountExTax: l.amountExCents,
+          gst: l.gstCents,
+          amountIncTax: l.amountIncCents,
+        }));
+  const pdfTotalsCents = () =>
+    showIssued
+      ? {
+          subtotalCents: (invoice?.subtotal ?? 0) + ((invoice as any)?.markupAmount ?? 0),
+          gstCents: invoice?.gstAmount ?? 0,
+          totalCents: invoice?.totalAmount ?? 0,
+        }
+      : {
+          subtotalCents: Math.round(amountExTax() * 100),
+          gstCents: Math.round(amountTax() * 100),
+          totalCents: Math.round(amountIncTax() * 100),
+        };
 
   const handleDownloadInvoicePdf = async () => {
     setInvoicePdfGenerating(true);
     try {
-      const subtotalCents = Math.round(amountExTax() * 100);
-      const gstCents = Math.round(amountTax() * 100);
-      const totalCents = Math.round(amountIncTax() * 100);
+      const { subtotalCents, gstCents, totalCents } = pdfTotalsCents();
       const paidCents = Math.round(paid * 100);
       const balanceDueCents = totalCents - paidCents;
       const blob = await pdf(
@@ -2080,9 +2107,7 @@ function ClientInvoiceDetailInner() {
   };
 
   const handleOpenInvoiceSendModal = () => {
-    const subtotalCents = Math.round(amountExTax() * 100);
-    const gstCents = Math.round(amountTax() * 100);
-    const totalCents = Math.round(amountIncTax() * 100);
+    const { subtotalCents, gstCents, totalCents } = pdfTotalsCents();
     const paidCents = Math.round(paid * 100);
     const balanceDueCents = totalCents - paidCents;
     setInvoiceSendData({
@@ -5546,11 +5571,9 @@ function ClientInvoiceDetailInner() {
               projectName={currentProject?.name}
               projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
               lineItems={buildInvoicePdfLineItems()}
-              subtotalCents={Math.round(amountExTax() * 100)}
-              gstCents={Math.round(amountTax() * 100)}
-              totalCents={Math.round(amountIncTax() * 100)}
+              {...pdfTotalsCents()}
               paidCents={Math.round(paid * 100)}
-              balanceDueCents={Math.round(amountIncTax() * 100) - Math.round(paid * 100)}
+              balanceDueCents={pdfTotalsCents().totalCents - Math.round(paid * 100)}
               brandColor={companySettings?.brandColor || "#6d28d9"}
               documentStyle={docStyle}
               logoUrl={logoUrl}

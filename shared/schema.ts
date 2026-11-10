@@ -3000,6 +3000,12 @@ export const invoiceLineBreakdownEntrySchema = z.object({
     .array(z.object({ categoryId: z.string(), optionId: z.string() }))
     .optional()
     .nullable(),
+  // How the line printed on the PDF, so an issued invoice's PDF can be rebuilt
+  // from the snapshot instead of from the project's live figures. Absent on
+  // snapshots saved before these were kept — the PDF falls back to description.
+  label: z.string().optional().nullable(),
+  pdfDescription: z.string().optional().nullable(),
+  claimPct: z.number().optional().nullable(),
 }).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
   message: "amountExCents + gstCents must equal amountIncCents",
 }).refine((l) => l.taxable || l.gstCents === 0, {
