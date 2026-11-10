@@ -172,7 +172,10 @@ const billFormSchema = z.object({
   billType: z.enum(["bill", "credit", "receipt"]).default("bill"),
   status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]).default("draft"),
   billDate: z.string().min(1, "Bill date is required"),
-  dueDate: z.string().optional(),
+  // Required: a bill with no due date can't be approved, and Xero needs one.
+  // Bills arriving by email or the AI reader can still be created without one
+  // (server-side) — it is asked for the first time someone saves the bill here.
+  dueDate: z.string().min(1, "Due date is required"),
   billReference: z.string().optional(),
   notes: z.string().optional(),
   paidAmount: z.number().default(0),
@@ -2564,6 +2567,10 @@ export default function BillDetail() {
     if (lineItems.length === 0) {
       errors.push("Please add line items");
     }
+
+    if (!form.watch('dueDate')) {
+      errors.push("Please set a due date");
+    }
     
     const missingCostCodes = lineItems.some((item) => !item.costCodeId);
     if (missingCostCodes) {
@@ -3165,7 +3172,7 @@ export default function BillDetail() {
                     name="dueDate"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Due date</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Due date *</FormLabel>
                         <FormControl>
                           <DatePicker
                             value={field.value}
@@ -4461,9 +4468,18 @@ export default function BillDetail() {
                     })()}
                     {isViewOnly ? (
                       <Button
+                        key="edit"
                         type="button"
                         size="sm"
-                        onClick={() => setEditUnlocked(true)}
+                        onClick={(e) => {
+                          // Edit and Save share this slot. React swaps the
+                          // button to type="submit" inside this click, and the
+                          // browser then completes the click as a submit — so
+                          // Edit saved the bill instantly. Cancel the default
+                          // and key the two buttons apart so neither can happen.
+                          e.preventDefault();
+                          setEditUnlocked(true);
+                        }}
                         className="gap-1"
                         data-testid="button-edit-bill"
                       >
@@ -4472,6 +4488,7 @@ export default function BillDetail() {
                       </Button>
                     ) : (
                     <Button
+                      key="save"
                       type="submit"
                       size="sm"
                       disabled={

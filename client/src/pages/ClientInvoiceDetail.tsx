@@ -2446,8 +2446,14 @@ function ClientInvoiceDetailInner() {
                 )}
                 {isViewOnly ? (
                   <button
+                    key="edit"
                     type="button"
-                    onClick={() => setEditUnlocked(true)}
+                    onClick={(e) => {
+                      // Edit and Save share this slot: without this, the click
+                      // that unlocks the invoice also submitted it (see BillDetail).
+                      e.preventDefault();
+                      setEditUnlocked(true);
+                    }}
                     className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
                     data-testid="button-edit-invoice"
                   >
@@ -2456,6 +2462,7 @@ function ClientInvoiceDetailInner() {
                   </button>
                 ) : (
                 <button
+                  key="save"
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
                   className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"

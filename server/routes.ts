@@ -242,6 +242,10 @@ import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS, isXeroRoundingLine } from "@shared/billTotals";
+
+// Bill statuses that need a due date: going for approval, approved, or paid.
+// Drafts and "needs review" may have none — email and AI-read bills arrive that way.
+const DUE_DATE_REQUIRED_STATUSES = new Set(["awaiting_approval", "awaiting_payment", "paid"]);
 import { buildRoundingLine } from "./services/xeroBillRounding";
 import { isLockedInXero, messageLooksLocked } from "./services/xeroLockedBill";
 import { findDuplicateBlocker, pushToXeroTarget, xeroStatusForPush } from "./services/xeroPushTarget";
@@ -1106,6 +1110,16 @@ async function pushBillToXeroUnguarded(
       await writeSyncStatus("failed", msg);
       logOutcome({ ok: false, reason: "NEGATIVE_TOTAL", message: msg, validationErrors: issues });
       return { ok: false, status: 422, error: "NEGATIVE_TOTAL", message: msg, validationErrors: issues };
+    }
+
+    // Pre-flight: Xero needs a due date on a bill. Without this check the push
+    // failed with Xero's own validation error and the bill sat unsynced.
+    if (!bill.dueDate) {
+      const msg = "This bill has no due date. Set one and save to send it to Xero.";
+      const issues: XeroValidationIssue[] = [{ scope: "invoice", message: msg }];
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "DUE_DATE_REQUIRED", message: msg, validationErrors: issues });
+      return { ok: false, status: 422, error: "DUE_DATE_REQUIRED", message: msg, validationErrors: issues };
     }
 
     // Pre-flight: tax types referenced on lines must exist on the connected
@@ -21819,6 +21833,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // A bill going for approval, or already past it, must keep a due date:
+      // without one it can't be approved and Xero rejects it. Drafts and bills
+      // still in review may have none (email and AI-read bills arrive that way).
+      {
+        const d = validationResult.data as any;
+        const nextStatus = d.status ?? previous.status;
+        const nextDueDate = "dueDate" in d ? d.dueDate : previous.dueDate;
+        if (DUE_DATE_REQUIRED_STATUSES.has(nextStatus) && !nextDueDate) {
+          return res.status(400).json({
+            error: "Set a due date — a bill needs one to go for approval or to Xero.",
+            code: "DUE_DATE_REQUIRED",
+          });
+        }
+      }
+
       // Rounding is a cent-level reconciliation, never a way to fudge amounts.
       if (validationResult.data.roundingCents != null) {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
@@ -23191,6 +23220,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const ownedBill = await getOwnedBill(req, res, req.params.id);
       if (!ownedBill) return;
+
+      // An approved bill with no due date can't be paid on time and fails the
+      // Xero push. Approving is the last gate before Xero, so it is held here.
+      if (!ownedBill.dueDate) {
+        return res.status(400).json({
+          error: `${ownedBill.billNumber || "This bill"} has no due date. Set one before approving.`,
+          code: "DUE_DATE_REQUIRED",
+        });
+      }
 
       const validationResult = insertBillApprovalSchema.safeParse({
         billId: req.params.id,
