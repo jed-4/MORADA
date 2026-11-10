@@ -127,6 +127,7 @@ import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { UnitSelect } from "@/components/UnitSelect";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { cn } from "@/lib/utils";
+import { BillDocumentFields, BillDocumentLines, type BillDocumentField, type BillDocumentLine } from "@/components/bills/BillDocumentView";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillPayment, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
@@ -2640,6 +2641,64 @@ export default function BillDetail() {
   const paid = paidDollars;
   const due = calculateDue();
 
+  // The read-only document (view mode) — every id resolved to a label here so
+  // the view stays pure presentation.
+  const documentFields: BillDocumentField[] = (() => {
+    if (!isViewOnly) return [];
+    const v = form.getValues();
+    const supplier = suppliers.find((c: any) => c.id === v.supplierId);
+    const project = v.projectId && businessProject?.id === v.projectId
+      ? { name: "Business (no project)" }
+      : projects.find((p) => p.id === v.projectId);
+    const fmt = (d?: string) => (d ? formatDate(d) : "");
+    return [
+      { label: v.billType === "credit" ? "Credit note no." : "Bill no.", value: v.billNumber, testId: "text-bill-number" },
+      { label: "From", value: supplier?.name ?? "", testId: "text-bill-supplier" },
+      { label: "Project", value: (project as any)?.name ?? "", testId: "text-bill-project" },
+      { label: "Reference", value: v.billReference, testId: "text-bill-reference" },
+      { label: "Date", value: fmt(v.billDate), testId: "text-bill-date" },
+      { label: "Due date", value: fmt(v.dueDate), testId: "text-bill-due-date" },
+      {
+        label: "Purchase order",
+        value: matchedSitePOId && matchedSitePO ? (
+          <button
+            type="button"
+            onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
+            className="font-mono font-medium hover:underline"
+            data-testid="link-matched-po"
+          >
+            {matchedSitePO.poNumber}
+          </button>
+        ) : "",
+      },
+      {
+        label: "Xero",
+        value: (bill as any)?.xeroInvoiceId ? "Sent to Xero" : v.sendToXero ? "Not sent yet" : "Not synced",
+        testId: "text-bill-xero",
+      },
+    ];
+  })();
+  const documentLines: BillDocumentLine[] = !isViewOnly ? [] : lineItems.map((item, i) => {
+    const acc = xeroAccounts.find((a) => a.code === item.account);
+    const allowance = item.appliesToAllowances
+      ? allowances.find((a: any) => a.id === item.allowanceItemId)
+      : undefined;
+    const asset = assetOptions.find((a) => a.id === item.assetId);
+    return {
+      key: item.id ?? String(i),
+      description: item.description,
+      costCode: getCostCodeName(item.costCodeId),
+      quantity: item.quantity,
+      unit: item.unit,
+      unitPriceCents: Math.round(item.unitPrice * 100),
+      tax: item.tax,
+      account: acc ? `${acc.code} - ${acc.name}` : item.account,
+      allowance: allowance ? (allowance.name || allowance.description) : undefined,
+      vehicle: asset ? asset.name : undefined,
+      amountCents: Math.round(item.total * 100),
+    };
+  });
+
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="page-bill-detail">
       <div className="flex-none px-4 py-2 border-b">
@@ -2870,7 +2929,10 @@ export default function BillDetail() {
               {/* A disabled fieldset disables every native control and Radix
                   trigger inside it — that is the whole of view mode for the
                   bill's own fields. Attachments and payments stay live. */}
-              <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-bill-header">
+              {isViewOnly ? (
+                <BillDocumentFields fields={documentFields} notes={form.getValues("notes")} />
+              ) : (
+              <fieldset className="contents" data-testid="fieldset-bill-header">
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <FormField
@@ -3364,6 +3426,7 @@ export default function BillDetail() {
                 </div>
               </Card>
               </fieldset>
+              )}
 
               <div className="space-y-3">
                 <Card className="p-3">
@@ -3601,7 +3664,21 @@ export default function BillDetail() {
               </div>
             </div>
 
-            <fieldset disabled={isViewOnly} className="contents" data-testid="fieldset-bill-lines">
+            {isViewOnly ? (
+              <BillDocumentLines
+                lines={documentLines}
+                taxMode={taxMode}
+                totals={{
+                  subtotalCents: Math.round(calculateSubtotal() * 100),
+                  taxCents: Math.round(calculateTax() * 100),
+                  roundingCents,
+                  totalCents: Math.round(total * 100),
+                  paidCents: Math.round(paid * 100),
+                  dueCents: Math.round(due * 100),
+                }}
+              />
+            ) : (
+            <fieldset className="contents" data-testid="fieldset-bill-lines">
             <Card className="p-0 overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                 <h3 className="text-xs font-semibold">Cost Lines</h3>
@@ -4163,6 +4240,7 @@ export default function BillDetail() {
               </div>
             </Card>
             </fieldset>
+            )}
 
                 {isEditMode && approvals.length > 0 && (
                   <Card className="p-3">
