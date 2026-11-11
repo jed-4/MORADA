@@ -82,6 +82,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { PODocumentFields, PODocumentLines } from "@/components/purchase-orders/PODocumentView";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { SiXero } from "react-icons/si";
 import { DocumentHeader } from "@/components/detail/DocumentHeader";
@@ -1908,6 +1909,21 @@ export default function PurchaseOrderDetail() {
             </DocumentSection>
 
             <DocumentSection title="Details" role="manual" collapsible={false} divider={false} data-testid="section-details">
+              {isLocked ? (
+                <PODocumentFields
+                  fields={[
+                    { label: "PO name", value: title, testId: "text-po-title" },
+                    { label: "Required by", value: requiredByDate ? format(new Date(requiredByDate), "d MMM yyyy") : null, testId: "text-required-by-date" },
+                    { label: "Reference", value: deliveryReference, testId: "text-delivery-reference" },
+                    { label: "Description", value: description, wide: true, testId: "text-po-description" },
+                    { label: "Attention", value: deliveryAttention, testId: "text-delivery-attention" },
+                    { label: "Site contact", value: deliveryContact, testId: "text-delivery-contact" },
+                    { label: "GST", value: gstMode === "inclusive" ? "Prices include GST" : gstMode === "gst_free" ? "GST free" : "Prices exclude GST", testId: "text-gst-mode" },
+                    { label: "Delivery address", value: deliveryAddress, wide: true, testId: "text-delivery-address" },
+                    { label: "Delivery instructions", value: deliveryInstructions, wide: true, testId: "text-delivery-instructions" },
+                  ]}
+                />
+              ) : (
               <div className="p-3.5 space-y-3 border-t border-border/60">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2 space-y-1">
@@ -2009,6 +2025,7 @@ export default function PurchaseOrderDetail() {
                   </div>
                 </div>
               </div>
+              )}
             </DocumentSection>
           </DocumentCard>
 
@@ -2034,12 +2051,12 @@ export default function PurchaseOrderDetail() {
                       <span>Import timesheets</span>
                     </button>
                   )}
+                  {!isLocked && (
                   <Select
                     value={gstMode}
                     onValueChange={(value) => {
                       if (value && value !== gstMode) gstModeMutation.mutate(value);
                     }}
-                    disabled={isLocked}
                   >
                     <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="select-gst-mode">
                       <SelectValue />
@@ -2050,10 +2067,31 @@ export default function PurchaseOrderDetail() {
                       <SelectItem value="gst_free">GST free</SelectItem>
                     </SelectContent>
                   </Select>
+                  )}
                 </>
               }
             >
               <div className="border-t border-border/60">
+                {isLocked ? (
+                  <PODocumentLines
+                    lines={items.map((item) => {
+                      const qty = parseFloat(item.quantity || "1");
+                      const price = item.unitPrice || 0;
+                      const cc = costCodes.find((c) => c.id === item.costCodeId);
+                      return {
+                        key: String(item.id),
+                        description: item.description || "",
+                        quantity: qty,
+                        unit: item.unit,
+                        unitPriceCents: price,
+                        totalCents: Math.round(qty * price),
+                        gstFree: !!item.isGstFree,
+                        costCode: cc ? `${cc.code} ${cc.title}` : null,
+                      };
+                    })}
+                  />
+                ) : (
+                <>
                 <div className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-3 py-2 bg-muted/40 border-b border-border/60">
                   <div></div>
                   <div className={labelCls}>Description</div>
@@ -2102,6 +2140,8 @@ export default function PurchaseOrderDetail() {
                     data-testid="button-add-item"
                   />
                 )}
+                </>
+                )}
 
                 {totalHours > 0 && (
                   <div className="px-3.5 py-2 border-t border-border/60">
@@ -2121,6 +2161,7 @@ export default function PurchaseOrderDetail() {
                   { label: "GST (10%)", cents: gstAmount, tone: gstAmount === 0 ? "zero" : "normal", testId: "text-gst" },
                 ]}
                 total={{ label: "Total inc GST", cents: total }}
+                alwaysShowDecimals
               />
             </DocumentSection>
           </DocumentCard>
