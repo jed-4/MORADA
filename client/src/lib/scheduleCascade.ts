@@ -63,14 +63,15 @@ function getChildrenRecursive(parentId: number | string, allItems: ScheduleItem[
 }
 
 function getAllDownstreamSuccessors(
-  rootId: number | string,
+  rootId: number | string | Array<number | string>,
   allItems: ScheduleItem[],
   depTypeFilter?: (type: string) => boolean,
 ): ScheduleItem[] {
-  // Step 1: collect all reachable downstream successors via BFS.
-  const reachable = new Set<string>();
-  const queue: Array<string> = [String(rootId)];
-  reachable.add(String(rootId));
+  // Step 1: collect all reachable downstream successors via BFS. Several roots
+  // when a stage moves: links can hang off the stage OR any task inside it.
+  const roots = (Array.isArray(rootId) ? rootId : [rootId]).map(String);
+  const reachable = new Set<string>(roots);
+  const queue: Array<string> = [...roots];
   while (queue.length > 0) {
     const cur = queue.shift()!;
     for (const it of allItems) {
@@ -85,7 +86,7 @@ function getAllDownstreamSuccessors(
       }
     }
   }
-  reachable.delete(String(rootId)); // root is the moved item, not a result
+  for (const r of roots) reachable.delete(r); // roots moved themselves, not results
 
   // Step 2: build adjacency within the reachable set and compute in-degrees for
   //         Kahn's topological sort so diamond graphs are processed correctly.
@@ -143,8 +144,12 @@ export function computeMoveCascade(params: {
   newEnd: Date;
   allItems: ScheduleItem[];
   isNonWorking: (d: Date) => boolean;
+  /** Where the caller has already put the moved item's children (a stage
+   *  drag shifts them itself). Used instead of re-deriving them, so their
+   *  successors are cascaded from the dates actually being written. */
+  childMoves?: CascadeUpdate[];
 }): CascadeUpdate[] {
-  const { movedItemId, originalStart, originalEnd, newStart, newEnd, allItems, isNonWorking } = params;
+  const { movedItemId, originalStart, originalEnd, newStart, newEnd, allItems, isNonWorking, childMoves } = params;
 
   const origStartMidnight = parseScheduleDate(originalStart);
   const newStartMidnight = parseScheduleDate(newStart);
@@ -211,10 +216,23 @@ export function computeMoveCascade(params: {
   // ── Regular move or resize-right ──────────────────────────────────────────
   // 1. Move direct children of the dragged item proportionally (working-day offset)
   const childItems = getChildrenRecursive(movedItemId, allItems);
-  const allSuccessors = getAllDownstreamSuccessors(movedItemId, allItems);
+  // When the caller is really moving the children (a stage drag, childMoves
+  // given), whatever follows a CHILD has to be pulled along too — not only what
+  // follows the stage itself. Other callers (the parent-successor preview after
+  // a single task drag) don't move the children, so their links stay out.
+  const allSuccessors = getAllDownstreamSuccessors(
+    childMoves ? [movedItemId, ...childItems.map(c => c.id)] : movedItemId,
+    allItems,
+  );
 
+  const fixedChild = new Map((childMoves ?? []).map(m => [String(m.id), m]));
   for (const child of childItems) {
-    if (allSuccessors.some(s => s.id === child.id)) continue; // handled below
+    if (!childMoves && allSuccessors.some(s => s.id === child.id)) continue; // handled below
+    const fixed = fixedChild.get(String(child.id));
+    if (fixed) {
+      recordUpdate(child.id, parseScheduleDate(fixed.startDate), parseScheduleDate(fixed.endDate));
+      continue;
+    }
     const childStart = parseScheduleDate(child.startDate as string);
     const childEnd = parseScheduleDate(child.endDate as string);
     if (!isValidDate(childStart) || !isValidDate(childEnd)) continue;
