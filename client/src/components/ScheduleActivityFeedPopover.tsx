@@ -533,12 +533,12 @@ function FeedBurst({ entries, onSelectItem, resolveAssignee }: { entries: Activi
               {formatDistanceToNowStrict(new Date(head.createdAt), { addSuffix: true })}
             </span>
           </div>
-          <div className="text-xs text-foreground mt-0.5 break-words">
-            {sharedHeadline || `Updated ${entries.length} items`}
-          </div>
           <div className="text-table text-muted-foreground mt-0.5 truncate">
             {itemNames.slice(0, 3).join(", ")}
             {itemNames.length > 3 ? ` and ${itemNames.length - 3} more` : ""}
+          </div>
+          <div className="text-xs text-foreground mt-0.5 break-words">
+            {sharedHeadline || `Updated ${entries.length} items`}
           </div>
           <div className="text-table text-muted-foreground/70 mt-0.5">
             {expanded ? "Hide" : "Show each one"}
@@ -598,6 +598,13 @@ function FeedItem({ entry, onSelectItem, resolveAssignee }: { entry: ActivityFee
             {formatDistanceToNowStrict(new Date(entry.createdAt), { addSuffix: true })}
           </span>
         </div>
+        {/* User, then the item, then the note — the item used to sit at the
+            bottom, where it was easy to miss which item a note was about. */}
+        {entry.scheduleItemName && (
+          <div className="text-table text-muted-foreground mt-0.5 truncate">
+            on {entry.scheduleItemName}
+          </div>
+        )}
         {isChange && summary ? (
           <>
             <div className="text-xs text-foreground mt-0.5 break-words">
@@ -629,11 +636,6 @@ function FeedItem({ entry, onSelectItem, resolveAssignee }: { entry: ActivityFee
               </div>
             )}
           </>
-        )}
-        {entry.scheduleItemName && (
-          <div className="text-table text-muted-foreground mt-0.5 truncate">
-            on {entry.scheduleItemName}
-          </div>
         )}
       </div>
     </button>
