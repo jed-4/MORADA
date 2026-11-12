@@ -46,6 +46,9 @@ interface MessageBubbleProps {
   onRetry: (msg: Message) => void;
   onDiscard: (id: string) => void;
   onPressImage: (att: MessageAttachment) => void;
+  /** Open a non-image attachment (PDF etc.). They used to be a bare file name
+   *  with no tap target, so a PDF sent in chat couldn't be opened on the phone. */
+  onPressFile?: (att: MessageAttachment) => void;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -61,6 +64,7 @@ export const MessageBubble = memo(function MessageBubble({
   onRetry,
   onDiscard,
   onPressImage,
+  onPressFile,
 }: MessageBubbleProps) {
   const initials = getInitials(senderName);
   const isTemp = !!(msg.pending || msg.failed);
@@ -115,12 +119,23 @@ export const MessageBubble = memo(function MessageBubble({
             </Pressable>
           ))}
           {otherAttachments.map(att => (
-            <View key={att.id} style={styles.fileRow}>
+            <Pressable
+              key={att.id}
+              style={styles.fileRow}
+              onPress={() => onPressFile?.(att)}
+              disabled={isTemp || !onPressFile}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${att.fileName}`}
+            >
               <Ionicons name="document-outline" size={15} color={isMe ? '#FFFFFF' : theme.textSecondary} />
-              <Text style={[styles.fileName, { color: isMe ? '#FFFFFF' : theme.textPrimary }]} numberOfLines={1}>
+              <Text
+                style={[styles.fileName, { color: isMe ? '#FFFFFF' : theme.textPrimary, textDecorationLine: 'underline' }]}
+                numberOfLines={1}
+              >
                 {att.fileName}
               </Text>
-            </View>
+            </Pressable>
           ))}
           {hasText && <MessageContent content={msg.content} isOwn={isMe} theme={theme} />}
           {msg.isEdited ? (

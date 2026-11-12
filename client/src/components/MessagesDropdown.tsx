@@ -6,7 +6,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useClientPortal } from "@/hooks/use-client-portal";
-import { MessageSquare, ArrowLeft, ExternalLink, Send, Loader2, Hash } from "lucide-react";
+import { MessageSquare, ArrowLeft, ExternalLink, Send, Loader2, Hash, FileText, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
@@ -26,6 +26,13 @@ interface ChannelWithMeta extends Channel {
   lastMessageAt?: Date | string | null;
   lastMessageSender?: string | null;
   messageCount?: number;
+}
+
+interface DropdownAttachment {
+  id: string;
+  fileUrl: string;
+  fileName: string;
+  mimeType?: string | null;
 }
 
 function getInitials(
@@ -329,7 +336,14 @@ export function MessagesDropdown() {
                               {/* Who said it, only where it is not obvious: in a
                                   DM the row is already their name. */}
                               {!isDm && senderName ? `${senderName}: ` : ""}
-                              {stripMentionMarkup(latest.content || "")}
+                              {latest.content
+                                ? stripMentionMarkup(latest.content)
+                                : (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Paperclip className="h-3 w-3" />
+                                    Sent an attachment
+                                  </span>
+                                )}
                             </p>
                           ) : (
                             <p className="text-table text-muted-foreground/70 italic">No messages yet</p>
@@ -428,7 +442,33 @@ export function MessagesDropdown() {
                                 : "bg-muted/40 text-foreground"
                             }`}
                           >
-                            {renderDropdownMessageContent(msg.content, user?.id)}
+                            {msg.content ? renderDropdownMessageContent(msg.content, user?.id) : null}
+                            {/* Attachments. This bubble used to draw text only, so a
+                                message that was just a PDF or photo showed EMPTY here,
+                                with nothing to click. */}
+                            {((msg as any).attachments as DropdownAttachment[] | undefined)?.length ? (
+                              <div className={`flex flex-col gap-1 ${msg.content ? "mt-1.5" : ""}`}>
+                                {((msg as any).attachments as DropdownAttachment[]).map((att) =>
+                                  att.mimeType?.startsWith("image/") ? (
+                                    <a key={att.id} href={att.fileUrl} target="_blank" rel="noopener noreferrer" className="block" data-testid={`dropdown-attachment-${att.id}`}>
+                                      <img src={att.fileUrl} alt={att.fileName} className="max-h-32 w-auto rounded-md" />
+                                    </a>
+                                  ) : (
+                                    <a
+                                      key={att.id}
+                                      href={att.fileUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1.5 px-2 py-1 rounded-md border bg-background/60 hover-elevate"
+                                      data-testid={`dropdown-attachment-${att.id}`}
+                                    >
+                                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      <span className="truncate underline">{att.fileName}</span>
+                                    </a>
+                                  ),
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                           <span className="text-data text-muted-foreground">
                             {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}

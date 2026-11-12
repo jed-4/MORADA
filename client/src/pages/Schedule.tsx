@@ -1559,15 +1559,28 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
     }));
   }, [scheduleItems]);
 
-  // Get parent items (stages) for dropdown - exclude the current editing item and its children
-  const parentItems = useMemo(() => {
-    return scheduleItems.filter(item => {
-      // Must not have a parent (top-level items only)
-      if (item.parentItemId) return false;
-      // Exclude the current editing item (can't be its own parent)
-      if (editingItem && item.id === editingItem.id) return false;
-      return true;
-    });
+  // Possible parents for the item being edited, as an indented tree: anything
+  // except the item itself and its own descendants (that would be a loop —
+  // the server refuses it too). Nesting can go more than one level deep.
+  const parentOptions = useMemo(() => {
+    const editingId = editingItem?.id ? String(editingItem.id) : null;
+    const byParent = new Map<string, ScheduleItem[]>();
+    for (const it of scheduleItems) {
+      const key = it.parentItemId ? String(it.parentItemId) : "";
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key)!.push(it);
+    }
+    const out: Array<{ id: string; name: string; depth: number }> = [];
+    const walk = (parentKey: string, depth: number) => {
+      const kids = (byParent.get(parentKey) ?? []).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      for (const k of kids) {
+        if (editingId && String(k.id) === editingId) continue; // skips its whole subtree too
+        out.push({ id: String(k.id), name: k.name || "Untitled", depth });
+        walk(String(k.id), depth + 1);
+      }
+    };
+    walk("", 0);
+    return out;
   }, [scheduleItems, editingItem]);
 
   // Memoize filtered items computation
@@ -2630,10 +2643,35 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
               />
             </div>
 
+            {/* Parent. Removed in July (task #512) and asked for back by Jed,
+                11 Nov 2026: with only drag-to-nest, an item created from the
+                modal could not be put under a stage. */}
+            <div className="space-y-1">
+              <Label htmlFor="item-parent" className="text-xs text-muted-foreground">Parent (stage)</Label>
+              <Select
+                value={formData.parentItemId || "none"}
+                onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}
+              >
+                <SelectTrigger id="item-parent" data-testid="select-parent-item">
+                  <SelectValue placeholder="No parent (top level)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No parent (top level)</SelectItem>
+                  {parentOptions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      <span style={{ paddingLeft: p.depth * 12 }}>{p.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Type / Status / Assignee / Progress — compact 2×2 grid */}
             {(() => {
               const isParentWithChildren = !!(editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id));
-              const showProgress = !!(editingItem || formData.status === "in_progress");
+              // A new item (even one opened pre-filled, e.g. Create Predecessor) has
+              // no progress yet; only a saved one or one marked In progress does.
+              const showProgress = !!(editingItem?.id || formData.status === "in_progress");
               return (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                   <div className="space-y-1">
@@ -2969,7 +3007,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
               );
             })()}
 
-            {editingItem && (
+            {editingItem?.id && (
               <div className="space-y-2 pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <Label>Sub-items</Label>
@@ -3057,13 +3095,14 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
 
             {/* Invoices this item triggers — only for "Progress Claims" viewers.
                 Outside the hidden advanced block below so it actually shows. */}
-            {!isTemplate && editingItem && projectId && (
+            {!isTemplate && editingItem?.id && projectId && (
               <div className="pt-3 border-t">
                 <ScheduleItemInvoicesSection itemId={editingItem.id} projectId={projectId} />
               </div>
             )}
 
-            <div className="pt-3 border-t hidden">
+            {/* Was hidden (task #512) — the switch worked, nobody could see it. */}
+            <div className="pt-3 border-t">
                   <div className="space-y-4">
                     {/* Allow on weekends */}
                     <div className="flex items-center justify-between py-1">
@@ -3119,7 +3158,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                     )}
 
                     {/* Linked Items — a job's own checklists and tasks; a template has none */}
-                    {!isTemplate && editingItem && (
+                    {!isTemplate && editingItem?.id && (
                       <div className="space-y-3 pt-3 border-t">
                         <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Linked Items</Label>
 
@@ -3323,7 +3362,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
               </div>
             </div>
             <DialogFooter className="border-t pt-4 mt-4">
-            {editingItem && (
+            {editingItem?.id && (
               <Button
                 variant="outline"
                 onClick={() => {
