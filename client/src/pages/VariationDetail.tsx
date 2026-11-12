@@ -3092,6 +3092,11 @@ export default function VariationDetail() {
                 savingTemplate={saveTemplatesMutation.isPending}
                 disabled={(variation as any).status === "approved"}
                 disabledReason="This variation is approved, so what the client sees is locked."
+                unavailable={
+                  originalContractCents > 0
+                    ? {}
+                    : { contractSummary: "This project has no contract sum, so there's no contract summary to show. Set the contract value on the project to use it." }
+                }
               />
             )
           }
