@@ -41,12 +41,14 @@ function getItemColor(item: ScheduleItem, colourBy: ColourBy): string {
   if (colourBy === "status")
     return STATUS_COLORS[item.status] ?? "hsl(var(--bp-muted))";
   if (colourBy === "trade" || colourBy === "assignee")
-    return item.assignedToColor ?? item.color ?? GANTT_NO_COLOUR;
+    return item.assignedToColor || item.color || GANTT_NO_COLOUR;
   // "type" (the default) is "the schedule's colours": exactly the Gantt's
   // order — the item's own colour, then its trade/assignee colour, then grey.
   // It used to stop at the item's colour and fall to a type colour, so a bar
   // coloured by trade on the schedule came out a different colour here.
-  return item.color ?? item.assignedToColor ?? GANTT_NO_COLOUR;
+  // `||`, not `??`: the Add Item window saves "no colour" as "" — with `??`
+  // that empty string won and every item made there drew grey here.
+  return item.color || item.assignedToColor || GANTT_NO_COLOUR;
 }
 
 type WidgetItem = ScheduleItem & { isStage?: boolean };
