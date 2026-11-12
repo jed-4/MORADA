@@ -25,7 +25,10 @@ export interface InvoiceDocumentField {
 
 export interface InvoiceDocumentLine {
   key: string;
+  /** The line's name — "Fit Off", "Variation VO-003". */
   description: string;
+  /** What it's for, under the name — the same text the PDF prints. */
+  detail?: string | null;
   amountExCents: number;
   gstCents: number;
   amountIncCents: number;
@@ -99,7 +102,14 @@ export function InvoiceDocumentView({ fields, introductionHtml, lines, totals, r
               ) : (
                 lines.map((l) => (
                   <tr key={l.key} className="border-b last:border-b-0 align-top" data-testid={`invoice-document-line-${l.key}`}>
-                    <td className="px-3 py-2 whitespace-pre-wrap">{l.description || <Dash />}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium whitespace-pre-wrap">{l.description || <Dash />}</div>
+                      {l.detail?.trim() && (
+                        <div className="doc-body-muted whitespace-pre-wrap mt-0.5" data-testid={`invoice-document-line-detail-${l.key}`}>
+                          {l.detail.trim()}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 money">{formatCents(l.amountExCents, { alwaysShowDecimals: true })}</td>
                     <td className="px-3 py-2 money text-muted-foreground">{formatCents(l.gstCents, { alwaysShowDecimals: true })}</td>
                     <td className="px-3 py-2 money-figure">{formatCents(l.amountIncCents, { alwaysShowDecimals: true })}</td>
