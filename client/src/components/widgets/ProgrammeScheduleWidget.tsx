@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -34,22 +34,73 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "hsl(var(--bp-coral))",
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  task: "hsl(var(--bp-purple))",
-  milestone: "hsl(var(--bp-amber))",
-  inspection: "hsl(var(--bp-teal))",
-  delivery: "hsl(var(--bp-green))",
-  meeting: "hsl(var(--bp-coral))",
-};
+// The Gantt's own grey for an item with no colour (Gantt.tsx getBarColor).
+const GANTT_NO_COLOUR = "#9ca3af";
 
 function getItemColor(item: ScheduleItem, colourBy: ColourBy): string {
   if (colourBy === "status")
     return STATUS_COLORS[item.status] ?? "hsl(var(--bp-muted))";
-  if (colourBy === "trade")
-    return item.assignedToColor ?? "hsl(var(--bp-muted))";
-  if (colourBy === "assignee")
-    return item.assignedToColor ?? "hsl(var(--bp-purple))";
-  return item.color ?? TYPE_COLORS[item.type] ?? "hsl(var(--bp-purple))";
+  if (colourBy === "trade" || colourBy === "assignee")
+    return item.assignedToColor ?? item.color ?? GANTT_NO_COLOUR;
+  // "type" (the default) is "the schedule's colours": exactly the Gantt's
+  // order — the item's own colour, then its trade/assignee colour, then grey.
+  // It used to stop at the item's colour and fall to a type colour, so a bar
+  // coloured by trade on the schedule came out a different colour here.
+  return item.color ?? item.assignedToColor ?? GANTT_NO_COLOUR;
+}
+
+type WidgetItem = ScheduleItem & { isStage?: boolean };
+
+/**
+ * Stages (items with sub-items) are drawn from their children, like the Gantt
+ * (getEffectiveDates): the stored row can lag behind its tasks, and drawing it
+ * meant the widget and the schedule disagreed about where a stage sat.
+ */
+function withStageSpans(items: ScheduleItem[]): WidgetItem[] {
+  const children = new Map<string, ScheduleItem[]>();
+  for (const it of items) {
+    const pid = it.parentItemId ? String(it.parentItemId) : null;
+    if (!pid) continue;
+    if (!children.has(pid)) children.set(pid, []);
+    children.get(pid)!.push(it);
+  }
+  const descendants = (id: string, seen = new Set<string>()): ScheduleItem[] => {
+    const out: ScheduleItem[] = [];
+    for (const c of children.get(id) ?? []) {
+      if (seen.has(String(c.id))) continue;
+      seen.add(String(c.id));
+      out.push(c, ...descendants(String(c.id), seen));
+    }
+    return out;
+  };
+  return items.map((it) => {
+    const kids = descendants(String(it.id)).filter((k) => k.startDate && k.endDate);
+    if (kids.length === 0) return it;
+    const starts = kids.map((k) => new Date(k.startDate as any).getTime());
+    const ends = kids.map((k) => new Date(k.endDate as any).getTime());
+    return {
+      ...it,
+      startDate: new Date(Math.min(...starts)) as any,
+      endDate: new Date(Math.max(...ends)) as any,
+      isStage: true,
+    };
+  });
+}
+
+/** A stage reads as a band you look THROUGH (tinted, outlined, bold label);
+ *  a task is a solid bar. Same colour either way, so it still matches the Gantt. */
+function barStyle(item: WidgetItem, color: string): { className: string; style: CSSProperties } {
+  if (item.isStage) {
+    return {
+      className: "font-semibold uppercase tracking-wide",
+      style: {
+        backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
+        border: `1.5px solid ${color}`,
+        color: "hsl(var(--foreground))",
+      },
+    };
+  }
+  return { className: "text-white", style: { backgroundColor: color } };
 }
 
 function packIntoRows<
@@ -135,7 +186,7 @@ export default function ProgrammeScheduleWidget({
       !!projectId && config.showTasks && config.viewMode === "week",
   });
 
-  const scheduleItems = itemsQ.data ?? [];
+  const scheduleItems = useMemo(() => withStageSpans(itemsQ.data ?? []), [itemsQ.data]);
   const tasks = (tasksQ.data ?? []).filter((t) => t.type === "task");
 
   const filteredItems = useMemo(() => {
@@ -449,7 +500,7 @@ export default function ProgrammeScheduleWidget({
                 onChange={(e) => updateConfig("colourBy", e.target.value)}
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px]"
               >
-                <option value="type">Item type</option>
+                <option value="type">Schedule colours (as on the Gantt)</option>
                 <option value="trade">Trade / assignee colour</option>
                 <option value="status">Status</option>
                 <option value="assignee">Assignee</option>
@@ -608,13 +659,16 @@ export default function ProgrammeScheduleWidget({
                             ? ` · ${item.assignedToName}`
                             : ""
                         }`}
-                        className="absolute top-1 bottom-1 flex items-center px-2 rounded-md text-[9px] font-medium text-white cursor-pointer overflow-hidden"
+                        className={cn(
+                          "absolute top-1 bottom-1 flex items-center px-2 rounded-md text-[9px] font-medium cursor-pointer overflow-hidden",
+                          barStyle(item, color).className,
+                        )}
                         style={{
                           left: `calc(${(sc / COL_COUNT) * 100}% + 2px)`,
                           right: `calc(${
                             ((COL_COUNT - ec - 1) / COL_COUNT) * 100
                           }% + 2px)`,
-                          backgroundColor: color,
+                          ...barStyle(item, color).style,
                         }}
                         data-testid={`week-item-${item.id}`}
                       >
@@ -733,11 +787,14 @@ export default function ProgrammeScheduleWidget({
                       >
                         {renderDayGrid(true)}
                         <div
-                          className="absolute inset-y-1.5 rounded-md flex items-center px-2 text-[9px] font-medium text-white overflow-hidden"
+                          className={cn(
+                            "absolute inset-y-1.5 rounded-md flex items-center px-2 text-[9px] font-medium overflow-hidden",
+                            barStyle(item, color).className,
+                          )}
                           style={{
                             left: `${left}%`,
                             width: `${width}%`,
-                            backgroundColor: color,
+                            ...barStyle(item, color).style,
                           }}
                           title={`${item.name}${
                             item.assignedToName
