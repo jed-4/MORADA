@@ -11,6 +11,33 @@ let io: SocketIOServer | null = null;
 // correctly — a user is only considered "offline" when ALL their sockets disconnect.
 const connectedByCompany = new Map<string, Map<string, Set<string>>>();
 
+// Which conversation each socket has ON SCREEN: userId -> (socketId -> channelId).
+// Being connected is not the same as reading: every socket auto-joins every
+// channel room on connect, and a desktop tab left open on the dashboard used to
+// count as "online", which suppressed the phone push for every new message.
+// Clients report the channel they are actually looking at (and null when they
+// leave it or the tab/app goes to the background) via "viewing_channel".
+const viewingByUser = new Map<string, Map<string, string>>();
+
+export function setViewing(userId: string, socketId: string, channelId: string | null) {
+  if (!channelId) {
+    const m = viewingByUser.get(userId);
+    m?.delete(socketId);
+    if (m && m.size === 0) viewingByUser.delete(userId);
+    return;
+  }
+  if (!viewingByUser.has(userId)) viewingByUser.set(userId, new Map());
+  viewingByUser.get(userId)!.set(socketId, channelId);
+}
+
+/** True when any of the user's sessions has this conversation open on screen. */
+export function isUserViewingChannel(userId: string, channelId: string): boolean {
+  const m = viewingByUser.get(userId);
+  if (!m) return false;
+  for (const ch of Array.from(m.values())) if (ch === channelId) return true;
+  return false;
+}
+
 // Returns true when this socket is the user's FIRST — i.e. they just came online.
 function addConnectedUser(companyId: string, userId: string, socketId: string): boolean {
   if (!connectedByCompany.has(companyId)) connectedByCompany.set(companyId, new Map());
@@ -144,6 +171,13 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
       socket.leave(`channel:${channelId}`);
     });
 
+    // The conversation this socket has on screen, or null. Only a channel the
+    // socket is already in (membership-checked on join) can be claimed.
+    socket.on("viewing_channel", (channelId: string | null) => {
+      const id = typeof channelId === "string" && socket.rooms.has(`channel:${channelId}`) ? channelId : null;
+      setViewing(socket.data.userId, socket.id, id);
+    });
+
     // Typing indicators — broadcast to everyone else in the channel room.
     // Guard: only emit if the socket is already in the channel room, which
     // can only happen after passing the membership checks in join_channel.
@@ -210,6 +244,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
 
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.data.userId}`);
+      setViewing(socket.data.userId, socket.id, null);
       const wentOffline = removeConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
       if (wentOffline) {
         io!.to(`company:${socket.data.companyId}`).emit("presence_changed", {

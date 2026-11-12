@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { emitNotification, getConnectedUserIdsForCompany } from "../socketManager";
+import { emitNotification, getConnectedUserIdsForCompany, isUserViewingChannel } from "../socketManager";
 import { parseMentionUserIds, buildContentPreview } from "./mentions";
 
 interface ChatMessageForNotify {
@@ -22,10 +22,11 @@ interface ChatMessageForNotify {
  *   3. Everyone else in the channel -> type "message_new"
  *
  * To keep an active back-and-forth from spamming devices, the generic
- * "message_new" notification is only created for members who are NOT currently
- * connected (online users already receive the message in real time over the
- * socket, so they don't need a banner). Explicit mentions always notify,
- * connected or not. The acting sender is never notified.
+ * "message_new" notification is skipped for members who have THIS conversation
+ * open on screen right now (reported by the client via "viewing_channel").
+ * It used to skip anyone merely connected — so a desktop tab left open on any
+ * page silenced the phone push for every message (Jed, 12 Nov 2026). Explicit
+ * mentions always notify. The acting sender is never notified.
  */
 export async function dispatchChatMessageNotifications(params: {
   message: ChatMessageForNotify;
@@ -110,12 +111,10 @@ export async function dispatchChatMessageNotifications(params: {
       }
     }
 
-    // 3) Generic new-message notification for everyone else — but only for
-    // members who are offline, so online participants aren't spammed during a
-    // live conversation (they already get the message over the socket).
-    const connected = new Set(getConnectedUserIdsForCompany(companyId));
-    for (const uid of memberIds) {
-      if (connected.has(uid)) continue;
+    // 3) Generic new-message notification for everyone else — except members
+    // reading this conversation right now, who already see it arrive.
+    for (const uid of Array.from(memberIds)) {
+      if (isUserViewingChannel(uid, message.channelId)) continue;
       await notify(
         uid,
         "message_new",

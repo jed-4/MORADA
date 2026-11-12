@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { apiFetch } from '../services/api';
 import { onSocketEvent, emitSocketEvent } from '../services/socket';
 import { usePolling } from './usePolling';
@@ -171,6 +172,23 @@ export function useThreadMessages({
     if (!socketConnected) return;
     emitSocketEvent('join_channel', channelId);
   }, [socketConnected, channelId]);
+
+  // Tell the server this conversation is on screen, so it skips the push only
+  // while you're reading it. Cleared when the screen loses focus or the app
+  // goes to the background; re-sent after a reconnect (the server forgets it
+  // with the old socket). See server/utils/chatNotifications.ts.
+  useEffect(() => {
+    if (!socketConnected) return;
+    const report = () => {
+      emitSocketEvent('viewing_channel', isFocused && AppState.currentState === 'active' ? channelId : null);
+    };
+    report();
+    const sub = AppState.addEventListener('change', report);
+    return () => {
+      sub.remove();
+      emitSocketEvent('viewing_channel', null);
+    };
+  }, [socketConnected, channelId, isFocused]);
 
   // Real-time delivery. While the socket is connected the poll is only a 60s
   // safety net; when it drops, polling returns to 5s. (usePolling skips

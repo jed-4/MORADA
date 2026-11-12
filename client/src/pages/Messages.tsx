@@ -347,6 +347,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     document.title = "Morada";
   }, []);
 
+
   // Merge new attachments into an existing list, deduplicating by id
   const mergeAttachments = (existing: MessageAttachment[], incoming: MessageAttachment[]): MessageAttachment[] => {
     const seen = new Set(existing.map(a => a.id));
@@ -360,6 +361,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   }, []);
   
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(channelFromUrl);
+
+  // Tell the server which conversation is on screen, so it skips the bell and
+  // phone push only for the chat you're actually reading. Cleared when the tab
+  // is hidden, when you leave the page, and re-sent after a reconnect (the
+  // server forgets it with the old socket).
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+    const report = () => {
+      socket.emit("viewing_channel", document.visibilityState === "visible" ? selectedChannelId : null);
+    };
+    report();
+    document.addEventListener("visibilitychange", report);
+    return () => {
+      document.removeEventListener("visibilitychange", report);
+      socket.emit("viewing_channel", null);
+    };
+  }, [socket, isConnected, selectedChannelId]);
   const [messageInput, setMessageInput] = useState("");
   // Per-channel draft store — survives channel switches
   const channelDrafts = useRef<Map<string, string>>(new Map());
