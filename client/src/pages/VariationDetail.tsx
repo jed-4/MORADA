@@ -860,6 +860,42 @@ export default function VariationDetail() {
     "focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:bg-primary/[0.04] transition-colors";
 
   const renderCostLineCell = (columnId: string, line: CostLine, index: number) => {
+    // An approved variation reads as a document: the typed-in columns show
+    // their value as text (no inputs, pickers or "Item name" placeholders).
+    // The derived columns (amounts) fall through to the same code as the
+    // editable grid, so every figure on screen is the one the page already
+    // computes — nothing is recalculated for the read-only view.
+    if (isLocked) {
+      const text = (v: React.ReactNode, cls = "doc-cell") => (
+        <span className={cn("px-1.5 w-full truncate", cls)} data-testid={`text-${columnId}-${index}`}>{v}</span>
+      );
+      const dash = <span className="text-muted-foreground/60">—</span>;
+      switch (columnId) {
+        case "type":
+          return <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-data font-medium mx-1", VARIATION_TYPE_COLORS[line.type] || VARIATION_TYPE_COLORS.Material)}>{line.type}</span>;
+        case "name":
+          return text(line.name || dash, cn("doc-cell-name", !line.showInPdf && "line-through"));
+        case "description":
+          return text(line.description || dash, "doc-cell-muted");
+        case "costCode":
+          return text(line.costCode ? (costCodeLabels[line.costCode] || line.costCode) : dash, "doc-cell-muted");
+        case "qty":
+          return text(line.quantity, "money");
+        case "unit":
+          return text(line.unitType || dash, "doc-cell-muted");
+        case "unitCostExTax":
+          return text(formatCurrency(line.unitCostExTax || 0), "money");
+        case "unitCostIncTax":
+          return text(formatCurrency(getUnitCostIncTax(line)), "money");
+        case "markup":
+          return text(line.markupPercent != null ? `${line.markupPercent}%` : dash, "money");
+        case "visible":
+          return line.showInPdf
+            ? <Eye className="h-3.5 w-3.5 mx-auto text-muted-foreground" aria-label="Shown on the document" />
+            : <EyeOff className="h-3.5 w-3.5 mx-auto text-muted-foreground/40" aria-label="Hidden from the document" />;
+        // amtExTax / amtIncTax: identical in both modes — below.
+      }
+    }
     switch (columnId) {
       case "type":
         return (
@@ -2093,6 +2129,24 @@ export default function VariationDetail() {
                     divider={false}
                     data-testid="section-general-info"
                   >
+                  {isLocked ? (
+                    <dl className="p-4 grid grid-cols-3 gap-x-4 gap-y-3" data-testid="variation-document-fields">
+                      {[
+                        { label: "Name", value: form.watch("name"), span: 2, testId: "text-name" },
+                        { label: "Variation No.", value: form.watch("variationNumber"), testId: "text-variation-number" },
+                        { label: "Approval deadline", value: form.watch("approvalDeadline") ? format(form.watch("approvalDeadline") as any, "d MMM yyyy") : null, testId: "text-approval-deadline" },
+                        { label: "Days changed", value: form.watch("daysChanged") ? String(form.watch("daysChanged")) : null, span: 2, testId: "text-days-changed" },
+                        { label: "Introduction", value: form.watch("introductionText"), span: 3, prose: true, testId: "text-introduction" },
+                      ].map((f) => (
+                        <div key={f.label} className={cn("min-w-0 space-y-0.5", f.span === 2 && "col-span-2", f.span === 3 && "col-span-3")}>
+                          <dt className="doc-field-label">{f.label}</dt>
+                          <dd className={cn(f.prose ? "doc-prose whitespace-pre-wrap" : "doc-body truncate")} data-testid={f.testId}>
+                            {f.value ? f.value : <span className="text-muted-foreground/60">—</span>}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
                   <div className="p-4 space-y-3">
 
                     {/* Row 1: Name (col-span-2) + Variation Number */}
@@ -2213,6 +2267,7 @@ export default function VariationDetail() {
                     </div>
 
                   </div>
+                  )}
                   </DocumentSection>
                 </DocumentCard>
 
@@ -2373,6 +2428,7 @@ export default function VariationDetail() {
                                       );
                                     })}
                                     <div className="px-1 py-1 flex items-center justify-center">
+                                      {!isLocked && (
                                       <button
                                         type="button"
                                         onClick={() => deleteCostLine(index)}
@@ -2381,6 +2437,7 @@ export default function VariationDetail() {
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
+                                      )}
                                     </div>
                                   </div>
                                 ))}
@@ -2397,11 +2454,12 @@ export default function VariationDetail() {
                       )}
                     </div>
                     </div>
-                    <AddLineRow
-                      onClick={addCostLine}
-                      disabled={isLocked}
-                      data-testid="button-add-cost-line"
-                    />
+                    {!isLocked && (
+                      <AddLineRow
+                        onClick={addCostLine}
+                        data-testid="button-add-cost-line"
+                      />
+                    )}
                   </DocumentSection>
 
                   {/* Bills sub-section */}
