@@ -36,6 +36,13 @@ interface PushGroup {
 
 const PUSH_GROUPS: PushGroup[] = [
   {
+    // Was missing here, so a client-decision push could only be muted on the web.
+    key: 'clientDecisions',
+    label: 'Client decisions',
+    description: 'When a client approves, rejects or responds to something you sent them.',
+    icon: 'checkmark-done-outline',
+  },
+  {
     key: 'tasks',
     label: 'Tasks & checklists',
     description: 'When a task or checklist is assigned, completed, or mentions you.',
@@ -139,11 +146,18 @@ export default function SettingsScreen({ navigation }: Props) {
     muted: theme.textMuted,
   };
 
+  // The same saved row holds the web's email choices (emailGroups). A save
+  // replaces the whole row, so keep whatever else is in it — sending only
+  // mutedGroups used to wipe the email settings back to the default.
+  const otherPrefs = useRef<Record<string, unknown>>({});
+
   useEffect(() => {
-    apiFetch<{ preferences: { mutedGroups?: string[] } } | null>(
+    apiFetch<{ preferences: { mutedGroups?: string[] } & Record<string, unknown> } | null>(
       `/api/user-view-preferences/${PUSH_PREFS_VIEW_KEY}`,
     )
       .then(data => {
+        const { mutedGroups: _m, ...rest } = data?.preferences ?? {};
+        otherPrefs.current = rest;
         const muted = data?.preferences?.mutedGroups;
         if (Array.isArray(muted)) setMutedGroups(muted);
       })
@@ -160,7 +174,7 @@ export default function SettingsScreen({ navigation }: Props) {
       .then(() =>
         apiRequest('/api/user-view-preferences', 'POST', {
           viewKey: PUSH_PREFS_VIEW_KEY,
-          preferences: { mutedGroups: next },
+          preferences: { ...otherPrefs.current, mutedGroups: next },
         }),
       )
       .catch(() => {});
