@@ -122,7 +122,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
 import { priceListSearchTokens } from "@shared/priceListSearch";
@@ -7155,6 +7155,17 @@ function notReminderFiredBeforeFix() {
     ne(schema.notifications.type, "reminder_due"),
     gte(schema.notifications.createdAt, REMINDERS_BACK_IN_BELL),
   );
+}
+
+/**
+ * Chat stays out of the notification centre (Jed, 12 Nov 2026): messages have
+ * their own badge and popover, and in the bell they buried everything else.
+ * The rows are still created — storage.createNotification is what sends the
+ * phone push — they just aren't listed or counted here.
+ */
+const CHAT_NOTIFICATION_TYPES = ["message_new", "mention"];
+function notChatNotification() {
+  return notInArray(schema.notifications.type, CHAT_NOTIFICATION_TYPES);
 }
 
 export class DbStorage implements IStorage {
@@ -29752,6 +29763,7 @@ export class DbStorage implements IStorage {
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
           notReminderFiredBeforeFix(),
+          notChatNotification(),
           ...(options?.unreadOnly ? [eq(schema.notifications.isRead, false)] : [])
         ))
         .orderBy(desc(schema.notifications.createdAt));
@@ -29866,7 +29878,8 @@ export class DbStorage implements IStorage {
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
           eq(schema.notifications.isRead, false),
-          notReminderFiredBeforeFix()
+          notReminderFiredBeforeFix(),
+          notChatNotification()
         ));
       return Number(result?.count || 0);
     } catch (error) {

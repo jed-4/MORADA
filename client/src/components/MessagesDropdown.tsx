@@ -10,7 +10,6 @@ import { MessageSquare, ArrowLeft, ExternalLink, Send, Loader2, Hash, FileText, 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -123,6 +122,22 @@ export function MessagesDropdown() {
   });
 
   const totalUnread = Object.values(unreadCounts).reduce((sum, n) => sum + n, 0);
+
+  // Mark every conversation with unread messages as read (the same per-channel
+  // read the chat view does when you open one).
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const markAllRead = async () => {
+    const ids = Object.entries(unreadCounts).filter(([, n]) => n > 0).map(([id]) => id);
+    if (ids.length === 0) return;
+    setMarkingAllRead(true);
+    try {
+      await Promise.all(ids.map((id) => fetch(`/api/channels/${id}/read`, { method: "POST", credentials: "include" })));
+    } finally {
+      setMarkingAllRead(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    }
+  };
 
   const { data: channels = [] } = useQuery<ChannelWithMeta[]>({
     queryKey: ["/api/channels"],
@@ -270,18 +285,35 @@ export function MessagesDropdown() {
           <>
             <div className="flex items-center justify-between px-3 py-2 border-b">
               <span className="text-sm font-semibold">Messages</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => { navigate("/messages"); setOpen(false); }}
-                data-testid="button-view-all"
-              >
-                View All
-              </Button>
+              <div className="flex items-center gap-0.5">
+                {totalUnread > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={markAllRead}
+                    disabled={markingAllRead}
+                    data-testid="button-mark-all-read"
+                  >
+                    {markingAllRead ? <Loader2 className="h-3 w-3 animate-spin" /> : "Mark all read"}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => { navigate("/messages"); setOpen(false); }}
+                  data-testid="button-view-all"
+                >
+                  View All
+                </Button>
+              </div>
             </div>
 
-            <ScrollArea className="max-h-[400px]">
+            {/* Plain overflow box, not Radix ScrollArea: a ScrollArea with only a
+                max-height never scrolls (its viewport is h-full of an auto-height
+                root) and the wheel scrolled the page behind instead. */}
+            <div className="max-h-[400px] overflow-y-auto overscroll-contain" data-testid="dropdown-channel-list">
               {sortedChannels.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
                   No conversations yet
@@ -362,7 +394,7 @@ export function MessagesDropdown() {
                   })}
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </>
         ) : (
           <>
@@ -393,7 +425,7 @@ export function MessagesDropdown() {
               </Button>
             </div>
 
-            <ScrollArea className="h-64">
+            <div className="h-64 overflow-y-auto overscroll-contain" data-testid="dropdown-chat-scroll">
               <div className="p-3 space-y-3">
                 {messagesLoading ? (
                   <div className="flex justify-center py-8">
@@ -480,7 +512,7 @@ export function MessagesDropdown() {
                 )}
                 <div ref={messagesEndRef} />
               </div>
-            </ScrollArea>
+            </div>
 
             <div className="p-2 border-t">
               {/* A single-line <input> scrolled sideways as you typed, so a
