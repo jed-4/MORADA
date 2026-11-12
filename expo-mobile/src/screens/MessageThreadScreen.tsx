@@ -27,6 +27,7 @@ import { useToast } from '../components/ui/Toast';
 import { MessageBubble } from '../components/messages/MessageBubble';
 import { MessageActionsSheet } from '../components/messages/MessageActionsSheet';
 import { ImageViewerModal } from '../components/messages/ImageViewerModal';
+import DocumentViewer, { type ViewableDocument } from '../components/DocumentViewer';
 import { TypingIndicator } from '../components/messages/TypingIndicator';
 import { ScrollToBottomPill } from '../components/messages/ScrollToBottomPill';
 import { PinnedBanner } from '../components/messages/PinnedBanner';
@@ -124,6 +125,13 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   const [menuMessage, setMenuMessage] = useState<Message | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [viewerAttachment, setViewerAttachment] = useState<MessageAttachment | null>(null);
+  // PDFs and other files open in the in-app viewer (downloaded with the
+  // session — a plain link can't carry it), with Share for saving/printing.
+  const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
+  const openFileAttachment = useCallback((att: MessageAttachment) => {
+    const path = att.fileUrl || (att as any).objectPath;
+    if (path) setOpenDoc({ path, name: att.fileName || 'Attachment' });
+  }, []);
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const [readState, setReadState] = useState<Record<string, string>>({});
   const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
@@ -570,9 +578,10 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         onRetry={retrySend}
         onDiscard={discardFailed}
         onPressImage={setViewerAttachment}
+        onPressFile={openFileAttachment}
       />
     );
-  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed]);
+  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed, openFileAttachment]);
 
   // ── Pinned banner ──
 
@@ -762,6 +771,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
 
       {/* Full-screen attachment viewer */}
       <ImageViewerModal attachment={viewerAttachment} onClose={() => setViewerAttachment(null)} />
+      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} />
     </KeyboardAvoidingView>
   );
 }
