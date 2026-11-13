@@ -65,6 +65,7 @@ import {
   History,
   Radio,
   DollarSign,
+  Save,
 } from "lucide-react";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
@@ -78,9 +79,8 @@ import { dollarsToCents, formatCents, incGstFromEx } from "@shared/money";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import { SectionCard, SectionSubHeader } from "@/components/detail/SectionCard";
-import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
-import { DetailLayout } from "@/components/detail/DetailLayout";
+import { DocumentHeader } from "@/components/detail/DocumentHeader";
+import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSection";
 import { RfqRecipientsPanel } from "@/components/rfq/RfqRecipientsPanel";
 import { RFQ_STATUS_LABEL } from "@shared/rfqStatus";
 import { RfqActivityFeed } from "@/components/rfq/RfqActivityFeed";
@@ -612,226 +612,101 @@ export default function RFQDetail() {
     );
   }
 
+  const quotedTotals = quotes.map((q) => q.totalAmount).filter((n) => n > 0);
+  const lowestQuote = quotedTotals.length ? Math.min(...quotedTotals) : null;
+  const headerStrip = [
+    { label: "Response due", value: formData.dueDate ? format(new Date(formData.dueDate), "d MMM yyyy") : "—" },
+    { label: "Work deadline", value: formData.deadline ? format(new Date(formData.deadline), "d MMM yyyy") : "—" },
+    { label: "Quotes", value: String(quotes.length) },
+    { label: "Your estimate ex GST", value: itemsTotalCents > 0 ? formatCents(itemsTotalCents) : "—" },
+  ];
+  const hbtn = "h-7 px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0";
+  const hbtnPrimary = `${hbtn} bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2`;
+  const hbtnQuiet = `${hbtn} bg-card hover-elevate active-elevate-2`;
+
   return (
-    <div className="flex flex-col h-full">
-      <DetailPageHeader
-        backTo="/rfqs"
-        projectId={rfq.projectId}
-        title={formData.title}
-        onTitleChange={(v) => handleFieldChange("title", v)}
-        reference={rfq.rfqNumber}
-        badges={
-          <>
-            <StatusBadge
-              status={rfq.status}
-              label={RFQ_STATUS_LABEL[rfq.status] ?? rfq.status}
-              tone={rfq.status === "confirmed" ? "success" : undefined}
-            />
-            {rfq.isExternal && (
-              <Badge variant="outline" className="text-xs gap-1">
-                <ExternalLink className="w-3 h-3" />
-                External
-              </Badge>
-            )}
-          </>
-        }
-        dirty={hasChanges}
-        saving={updateRfqMutation.isPending}
-        onSave={handleSave}
-        actions={
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowPreview(!showPreview)}
-              className="h-7 text-xs"
-              data-testid="button-preview-pdf"
-            >
-              {showPreview ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />}
-              {showPreview ? "Hide" : "Preview"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleDownloadPdf}
-              disabled={isGenerating}
-              className="h-7 text-xs"
-              data-testid="button-download-pdf"
-            >
-              <Download className="w-3 h-3 mr-1" />
-              PDF
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowSendDialog(true)}
-              className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
-              data-testid="button-send-rfq"
-            >
-              <Send className="w-3 h-3 mr-1" />
-              Send
-            </Button>
-          </>
-        }
-      />
-
-      <DetailLayout
-        sidebar={
-          <>
-      <SectionCard variant="editorial"
-        title="Owner"
-        icon={<ClipboardList className="w-4 h-4" />}
-        accent="primary"
-      >
-        <div className="pt-2 space-y-3">
-          <div className="space-y-1.5">
-            <Select
-              value={rfq.ownerId ?? UNASSIGNED}
-              onValueChange={(value) =>
-                assignMutation.mutate({ ownerId: value === UNASSIGNED ? null : value })
-              }
-            >
-              <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-owner">
-                <SelectValue placeholder="Unassigned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                {teamUsers.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-data text-muted-foreground">Who is chasing this</p>
-          </div>
-
-          <div className="space-y-1.5">
-            {rfq.projectId ? null : (
-              // Attach-once: a general enquiry can be pulled into a job when the
-              // job becomes real, but an RFQ suppliers have already quoted
-              // against is never re-parented.
-              <Select
-                value={UNASSIGNED}
-                onValueChange={(value) => {
-                  if (value !== UNASSIGNED) assignMutation.mutate({ projectId: value });
-                }}
-              >
-                <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-project">
-                  <SelectValue placeholder="General — no project" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNASSIGNED}>General — no project</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </div>
-      </SectionCard>
-
-      <SectionCard variant="editorial"
-        title="Track Only Mode"
-        subtitle="RFQ sent outside Morada"
-        icon={<Radio className="w-4 h-4" />}
-        accent="muted"
-        actions={
-          <Switch
-            checked={formData.isExternal}
-            onCheckedChange={(checked) => handleFieldChange("isExternal", checked)}
-          />
-        }
-      >
-            {formData.isExternal && (
-              <div className="p-3">
-                <Textarea
-                  value={formData.externalNotes}
-                  onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
-                  placeholder="Where was this RFQ sent? (email, phone, etc.)"
-                  className={cn("min-h-[60px]", EDITORIAL_TEXTAREA)}
-                />
-              </div>
-            )}
-      </SectionCard>
-
-      <SectionCard variant="editorial"
-        title="Reminders"
-        subtitle="Chase suppliers who go quiet"
-        icon={<Bell className="w-4 h-4" />}
-        accent="amber"
-        actions={
-          <Switch
-            checked={formData.followUpEnabled}
-            onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
-            aria-label="Chase suppliers who haven't responded"
-          />
-        }
-      >
-        <div className="p-3 space-y-2">
-          {formData.followUpEnabled ? (
-            <>
-              <p className="text-data text-muted-foreground">
-                {nextReminderLabel}
-              </p>
-              {/* The schedule and wording are company-level — every RFQ chases
-                  the same way, so this is a link to the shared settings rather
-                  than a per-RFQ copy of them. */}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 text-xs w-full"
-                onClick={() => setShowRemindersDialog(true)}
-                data-testid="button-manage-reminders"
-              >
-                <Bell className="w-3 h-3 mr-1" />
-                Manage reminders
-              </Button>
-            </>
-          ) : (
-            <p className="text-data text-muted-foreground">
-              Suppliers who don't respond won't be chased.
-            </p>
-          )}
-        </div>
-      </SectionCard>
-
-      <SectionCard variant="editorial"
-        title="Internal Notes"
-        subtitle="Only visible to your team"
-        icon={<StickyNote className="w-4 h-4" />}
-        accent="muted"
-      >
-            <div className="p-3">
-              <Textarea
-                value={formData.internalNotes}
-                onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
-                placeholder="Notes for your team..."
-                className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
-                data-testid="input-internal-notes"
+    <div className="flex h-full flex-col" data-testid="page-rfq-detail">
+      {/* ── Header ── same document header as the PO and variation pages. */}
+      <div className="mx-3 mt-3 flex-shrink-0">
+        <DocumentHeader
+          backTo="/rfqs"
+          projectId={rfq.projectId}
+          title={rfq.rfqNumber}
+          status={
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <StatusBadge
+                status={rfq.status}
+                label={RFQ_STATUS_LABEL[rfq.status] ?? rfq.status}
+                tone={rfq.status === "confirmed" ? "success" : undefined}
               />
+              {rfq.isExternal && (
+                <Badge variant="outline" className="text-xs gap-1">
+                  <ExternalLink className="w-3 h-3" />
+                  External
+                </Badge>
+              )}
             </div>
-      </SectionCard>
+          }
+          context={[formData.title, project?.name].filter(Boolean).join(" · ") || null}
+          strip={headerStrip}
+          headline={lowestQuote !== null ? { label: "Lowest quote", value: formatCents(lowestQuote) } : undefined}
+          data-testid="header-rfq"
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setShowPreview(!showPreview)}
+                className={hbtnQuiet}
+                data-testid="button-preview-pdf"
+              >
+                {showPreview ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                <span>{showPreview ? "Hide preview" : "Preview"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isGenerating}
+                className={hbtnQuiet}
+                data-testid="button-download-pdf"
+              >
+                <Download className="w-3 h-3" />
+                <span>PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSendDialog(true)}
+                className={hbtnQuiet}
+                data-testid="button-send-rfq"
+              >
+                <Send className="w-3 h-3" />
+                <span>Send</span>
+              </button>
+            </>
+          }
+          primaryAction={
+            /* Filled only when there is something to save. */
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={updateRfqMutation.isPending || !hasChanges}
+              className={hasChanges ? hbtnPrimary : `${hbtn} border-border text-muted-foreground bg-card cursor-default`}
+              data-testid="button-save"
+            >
+              {updateRfqMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              <span>{hasChanges ? "Save Changes" : "Saved"}</span>
+            </button>
+          }
+        />
+      </div>
 
-      <SectionCard variant="editorial"
-        title="Activity"
-        subtitle="Everything that has happened"
-        icon={<History className="w-4 h-4" />}
-        accent="muted"
-      >
-        <RfqActivityFeed rfq={rfq} quotes={quotes} />
-      </SectionCard>
-          </>
-        }
-      >
-        <SectionCard variant="editorial"
-          title="RFQ Info"
-          subtitle="Response dates and description"
-          icon={<Info className="w-4 h-4" />}
-          accent="primary"
-        >
+      {/* ── Body ── */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-6xl mx-auto px-3 py-3 space-y-3">
+          {/* ── The request ── */}
+          <DocumentCard>
+            <DocumentSection title="Details" role="manual" collapsible={false} data-testid="section-rfq-info">
+              <div className="px-3.5 pb-3">
+
             <div className="pt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -886,7 +761,7 @@ export default function RFQDetail() {
               <button
                 type="button"
                 onClick={() => setDescOpen((o) => !o)}
-                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
+                className="h-7 w-full flex items-center gap-1.5 hover-elevate"
               >
                 {descOpen
                   ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
@@ -894,7 +769,7 @@ export default function RFQDetail() {
                 <span className="text-xs text-muted-foreground">Description</span>
               </button>
               {descOpen && (
-                <div className="px-3 pb-3">
+                <div className="pb-1">
                   <Textarea
                     value={formData.description}
                     onChange={(e) => handleFieldChange("description", e.target.value)}
@@ -906,23 +781,141 @@ export default function RFQDetail() {
               )}
             </div>
 
-        </SectionCard>
+        
+              </div>
+            </DocumentSection>
+            <DocumentSection title="Owner & chasing" role="meta" collapsible={false} divider={false} data-testid="section-rfq-owner">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-3.5 pb-3.5">
+                <div className="space-y-1.5" data-testid="block-rfq-owner">
+                  <Label className="text-xs text-muted-foreground">Owner</Label>
 
-        {/* Suppliers — the main event. One row per request, each with its own
-            state, replacing the "3 selected" popover that hid them. */}
-        <RfqRecipientsPanel rfqId={rfq.id} quotes={quotes} />
+        <div className="pt-2 space-y-3">
+          <div className="space-y-1.5">
+            <Select
+              value={rfq.ownerId ?? UNASSIGNED}
+              onValueChange={(value) =>
+                assignMutation.mutate({ ownerId: value === UNASSIGNED ? null : value })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-owner">
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                {teamUsers.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-data text-muted-foreground">Who is chasing this</p>
+          </div>
 
+          <div className="space-y-1.5">
+            {rfq.projectId ? null : (
+              // Attach-once: a general enquiry can be pulled into a job when the
+              // job becomes real, but an RFQ suppliers have already quoted
+              // against is never re-parented.
+              <Select
+                value={UNASSIGNED}
+                onValueChange={(value) => {
+                  if (value !== UNASSIGNED) assignMutation.mutate({ projectId: value });
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-project">
+                  <SelectValue placeholder="General — no project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNASSIGNED}>General — no project</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+      
+                </div>
+                <div className="space-y-1.5" data-testid="block-rfq-track-only">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs text-muted-foreground">Track only — sent outside Morada</Label>
+                    <Switch
+            checked={formData.isExternal}
+            onCheckedChange={(checked) => handleFieldChange("isExternal", checked)}
+          />
+                  </div>
 
-        <SectionCard variant="editorial"
-          title="Scope & Items"
-          subtitle="What you are asking suppliers to price"
-          icon={<ListChecks className="w-4 h-4" />}
-          accent="amber"
-        >
-            {/* Scope of Work — always visible */}
-            <div className="border-b border-border/50">
-              <SectionSubHeader title="Scope of Work" />
+            {formData.isExternal && (
               <div className="p-3">
+                <Textarea
+                  value={formData.externalNotes}
+                  onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
+                  placeholder="Where was this RFQ sent? (email, phone, etc.)"
+                  className={cn("min-h-[60px]", EDITORIAL_TEXTAREA)}
+                />
+              </div>
+            )}
+      
+                </div>
+                <div className="space-y-1.5" data-testid="block-rfq-reminders">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs text-muted-foreground">Chase suppliers who go quiet</Label>
+                    <Switch
+            checked={formData.followUpEnabled}
+            onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
+            aria-label="Chase suppliers who haven't responded"
+          />
+                  </div>
+
+        <div className="p-3 space-y-2">
+          {formData.followUpEnabled ? (
+            <>
+              <p className="text-data text-muted-foreground">
+                {nextReminderLabel}
+              </p>
+              {/* The schedule and wording are company-level — every RFQ chases
+                  the same way, so this is a link to the shared settings rather
+                  than a per-RFQ copy of them. */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-xs w-full"
+                onClick={() => setShowRemindersDialog(true)}
+                data-testid="button-manage-reminders"
+              >
+                <Bell className="w-3 h-3 mr-1" />
+                Manage reminders
+              </Button>
+            </>
+          ) : (
+            <p className="text-data text-muted-foreground">
+              Suppliers who don't respond won't be chased.
+            </p>
+          )}
+        </div>
+      
+                </div>
+              </div>
+            </DocumentSection>
+          </DocumentCard>
+
+          {/* Suppliers — the main event. One row per request, each with its own state. */}
+          <RfqRecipientsPanel rfqId={rfq.id} quotes={quotes} />
+
+          {/* ── What suppliers are pricing ── */}
+          <DocumentCard>
+            <DocumentSection
+              title="Scope of Work"
+              role="client"
+              defaultOpen
+              summary={formData.scope?.trim() ? undefined : "Not written yet"}
+              data-testid="section-scope"
+            >
+              <div className="px-3.5 pb-3">
                 <Textarea
                   value={formData.scope}
                   onChange={(e) => handleFieldChange("scope", e.target.value)}
@@ -930,19 +923,17 @@ export default function RFQDetail() {
                   className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
                   data-testid="input-scope"
                 />
-              </div>
-            </div>
 
-            {/* Line Items — always visible */}
-            <div>
-              <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/30 bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground font-medium">Line Items</span>
-                  {items.length > 0 && (
-                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{items.length}</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
+              </div>
+            </DocumentSection>
+            <DocumentSection
+              title="Line Items"
+              role="supplier"
+              count={items.length}
+              summary={itemsTotalCents > 0 ? `Your estimate ${formatCents(itemsTotalCents)} ex GST` : undefined}
+              defaultOpen
+              actions={
+                <>
                   {estimateItems.length > 0 && (
                     <Button
                       size="sm"
@@ -955,11 +946,11 @@ export default function RFQDetail() {
                       Import from estimate
                     </Button>
                   )}
-
-                </div>
-              </div>
-
-            {/* Line Items table */}
+                </>
+              }
+              data-testid="section-line-items"
+            >
+            
             {items.length === 0 ? (
               <EmptyState
                 variant="inline"
@@ -1078,19 +1069,16 @@ export default function RFQDetail() {
                 </TableBody>
               </Table>
             )}
-            </div>{/* end Line Items section */}
-        </SectionCard>
 
-        <SectionCard variant="editorial"
-          title="Terms & Conditions"
-          subtitle="Included in the RFQ document"
-          icon={<ScrollText className="w-4 h-4" />}
-          accent="primary"
-          collapsible
-          collapsed={tcCollapsed}
-          onCollapsedChange={setTcCollapsed}
-          actions={
-            <Select
+            </DocumentSection>
+            <DocumentSection
+              title="Terms & Conditions"
+              role="client"
+              open={!tcCollapsed}
+              onOpenChange={(o) => setTcCollapsed(!o)}
+              summary={formData.customTerms?.trim() ? undefined : "None"}
+              actions={
+                <Select
               value={formData.termsTemplateId || "custom"}
               onValueChange={handleTermsTemplateChange}
             >
@@ -1106,8 +1094,10 @@ export default function RFQDetail() {
                 ))}
               </SelectContent>
             </Select>
-          }
-        >
+              }
+              data-testid="section-terms"
+            >
+
             <div>
               {(
                 <div className="p-3">
@@ -1122,29 +1112,34 @@ export default function RFQDetail() {
               )}
             </div>
 
-        </SectionCard>
+        
+            </DocumentSection>
+            <DocumentSection
+              title="Attachments"
+              role="meta"
+              count={rfq.attachmentUrls?.length ?? 0}
+              open={!attachCollapsed}
+              onOpenChange={(o) => setAttachCollapsed(!o)}
+              divider={false}
+              data-testid="section-attachments"
+            >
 
-        <SectionCard variant="editorial"
-          title="Attachments"
-          subtitle="Drawings and specs sent with the RFQ"
-          icon={<Paperclip className="w-4 h-4" />}
-          accent="amber"
-          count={rfq.attachmentUrls?.length ?? 0}
-          collapsible
-          collapsed={attachCollapsed}
-          onCollapsedChange={setAttachCollapsed}
-        >
           <RfqAttachments rfq={rfq} />
-        </SectionCard>
+        
+            </DocumentSection>
+          </DocumentCard>
 
-        <SectionCard variant="editorial"
-          title="Quotes Received"
-          subtitle="Supplier responses"
-          icon={<DollarSign className="w-4 h-4" />}
-          accent="sage"
-          count={quotes.length}
-          actions={
-            <Button
+          {/* ── What came back ── */}
+          <DocumentCard>
+            <DocumentSection
+              title="Quotes Received"
+              role="supplier"
+              count={quotes.length}
+              summary={lowestQuote !== null ? `Lowest ${formatCents(lowestQuote)}` : undefined}
+              defaultOpen={quotes.length > 0}
+              isEmpty={quotes.length === 0}
+              actions={
+                <Button
               size="sm"
               variant="ghost"
               onClick={() => setShowUploadQuoteDialog(true)}
@@ -1154,22 +1149,62 @@ export default function RFQDetail() {
               <Upload className="w-3 h-3 mr-1" />
               Upload quote
             </Button>
-          }
-        >
+              }
+              emptyAction={
+                <button
+                  type="button"
+                  onClick={() => setShowUploadQuoteDialog(true)}
+                  className="text-xs font-medium text-primary hover:underline"
+                  data-testid="button-upload-quote-empty"
+                >
+                  + Upload quote
+                </button>
+              }
+              divider={false}
+              data-testid="section-quotes"
+            >
+
             {quotes.length === 0 ? (
               <EmptyState variant="inline" title="No quotes received yet" className="py-8" />
             ) : (
               <QuoteComparisonView rfqId={rfq.id} quotes={quotes} rfq={rfq} />
             )}
-        </SectionCard>
+        
+            </DocumentSection>
+          </DocumentCard>
+
+          {/* ── Team only ── */}
+          <DocumentCard>
+            <DocumentSection
+              title="Internal Notes"
+              role="meta"
+              defaultOpen={!!formData.internalNotes?.trim()}
+              summary="Only your team sees these"
+              data-testid="section-internal-notes"
+            >
+
+            <div className="p-3">
+              <Textarea
+                value={formData.internalNotes}
+                onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
+                placeholder="Notes for your team..."
+                className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
+                data-testid="input-internal-notes"
+              />
+            </div>
+      
+            </DocumentSection>
+            <DocumentSection title="Activity" role="meta" divider={false} data-testid="section-activity">
+
+        <RfqActivityFeed rfq={rfq} quotes={quotes} />
+      
+            </DocumentSection>
+          </DocumentCard>
 
           {showPreview && (
-            <SectionCard variant="editorial"
-            title="PDF Preview"
-            subtitle="What the supplier receives"
-            icon={<FileText className="w-4 h-4" />}
-            accent="muted"
-          >
+            <DocumentCard>
+              <DocumentSection title="PDF Preview" role="client" collapsible={false} divider={false} summary="What the supplier receives" data-testid="section-pdf-preview">
+
               {isGenerating ? (
                 <div className="flex items-center justify-center h-[500px] bg-muted/20">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -1185,10 +1220,12 @@ export default function RFQDetail() {
                   Failed to generate preview
                 </div>
               )}
-            </SectionCard>
+            
+              </DocumentSection>
+            </DocumentCard>
           )}
-
-        </DetailLayout>
+        </div>
+      </div>
 
       {/* Add Item Dialog */}
       <Dialog open={showAddItemDialog} onOpenChange={(o) => (o ? setShowAddItemDialog(true) : closeItemDialog())}>
