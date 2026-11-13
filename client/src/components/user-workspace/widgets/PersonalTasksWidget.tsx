@@ -175,7 +175,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
   const [configShowFilter, setConfigShowFilter] = useState<FilterType>(showFilter);
-  const [configGroupBy, setConfigGroupBy] = useState<GroupByType>(groupBy);
+  // A saved board with no grouping actually draws by project — show that.
+  const [configGroupBy, setConfigGroupBy] = useState<GroupByType>(effectiveGroupBy);
   const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
   const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
   const [configView, setConfigView] = useState<ViewType>(view);
@@ -226,7 +227,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     setEditingTitle(widget.title);
     setConfigMaxTasks(config.maxTasks || 10);
     setConfigShowFilter(config.showFilter ?? 'all');
-    setConfigGroupBy(config.groupBy ?? 'none');
+    setConfigGroupBy(config.view === 'board' && (config.groupBy ?? 'none') === 'none' ? 'project' : (config.groupBy ?? 'none'));
     setConfigShowCompleted(config.showCompleted ?? false);
     setConfigProjectFilter(config.projectFilter ?? 'all');
     setConfigView(config.view ?? 'list');
@@ -608,7 +609,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       setEditingTitle(widget.title);
       setConfigMaxTasks(config.maxTasks || 10);
       setConfigShowFilter(config.showFilter ?? 'all');
-      setConfigGroupBy(config.groupBy ?? 'none');
+      setConfigGroupBy(config.view === 'board' && (config.groupBy ?? 'none') === 'none' ? 'project' : (config.groupBy ?? 'none'));
       setConfigShowCompleted(config.showCompleted ?? false);
       setConfigProjectFilter(config.projectFilter ?? 'all');
       setConfigView(config.view ?? 'list');
@@ -664,7 +665,15 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
         <div className="space-y-2">
           <Label className="text-xs">View</Label>
-          <Select value={configView} onValueChange={(v) => setConfigView(v as ViewType)}>
+          <Select
+            value={configView}
+            onValueChange={(v) => {
+              setConfigView(v as ViewType);
+              // A board has no "No Grouping" option, so the Columns box sat
+              // blank. Show what the board actually uses (project) instead.
+              if (v === 'board' && configGroupBy === 'none') setConfigGroupBy('project');
+            }}
+          >
             <SelectTrigger className="h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
