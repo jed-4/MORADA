@@ -1593,6 +1593,11 @@ function ClientInvoiceDetailInner() {
     },
   });
 
+  // Approve saves first so it never stops on "click Update, then push again"
+  // (the line snapshot Xero is built from is written by the save). That save
+  // must not auto-push or leave the page — Approve does the push itself.
+  const saveBeforeApproveRef = useRef(false);
+
   const updateMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const payload = buildInvoicePayload(data);
@@ -1633,6 +1638,8 @@ function ClientInvoiceDetailInner() {
           metadata: {},
         });
       }
+
+      if (saveBeforeApproveRef.current) return;
 
       // Auto-sync to Xero if sendToXero is enabled
       if (sendToXero && xeroStatus?.connected && effectiveInvoiceId) {
@@ -1733,6 +1740,11 @@ function ClientInvoiceDetailInner() {
      never moves that figure — the point is that the builder can keep working
      without the client watching the number change. See shared/claimSchedule.ts. */
   const canSendInvoices = usePermission("projects.invoices", "send");
+  // With Xero connected an invoice is approved before it goes to the client:
+  // Email and Send wait until then, so a draft can't reach the client first.
+  // Drafts only: an invoice already sent outside Xero (before it was
+  // connected) can still be emailed again.
+  const awaitingApproval = !!xeroStatus?.connected && !invoice?.xeroInvoiceId && invoice?.status === "draft";
   const shareWithClientMutation = useMutation({
     mutationFn: async (share: boolean) =>
       apiRequest(
@@ -1902,6 +1914,24 @@ function ClientInvoiceDetailInner() {
   const handlePushToXero = async () => {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
+    if (!isViewOnly) {
+      const valid = await form.trigger();
+      if (!valid) {
+        setXeroPushing(false);
+        toast({ title: "Check the invoice", description: "Fix the highlighted fields, then approve.", variant: "destructive" });
+        return;
+      }
+      saveBeforeApproveRef.current = true;
+      try {
+        await updateMutation.mutateAsync(form.getValues());
+      } catch {
+        // updateMutation's onError has already said why.
+        setXeroPushing(false);
+        return;
+      } finally {
+        saveBeforeApproveRef.current = false;
+      }
+    }
     const doPush = async () => {
       const data = await apiRequest("/api/xero/push-client-invoice", "POST", {
         invoiceId: effectiveInvoiceId,
@@ -2004,6 +2034,7 @@ function ClientInvoiceDetailInner() {
     ? savedSnapshot.map((l, i) => ({
         key: String(i),
         description: l.label || l.description || "",
+        detail: l.pdfDescription ?? null,
         amountExCents: l.amountExCents ?? 0,
         gstCents: l.gstCents ?? 0,
         amountIncCents: l.amountIncCents ?? 0,
@@ -2011,6 +2042,7 @@ function ClientInvoiceDetailInner() {
     : buildInvoiceLineBreakdown().map((l, i) => ({
         key: String(i),
         description: l.label || l.description,
+        detail: l.pdfDescription ?? null,
         amountExCents: l.amountExCents,
         gstCents: l.gstCents,
         amountIncCents: l.amountIncCents,
@@ -2485,7 +2517,7 @@ function ClientInvoiceDetailInner() {
                 {/* Email stays inline — for an invoice, sending it is a primary
                     act, not an occasional one. Preview/PDF/sync/duplicate/delete
                     move into the overflow menu, matching PurchaseOrderDetail. */}
-                {isEditMode && (
+                {isEditMode && !awaitingApproval && (
                   <button
                     type="button"
                     onClick={handleOpenInvoiceSendModal}
@@ -2657,7 +2689,7 @@ function ClientInvoiceDetailInner() {
                   </Tooltip>
                 )}
 
-                {isEditMode && invoice?.status === "draft" && canSendInvoices && (
+                {isEditMode && invoice?.status === "draft" && canSendInvoices && !awaitingApproval && (
                   <button
                     type="button"
                     onClick={() => sendInvoiceMutation.mutate()}
