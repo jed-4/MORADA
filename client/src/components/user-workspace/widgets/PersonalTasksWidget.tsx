@@ -3,6 +3,9 @@ import { getWorkspacePreferences } from "@/lib/workspacePreferences";
 import { generateNotionColors } from "@/lib/taskColors";
 import { TaskRow, TaskCard } from "@/components/widgets/shared/TaskRow";
 import { useTaskToggle } from "@/hooks/useTaskToggle";
+import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
+import { useToast } from "@/hooks/use-toast";
+import { isTaskDone } from "@/components/widgets/shared/TaskRow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -67,7 +70,7 @@ function readStoredTab(widgetId: string): TabFilter | null {
     return null;
   }
 }
-type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
+type GroupByType = 'none' | 'project' | 'dueDate' | 'priority' | 'status';
 type ViewType = 'list' | 'board';
 
 /**
@@ -276,6 +279,41 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   // Strikes the row through on the click and holds it briefly before the
   // filter below drops it, instead of waiting on the server round trip.
   const { toggleTask, isLingering } = useTaskToggle();
+  const { statusOptions, getStatusInfo } = useTaskStatusOptions();
+  const { toast } = useToast();
+  /** The company's task statuses in their set order — the status board's columns. */
+  const orderedStatuses = useMemo(
+    () => [...statusOptions]
+      .filter((o: any) => o.isActive !== false && !o.parentId)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    [statusOptions],
+  );
+
+  // Board by status: drag a card to another column to change its status.
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const TASK_CACHES = [["/api/tasks/my"], ["/api/tasks"]] as const;
+  const moveTaskToStatus = async (task: Task, status: string) => {
+    if (task.status === status) return;
+    // Into a "done" column: the same path as ticking it, so it lingers struck
+    // through for a moment instead of vanishing under the cursor.
+    if (isTaskDone(status) && !isTaskDone(task.status)) {
+      toggleTask(task);
+      return;
+    }
+    const snapshots = TASK_CACHES.map((key) => [key, queryClient.getQueryData<unknown>(key)] as const);
+    for (const key of TASK_CACHES) {
+      queryClient.setQueryData<unknown>(key, (old: unknown) =>
+        Array.isArray(old) ? old.map((t: any) => (t?.id === task.id ? { ...t, status } : t)) : old,
+      );
+    }
+    try {
+      await apiRequest(`/api/tasks/${task.id}`, "PATCH", { status });
+    } catch (e: any) {
+      snapshots.forEach(([key, data]) => queryClient.setQueryData<unknown>(key, data));
+      toast({ title: "Couldn't move the task", description: e?.message || "Please try again", variant: "destructive" });
+    }
+  };
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -423,6 +461,13 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             label = 'Later';
           }
           break;
+        case 'status': {
+          key = task.status || 'todo';
+          const info = getStatusInfo(key) as any;
+          label = info?.name || key;
+          color = info?.color || undefined;
+          break;
+        }
         case 'priority':
           key = task.priority || 'none';
           label = task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'No Priority';
@@ -438,8 +483,23 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       groups.get(key)!.tasks.push(task);
     });
 
+    if (groupByForList === 'status') {
+      // Every status is a column, in the company's order — an empty column is
+      // still somewhere to drag a task to. Done columns only show when
+      // completed tasks are shown (or something is lingering in one).
+      for (const opt of orderedStatuses as any[]) {
+        if (groups.has(opt.key)) continue;
+        if (isTaskDone(opt.key) && !showCompleted) continue;
+        groups.set(opt.key, { label: opt.name, tasks: [], color: opt.color || undefined });
+      }
+      const rank = new Map((orderedStatuses as any[]).map((o, i) => [o.key, i]));
+      return Array.from(groups.entries())
+        .sort(([a], [b]) => (rank.get(a) ?? 999) - (rank.get(b) ?? 999))
+        .map(([key, value]) => ({ key, ...value }));
+    }
+
     return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
-  }, [filteredTasks, groupByForList, projectMap, today]);
+  }, [filteredTasks, groupByForList, projectMap, today, orderedStatuses, getStatusInfo, showCompleted]);
 
   const [prevGroupBy, setPrevGroupBy] = useState(groupByForList);
   useEffect(() => {
@@ -655,11 +715,13 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
               <SelectItem value="project">Project</SelectItem>
               <SelectItem value="dueDate">Due Date</SelectItem>
               <SelectItem value="priority">Priority</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
             </SelectContent>
           </Select>
           {configView === 'board' && (
             <p className="text-[11px] text-muted-foreground">
               Each {configGroupBy === 'none' ? 'group' : configGroupBy === 'dueDate' ? 'due date' : configGroupBy} becomes a column.
+              {configGroupBy === 'status' && ' Drag a task to another column to change its status.'}
             </p>
           )}
         </div>
@@ -797,8 +859,29 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
               {groupedTasks.map((group) => (
                 <div
                   key={group.key}
-                  className="flex-shrink-0 w-[190px] flex flex-col"
+                  className={`flex-shrink-0 w-[190px] flex flex-col rounded-md transition-colors ${
+                    groupByForList === 'status' && dropTarget === group.key ? 'bg-primary/10 ring-1 ring-primary/30' : ''
+                  }`}
                   data-testid={`personal-tasks-column-${group.key}`}
+                  {...(groupByForList === 'status' ? {
+                    onDragOver: (e: React.DragEvent) => {
+                      if (!dragTaskId) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dropTarget !== group.key) setDropTarget(group.key);
+                    },
+                    onDragLeave: (e: React.DragEvent) => {
+                      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropTarget(null);
+                    },
+                    onDrop: (e: React.DragEvent) => {
+                      e.preventDefault();
+                      const id = dragTaskId || e.dataTransfer.getData('text/plain');
+                      setDropTarget(null);
+                      setDragTaskId(null);
+                      const t = filteredTasks.find((x) => x.id === id);
+                      if (t) moveTaskToStatus(t, group.key);
+                    },
+                  } : {})}
                 >
                   <div className="flex items-center gap-1.5 px-1 pb-1.5">
                     {group.color && (
@@ -809,14 +892,30 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                     </span>
                     <span className="text-[10px] text-muted-foreground tabular-nums">{group.tasks.length}</span>
                   </div>
-                  <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
+                  <div className={`space-y-1 max-h-[320px] overflow-y-auto pr-0.5 ${groupByForList === 'status' ? 'min-h-[48px]' : ''}`}>
+                    {groupByForList === 'status' && group.tasks.length === 0 && (
+                      <div className="text-[10px] text-muted-foreground/70 border border-dashed rounded-md py-3 text-center">
+                        Drop a task here
+                      </div>
+                    )}
                     {group.tasks.map((task) => {
                       const project = task.projectId ? projectMap.get(task.projectId) : null;
                       const isBusiness = isBusinessTask(task);
                       const showAccent = groupByForList !== 'project';
                       return (
-                        <TaskCard
+                        <div
                           key={task.id}
+                          draggable={groupByForList === 'status'}
+                          onDragStart={groupByForList === 'status' ? (e) => {
+                            e.dataTransfer.setData('text/plain', task.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDragTaskId(task.id);
+                          } : undefined}
+                          onDragEnd={() => { setDragTaskId(null); setDropTarget(null); }}
+                          className={groupByForList === 'status' ? `cursor-grab active:cursor-grabbing ${dragTaskId === task.id ? 'opacity-50' : ''}` : undefined}
+                          data-testid={`personal-task-drag-${task.id}`}
+                        >
+                        <TaskCard
                           task={{ ...task, dueDate: groupByForList === 'dueDate' ? null : task.dueDate } as any}
                           accentColor={
                             !showAccent ? null
@@ -832,6 +931,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           onClick={() => setSelectedTaskId(task.id)}
                           testIdPrefix="personal-task-card"
                         />
+                        </div>
                       );
                     })}
                   </div>
