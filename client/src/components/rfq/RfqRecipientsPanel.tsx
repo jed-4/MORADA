@@ -27,7 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
-import { SectionCard } from "@/components/detail/SectionCard";
+import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSection";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatCents } from "@shared/money";
@@ -223,14 +223,18 @@ export function RfqRecipientsPanel({
   );
 
   return (
-    <SectionCard variant="editorial"
+    <DocumentCard data-testid="card-recipients">
+    <DocumentSection
       title="Suppliers"
-      subtitle="Who this RFQ went to, and where each one is up to"
-      icon={<Users className="w-4 h-4" />}
-      accent="primary"
+      role="supplier"
       count={recipients.length}
+      summary={recipients.length ? undefined : "Who this RFQ went to, and where each one is up to"}
+      // Adding a supplier is the next step on a new RFQ, so it stays reachable
+      // at rest; the section opens by default either way.
+      defaultOpen
       actions={addButton}
-      data-testid="card-recipients"
+      emptyAction={addButton}
+      divider={false}
     >
       {isLoading ? (
         <div className="flex items-center gap-2 px-3 h-10 text-xs text-muted-foreground">
@@ -405,6 +409,7 @@ export function RfqRecipientsPanel({
           })}
         </div>
       )}
-    </SectionCard>
+    </DocumentSection>
+    </DocumentCard>
   );
 }
