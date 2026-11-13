@@ -4924,7 +4924,9 @@ export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
   updatedAt: true,
 }).extend({
   calendarType: z.enum(["personal", "business"]),
-  calendarMode: z.enum(["month", "week", "day"]).default("month"),
+  // The business calendar also has agenda / roster / people; saving a view in
+  // one of those 400'd as "Failed to save view".
+  calendarMode: z.enum(["month", "week", "day", "agenda", "roster", "people"]).default("month"),
   filters: z.object({
     projectIds: z.array(z.string()).optional(),
     statuses: z.array(z.string()).optional(),
@@ -4934,7 +4936,11 @@ export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
       start: z.coerce.date(),
       end: z.coerce.date(),
     }).optional().nullable(),
-  }).optional(),
+    // passthrough: the calendars keep more than the keys above (projects,
+    // status, assignees, layers, dateFrom/dateTo, fullScheduleProjects…).
+    // A plain object STRIPPED them, so a saved business view kept only its
+    // event types.
+  }).passthrough().optional(),
   sharedWith: z.array(z.string()).optional(),
   isDefault: z.boolean().default(false),
   sortOrder: z.number().default(0),

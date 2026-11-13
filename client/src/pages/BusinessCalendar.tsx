@@ -33,6 +33,7 @@ import {
 } from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
+import { CalendarViewBar, calendarSnapshotKey, lastViewStore } from "@/components/calendar/CalendarViewBar";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -117,14 +118,9 @@ export default function BusinessCalendar() {
   const [filters, setFilters] = useState<CalendarFiltersType>({});
   const [calendarMode, setCalendarMode] = useState<BusinessCalendarMode>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
-  const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
-  const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
-  const [showEditViewDialog, setShowEditViewDialog] = useState(false);
-  const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
-  const [viewToEdit, setViewToEdit] = useState<CalendarView | null>(null);
-  const [editViewName, setEditViewName] = useState("");
-  const [newViewName, setNewViewName] = useState("");
-  const [sharedWithUsers, setSharedWithUsers] = useState<string[]>([]);
+  // Snapshot of the settings when the selected view was applied/saved — the
+  // screen differing from it is what lights the "unsaved" dot.
+  const [appliedViewKey, setAppliedViewKey] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
@@ -253,17 +249,16 @@ export default function BusinessCalendar() {
   // Events" copy per person, and needed a module-level flag to stop it firing
   // again on every remount.
 
-  // Set selected view to default on load
+  // Open on the view used last on this calendar, else the company default.
   useEffect(() => {
     if (views.length > 0 && !selectedViewId) {
-      const defaultView =
+      const lastId = lastViewStore.read("business", user?.id);
+      const start =
+        views.find((v: CalendarView) => v.id === lastId) ??
         views.find((v: CalendarView) => (v as any).isCompanyDefault) ??
-        views.find((v: CalendarView) => v.isDefault);
-      if (defaultView) {
-        setSelectedViewId(defaultView.id);
-        setFilters(normalizeFilterDates(defaultView.filters || {}));
-        setCalendarMode(toCalendarView(defaultView.calendarMode));
-      }
+        views.find((v: CalendarView) => v.isDefault) ??
+        views[0];
+      if (start) applyView(start);
     }
   }, [views, selectedViewId]);
 
@@ -591,126 +586,16 @@ export default function BusinessCalendar() {
     }
   };
 
-  /**
-   * Who else can see this view.
-   *
-   * The column and the read path have existed since the table was created, and
-   * SavedViews.tsx has carried an unused UI for it just as long — a shared
-   * calendar whose views were all private. This is the control that connects them.
-   */
-  const renderShareWith = () => {
-    // Test the list actually rendered, not the one before you are removed from it —
-    // otherwise a one-person company gets an empty box instead of an explanation.
-    const shareable = availableAssignees.filter((a: any) => a.id !== user?.id);
-    return (
-    <div className="grid gap-2">
-      <Label>Share with</Label>
-      <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border p-2">
-        {shareable.length === 0 && (
-          <p className="text-xs text-muted-foreground">No one else on the team yet.</p>
-        )}
-        {shareable
-          .map((a: any) => (
-            <label key={a.id} className="flex cursor-pointer items-center gap-2">
-              <Checkbox
-                checked={sharedWithUsers.includes(a.id)}
-                onCheckedChange={() => setSharedWithUsers(current =>
-                  current.includes(a.id) ? current.filter(id => id !== a.id) : [...current, a.id]
-                )}
-                data-testid={`share-with-${a.id}`}
-              />
-              <span className="text-xs">{a.name}</span>
-            </label>
-          ))}
-      </div>
-      <p className="text-data text-muted-foreground">
-        Everyone already sees the company's default view. This shares this one on top of it.
-      </p>
-    </div>
-    );
-  };
-
-  const createViewMutation = useMutation({
-    mutationFn: async (data: { name: string }) => {
-      return await apiRequest("/api/calendar-views", "POST", {
-        name: data.name,
-        calendarType: "business",
-        filters,
-        calendarMode,
-        sharedWith: sharedWithUsers,
-      });
-    },
-    onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setSelectedViewId(newView.id);
-      setShowCreateViewDialog(false);
-      setNewViewName("");
-      setSharedWithUsers([]);
-      toast({ title: "View created", description: `"${newView.name}" has been saved.` });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
-    },
-  });
-
-  const updateViewMutation = useMutation({
-    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string; sharedWith?: string[] }) => {
-      return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.filters !== undefined && { filters: data.filters }),
-        ...(data.calendarMode !== undefined && { calendarMode: data.calendarMode }),
-        ...(data.sharedWith !== undefined && { sharedWith: data.sharedWith }),
-      });
-    },
-    onSuccess: (updatedView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setShowCreateViewDialog(false);
-      setShowEditViewDialog(false);
-      setViewToEdit(null);
-      toast({ title: "View saved", description: `"${updatedView.name}" has been updated.` });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save view.", variant: "destructive" });
-    },
-  });
-
-  const deleteViewMutation = useMutation({
-    mutationFn: async (viewId: string) => {
-      await apiRequest(`/api/calendar-views/${viewId}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      if (viewToDelete && selectedViewId === viewToDelete.id) {
-        setSelectedViewId(undefined);
-      }
-      setShowDeleteViewDialog(false);
-      setViewToDelete(null);
-      toast({ title: "View deleted", description: `"${viewToDelete?.name}" has been removed.` });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to delete view.", variant: "destructive" });
-    },
-  });
-
-  const handleViewSelect = (view: CalendarView) => {
+  /** Put a view's saved settings on screen and remember it as the last used. */
+  function applyView(view: CalendarView) {
+    const f = normalizeFilterDates((view.filters || {}) as CalendarFiltersType);
+    const mode = toCalendarView(view.calendarMode);
     setSelectedViewId(view.id);
-    setFilters(normalizeFilterDates(view.filters || {}));
-    setCalendarMode(toCalendarView(view.calendarMode));
-  };
-
-  const handleEditView = (view: CalendarView) => {
-    setViewToEdit(view);
-    setEditViewName(view.name);
-    // Load who it is already shared with, so opening the dialog and saving does
-    // not silently unshare it.
-    setSharedWithUsers(Array.isArray(view.sharedWith) ? view.sharedWith : []);
-    setShowEditViewDialog(true);
-  };
-
-  const handleUpdateView = () => {
-    if (!viewToEdit || !editViewName.trim()) return;
-    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode, sharedWith: sharedWithUsers });
-  };
+    setFilters(f);
+    setCalendarMode(mode);
+    setAppliedViewKey(calendarSnapshotKey(f as any, mode));
+    lastViewStore.write("business", user?.id, view.id);
+  }
 
   // Navigation handlers
   const handleNavigateToday = () => {
@@ -774,19 +659,7 @@ export default function BusinessCalendar() {
   // View management
   const currentView = views.find((v: CalendarView) => v.id === selectedViewId);
 
-  const handleSaveView = () => {
-    if (!currentView) return;
-    if (currentView.isDefault) {
-      setShowCreateViewDialog(true);
-    } else {
-      updateViewMutation.mutate({ id: currentView.id, filters, calendarMode });
-    }
-  };
-
-  const handleDeleteView = (view: CalendarView) => {
-    setViewToDelete(view);
-    setShowDeleteViewDialog(true);
-  };
+  const viewIsDirty = appliedViewKey !== null && calendarSnapshotKey(filters as any, calendarMode) !== appliedViewKey;
 
   const isLoading = isLoadingProjects || isLoadingTasks || isLoadingSchedule;
 
@@ -836,62 +709,23 @@ export default function BusinessCalendar() {
       <div className="h-9 bg-card flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1">
           {/* View Tabs */}
-          <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
-            {views.map((view: CalendarView) => (
-              <div key={view.id} className="flex items-center">
-                <button
-                  onClick={() => handleViewSelect(view)}
-                  className={`relative h-9 px-2 text-xs flex items-center gap-1 transition-colors ${
-                    selectedViewId === view.id
-                      ? 'text-primary font-medium'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  data-testid={`tab-${view.id}`}
-                >
-                  <span>{view.name}</span>
-                  {selectedViewId === view.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-                  )}
-                </button>
-                {selectedViewId === view.id && !view.isDefault && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="h-5 px-0.5 text-primary hover:text-primary/80 flex items-center"
-                        data-testid={`button-view-options-${view.id}`}
-                      >
-                        <ChevronDown className="h-3 w-3" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem
-                        onClick={() => handleEditView(view)}
-                        data-testid={`menu-edit-${view.id}`}
-                      >
-                        <Pencil className="h-3 w-3 mr-2" />
-                        Edit View
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => handleDeleteView(view)}
-                        className="text-destructive"
-                        data-testid={`menu-delete-${view.id}`}
-                      >
-                        <X className="h-3 w-3 mr-2" />
-                        Delete View
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            ))}
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => { setSharedWithUsers([]); setShowCreateViewDialog(true); }}
-              data-testid="button-add-view"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-          </div>
+          <CalendarViewBar
+            calendarType="business"
+            views={views}
+            selectedViewId={selectedViewId}
+            currentUserId={user?.id}
+            isAdmin={!!(user as any)?.isAdminLike}
+            isDirty={viewIsDirty}
+            getCurrent={() => ({ filters: filters as any, calendarMode })}
+            onSelect={applyView}
+            onDiscard={() => currentView && applyView(currentView)}
+            onSaved={(view) => {
+              setSelectedViewId(view.id);
+              setAppliedViewKey(calendarSnapshotKey(filters as any, calendarMode));
+              lastViewStore.write("business", user?.id, view.id);
+            }}
+            shareable={availableAssignees.map((a: any) => ({ id: a.id, name: a.name }))}
+          />
 
           {/* Settings Icon */}
           <button
@@ -1793,117 +1627,6 @@ export default function BusinessCalendar() {
               {editingLeaveId ? "Save" : "Mark leave"}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Save / Create View Dialog */}
-      <Dialog open={showCreateViewDialog} onOpenChange={(open) => { setShowCreateViewDialog(open); if (!open) setNewViewName(""); }}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Save As New View</DialogTitle>
-            <DialogDescription>
-              Save your current filters and calendar mode as a new view.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="view-name">View Name</Label>
-              <Input
-                id="view-name"
-                value={newViewName}
-                onChange={(e) => setNewViewName(e.target.value)}
-                placeholder="e.g., My Week View"
-                data-testid="input-view-name"
-              />
-            </div>
-            {renderShareWith()}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => { setShowCreateViewDialog(false); setNewViewName(""); }}
-              data-testid="button-cancel-view"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => newViewName.trim() && createViewMutation.mutate({ name: newViewName.trim() })}
-              disabled={!newViewName.trim() || createViewMutation.isPending}
-              data-testid="button-confirm-save-view"
-            >
-              {createViewMutation.isPending ? "Saving..." : "Save View"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit View Dialog */}
-      <Dialog open={showEditViewDialog} onOpenChange={setShowEditViewDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Edit View</DialogTitle>
-            <DialogDescription>
-              Update the view name and save current filters to this view.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-view-name">View Name</Label>
-              <Input
-                id="edit-view-name"
-                value={editViewName}
-                onChange={(e) => setEditViewName(e.target.value)}
-                placeholder="My Custom View"
-                data-testid="input-edit-view-name"
-              />
-            </div>
-            {renderShareWith()}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditViewDialog(false)}
-              data-testid="button-cancel-edit"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpdateView}
-              disabled={!editViewName.trim() || updateViewMutation.isPending}
-              data-testid="button-update-view"
-            >
-              {updateViewMutation.isPending ? "Updating..." : "Update View"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete View Dialog */}
-      <Dialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete View</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteViewDialog(false)}
-              data-testid="button-cancel-delete"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
-              disabled={deleteViewMutation.isPending}
-              data-testid="button-confirm-delete-view"
-            >
-              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
 
