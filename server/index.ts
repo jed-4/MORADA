@@ -507,6 +507,9 @@ app.use((req, res, next) => {
     // so this sweep does nothing at all until someone switches chasing on.
     const { startProposalReminderScheduler } = await import("./services/proposalReminderScheduler");
     startProposalReminderScheduler();
+    import("./services/variationReminders")
+      .then((m) => m.startVariationReminderScheduler())
+      .catch((e) => console.error("[VariationReminders] failed to start", e));
 
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in
