@@ -37968,6 +37968,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Handle business assignee (company:xxx format)
       const createData = { ...validationResult.data } as any;
+      // "No colour" is null. An empty string reads as "has a colour" to any
+      // `??` fallback and hid the assignee's colour behind it.
+      if (createData.color === "") createData.color = null;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
         const companyId = createData.assignedToId.replace('company:', '');
         const company = await storage.getCompany(companyId);
@@ -38128,6 +38131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // An item never changes schedule. Accepting scheduleId here moved an
       // owned item into any schedule, another company's included.
       delete updateData.scheduleId;
+      if (updateData.color === "") updateData.color = null;
       const wasCompanyAssigned = !!(updateData.assignedToId && updateData.assignedToId.startsWith('company:'));
       if (wasCompanyAssigned) {
         const companyId = updateData.assignedToId.replace('company:', '');

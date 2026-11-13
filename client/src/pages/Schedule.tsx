@@ -1439,6 +1439,8 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
       ...formData,
       assignedToId: formData.assignedToId === "" ? null : formData.assignedToId,
       parentItemId: formData.parentItemId === "" ? null : formData.parentItemId,
+      // "" is the dot's "no colour"; store it as null like every other path.
+      color: formData.color || null,
       useWorkingDaysOverride: formData.useWorkingDaysOverride,
       taskLinkOffsets: taskLinkOffsetsLocal.length > 0 ? taskLinkOffsetsLocal : undefined,
     };
