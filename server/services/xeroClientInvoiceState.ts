@@ -85,10 +85,19 @@ export async function applyXeroClientInvoiceState(
     await store.syncClientInvoicePaidStatus(invoice.id);
   }
 
-  // VOIDED/DELETED in Xero is a document-state change, not a payment change —
-  // reflect it explicitly, since the payment sync above never sets "draft".
+  // VOIDED/DELETED in Xero: the copy this invoice pointed at is gone, so the
+  // link goes — the invoice can then be re-approved or linked to the copy
+  // that survives. It used to ALSO force "draft", which ran straight over
+  // payments recorded here: a fully paid invoice whose duplicate was deleted
+  // in Xero sat on Draft (6705-CI-004). Payments decide the status; only an
+  // unpaid invoice goes back to draft.
   if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-    await store.updateClientInvoice(invoice.id, { status: "draft" });
+    const hasPayments = (invoice.paidAmount || 0) > 0;
+    await store.updateClientInvoice(invoice.id, {
+      xeroInvoiceId: null,
+      xeroInvoiceNumber: null,
+      ...(hasPayments ? {} : { status: "draft" }),
+    });
   }
 
   return { xeroStatus, amountPaidCents, amountDueCents };

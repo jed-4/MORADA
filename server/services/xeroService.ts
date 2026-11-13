@@ -1630,6 +1630,45 @@ export class XeroService {
     return found;
   }
 
+  /**
+   * Sales (ACCREC) invoices for linking a Morada client invoice to one that
+   * already exists in Xero. Read-only. Filters to one contact when known,
+   * else matches the search term on number/reference; drafts, voided and
+   * deleted copies are left out — none of them can carry a payment.
+   */
+  async listSalesInvoicesForLinking(
+    connectionId: string,
+    opts: { contactId?: string; searchTerm?: string },
+  ): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const params = new URLSearchParams();
+    params.set("where", 'Type=="ACCREC"');
+    params.set("Statuses", "AUTHORISED,PAID,SUBMITTED");
+    params.set("order", "Date DESC");
+    params.set("page", "1");
+    params.set("summaryOnly", "true");
+    if (opts.contactId) params.set("ContactIDs", opts.contactId);
+    if (opts.searchTerm?.trim()) params.set("SearchTerm", opts.searchTerm.trim());
+
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    }, { label: "listSalesInvoicesForLinking" });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to list Xero invoices: ${response.status} ${errorText}`);
+    }
+    const data = (await response.json()) as any;
+    return Array.isArray(data.Invoices) ? data.Invoices : [];
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
