@@ -87,6 +87,19 @@ async function main() {
         xeroInvoice: { Status, AmountPaid: 0, AmountDue: 0 },
       });
       assert.ok(calls.some((c) => c.fn === "update" && c.args[1].status === "draft"));
+      assert.ok(calls.some((c) => c.fn === "update" && c.args[1].xeroInvoiceId === null), "the dead link is dropped");
+    });
+
+    // 6705-CI-004: a duplicate was deleted in Xero, and every sync then put a
+    // fully paid invoice back on Draft over its own payments.
+    await check(`${Status} in Xero does NOT revert a paid invoice to draft`, async () => {
+      const { store, calls } = spyStore();
+      await applyXeroClientInvoiceState(store, {
+        invoice: { id: "inv-5b", status: "paid", paidAmount: 10_104_424 }, source: "manual",
+        xeroInvoice: { Status, AmountPaid: 0, AmountDue: 0 },
+      });
+      assert.ok(!calls.some((c) => c.fn === "update" && c.args[1].status === "draft"), "payments decide the status");
+      assert.ok(calls.some((c) => c.fn === "update" && c.args[1].xeroInvoiceId === null), "the dead link is still dropped");
     });
   }
 

@@ -46494,6 +46494,143 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     }
   });
 
+  // Xero: link a Morada client invoice to one that ALREADY exists in Xero.
+  // For an invoice whose copy was pushed twice and the linked one deleted, or
+  // one raised in Xero directly. Read-only against Xero: nothing is written
+  // there, Morada just points at the chosen invoice and pulls its state.
+  const loadOwnedInvoiceForXeroLink = async (req: any, res: any) => {
+    const companyId = (req.user as any)?.companyId;
+    if (!companyId) { res.status(401).json({ error: "Unauthorized - no company context" }); return null; }
+    const invoice = await storage.getClientInvoice(req.params.id);
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return null; }
+    const project = await storage.getProject(invoice.projectId);
+    if (!project || (project as any).companyId !== companyId) {
+      res.status(403).json({ error: "Forbidden - invoice does not belong to your company" });
+      return null;
+    }
+    const connection = await storage.getXeroConnectionByCompanyId(companyId);
+    if (!connection) { res.status(400).json({ error: "Xero is not connected" }); return null; }
+    return { invoice, project, connection, companyId };
+  };
+
+  /** Xero invoice id → Morada invoice number, for ids already linked in this company. */
+  const moradaInvoicesLinkedTo = async (companyId: string, xeroIds: string[]) => {
+    if (xeroIds.length === 0) return new Map<string, { id: string; invoiceNumber: string | null }>();
+    const rows = await db
+      .select({ id: clientInvoices.id, invoiceNumber: clientInvoices.invoiceNumber, xeroInvoiceId: clientInvoices.xeroInvoiceId })
+      .from(clientInvoices)
+      .innerJoin(projectsTable, eq(projectsTable.id, clientInvoices.projectId))
+      .where(and(eq(projectsTable.companyId, companyId), inArray(clientInvoices.xeroInvoiceId, xeroIds)));
+    return new Map(rows.map((r) => [r.xeroInvoiceId as string, { id: r.id, invoiceNumber: r.invoiceNumber }]));
+  };
+
+  app.get("/api/xero/client-invoices/:id/link-candidates", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
+    try {
+      const ctx = await loadOwnedInvoiceForXeroLink(req, res);
+      if (!ctx) return;
+      const { invoice, project, connection, companyId } = ctx;
+
+      let contactId: string | undefined;
+      let clientName: string | null = null;
+      if ((project as any).clientId) {
+        const client = await storage.getContact((project as any).clientId, companyId).catch(() => null);
+        contactId = (client as any)?.xeroContactId || undefined;
+        clientName = client ? (client.company || client.name || null) : null;
+      }
+      const searchTerm = typeof req.query.q === "string" ? req.query.q : undefined;
+      // No mapped contact and nothing typed: show recent sales invoices
+      // rather than nothing, so the right one can still be found.
+      const found = await xeroService.listSalesInvoicesForLinking(connection.id, {
+        contactId: searchTerm ? undefined : contactId,
+        searchTerm,
+      });
+      const linked = await moradaInvoicesLinkedTo(companyId, found.map((x: any) => x.InvoiceID).filter(Boolean));
+
+      res.json({
+        clientName,
+        filteredByClient: !!contactId && !searchTerm,
+        moradaTotalCents: invoice.totalAmount ?? 0,
+        candidates: found.slice(0, 50).map((x: any) => {
+          const other = linked.get(x.InvoiceID);
+          return {
+            xeroInvoiceId: x.InvoiceID,
+            invoiceNumber: x.InvoiceNumber || null,
+            reference: x.Reference || null,
+            contactName: x.Contact?.Name || null,
+            date: x.DateString || x.Date || null,
+            status: x.Status,
+            totalCents: Math.round((x.Total || 0) * 100),
+            amountPaidCents: Math.round((x.AmountPaid || 0) * 100),
+            linkedToInvoiceId: other && other.id !== invoice.id ? other.id : null,
+            linkedToInvoiceNumber: other && other.id !== invoice.id ? other.invoiceNumber : null,
+          };
+        }),
+      });
+    } catch (error: any) {
+      console.error("Error listing Xero invoices to link:", error);
+      res.status(500).json({ error: error.message || "Could not load invoices from Xero" });
+    }
+  });
+
+  app.post("/api/xero/client-invoices/:id/link", requireAuth, requireTeamPermission("projects.invoices", "edit"), async (req, res) => {
+    try {
+      const ctx = await loadOwnedInvoiceForXeroLink(req, res);
+      if (!ctx) return;
+      const { invoice, connection, companyId } = ctx;
+      const xeroInvoiceId = typeof req.body?.xeroInvoiceId === "string" ? req.body.xeroInvoiceId.trim() : "";
+      if (!xeroInvoiceId) return res.status(400).json({ error: "xeroInvoiceId is required" });
+      if (invoice.xeroInvoiceId && invoice.xeroInvoiceId !== xeroInvoiceId) {
+        return res.status(409).json({
+          error: "ALREADY_LINKED",
+          message: "This invoice is already linked to a Xero invoice. Refresh its status from Xero first — if that copy was deleted or voided, the link is cleared.",
+        });
+      }
+
+      // Re-read from Xero rather than trusting the picker: the tenant, type and
+      // status are checked on the real record.
+      const xeroInvoice = await xeroService.getInvoice(connection.id, xeroInvoiceId).catch(() => null);
+      if (!xeroInvoice) return res.status(404).json({ error: "That invoice wasn't found in Xero" });
+      if (xeroInvoice.Type !== "ACCREC") return res.status(422).json({ error: "That's a bill in Xero, not a sales invoice" });
+      if (xeroInvoice.Status === "VOIDED" || xeroInvoice.Status === "DELETED" || xeroInvoice.Status === "DRAFT") {
+        return res.status(422).json({ error: `That Xero invoice is ${String(xeroInvoice.Status).toLowerCase()} — pick the live copy` });
+      }
+      const already = (await moradaInvoicesLinkedTo(companyId, [xeroInvoiceId])).get(xeroInvoiceId);
+      if (already && already.id !== invoice.id) {
+        return res.status(409).json({ error: `That Xero invoice is already linked to ${already.invoiceNumber || "another invoice"}` });
+      }
+
+      // It exists in Xero, so it's at least approved here. Payment state is
+      // recomputed by the shared writer below.
+      await storage.updateClientInvoice(invoice.id, {
+        xeroInvoiceId,
+        xeroInvoiceNumber: xeroInvoice.InvoiceNumber || null,
+        sendToXero: true,
+        ...(invoice.status === "draft" ? { status: "approved" } : {}),
+      } as any);
+      const fresh = (await storage.getClientInvoice(invoice.id))!;
+      const result = await applyXeroClientInvoiceState({
+        invoice: fresh,
+        xeroInvoice,
+        recordedBy: (req.user as any)?.id || null,
+        source: "manual",
+      });
+
+      const updated = await storage.getClientInvoice(invoice.id);
+      const xeroTotalCents = Math.round((xeroInvoice.Total || 0) * 100);
+      res.json({
+        success: true,
+        xeroInvoiceNumber: xeroInvoice.InvoiceNumber || null,
+        xeroStatus: result.xeroStatus,
+        totalsMatch: xeroTotalCents === (invoice.totalAmount ?? 0),
+        xeroTotalCents,
+        newLocalStatus: updated?.status ?? invoice.status,
+      });
+    } catch (error: any) {
+      console.error("Error linking client invoice to Xero:", error);
+      res.status(500).json({ error: error.message || "Could not link to the Xero invoice" });
+    }
+  });
+
   // Xero: Webhook endpoint for receiving Xero change notifications
   // Must be publicly accessible (no requireAuth) so Xero can POST to it
   app.post("/api/xero/webhook", async (req, res) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { InvoiceDocumentView, type InvoiceDocumentLine } from "@/components/invoices/InvoiceDocumentView";
+import { XeroInvoiceLinkDialog } from "@/components/invoices/XeroInvoiceLinkDialog";
 import { invoiceDateMode, itemClaimDate, scheduleMovedSinceLock } from "@shared/invoiceScheduleDates";
 import { hasSharedAmountDrift, isClaimIssued, isClaimShared, sharedAmountDrift } from "@shared/claimSchedule";
 import { EmptyState } from "@/components/EmptyState";
@@ -18,6 +19,7 @@ import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal
 import { InvoiceAttachments } from "@/components/invoices/InvoiceAttachments";
 import {
   ArrowLeft,
+  Link2,
   Plus,
   FileText,
   Calendar as CalendarIcon,
@@ -466,6 +468,7 @@ function ClientInvoiceDetailInner() {
   // cancelled) the invoice opens read-only and the Edit button unlocks it.
   // Screen-level only — the server still accepts edits, as Xero allows.
   const [editUnlocked, setEditUnlocked] = useState(false);
+  const [xeroLinkOpen, setXeroLinkOpen] = useState(false);
   useEffect(() => { setEditUnlocked(false); }, [effectiveInvoiceId]);
   const isIssuedInvoice = !!invoice?.status && invoice.status !== "draft";
   const isViewOnly = isEditMode && isIssuedInvoice && !editUnlocked;
@@ -2568,6 +2571,15 @@ function ClientInvoiceDetailInner() {
                         >
                           <RefreshCw className="w-3.5 h-3.5 mr-2" />
                           Refresh status from Xero
+                        </DropdownMenuItem>
+                      )}
+                      {/* Already in Xero (pushed twice and the linked copy
+                          deleted, or raised there directly): point this
+                          invoice at it instead of creating another. */}
+                      {xeroStatus?.connected && !invoice?.xeroInvoiceId && (
+                        <DropdownMenuItem onClick={() => setXeroLinkOpen(true)} data-testid="menu-link-xero-invoice">
+                          <Link2 className="w-3.5 h-3.5 mr-2" />
+                          Link to Xero invoice…
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem onClick={() => duplicateInvoiceMutation.mutate()} disabled={duplicateInvoiceMutation.isPending} data-testid="menu-duplicate-invoice">
@@ -5595,6 +5607,15 @@ function ClientInvoiceDetailInner() {
           }
           filename={`INV-${form.watch("invoiceNumber") || invoice.invoiceNumber || "export"}.pdf`}
           onSend={() => { setInvoicePreviewOpen(false); handleOpenInvoiceSendModal(); }}
+        />
+      )}
+
+      {effectiveInvoiceId && (
+        <XeroInvoiceLinkDialog
+          open={xeroLinkOpen}
+          onOpenChange={setXeroLinkOpen}
+          invoiceId={effectiveInvoiceId}
+          invoiceNumber={invoice?.invoiceNumber}
         />
       )}
 
