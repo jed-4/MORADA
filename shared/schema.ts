@@ -2614,6 +2614,9 @@ export const variations = pgTable("variations", {
   // Client portal (T003)
   portalToken: text("portal_token").unique(),
   portalSentAt: timestamp("portal_sent_at"),
+  // Chase the client automatically while this awaits their signature
+  // (migration 0126). Off by default — switched on per variation.
+  remindersEnabled: boolean("reminders_enabled").notNull().default(false),
   portalViewedAt: timestamp("portal_viewed_at"), // First time the client opened the portal link
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }), // Who raised the variation
   clientSignedName: text("client_signed_name"),
@@ -3579,6 +3582,56 @@ export const insertProposalReminderLogSchema = createInsertSchema(proposalRemind
 
 export type InsertProposalReminderLog = z.infer<typeof insertProposalReminderLogSchema>;
 export type ProposalReminderLogEntry = typeof proposalReminderLog.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Variation reminders — chasing a client who hasn't signed (migration 0126).
+// Mirrors proposal reminders; see shared/variationReminders.ts.
+// ---------------------------------------------------------------------------
+export const variationReminderTemplates = pgTable("variation_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  trigger: text("trigger").notNull().default("after_send"), // "after_send" | "before_deadline"
+  offsetDays: integer("offset_days").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertVariationReminderTemplateSchema = createInsertSchema(variationReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  trigger: z.enum(["after_send", "before_deadline"]),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+export const updateVariationReminderTemplateSchema = insertVariationReminderTemplateSchema.partial();
+export type InsertVariationReminderTemplate = z.infer<typeof insertVariationReminderTemplateSchema>;
+export type VariationReminderTemplate = typeof variationReminderTemplates.$inferSelect;
+
+export const variationReminderLog = pgTable("variation_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => variationReminderTemplates.id, { onDelete: "set null" }),
+  toEmail: text("to_email").notNull(),
+  subject: text("subject"),
+  body: text("body"),
+  status: text("status").notNull().default("sent"), // "sent" | "failed"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+}, (table) => ({
+  oncePerRecipient: uniqueIndex("variation_reminder_log_once_idx")
+    .on(table.variationId, table.templateId, table.toEmail),
+}));
+export type VariationReminderLogEntry = typeof variationReminderLog.$inferSelect;
 
 // Activity feed table
 export const activities = pgTable("activities", {

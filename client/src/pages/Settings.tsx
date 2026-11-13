@@ -1,4 +1,5 @@
 import { MORADA_PALETTE_HEXES } from '@/lib/colors';
+import { VariationRemindersSettings } from "@/components/variations/VariationRemindersSettings";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
@@ -177,6 +178,13 @@ const SETTINGS_CATEGORIES = [
     label: "Layout Templates",
     icon: Layout,
     description: "PDF and email templates for proposals and reports",
+    group: "templates"
+  },
+  {
+    id: "variation-reminders",
+    label: "Variation Reminders",
+    icon: Bell,
+    description: "Chase clients who haven't signed a variation",
     group: "templates"
   },
   {
@@ -2154,9 +2162,10 @@ export default function Settings() {
             {activeSection === "activity" && <ActivitySection />}
             {activeSection === "maintenance" && <MaintenanceSection />}
             {activeSection === "billing" && <BillingSection />}
+            {activeSection === "variation-reminders" && <VariationRemindersSettings />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing"].includes(activeSection) && (
+            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing", "variation-reminders"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">

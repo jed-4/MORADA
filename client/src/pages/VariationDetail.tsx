@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from "react";
+import { VariationRemindersSection } from "@/components/variations/VariationRemindersSection";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
@@ -2117,6 +2118,19 @@ export default function VariationDetail() {
                         variationId={effectiveVariationId!}
                       />
                     </DocumentSection>
+                  </DocumentCard>
+                )}
+
+                {/* ── Chasing the client ── off by default; switched on here. */}
+                {isEditMode && effectiveVariationId && (
+                  <DocumentCard data-testid="card-variation-reminders">
+                    <VariationRemindersSection
+                      variationId={effectiveVariationId}
+                      status={variation?.status}
+                      portalSentAt={(variation as any)?.portalSentAt}
+                      approvalDeadline={(variation as any)?.approvalDeadline}
+                      signed={!!(variation as any)?.clientSignedDate}
+                    />
                   </DocumentCard>
                 )}
 
