@@ -33,6 +33,7 @@ import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
+import { CalendarViewBar, calendarSnapshotKey, lastViewStore } from "@/components/calendar/CalendarViewBar";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -135,10 +136,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
-  const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
-  const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
-  const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
-  const [newViewName, setNewViewName] = useState("");
+  const [appliedViewKey, setAppliedViewKey] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const weekStartDay = useWeekStartDay();
@@ -485,13 +483,19 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     },
   });
 
-  // Create default view if none exist; auto-select first view on load
+  // Create the default view if none exist; open on the view used last here,
+  // else the default.
   useEffect(() => {
     if (savedViews.length === 0 && !defaultViewCreationAttempted.current) {
       defaultViewCreationAttempted.current = true;
       createDefaultView();
     } else if (savedViews.length > 0 && !selectedViewId) {
-      setSelectedViewId(savedViews[0].id);
+      const lastId = lastViewStore.read("personal", user.id);
+      const start =
+        savedViews.find((v: CalendarView) => v.id === lastId && (v.isDefault || v.userId === user.id)) ??
+        savedViews.find((v: CalendarView) => v.isDefault) ??
+        savedViews[0];
+      applyView(start);
     }
   }, [savedViews]);
 
@@ -500,49 +504,44 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       const newView = await apiRequest("/api/calendar-views", "POST", {
         name: "All Events",
         calendarType: "personal",
+        isDefault: true,
         filters: {
           eventTypes: DEFAULT_EVENT_TYPES,
         },
       });
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
-      if (newView?.id) {
-        setSelectedViewId(newView.id);
-      }
+      if (newView?.id) applyView(newView);
     } catch (error) {
       console.error("Failed to create default view:", error);
     }
   };
 
-  // Apply view filters when selected
-  useEffect(() => {
-    if (selectedViewId) {
-      const view = savedViews.find((v: CalendarView) => v.id === selectedViewId);
-      if (view && view.filters) {
-        const normalizedFilters = normalizeFilterDates(view.filters as CalendarFiltersType);
-        // If view doesn't have eventTypes defined, use default (all selected)
-        if (!normalizedFilters.eventTypes) {
-          normalizedFilters.eventTypes = DEFAULT_EVENT_TYPES;
-        } else {
-          if (!normalizedFilters.eventTypes.includes("google-calendar")) {
-            // Ensure google-calendar is always included in eventTypes
-            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "google-calendar"];
-          }
-          if (!normalizedFilters.eventTypes.includes("schedule")) {
-            // Ensure schedule is always included in eventTypes (backward compat for old saved views)
-            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "schedule"];
-          }
-          if (!normalizedFilters.eventTypes.includes("reminder")) {
-            // Views saved before reminders existed would otherwise hide them for good
-            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "reminder"];
-          }
-          if (!normalizedFilters.eventTypes.includes("projected")) {
-            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "projected"];
-          }
+  /**
+   * Put a view's saved settings on screen. Applied when a view is CHOSEN —
+   * it used to be an effect on the views list, so every refetch of the list
+   * re-applied the view and wiped whatever you'd changed on screen.
+   */
+  function applyView(view: CalendarView) {
+    const f = normalizeFilterDates((view.filters || {}) as CalendarFiltersType);
+    // Views saved before the bar was rebuilt (no `eventTypesV`) predate some
+    // event types, so those are added back as they always were. A view saved
+    // since records exactly what it shows, so it can hide them too.
+    if (!(f as any).eventTypesV) {
+      if (!f.eventTypes) {
+        f.eventTypes = DEFAULT_EVENT_TYPES;
+      } else {
+        for (const t of ["google-calendar", "schedule", "reminder", "projected"]) {
+          if (!f.eventTypes.includes(t)) f.eventTypes = [...f.eventTypes, t];
         }
-        setFilters(normalizedFilters);
       }
     }
-  }, [selectedViewId, savedViews, DEFAULT_EVENT_TYPES]);
+    const mode = ["day", "week", "month"].includes(view.calendarMode) ? view.calendarMode : calendarMode;
+    setSelectedViewId(view.id);
+    setFilters(f);
+    setCalendarMode(mode);
+    setAppliedViewKey(calendarSnapshotKey(f as any, mode));
+    lastViewStore.write("personal", user.id, view.id);
+  }
 
   // Convert tasks, schedule items, and Google Calendar events to calendar events
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -893,68 +892,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const currentView = savedViews.find((v: CalendarView) => v.id === selectedViewId);
   const views = savedViews.filter((v: CalendarView) => v.isDefault || v.userId === user.id);
 
-  const handleViewSelect = (view: CalendarView) => {
-    setSelectedViewId(view.id);
-  };
-
-  const handleSaveView = async () => {
-    if (!currentView || currentView.isDefault) return;
-    
-    try {
-      await apiRequest(`/api/calendar-views/${currentView.id}`, "PATCH", {
-        filters,
-        calendarMode,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
-      toast({ title: "View Updated", description: "Your view has been saved successfully." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save view.", variant: "destructive" });
-    }
-  };
-
-  const handleDeleteView = (view: CalendarView) => {
-    setViewToDelete(view);
-    setShowDeleteViewDialog(true);
-  };
-
-  const confirmDeleteView = async () => {
-    if (!viewToDelete) return;
-    
-    try {
-      await apiRequest(`/api/calendar-views/${viewToDelete.id}`, "DELETE");
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
-      setShowDeleteViewDialog(false);
-      setViewToDelete(null);
-      if (selectedViewId === viewToDelete.id) {
-        setSelectedViewId(undefined);
-      }
-      toast({ title: "View Deleted", description: "View has been removed." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to delete view.", variant: "destructive" });
-    }
-  };
-
-  const createNewView = async () => {
-    if (!newViewName.trim()) return;
-    
-    try {
-      const newView = await apiRequest("/api/calendar-views", "POST", {
-        name: newViewName,
-        calendarType: "personal",
-        filters,
-        calendarMode,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
-      setShowCreateViewDialog(false);
-      setNewViewName("");
-      if (newView?.id) {
-        setSelectedViewId(newView.id);
-      }
-      toast({ title: "View Created", description: "Your new view has been saved." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
-    }
-  };
+  const viewIsDirty = appliedViewKey !== null && calendarSnapshotKey(filters as any, calendarMode) !== appliedViewKey;
 
   return (
     <div className="flex flex-col h-full" data-testid="user-calendar">
@@ -964,48 +902,22 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       <div className="h-9 flex items-center justify-between px-2 border-b border-border/50">
         <div className="flex items-center gap-1">
           {/* View Tabs */}
-          <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
-            {views.map((view: CalendarView) => (
-              <div key={view.id} className="relative group">
-                <button
-                  onClick={() => handleViewSelect(view)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                    selectedViewId === view.id
-                      ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
-                      : 'hover-elevate'
-                  } active-elevate-2 flex items-center gap-1`}
-                  data-testid={`tab-${view.id}`}
-                >
-                  {view.name}
-                </button>
-                {!view.isDefault && (
-                  <button
-                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteView(view);
-                    }}
-                    data-testid={`button-delete-${view.id}`}
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => {
-                if (currentView && !currentView.isDefault) {
-                  handleSaveView();
-                } else {
-                  setShowCreateViewDialog(true);
-                }
-              }}
-              data-testid="button-add-view"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-          </div>
+          <CalendarViewBar
+            calendarType="personal"
+            views={views}
+            selectedViewId={selectedViewId}
+            currentUserId={user.id}
+            isDirty={viewIsDirty}
+            // eventTypesV: this view records exactly which event types it shows.
+            getCurrent={() => ({ filters: { ...(filters as any), eventTypesV: 2 }, calendarMode })}
+            onSelect={applyView}
+            onDiscard={() => currentView && applyView(currentView)}
+            onSaved={(view) => {
+              setSelectedViewId(view.id);
+              setAppliedViewKey(calendarSnapshotKey(filters as any, calendarMode));
+              lastViewStore.write("personal", user.id, view.id);
+            }}
+          />
 
           {/* Settings Icon */}
           <button
@@ -1432,76 +1344,6 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         onOpenChange={(open) => !open && setEditingTask(null)}
         onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
-
-      {/* Create View Dialog */}
-      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Save View</DialogTitle>
-            <DialogDescription>
-              Save your current filters and calendar mode as a new view
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="view-name">View Name</Label>
-              <Input
-                id="view-name"
-                value={newViewName}
-                onChange={(e) => setNewViewName(e.target.value)}
-                placeholder="e.g., My Week View"
-                data-testid="input-view-name"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <button
-              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
-              onClick={() => {
-                setShowCreateViewDialog(false);
-                setNewViewName("");
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="h-8 px-3 text-sm rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2"
-              onClick={createNewView}
-              disabled={!newViewName.trim()}
-              data-testid="button-confirm-save-view"
-            >
-              Save View
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete View Dialog */}
-      <Dialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete View</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
-              onClick={() => setShowDeleteViewDialog(false)}
-            >
-              Cancel
-            </button>
-            <button
-              className="h-8 px-3 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 active-elevate-2"
-              onClick={confirmDeleteView}
-              data-testid="button-confirm-delete-view"
-            >
-              Delete
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>

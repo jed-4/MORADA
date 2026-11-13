@@ -41548,7 +41548,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const data = validationResult.data;
+      const data = { ...validationResult.data } as any;
+      delete data.isCompanyDefault;
       
       if (data.name === "All Events" && data.calendarType) {
         const view = await storage.findOrCreateCalendarView({
@@ -41573,6 +41574,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Who may change a saved calendar view: its owner. The company default
+   * business view belongs to everyone, so only an admin changes it, and it
+   * can't be deleted. These routes used to check the company only — anyone
+   * could edit or delete anyone's view by id.
+   */
+  const calendarViewWriteGuard = async (req: any, res: any, action: "edit" | "delete") => {
+    const view = await storage.getCalendarView(req.params.id, req.user!.companyId!);
+    if (!view) { res.status(404).json({ error: "Calendar view not found" }); return null; }
+    if ((view as any).isCompanyDefault) {
+      if (action === "delete") { res.status(403).json({ error: "The company's default view can't be deleted" }); return null; }
+      let admin = false;
+      const u = req.user as any;
+      if (u?.roleId && u?.companyId) {
+        const role = await storage.getUserRole(u.roleId, u.companyId).catch(() => undefined);
+        const n = (role?.name ?? "").toLowerCase();
+        admin = !!role?.isBuiltIn && (n.includes("admin") || n.includes("owner") || n.includes("general manage"));
+      }
+      if (!admin) { res.status(403).json({ error: "Only an admin can change the company's default view" }); return null; }
+      return view;
+    }
+    if (view.userId !== req.user!.id) {
+      res.status(403).json({ error: "Only the person who made this view can change it" });
+      return null;
+    }
+    return view;
+  };
+
   app.patch("/api/calendar-views/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const validationResult = insertCalendarViewSchema.partial().safeParse(req.body);
@@ -41582,10 +41611,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      
+      if (!(await calendarViewWriteGuard(req, res, "edit"))) return;
+      // Which view is the default isn't a client decision.
+      const patch = { ...validationResult.data } as any;
+      delete patch.isCompanyDefault;
+      delete patch.calendarType;
+
       const view = await storage.updateCalendarView(
         req.params.id,
-        validationResult.data,
+        patch,
         req.user!.companyId!
       );
       if (!view) {
@@ -41602,6 +41636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/calendar-views/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await calendarViewWriteGuard(req, res, "delete"))) return;
       const success = await storage.deleteCalendarView(req.params.id, req.user!.companyId!);
       if (!success) {
         return res.status(404).json({ error: "Calendar view not found" });
