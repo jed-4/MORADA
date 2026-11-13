@@ -29,6 +29,10 @@ interface VariationColumnSidebarProps {
   savingTemplate?: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** Toggles that can't show anything on THIS document, with the reason. The
+   *  switch reads off and is disabled — e.g. Contract summary on a project
+   *  with no contract sum, which used to sit ON while drawing nothing. */
+  unavailable?: Partial<Record<keyof VariationDocumentColumns, string>>;
 }
 
 const NO_TEMPLATE = "__none__";
@@ -42,6 +46,7 @@ export function VariationColumnSidebar({
   savingTemplate = false,
   disabled = false,
   disabledReason,
+  unavailable = {},
 }: VariationColumnSidebarProps) {
   const [newName, setNewName] = useState("");
   const [naming, setNaming] = useState(false);
@@ -190,10 +195,12 @@ export function VariationColumnSidebar({
             </div>
             {group.keys.map((key) => {
               const meta = VARIATION_DOCUMENT_COLUMN_LABELS[key];
+              const unavailableReason = unavailable[key];
+              const rowDisabled = disabled || !!unavailableReason;
               const row = (
                 <div
                   className={`flex items-center justify-between gap-3 px-4 py-1.5 ${
-                    disabled ? "opacity-60" : "hover:bg-muted/50"
+                    rowDisabled ? "opacity-60" : "hover:bg-muted/50"
                   }`}
                 >
                   <span className="text-sm min-w-0 flex items-center gap-1.5">
@@ -210,8 +217,8 @@ export function VariationColumnSidebar({
                     )}
                   </span>
                   <Switch
-                    checked={columns[key]}
-                    disabled={disabled}
+                    checked={columns[key] && !unavailableReason}
+                    disabled={rowDisabled}
                     onCheckedChange={(checked) => onChange({ ...columns, [key]: checked })}
                     className="shrink-0 scale-75 origin-right"
                     data-testid={`switch-column-${key}`}
@@ -224,7 +231,7 @@ export function VariationColumnSidebar({
                 <Tooltip key={key}>
                   <TooltipTrigger asChild>{row}</TooltipTrigger>
                   <TooltipContent side="left" className="max-w-[220px]">
-                    {meta.hint}
+                    {unavailableReason ?? meta.hint}
                     {meta.revealsMargin && (
                       <span className="block mt-0.5 text-status-warning">
                         Shows the client your margin.
