@@ -2403,12 +2403,53 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
   const ganttInitialScrollRef = useRef(false);
 
+  /**
+   * The row to bring into view for "today": the first item running today
+   * (stages are skipped in favour of their tasks, since a stage spans weeks),
+   * else the next one to start, else the last to finish. Opening a schedule
+   * used to scroll sideways to today but leave the list at the top, so on a
+   * long job you scrolled down to find what was on.
+   */
+  const orderedItemsRef = useRef<ScheduleItem[]>([]);
+  orderedItemsRef.current = orderedItems;
+  const todayRowIndex = useCallback((): number => {
+    const rows = orderedItemsRef.current;
+    if (rows.length === 0) return -1;
+    const today = new Date();
+    const dayKey = (d: Date) => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    const t = dayKey(today);
+    const isStage = (it: ScheduleItem) => rows.some((r) => r.parentItemId === it.id);
+    const span = (it: ScheduleItem) => {
+      const s = it.startDate ? new Date(it.startDate as any) : null;
+      const e = it.endDate ? new Date(it.endDate as any) : s;
+      return s && e ? { s: dayKey(s), e: dayKey(e) } : null;
+    };
+    let next = -1, nextStart = Infinity, last = -1, lastEnd = -Infinity;
+    for (let i = 0; i < rows.length; i++) {
+      if (isStage(rows[i])) continue;
+      const sp = span(rows[i]);
+      if (!sp) continue;
+      if (sp.s <= t && sp.e >= t) return i;
+      if (sp.s > t && sp.s < nextStart) { next = i; nextStart = sp.s; }
+      if (sp.e < t && sp.e > lastEnd) { last = i; lastEnd = sp.e; }
+    }
+    return next >= 0 ? next : last;
+  }, []);
+
   const scrollToToday = useCallback(() => {
     if (!timelineRef.current) return;
     const todayPos = differenceInDays(new Date(), timelineStart) * pixelsPerDay;
     const containerWidth = timelineRef.current.clientWidth;
     timelineRef.current.scrollLeft = todayPos - containerWidth / 2;
-  }, [timelineStart, pixelsPerDay]);
+    // And down to today's work, centred. The scroll handler mirrors this onto
+    // the left-hand list.
+    const row = todayRowIndex();
+    if (row >= 0) {
+      const target = row * ROW_HEIGHT + ROW_HEIGHT / 2 - timelineRef.current.clientHeight / 2;
+      timelineRef.current.scrollTop = Math.max(0, target);
+      if (leftPanelRef.current) leftPanelRef.current.scrollTop = timelineRef.current.scrollTop;
+    }
+  }, [timelineStart, pixelsPerDay, todayRowIndex]);
 
   useEffect(() => {
     if (scrollToTodayRef) {
