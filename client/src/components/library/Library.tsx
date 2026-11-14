@@ -26,6 +26,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import NotionEditor from "@/components/NotionEditor";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
+import { useAuth } from "@/hooks/use-auth";
+import { FolderAccessDialog } from "@/components/library/FolderAccessDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import {
@@ -107,7 +109,15 @@ interface LibraryProps {
 export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library({ onPathChange }, ref) {
   const { toast } = useToast();
   const canAdd = usePermission("operations.library", "add");
-  const canEdit = usePermission("operations.library", "edit");
+  const canEditLibrary = usePermission("operations.library", "edit");
+  // Per-folder access (migration 0127): the server marks each document and
+  // folder with whether THIS person may change it. Viewing and editing are
+  // separate — a role can read a folder's SOPs without being able to edit them.
+  const editableDoc = (d: object | null | undefined) => !!d && canEditLibrary && (d as { canEdit?: boolean }).canEdit !== false;
+  const editableFolder = (f: object | null | undefined) => !!f && canEditLibrary && (f as { canEdit?: boolean }).canEdit !== false;
+  const { user } = useAuth();
+  const isAdmin = !!(user as any)?.isAdminLike;
+  const [accessFolder, setAccessFolder] = useState<DocFolder | null>(null);
   const canDelete = usePermission("operations.library", "delete");
   const canApprove = usePermission("operations.library", "approve");
 
@@ -175,6 +185,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   // Someone who can only read the Library should be reading what was signed
   // off, not a draft someone is part-way through. Show the last approved
   // version while a newer draft is in progress.
+  const canEdit = editableDoc(selectedDoc);
   const showApprovedCopy = !!selectedDoc && !canEdit
     && (selectedDoc.status === "draft" || selectedDoc.status === "in_review")
     && selectedDoc.currentVersion > 0;
@@ -425,7 +436,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
         : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       <span className="text-sm flex-1 truncate">{doc.title || "Untitled"}</span>
       {doc.status !== "approved" && <StatusChip status={doc.status} className="shrink-0" />}
-      {canEdit && (
+      {editableDoc(doc) && (
         <div className="invisible group-hover:visible shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -439,7 +450,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   <DropdownMenuSubTrigger><MoveRight className="h-3.5 w-3.5 mr-2" />Move to folder</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); saveDoc.mutate({ id: doc.id, data: { folderId: null } }); }}>No folder</DropdownMenuItem>
-                    {flatFolders.map(({ folder: f, depth }) => (
+                    {flatFolders.filter(({ folder: f }) => editableFolder(f)).map(({ folder: f, depth }) => (
                       <DropdownMenuItem key={f.id} onClick={(e) => { e.stopPropagation(); saveDoc.mutate({ id: doc.id, data: { folderId: f.id } }); }}>
                         <span style={{ paddingLeft: depth * 12 }}>{f.name}</span>
                       </DropdownMenuItem>
@@ -496,8 +507,11 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
           ) : (
             <span className="text-sm flex-1 truncate">{folder.name}</span>
           )}
+          {isAdmin && (Array.isArray((folder as any).viewRoleIds) || Array.isArray((folder as any).editRoleIds)) && (
+            <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Access set on this folder" />
+          )}
           <span className="text-data text-muted-foreground shrink-0">{total}</span>
-          {(canAdd || canEdit || canDelete) && (
+          {(editableFolder(folder) || isAdmin) && (
             <div className="invisible group-hover:visible shrink-0">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -506,11 +520,12 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
-                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "sop"); }}><ClipboardCheck className="h-3.5 w-3.5 mr-2" />New SOP here</DropdownMenuItem>}
-                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "document"); }}><FileText className="h-3.5 w-3.5 mr-2" />New document here</DropdownMenuItem>}
-                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openNewFolder(folder.id); }} data-testid={`library-new-subfolder-${folder.id}`}><FolderPlus className="h-3.5 w-3.5 mr-2" />New sub-folder</DropdownMenuItem>}
-                  {canEdit && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}><Pencil className="h-3.5 w-3.5 mr-2" />Rename</DropdownMenuItem>}
-                  {canDelete && (
+                  {canAdd && editableFolder(folder) && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "sop"); }}><ClipboardCheck className="h-3.5 w-3.5 mr-2" />New SOP here</DropdownMenuItem>}
+                  {canAdd && editableFolder(folder) && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "document"); }}><FileText className="h-3.5 w-3.5 mr-2" />New document here</DropdownMenuItem>}
+                  {canAdd && editableFolder(folder) && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openNewFolder(folder.id); }} data-testid={`library-new-subfolder-${folder.id}`}><FolderPlus className="h-3.5 w-3.5 mr-2" />New sub-folder</DropdownMenuItem>}
+                  {editableFolder(folder) && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}><Pencil className="h-3.5 w-3.5 mr-2" />Rename</DropdownMenuItem>}
+                  {isAdmin && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setAccessFolder(folder); }} data-testid={`library-folder-access-${folder.id}`}><Lock className="h-3.5 w-3.5 mr-2" />Who can see &amp; edit…</DropdownMenuItem>}
+                  {canDelete && editableFolder(folder) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); setConfirmDeleteFolderId(folder.id); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete folder</DropdownMenuItem>
@@ -865,6 +880,14 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
           </div>
         </DialogContent>
       </Dialog>
+
+      {accessFolder && (
+        <FolderAccessDialog
+          folder={accessFolder}
+          parentName={accessFolder.parentFolderId ? folderById.get(accessFolder.parentFolderId)?.name ?? null : null}
+          onClose={() => setAccessFolder(null)}
+        />
+      )}
 
       {/* Send back */}
       <Dialog open={sendBackOpen} onOpenChange={setSendBackOpen}>

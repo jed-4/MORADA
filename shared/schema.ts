@@ -748,6 +748,11 @@ export const docFolders = pgTable("doc_folders", {
   name: text("name").notNull(),
   parentFolderId: varchar("parent_folder_id"),
   sortOrder: integer("sort_order").default(0),
+  // Who can see / edit this folder's documents (migration 0127). NULL =
+  // inherit from the parent; top level: view = everyone with Library access,
+  // edit = admins only. See server/services/libraryAccess.ts.
+  viewRoleIds: text("view_role_ids").array(),
+  editRoleIds: text("edit_role_ids").array(),
 });
 export const insertDocFolderSchema = createInsertSchema(docFolders).omit({ id: true });
 export type DocFolder = typeof docFolders.$inferSelect;

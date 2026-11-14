@@ -3342,6 +3342,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const userDisplayName = (u: any) =>
     `${u?.firstName ?? ""} ${u?.lastName ?? ""}`.trim() || u?.email || "Unknown";
 
+  /**
+   * getOwnedDoc plus per-folder access (migration 0127). "view" answers 404 —
+   * a document you can't see doesn't exist for you; "edit" answers 403.
+   */
+  const getAccessibleDoc = async (req: any, res: any, id: string, need: "view" | "edit") => {
+    const owned = await getOwnedDoc(req, res, id, "Doc not found");
+    if (!owned) return null;
+    const { libraryContext } = await import("./services/libraryAccess");
+    const lib = await libraryContext(req.user);
+    if (!lib.viewDoc(owned)) { res.status(404).json({ error: "Doc not found" }); return null; }
+    if (need === "edit" && !lib.editDoc(owned)) {
+      res.status(403).json({ error: "You can view this document but not change it" });
+      return null;
+    }
+    return owned;
+  };
+
   app.get("/api/docs", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
@@ -3350,7 +3367,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? (req.query.folderId === 'null' ? null : req.query.folderId as string)
         : undefined;
       const docs = await storage.getDocs(companyId, folderId);
-      res.json(docs);
+      // Per-folder access (migration 0127): only what this person may see,
+      // each marked with whether they may edit it.
+      const { libraryContext } = await import("./services/libraryAccess");
+      const lib = await libraryContext(req.user);
+      res.json(docs.filter(lib.viewDoc).map((d) => ({ ...d, canEdit: lib.editDoc(d) })));
     } catch (error) {
       console.error("[Docs] GET /api/docs error:", error);
       res.status(500).json({ error: "Failed to fetch docs" });
@@ -3361,7 +3382,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const doc = await getOwnedDoc(req, res, req.params.id, "Doc not found");
       if (!doc) return;
-      res.json(doc);
+      const { libraryContext } = await import("./services/libraryAccess");
+      const lib = await libraryContext(req.user);
+      if (!lib.viewDoc(doc)) return res.status(404).json({ error: "Doc not found" });
+      res.json({ ...doc, canEdit: lib.editDoc(doc) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch doc" });
     }
@@ -3374,6 +3398,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
       if (!(await docFolderIsOwn(user.companyId, parsed.data.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
+      }
+      {
+        const { libraryContext } = await import("./services/libraryAccess");
+        const lib = await libraryContext(user);
+        if (!lib.editFolder(parsed.data.folderId)) {
+          return res.status(403).json({ error: "You can't add documents to this folder" });
+        }
       }
       const doc = await storage.createDoc({
         ...parsed.data,
@@ -3402,6 +3433,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await docFolderIsOwn(companyId, changes.folderId))) {
         return res.status(400).json({ error: "Folder not found" });
       }
+      {
+        const { libraryContext } = await import("./services/libraryAccess");
+        const lib = await libraryContext(req.user);
+        if (!lib.editDoc(owned)) return res.status(403).json({ error: "You can view this document but not change it" });
+        if (changes.folderId !== undefined && !lib.editFolder(changes.folderId)) {
+          return res.status(403).json({ error: "You can't move documents into that folder" });
+        }
+      }
       if (owned.status === "archived" && (changes.title !== undefined || changes.contentHtml !== undefined)) {
         return res.status(409).json({ error: "Restore this document before editing it" });
       }
@@ -3427,7 +3466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
       await storage.deleteDoc(req.params.id);
       res.status(204).end();
@@ -3442,7 +3481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docs/:id/submit", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
       if (owned.status !== "draft") return res.status(409).json({ error: `A ${owned.status.replace("_", " ")} document can't be sent for review` });
       const user = req.user as any;
@@ -3457,7 +3496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docs/:id/approve", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "view");
       if (!owned) return;
       if (owned.status !== "draft" && owned.status !== "in_review") {
         return res.status(409).json({ error: `This document is already ${owned.status}` });
@@ -3474,7 +3513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docs/:id/reject", requireAuth, requireTeamMember, requirePermission("operations.library", "approve"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "view");
       if (!owned) return;
       if (owned.status !== "in_review") return res.status(409).json({ error: "Only a document in review can be sent back" });
       const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 2000) : "";
@@ -3489,7 +3528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docs/:id/archive", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
       const doc = await storage.setDocReviewState(owned.id, (req.user as any).companyId, { status: "archived" });
       res.json(doc);
@@ -3502,7 +3541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the last approved version; otherwise it comes back as a draft.
   app.post("/api/docs/:id/restore", requireAuth, requireTeamMember, requirePermission("operations.library", "edit"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
       if (owned.status !== "archived") return res.status(409).json({ error: "This document isn't archived" });
       const companyId = (req.user as any).companyId;
@@ -3518,7 +3557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Which task templates point at this doc — "Used by" in the Library.
   app.get("/api/docs/:id/usage", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "view");
       if (!owned) return;
       const templates = await storage.getTaskTemplates((req.user as any).companyId);
       res.json(templates
@@ -3557,7 +3596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/docs/:id/versions", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "view");
       if (!owned) return;
       const versions = await storage.getDocVersions(owned.id, (req.user as any).companyId);
       // The list is for the history panel; bodies are fetched one at a time.
@@ -3569,7 +3608,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/docs/:id/versions/:version", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
     try {
-      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      const owned = await getAccessibleDoc(req, res, req.params.id, "view");
       if (!owned) return;
       const version = Number(req.params.version);
       if (!Number.isInteger(version) || version < 1) return res.status(404).json({ error: "Version not found" });
@@ -3585,8 +3624,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-      const folders = await storage.getDocFolders(companyId);
-      res.json(folders);
+      const { libraryContext } = await import("./services/libraryAccess");
+      const lib = await libraryContext(req.user);
+      res.json(lib.folders
+        .filter((f) => lib.viewFolder(f.id))
+        .map((f) => ({
+          ...f,
+          canEdit: lib.editFolder(f.id),
+          // The settings themselves are only for admins to see and change.
+          ...(lib.viewer.isAdmin ? {} : { viewRoleIds: undefined, editRoleIds: undefined }),
+        })));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch doc folders" });
     }
@@ -3598,7 +3645,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await docFolderIsOwn(companyId, req.body?.parentFolderId))) {
         return res.status(400).json({ error: "Parent folder not found" });
       }
-      const folder = await storage.createDocFolder({ ...req.body, companyId });
+      const { libraryContext } = await import("./services/libraryAccess");
+      const lib = await libraryContext(req.user);
+      if (req.body?.parentFolderId && !lib.editFolder(req.body.parentFolderId)) {
+        return res.status(403).json({ error: "You can't add folders here" });
+      }
+      // Access settings are admin-only (PATCH); a new folder inherits.
+      const { viewRoleIds: _v, editRoleIds: _e, ...body } = req.body ?? {};
+      const folder = await storage.createDocFolder({ ...body, companyId });
       res.status(201).json(folder);
     } catch (error) {
       res.status(500).json({ error: "Failed to create doc folder" });
@@ -3615,6 +3669,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         || !(await docFolderIsOwn((req.user as any).companyId, changes.parentFolderId))) {
         return res.status(400).json({ error: "Parent folder not found" });
       }
+      const { libraryContext } = await import("./services/libraryAccess");
+      const lib = await libraryContext(req.user);
+      const touchesAccess = "viewRoleIds" in changes || "editRoleIds" in changes;
+      if (touchesAccess && !lib.viewer.isAdmin) {
+        return res.status(403).json({ error: "Only an admin can change who can see or edit a folder" });
+      }
+      const touchesContent = Object.keys(changes).some((k) => k !== "viewRoleIds" && k !== "editRoleIds");
+      if (touchesContent && !lib.editFolder(req.params.id)) {
+        return res.status(403).json({ error: "You can't change this folder" });
+      }
+      if (changes.parentFolderId) {
+        if (!lib.editFolder(changes.parentFolderId)) return res.status(403).json({ error: "You can't move folders there" });
+        // Not into itself or anything below it (was unchecked: a cycle hid both folders).
+        const byId = new Map(lib.folders.map((f) => [f.id, f]));
+        const seen = new Set<string>();
+        let cur: string | null | undefined = changes.parentFolderId;
+        while (cur && !seen.has(cur)) {
+          if (cur === req.params.id) return res.status(400).json({ error: "A folder can't go inside itself" });
+          seen.add(cur);
+          cur = byId.get(cur)?.parentFolderId;
+        }
+      }
+      for (const key of ["viewRoleIds", "editRoleIds"] as const) {
+        const v = changes[key];
+        if (key in changes && v !== null && !(Array.isArray(v) && v.every((x: unknown) => typeof x === "string"))) {
+          return res.status(400).json({ error: `${key} must be a list of role ids or null` });
+        }
+      }
       const folder = await storage.updateDocFolder(req.params.id, changes);
       if (!folder) return res.status(404).json({ error: "Folder not found" });
       res.json(folder);
@@ -3629,6 +3711,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
       // so the victim's documents were silently unfiled as collateral.
       if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
+      {
+        const { libraryContext } = await import("./services/libraryAccess");
+        const lib = await libraryContext(req.user);
+        if (!lib.editFolder(req.params.id)) return res.status(403).json({ error: "You can't delete this folder" });
+      }
       await storage.deleteDocFolder(req.params.id);
       res.status(204).end();
     } catch (error) {
