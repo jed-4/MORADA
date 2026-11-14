@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
 import { FolderAccessDialog } from "@/components/library/FolderAccessDialog";
+import { DocPropertiesRow, SopStrip, OptionChip, isReviewOverdue, useLibraryProperties } from "@/components/library/LibraryProperties";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import {
@@ -60,6 +61,9 @@ export const kindOf = (t: string | null | undefined): LibraryKind => (t === "sop
 export interface LibraryFilters {
   type: "all" | LibraryKind;
   status: LibraryDocStatus | "active";
+  /** propertyId → option ids; a document matches if it has ANY of them. */
+  props?: Record<string, string[]>;
+  overdueOnly?: boolean;
 }
 
 const STATUS_LABEL: Record<LibraryDocStatus, string> = {
@@ -128,7 +132,9 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const [filters, setFilters] = useState<LibraryFilters>({ type: "all", status: "active" });
   const typeFilter = filters.type;
   const statusFilter = filters.status;
-  const activeFilterCount = (filters.type !== "all" ? 1 : 0) + (filters.status !== "active" ? 1 : 0);
+  const { data: libraryProps = [] } = useLibraryProperties();
+  const propFilterCount = Object.values(filters.props ?? {}).filter((v) => v.length).length;
+  const activeFilterCount = (filters.type !== "all" ? 1 : 0) + (filters.status !== "active" ? 1 : 0) + propFilterCount + (filters.overdueOnly ? 1 : 0);
   const filterChip = (on: boolean) =>
     `px-2 h-6 rounded-md text-xs border transition-colors ${on ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground hover-elevate"}`;
   const [activeFolderId, setActiveFolderId] = useState<string | null | undefined>(undefined);
@@ -209,13 +215,20 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   // ── filtering ──────────────────────────────────────────────────────────────
   const matches = useCallback((d: Doc) => {
     if (typeFilter !== "all" && kindOf(d.docType) !== typeFilter) return false;
+    if (filters.overdueOnly && !isReviewOverdue(d)) return false;
+    for (const [pid, wanted] of Object.entries(filters.props ?? {})) {
+      if (!wanted.length) continue;
+      const v = (d.properties ?? {})[pid];
+      const have = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+      if (!wanted.some((w) => have.includes(w))) return false;
+    }
     if (statusFilter === "active" ? d.status === "archived" : d.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       if (!(d.title || "").toLowerCase().includes(q) && !(d.contentText || "").toLowerCase().includes(q)) return false;
     }
     return true;
-  }, [typeFilter, statusFilter, searchQuery]);
+  }, [typeFilter, statusFilter, searchQuery, filters.props, filters.overdueOnly]);
 
   const visibleDocs = useMemo(
     () => docs.filter(matches).sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { numeric: true })),
@@ -257,7 +270,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     (folderId: string | null) => visibleDocs.filter((d) => (folderId === null ? !d.folderId : d.folderId === folderId)),
     [visibleDocs],
   );
-  const filtering = typeFilter !== "all" || statusFilter !== "active" || !!searchQuery;
+  const filtering = activeFilterCount > 0 || !!searchQuery;
   const reviewCount = docs.filter((d) => d.status === "in_review").length;
 
   // ── mutations ──────────────────────────────────────────────────────────────
@@ -435,6 +448,9 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
         ? <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
         : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       <span className="text-sm flex-1 truncate">{doc.title || "Untitled"}</span>
+      {kindOf(doc.docType) === "sop" && isReviewOverdue(doc) && (
+        <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-[hsl(var(--coral))]" title="Review overdue" data-testid={`library-doc-overdue-${doc.id}`} />
+      )}
       {doc.status !== "approved" && <StatusChip status={doc.status} className="shrink-0" />}
       {editableDoc(doc) && (
         <div className="invisible group-hover:visible shrink-0">
@@ -596,6 +612,33 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   ))}
                 </div>
               </div>
+              {libraryProps.filter((p) => p.options.length > 0).map((p) => (
+                <div key={p.id} className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">{p.name}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {p.options.map((o) => {
+                      const on = (filters.props?.[p.id] ?? []).includes(o.id);
+                      return (
+                        <button
+                          key={o.id}
+                          className={cn("rounded-md border px-1 py-0.5", on ? "border-primary/40 bg-primary/5" : "border-transparent hover-elevate")}
+                          onClick={() => {
+                            const cur = filters.props?.[p.id] ?? [];
+                            setFilters({ ...filters, props: { ...(filters.props ?? {}), [p.id]: on ? cur.filter((x) => x !== o.id) : [...cur, o.id] } });
+                          }}
+                          data-testid={`library-filter-prop-${o.id}`}
+                        >
+                          <OptionChip label={o.label} color={o.color} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input type="checkbox" checked={!!filters.overdueOnly} onChange={(e) => setFilters({ ...filters, overdueOnly: e.target.checked })} data-testid="library-filter-overdue" />
+                SOPs overdue for review
+              </label>
               {activeFilterCount > 0 && (
                 <button className="text-xs text-primary hover:underline" onClick={() => setFilters({ type: "all", status: "active" })}>Clear filters</button>
               )}
@@ -800,6 +843,19 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
+                {kindOf(selectedDoc.docType) === "sop" && (
+                  <SopStrip
+                    doc={selectedDoc}
+                    editable={editable}
+                    usedBy={usage.length}
+                    onReviewDate={(d) => saveDoc.mutate({ id: selectedDoc.id, data: { reviewDueAt: d as any } })}
+                  />
+                )}
+                <DocPropertiesRow
+                  doc={selectedDoc}
+                  editable={editable}
+                  onSave={(properties) => saveDoc.mutate({ id: selectedDoc.id, data: { properties } })}
+                />
                 {usage.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap mb-4 text-xs text-muted-foreground" data-testid="library-doc-usage">
                     <ListTodo className="h-3.5 w-3.5 shrink-0" />

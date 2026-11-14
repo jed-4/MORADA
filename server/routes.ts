@@ -3441,6 +3441,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(403).json({ error: "You can't move documents into that folder" });
         }
       }
+      // Property values: only this company's properties, only their options,
+      // one value for a select, a list for tags.
+      if (changes.properties) {
+        const props = await db.select().from(schema.libraryProperties)
+          .where(eq(schema.libraryProperties.companyId, companyId));
+        const clean: Record<string, string | string[]> = {};
+        for (const p of props) {
+          const v = (changes.properties as Record<string, unknown>)[p.id];
+          const ok = new Set((p.options ?? []).map((o) => o.id));
+          if (p.kind === "select" && typeof v === "string" && ok.has(v)) clean[p.id] = v;
+          if (p.kind === "tags" && Array.isArray(v)) clean[p.id] = v.filter((x): x is string => typeof x === "string" && ok.has(x));
+        }
+        changes.properties = clean;
+      }
       if (owned.status === "archived" && (changes.title !== undefined || changes.contentHtml !== undefined)) {
         return res.status(409).json({ error: "Restore this document before editing it" });
       }
@@ -3617,6 +3631,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(row);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch version" });
+    }
+  });
+
+  // ── Library properties (migration 0128): Notion-style select / tags ──────
+  // Anyone who can see the Library reads them; only admins define them. A
+  // company with none gets one "Tags" property to start from.
+  app.get("/api/library-properties", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId as string;
+      const read = () => db.select().from(schema.libraryProperties)
+        .where(eq(schema.libraryProperties.companyId, companyId))
+        .orderBy(asc(schema.libraryProperties.sortOrder), asc(schema.libraryProperties.createdAt));
+      let rows = await read();
+      if (rows.length === 0) {
+        await db.insert(schema.libraryProperties).values({ companyId, name: "Tags", kind: "tags", options: [], sortOrder: 0 });
+        rows = await read();
+      }
+      res.json(rows);
+    } catch (error) {
+      console.error("[Library] properties GET failed:", error);
+      res.status(500).json({ error: "Failed to fetch properties" });
+    }
+  });
+
+  const requireLibraryAdmin = async (req: any, res: any): Promise<boolean> => {
+    const { libraryViewer } = await import("./services/libraryAccess");
+    if ((await libraryViewer(req.user)).isAdmin) return true;
+    res.status(403).json({ error: "Only an admin can change Library properties" });
+    return false;
+  };
+
+  app.post("/api/library-properties", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      if (!(await requireLibraryAdmin(req, res))) return;
+      const parsed = schema.insertLibraryPropertySchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const [row] = await db.insert(schema.libraryProperties)
+        .values({ ...parsed.data, companyId: (req.user as any).companyId }).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add property" });
+    }
+  });
+
+  app.patch("/api/library-properties/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      if (!(await requireLibraryAdmin(req, res))) return;
+      const parsed = schema.insertLibraryPropertySchema.partial().safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const [row] = await db.update(schema.libraryProperties).set(parsed.data)
+        .where(and(eq(schema.libraryProperties.id, req.params.id), eq(schema.libraryProperties.companyId, (req.user as any).companyId)))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Property not found" });
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save property" });
+    }
+  });
+
+  app.delete("/api/library-properties/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "view"), async (req, res) => {
+    try {
+      if (!(await requireLibraryAdmin(req, res))) return;
+      const rows = await db.delete(schema.libraryProperties)
+        .where(and(eq(schema.libraryProperties.id, req.params.id), eq(schema.libraryProperties.companyId, (req.user as any).companyId)))
+        .returning();
+      if (!rows.length) return res.status(404).json({ error: "Property not found" });
+      // Documents keep the stale key; it no longer matches a property, so it
+      // simply doesn't show (and is dropped the next time the doc is saved).
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete property" });
     }
   });
 
