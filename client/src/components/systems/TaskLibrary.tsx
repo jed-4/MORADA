@@ -23,6 +23,7 @@ import {
   PlayCircle,
   GripVertical,
   BookOpen,
+  SlidersHorizontal,
 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -160,10 +161,20 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  /**
+   * Two kinds of template live here:
+   *  - "tasks": stored one-off templates, usually tied to an SOP. They sit
+   *    here until a workflow (or "create task from template") puts them on a
+   *    job — e.g. when a project reaches a new stage.
+   *  - "operational": the ones that repeat (daily / weekly / monthly) and
+   *    generate to-dos by themselves.
+   * Opens on Tasks.
+   */
+  const [kind, setKind] = useState<"tasks" | "operational">("tasks");
+
   // Filter state
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterRole, setFilterRole] = useState<string>("all");
-  const [filterFrequency, setFilterFrequency] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterActive, setFilterActive] = useState<string>("all");
 
@@ -445,6 +456,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const openNewTemplateDialog = () => {
     setEditingTemplate(null);
     resetForm();
+    // New from the Operational tab starts as a repeating weekly task; from
+    // the Tasks tab, a stored one-off.
+    if (kind === "operational") {
+      setTemplateForm((prev) => ({ ...prev, isRecurringTemplate: true, frequency: "weekly" }));
+    }
     setShowDialog(true);
   };
 
@@ -730,9 +746,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     
     const matchesCategory = filterCategory === "all" || template.category === filterCategory;
     const matchesRole = filterRole === "all" || template.defaultRoleId === filterRole;
-    const matchesFrequency = filterFrequency === "all" || 
-      (filterFrequency === "recurring" && template.isRecurringTemplate) ||
-      (filterFrequency === "once" && !template.isRecurringTemplate);
+    // The tab decides recurring vs one-off.
+    const matchesFrequency = kind === "operational" ? !!template.isRecurringTemplate : !template.isRecurringTemplate;
     const matchesStatus = filterStatus === "all" || template.status === filterStatus;
     const matchesActive = filterActive === "all" || 
       (filterActive === "active" && template.isActive) ||
@@ -741,12 +756,16 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     return matchesSearch && matchesCategory && matchesRole && matchesFrequency && matchesStatus && matchesActive;
   });
 
-  const hasActiveFilters = filterCategory !== "all" || filterRole !== "all" || filterFrequency !== "all" || filterStatus !== "all" || filterActive !== "all";
+  const activeFilterCount = [filterCategory, filterRole, filterStatus, filterActive].filter((f) => f !== "all").length;
+  const hasActiveFilters = activeFilterCount > 0;
+  const kindCounts = {
+    tasks: templates.filter((t) => !t.isRecurringTemplate).length,
+    operational: templates.filter((t) => t.isRecurringTemplate).length,
+  };
 
   const clearAllFilters = () => {
     setFilterCategory("all");
     setFilterRole("all");
-    setFilterFrequency("all");
     setFilterStatus("all");
     setFilterActive("all");
   };
@@ -807,93 +826,124 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
   return (
     <div className="flex flex-col h-full">
-      {/* Filter Row */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-background flex-shrink-0 overflow-x-auto">
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="h-7 w-32 text-xs flex-shrink-0" data-testid="filter-category">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categoryOptions.map((cat) => (
-              <SelectItem key={cat.value} value={cat.value}>
-                {"  ".repeat(cat.depth || 0)}{cat.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={filterRole} onValueChange={setFilterRole}>
-          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-role">
-            <SelectValue placeholder="Role" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Roles</SelectItem>
-            {roles.map((role) => (
-              <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={filterFrequency} onValueChange={setFilterFrequency}>
-          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-frequency">
-            <SelectValue placeholder="Frequency" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="recurring">Recurring</SelectItem>
-            <SelectItem value="once">One-time</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-status">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="published">Published</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="archived">Archived</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={filterActive} onValueChange={setFilterActive}>
-          <SelectTrigger className="h-7 w-24 text-xs flex-shrink-0" data-testid="filter-active">
-            <SelectValue placeholder="Active" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs flex-shrink-0"
-            onClick={clearAllFilters}
-            data-testid="button-clear-filters"
-          >
-            <X className="h-3 w-3 mr-1" />
-            Clear
-          </Button>
-        )}
-
-        <div className="ml-auto flex-shrink-0">
-          <Badge variant="secondary" className="text-xs">
-            {filteredTemplates.length} / {templates.length}
-          </Badge>
+      {/* Tabs + one filter button (it replaced a row of five dropdowns). */}
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-border bg-background flex-shrink-0">
+        <div className="flex items-center gap-1" role="tablist" data-testid="tabs-task-kind">
+          {([
+            { id: "tasks", label: "Tasks", hint: "Stored tasks, usually tied to an SOP — workflows add them to jobs" },
+            { id: "operational", label: "Operational", hint: "Repeating tasks that create to-dos by themselves" },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={kind === t.id}
+              onClick={() => setKind(t.id)}
+              title={t.hint}
+              className={`px-3 h-7 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                kind === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover-elevate"
+              }`}
+              data-testid={`tab-task-kind-${t.id}`}
+            >
+              <span>{t.label}</span>
+              <span className="tabular-nums text-[10px] opacity-70">{kindCounts[t.id]}</span>
+            </button>
+          ))}
         </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative flex-shrink-0"
+              data-testid="button-filter-templates"
+              aria-label="Filter templates"
+              title="Filter"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3 space-y-2.5" align="start">
+            <div className="space-y-1">
+              <Label className="text-data text-muted-foreground">Category</Label>
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="h-7 text-xs" data-testid="filter-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categoryOptions.map((cat) => (
+                    <SelectItem key={cat.value} value={cat.value}>
+                      {"  ".repeat(cat.depth || 0)}{cat.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-data text-muted-foreground">Role</Label>
+              <Select value={filterRole} onValueChange={setFilterRole}>
+                <SelectTrigger className="h-7 text-xs" data-testid="filter-role"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All roles</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-data text-muted-foreground">Status</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-7 text-xs" data-testid="filter-status"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="published">Published</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-data text-muted-foreground">On / off</Label>
+              <Select value={filterActive} onValueChange={setFilterActive}>
+                <SelectTrigger className="h-7 text-xs" data-testid="filter-active"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+                data-testid="button-clear-filters"
+              >
+                <X className="h-3 w-3" />
+                Clear filters
+              </button>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums flex-shrink-0" data-testid="text-template-count">
+          {filteredTemplates.length} of {kindCounts[kind]}
+        </span>
       </div>
 
       <div className="flex-1 overflow-auto p-3">
-        {templates.length === 0 ? (
+        {kindCounts[kind] === 0 ? (
           <Card className="p-8">
-            <div className="text-center text-muted-foreground">
-              No operational tasks yet. Create your first one to get started.
+            <div className="text-center text-muted-foreground" data-testid="text-no-templates">
+              {kind === "tasks"
+                ? "No stored tasks yet. Add tasks your workflows can put on a job — e.g. when a project reaches a new stage."
+                : "No operational tasks yet. Add a repeating task (daily, weekly or monthly) to get started."}
             </div>
           </Card>
         ) : filteredTemplates.length === 0 ? (
@@ -1550,18 +1600,36 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             
                 {/* Monthly - Day */}
                 {templateForm.frequency === "monthly" && (
-                  <div>
-                    <Label className="text-data text-muted-foreground">Day of Month</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="31"
-                      value={templateForm.dueDayOfMonth}
-                      onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: parseInt(e.target.value) || 1 })}
-                      placeholder="1-31"
-                      className="h-7 text-table w-20"
-                      data-testid="input-template-day-of-month"
-                    />
+                  <div className="space-y-1">
+                    <div className="flex items-end gap-4">
+                      <div>
+                        <Label className="text-data text-muted-foreground">Day of Month</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={templateForm.dueDayOfMonth}
+                          onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: Math.min(31, Math.max(1, parseInt(e.target.value) || 1)) })}
+                          placeholder="1-31"
+                          className="h-7 text-table w-20"
+                          data-testid="input-template-day-of-month"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-data text-muted-foreground">Time</Label>
+                        <Input
+                          type="time"
+                          step="900"
+                          value={templateForm.dueTime}
+                          onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
+                          className="h-7 text-table w-28"
+                          data-testid="input-template-monthly-time"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-data text-muted-foreground">
+                      Past the end of a short month it falls on the last day — 31 means "last day of the month".
+                    </p>
                   </div>
                 )}
               </div>

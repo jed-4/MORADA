@@ -1,4 +1,4 @@
-import { addDays, startOfWeek, format, addWeeks, isWithinInterval } from "date-fns";
+import { addDays, addMonths, getDaysInMonth, startOfWeek, format, addWeeks, isWithinInterval } from "date-fns";
 
 export interface RecurringScheduleItem {
   dayOfWeek: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
@@ -24,6 +24,33 @@ export interface RecurringTaskTemplate {
   recurringDuration?: number; // DEPRECATED: minutes
   dueTime?: string; // "HH:MM" format - primary time field for operational tasks
   estimatedDuration?: number; // minutes - for calculating end time
+  frequency?: string | null; // "daily" | "weekly" | "monthly" | "once"
+  dueDayOfMonth?: number | null; // monthly: 1-31; past the month's end = its last day
+}
+
+/**
+ * A monthly template's day of the month, or null if it isn't monthly.
+ *
+ * Monthly used to generate NOTHING: the editor saved recurringDays [] for it and
+ * the generator only knew days of the week, so a monthly template sat there
+ * creating no tasks while looking set up.
+ */
+export function monthlyDay(template: RecurringTaskTemplate): number | null {
+  if (template.frequency !== "monthly") return null;
+  const d = Number(template.dueDayOfMonth);
+  return Number.isInteger(d) && d >= 1 && d <= 31 ? d : null;
+}
+
+/** The date a monthly day falls on in `date`'s month — 31 in February is the 28th/29th. */
+function monthlyDateIn(date: Date, day: number): number {
+  return Math.min(day, getDaysInMonth(date));
+}
+
+/** Whether the template has a task on this calendar day. */
+export function isScheduledOn(template: RecurringTaskTemplate, date: Date): boolean {
+  const dom = monthlyDay(template);
+  if (dom !== null) return date.getDate() === monthlyDateIn(date, dom);
+  return !!template.recurringDays && template.recurringDays.includes(date.getDay());
 }
 
 export interface GeneratedTaskInstance {
@@ -63,16 +90,18 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
  * @returns Array of task instances to create (caller handles duplicate filtering)
  */
 export function generateRecurringTaskInstances(
-  template: RecurringTaskTemplate
+  template: RecurringTaskTemplate,
+  /** Injectable for tests. */
+  now: Date = new Date(),
 ): GeneratedTaskInstance[] {
   const instances: GeneratedTaskInstance[] = [];
 
   // Validate template has recurring schedule
-  if (!template.recurringDays || template.recurringDays.length === 0) {
+  if (monthlyDay(template) === null && (!template.recurringDays || template.recurringDays.length === 0)) {
     return instances;
   }
 
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0); // Start of today
 
   // Generate for current week + next week (14 days total)
@@ -86,7 +115,7 @@ export function generateRecurringTaskInstances(
     const dayOfWeek = currentDate.getDay();
 
     // Check if template is scheduled for this day
-    if (template.recurringDays.includes(dayOfWeek)) {
+    if (isScheduledOn(template, currentDate)) {
       // Determine assignee - prefer assigneeUserId when assigneeType is "user", otherwise use legacy defaultAssigneeId
       const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
         ? template.assigneeUserId 
@@ -217,25 +246,31 @@ export function generateNextRecurringInstance(
   template: RecurringTaskTemplate,
   completedTaskDueDate: Date | string
 ): GeneratedTaskInstance | null {
-  // Validate template has recurring schedule
-  if (!template.recurringDays || template.recurringDays.length === 0) {
-    return null;
-  }
-
-  const dueDate = typeof completedTaskDueDate === 'string' 
-    ? new Date(completedTaskDueDate) 
+  const dueDate = typeof completedTaskDueDate === 'string'
+    ? new Date(completedTaskDueDate)
     : completedTaskDueDate;
-  
-  // Get day of week for the completed task
   const dayOfWeek = dueDate.getDay();
-  
-  // Verify this day is still in the template's recurring days
-  if (!template.recurringDays.includes(dayOfWeek)) {
-    return null;
-  }
+  const dom = monthlyDay(template);
 
-  // Calculate next week's date
-  const nextDueDate = getNextWeekDate(dueDate);
+  let nextDueDate: Date;
+  if (dom !== null) {
+    // Monthly: the same day next month, clamped to that month's length.
+    const next = addMonths(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1), 1);
+    next.setDate(monthlyDateIn(next, dom));
+    next.setHours(dueDate.getHours(), dueDate.getMinutes(), dueDate.getSeconds(), dueDate.getMilliseconds());
+    nextDueDate = next;
+  } else {
+    // Validate template has recurring schedule
+    if (!template.recurringDays || template.recurringDays.length === 0) {
+      return null;
+    }
+    // Verify this day is still in the template's recurring days
+    if (!template.recurringDays.includes(dayOfWeek)) {
+      return null;
+    }
+    // Calculate next week's date
+    nextDueDate = getNextWeekDate(dueDate);
+  }
   
   // Determine assignee
   const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
