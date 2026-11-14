@@ -5,8 +5,9 @@ import { format } from "date-fns";
 import {
   BookOpen, Plus, MoreHorizontal, Trash2, Folder, FolderOpen, ChevronDown, ChevronRight,
   FileText, Pencil, Check, MoveRight, History, Archive, ArchiveRestore, Send, ShieldCheck,
-  Undo2, Link2, ExternalLink, Lock, ListTodo,
+  Undo2, Link2, ExternalLink, Lock, ListTodo, FolderPlus, ClipboardCheck, X,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,6 +50,16 @@ const DOC_TYPE_PLURAL: Record<LibraryDocType, string> = {
   document: "Documents",
 };
 
+/** The Library offers two types. Older policy / template / checklist /
+ *  reference documents read as Documents (Jed, 2026-11-15). */
+export type LibraryKind = "sop" | "document";
+export const kindOf = (t: string | null | undefined): LibraryKind => (t === "sop" ? "sop" : "document");
+
+export interface LibraryFilters {
+  type: "all" | LibraryKind;
+  status: LibraryDocStatus | "active";
+}
+
 const STATUS_LABEL: Record<LibraryDocStatus, string> = {
   draft: "Draft",
   in_review: "In review",
@@ -78,16 +89,24 @@ function StatusChip({ status, className }: { status: string; className?: string 
 
 const docText = (text: string) => text.replace(/\s+/g, " ").trim();
 
+// The app's standard small buttons (see PurchaseOrderDetail / Tasks).
+const DOC_BTN = "h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 flex-shrink-0";
+const DOC_PRIMARY_BTN = "h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 flex-shrink-0";
+const DOC_ICON_BTN = "h-6 w-6 flex items-center justify-center rounded-md border hover-elevate active-elevate-2 flex-shrink-0";
+
 export interface LibraryHandle {
-  newDoc: () => void;
-  newFolder: () => void;
+  newDoc: (type?: LibraryKind) => void;
+  newFolder: (parentFolderId?: string | null) => void;
 }
 
 interface LibraryProps {
   searchQuery: string;
+  filters: LibraryFilters;
+  /** Folder names then the document title, for the page breadcrumb. */
+  onPathChange?: (path: string[]) => void;
 }
 
-export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library({ searchQuery }, ref) {
+export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library({ searchQuery, filters, onPathChange }, ref) {
   const { toast } = useToast();
   const canAdd = usePermission("operations.library", "add");
   const canEdit = usePermission("operations.library", "edit");
@@ -95,8 +114,8 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const canApprove = usePermission("operations.library", "approve");
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [typeFilter, setTypeFilter] = useState<LibraryDocType | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<LibraryDocStatus | "active">("active");
+  const typeFilter = filters.type;
+  const statusFilter = filters.status;
   const [activeFolderId, setActiveFolderId] = useState<string | null | undefined>(undefined);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
@@ -112,6 +131,11 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const isCreatingRef = useRef(false);
 
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  // Which folder a new folder goes inside (null = top level).
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
+  // Opening a doc you just created goes straight into edit mode.
+  const unlockOnOpenRef = useRef<string | null>(null);
+  const [linkDraft, setLinkDraft] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
@@ -168,7 +192,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
 
   // ── filtering ──────────────────────────────────────────────────────────────
   const matches = useCallback((d: Doc) => {
-    if (typeFilter !== "all" && d.docType !== typeFilter) return false;
+    if (typeFilter !== "all" && kindOf(d.docType) !== typeFilter) return false;
     if (statusFilter === "active" ? d.status === "archived" : d.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -181,6 +205,38 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     () => docs.filter(matches).sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { numeric: true })),
     [docs, matches],
   );
+  // ── folder tree ────────────────────────────────────────────────────────────
+  // A folder whose parent is gone (deleted, or never brought across) shows at
+  // the top level rather than disappearing.
+  const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
+  const parentOf = useCallback(
+    (f: DocFolder) => (f.parentFolderId && folderById.has(f.parentFolderId) ? f.parentFolderId : null),
+    [folderById],
+  );
+  const childFolders = useCallback(
+    (parentId: string | null) =>
+      folders
+        .filter((f) => parentOf(f) === parentId)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, undefined, { numeric: true })),
+    [folders, parentOf],
+  );
+  const folderPath = useCallback((id: string | null | undefined): DocFolder[] => {
+    const out: DocFolder[] = [];
+    let cur = id ? folderById.get(id) : undefined;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) { seen.add(cur.id); out.unshift(cur); cur = parentOf(cur) ? folderById.get(parentOf(cur)!) : undefined; }
+    return out;
+  }, [folderById, parentOf]);
+  // Folders in tree order, with depth — for "Move to folder".
+  const flatFolders = useMemo(() => {
+    const out: { folder: DocFolder; depth: number }[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const f of childFolders(parentId)) { out.push({ folder: f, depth }); walk(f.id, depth + 1); }
+    };
+    walk(null, 0);
+    return out;
+  }, [childFolders]);
+
   const docsIn = useCallback(
     (folderId: string | null) => visibleDocs.filter((d) => (folderId === null ? !d.folderId : d.folderId === folderId)),
     [visibleDocs],
@@ -198,6 +254,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
       apiRequest("/api/docs", "POST", data),
     onSuccess: (doc: Doc) => {
       invalidateDocs();
+      unlockOnOpenRef.current = doc.id;
       setSelectedDocId(doc.id);
       setEditTitle(doc.title || "");
       isCreatingRef.current = false;
@@ -235,10 +292,11 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   });
 
   const createFolder = useMutation({
-    mutationFn: async (name: string) => apiRequest("/api/doc-folders", "POST", { name }),
+    mutationFn: async (name: string) =>
+      apiRequest("/api/doc-folders", "POST", { name, parentFolderId: newFolderParentId }),
     onSuccess: (folder: DocFolder) => {
       queryClient.invalidateQueries({ queryKey: ["/api/doc-folders"] });
-      setExpandedFolders((prev) => new Set([...Array.from(prev), folder.id]));
+      setExpandedFolders((prev) => new Set([...Array.from(prev), folder.id, ...(newFolderParentId ? [newFolderParentId] : [])]));
       setIsCreateFolderOpen(false);
       setNewFolderName("");
     },
@@ -278,7 +336,8 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     if (selectedDoc && !isCreatingRef.current) setEditTitle(selectedDoc.title || "");
   }, [selectedDoc?.id]);
   useEffect(() => {
-    setUnlockedDocId(null);
+    setUnlockedDocId(unlockOnOpenRef.current && unlockOnOpenRef.current === selectedDocId ? selectedDocId : null);
+    unlockOnOpenRef.current = null;
     setViewVersion(null);
     return () => { flushSave().catch(() => {}); };
   }, [selectedDocId]);
@@ -297,23 +356,42 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     saveTimerRef.current = setTimeout(() => { flushSave().catch(() => {}); }, 800);
   };
 
+  // Folder › document, for the page breadcrumb.
+  useEffect(() => {
+    if (!onPathChange) return;
+    if (!selectedDoc) { onPathChange([]); return; }
+    onPathChange([...folderPath(selectedDoc.folderId).map((f) => f.name), editTitle || selectedDoc.title || "Untitled"]);
+  }, [selectedDoc?.id, selectedDoc?.folderId, editTitle, folders, onPathChange]);
+  useEffect(() => () => onPathChange?.([]), []);
+
   const status = (selectedDoc?.status ?? "draft") as LibraryDocStatus;
   const lockedByReview = status === "approved" || status === "in_review";
-  const editable = !!selectedDoc && canEdit && status !== "archived" && (!lockedByReview || unlockedDocId === selectedDoc.id);
+  // Every document opens to READ. Someone allowed to edit presses Edit; that's
+  // the only way into the editor (was: drafts opened straight into editing).
+  const editable = !!selectedDoc && canEdit && status !== "archived" && unlockedDocId === selectedDoc.id;
+  const finishEditing = async () => {
+    try { await flushSave(); } catch { return; }
+    setUnlockedDocId(null);
+  };
 
-  const handleNewDoc = (folderId?: string | null) => {
+  const handleNewDoc = (folderId?: string | null, type?: LibraryKind) => {
     if (isCreatingRef.current) return;
     isCreatingRef.current = true;
     createDoc.mutate({
       title: "Untitled",
       folderId: folderId ?? (activeFolderId !== undefined ? activeFolderId : null),
-      docType: typeFilter !== "all" ? typeFilter : "sop",
+      docType: type ?? (typeFilter !== "all" ? typeFilter : "sop"),
     });
+  };
+  const openNewFolder = (parentId: string | null) => {
+    setNewFolderParentId(parentId);
+    setNewFolderName("");
+    setIsCreateFolderOpen(true);
   };
 
   useImperativeHandle(ref, () => ({
-    newDoc: () => handleNewDoc(),
-    newFolder: () => setIsCreateFolderOpen(true),
+    newDoc: (type?: LibraryKind) => handleNewDoc(undefined, type),
+    newFolder: (parentId?: string | null) => openNewFolder(parentId ?? (activeFolderId || null)),
   }));
 
   const toggleFolder = (id: string) =>
@@ -326,18 +404,20 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   // ── list rows ──────────────────────────────────────────────────────────────
   // A render function, not a component: defined inline as a component it
   // would remount on every refetch and close any open row menu.
-  const docRow = (doc: Doc, indented = false) => (
+  const docRow = (doc: Doc, depth = 0) => (
     <div
       key={doc.id}
       className={cn(
         "group relative flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded-md mx-1",
-        indented && "pl-7",
-        selectedDocId === doc.id ? "bg-accent" : "hover-elevate",
+        selectedDocId === doc.id ? "bg-primary/10 text-primary" : "hover-elevate",
       )}
+      style={depth ? { paddingLeft: 12 + depth * 16 } : undefined}
       onClick={() => setSelectedDocId(doc.id)}
       data-testid={`library-doc-${doc.id}`}
     >
-      {doc.linkUrl ? <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+      {kindOf(doc.docType) === "sop"
+        ? <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+        : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       <span className="text-sm flex-1 truncate">{doc.title || "Untitled"}</span>
       {doc.status !== "approved" && <StatusChip status={doc.status} className="shrink-0" />}
       {canEdit && (
@@ -349,14 +429,14 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              {folders.length > 0 && (
+              {flatFolders.length > 0 && (
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger><MoveRight className="h-3.5 w-3.5 mr-2" />Move to folder</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); saveDoc.mutate({ id: doc.id, data: { folderId: null } }); }}>No folder</DropdownMenuItem>
-                    {folders.map((f) => (
+                    {flatFolders.map(({ folder: f, depth }) => (
                       <DropdownMenuItem key={f.id} onClick={(e) => { e.stopPropagation(); saveDoc.mutate({ id: doc.id, data: { folderId: f.id } }); }}>
-                        {f.name}
+                        <span style={{ paddingLeft: depth * 12 }}>{f.name}</span>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuSubContent>
@@ -377,99 +457,86 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     </div>
   );
 
+  // A folder, its documents, then its sub-folders. A render function for the
+  // same reason as docRow. Counts include everything below.
+  const countBelow = (id: string): number =>
+    docsIn(id).length + childFolders(id).reduce((n, c) => n + countBelow(c.id), 0);
+  const folderNode = (folder: DocFolder, depth: number): JSX.Element | null => {
+    const total = countBelow(folder.id);
+    if (filtering && total === 0) return null;
+    const open = expandedFolders.has(folder.id) || filtering;
+    return (
+      <div key={folder.id}>
+        <div
+          className={cn("group flex items-center gap-1.5 px-3 py-1.5 cursor-pointer rounded-md mx-1", activeFolderId === folder.id && !selectedDocId ? "bg-primary/10 text-primary" : "hover-elevate")}
+          style={depth ? { paddingLeft: 12 + depth * 16 } : undefined}
+          onClick={() => { setActiveFolderId(folder.id); toggleFolder(folder.id); }}
+          data-testid={`library-folder-${folder.id}`}
+        >
+          {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-primary" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-primary" />}
+          {open ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-primary" />}
+          {editingFolderId === folder.id ? (
+            <Input
+              value={editingFolderName}
+              onChange={(e) => setEditingFolderName(e.target.value)}
+              onBlur={() => editingFolderName.trim() ? renameFolder.mutate({ id: folder.id, name: editingFolderName.trim() }) : setEditingFolderId(null)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && editingFolderName.trim()) renameFolder.mutate({ id: folder.id, name: editingFolderName.trim() });
+                else if (e.key === "Escape") setEditingFolderId(null);
+              }}
+              className="h-5 text-xs flex-1"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="text-sm flex-1 truncate">{folder.name}</span>
+          )}
+          <span className="text-data text-muted-foreground shrink-0">{total}</span>
+          {(canAdd || canEdit || canDelete) && (
+            <div className="invisible group-hover:visible shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => e.stopPropagation()} data-testid={`library-folder-menu-${folder.id}`}>
+                    <MoreHorizontal className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "sop"); }}><ClipboardCheck className="h-3.5 w-3.5 mr-2" />New SOP here</DropdownMenuItem>}
+                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id, "document"); }}><FileText className="h-3.5 w-3.5 mr-2" />New document here</DropdownMenuItem>}
+                  {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openNewFolder(folder.id); }} data-testid={`library-new-subfolder-${folder.id}`}><FolderPlus className="h-3.5 w-3.5 mr-2" />New sub-folder</DropdownMenuItem>}
+                  {canEdit && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}><Pencil className="h-3.5 w-3.5 mr-2" />Rename</DropdownMenuItem>}
+                  {canDelete && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); setConfirmDeleteFolderId(folder.id); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete folder</DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+        </div>
+        {open && (
+          <>
+            {docsIn(folder.id).map((doc) => docRow(doc, depth + 1))}
+            {childFolders(folder.id).map((c) => folderNode(c, depth + 1))}
+          </>
+        )}
+      </div>
+    );
+  };
+
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full" data-testid="library">
       {/* LEFT: filters + folder tree */}
       <div className="w-72 shrink-0 border-r flex flex-col overflow-hidden bg-card">
-        <div className="flex flex-wrap gap-1 px-2 py-2 border-b shrink-0" data-testid="library-type-filter">
-          {(["all", ...LIBRARY_DOC_TYPES] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={cn(
-                "px-2 h-6 rounded-md text-xs font-medium transition-colors",
-                typeFilter === t ? "bg-primary/10 text-primary" : "text-muted-foreground hover-elevate",
-              )}
-              data-testid={`library-type-${t}`}
-            >
-              {t === "all" ? "All" : DOC_TYPE_PLURAL[t]}
-            </button>
-          ))}
-        </div>
-        <div className="px-2 py-1.5 border-b shrink-0">
-          <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v as any)}>
-            <SelectTrigger className="h-7 text-xs" data-testid="library-status-filter"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">All current</SelectItem>
-              <SelectItem value="draft">Drafts</SelectItem>
-              <SelectItem value="in_review">In review{reviewCount ? ` (${reviewCount})` : ""}</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="flex-1 overflow-y-auto py-1">
-          {folders.map((folder) => {
-            const inFolder = docsIn(folder.id);
-            if (filtering && inFolder.length === 0) return null;
-            const open = expandedFolders.has(folder.id) || filtering;
-            return (
-              <div key={folder.id}>
-                <div
-                  className={cn("group flex items-center gap-1.5 px-3 py-1.5 cursor-pointer rounded-md mx-1", activeFolderId === folder.id ? "bg-accent" : "hover-elevate")}
-                  onClick={() => { setActiveFolderId(folder.id); toggleFolder(folder.id); }}
-                >
-                  {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-primary" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                  {open ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                  {editingFolderId === folder.id ? (
-                    <Input
-                      value={editingFolderName}
-                      onChange={(e) => setEditingFolderName(e.target.value)}
-                      onBlur={() => editingFolderName.trim() ? renameFolder.mutate({ id: folder.id, name: editingFolderName.trim() }) : setEditingFolderId(null)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && editingFolderName.trim()) renameFolder.mutate({ id: folder.id, name: editingFolderName.trim() });
-                        else if (e.key === "Escape") setEditingFolderId(null);
-                      }}
-                      className="h-5 text-xs flex-1"
-                      autoFocus
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className="text-sm flex-1 truncate">{folder.name}</span>
-                  )}
-                  <span className="text-data text-muted-foreground shrink-0">{inFolder.length}</span>
-                  {(canAdd || canEdit || canDelete) && (
-                    <div className="invisible group-hover:visible shrink-0">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => e.stopPropagation()}>
-                            <MoreHorizontal className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          {canAdd && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleNewDoc(folder.id); }}><Plus className="h-3.5 w-3.5 mr-2" />New here</DropdownMenuItem>}
-                          {canEdit && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}><Pencil className="h-3.5 w-3.5 mr-2" />Rename</DropdownMenuItem>}
-                          {canDelete && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); setConfirmDeleteFolderId(folder.id); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete folder</DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
-                </div>
-                {open && inFolder.map((doc) => docRow(doc, true))}
-              </div>
-            );
-          })}
+          {childFolders(null).map((folder) => folderNode(folder, 0))}
 
           {docsIn(null).length > 0 && (
             <div className="mt-1">
-              {folders.length > 0 && <p className="text-data text-muted-foreground uppercase tracking-wide px-4 py-1">Unfiled</p>}
+              {folders.length > 0 && <p className="text-data text-muted-foreground uppercase tracking-wide px-4 py-1 mt-1">Unfiled</p>}
               {docsIn(null).map((doc) => docRow(doc))}
             </div>
           )}
@@ -488,17 +555,30 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
       <div className="flex-1 flex flex-col overflow-hidden bg-card">
         {selectedDoc ? (
           <>
-            <div className="flex items-center gap-2 px-6 h-11 border-b shrink-0">
-              <Select
-                value={selectedDoc.docType}
-                onValueChange={(v) => v && v !== selectedDoc.docType && saveDoc.mutate({ id: selectedDoc.id, data: { docType: v as LibraryDocType } })}
-                disabled={!canEdit}
-              >
-                <SelectTrigger className="h-7 w-32 text-xs" data-testid="library-doc-type"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {LIBRARY_DOC_TYPES.map((t) => <SelectItem key={t} value={t}>{DOC_TYPE_LABEL[t]}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 px-4 h-10 border-b shrink-0">
+              {editable ? (
+                <Select
+                  value={kindOf(selectedDoc.docType)}
+                  onValueChange={(v) => v && v !== kindOf(selectedDoc.docType) && saveDoc.mutate({ id: selectedDoc.id, data: { docType: v as LibraryDocType } })}
+                >
+                  <SelectTrigger className="h-6 w-28 text-xs" data-testid="library-doc-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sop">SOP</SelectItem>
+                    <SelectItem value="document">Document</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium leading-none",
+                    kindOf(selectedDoc.docType) === "sop" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                  )}
+                  data-testid="library-doc-kind"
+                >
+                  {kindOf(selectedDoc.docType) === "sop" ? <ClipboardCheck className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+                  {kindOf(selectedDoc.docType) === "sop" ? "SOP" : "Document"}
+                </span>
+              )}
               <StatusChip status={status} />
               {selectedDoc.currentVersion > 0 && (
                 <span className="text-xs text-muted-foreground" data-testid="library-doc-version">
@@ -511,34 +591,81 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
               {saveState === "saving" && <span className="text-table text-muted-foreground">Saving…</span>}
               {saveState === "saved" && <span className="text-table text-muted-foreground flex items-center gap-1"><Check className="h-3 w-3" />Saved</span>}
 
-              {canEdit && lockedByReview && unlockedDocId !== selectedDoc.id && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setUnlockedDocId(selectedDoc.id)} data-testid="library-unlock">
+              {/* Link to a file elsewhere (Drive, SharePoint…): a small icon,
+                  tinted when set. Was a full-width field under the title. */}
+              {(editable || selectedDoc.linkUrl) && (
+                <Popover onOpenChange={(o) => o && setLinkDraft(selectedDoc.linkUrl ?? "")}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={cn(DOC_ICON_BTN, selectedDoc.linkUrl ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground")}
+                      title={selectedDoc.linkUrl ? "Linked file" : "Link a file"}
+                      data-testid="library-doc-link-button"
+                    >
+                      <Link2 className="h-3 w-3" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 p-2 space-y-2">
+                    {editable ? (
+                      <>
+                        <Input
+                          autoFocus
+                          value={linkDraft}
+                          onChange={(e) => setLinkDraft(e.target.value)}
+                          placeholder="Paste a link to a file…"
+                          className="h-7 text-xs"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveDoc.mutate({ id: selectedDoc.id, data: { linkUrl: linkDraft.trim() || null } });
+                          }}
+                          data-testid="library-doc-link"
+                        />
+                        <div className="flex items-center gap-1.5">
+                          <button className={DOC_PRIMARY_BTN} onClick={() => saveDoc.mutate({ id: selectedDoc.id, data: { linkUrl: linkDraft.trim() || null } })}>Save</button>
+                          {selectedDoc.linkUrl && (
+                            <button className={cn(DOC_BTN, "text-muted-foreground")} onClick={() => saveDoc.mutate({ id: selectedDoc.id, data: { linkUrl: null } })}>Remove</button>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <a href={selectedDoc.linkUrl!} target="_blank" rel="noreferrer" className="text-xs text-primary underline break-all">{selectedDoc.linkUrl}</a>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              )}
+
+              {/* Read by default; Edit opens the editor for those allowed. */}
+              {canEdit && status !== "archived" && !editable && (
+                <button className={cn(DOC_BTN, "border-border/50")} onClick={() => setUnlockedDocId(selectedDoc.id)} data-testid="library-unlock">
                   <Pencil className="h-3 w-3" />Edit
-                </Button>
+                </button>
+              )}
+              {editable && (
+                <button className={cn(DOC_BTN, "border-border/50")} onClick={finishEditing} data-testid="library-done-editing">
+                  <Check className="h-3 w-3" />Done
+                </button>
               )}
               {canEdit && status === "draft" && !canApprove && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => act("submit")} data-testid="library-submit">
+                <button className={cn(DOC_BTN, "border-border/50")} onClick={() => act("submit")} data-testid="library-submit">
                   <Send className="h-3 w-3" />Send for review
-                </Button>
+                </button>
               )}
               {canApprove && status === "in_review" && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setSendBackNote(""); setSendBackOpen(true); }} data-testid="library-reject">
+                <button className={cn(DOC_BTN, "border-border/50")} onClick={() => { setSendBackNote(""); setSendBackOpen(true); }} data-testid="library-reject">
                   <Undo2 className="h-3 w-3" />Send back
-                </Button>
+                </button>
               )}
               {canApprove && (status === "draft" || status === "in_review") && (
-                <Button size="sm" className="h-7 text-xs gap-1" onClick={() => act("approve")} data-testid="library-approve">
+                <button className={DOC_PRIMARY_BTN} onClick={() => act("approve")} data-testid="library-approve">
                   <ShieldCheck className="h-3 w-3" />Approve
-                </Button>
+                </button>
               )}
               {canEdit && status === "archived" && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => act("restore")} data-testid="library-restore">
+                <button className={cn(DOC_BTN, "border-border/50")} onClick={() => act("restore")} data-testid="library-restore">
                   <ArchiveRestore className="h-3 w-3" />Restore
-                </Button>
+                </button>
               )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="library-doc-menu"><MoreHorizontal className="h-4 w-4" /></Button>
+                  <button className={cn(DOC_ICON_BTN, "border-border/50 text-muted-foreground")} data-testid="library-doc-menu"><MoreHorizontal className="h-3 w-3" /></button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem onClick={() => setHistoryOpen(true)}><History className="h-3.5 w-3.5 mr-2" />Version history</DropdownMenuItem>
@@ -589,28 +716,18 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
                   className="w-full text-3xl font-bold bg-transparent border-none outline-none placeholder:text-muted-foreground/40 mb-3"
                   data-testid="library-doc-title"
                 />
-                {(selectedDoc.linkUrl || editable) && (
-                  <div className="flex items-center gap-2 mb-6">
-                    <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    {editable ? (
-                      <Input
-                        key={selectedDoc.id}
-                        defaultValue={selectedDoc.linkUrl ?? ""}
-                        placeholder="Link to a file (optional)"
-                        className="h-7 text-xs"
-                        onBlur={(e) => {
-                          const v = e.target.value.trim() || null;
-                          if (v !== (selectedDoc.linkUrl ?? null)) saveDoc.mutate({ id: selectedDoc.id, data: { linkUrl: v } });
-                        }}
-                        data-testid="library-doc-link"
-                      />
-                    ) : (
-                      <a href={selectedDoc.linkUrl!} target="_blank" rel="noreferrer" className="text-xs text-primary underline truncate">{selectedDoc.linkUrl}</a>
-                    )}
-                    {selectedDoc.linkUrl && (
-                      <a href={selectedDoc.linkUrl} target="_blank" rel="noreferrer" title="Open link"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></a>
-                    )}
-                  </div>
+                {selectedDoc.linkUrl && (
+                  <a
+                    href={selectedDoc.linkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 mb-4 text-xs text-muted-foreground hover:text-primary"
+                    data-testid="library-doc-link-chip"
+                  >
+                    <Link2 className="h-3 w-3" />
+                    {(() => { try { return new URL(selectedDoc.linkUrl).hostname.replace(/^www\./, ""); } catch { return "Linked file"; } })()}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 )}
                 {usage.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap mb-4 text-xs text-muted-foreground" data-testid="library-doc-usage">
@@ -663,7 +780,7 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
             <BookOpen className="h-12 w-12 text-muted-foreground/30" />
             <div>
               <p className="text-sm font-medium text-muted-foreground">Select a document</p>
-              <p className="text-xs text-muted-foreground mt-1">SOPs, policies, templates and checklists for your team</p>
+              <p className="text-xs text-muted-foreground mt-1">Your SOPs and documents</p>
             </div>
             {canAdd && (
               <Button size="sm" onClick={() => handleNewDoc()} disabled={createDoc.isPending} data-testid="library-new-empty">
@@ -677,7 +794,9 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
       {/* New folder */}
       <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{newFolderParentId ? `New folder in ${folderById.get(newFolderParentId)?.name ?? "folder"}` : "New folder"}</DialogTitle>
+          </DialogHeader>
           <div className="flex gap-2 mt-2">
             <Input
               placeholder="Folder name…"

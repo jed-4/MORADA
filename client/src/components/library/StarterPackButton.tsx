@@ -21,9 +21,26 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 // Shown in the Library toolbar while there is any of the starter pack this
 // company hasn't had yet. Disappears once it's all been added — deleting a
 // starter SOP afterwards doesn't bring the button back.
-export function StarterPackButton() {
+/** Whether there's any of the starter pack left to add (and the user may add it). */
+export function useStarterPackAvailable(): boolean {
+  const canAdd = usePermission("operations.library", "add") && usePermission("operations.tasks", "add");
+  const { data } = useQuery<StarterPackStatus>({ queryKey: ["/api/operations/starter-pack"], enabled: canAdd });
+  return !!canAdd && !!data && data.available.docs + data.available.tasks > 0;
+}
+
+/**
+ * `open` / `onOpenChange` let the Library's ⋮ menu open the dialog without
+ * this rendering its own button (`hideTrigger`).
+ */
+export function StarterPackButton({
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
+}: { open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean } = {}) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean) => { setOpenState(v); onOpenChange?.(v); };
   const canAddDocs = usePermission("operations.library", "add");
   const canAddTasks = usePermission("operations.tasks", "add");
   const canAdd = canAddDocs && canAddTasks;
@@ -57,16 +74,18 @@ export function StarterPackButton() {
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-xs gap-1"
-        onClick={() => setOpen(true)}
-        data-testid="button-starter-pack"
-      >
-        <Sparkles className="w-3 h-3" />
-        <span>Starter pack</span>
-      </Button>
+      {!hideTrigger && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs gap-1"
+          onClick={() => setOpen(true)}
+          data-testid="button-starter-pack"
+        >
+          <Sparkles className="w-3 h-3" />
+          <span>Starter pack</span>
+        </Button>
+      )}
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays } from "lucide-react";
+import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays, ChevronRight, Filter, MoreHorizontal, Sparkles, ChevronDown, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Library, type LibraryHandle } from "@/components/library/Library";
-import { StarterPackButton } from "@/components/library/StarterPackButton";
+import { Library, type LibraryHandle, type LibraryFilters } from "@/components/library/Library";
+import { StarterPackButton, useStarterPackAvailable } from "@/components/library/StarterPackButton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
@@ -43,6 +47,11 @@ export default function Systems() {
   const [requestedTab, setActiveTab] = useState(tabFromUrl === "folders" ? "library" : tabFromUrl ?? "");
   const [searchQuery, setSearchQuery] = useState("");
   const activeTab = allowedIds.includes(requestedTab) ? requestedTab : allowedIds[0];
+  // Library filters live here because their control sits in the header.
+  const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>({ type: "all", status: "active" });
+  // Folder › document path for the breadcrumb, reported by the Library.
+  const [libraryPath, setLibraryPath] = useState<string[]>([]);
+  const activeLabel = ALL_TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   // Update active tab when URL changes
   useEffect(() => {
@@ -58,45 +67,60 @@ export default function Systems() {
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
-      {/* Row 1: Tabs Only (h-9) */}
-      <div className="h-9 bg-background dark:bg-background flex items-center px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1">
-          {tabs.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
-                activeTab === id
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover-elevate"
-              }`}
-              data-testid={`tab-${id}`}
-            >
-              <div className="flex items-center gap-1.5">
-                <Icon className="h-3 w-3" />
-                <span>{label}</span>
-              </div>
-            </button>
-          ))}
+      {/* Breadcrumb strip — the same as Tasks, Timesheets and the other card pages. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0 min-w-0" data-testid="systems-breadcrumb">
+        <span className="text-xs text-muted-foreground">Operations</span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className={`text-xs ${activeTab === "library" && libraryPath.length ? "text-muted-foreground" : "font-medium text-foreground"}`} data-testid="text-page-title">
+          {activeLabel}
+        </span>
+        {activeTab === "library" && libraryPath.map((part, i) => (
+          <span key={i} className="flex items-center gap-1 min-w-0">
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+            <span className={`text-xs truncate ${i === libraryPath.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}`}>{part}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Card header: tabs on the left, the tab's search / filter / new on the right. */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-9 flex items-center justify-between px-2 gap-2">
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+            {tabs.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                onClick={() => { setActiveTab(id); setSearchQuery(""); }}
+                className={`px-2.5 h-6 rounded-md text-xs font-medium transition-colors flex-shrink-0 ${
+                  activeTab === id ? "bg-primary/10 text-primary" : "text-muted-foreground hover-elevate"
+                }`}
+                data-testid={`tab-${id}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Icon className="h-3 w-3" />
+                  <span>{label}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <SystemsControlBar
+            activeTab={activeTab}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            libraryRef={libraryRef}
+            libraryFilters={libraryFilters}
+            setLibraryFilters={setLibraryFilters}
+            taskLibraryRef={taskLibraryRef}
+            workflowBuilderRef={workflowBuilderRef}
+            businessRemindersRef={businessRemindersRef}
+          />
         </div>
       </div>
 
-      {/* Row 2: Tab-Specific Controls (h-9) */}
-      <SystemsControlBar 
-        activeTab={activeTab} 
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        libraryRef={libraryRef}
-        taskLibraryRef={taskLibraryRef}
-        workflowBuilderRef={workflowBuilderRef}
-        businessRemindersRef={businessRemindersRef}
-      />
-
-      {/* Content Area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Body closes the card. */}
+      <div className="flex-1 min-h-0 overflow-hidden border-x border-b border-border rounded-b-lg bg-card">
         {activeTab === "library" && (
           <div className="h-full">
-            <Library ref={libraryRef} searchQuery={searchQuery} />
+            <Library ref={libraryRef} searchQuery={searchQuery} filters={libraryFilters} onPathChange={setLibraryPath} />
           </div>
         )}
         {activeTab === "tasks" && (
@@ -125,83 +149,151 @@ export default function Systems() {
 }
 
 // Control bar component that renders different controls based on active tab
-function SystemsControlBar({ 
-  activeTab, 
+function SystemsControlBar({
+  activeTab,
   searchQuery,
   setSearchQuery,
   libraryRef,
+  libraryFilters,
+  setLibraryFilters,
   taskLibraryRef,
   workflowBuilderRef,
   businessRemindersRef
-}: { 
+}: {
   activeTab: string;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   libraryRef: React.RefObject<LibraryHandle>;
+  libraryFilters: LibraryFilters;
+  setLibraryFilters: (f: LibraryFilters) => void;
   taskLibraryRef: React.RefObject<TaskLibraryHandle>;
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
   businessRemindersRef: React.RefObject<BusinessRemindersHandle>;
 }) {
   return (
-    <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-      {/* Left: Search Bar */}
-      <div className="relative w-64">
-        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+    <div className="flex items-center gap-1.5 flex-shrink-0">
+      {/* Search — the app's standard 200px search field. */}
+      <div className="relative" style={{ width: 200 }}>
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
         <Input
-          placeholder={`Search ${activeTab}...`}
+          placeholder="Search..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-6 pl-7 text-xs border rounded-md"
+          onKeyDown={(e) => { if (e.key === "Escape") setSearchQuery(""); }}
+          className="pl-7 pr-2 h-6 text-xs"
           data-testid="input-search-systems"
         />
       </div>
-
-      {/* Right: Tab-Specific Action Buttons */}
-      <div className="flex items-center gap-1.5">
-        {activeTab === "library" && (
-          <LibraryControls libraryRef={libraryRef} />
-        )}
-        {activeTab === "tasks" && (
-          <TasksControls taskLibraryRef={taskLibraryRef} />
-        )}
-        {activeTab === "workflows" && (
-          <WorkflowsControls workflowBuilderRef={workflowBuilderRef} />
-        )}
-        {activeTab === "reminders" && (
-          <RemindersControls businessRemindersRef={businessRemindersRef} />
-        )}
-      </div>
+      {activeTab === "library" && (
+        <LibraryControls libraryRef={libraryRef} filters={libraryFilters} setFilters={setLibraryFilters} />
+      )}
+      {activeTab === "tasks" && (
+        <TasksControls taskLibraryRef={taskLibraryRef} />
+      )}
+      {activeTab === "workflows" && (
+        <WorkflowsControls workflowBuilderRef={workflowBuilderRef} />
+      )}
+      {activeTab === "reminders" && (
+        <RemindersControls businessRemindersRef={businessRemindersRef} />
+      )}
     </div>
   );
 }
 
-// Library tab controls
-function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHandle> }) {
+const ICON_BTN = "relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2";
+const PRIMARY_BTN = "h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5";
+
+// Library tab controls — one Filter icon (type + status), one New menu, and
+// the starter pack tucked in a ⋮ menu. Was: a row of type buttons and a status
+// select in the side panel, plus three outlined buttons up here.
+function LibraryControls({
+  libraryRef, filters, setFilters,
+}: { libraryRef: React.RefObject<LibraryHandle>; filters: LibraryFilters; setFilters: (f: LibraryFilters) => void }) {
   const canAdd = usePermission("operations.library", "add");
-  if (!canAdd) return null;
+  const starterAvailable = useStarterPackAvailable();
+  const [starterOpen, setStarterOpen] = useState(false);
+  const activeCount = (filters.type !== "all" ? 1 : 0) + (filters.status !== "active" ? 1 : 0);
+  const chip = (on: boolean) =>
+    `px-2 h-6 rounded-md text-xs border transition-colors ${on ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground hover-elevate"}`;
   return (
     <>
-      <StarterPackButton />
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-xs gap-1"
-        onClick={() => libraryRef.current?.newFolder()}
-        data-testid="button-new-folder"
-      >
-        <FolderPlus className="w-3 h-3" />
-        <span>New Folder</span>
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-xs gap-1"
-        onClick={() => libraryRef.current?.newDoc()}
-        data-testid="button-new-document"
-      >
-        <FilePlus className="w-3 h-3" />
-        <span>New Document</span>
-      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            className={`${ICON_BTN} ${activeCount ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground"}`}
+            aria-label="Filter"
+            data-testid="button-filter-library"
+          >
+            <Filter className="h-3 w-3" />
+            {activeCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center">
+                {activeCount}
+              </span>
+            )}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-64 p-3 space-y-3">
+          <div className="space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Type</p>
+            <div className="flex flex-wrap gap-1">
+              {([["all", "All"], ["sop", "SOPs"], ["document", "Documents"]] as const).map(([v, l]) => (
+                <button key={v} className={chip(filters.type === v)} onClick={() => setFilters({ ...filters, type: v })} data-testid={`library-type-${v}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Status</p>
+            <div className="flex flex-wrap gap-1">
+              {([["active", "All current"], ["draft", "Drafts"], ["in_review", "In review"], ["approved", "Approved"], ["archived", "Archived"]] as const).map(([v, l]) => (
+                <button key={v} className={chip(filters.status === v)} onClick={() => setFilters({ ...filters, status: v })} data-testid={`library-status-${v}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {activeCount > 0 && (
+            <button className="text-xs text-primary hover:underline" onClick={() => setFilters({ type: "all", status: "active" })}>Clear filters</button>
+          )}
+        </PopoverContent>
+      </Popover>
+      {canAdd && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className={PRIMARY_BTN} data-testid="button-library-new">
+              <Plus className="w-3 h-3" />
+              <span>New</span>
+              <ChevronDown className="w-3 h-3 ml-0.5 opacity-80" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => libraryRef.current?.newDoc("sop")} data-testid="button-new-sop">
+              <ClipboardCheck className="w-3.5 h-3.5 mr-2" />SOP
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => libraryRef.current?.newDoc("document")} data-testid="button-new-document">
+              <FilePlus className="w-3.5 h-3.5 mr-2" />Document
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => libraryRef.current?.newFolder()} data-testid="button-new-folder">
+              <FolderPlus className="w-3.5 h-3.5 mr-2" />Folder
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {starterAvailable && (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={`${ICON_BTN} border-border/50 text-muted-foreground`} aria-label="More" data-testid="button-library-more">
+                <MoreHorizontal className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => setStarterOpen(true)} data-testid="button-starter-pack">
+                <Sparkles className="w-3.5 h-3.5 mr-2" />Add the starter pack…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <StarterPackButton open={starterOpen} onOpenChange={setStarterOpen} hideTrigger />
+        </>
+      )}
     </>
   );
 }
