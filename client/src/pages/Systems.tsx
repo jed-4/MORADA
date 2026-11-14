@@ -4,7 +4,7 @@ import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon,
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Library, type LibraryHandle, type LibraryFilters } from "@/components/library/Library";
+import { Library, type LibraryHandle } from "@/components/library/Library";
 import { StarterPackButton, useStarterPackAvailable } from "@/components/library/StarterPackButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -47,8 +47,6 @@ export default function Systems() {
   const [requestedTab, setActiveTab] = useState(tabFromUrl === "folders" ? "library" : tabFromUrl ?? "");
   const [searchQuery, setSearchQuery] = useState("");
   const activeTab = allowedIds.includes(requestedTab) ? requestedTab : allowedIds[0];
-  // Library filters live here because their control sits in the header.
-  const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>({ type: "all", status: "active" });
   // Folder › document path for the breadcrumb, reported by the Library.
   const [libraryPath, setLibraryPath] = useState<string[]>([]);
   const activeLabel = ALL_TABS.find((t) => t.id === activeTab)?.label ?? "";
@@ -107,8 +105,6 @@ export default function Systems() {
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             libraryRef={libraryRef}
-            libraryFilters={libraryFilters}
-            setLibraryFilters={setLibraryFilters}
             taskLibraryRef={taskLibraryRef}
             workflowBuilderRef={workflowBuilderRef}
             businessRemindersRef={businessRemindersRef}
@@ -120,7 +116,7 @@ export default function Systems() {
       <div className="flex-1 min-h-0 overflow-hidden border-x border-b border-border rounded-b-lg bg-card">
         {activeTab === "library" && (
           <div className="h-full">
-            <Library ref={libraryRef} searchQuery={searchQuery} filters={libraryFilters} onPathChange={setLibraryPath} />
+            <Library ref={libraryRef} onPathChange={setLibraryPath} />
           </div>
         )}
         {activeTab === "tasks" && (
@@ -154,8 +150,6 @@ function SystemsControlBar({
   searchQuery,
   setSearchQuery,
   libraryRef,
-  libraryFilters,
-  setLibraryFilters,
   taskLibraryRef,
   workflowBuilderRef,
   businessRemindersRef
@@ -164,16 +158,15 @@ function SystemsControlBar({
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   libraryRef: React.RefObject<LibraryHandle>;
-  libraryFilters: LibraryFilters;
-  setLibraryFilters: (f: LibraryFilters) => void;
   taskLibraryRef: React.RefObject<TaskLibraryHandle>;
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
   businessRemindersRef: React.RefObject<BusinessRemindersHandle>;
 }) {
   return (
     <div className="flex items-center gap-1.5 flex-shrink-0">
-      {/* Search — the app's standard 200px search field. */}
-      <div className="relative" style={{ width: 200 }}>
+      {/* Search — the app's standard 200px search field. The Library has its
+          own, in its folder panel: it searches documents, not the other tabs. */}
+      {activeTab !== "library" && <div className="relative" style={{ width: 200 }}>
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
         <Input
           placeholder="Search..."
@@ -183,9 +176,9 @@ function SystemsControlBar({
           className="pl-7 pr-2 h-6 text-xs"
           data-testid="input-search-systems"
         />
-      </div>
+      </div>}
       {activeTab === "library" && (
-        <LibraryControls libraryRef={libraryRef} filters={libraryFilters} setFilters={setLibraryFilters} />
+        <LibraryControls libraryRef={libraryRef} />
       )}
       {activeTab === "tasks" && (
         <TasksControls taskLibraryRef={taskLibraryRef} />
@@ -203,57 +196,14 @@ function SystemsControlBar({
 const ICON_BTN = "relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2";
 const PRIMARY_BTN = "h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5";
 
-// Library tab controls — one Filter icon (type + status), one New menu, and
-// the starter pack tucked in a ⋮ menu. Was: a row of type buttons and a status
-// select in the side panel, plus three outlined buttons up here.
-function LibraryControls({
-  libraryRef, filters, setFilters,
-}: { libraryRef: React.RefObject<LibraryHandle>; filters: LibraryFilters; setFilters: (f: LibraryFilters) => void }) {
+// Library tab controls — one New menu, and the starter pack tucked in a ⋮
+// menu. Search and Filter live in the Library's own folder panel.
+function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHandle> }) {
   const canAdd = usePermission("operations.library", "add");
   const starterAvailable = useStarterPackAvailable();
   const [starterOpen, setStarterOpen] = useState(false);
-  const activeCount = (filters.type !== "all" ? 1 : 0) + (filters.status !== "active" ? 1 : 0);
-  const chip = (on: boolean) =>
-    `px-2 h-6 rounded-md text-xs border transition-colors ${on ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground hover-elevate"}`;
   return (
     <>
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            className={`${ICON_BTN} ${activeCount ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground"}`}
-            aria-label="Filter"
-            data-testid="button-filter-library"
-          >
-            <Filter className="h-3 w-3" />
-            {activeCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center">
-                {activeCount}
-              </span>
-            )}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-64 p-3 space-y-3">
-          <div className="space-y-1.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Type</p>
-            <div className="flex flex-wrap gap-1">
-              {([["all", "All"], ["sop", "SOPs"], ["document", "Documents"]] as const).map(([v, l]) => (
-                <button key={v} className={chip(filters.type === v)} onClick={() => setFilters({ ...filters, type: v })} data-testid={`library-type-${v}`}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Status</p>
-            <div className="flex flex-wrap gap-1">
-              {([["active", "All current"], ["draft", "Drafts"], ["in_review", "In review"], ["approved", "Approved"], ["archived", "Archived"]] as const).map(([v, l]) => (
-                <button key={v} className={chip(filters.status === v)} onClick={() => setFilters({ ...filters, status: v })} data-testid={`library-status-${v}`}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {activeCount > 0 && (
-            <button className="text-xs text-primary hover:underline" onClick={() => setFilters({ type: "all", status: "active" })}>Clear filters</button>
-          )}
-        </PopoverContent>
-      </Popover>
       {canAdd && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

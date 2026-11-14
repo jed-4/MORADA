@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import {
   BookOpen, Plus, MoreHorizontal, Trash2, Folder, FolderOpen, ChevronDown, ChevronRight,
   FileText, Pencil, Check, MoveRight, History, Archive, ArchiveRestore, Send, ShieldCheck,
-  Undo2, Link2, ExternalLink, Lock, ListTodo, FolderPlus, ClipboardCheck, X,
+  Undo2, Link2, ExternalLink, Lock, ListTodo, FolderPlus, ClipboardCheck, X, Search, Filter,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -100,13 +100,11 @@ export interface LibraryHandle {
 }
 
 interface LibraryProps {
-  searchQuery: string;
-  filters: LibraryFilters;
   /** Folder names then the document title, for the page breadcrumb. */
   onPathChange?: (path: string[]) => void;
 }
 
-export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library({ searchQuery, filters, onPathChange }, ref) {
+export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library({ onPathChange }, ref) {
   const { toast } = useToast();
   const canAdd = usePermission("operations.library", "add");
   const canEdit = usePermission("operations.library", "edit");
@@ -114,8 +112,15 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
   const canApprove = usePermission("operations.library", "approve");
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  // Search and filters belong to the Library (its folder panel), not the page
+  // header — they search documents, not the other Operations tabs.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<LibraryFilters>({ type: "all", status: "active" });
   const typeFilter = filters.type;
   const statusFilter = filters.status;
+  const activeFilterCount = (filters.type !== "all" ? 1 : 0) + (filters.status !== "active" ? 1 : 0);
+  const filterChip = (on: boolean) =>
+    `px-2 h-6 rounded-md text-xs border transition-colors ${on ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground hover-elevate"}`;
   const [activeFolderId, setActiveFolderId] = useState<string | null | undefined>(undefined);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
@@ -531,6 +536,57 @@ export const Library = forwardRef<LibraryHandle, LibraryProps>(function Library(
     <div className="flex h-full" data-testid="library">
       {/* LEFT: filters + folder tree */}
       <div className="w-72 shrink-0 border-r flex flex-col overflow-hidden bg-card">
+        {/* Search + Filter for the Library itself. */}
+        <div className="flex items-center gap-1.5 px-2 py-2 border-b shrink-0">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search library..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") setSearchQuery(""); }}
+              className="pl-7 pr-2 h-6 text-xs"
+              data-testid="input-search-library"
+            />
+          </div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className={cn(DOC_ICON_BTN, "relative", activeFilterCount ? "bg-primary/10 text-primary border-primary/20" : "border-border/50 text-muted-foreground")}
+                aria-label="Filter"
+                data-testid="button-filter-library"
+              >
+                <Filter className="h-3 w-3" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3 space-y-3">
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Type</p>
+                <div className="flex flex-wrap gap-1">
+                  {([["all", "All"], ["sop", "SOPs"], ["document", "Documents"]] as const).map(([v, l]) => (
+                    <button key={v} className={filterChip(filters.type === v)} onClick={() => setFilters({ ...filters, type: v })} data-testid={`library-type-${v}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Status</p>
+                <div className="flex flex-wrap gap-1">
+                  {([["active", "All current"], ["draft", "Drafts"], ["in_review", `In review${reviewCount ? ` (${reviewCount})` : ""}`], ["approved", "Approved"], ["archived", "Archived"]] as const).map(([v, l]) => (
+                    <button key={v} className={filterChip(filters.status === v)} onClick={() => setFilters({ ...filters, status: v as LibraryFilters["status"] })} data-testid={`library-status-${v}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {activeFilterCount > 0 && (
+                <button className="text-xs text-primary hover:underline" onClick={() => setFilters({ type: "all", status: "active" })}>Clear filters</button>
+              )}
+            </PopoverContent>
+          </Popover>
+        </div>
         <div className="flex-1 overflow-y-auto py-1">
           {childFolders(null).map((folder) => folderNode(folder, 0))}
 
