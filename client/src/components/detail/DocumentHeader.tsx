@@ -93,13 +93,15 @@ export function DocumentHeader({
           </button>
         )}
 
-        <span className="doc-title truncate" data-testid="text-detail-title">
+        {/* The number never gives way to the context beside it — "RF…" told
+            you nothing; the context truncates instead. */}
+        <span className="doc-title whitespace-nowrap flex-shrink-0" data-testid="text-detail-title">
           {title}
         </span>
 
         {status}
 
-        {context && <span className="doc-body-muted truncate">{context}</span>}
+        {context && <span className="doc-body-muted truncate min-w-0">{context}</span>}
 
         <span className="flex-1" />
 
