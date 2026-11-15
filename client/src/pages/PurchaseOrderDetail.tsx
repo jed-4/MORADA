@@ -55,6 +55,8 @@ import {
   Building2,
   RefreshCw,
   CreditCard,
+  Pencil,
+  Lock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -769,6 +771,12 @@ export default function PurchaseOrderDetail() {
   // ---------- dialog state ----------
   const [isImportScopeDialogOpen, setIsImportScopeDialogOpen] = useState(false);
   const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
+  // Editing a SENT PO: Edit unlocks it, Done stamps it amended and offers to
+  // resend. `editedWhileUnlocked` catches line edits too, which save as you go.
+  const [editUnlocked, setEditUnlocked] = useState(false);
+  const [editedWhileUnlocked, setEditedWhileUnlocked] = useState(false);
+  const [resendPromptOpen, setResendPromptOpen] = useState(false);
+  const [finishingEdit, setFinishingEdit] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isChangeSupplierOpen, setIsChangeSupplierOpen] = useState(false);
   const [isImportTimesheetsOpen, setIsImportTimesheetsOpen] = useState(false);
@@ -1388,6 +1396,7 @@ export default function PurchaseOrderDetail() {
     updates: Partial<PurchaseOrderItem>,
   ) => {
     if (!poId) return;
+    if (editUnlocked) setEditedWhileUnlocked(true);
     setItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
     );
@@ -1396,12 +1405,14 @@ export default function PurchaseOrderDetail() {
 
   const handleItemDelete = (itemId: string) => {
     if (!poId) return;
+    if (editUnlocked) setEditedWhileUnlocked(true);
     setItems((prev) => prev.filter((item) => item.id !== itemId));
     deleteItemMutation.mutate(itemId);
   };
 
   const handleAddItem = () => {
     if (!poId) return;
+    if (editUnlocked) setEditedWhileUnlocked(true);
     addItemMutation.mutate({
       purchaseOrderId: poId,
       description: "",
@@ -1526,6 +1537,14 @@ export default function PurchaseOrderDetail() {
         color: TOKENS.blue,
       });
     }
+    if ((purchaseOrder as any).amendedAt) {
+      const n = (purchaseOrder as any).amendmentCount ?? 1;
+      list.push({
+        label: n > 1 ? `Amended after sending (${n} times)` : "Amended after sending",
+        time: (purchaseOrder as any).amendedAt,
+        color: TOKENS.amber,
+      });
+    }
     if ((purchaseOrder as any).approvedAt) {
       list.push({
         label: "Acknowledged by supplier",
@@ -1584,7 +1603,32 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const isLocked = purchaseOrder?.status !== "draft";
+  // Billed (status, or a bill matched to it) = content frozen; the server
+  // refuses edits then too (PO_LOCKED).
+  const PO_BILLED_STATUSES = ["billed", "invoiced", "partially_paid", "paid", "completed", "cancelled"];
+  const billedLock = !!purchaseOrder && (PO_BILLED_STATUSES.includes(purchaseOrder.status as string) || linkedBills.length > 0);
+  const isLocked = purchaseOrder?.status !== "draft" && !editUnlocked;
+  const canEditSent = !!purchaseOrder && purchaseOrder.status !== "draft" && !billedLock;
+
+  const finishEditing = async () => {
+    if (!poId) return;
+    setFinishingEdit(true);
+    try {
+      if (hasUnsavedChanges) await handleSave();
+      const changed = editedWhileUnlocked || hasUnsavedChanges;
+      if (changed) {
+        await apiRequest(`/api/purchase-orders/${poId}/amended`, "POST");
+        queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      }
+      setEditUnlocked(false);
+      setEditedWhileUnlocked(false);
+      if (changed) setResendPromptOpen(true);
+    } catch {
+      // handleSave's mutation has already toasted why.
+    } finally {
+      setFinishingEdit(false);
+    }
+  };
 
   // ---------- early returns ----------
   if (poLoading) {
@@ -1701,8 +1745,42 @@ export default function PurchaseOrderDetail() {
           }
           primaryAction={
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* A sent PO opens read-only, like an approved invoice. */}
+              {purchaseOrder.status !== "draft" && !editUnlocked && canEditSent && (
+                <button
+                  type="button"
+                  onClick={() => { setEditUnlocked(true); setEditedWhileUnlocked(false); }}
+                  className={btnPrimary}
+                  data-testid="button-edit-po"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Edit</span>
+                </button>
+              )}
+              {purchaseOrder.status !== "draft" && billedLock && (
+                <span
+                  className={`${btn} border-border text-muted-foreground bg-card cursor-default`}
+                  title="A bill is matched to this PO (or it's billed/paid), so it can't be changed. Cancel it and raise a new one if it's wrong."
+                  data-testid="text-po-billed-locked"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>Billed — locked</span>
+                </span>
+              )}
+              {editUnlocked && (
+                <button
+                  type="button"
+                  onClick={finishEditing}
+                  disabled={finishingEdit || isSaving}
+                  className={btnPrimary}
+                  data-testid="button-done-editing-po"
+                >
+                  {finishingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                  <span>{hasUnsavedChanges ? "Save & finish" : "Done editing"}</span>
+                </button>
+              )}
               {/* Filled only when there is something to save. */}
-              {!isLocked && (
+              {!isLocked && !editUnlocked && (
                 <button
                   type="button"
                   onClick={handleSave}
@@ -2402,6 +2480,30 @@ export default function PurchaseOrderDetail() {
         documentStyle={poDocStyle}
         logoUrl={poLogoUrl}
       />
+
+      {/* After editing a sent PO: the supplier still has the old one. */}
+      <Dialog open={resendPromptOpen} onOpenChange={setResendPromptOpen}>
+        <DialogContent data-testid="dialog-resend-po">
+          <DialogHeader>
+            <DialogTitle>Send the updated PO?</DialogTitle>
+            <DialogDescription>
+              {supplier?.name ? `${supplier.name} still has` : "The supplier still has"} the version you sent before. Send them this one, marked as amended?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResendPromptOpen(false)} data-testid="button-resend-later">
+              Not now
+            </Button>
+            <Button
+              onClick={() => { setResendPromptOpen(false); setIsSendDialogOpen(true); }}
+              data-testid="button-resend-po"
+            >
+              <Send className="w-3.5 h-3.5 mr-1.5" />
+              Send updated PO
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirm */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

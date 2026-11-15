@@ -6493,6 +6493,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Sending
   sentAt: timestamp("sent_at"),
   sentToEmail: text("sent_to_email"),
+  // Changed after it was sent (migration 0125). Stamped once per edit session.
+  amendedAt: timestamp("amended_at"),
+  amendmentCount: integer("amendment_count").notNull().default(0),
   
   // Notes
   internalNotes: text("internal_notes"), // Internal only, not on PDF
