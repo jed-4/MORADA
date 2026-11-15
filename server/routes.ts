@@ -165,6 +165,8 @@ import {
   updateRfqReminderTemplateSchema,
   insertProposalReminderTemplateSchema,
   updateProposalReminderTemplateSchema,
+  insertVariationReminderTemplateSchema,
+  updateVariationReminderTemplateSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -25217,6 +25219,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });
+    }
+  });
+
+  // ============================================
+  // VARIATION REMINDERS — chasing an unsigned variation (migration 0126)
+  // Steps are per company (Settings → Variation Reminders); chasing is
+  // switched on per variation. See server/services/variationReminders.ts.
+  // ============================================
+  app.get("/api/variation-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { getVariationReminderTemplates } = await import("./services/variationReminders");
+      res.json(await getVariationReminderTemplates(getSessionCompanyId(req)!));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load variation reminders" });
+    }
+  });
+
+  app.post("/api/variation-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = insertVariationReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const { createVariationReminderTemplate } = await import("./services/variationReminders");
+      res.status(201).json(await createVariationReminderTemplate(getSessionCompanyId(req)!, parsed.data));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to add the reminder" });
+    }
+  });
+
+  app.patch("/api/variation-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = updateVariationReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const { updateVariationReminderTemplate } = await import("./services/variationReminders");
+      const row = await updateVariationReminderTemplate(req.params.id, getSessionCompanyId(req)!, parsed.data);
+      if (!row) return res.status(404).json({ error: "Reminder not found" });
+      res.json(row);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save the reminder" });
+    }
+  });
+
+  app.delete("/api/variation-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { deleteVariationReminderTemplate } = await import("./services/variationReminders");
+      const ok = await deleteVariationReminderTemplate(req.params.id, getSessionCompanyId(req)!);
+      if (!ok) return res.status(404).json({ error: "Reminder not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete the reminder" });
+    }
+  });
+
+  // Chasing on/off for one variation, plus what it would chase and what went.
+  app.get("/api/variations/:id/reminders", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const { getVariationReminderLog, variationRecipients } = await import("./services/variationReminders");
+      const [log, recipients] = await Promise.all([
+        getVariationReminderLog(variation.id),
+        variationRecipients(variation.id),
+      ]);
+      res.json({ enabled: !!(variation as any).remindersEnabled, recipients, log });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load reminders" });
+    }
+  });
+
+  app.patch("/api/variations/:id/reminders", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const enabled = req.body?.enabled === true;
+      await storage.updateVariation(variation.id, { remindersEnabled: enabled } as any);
+      res.json({ enabled });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to change chasing" });
+    }
+  });
+
+  app.post("/api/variations/:id/reminders/:templateId/send", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      if (variation.status !== "pending" || (variation as any).clientSignedDate) {
+        return res.status(409).json({ error: "This variation isn't waiting on the client, so there's nothing to chase." });
+      }
+      const companyId = getSessionCompanyId(req)!;
+      const svc = await import("./services/variationReminders");
+      const template = await svc.getVariationReminderTemplate(req.params.templateId, companyId);
+      if (!template) return res.status(404).json({ error: "Reminder not found" });
+      const recipients = await svc.variationRecipients(variation.id);
+      if (recipients.length === 0) return res.status(409).json({ error: "This variation hasn't been sent to anyone yet." });
+      const results = [];
+      for (const recipient of recipients) {
+        results.push(await svc.sendVariationReminder({ variation, template, recipient, companyId, force: true }));
+      }
+      res.json({ results });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to send the reminder" });
     }
   });
 
