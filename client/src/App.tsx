@@ -72,7 +72,6 @@ const RfiTemplates = lazy(() => import("@/pages/RfiTemplates"));
 const RfiTemplateDetail = lazy(() => import("@/pages/RfiTemplateDetail"));
 const ChecklistTemplates = lazy(() => import("@/pages/ChecklistTemplates"));
 const NoteTemplates = lazy(() => import("@/pages/NoteTemplates"));
-const TaskTemplates = lazy(() => import("@/pages/TaskTemplates"));
 const TakeoffTemplates = lazy(() => import("@/pages/TakeoffTemplates"));
 const TakeoffTemplateDetail = lazy(() => import("@/pages/TakeoffTemplateDetail"));
 const ChecklistTemplateDetail = lazy(() => import("@/pages/ChecklistTemplateDetail"));
@@ -363,7 +362,9 @@ function Router() {
       <Route path="/rfi-templates/:templateId" component={RfiTemplateDetail} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
-      <Route path="/task-templates" component={TaskTemplates} />
+      {/* One task template editor: Operations → Operational Tasks. The old
+          page edited the same templates without the SOP / assignee fields. */}
+      <Route path="/task-templates">{() => <Redirect to="/systems?tab=tasks" />}</Route>
       <Route path="/takeoff-templates" component={TakeoffTemplates} />
       <Route path="/takeoff-templates/:id" component={TakeoffTemplateDetail} />
       <Route path="/settings" component={Settings} />

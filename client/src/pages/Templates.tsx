@@ -57,9 +57,9 @@ const templateTypes = [
   {
     id: "tasks",
     title: "Task Templates",
-    description: "Create task templates for recurring workflows",
+    description: "Stored and repeating tasks, in Operations",
     icon: CheckSquare,
-    url: "/task-templates",
+    url: "/systems?tab=tasks",
     color: "text-coral",
     implemented: true,
   },
