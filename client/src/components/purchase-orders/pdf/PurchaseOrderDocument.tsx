@@ -76,6 +76,8 @@ interface PurchaseOrderDocumentProps {
     total: number;
     gstMode?: string | null;
     status?: string | null;
+    /** Set when a sent PO was changed — the supplier's copy says so. */
+    amendedAt?: Date | string | null;
   };
   items: POItem[];
   company?: Company | null;
@@ -136,7 +138,11 @@ export function PurchaseOrderDocument({
           status={purchaseOrder.status ? chip : null}
           figure={formatAUD(purchaseOrder.total)}
           figureLabel="Order total inc. GST"
-          figureCaption={purchaseOrder.poNumber}
+          figureCaption={
+            purchaseOrder.amendedAt
+              ? `${purchaseOrder.poNumber} · Amended ${new Date(purchaseOrder.amendedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`
+              : purchaseOrder.poNumber
+          }
         />
 
         <View style={{ paddingHorizontal: PDF_PAGE_MARGIN, paddingTop: PDF_SPACE.xl }}>

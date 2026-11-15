@@ -274,40 +274,33 @@ function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHa
 function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<TaskLibraryHandle> }) {
   const canAdd = usePermission("operations.tasks", "add");
   const canEdit = usePermission("operations.tasks", "edit");
+  // Same button style as the rest of the app (PO / variation headers). The
+  // Active / Inactive legend badges went — "On / off" is in the filter now.
+  const btn = "h-7 px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0";
   return (
     <>
-      <div className="flex items-center gap-1">
-        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
-          <Power className="h-3 w-3 text-status-success" />
-          <span>Active</span>
-        </Badge>
-        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
-          <PowerOff className="h-3 w-3 text-muted-foreground" />
-          <span>Inactive</span>
-        </Badge>
-      </div>
       {canEdit && (
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-xs gap-1"
-        onClick={() => taskLibraryRef.current?.generateRecurringTasks()}
-        data-testid="button-generate-recurring"
-      >
-        <CalendarIcon className="w-3 h-3" />
-        <span>Generate Tasks</span>
-      </Button>
+        <button
+          type="button"
+          className={`${btn} bg-card hover-elevate active-elevate-2`}
+          onClick={() => taskLibraryRef.current?.generateRecurringTasks()}
+          title="Create the next two weeks of to-dos from the repeating tasks now"
+          data-testid="button-generate-recurring"
+        >
+          <CalendarIcon className="w-3 h-3" />
+          <span>Generate</span>
+        </button>
       )}
       {canAdd && (
-      <Button
-        size="sm"
-        className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
-        onClick={() => taskLibraryRef.current?.openNewTemplateDialog()}
-        data-testid="button-new-template"
-      >
-        <Plus className="w-3 h-3" />
-        <span>New Template</span>
-      </Button>
+        <button
+          type="button"
+          className={`${btn} bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2`}
+          onClick={() => taskLibraryRef.current?.openNewTemplateDialog()}
+          data-testid="button-new-template"
+        >
+          <Plus className="w-3 h-3" />
+          <span>New</span>
+        </button>
       )}
     </>
   );

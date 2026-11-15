@@ -1681,3 +1681,33 @@ input[type="number"] {
   }
   .doc-scroll-fade[data-at-end="true"]::after { opacity: 0; }
 }
+
+
+/* Notion-style toggle blocks in NotionEditor (@tiptap/extension-details). */
+.ProseMirror .morada-toggle { display: flex; align-items: flex-start; gap: 0.25rem; margin: 0.25rem 0; }
+.ProseMirror .morada-toggle > button {
+  flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin-top: 0.15rem;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 0.25rem; cursor: pointer; background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+.ProseMirror .morada-toggle > button:hover { background: hsl(var(--muted)); }
+.ProseMirror .morada-toggle > button::before {
+  content: ""; width: 0; height: 0;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor; transition: transform 0.15s ease;
+}
+.ProseMirror .morada-toggle.is-open > button::before { transform: rotate(90deg); }
+.ProseMirror .morada-toggle > div { flex: 1; min-width: 0; }
+.ProseMirror .morada-toggle summary { font-weight: 600; font-size: 1.05rem; list-style: none; display: block; }
+.ProseMirror .morada-toggle summary::-webkit-details-marker { display: none; }
+.ProseMirror .morada-toggle [data-type="detailsContent"] { padding-left: 0.1rem; }
+.ProseMirror .morada-toggle:not(.is-open) [data-type="detailsContent"] { display: none; }
+
+/* To-do rows in NotionEditor: checkbox beside its text, ticked ones struck through. */
+.ProseMirror ul[data-type="taskList"] > li { display: flex; align-items: flex-start; gap: 0.5rem; list-style: none; }
+.ProseMirror ul[data-type="taskList"] > li > label { flex-shrink: 0; margin-top: 0.3rem; user-select: none; }
+.ProseMirror ul[data-type="taskList"] > li > label > input[type="checkbox"] { cursor: pointer; accent-color: hsl(var(--primary)); width: 0.95rem; height: 0.95rem; }
+.ProseMirror ul[data-type="taskList"] > li > div { flex: 1; min-width: 0; }
+.ProseMirror ul[data-type="taskList"] > li > div > p { margin: 0; }
+.ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > div { text-decoration: line-through; color: hsl(var(--muted-foreground)); }

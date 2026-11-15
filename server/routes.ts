@@ -165,6 +165,8 @@ import {
   updateRfqReminderTemplateSchema,
   insertProposalReminderTemplateSchema,
   updateProposalReminderTemplateSchema,
+  insertVariationReminderTemplateSchema,
+  updateVariationReminderTemplateSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -25393,6 +25395,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
+  // VARIATION REMINDERS — chasing an unsigned variation (migration 0126)
+  // Steps are per company (Settings → Variation Reminders); chasing is
+  // switched on per variation. See server/services/variationReminders.ts.
+  // ============================================
+  app.get("/api/variation-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { getVariationReminderTemplates } = await import("./services/variationReminders");
+      res.json(await getVariationReminderTemplates(getSessionCompanyId(req)!));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load variation reminders" });
+    }
+  });
+
+  app.post("/api/variation-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = insertVariationReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const { createVariationReminderTemplate } = await import("./services/variationReminders");
+      res.status(201).json(await createVariationReminderTemplate(getSessionCompanyId(req)!, parsed.data));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to add the reminder" });
+    }
+  });
+
+  app.patch("/api/variation-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = updateVariationReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      const { updateVariationReminderTemplate } = await import("./services/variationReminders");
+      const row = await updateVariationReminderTemplate(req.params.id, getSessionCompanyId(req)!, parsed.data);
+      if (!row) return res.status(404).json({ error: "Reminder not found" });
+      res.json(row);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save the reminder" });
+    }
+  });
+
+  app.delete("/api/variation-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { deleteVariationReminderTemplate } = await import("./services/variationReminders");
+      const ok = await deleteVariationReminderTemplate(req.params.id, getSessionCompanyId(req)!);
+      if (!ok) return res.status(404).json({ error: "Reminder not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete the reminder" });
+    }
+  });
+
+  // Chasing on/off for one variation, plus what it would chase and what went.
+  app.get("/api/variations/:id/reminders", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const { getVariationReminderLog, variationRecipients } = await import("./services/variationReminders");
+      const [log, recipients] = await Promise.all([
+        getVariationReminderLog(variation.id),
+        variationRecipients(variation.id),
+      ]);
+      res.json({ enabled: !!(variation as any).remindersEnabled, recipients, log });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load reminders" });
+    }
+  });
+
+  app.patch("/api/variations/:id/reminders", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      const enabled = req.body?.enabled === true;
+      await storage.updateVariation(variation.id, { remindersEnabled: enabled } as any);
+      res.json({ enabled });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to change chasing" });
+    }
+  });
+
+  app.post("/api/variations/:id/reminders/:templateId/send", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
+      if (variation.status !== "pending" || (variation as any).clientSignedDate) {
+        return res.status(409).json({ error: "This variation isn't waiting on the client, so there's nothing to chase." });
+      }
+      const companyId = getSessionCompanyId(req)!;
+      const svc = await import("./services/variationReminders");
+      const template = await svc.getVariationReminderTemplate(req.params.templateId, companyId);
+      if (!template) return res.status(404).json({ error: "Reminder not found" });
+      const recipients = await svc.variationRecipients(variation.id);
+      if (recipients.length === 0) return res.status(409).json({ error: "This variation hasn't been sent to anyone yet." });
+      const results = [];
+      for (const recipient of recipients) {
+        results.push(await svc.sendVariationReminder({ variation, template, recipient, companyId, force: true }));
+      }
+      res.json({ results });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to send the reminder" });
+    }
+  });
+
+  // ============================================
   // PURCHASE ORDERS API ROUTES
   // ============================================
 
@@ -25579,6 +25681,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return reverted.length;
   };
 
+  /**
+   * A PO's content (lines, scope, delivery, supplier) can change until it is
+   * billed. After a bill is matched — or the PO has moved to billed / paid /
+   * completed / cancelled — editing it would put the bill and the PO out of
+   * step, so the server refuses (the page hides Edit too). Status moves are
+   * unaffected.
+   */
+  const PO_CONTENT_LOCKED_STATUSES = new Set(["billed", "invoiced", "partially_paid", "paid", "completed", "cancelled"]);
+  const PO_CONTENT_FIELDS = [
+    "title", "description", "scope", "termsAndConditions", "deliveryReference", "deliveryAttention",
+    "deliveryContact", "deliveryAddress", "deliveryInstructions", "requiredByDate",
+    "supplierId", "supplierUserId", "supplierName", "gstMode", "projectId",
+    "termsAndConditionsId", "scopeStageId", "costCodeId",
+  ];
+  const poContentLockReason = async (po: { id: string; status: string | null }): Promise<string | null> => {
+    if (po.status && PO_CONTENT_LOCKED_STATUSES.has(po.status)) {
+      return `This PO is ${po.status.replace(/_/g, " ")}, so it can't be changed. Cancel it and raise a new one if it's wrong.`;
+    }
+    const [bill] = await db.select({ id: billsTable.id }).from(billsTable)
+      .where(eq(billsTable.matchedSitePOId, po.id)).limit(1);
+    if (bill) return "A bill is matched to this PO, so it can't be changed. Unlink the bill first, or cancel the PO and raise a new one.";
+    return null;
+  };
+
   app.patch("/api/purchase-orders/:id", async (req, res) => {
     try {
       if (!req.user?.companyId) {
@@ -25600,6 +25726,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
+
+      if (PO_CONTENT_FIELDS.some((k) => k in (validationResult.data as any))) {
+        const locked = await poContentLockReason(existingPo);
+        if (locked) return res.status(409).json({ error: locked, code: "PO_LOCKED" });
+      }
 
       const nextStatus = validationResult.data.status;
       if (nextStatus && !canMovePOStatus(existingPo.status, nextStatus)) {
@@ -25645,6 +25776,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to update purchase order:", error);
       res.status(500).json({ error: "Failed to update purchase order" });
+    }
+  });
+
+  // Stamp a sent PO as amended — once per edit session, when the editor is
+  // closed with changes, not on every line PATCH.
+  app.post("/api/purchase-orders/:id/amended", async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId as string | undefined;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const po = await storage.getPurchaseOrder(req.params.id);
+      if (!po || po.companyId !== companyId) return res.status(404).json({ error: "Purchase order not found" });
+      if (po.status === "draft") return res.json(po); // a draft isn't "amended", it's just being written
+      const updated = await storage.updatePurchaseOrder(po.id, {
+        amendedAt: new Date(),
+        amendmentCount: ((po as any).amendmentCount ?? 0) + 1,
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to mark purchase order amended:", error);
+      res.status(500).json({ error: "Failed to mark purchase order amended" });
     }
   });
 
@@ -25922,6 +26073,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const badRef = await firstForeignPOReference(validationResult.data, req.user.companyId);
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
+      const parentPo = await storage.getPurchaseOrder(req.params.poId);
+      const lockedCreate = parentPo ? await poContentLockReason(parentPo) : null;
+      if (lockedCreate) return res.status(409).json({ error: lockedCreate, code: "PO_LOCKED" });
+
       const item = await storage.createPurchaseOrderItem(validationResult.data);
       await syncPOTotals(req.params.poId);
       res.status(201).json(item);
@@ -26007,6 +26162,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (badRef) return res.status(400).json({ error: `Invalid ${badRef}` });
 
       const before = await storage.getPurchaseOrderItem(req.params.id);
+      const itemPo = before ? await storage.getPurchaseOrder(before.purchaseOrderId) : undefined;
+      const lockedUpdate = itemPo ? await poContentLockReason(itemPo) : null;
+      if (lockedUpdate) return res.status(409).json({ error: lockedUpdate, code: "PO_LOCKED" });
       const item = await storage.updatePurchaseOrderItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Purchase order item not found" });
@@ -26030,6 +26188,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const before = await storage.getPurchaseOrderItem(req.params.id);
+      const delPo = before ? await storage.getPurchaseOrder(before.purchaseOrderId) : undefined;
+      const lockedDelete = delPo ? await poContentLockReason(delPo) : null;
+      if (lockedDelete) return res.status(409).json({ error: lockedDelete, code: "PO_LOCKED" });
       const deleted = await storage.deletePurchaseOrderItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });

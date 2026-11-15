@@ -5,6 +5,7 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { Image } from '@tiptap/extension-image';
+import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useUpload } from '@/hooks/use-upload';
@@ -25,6 +26,7 @@ import {
   Minus,
   RemoveFormatting,
   Image as ImageIcon,
+  ChevronRight,
 } from 'lucide-react';
 
 interface NotionEditorProps {
@@ -50,6 +52,7 @@ const BLOCK_TYPES = [
   { id: 'ul', label: 'Bullet list', icon: List, action: (e: any) => e.chain().focus().toggleBulletList().run() },
   { id: 'ol', label: 'Numbered list', icon: ListOrdered, action: (e: any) => e.chain().focus().toggleOrderedList().run() },
   { id: 'todo', label: 'To-do', icon: CheckSquare, action: (e: any) => e.chain().focus().toggleTaskList().run() },
+  { id: 'toggle', label: 'Toggle', icon: ChevronRight, action: (e: any) => e.chain().focus().setDetails().run() },
   { id: 'code', label: 'Code block', icon: Code, action: (e: any) => e.chain().focus().toggleCodeBlock().run() },
   { id: 'quote', label: 'Quote', icon: Quote, action: (e: any) => e.chain().focus().toggleBlockquote().run() },
   { id: 'hr', label: 'Divider', icon: Minus, action: (e: any) => e.chain().focus().setHorizontalRule().run() },
@@ -89,8 +92,15 @@ export default function NotionEditor({
       Underline,
       TextStyle,
       TaskList,
-      TaskItem.configure({ nested: true }),
+      // Ticking is allowed while READING too, so someone can work through an
+      // SOP's checklist. Those ticks aren't saved: callers ignore onChange
+      // when the editor isn't editable (the Library does).
+      TaskItem.configure({ nested: true, onReadOnlyChecked: () => true }),
       Image.configure({ inline: false, allowBase64: false }),
+      // Notion-style toggles. Open/closed isn't saved with the document.
+      Details.configure({ persist: false, HTMLAttributes: { class: 'morada-toggle' } }),
+      DetailsSummary,
+      DetailsContent,
     ],
     content,
     editable,
@@ -98,6 +108,9 @@ export default function NotionEditor({
       attributes: {
         class: 'outline-none',
       },
+      // Pasting from Notion: its to-dos and toggles become real to-dos and
+      // toggles here instead of plain bullets.
+      transformPastedHTML: (html) => notionPasteToTiptap(html),
       handlePaste: (_view, event) => {
         const items = event.clipboardData?.items;
         if (!items) return false;
@@ -394,20 +407,19 @@ export default function NotionEditor({
             '[&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:ml-5 [&_.ProseMirror_ol]:my-1',
             '[&_.ProseMirror_li]:my-0.5',
             '[&_.ProseMirror_ul[data-type="taskList"]]:list-none [&_.ProseMirror_ul[data-type="taskList"]]:ml-0',
-            '[&_.ProseMirror_li[data-type="taskItem"]]:flex [&_.ProseMirror_li[data-type="taskItem"]]:items-start [&_.ProseMirror_li[data-type="taskItem"]]:gap-2',
-            '[&_.ProseMirror_li[data-type="taskItem"]>label]:mt-0.5',
-            '[&_.ProseMirror_li[data-type="taskItem"]>label>input[type="checkbox"]]:cursor-pointer',
-            '[&_.ProseMirror_li[data-type="taskItem"]>div]:flex-1',
+            // To-do rows live in index.css (.ProseMirror ul[data-type="taskList"] > li):
+            // this TipTap version writes <li data-checked> WITHOUT data-type="taskItem",
+            // so the old li[data-type="taskItem"] rules never matched and every
+            // checkbox sat on its own line above its text.
             '[&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:rounded-md [&_.ProseMirror_pre]:p-3 [&_.ProseMirror_pre]:my-2 [&_.ProseMirror_pre]:text-sm [&_.ProseMirror_pre]:font-mono [&_.ProseMirror_pre]:overflow-x-auto',
             '[&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:text-sm [&_.ProseMirror_code]:font-mono',
             '[&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0',
             '[&_.ProseMirror_blockquote]:border-l-4 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:my-2 [&_.ProseMirror_blockquote]:text-muted-foreground [&_.ProseMirror_blockquote]:italic',
             '[&_.ProseMirror_hr]:border-border [&_.ProseMirror_hr]:my-4',
             '[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:h-auto [&_.ProseMirror_img]:rounded-md [&_.ProseMirror_img]:my-2',
-            '[&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:line-through [&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:text-muted-foreground',
           )}
         />
-        {editor?.isEmpty && !isFocused && (
+        {editor?.isEmpty && !isFocused && editable && (
           <p className="absolute top-0 left-0 text-muted-foreground pointer-events-none select-none leading-relaxed">
             {placeholder}
           </p>
@@ -446,4 +458,69 @@ function BubbleBtn({
       {children}
     </button>
   );
+}
+
+
+/**
+ * Notion's clipboard HTML → markup our extensions parse.
+ *  - to-dos: <ul class="to-do-list"><li><div class="checkbox checkbox-on">… and
+ *    plain "[ ] / [x]" bullets → task list items.
+ *  - toggles: <details><summary>…</summary>…</details> (often wrapped in
+ *    <ul class="toggle"><li>) → Details with its body in a detailsContent div;
+ *    a heading inside the summary ("toggle heading") is flattened to its text.
+ * Anything else passes through untouched.
+ */
+export function notionPasteToTiptap(html: string): string {
+  if (typeof window === 'undefined' || !/to-do|checkbox|<details|\[[ xX]\]/.test(html)) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  // Toggle lists: unwrap <ul class="toggle"><li><details>.
+  doc.querySelectorAll('ul.toggle').forEach((ul) => {
+    const frag = doc.createDocumentFragment();
+    ul.querySelectorAll(':scope > li').forEach((li) => { while (li.firstChild) frag.appendChild(li.firstChild); });
+    ul.replaceWith(frag);
+  });
+  doc.querySelectorAll('details').forEach((det) => {
+    const summary = det.querySelector(':scope > summary');
+    if (summary) {
+      const h = summary.querySelector('h1,h2,h3,h4');
+      if (h) summary.textContent = h.textContent ?? '';
+    }
+    const body = doc.createElement('div');
+    body.setAttribute('data-type', 'detailsContent');
+    Array.from(det.childNodes).forEach((n) => { if (n !== summary) body.appendChild(n); });
+    if (!body.textContent?.trim() && !body.querySelector('img')) body.innerHTML = '<p></p>';
+    det.appendChild(body);
+  });
+
+  // To-dos.
+  const toTaskItem = (li: Element, checked: boolean, text: string) => {
+    const item = doc.createElement('li');
+    item.setAttribute('data-type', 'taskItem');
+    item.setAttribute('data-checked', checked ? 'true' : 'false');
+    const p = doc.createElement('p');
+    p.textContent = text.trim();
+    item.appendChild(p);
+    li.replaceWith(item);
+  };
+  doc.querySelectorAll('ul').forEach((ul) => {
+    const items = Array.from(ul.querySelectorAll(':scope > li'));
+    if (!items.length) return;
+    const isNotionTodo = ul.classList.contains('to-do-list') || items.every((li) => li.querySelector('.checkbox'));
+    const isBracketTodo = items.every((li) => /^\s*\[[ xX]\]/.test(li.textContent ?? ''));
+    if (!isNotionTodo && !isBracketTodo) return;
+    ul.setAttribute('data-type', 'taskList');
+    items.forEach((li) => {
+      if (isNotionTodo) {
+        const box = li.querySelector('.checkbox');
+        const checked = !!box?.classList.contains('checkbox-on') || !!li.querySelector('.to-do-children-checked');
+        box?.remove();
+        toTaskItem(li, checked, li.textContent ?? '');
+      } else {
+        const m = /^\s*\[([ xX])\]\s*/.exec(li.textContent ?? '')!;
+        toTaskItem(li, m[1].toLowerCase() === 'x', (li.textContent ?? '').slice(m[0].length));
+      }
+    });
+  });
+  return doc.body.innerHTML;
 }
