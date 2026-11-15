@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays, ChevronRight, Filter, MoreHorizontal, Sparkles, ChevronDown, ClipboardCheck } from "lucide-react";
+import { BookOpen, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays, ChevronRight, Filter, MoreHorizontal, Sparkles, ChevronDown, ClipboardCheck, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Library, type LibraryHandle } from "@/components/library/Library";
 import { StarterPackButton, useStarterPackAvailable } from "@/components/library/StarterPackButton";
+import { LibraryPropertiesManager } from "@/components/library/LibraryProperties";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/hooks/use-auth";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -202,6 +205,9 @@ function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHa
   const canAdd = usePermission("operations.library", "add");
   const starterAvailable = useStarterPackAvailable();
   const [starterOpen, setStarterOpen] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = !!(user as any)?.isAdminLike;
+  const [propsOpen, setPropsOpen] = useState(false);
   return (
     <>
       {canAdd && (
@@ -227,7 +233,7 @@ function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHa
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {starterAvailable && (
+      {(starterAvailable || isAdmin) && (
         <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -236,12 +242,28 @@ function LibraryControls({ libraryRef }: { libraryRef: React.RefObject<LibraryHa
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => setStarterOpen(true)} data-testid="button-starter-pack">
-                <Sparkles className="w-3.5 h-3.5 mr-2" />Add the starter pack…
-              </DropdownMenuItem>
+              {isAdmin && (
+                <DropdownMenuItem onClick={() => setPropsOpen(true)} data-testid="button-library-properties">
+                  <Tag className="w-3.5 h-3.5 mr-2" />Manage properties…
+                </DropdownMenuItem>
+              )}
+              {starterAvailable && (
+                <DropdownMenuItem onClick={() => setStarterOpen(true)} data-testid="button-starter-pack">
+                  <Sparkles className="w-3.5 h-3.5 mr-2" />Add the starter pack…
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <StarterPackButton open={starterOpen} onOpenChange={setStarterOpen} hideTrigger />
+          {starterAvailable && <StarterPackButton open={starterOpen} onOpenChange={setStarterOpen} hideTrigger />}
+          <Dialog open={propsOpen} onOpenChange={setPropsOpen}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Library properties</DialogTitle>
+                <DialogDescription>Labels you can give documents — like Notion's select and multi-select. Also in Settings → Library.</DialogDescription>
+              </DialogHeader>
+              <LibraryPropertiesManager />
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </>

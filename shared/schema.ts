@@ -748,6 +748,11 @@ export const docFolders = pgTable("doc_folders", {
   name: text("name").notNull(),
   parentFolderId: varchar("parent_folder_id"),
   sortOrder: integer("sort_order").default(0),
+  // Who can see / edit this folder's documents (migration 0127). NULL =
+  // inherit from the parent; top level: view = everyone with Library access,
+  // edit = admins only. See server/services/libraryAccess.ts.
+  viewRoleIds: text("view_role_ids").array(),
+  editRoleIds: text("edit_role_ids").array(),
 });
 export const insertDocFolderSchema = createInsertSchema(docFolders).omit({ id: true });
 export type DocFolder = typeof docFolders.$inferSelect;
@@ -776,9 +781,36 @@ export const docs = pgTable("docs", {
   approvedById: varchar("approved_by_id").references(() => users.id, { onDelete: "set null" }),
   approvedByName: text("approved_by_name"),
   reviewNote: text("review_note"), // why a review was sent back
+  // Migration 0128: Notion-style property values { propertyId: optionId |
+  // optionId[] } (see libraryProperties) and when an SOP is next due a review.
+  properties: jsonb("properties").$type<Record<string, string | string[]>>().notNull().default({}),
+  reviewDueAt: timestamp("review_due_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+/** A company's Library properties (migration 0128) — Notion's select / multi-select. */
+export const libraryProperties = pgTable("library_properties", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: text("kind").notNull().default("tags"), // "select" (one) | "tags" (several)
+  options: jsonb("options").$type<Array<{ id: string; label: string; color: string }>>().notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const libraryPropertyOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(60),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+});
+export const insertLibraryPropertySchema = z.object({
+  name: z.string().min(1).max(60),
+  kind: z.enum(["select", "tags"]),
+  options: z.array(libraryPropertyOptionSchema).max(50),
+  sortOrder: z.number().int().optional(),
+});
+export type LibraryProperty = typeof libraryProperties.$inferSelect;
+
 export const LIBRARY_DOC_TYPES = ["sop", "policy", "template", "checklist", "reference", "document"] as const;
 export const LIBRARY_DOC_STATUSES = ["draft", "in_review", "approved", "archived"] as const;
 export type LibraryDocType = typeof LIBRARY_DOC_TYPES[number];
@@ -788,6 +820,8 @@ export type LibraryDocStatus = typeof LIBRARY_DOC_STATUSES[number];
 export const insertDocSchema = createInsertSchema(docs, {
   docType: z.enum(LIBRARY_DOC_TYPES).optional(),
   tags: z.array(z.string()).optional(),
+  properties: z.record(z.union([z.string(), z.array(z.string())])).optional(),
+  reviewDueAt: z.coerce.date().nullable().optional(),
 }).omit({
   id: true, createdAt: true, updatedAt: true,
   status: true, currentVersion: true, submittedAt: true, submittedById: true,
