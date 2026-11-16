@@ -150,9 +150,18 @@ function tenantOwnedSchemas() {
   }
   const schemas = new Set();
   const schemaRe = /export const (insert\w+Schema)\s*=\s*createInsertSchema\(\s*(\w+)\s*\)/g;
+  // An .omit() straight after createInsertSchema(table) that drops every FK
+  // field makes the schema safe wherever it is parsed — no need to repeat
+  // the .omit() at each route (zod won't type-check a second omit anyway).
+  const omitsAtDefinition = (after) => {
+    const omit = /^\s*\.\s*omit\(\s*\{([^}]*)\}/.exec(after);
+    return !!omit && FK_FIELDS.every((f) => new RegExp(`\\b${f}\\s*:\\s*true`).test(omit[1]));
+  };
   let m;
   while ((m = schemaRe.exec(src)) !== null) {
-    if (withCompany.has(m[2])) schemas.add(m[1]);
+    if (!withCompany.has(m[2])) continue;
+    if (omitsAtDefinition(src.slice(schemaRe.lastIndex, schemaRe.lastIndex + 1000))) continue;
+    schemas.add(m[1]);
   }
   return schemas;
 }
