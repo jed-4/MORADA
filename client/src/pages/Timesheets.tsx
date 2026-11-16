@@ -696,6 +696,13 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     return u ? `${u.firstName} ${u.lastName}`.trim() || u.username : "Unknown User";
   };
 
+  // Subcontractors are costed through their bills; their timesheets are
+  // hours only, so rate and total read "—" instead of a misleading figure.
+  const isSubbieUser = (userId: string) => {
+    const u = users.find((usr) => usr.id === userId) ?? allUsersInclArchived.find((usr) => usr.id === userId);
+    return (u as { isSubcontractor?: boolean } | undefined)?.isSubcontractor === true;
+  };
+
   const getCostCodeName = (costCodeId: string | null) => {
     if (!costCodeId) return "-";
     const costCode = costCodes.find((c) => c.id === costCodeId);
@@ -1004,7 +1011,20 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
           if (t._isSplitRow && !t._splitIsFirst) {
             return <span className="text-table truncate text-muted-foreground/30">—</span>;
           }
-          return <span className="text-table truncate">{getUserName(t.userId)}</span>;
+          return (
+            <span className="flex items-center gap-1 min-w-0">
+              <span className="text-table truncate">{getUserName(t.userId)}</span>
+              {isSubbieUser(t.userId) && (
+                <span
+                  className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground"
+                  title="Subcontractor — costed through their bills"
+                  data-testid={`badge-subbie-${t.id}`}
+                >
+                  Subbie
+                </span>
+              )}
+            </span>
+          );
         },
       },
       {
@@ -1158,7 +1178,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         enableSorting: false,
         meta: { headerLabel: "Rate", defaultWidth: 50 },
         cell: ({ row }) => {
-          const rate = row.original.hourlyRate ? parseFloat(row.original.hourlyRate) : 0;
+          const rate = isSubbieUser(row.original.userId) ? 0 : (row.original.hourlyRate ? parseFloat(row.original.hourlyRate) : 0);
           if (rate > 0) {
             return (
               <span className="text-table text-muted-foreground tabular-nums">
@@ -1177,6 +1197,9 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         meta: { headerLabel: "Total", defaultWidth: 60, align: "right" },
         cell: ({ row }) => {
           const t = row.original;
+          if (isSubbieUser(t.userId)) {
+            return <span className="text-table text-muted-foreground tabular-nums" title="Costed through their bills">&mdash;</span>;
+          }
           if (t._splitTotal != null) {
             const val = parseFloat(t._splitTotal);
             return (

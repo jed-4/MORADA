@@ -237,12 +237,22 @@ export function TimesheetDialog({
   // A NEW timesheet takes the chosen person's cost rate (Team → their profile →
   // Rates). It used to start at $50 whoever it was for. Editing an existing
   // timesheet keeps the rate it was saved with.
+  // Subcontractors are costed through their PO and bill, so their timesheet
+  // is hours only: rate and total are $0 (the server enforces this too).
+  const isSubbieSelected = (users.find((u) => u.id === watchedUserId) as { isSubcontractor?: boolean } | undefined)?.isSubcontractor === true;
   useEffect(() => {
-    if (!open || timesheet) return;
+    if (!open) return;
+    if (isSubbieSelected) {
+      form.setValue("hourlyRate", "0");
+      setCostCodeSplits((prev) => prev.map((sp) => ({ ...sp, hourlyRate: "0", total: "0" })));
+      return;
+    }
+    if (timesheet) return;
     const person = users.find((u) => u.id === watchedUserId) as { hourlyRate?: string | null } | undefined;
     const rate = person?.hourlyRate ? parseFloat(person.hourlyRate) : 0;
     if (rate > 0) form.setValue("hourlyRate", rate.toString());
-  }, [open, timesheet, watchedUserId, users, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, timesheet, watchedUserId, users, form, isSubbieSelected]);
 
   const toggleLabel = (labelKey: string) => {
     const current = form.getValues("labels") || [];
@@ -1079,10 +1089,16 @@ export function TimesheetDialog({
                                   step="1"
                                   min="0"
                                   {...field}
+                                  disabled={isSubbieSelected}
                                   className={inputClass}
                                   data-testid="input-hourly-rate"
                                 />
                               </FormControl>
+                              {isSubbieSelected && (
+                                <p className="text-[11px] text-muted-foreground mt-1" data-testid="text-subbie-rate-note">
+                                  Subcontractor — costed through their bills
+                                </p>
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1139,6 +1155,7 @@ export function TimesheetDialog({
                                     step="1"
                                     value={split.hourlyRate}
                                     onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
+                                    disabled={isSubbieSelected}
                                     className={cn(inputClass, "w-full")}
                                     data-testid={`input-split-rate-${split.id}`}
                                   />
@@ -1210,7 +1227,9 @@ export function TimesheetDialog({
                         <div style={{ fontSize: '20px', fontWeight: 600, lineHeight: 1.2 }} className="text-muted-foreground">
                           ${displayTotal}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total cost</div>
+                        <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>
+                          {isSubbieSelected ? "billed by subcontractor" : "total cost"}
+                        </div>
                       </div>
                     </div>
                   )}
