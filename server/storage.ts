@@ -22691,10 +22691,12 @@ export class DbStorage implements IStorage {
           eq(schema.timesheets.projectId, projectId),
           eq(schema.timesheets.status, "approved"),
         ));
-      const labourActualAmount = approvedTimesheetsForActual.reduce(
-        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
-        0,
-      );
+      // Subcontractor time is costed via their bills; skip any legacy row
+      // that still carries a rate so it can't double-count.
+      const actualSubs = await this.subcontractorUserIds(approvedTimesheetsForActual.map((t: any) => t.userId));
+      const labourActualAmount = approvedTimesheetsForActual
+        .filter((ts: any) => !actualSubs.has(ts.userId))
+        .reduce((sum: number, ts: any) => sum + timesheetTotalExGstCents(ts), 0);
 
       const actualAmount = billsActualAmount + labourActualAmount;
 
@@ -23050,10 +23052,13 @@ export class DbStorage implements IStorage {
         existing.budgetedHours += item.quantity || 0;
       }
 
-      // Get timesheets for this project
-      const timesheets: Timesheet[] = await exec.select()
+      // Get timesheets for this project. Subcontractor hours are left out:
+      // they're costed through their PO/bill, not tallied as job labour.
+      const projectTimesheets: Timesheet[] = await exec.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
+      const labourSubs = await this.subcontractorUserIds(projectTimesheets.map((t) => t.userId));
+      const timesheets = projectTimesheets.filter((t) => !labourSubs.has(t.userId));
 
       // Get timesheet cost code splits
       const timesheetIds = timesheets.map((t) => t.id);
@@ -23183,7 +23188,9 @@ export class DbStorage implements IStorage {
       const allTimesheets = await db.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
-      const timesheets = allTimesheets.filter((t) => t.status === "approved");
+      // Subcontractors are costed through bills — not labour rows here.
+      const breakdownSubs = await this.subcontractorUserIds(allTimesheets.map((t) => t.userId));
+      const timesheets = allTimesheets.filter((t) => t.status === "approved" && !breakdownSubs.has(t.userId));
       if (timesheets.length === 0) return { byCostCode: [], total: 0, entries: [] };
 
       const timesheetIds = timesheets.map((t) => t.id);
@@ -23375,11 +23382,38 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // ── Subcontractor timesheets are always $0 ────────────────────────────────
+  // A subcontractor (users.isSubcontractor) is costed through their PO and
+  // bill. Their timesheet records hours only: the rate and total — on the
+  // timesheet AND on every cost-code split — are forced to 0 here, at the one
+  // layer every entry path (dialog, mobile, import, clock-out) goes through.
+  // The PO generated from their hours prices them off the PROFILE rate.
+  private async subcontractorUserIds(userIds: (string | null | undefined)[]): Promise<Set<string>> {
+    const ids = Array.from(new Set(userIds.filter((u): u is string => !!u)));
+    if (ids.length === 0) return new Set();
+    const rows = await db.select({ id: schema.users.id })
+      .from(schema.users)
+      .where(and(inArray(schema.users.id, ids), eq(schema.users.isSubcontractor, true)));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  private async isSubcontractorTimesheet(timesheetId: string): Promise<boolean> {
+    const [row] = await db.select({ sub: schema.users.isSubcontractor })
+      .from(schema.timesheets)
+      .innerJoin(schema.users, eq(schema.timesheets.userId, schema.users.id))
+      .where(eq(schema.timesheets.id, timesheetId))
+      .limit(1);
+    return row?.sub === true;
+  }
+
   async createTimesheetsBulk(timesheets: InsertTimesheet[]): Promise<Timesheet[]> {
     if (timesheets.length === 0) return [];
     try {
+      const subs = await this.subcontractorUserIds(timesheets.map((t) => t.userId));
+      const rows = subs.size === 0 ? timesheets : timesheets.map((t) =>
+        subs.has(t.userId) ? { ...t, hourlyRate: "0", total: "0" } : t);
       return await db.insert(schema.timesheets)
-        .values(timesheets)
+        .values(rows)
         .returning();
     } catch (error) {
       console.error("Database error in createTimesheetsBulk:", error);
@@ -23402,8 +23436,10 @@ export class DbStorage implements IStorage {
 
   async createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet> {
     try {
+      const subs = await this.subcontractorUserIds([timesheet.userId]);
+      const row = subs.size > 0 ? { ...timesheet, hourlyRate: "0", total: "0" } : timesheet;
       const result = await db.insert(schema.timesheets)
-        .values(timesheet)
+        .values(row)
         .returning();
       return result[0];
     } catch (error) {
@@ -23415,6 +23451,14 @@ export class DbStorage implements IStorage {
   async updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
     try {
       const { actualStartTime, actualEndTime, ...safeFields } = timesheet as any;
+      // Only look the person up when the patch could put money on the row.
+      if (["hourlyRate", "total", "userId", "duration"].some((k) => k in safeFields)) {
+        const userId = safeFields.userId ?? (await this.getTimesheet(id))?.userId;
+        if ((await this.subcontractorUserIds([userId])).size > 0) {
+          safeFields.hourlyRate = "0";
+          safeFields.total = "0";
+        }
+      }
       const result = await db.update(schema.timesheets)
         .set({ ...safeFields, updatedAt: new Date() })
         .where(eq(schema.timesheets.id, id))
@@ -23508,8 +23552,9 @@ export class DbStorage implements IStorage {
         await tx.delete(schema.timesheetCostCodes)
           .where(eq(schema.timesheetCostCodes.timesheetId, timesheetId));
         if (splits.length === 0) return [];
+        const zero = await this.isSubcontractorTimesheet(timesheetId);
         return await tx.insert(schema.timesheetCostCodes)
-          .values(splits.map((s) => ({ ...s, timesheetId })))
+          .values(splits.map((s) => ({ ...s, timesheetId, ...(zero ? { hourlyRate: "0", total: "0" } : {}) })))
           .returning();
       });
     } catch (error) {
@@ -23520,8 +23565,9 @@ export class DbStorage implements IStorage {
 
   async createTimesheetCostCode(costCode: InsertTimesheetCostCode): Promise<TimesheetCostCode> {
     try {
+      const zero = await this.isSubcontractorTimesheet(costCode.timesheetId);
       const result = await db.insert(schema.timesheetCostCodes)
-        .values(costCode)
+        .values(zero ? { ...costCode, hourlyRate: "0", total: "0" } : costCode)
         .returning();
       return result[0];
     } catch (error) {
@@ -23532,8 +23578,16 @@ export class DbStorage implements IStorage {
 
   async updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined> {
     try {
+      let patch: Partial<InsertTimesheetCostCode> = costCode;
+      if ("hourlyRate" in costCode || "total" in costCode || "duration" in costCode) {
+        const [split] = await db.select({ timesheetId: schema.timesheetCostCodes.timesheetId })
+          .from(schema.timesheetCostCodes).where(eq(schema.timesheetCostCodes.id, id)).limit(1);
+        if (split && await this.isSubcontractorTimesheet(split.timesheetId)) {
+          patch = { ...costCode, hourlyRate: 0, total: 0 };
+        }
+      }
       const result = await db.update(schema.timesheetCostCodes)
-        .set({ ...costCode, updatedAt: new Date() })
+        .set({ ...patch, updatedAt: new Date() })
         .where(eq(schema.timesheetCostCodes.id, id))
         .returning();
       return result[0];
