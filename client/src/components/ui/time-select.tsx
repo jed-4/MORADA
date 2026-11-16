@@ -91,8 +91,9 @@ export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
             <SelectItem
               key={option.value}
               value={option.value}
-              className={cn(option.isWholeHour && "font-semibold")}
-              style={option.isWholeHour ? { color: '#3a3a3a' } : { color: '#6b6b6b' }}
+              // Theme tokens, not fixed hex greys: #3a3a3a/#6b6b6b were near-
+              // invisible on the dark popover.
+              className={cn(option.isWholeHour ? "font-semibold text-foreground" : "text-muted-foreground")}
             >
               {option.label}
             </SelectItem>

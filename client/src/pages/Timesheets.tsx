@@ -87,7 +87,13 @@ type TimesheetTableRow = Timesheet & {
   _splitDuration?: string;
   _splitTotal?: string;
   _splitIsFirst?: boolean;
+  // Collapsed split timesheet: ONE row standing for all its splits.
+  _isSplitSummary?: true;
+  _splitCostCodeIds?: string[];
+  _splitCount?: number;
 };
+
+const EXPAND_SPLITS_KEY = "timesheets.expandSplits";
 
 const PICKER_COLUMNS: { id: string; label: string; pinned?: boolean }[] = [
   { id: "select", label: "Select", pinned: true },
@@ -144,6 +150,29 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
   const [selectedCostCodes, setSelectedCostCodes] = useState<string[]>([]);
+  // Split timesheets show as one row (codes comma-joined) unless expanded —
+  // all at once from the toolbar (remembered per browser) or one at a time.
+  const [expandAllSplits, setExpandAllSplits] = useState<boolean>(() => {
+    try { return localStorage.getItem(EXPAND_SPLITS_KEY) === "1"; } catch { return false; }
+  });
+  const [expandedSplitIds, setExpandedSplitIds] = useState<Set<string>>(() => new Set());
+  const toggleExpandAllSplits = () => {
+    setExpandAllSplits((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(EXPAND_SPLITS_KEY, next ? "1" : "0"); } catch { /* storage blocked */ }
+      return next;
+    });
+    setExpandedSplitIds(new Set());
+  };
+  const toggleSplitRow = (id: string) => {
+    setExpandedSplitIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  // In expand-all mode the per-row set holds the ones the user CLOSED.
+  const isSplitExpanded = (id: string) => expandAllSplits !== expandedSplitIds.has(id);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
@@ -727,7 +756,21 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     const rows: TimesheetTableRow[] = [];
     for (const ts of filteredTimesheets) {
       const splits = (ts as any).costCodeSplits as any[] | undefined;
-      if (splits && splits.length > 0) {
+      if (splits && splits.length > 0 && !isSplitExpanded(ts.id)) {
+        // Totals come from the splits so the collapsed row always equals the
+        // sum of its expanded rows.
+        const hours = splits.reduce((sum, sp) => sum + (parseFloat(sp.duration ?? "0") || 0), 0);
+        const total = splits.reduce((sum, sp) => sum + (parseFloat(sp.total ?? "0") || 0), 0);
+        rows.push({
+          ...ts,
+          _rowKey: `timesheet-${ts.id}`,
+          _isSplitSummary: true,
+          _splitCostCodeIds: splits.map((sp) => sp.costCodeId || ""),
+          _splitCount: splits.length,
+          _splitDuration: hours.toString(),
+          _splitTotal: total.toString(),
+        });
+      } else if (splits && splits.length > 0) {
         splits.forEach((split, idx) => {
           rows.push({
             ...ts,
@@ -737,6 +780,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             _splitDuration: split.duration?.toString() ?? "0",
             _splitTotal: split.total?.toString() ?? "0",
             _splitIsFirst: idx === 0,
+            _splitCount: splits.length,
           });
         });
       } else {
@@ -744,7 +788,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       }
     }
     return rows;
-  }, [filteredTimesheets]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredTimesheets, expandAllSplits, expandedSplitIds]);
 
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
@@ -991,15 +1036,57 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       },
       {
         id: "costCode",
-        accessorFn: (t) => getCostCodeName(t._splitCostCodeId ?? t.costCodeId),
+        accessorFn: (t) =>
+          t._isSplitSummary
+            ? (t._splitCostCodeIds || []).map(getCostCodeName).join(", ")
+            : getCostCodeName(t._splitCostCodeId ?? t.costCodeId),
         header: "Cost Code",
         meta: { headerLabel: "Cost Code", defaultWidth: 100 },
         cell: ({ row }) => {
           const t = row.original;
+          // Split timesheets get an arrow: on the collapsed row, or on the
+          // first of its expanded rows. Clicking it never opens the dialog.
+          const showToggle = t._isSplitSummary || (t._isSplitRow && t._splitIsFirst);
+          const toggle = showToggle ? (
+            <button
+              type="button"
+              className="shrink-0 h-4 w-4 -ml-0.5 rounded hover:bg-muted flex items-center justify-center"
+              onClick={(e) => { e.stopPropagation(); toggleSplitRow(t.id); }}
+              title={t._isSplitSummary ? `Show ${t._splitCount} split rows` : "Show as one row"}
+              aria-label={t._isSplitSummary ? "Expand split" : "Collapse split"}
+              data-testid={`button-toggle-split-${t.id}`}
+            >
+              {t._isSplitSummary
+                ? <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+            </button>
+          ) : null;
+          if (t._isSplitSummary) {
+            const ids = t._splitCostCodeIds || [];
+            const title = ids.map(getCostCodeName).join(", ");
+            return (
+              <span className="flex items-center gap-1 min-w-0" title={title}>
+                {toggle}
+                <span className="text-table truncate text-muted-foreground">
+                  {ids.map((id, i) => (
+                    <span key={`${id}-${i}`}>
+                      {i > 0 && ", "}
+                      <span className={selectedCostCodes.includes(id) ? "text-foreground font-semibold" : undefined}>
+                        {getCostCodeName(id)}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              </span>
+            );
+          }
           const codeId = t._splitCostCodeId ?? t.costCodeId;
           return (
-            <span className="text-table truncate text-muted-foreground">
-              {getCostCodeName(codeId)}
+            <span className="flex items-center gap-1 min-w-0">
+              {toggle}
+              <span className={`text-table truncate text-muted-foreground ${t._isSplitRow && !t._splitIsFirst ? "pl-4" : ""}`}>
+                {getCostCodeName(codeId)}
+              </span>
             </span>
           );
         },
@@ -1306,7 +1393,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     // Hide cost columns from users without timesheets.rates permission
     return canViewTimesheetRates ? cols : cols.filter(c => c.id !== "rate" && c.id !== "total");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, canViewTimesheetRates, user?.id, user?.roleName, duplicateMutation.isPending]);
+  }, [filteredTimesheets, selectedTimesheets, selectedCostCodes, projects, users, costCodes, tsDateFormat, canApproveTimesheets, canViewTimesheetRates, user?.id, user?.roleName, duplicateMutation.isPending]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1724,6 +1811,26 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {activeView === "table" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggleExpandAllSplits}
+                  aria-pressed={expandAllSplits}
+                  className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${expandAllSplits ? "bg-primary/10 text-primary border-primary/30" : ""}`}
+                  data-testid="button-toggle-expand-splits"
+                >
+                  {expandAllSplits ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  Splits
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {expandAllSplits ? "Show each split timesheet as one row" : "Show every cost-code split as its own row"}
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {activeView === "table" && (
             <Popover>
