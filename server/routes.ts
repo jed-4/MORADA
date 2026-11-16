@@ -3483,9 +3483,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/docs/:id", requireAuth, requireTeamMember, requirePermission("operations.library", "delete"), async (req, res) => {
     try {
+      // getAccessibleDoc = getOwnedDoc (row's companyId must be the session's)
+      // + the folder's edit roles. The delete repeats the company predicate so
+      // it can never touch another tenant's row even if the guard changes.
       const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
-      await storage.deleteDoc(req.params.id);
+      const companyId = (req.user as any).companyId;
+      await db.delete(schema.docs)
+        .where(and(eq(schema.docs.id, owned.id), eq(schema.docs.companyId, companyId)));
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doc" });
