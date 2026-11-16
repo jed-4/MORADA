@@ -114,7 +114,7 @@ export default function CreateRFI() {
       return contacts.map(c => ({ id: c.id, name: c.name, email: c.email }));
     }
     if (form.directedToType === "user") {
-      return users.map(u => ({ id: u.id, name: u.name || u.email, email: u.email }));
+      return users.map(u => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Team member", email: u.email }));
     }
     return [];
   };

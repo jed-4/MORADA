@@ -77,7 +77,7 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
     return new Date(t.date) >= startOfWeek;
   });
   
-  const hoursThisWeek = weeklyTimesheets.reduce((sum, t) => sum + (t.hours || 0), 0);
+  const hoursThisWeek = weeklyTimesheets.reduce((sum, t) => sum + (Number(t.duration) || 0), 0); // was t.hours (no such field) — always 0
   const hoursProgress = Math.min((hoursThisWeek / weeklyHoursTarget) * 100, 100);
 
   if (isConfiguring) {

@@ -134,7 +134,7 @@ const contactFormSchema = z.object({
 type ContactFormValues = z.infer<typeof contactFormSchema>;
 
 const insuranceFormSchema = z.object({
-  insuranceType: z.enum(["public_liability", "workers_compensation", "other"]),
+  insuranceType: z.enum(["public_liability", "workers_comp", "other"]),
   policyNumber: z.string().optional(),
   insurer: z.string().optional(),
   expiryDate: z.string().optional(),
@@ -317,9 +317,27 @@ export default function Trades() {
     },
   });
 
+  // Supplier contacts store ONE required `name`; insurances store
+  // `insurerName` and have no coverage column. The forms used first/last name
+  // and `insurer`, so adding a contact always failed validation and the
+  // insurer typed in was silently dropped.
+  const toContactPayload = (data: Partial<ContactFormValues>) => {
+    const { firstName, lastName, ...rest } = data as any;
+    const name = [firstName, lastName].filter(Boolean).join(" ").trim();
+    return name ? { ...rest, name } : rest;
+  };
+  const toInsurancePayload = (data: Partial<InsuranceFormValues>) => {
+    const { insurer, coverageAmount, expiryDate, ...rest } = data as any;
+    return {
+      ...rest,
+      insurerName: insurer || null,
+      expiryDate: expiryDate ? new Date(expiryDate) : null,
+    };
+  };
+
   const createContactMutation = useMutation({
     mutationFn: async (data: ContactFormValues) => {
-      return await apiRequest(`/api/suppliers/${selectedTrade?.id}/contacts`, "POST", data);
+      return await apiRequest(`/api/suppliers/${selectedTrade?.id}/contacts`, "POST", toContactPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedTrade?.id, "contacts"] });
@@ -334,7 +352,7 @@ export default function Trades() {
 
   const updateContactMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ContactFormValues> }) => {
-      return await apiRequest(`/api/supplier-contacts/${id}`, "PATCH", data);
+      return await apiRequest(`/api/supplier-contacts/${id}`, "PATCH", toContactPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedTrade?.id, "contacts"] });
@@ -363,10 +381,7 @@ export default function Trades() {
 
   const createInsuranceMutation = useMutation({
     mutationFn: async (data: InsuranceFormValues) => {
-      return await apiRequest(`/api/suppliers/${selectedTrade?.id}/insurances`, "POST", {
-        ...data,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate).toISOString() : null,
-      });
+      return await apiRequest(`/api/suppliers/${selectedTrade?.id}/insurances`, "POST", toInsurancePayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedTrade?.id, "insurances"] });
@@ -381,10 +396,7 @@ export default function Trades() {
 
   const updateInsuranceMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsuranceFormValues> }) => {
-      return await apiRequest(`/api/supplier-insurances/${id}`, "PATCH", {
-        ...data,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate).toISOString() : null,
-      });
+      return await apiRequest(`/api/supplier-insurances/${id}`, "PATCH", toInsurancePayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedTrade?.id, "insurances"] });
@@ -517,8 +529,9 @@ export default function Trades() {
   const handleEditContact = (contact: SupplierContact) => {
     setEditingContact(contact);
     contactForm.reset({
-      firstName: contact.firstName,
-      lastName: contact.lastName ?? "",
+      // One stored `name`: first word → first name, the rest → last name.
+      firstName: (contact.name || "").split(" ")[0] ?? "",
+      lastName: (contact.name || "").split(" ").slice(1).join(" "),
       email: contact.email ?? "",
       phone: contact.phone ?? "",
       mobile: contact.mobile ?? "",
@@ -543,11 +556,11 @@ export default function Trades() {
   const handleEditInsurance = (insurance: SupplierInsurance) => {
     setEditingInsurance(insurance);
     insuranceForm.reset({
-      insuranceType: insurance.insuranceType as "public_liability" | "workers_compensation" | "other",
+      insuranceType: insurance.insuranceType as "public_liability" | "workers_comp" | "other",
       policyNumber: insurance.policyNumber ?? "",
-      insurer: insurance.insurer ?? "",
+      insurer: insurance.insurerName ?? "",
       expiryDate: insurance.expiryDate ? format(new Date(insurance.expiryDate), "yyyy-MM-dd") : "",
-      coverageAmount: insurance.coverageAmount ?? "",
+      coverageAmount: "", // no column — not stored
     });
     setIsInsuranceDialogOpen(true);
   };
@@ -1207,7 +1220,7 @@ export default function Trades() {
                         <p className="text-muted-foreground text-xs">Default Cost Code</p>
                         <p>
                           {selectedTrade.defaultCostCodeId 
-                            ? costCodes.find(c => c.id === selectedTrade.defaultCostCodeId)?.name || "-"
+                            ? costCodes.find(c => c.id === selectedTrade.defaultCostCodeId)?.title || "-"
                             : "-"}
                         </p>
                       </div>
@@ -1263,7 +1276,7 @@ export default function Trades() {
                             <div>
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-sm">
-                                  {contact.firstName} {contact.lastName}
+                                  {contact.name}
                                 </p>
                                 {contact.isPrimary && (
                                   <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
@@ -1357,7 +1370,7 @@ export default function Trades() {
                                 {getInsuranceStatusBadge(insurance.expiryDate)}
                               </div>
                               <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
-                                {insurance.insurer && <span>Insurer: {insurance.insurer}</span>}
+                                {insurance.insurerName && <span>Insurer: {insurance.insurerName}</span>}
                                 {insurance.policyNumber && <span>Policy: {insurance.policyNumber}</span>}
                               </div>
                               {insurance.expiryDate && (
@@ -1573,7 +1586,7 @@ export default function Trades() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="public_liability">Public Liability</SelectItem>
-                        <SelectItem value="workers_compensation">Workers Compensation</SelectItem>
+                        <SelectItem value="workers_comp">Workers Compensation</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1622,19 +1635,7 @@ export default function Trades() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={insuranceForm.control}
-                  name="coverageAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Coverage Amount</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. $10,000,000" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Coverage amount removed: supplier_insurances has no column for it, so it was never saved. */}
               </div>
 
               <div className="flex justify-end gap-3">
