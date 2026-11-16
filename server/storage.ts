@@ -122,7 +122,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains, max } from "drizzle-orm";
 import { resolveTimesheetViewScope } from "./timesheet-view-scope";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
@@ -15931,9 +15931,6 @@ export class DbStorage implements IStorage {
     const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
     return (result.rowCount ?? 0) > 0;
   }
-  async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
-  async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
-  async deleteSelectionComment(id: string): Promise<boolean> { return false; }
 
   async getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]> {
     try {

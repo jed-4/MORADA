@@ -597,7 +597,7 @@ function ChangeSupplierDialog({
     return contacts
       .filter(
         (c) =>
-          c.contactType === "supplier" || c.contactType === "subcontractor",
+          c.contactType === "supplier" || c.contactType === "trade", // trades are "trade" — there is no "subcontractor" contact type
       )
       .filter((c) => (q ? (c.name || "").toLowerCase().includes(q) : true))
       .slice(0, 100);

@@ -1223,7 +1223,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                 </SelectTrigger>
                 <SelectContent>
                   {projectCostCodes.map(cc => (
-                    <SelectItem key={cc.id} value={cc.id}>{cc.code ? `${cc.code} — ${cc.name}` : cc.name}</SelectItem>
+                    <SelectItem key={cc.id} value={cc.id}>{cc.code ? `${cc.code} — ${cc.title}` : cc.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

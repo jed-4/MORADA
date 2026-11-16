@@ -9394,9 +9394,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cost Codes API Routes (legacy project-scoped route - deprecated)
-  app.get("/api/projects/:projectId/cost-codes", async (req, res) => {
+  app.get("/api/projects/:projectId/cost-codes", requireAuth, async (req, res) => {
     try {
-      const costCodes = await storage.getCostCodes();
+      // Cost codes are company-wide. This called getCostCodes() with no
+      // company, which matched nothing — the Site PO dialog's REQUIRED cost
+      // code list was always empty, so a Site PO could never be created.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const costCodes = await storage.getCostCodes(companyId);
       res.json(costCodes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cost codes" });
@@ -44914,7 +44919,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Open RFIs and RFQs
-      const openRFIs = rfis.filter(r => r.status === 'open' || r.status === 'pending');
+      // RFI statuses are draft | submitted | under_review | answered | closed —
+      // 'open'/'pending' never matched, so this always reported zero.
+      const openRFIs = rfis.filter(r => r.status === 'submitted' || r.status === 'under_review');
       const openRFQs = rfqs.filter(r => r.status === 'draft' || r.status === 'sent');
 
       // Calculate budget info
@@ -48804,7 +48811,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         id: projectsTable.id,
         name: projectsTable.name,
         projectStatus: projectsTable.projectStatus,
-        lockedContractPrice: projectsTable.lockedContractPrice,
+        // projects has no lockedContractPrice column — selecting it threw
+        // ("Cannot convert undefined or null to object") so this endpoint 500'd
+        // every time. The frozen contract sum (ex GST, to sit beside the Xero
+        // income figures) is the contracted value; the client keeps its name.
+        lockedContractPrice: projectsTable.contractedTotalExGstCents,
         percentComplete: projectsTable.percentComplete,
       })
         .from(projectsTable)
