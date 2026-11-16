@@ -123,6 +123,7 @@ import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
+import { resolveTimesheetViewScope } from "./timesheet-view-scope";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
 import { priceListSearchTokens } from "@shared/priceListSearch";
@@ -10195,33 +10196,29 @@ export class DbStorage implements IStorage {
         }
       }
 
-      const timesheetPermission = await db.select()
-        .from(schema.permissions)
-        .where(eq(schema.permissions.key, 'projects.timesheet'))
-        .limit(1);
-
-      if (!timesheetPermission.length) {
-        return { viewScope: "own", viewableRoleIds: [] };
-      }
-
-      const rolePermission = await db.select()
+      // The scope lives on whichever timesheet permission row the Roles page
+      // lets you set it on. The dropdown is shown for "Timesheets"
+      // (timesheets.manage) and "Business Timesheets" (business.timesheets);
+      // "Project Timesheet" (projects.timesheet) is read too because it was
+      // the only key consulted before, so any hand-set value keeps working.
+      // A row only counts when it grants "view" (a stale scope can survive
+      // unticking View). The widest scope wins; "selected_roles" unions role ids.
+      const rows = await db.select({
+        key: schema.permissions.key,
+        allowedActions: schema.rolePermissions.allowedActions,
+        viewScope: schema.rolePermissions.viewScope,
+        viewableRoleIds: schema.rolePermissions.viewableRoleIds,
+      })
         .from(schema.rolePermissions)
+        .innerJoin(schema.permissions, eq(schema.rolePermissions.permissionId, schema.permissions.id))
         .where(
           and(
             eq(schema.rolePermissions.roleId, user[0].roleId),
-            eq(schema.rolePermissions.permissionId, timesheetPermission[0].id)
+            inArray(schema.permissions.key, ['timesheets.manage', 'business.timesheets', 'projects.timesheet'])
           )
-        )
-        .limit(1);
+        );
 
-      if (!rolePermission.length) {
-        return { viewScope: "own", viewableRoleIds: [] };
-      }
-
-      return {
-        viewScope: (rolePermission[0].viewScope as string) || "own",
-        viewableRoleIds: (rolePermission[0].viewableRoleIds as string[]) || [],
-      };
+      return resolveTimesheetViewScope(rows);
     } catch (error) {
       console.error("Database error in getUserTimesheetViewScope:", error);
       return { viewScope: "own", viewableRoleIds: [] };
