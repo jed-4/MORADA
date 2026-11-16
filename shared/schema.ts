@@ -5090,9 +5090,13 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  type: z.enum(["builder", "subcontractor", "client", "warranty"]).default("builder"),
-  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
-  status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
+  // Type / priority / status come from the company's Field Settings, which can
+  // add and rename options. These were hard-coded enums of the default keys,
+  // so any custom option made every create/edit fail with a 400 — and the
+  // form, validating against the same enums, refused to submit at all.
+  type: z.string().trim().min(1).max(64).default("builder"),
+  priority: z.string().trim().min(1).max(64).default("medium"),
+  status: z.string().trim().min(1).max(64).default("open"),
   dateIdentified: z.coerce.date().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   dateResolved: z.coerce.date().nullable().optional(),
