@@ -387,7 +387,7 @@ export interface IStorage {
   getDoc(id: string): Promise<schema.Doc | undefined>;
   createDoc(data: schema.InsertDoc): Promise<schema.Doc>;
   updateDoc(id: string, data: Partial<schema.InsertDoc>): Promise<schema.Doc | undefined>;
-  deleteDoc(id: string): Promise<void>;
+  deleteDoc(id: string, companyId: string): Promise<void>;
   getDocFolders(companyId: string): Promise<schema.DocFolder[]>;
   createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
   updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
@@ -30741,9 +30741,11 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteDoc(id: string): Promise<void> {
+  async deleteDoc(id: string, companyId: string): Promise<void> {
     try {
-      await db.delete(schema.docs).where(eq(schema.docs.id, id));
+      // Scoped by company as well as id, so the delete can never reach another
+      // tenant's doc even if a caller skips the ownership check.
+      await db.delete(schema.docs).where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)));
     } catch (error) {
       console.error("Database error in deleteDoc:", error);
       throw error;
