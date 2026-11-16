@@ -52,6 +52,7 @@ export const SIDEBAR_TITLE_TO_TAB: Record<string, string> = {
   RFIs: "rfis",
   RFQs: "rfqs",
   Files: "files",
+  "Site Board": "site-board",
   Estimates: "estimates",
   Proposals: "proposals",
   Bills: "bills",

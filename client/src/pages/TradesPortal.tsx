@@ -268,6 +268,78 @@ function SelectionDialog({ sel, onClose }: { sel: SiteSelection | null; onClose:
   );
 }
 
+type SiteTab = "plans" | "selections";
+
+interface SiteFile {
+  id: string;
+  folder: string;
+  name: string;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  addedAt?: string | null;
+  url: string;
+}
+
+function sizeLabel(bytes?: number | null) {
+  if (bytes == null) return null;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The builder's on-site files, grouped by folder. Big tap targets — this is
+ *  read on a phone, often with gloves on. PDFs open in the phone's viewer. */
+function SiteFiles({ files }: { files: SiteFile[] }) {
+  const byFolder = useMemo(() => {
+    const out = new Map<string, SiteFile[]>();
+    for (const f of files) {
+      if (!out.has(f.folder)) out.set(f.folder, []);
+      out.get(f.folder)!.push(f);
+    }
+    return Array.from(out.entries());
+  }, [files]);
+
+  return (
+    <div className="space-y-6" data-testid="site-files">
+      {byFolder.map(([folder, list]) => (
+        <section key={folder}>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{folder}</h2>
+          <div className="rounded-lg border border-border bg-card divide-y divide-border overflow-hidden">
+            {list.map((f) => {
+              const isImage = f.mimeType?.startsWith("image/");
+              return (
+                <a
+                  key={f.id}
+                  href={f.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-3 min-h-[56px] hover:bg-muted/40 active:bg-muted"
+                  data-testid={`link-site-file-${f.id}`}
+                >
+                  {isImage ? (
+                    <ImageIcon className="w-5 h-5 text-muted-foreground shrink-0" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-[hsl(var(--coral))] shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{f.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {[
+                        sizeLabel(f.fileSize),
+                        f.addedAt ? `Added ${new Date(f.addedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+                </a>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export default function TradesPortal() {
   const { token } = useParams<{ token: string }>();
   const [search, setSearch] = useState("");
@@ -287,6 +359,19 @@ export default function TradesPortal() {
     },
     enabled: !!token,
   });
+
+  // Files switched "on site" by the builder (server/siteBoard.ts). A failure
+  // here only hides the Plans tab — the selections still load.
+  const { data: files = [] } = useQuery<SiteFile[]>({
+    queryKey: ["/api/portal/project", token, "files"],
+    queryFn: async () => {
+      const res = await fetch(`/api/portal/project/${token}/files`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!token,
+  });
+  const [tabChoice, setTabChoice] = useState<SiteTab | null>(null);
 
   const selections = data?.selections ?? [];
 
@@ -321,20 +406,48 @@ export default function TradesPortal() {
   const confirmed = selections.filter((s) => s.options.some((o) => o.approvedAt)).length;
   const openSel = selections.find((s) => s.id === openId) ?? null;
 
+  // A tab shows only when it has something in it; with neither, Selections
+  // keeps its own empty state. Plans lead: they're what's checked on site.
+  const tabs: SiteTab[] = [
+    ...(files.length > 0 ? (["plans"] as const) : []),
+    ...(selections.length > 0 || files.length === 0 ? (["selections"] as const) : []),
+  ];
+  const tab: SiteTab = tabChoice && tabs.includes(tabChoice) ? tabChoice : tabs[0];
+
   return (
     <PortalLayout
       title={project.name}
-      subtitle={[companyName, project.address, "Selections"].filter(Boolean).join(" · ")}
-      headerRight={
+      subtitle={[companyName, project.address].filter(Boolean).join(" · ")}
+      headerRight={tab === "selections" ? (
         <span className="text-xs text-muted-foreground tabular-nums shrink-0 hidden sm:inline">
           {confirmed} of {selections.length} confirmed
         </span>
-      }
+      ) : undefined}
       maxWidth="max-w-4xl"
-      footerNote="Always the current selections. Check here before ordering or installing."
+      footerNote="Always the current version. Check here before ordering, building or installing."
     >
       <div className="sticky top-0 z-10 -mx-4 -mt-6 mb-4 border-b border-border bg-background/90 backdrop-blur">
-        <div className="px-4 py-2 flex items-center gap-2">
+        {tabs.length > 1 && (
+          <div className="px-4 pt-2 flex items-center gap-1" role="tablist">
+            {tabs.map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={tab === t}
+                onClick={() => setTabChoice(t)}
+                className={cn(
+                  "h-8 px-3 text-sm border-b-2 -mb-px",
+                  tab === t ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground",
+                )}
+                data-testid={`tab-site-${t}`}
+              >
+                {t === "plans" ? `Plans & files (${files.length})` : `Selections (${selections.length})`}
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "selections" && <div className="px-4 py-2 flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -362,10 +475,12 @@ export default function TradesPortal() {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
 
-      {groups.length === 0 ? (
+      {tab === "plans" ? (
+        <SiteFiles files={files} />
+      ) : groups.length === 0 ? (
         <div className="text-center py-12">
           <Package className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-50" />
           <p className="text-sm text-muted-foreground">

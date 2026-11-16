@@ -298,6 +298,7 @@ function Router() {
       <Route path="/projects/:projectId/timesheets" component={Dashboard} />
       <Route path="/projects/:projectId/budget" component={Dashboard} />
       <Route path="/projects/:projectId/files" component={Dashboard} />
+      <Route path="/projects/:projectId/site-board" component={Dashboard} />
       <Route path="/projects/:projectId/team" component={Dashboard} />
       <Route path="/projects/:projectId/activity" component={Dashboard} />
       <Route path="/projects/:projectId/checklists" component={Dashboard} />
