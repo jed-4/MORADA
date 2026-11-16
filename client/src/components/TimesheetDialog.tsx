@@ -232,6 +232,17 @@ export function TimesheetDialog({
   const watchedBreakStartTime = useWatch({ control: form.control, name: "breakStartTime" });
   const watchedBreakEndTime = useWatch({ control: form.control, name: "breakEndTime" });
   const watchedHourlyRate = form.watch("hourlyRate");
+  const watchedUserId = useWatch({ control: form.control, name: "userId" });
+
+  // A NEW timesheet takes the chosen person's cost rate (Team → their profile →
+  // Rates). It used to start at $50 whoever it was for. Editing an existing
+  // timesheet keeps the rate it was saved with.
+  useEffect(() => {
+    if (!open || timesheet) return;
+    const person = users.find((u) => u.id === watchedUserId) as { hourlyRate?: string | null } | undefined;
+    const rate = person?.hourlyRate ? parseFloat(person.hourlyRate) : 0;
+    if (rate > 0) form.setValue("hourlyRate", rate.toString());
+  }, [open, timesheet, watchedUserId, users, form]);
 
   const toggleLabel = (labelKey: string) => {
     const current = form.getValues("labels") || [];
@@ -283,10 +294,15 @@ export function TimesheetDialog({
         );
         setIsSplit(true);
         setShowCostCodeSplit(true);
+        initialSplitsRef.current = JSON.stringify(existingSplits.map((sp: any) => ({
+          id: sp.id, dbId: sp.id, costCodeId: sp.costCodeId || "", duration: sp.duration?.toString() || "",
+          hourlyRate: sp.hourlyRate?.toString() || "50", total: sp.total?.toString() || "0",
+        })));
       } else {
         setCostCodeSplits([]);
         setIsSplit(false);
         setShowCostCodeSplit(false);
+        initialSplitsRef.current = "[]";
       }
     } else if (open && !timesheet) {
       setLastEditedField(null);
@@ -381,9 +397,8 @@ export function TimesheetDialog({
     }
   }, [watchedBreakStartTime, watchedBreakEndTime]);
 
-  // Create/Update mutation
-  const createMutation = useMutation({
-    mutationFn: async ({ data, keepApproved }: { data: TimesheetFormData; keepApproved: boolean }) => {
+  // Save (create or update). Shared by Save and by Approve-with-changes.
+  const saveTimesheet = async ({ data, keepApproved }: { data: TimesheetFormData; keepApproved: boolean }) => {
       if (!isSplit && !data.costCodeId) {
         form.setError("costCodeId", { message: "Cost code is required" });
         throw new Error("Please select a cost code");
@@ -464,7 +479,11 @@ export function TimesheetDialog({
         await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "PUT", { splits: splitsPayload });
         return created;
       }
-    },
+  };
+
+  // Create/Update mutation
+  const createMutation = useMutation({
+    mutationFn: saveTimesheet,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       const projectId = data.projectId || form.getValues("projectId");
@@ -487,6 +506,39 @@ export function TimesheetDialog({
       });
     },
   });
+
+  // Splits as they were when the dialog opened — to tell whether they changed.
+  const initialSplitsRef = useRef<string>("[]");
+  // Read during render on purpose: react-hook-form only tracks isDirty for a
+  // form whose render reads it. Reading it only inside handleApprove left it
+  // permanently false, so edits were still skipped.
+  const formIsDirty = form.formState.isDirty;
+  const [savingBeforeApprove, setSavingBeforeApprove] = useState(false);
+
+  /**
+   * Approve SAVES any edits first. It used to only call /approve, so changes
+   * made in the form were thrown away while the old values got approved.
+   * Nothing changed → approve straight away, as before.
+   */
+  const handleApprove = () => {
+    if (!timesheet) return;
+    const splitsChanged = JSON.stringify(costCodeSplits) !== initialSplitsRef.current;
+    if (!formIsDirty && !splitsChanged) {
+      approveMutation.mutate(timesheet.id);
+      return;
+    }
+    form.handleSubmit(async (data) => {
+      setSavingBeforeApprove(true);
+      try {
+        await saveTimesheet({ data, keepApproved: false });
+        approveMutation.mutate(timesheet.id);
+      } catch (error: any) {
+        toast({ title: "Couldn't save the changes", description: error?.message || "Nothing was approved.", variant: "destructive" });
+      } finally {
+        setSavingBeforeApprove(false);
+      }
+    })();
+  };
 
   // Approve / reject mutations
   const approveMutation = useMutation({
@@ -1304,12 +1356,12 @@ export function TimesheetDialog({
                     </button>
                     <button
                       type="button"
-                      disabled={approveMutation.isPending}
-                      onClick={() => timesheet && approveMutation.mutate(timesheet.id)}
+                      disabled={approveMutation.isPending || savingBeforeApprove}
+                      onClick={handleApprove}
                       className="bg-[hsl(var(--sage))] text-white rounded-md px-4 h-[30px] text-[12px] font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
                       data-testid="button-approve-timesheet"
                     >
-                      {approveMutation.isPending ? "Approving…" : "Approve"}
+                      {savingBeforeApprove ? "Saving…" : approveMutation.isPending ? "Approving…" : "Approve"}
                     </button>
                   </>
                 )}
