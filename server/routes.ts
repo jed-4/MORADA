@@ -27051,6 +27051,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         poNumber,
         poType: "main",
         supplierId: supplierId || null,
+        // Link the subcontractor team member as the supplier. Only the NAME was
+        // stored before, so the draft header read "Supplier —" and the person
+        // had to be picked again at send time.
+        supplierUserId: supplierId ? null : (subUser?.id ?? null),
         supplierName: supplierName || (subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"),
         title: `Subcontractor Timesheet PO - ${subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"}`,
         // Names the job on the PO document itself. Without it the subcontractor's
