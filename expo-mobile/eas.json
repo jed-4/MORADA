@@ -12,7 +12,8 @@
         "image": "sdk-58"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "simulator": {
@@ -21,7 +22,8 @@
         "image": "sdk-58"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "preview": {
