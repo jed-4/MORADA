@@ -20,6 +20,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
+import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -17599,9 +17600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         token = randomBytes(24).toString("hex");
         await storage.updateSelection(selection.id, { portalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      const url = `${host}/portal/selections/${token}`;
-      const buffer = await QRCode.toBuffer(url, { width: 400, margin: 2 });
+      const buffer = await qrPng(`${publicBaseUrl(req)}/portal/selections/${token}`, 400);
       res.set("Content-Type", "image/png");
       res.send(buffer);
     } catch (error) {
@@ -18177,6 +18176,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Trades Portal Routes ───────────────────────────────────────────────────
+  // Site board: project files + their public routes (server/siteBoard.ts).
+  registerSiteBoardRoutes(app);
+
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -18185,11 +18187,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
       if (!token) {
-        token = randomBytes(24).toString("hex");
+        token = newSiteToken();
         await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+      res.json({ token, url: siteBoardUrl(req, token) });
     } catch (error) {
       res.status(500).json({ error: "Failed to get trades portal token" });
     }
@@ -18200,10 +18201,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/projects/:id/trades-portal-token/regenerate", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
-      const token = randomBytes(24).toString("hex");
+      const token = newSiteToken();
       await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+      res.json({ token, url: siteBoardUrl(req, token) });
     } catch (error) {
       res.status(500).json({ error: "Failed to regenerate link" });
     }
@@ -18217,13 +18217,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
       if (!token) {
-        token = randomBytes(24).toString("hex");
+        token = newSiteToken();
         await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      const url = `${host}/portal/project/${token}/trades`;
       // Large enough to print at A4 and stay sharp.
-      const buffer = await QRCode.toBuffer(url, { width: 1000, margin: 2 });
+      const buffer = await qrPng(siteBoardUrl(req, token), 1000);
       res.set("Cache-Control", "private, no-store");
       res.set("Content-Type", "image/png");
       res.send(buffer);
@@ -21189,7 +21187,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
 
       res.json({
-        project: { id: project.id, name: (project as any).name, address: (project as any).address },
+        // The address lives in `location` ("Address" in the UI); there is no `address` column.
+        project: { id: project.id, name: project.name, address: project.location ?? null },
         companyName: (company as any)?.nickname || company?.name || null,
         selections: safeSelections,
       });

@@ -4,7 +4,7 @@ import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus } from "lucide-react";
+import { ClipboardCheck, Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus, QrCode } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLocation } from "wouter";
@@ -26,6 +26,7 @@ const Tasks = lazy(() => import("@/pages/Tasks"));
 const Timesheets = lazy(() => import("@/pages/Timesheets"));
 const ProjectFiles = lazy(() => import("@/pages/ProjectFiles"));
 const Takeoff = lazy(() => import("@/pages/Takeoff"));
+const SiteBoard = lazy(() => import("@/pages/SiteBoard"));
 const ProjectEstimates = lazy(() => import("@/pages/ProjectEstimates"));
 const Proposals = lazy(() => import("@/pages/Proposals"));
 const Bills = lazy(() => import("@/pages/Bills"));
@@ -155,6 +156,7 @@ const PROJECT_TAB_GROUPS = [
       { id: "site-diary", label: "Site Diary", icon: BookOpen, path: "/site-diary" },
       { id: "timesheets", label: "Timesheets", icon: Timer, path: "/timesheets" },
       { id: "files", label: "Files", icon: FolderOpen, path: "/files" },
+      { id: "site-board", label: "Site board", icon: QrCode, path: "/site-board" },
       { id: "team", label: "Team", icon: Users, path: "/team" },
     ]
   },
@@ -1010,6 +1012,8 @@ export default function CustomizableProjectOverview() {
         return <ProjectFiles />;
       case "takeoff":
         return <Takeoff />;
+      case "site-board":
+        return <SiteBoard />;
       case "estimates":
         return <ProjectEstimates embedded />;
       case "proposals":
