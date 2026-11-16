@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Which URLs open a pre-start. Pure, so it runs directly:
  *   npx tsx src/navigation/prestartLink.test.ts

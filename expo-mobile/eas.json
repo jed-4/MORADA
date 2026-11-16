@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "sdk-58"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
@@ -16,7 +17,8 @@
     },
     "simulator": {
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "sdk-58"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
@@ -26,7 +28,8 @@
       "distribution": "store",
       "channel": "preview",
       "ios": {
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "sdk-58"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
@@ -36,7 +39,8 @@
     "production": {
       "channel": "production",
       "ios": {
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "sdk-58"
       },
       "android": {
         "buildType": "apk"
