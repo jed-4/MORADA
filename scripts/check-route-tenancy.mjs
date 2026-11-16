@@ -149,10 +149,16 @@ function tenantOwnedSchemas() {
     if (/companyId:\s*\w+\("company_id"/.test(t[3])) withCompany.add(t[1]);
   }
   const schemas = new Set();
-  const schemaRe = /export const (insert\w+Schema)\s*=\s*createInsertSchema\(\s*(\w+)\s*\)/g;
+  // The optional group captures an .omit({...}) chained straight onto the
+  // definition: a schema that already drops companyId there is safe at every
+  // call site, so it isn't flagged (see insertVariationReminderTemplateSchema).
+  const schemaRe = /export const (insert\w+Schema)\s*=\s*createInsertSchema\(\s*(\w+)\s*\)(\s*\.\s*omit\(\s*\{[^}]*\}\s*\))?/g;
   let m;
   while ((m = schemaRe.exec(src)) !== null) {
-    if (withCompany.has(m[2])) schemas.add(m[1]);
+    if (!withCompany.has(m[2])) continue;
+    const omit = m[3] ?? "";
+    if (FK_FIELDS.every((f) => new RegExp(`${f}\\s*:\\s*true`).test(omit))) continue;
+    schemas.add(m[1]);
   }
   return schemas;
 }

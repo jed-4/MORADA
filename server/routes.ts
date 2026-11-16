@@ -3485,7 +3485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
-      await storage.deleteDoc(req.params.id);
+      await storage.deleteDoc(req.params.id, (req.user as any).companyId);
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doc" });
