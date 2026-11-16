@@ -1274,12 +1274,23 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         accessorKey: "description",
         header: "Description",
         enableSorting: false,
-        meta: { headerLabel: "Description", defaultWidth: 180 },
-        cell: ({ row }) => (
-          <span className="text-table text-muted-foreground truncate">
-            {row.original.description || "-"}
-          </span>
-        ),
+        // flex: soaks up the leftover width so the text runs to the actions
+        // column instead of stopping short in front of a blank gap.
+        meta: { headerLabel: "Description", defaultWidth: 180, flex: true },
+        cell: ({ row }) => {
+          const text = row.original.description;
+          if (!text) return <span className="text-table text-muted-foreground">-</span>;
+          return (
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <span className="block text-table text-muted-foreground truncate">{text}</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start" className="max-w-sm whitespace-pre-wrap break-words">
+                {text}
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
       },
       {
         // Far-right per-row 3-dot actions menu. Pinned so it can't be
