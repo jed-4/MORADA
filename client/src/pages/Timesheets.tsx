@@ -2313,7 +2313,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 </div>
 
                 {/* Day headers — sticks just below the nav (nav = py-2 + h-7 = 44px) */}
-                <div ref={calHeadersRef} className="sticky top-[44px] z-20 flex border-b-2 border-border bg-card">
+                <div ref={calHeadersRef} className="sticky top-[44px] z-20 flex border-b border-border bg-card">
                   <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="border-r border-border" />
                   {calendarDays.map(day => {
                     const isToday = isSameDay(day, new Date());
@@ -2322,15 +2322,20 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       <div
                         key={day.toISOString()}
                         style={{ flex }}
-                        className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
-                          isToday ? "bg-teal/10" : "bg-muted/30 dark:bg-muted/10"
-                        }`}
+                        className="text-center py-1.5 border-r border-border/60 last:border-r-0 min-w-0"
                       >
-                        <div className={isToday ? "text-teal" : "text-muted-foreground"}>
-                          {format(day, "EEE")}
-                        </div>
-                        <div className={`text-data font-semibold ${isToday ? "text-teal" : ""}`}>
-                          {format(day, "d")}
+                        {/* Notion-style single line: "Mon 26", today's date in a filled circle */}
+                        <div className="flex items-center justify-center gap-1 text-[12px] leading-5">
+                          <span className={isToday ? "text-destructive font-medium" : "text-muted-foreground"}>
+                            {format(day, "EEE")}
+                          </span>
+                          <span
+                            className={isToday
+                              ? "inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-destructive text-destructive-foreground font-semibold"
+                              : "text-foreground font-medium"}
+                          >
+                            {format(day, "d")}
+                          </span>
                         </div>
                         {/* Per-user lane labels (only when 2–5 users) */}
                         {useLanes && (
@@ -2376,7 +2381,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                         <div
                           key={dk}
                           style={{ flex }}
-                          className={`border-r border-border last:border-r-0 min-h-[28px] min-w-0 flex ${isToday ? "bg-teal/5" : ""}`}
+                          className="border-r border-border/60 last:border-r-0 min-h-[28px] min-w-0 flex"
                         >
                           {useLanes ? (
                             laneUsers.map(uid => {
@@ -2443,17 +2448,32 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                   {/* Hour labels */}
                   <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="relative select-none border-r border-border">
                     {Array.from({ length: totalHours }, (_, i) => {
+                      if (i === 0) return null; // the top edge label would sit half under the header
                       const h = CAL_START_HOUR + i;
                       return (
                         <div
                           key={h}
-                          className="absolute right-0 pr-2 text-data text-muted-foreground leading-none"
-                          style={{ top: i * CAL_HOUR_PX - 6 }}
+                          className="absolute right-0 pr-2 text-[11px] text-muted-foreground leading-none tabular-nums"
+                          style={{ top: i * CAL_HOUR_PX - 5 }}
                         >
-                          {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
+                          {String(h).padStart(2, "0")}:00
                         </div>
                       );
                     })}
+                    {/* Current time, Notion-style, in the gutter (when this week includes today) */}
+                    {calendarDays.some((d) => isSameDay(d, nowTick)) && (() => {
+                      const nowDec = nowTick.getHours() + nowTick.getMinutes() / 60;
+                      if (nowDec < CAL_START_HOUR || nowDec > CAL_END_HOUR) return null;
+                      return (
+                        <div
+                          className="absolute right-0 pr-1.5 text-[11px] font-medium text-destructive leading-none tabular-nums bg-card z-10"
+                          style={{ top: (nowDec - CAL_START_HOUR) * CAL_HOUR_PX - 5 }}
+                          data-testid="cal-now-label"
+                        >
+                          {format(nowTick, "HH:mm")}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Day columns */}
@@ -2467,22 +2487,14 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       <div
                         key={dk}
                         style={{ flex }}
-                        className={`border-r border-border last:border-r-0 relative min-w-0 ${isToday ? "bg-teal/5" : ""}`}
+                        className="border-r border-border/60 last:border-r-0 relative min-w-0"
                       >
-                        {/* Hour lines */}
+                        {/* Hour lines only (Notion-style — no half-hour rules) */}
                         {Array.from({ length: totalHours }, (_, i) => (
                           <div
                             key={i}
-                            className="absolute left-0 right-0 border-t border-border/50"
+                            className="absolute left-0 right-0 border-t border-border/60"
                             style={{ top: i * CAL_HOUR_PX }}
-                          />
-                        ))}
-                        {/* Half-hour lines */}
-                        {Array.from({ length: totalHours }, (_, i) => (
-                          <div
-                            key={`h${i}`}
-                            className="absolute left-0 right-0 border-t border-border/25"
-                            style={{ top: i * CAL_HOUR_PX + CAL_HOUR_PX / 2 }}
                           />
                         ))}
 
@@ -2507,7 +2519,13 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           } else {
                             blockLanesMap.set("all", computeBlockLanes(daySegs));
                           }
-                          const INSET = 1;
+                          const INSET = 2;
+                          const hhmm = (dec: number) => {
+                            const d = ((dec % 24) + 24) % 24;
+                            const h = Math.floor(d);
+                            const m = Math.round((d - h) * 60);
+                            return `${String(m === 60 ? h + 1 : h).padStart(2, "0")}:${String(m === 60 ? 0 : m).padStart(2, "0")}`;
+                          };
                           return daySegs.map(sg => {
                             const { ts } = sg;
                             // Segments fully outside the 5am–10pm window are no
@@ -2563,17 +2581,17 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                               <div
                                 key={sg.segKey}
                                 onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`absolute rounded text-label px-1 py-0.5 cursor-pointer hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                className={`absolute rounded-md px-1.5 py-1 cursor-pointer hover-elevate text-foreground text-[11px] leading-[14px] overflow-clip${projColor ? "" : " bg-muted/70 border-l-[3px] border-border"}`}
                                 style={projColor ? {
-                                  top,
-                                  height,
+                                  top: top + 1,
+                                  height: height - 2,
                                   left: `calc(${leftPct}% + ${INSET}px)`,
                                   width: `calc(${widthPct}% - ${INSET * 2}px)`,
-                                  backgroundColor: hexToRgba(projColor, 0.15),
+                                  backgroundColor: hexToRgba(projColor, 0.2),
                                   borderLeft: `3px solid ${projColor}`,
                                 } : {
-                                  top,
-                                  height,
+                                  top: top + 1,
+                                  height: height - 2,
                                   left: `calc(${leftPct}% + ${INSET}px)`,
                                   width: `calc(${widthPct}% - ${INSET * 2}px)`,
                                 }}
@@ -2586,18 +2604,25 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                                   />
                                 )}
                                 <div
-                                  className="font-bold truncate leading-tight pr-2"
+                                  className="font-semibold truncate pr-2"
                                   style={{ position: "sticky", top: calStickyOffset + 2 }}
                                 >
                                   {clippedTop ? "↑ " : ""}{getProjectName(ts.projectId)}{clippedBottom ? " ↓" : ""}
                                 </div>
-                                {height > 28 && (
-                                  <div className="truncate leading-tight opacity-70">
+                                {/* Time range, Notion-style, right under the title */}
+                                {height > 30 && (
+                                  <div className="truncate text-muted-foreground tabular-nums" data-testid={`cal-time-${sg.segKey}`}>
+                                    {hhmm(sg.start)}–{hhmm(sg.end)}
+                                    <span className="opacity-70"> · {formatDuration(getNetHours(ts))}</span>
+                                  </div>
+                                )}
+                                {height > 46 && getCostCodeName(ts.costCodeId) !== "-" && (
+                                  <div className="truncate opacity-80">
                                     {getCostCodeName(ts.costCodeId)}
                                   </div>
                                 )}
-                                {height > 42 && (
-                                  <div className="truncate leading-tight opacity-50">
+                                {height > 62 && ts.description && (
+                                  <div className="opacity-60 line-clamp-2 whitespace-pre-wrap break-words">
                                     {ts.description}
                                   </div>
                                 )}
@@ -2615,8 +2640,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                               className="absolute left-0 right-0 z-10 pointer-events-none"
                               style={{ top: (nowDec - CAL_START_HOUR) * CAL_HOUR_PX }}
                             >
-                              <div className="h-[2px] bg-[hsl(var(--teal))]" />
-                              <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-[hsl(var(--teal))]" />
+                              <div className="h-[2px] bg-destructive" />
+                              <div className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-destructive" />
                             </div>
                           );
                         })()}
