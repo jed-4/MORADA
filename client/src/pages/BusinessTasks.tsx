@@ -682,7 +682,7 @@ export default function BusinessTasks() {
       setTaskToDelete(editingTask);
     } else {
       // Fallback: create minimal task object for deletion
-      const task = tasks.find(t => t.id === taskId);
+      const task = allTasks.find(t => t.id === taskId);
       if (task) {
         setTaskToDelete(task);
       } else {

@@ -8498,7 +8498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const createdItem = await storage.createEstimateItem(itemData);
           createdItems.push(createdItem);
         } catch (error: any) {
-          console.error(`[Import] Item "${item.name}" failed to create:`, error.message, JSON.stringify(itemData));
+          console.error(`[Import] Item "${item.name}" failed to create:`, error.message);
           errors.push({
             row: index + 1,
             errors: [error.message || "Failed to create item"]
@@ -11837,7 +11837,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Revoke Google token if exists
       if (user.googleCalendarAccessToken) {
         try {
-          await calendarOauth2Client.revokeToken(user.googleCalendarAccessToken);
+          // Was `calendarOauth2Client.revokeToken(...)` — a client that no longer
+          // exists, so the ReferenceError was swallowed and the token never revoked.
+          await fetch(
+            `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(user.googleCalendarAccessToken)}`,
+            { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+          );
         } catch (revokeError) {
           console.error("Error revoking Google token:", revokeError);
           // Continue anyway to clear local tokens
@@ -23047,6 +23052,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const wasPaid = bill.status === "paid";
+      // getOwnedBill has already checked the bill belongs to this company.
+      // (`companyId` was never declared here, so the paying payment threw a
+      // ReferenceError AFTER the insert: the user saw "failed" and Xero was
+      // never told.)
+      const companyId: string | undefined = (req as any).user?.companyId;
       const payment = await storage.createBillPayment(validationResult.data);
 
       // Keep Xero in sync: when this payment brings the bill fully paid, push a
@@ -43460,7 +43470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     userId: string,
     companyId: string,
     res: import("express").Response
-  ): Promise<{ message: Message; channelId: string } | null> {
+  ): Promise<{ message: import("@shared/schema").Message; channelId: string } | null> {
     const message = await storage.getMessage(messageId);
     if (!message) { res.status(404).json({ error: "Message not found" }); return null; }
     const channel = await storage.getChannel(message.channelId, companyId);
