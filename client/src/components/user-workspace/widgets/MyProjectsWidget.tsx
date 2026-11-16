@@ -88,7 +88,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
         return (
           p.name.toLowerCase().includes(query) ||
           p.description?.toLowerCase().includes(query) ||
-          p.address?.toLowerCase().includes(query)
+          p.location?.toLowerCase().includes(query)
         );
       })
       .sort((a, b) => {
@@ -249,11 +249,11 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
                       </Badge>
                     )}
                   </div>
-                  {project.address && (
+                  {project.location && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <span className="text-table text-muted-foreground truncate">
-                        {project.address}
+                        {project.location}
                       </span>
                     </div>
                   )}

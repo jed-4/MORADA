@@ -44925,7 +44925,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const openRFQs = rfqs.filter(r => r.status === 'draft' || r.status === 'sent');
 
       // Calculate budget info
-      const totalBudget = estimates.reduce((sum, e) => sum + (Number(e.totalIncGst) || 0), 0);
+      // Estimates have no stored total (this summed a non-existent field, so
+      // the AI always saw $0 — and summing every revision would overcount).
+      // Use the contract sum: frozen at Mark as Contract, else the live
+      // cached price. Dollars inc GST.
+      const contractCents = (project as any).contractedTotalIncGstCents ?? (project as any).contractPrice ?? 0;
+      const totalBudget = Math.round(Number(contractCents) || 0) / 100;
 
       // Build context for AI
       const context = {

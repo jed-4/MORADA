@@ -250,6 +250,10 @@ export default function CustomizableProjectOverview() {
   const clientContact = currentProject?.clientId
     ? contacts.find((c) => c.id === currentProject.clientId) ?? null
     : null;
+  // clientName is only on the projects LIST payload, not the single-project
+  // one — fall back to the client contact so the badge shows either way.
+  const projectClientName: string | undefined =
+    (currentProject as { clientName?: string } | null | undefined)?.clientName || clientContact?.name || undefined;
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
   const fmtAud = (cents: number) =>
@@ -1240,16 +1244,16 @@ export default function CustomizableProjectOverview() {
         </div>
       )}
       <div className="flex items-center pl-1 self-stretch">
-        {currentProject.clientId && currentProject.clientName ? (
+        {currentProject.clientId && projectClientName ? (
           <Badge
             variant="outline"
             className="text-xs gap-1 max-w-[180px] cursor-pointer"
             onClick={() => clientContact && setClientDialogOpen(true)}
-            title={currentProject.clientName}
+            title={projectClientName}
             data-testid="badge-project-client"
           >
             <User className="h-3 w-3 shrink-0" />
-            <span className="truncate">{currentProject.clientName}</span>
+            <span className="truncate">{projectClientName}</span>
           </Badge>
         ) : isClient ? null : (
           <Badge

@@ -67,9 +67,9 @@ export default function BusinessProjectsWidget({}: WidgetProps) {
                       tone={project.status === "completed" ? "info" : undefined}
                     />
                   </div>
-                  {project.address && (
+                  {project.location && (
                     <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {project.address}
+                      {project.location}
                     </p>
                   )}
                 </div>

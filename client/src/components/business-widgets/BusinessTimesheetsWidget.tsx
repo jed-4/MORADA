@@ -31,7 +31,7 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
 
   const pendingTimesheets = timesheets.filter(t => t.status === "submitted");
   const approvedThisWeek = thisWeekTimesheets.filter(t => t.status === "approved");
-  const totalHoursThisWeek = approvedThisWeek.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+  const totalHoursThisWeek = approvedThisWeek.reduce((sum, t) => sum + (Number(t.duration) || 0), 0); // timesheets store `duration` (net hours) — `hours` never existed
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
@@ -89,7 +89,7 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{Number(entry.hours).toFixed(1)}h</span>
+                <span className="text-sm font-medium">{(Number(entry.duration) || 0).toFixed(1)}h</span>
                 <StatusBadge status={entry.status} />
               </div>
             </div>

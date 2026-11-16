@@ -1954,7 +1954,11 @@ export const paymentTermsEnum = pgEnum("payment_terms_type", [
 export const insuranceTypeEnum = pgEnum("insurance_type", [
   "public_liability",
   "workers_comp",
-  "other"
+  "other",
+  // 0130 — offered by the Contacts insurance section but missing, so saving
+  // either type failed.
+  "professional_indemnity",
+  "contractors_all_risk",
 ]);
 
 // DEPRECATED: Legacy suppliers table - being replaced by contacts with contactType='supplier'
@@ -2072,6 +2076,10 @@ export const insertSupplierInsuranceSchema = createInsertSchema(supplierInsuranc
   reminder7DaySent: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // JSON carries dates as strings; without coercion every insurance save from
+  // the Suppliers/Trades pages failed "Expected date, received string".
+  expiryDate: z.coerce.date().nullable().optional(),
 });
 
 export type InsertSupplierInsurance = z.infer<typeof insertSupplierInsuranceSchema>;
