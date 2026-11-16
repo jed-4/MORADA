@@ -13,7 +13,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "simulator": {
@@ -23,7 +25,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "preview": {
@@ -35,7 +39,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "production": {
@@ -49,7 +55,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     }
   },
