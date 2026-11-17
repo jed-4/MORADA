@@ -35,6 +35,10 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
+import { TwoPane } from '../components/ui/TwoPane';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
+import { DiaryPhotoGallery, DiaryPhotoViewer } from '../components/diary/DiaryPhotos';
 interface TemplateField {
   id: string;
   title: string;
@@ -144,6 +148,17 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [formDateTime, setFormDateTime] = useState(localDayISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
+
+  // Full-screen photo viewer (big screen only). Kept here, not in the
+  // gallery, so it survives the detail moving between the right pane and the
+  // full-screen modal when the phone folds or unfolds.
+  const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
+
+  const { isWide } = useLayout();
+  // Duo unfolded: short form fields pair up two per row. Only these styles
+  // change with the fold — the tree doesn't — so half-typed fields survive it.
+  const halfField = isWide ? styles.halfField : null;
+  const fullField = isWide ? styles.fullField : null;
 
   const theme = useTheme();
 const colors = {
@@ -301,6 +316,9 @@ const colors = {
   };
 
   const openCreateModal = () => {
+    // Wide: "+" is reachable while an entry is open on the right. Close it,
+    // or folding later would show an empty detail modal (resetForm clears it).
+    setShowDetailModal(false);
     resetForm();
     setActiveTemplate(template);
     applyTemplateDefaults(template);
@@ -321,9 +339,18 @@ const colors = {
     setShowEntryModal(true);
   };
 
+  // On the Duo unfolded the open entry shows in the right pane instead of the
+  // modal (the modal is hidden while wide). Both read the same two flags, so
+  // folding with an entry open brings up its modal, and unfolding with the
+  // modal up moves it to the pane — you keep your place either way.
   const openDetailModal = (entry: SiteDiaryEntry) => {
     setSelectedEntry(entry);
     setShowDetailModal(true);
+  };
+
+  const closeDetail = () => {
+    setShowDetailModal(false);
+    setSelectedEntry(null);
   };
 
   const pickPhoto = async (fieldId?: string) => {
@@ -650,7 +677,7 @@ const colors = {
     switch (field.type) {
       case 'text':
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, halfField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
@@ -666,7 +693,7 @@ const colors = {
 
       case 'textarea':
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
@@ -685,7 +712,7 @@ const colors = {
 
       case 'number':
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, halfField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
@@ -702,7 +729,7 @@ const colors = {
 
       case 'date':
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, halfField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
@@ -718,7 +745,7 @@ const colors = {
 
       case 'select':
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
@@ -749,7 +776,7 @@ const colors = {
 
       case 'checkbox':
         return (
-          <View key={field.id} style={[styles.fieldContainer, styles.switchRow]}>
+          <View key={field.id} style={[styles.fieldContainer, styles.switchRow, halfField]}>
             <Text style={[styles.fieldLabel, { color: colors.text, flex: 1, marginBottom: 0 }]}>
               {field.title}
             </Text>
@@ -766,7 +793,7 @@ const colors = {
         const photos: string[] = Array.isArray(value) ? value : [];
         const maxPhotos = field.maxPhotos || 3;
         return (
-          <View key={field.id} style={styles.fieldContainer}>
+          <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title} ({photos.length}/{maxPhotos})
             </Text>
@@ -823,11 +850,13 @@ const colors = {
         return (
           <View key={field.id} style={styles.detailField}>
             <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
-              {value.map((uri: string, idx: number) => (
-                <Image key={idx} source={{ uri: getPhotoUrl(uri) }} style={styles.detailPhoto} />
-              ))}
-            </ScrollView>
+            <DiaryPhotoGallery
+              uris={value}
+              getUrl={getPhotoUrl}
+              onOpen={index => setViewer({ uris: value, index })}
+              thumbStyle={styles.detailPhoto}
+              scrollStyle={styles.photoScroll}
+            />
           </View>
         );
 
@@ -849,6 +878,94 @@ const colors = {
         );
     }
   };
+
+  // The open entry's body — shared by the phone's full-screen modal and the
+  // right pane on the Duo unfolded. Long diary text is capped at a readable
+  // width (no effect on a phone; it only bites in a wide full-screen view).
+  const renderDetailBody = () => {
+    if (!selectedEntry) return null;
+    return (
+      <ScrollView contentContainerStyle={[styles.detailContent, readableFrame]}>
+        {selectedEntry.id.startsWith('_offline_') && (
+          <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
+            <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
+            <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
+          </View>
+        )}
+
+        <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedEntry.title}</Text>
+        <Text style={[styles.detailDate, { color: colors.secondary }]}>
+          {formatDateTime(selectedEntry.entryDateTime)}
+        </Text>
+
+        {selectedEntry.createdByName && (
+          <View style={styles.detailMeta}>
+            <Ionicons name="person-outline" size={16} color={colors.secondary} />
+            <Text style={[styles.detailMetaText, { color: colors.secondary }]}>{selectedEntry.createdByName}</Text>
+          </View>
+        )}
+
+        {selectedEntry.weather && (selectedEntry.weather.condition || selectedEntry.weather.temp !== undefined) && (
+          <View style={[styles.weatherCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name={getWeatherIcon(selectedEntry.weather.condition) as any} size={24} color={colors.accent} />
+            <View style={styles.weatherCardInfo}>
+              {selectedEntry.weather.condition && (
+                <Text style={[styles.weatherCardText, { color: colors.text }]}>{selectedEntry.weather.condition}</Text>
+              )}
+              {selectedEntry.weather.temp !== undefined && (
+                <Text style={[styles.weatherCardTemp, { color: colors.secondary }]}>{selectedEntry.weather.temp}°C</Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {detailTemplate && detailTemplate.fields.length > 0 && (
+          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
+            {[...detailTemplate.fields]
+              .sort((a, b) => a.order - b.order)
+              .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
+          </View>
+        )}
+
+        {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 && (
+          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
+            <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Photos</Text>
+            <DiaryPhotoGallery
+              uris={selectedEntry.overallPhotos}
+              getUrl={getPhotoUrl}
+              onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
+              thumbStyle={styles.detailPhoto}
+              scrollStyle={styles.photoScroll}
+            />
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderDetailActions = () => (
+    <View style={styles.detailActions}>
+      <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={styles.detailActionBtn}>
+        <Ionicons name="create-outline" size={22} color={colors.accent} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => selectedEntry && handleDeleteEntry(selectedEntry)} style={styles.detailActionBtn}>
+        <Ionicons name="trash-outline" size={22} color={colors.danger} />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // One viewer per place it can be presented from; `show` picks the one for
+  // the current size, and the open photo + index live in `viewer` above.
+  const renderViewer = (show: boolean) => (
+    <DiaryPhotoViewer
+      visible={show && !!viewer}
+      uris={viewer?.uris ?? []}
+      index={viewer?.index ?? 0}
+      getUrl={getPhotoUrl}
+      onIndexChange={index => setViewer(v => (v ? { ...v, index } : v))}
+      onClose={() => setViewer(null)}
+    />
+  );
 
   if (loading) {
     return (
@@ -876,6 +993,25 @@ const colors = {
         </View>
       )}
 
+      {/* Entries on the left, the open entry on the right when wide. The list
+          stays the first child at every size, so folding never remounts it. */}
+      <TwoPane
+        emptyTitle="Select an entry"
+        emptyIcon="book-outline"
+        detail={showDetailModal && selectedEntry ? (
+          <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
+            <View style={[styles.modalHeader, styles.paneHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+              <TouchableOpacity onPress={closeDetail} accessibilityLabel="Close entry">
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
+              {renderDetailActions()}
+            </View>
+            {renderDetailBody()}
+          </View>
+        ) : null}
+        list={
+      <>
       <View style={[styles.headerArea, { borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
         <Text style={[styles.headerCount, { color: colors.secondary }]}>
@@ -897,14 +1033,18 @@ const colors = {
       ) : (
         <FlatList
           data={allEntries}
+          // Re-render rows when the entry open in the right pane changes (outline).
+          extraData={showDetailModal ? selectedEntry?.id : null}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           renderItem={({ item }) => {
             const photoCount = countPhotos(item as SiteDiaryEntry);
+            // Wide only: outline the entry that's open in the right pane.
+            const isOpen = isWide && showDetailModal && selectedEntry?.id === item.id;
             return (
               <TouchableOpacity
-                style={[styles.entryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                style={[styles.entryCard, { backgroundColor: colors.card, borderColor: isOpen ? colors.accent : colors.border }]}
                 onPress={() => openDetailModal(item as SiteDiaryEntry)}
                 activeOpacity={0.7}
               >
@@ -958,6 +1098,9 @@ const colors = {
       >
         <Ionicons name="add" size={28} color="#ffffff" />
       </TouchableOpacity>
+      </>
+        }
+      />
 
       <Modal visible={showEntryModal} animationType="slide" presentationStyle="fullScreen">
         <KeyboardAvoidingView
@@ -993,8 +1136,13 @@ const colors = {
             </TouchableOpacity>
           )}
 
-          <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
-            <View style={styles.fieldContainer}>
+          {/* readableFrame keeps the full-screen form to a sensible column on
+              the Duo unfolded; a phone is narrower than its cap. */}
+          <ScrollView contentContainerStyle={[styles.formContent, readableFrame]} keyboardShouldPersistTaps="handled">
+            {/* Wrapper is always here (no style on a phone) so the inputs sit at
+                the same place in the tree folded or unfolded. */}
+            <View style={isWide ? styles.fieldGrid : undefined}>
+            <View style={[styles.fieldContainer, halfField]}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
@@ -1005,11 +1153,12 @@ const colors = {
               />
             </View>
 
-            <View style={styles.fieldContainer}>
+            <View style={[styles.fieldContainer, halfField]}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Date / Time</Text>
               <View style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, justifyContent: 'center' }]}>
                 <Text style={{ color: colors.text }}>{formatDateTime(formDateTime)}</Text>
               </View>
+            </View>
             </View>
 
             {activeTemplate && activeTemplate.fields.length > 0 && (
@@ -1019,9 +1168,11 @@ const colors = {
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
-                {[...activeTemplate.fields]
-                  .sort((a, b) => a.order - b.order)
-                  .map(field => renderFieldInput(field))}
+                <View style={isWide ? styles.fieldGrid : undefined}>
+                  {[...activeTemplate.fields]
+                    .sort((a, b) => a.order - b.order)
+                    .map(field => renderFieldInput(field))}
+                </View>
               </>
             )}
 
@@ -1052,80 +1203,25 @@ const colors = {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={showDetailModal} animationType="slide" presentationStyle="fullScreen">
+      {/* Hidden while wide: the right pane shows the entry instead. */}
+      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen">
         <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
           <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => { setShowDetailModal(false); setSelectedEntry(null); }}>
+            <TouchableOpacity onPress={closeDetail}>
               <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
-            <View style={styles.detailActions}>
-              <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={styles.detailActionBtn}>
-                <Ionicons name="create-outline" size={22} color={colors.accent} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => selectedEntry && handleDeleteEntry(selectedEntry)} style={styles.detailActionBtn}>
-                <Ionicons name="trash-outline" size={22} color={colors.danger} />
-              </TouchableOpacity>
-            </View>
+            {renderDetailActions()}
           </View>
 
-          {selectedEntry && (
-            <ScrollView contentContainerStyle={styles.detailContent}>
-              {selectedEntry.id.startsWith('_offline_') && (
-                <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
-                  <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
-                  <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
-                </View>
-              )}
-
-              <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedEntry.title}</Text>
-              <Text style={[styles.detailDate, { color: colors.secondary }]}>
-                {formatDateTime(selectedEntry.entryDateTime)}
-              </Text>
-
-              {selectedEntry.createdByName && (
-                <View style={styles.detailMeta}>
-                  <Ionicons name="person-outline" size={16} color={colors.secondary} />
-                  <Text style={[styles.detailMetaText, { color: colors.secondary }]}>{selectedEntry.createdByName}</Text>
-                </View>
-              )}
-
-              {selectedEntry.weather && (selectedEntry.weather.condition || selectedEntry.weather.temp !== undefined) && (
-                <View style={[styles.weatherCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name={getWeatherIcon(selectedEntry.weather.condition) as any} size={24} color={colors.accent} />
-                  <View style={styles.weatherCardInfo}>
-                    {selectedEntry.weather.condition && (
-                      <Text style={[styles.weatherCardText, { color: colors.text }]}>{selectedEntry.weather.condition}</Text>
-                    )}
-                    {selectedEntry.weather.temp !== undefined && (
-                      <Text style={[styles.weatherCardTemp, { color: colors.secondary }]}>{selectedEntry.weather.temp}°C</Text>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {detailTemplate && detailTemplate.fields.length > 0 && (
-                <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-                  {[...detailTemplate.fields]
-                    .sort((a, b) => a.order - b.order)
-                    .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
-                </View>
-              )}
-
-              {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 && (
-                <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Photos</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
-                    {selectedEntry.overallPhotos.map((uri, idx) => (
-                      <Image key={idx} source={{ uri: getPhotoUrl(uri) }} style={styles.detailPhoto} />
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-            </ScrollView>
-          )}
+          {renderDetailBody()}
+          {/* Phone-side copy of the viewer: iOS can't present a root-level
+              modal over this one, so it lives inside. Wide uses the root copy. */}
+          {renderViewer(!isWide)}
         </View>
       </Modal>
+
+      {renderViewer(isWide)}
 
       <Modal visible={showTemplatePicker} transparent animationType="slide">
         <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
@@ -1308,6 +1404,11 @@ const styles = StyleSheet.create({
   modalHeaderBtn: {
     fontSize: 16,
   },
+  // The right-pane copy of the detail header sits under the app header, not
+  // the status bar, so it doesn't need the modal's top inset.
+  paneHeader: {
+    paddingTop: 12,
+  },
   modalHeaderTitle: {
     fontSize: 17,
     fontWeight: '600',
@@ -1320,6 +1421,20 @@ const styles = StyleSheet.create({
   },
   fieldContainer: {
     marginBottom: 16,
+  },
+  // Duo unfolded only: short fields two per row. A short field followed by a
+  // long one grows to the full row, so nothing is left half-empty.
+  fieldGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 12,
+  },
+  halfField: {
+    flexBasis: '40%',
+    flexGrow: 1,
+  },
+  fullField: {
+    width: '100%',
   },
   fieldLabelRow: {
     flexDirection: 'row',
