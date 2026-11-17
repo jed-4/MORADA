@@ -1,3 +1,8 @@
+// One camera permission string, shared by expo-image-picker and the document
+// scanner (both set NSCameraUsageDescription).
+const CAMERA_PERMISSION =
+  "Morada uses your camera so you can photograph site progress, checklist items and receipts, and scan receipts.";
+
 module.exports = {
   expo: {
     name: "Morada",
@@ -72,9 +77,13 @@ module.exports = {
         "expo-image-picker",
         {
           photosPermission: "Morada uses your photos so you can attach them to site diary entries, checklists, receipts, notes and messages.",
-          cameraPermission: "Morada uses your camera so you can photograph site progress, checklist items and receipts.",
+          cameraPermission: CAMERA_PERMISSION,
         },
       ],
+      // iOS VisionKit / Android ML Kit document scanner (receipts). Native
+      // module — needs a new build. Same camera text as expo-image-picker so
+      // whichever plugin writes NSCameraUsageDescription last, it reads right.
+      ["react-native-document-scanner-plugin", { cameraPermission: CAMERA_PERMISSION }],
       [
         "@sentry/react-native/expo",
         {
