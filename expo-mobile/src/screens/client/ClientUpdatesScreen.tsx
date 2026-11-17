@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +8,8 @@ import { useClientProject } from '../../contexts/ClientProjectContext';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { diaryPhotoUrls, diaryTextFields, formatDay, sortDiary, type ClientDiaryEntry } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote } from '../../components/client/ClientUI';
+import { READABLE_MAX_WIDTH, readableFrame } from '../../components/ui/ReadableColumn';
+import { useLayout } from '../../lib/useLayout';
 
 /**
  * Site diary entries the builder chose to share — "Updates" to a homeowner.
@@ -22,7 +24,7 @@ const loadablePhoto = (url: string) => url.startsWith('/') || url.startsWith('ht
 export default function ClientUpdatesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, isWide } = useLayout();
   const navigation = useNavigation<any>();
   const { project } = useClientProject();
   const [entries, setEntries] = useState<ClientDiaryEntry[]>([]);
@@ -56,8 +58,11 @@ export default function ClientUpdatesScreen() {
   }, [load]);
 
   const sorted = useMemo(() => sortDiary(entries), [entries]);
-  // Two photos a row inside the card's padding.
-  const photoSize = Math.floor((width - 32 - 28 - 8) / 2);
+  // Two photos a row inside the card's padding; three on the Duo unfolded,
+  // where the list is capped at the readable width (READABLE_MAX_WIDTH).
+  const columnWidth = Math.min(width, READABLE_MAX_WIDTH);
+  const photoColumns = isWide ? 3 : 2;
+  const photoSize = Math.floor((columnWidth - 32 - 28 - 8 * (photoColumns - 1)) / photoColumns);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -73,7 +78,7 @@ export default function ClientUpdatesScreen() {
         <FlatList
           data={sorted}
           keyExtractor={(e) => e.id}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, readableFrame]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           ListEmptyComponent={

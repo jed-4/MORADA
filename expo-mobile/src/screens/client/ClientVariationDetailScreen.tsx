@@ -25,6 +25,7 @@ import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { PORTAL_KEYS, formatDay, formatDaysChanged, variationStatus } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import DocumentViewer, { type ViewableDocument } from '../../components/DocumentViewer';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * One variation, as the document the client was sent, with the signature.
@@ -227,7 +228,7 @@ export default function ClientVariationDetailScreen() {
         <ClientEmpty icon="alert-circle-outline" title="This variation isn't available" body="Your builder may not have sent it yet." />
       ) : (
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + (awaiting && canSign ? 120 : 32) }]}
+          contentContainerStyle={[styles.content, readableFrame, { paddingBottom: insets.bottom + (awaiting && canSign ? 120 : 32) }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         >
           {/* Hero: who it's from, the total, and where it stands. */}

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import DocumentViewer, { type ViewableDocument } from '../DocumentViewer';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { formatMoney, prettifySpecKey, type SelectionOption } from '../../lib/selections';
 import { selectionPhotoSource } from '../../services/selectionsOffline';
 import { ClientStatusPill } from './ClientUI';
+import { useLayout } from '../../lib/useLayout';
+import { readableFrame } from '../ui/ReadableColumn';
 
 /**
  * Everything the builder attached to one option, for a client choosing
@@ -46,7 +48,14 @@ export default function ClientOptionSheet({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height, isWide } = useLayout();
+  // The sheet's own width, not the window's: on the Duo unfolded a pageSheet
+  // is a card narrower than the screen, so window-wide photos would overflow
+  // it. Same as the window on a phone.
+  const [sheetWidth, setSheetWidth] = useState(width);
+  // Square on a phone, as before; on the big screen a square the width of the
+  // sheet would push everything else off it, so cap the height.
+  const photoHeight = isWide ? Math.min(sheetWidth, Math.round(height * 0.5)) : sheetWidth;
   const [page, setPage] = useState(0);
   const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
 
@@ -62,7 +71,10 @@ export default function ClientOptionSheet({
   return (
     <Modal visible={!!option} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       {option && (
-        <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View
+          style={[styles.container, { backgroundColor: theme.background }]}
+          onLayout={(e) => setSheetWidth(e.nativeEvent.layout.width)}
+        >
           <View style={styles.grabRow}>
             <View style={[styles.grabber, { backgroundColor: theme.borderStrong }]} />
             <Pressable onPress={onClose} hitSlop={12} style={styles.close} accessibilityLabel="Close">
@@ -77,14 +89,15 @@ export default function ClientOptionSheet({
                   horizontal
                   pagingEnabled
                   showsHorizontalScrollIndicator={false}
-                  onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+                  onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / sheetWidth))}
                 >
                   {images.map((img) => (
                     <Image
                       key={img.id}
                       source={selectionPhotoSource(img.filePath)}
-                      style={{ width, height: width, backgroundColor: theme.subtle }}
-                      resizeMode="cover"
+                      style={{ width: sheetWidth, height: photoHeight, backgroundColor: theme.subtle }}
+                      // Whole product photo on the big screen, where the frame is wider than tall.
+                      resizeMode={isWide ? 'contain' : 'cover'}
                     />
                   ))}
                 </ScrollView>
@@ -102,7 +115,7 @@ export default function ClientOptionSheet({
               </View>
             )}
 
-            <View style={styles.body}>
+            <View style={[styles.body, readableFrame]}>
               <View style={styles.titleRow}>
                 <Text style={[styles.title, { color: theme.textPrimary }]}>{option.name}</Text>
                 {showPrice && option.totalCost != null && (
