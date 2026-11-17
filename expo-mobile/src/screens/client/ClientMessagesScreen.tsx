@@ -10,6 +10,7 @@ import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { markupToDisplay } from '../../components/messages/mentions';
 import { PressableScale } from '../../components/ui/PressableScale';
 import { ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * The conversations a client is in. The server lists only channels the
@@ -82,7 +83,7 @@ export default function ClientMessagesScreen() {
         <FlatList
           data={shown}
           keyExtractor={(c) => c.id}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, readableFrame]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
           ListEmptyComponent={

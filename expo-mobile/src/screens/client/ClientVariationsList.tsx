@@ -16,6 +16,7 @@ import {
 } from '../../lib/clientPortal';
 import { PressableScale } from '../../components/ui/PressableScale';
 import { ClientEmpty, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * Variations a client has been sent — the server hides drafts. Waiting on
@@ -71,7 +72,7 @@ export default function ClientVariationsList() {
           sections={sections}
           keyExtractor={(v) => v.id}
           stickySectionHeadersEnabled={false}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, readableFrame]}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ListHeaderComponent={

@@ -29,6 +29,7 @@ import {
 } from '../../lib/clientPortal';
 import { ClientCard, ClientHeader, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import { dateStrOf, toLocalDateStr } from '../../lib/dates';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * A homeowner's front page: what's waiting on them, how far along the job
@@ -145,7 +146,7 @@ export default function ClientHomeScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         {projects.length > 1 && (

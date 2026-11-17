@@ -15,6 +15,7 @@ import {
   type ClientScheduleItem,
 } from '../../lib/clientPortal';
 import { ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * The client's view of the programme — the phone twin of the web portal's
@@ -79,7 +80,7 @@ export default function ClientScheduleScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           stickySectionHeadersEnabled={false}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, readableFrame]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ListEmptyComponent={
             failed ? (
