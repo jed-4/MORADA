@@ -20,6 +20,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
+import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -3484,7 +3485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getAccessibleDoc(req, res, req.params.id, "edit");
       if (!owned) return;
-      await storage.deleteDoc(req.params.id);
+      await storage.deleteDoc(req.params.id, (req.user as any).companyId);
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doc" });
@@ -8498,7 +8499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const createdItem = await storage.createEstimateItem(itemData);
           createdItems.push(createdItem);
         } catch (error: any) {
-          console.error(`[Import] Item "${item.name}" failed to create:`, error.message, JSON.stringify(itemData));
+          console.error(`[Import] Item "${item.name}" failed to create:`, error.message);
           errors.push({
             row: index + 1,
             errors: [error.message || "Failed to create item"]
@@ -9393,9 +9394,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cost Codes API Routes (legacy project-scoped route - deprecated)
-  app.get("/api/projects/:projectId/cost-codes", async (req, res) => {
+  app.get("/api/projects/:projectId/cost-codes", requireAuth, async (req, res) => {
     try {
-      const costCodes = await storage.getCostCodes();
+      // Cost codes are company-wide. This called getCostCodes() with no
+      // company, which matched nothing — the Site PO dialog's REQUIRED cost
+      // code list was always empty, so a Site PO could never be created.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const costCodes = await storage.getCostCodes(companyId);
       res.json(costCodes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cost codes" });
@@ -11837,7 +11843,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Revoke Google token if exists
       if (user.googleCalendarAccessToken) {
         try {
-          await calendarOauth2Client.revokeToken(user.googleCalendarAccessToken);
+          // Was `calendarOauth2Client.revokeToken(...)` — a client that no longer
+          // exists, so the ReferenceError was swallowed and the token never revoked.
+          await fetch(
+            `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(user.googleCalendarAccessToken)}`,
+            { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+          );
         } catch (revokeError) {
           console.error("Error revoking Google token:", revokeError);
           // Continue anyway to clear local tokens
@@ -17599,9 +17610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         token = randomBytes(24).toString("hex");
         await storage.updateSelection(selection.id, { portalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      const url = `${host}/portal/selections/${token}`;
-      const buffer = await QRCode.toBuffer(url, { width: 400, margin: 2 });
+      const buffer = await qrPng(`${publicBaseUrl(req)}/portal/selections/${token}`, 400);
       res.set("Content-Type", "image/png");
       res.send(buffer);
     } catch (error) {
@@ -18177,6 +18186,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Trades Portal Routes ───────────────────────────────────────────────────
+  // Site board: project files + their public routes (server/siteBoard.ts).
+  registerSiteBoardRoutes(app);
+
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -18185,11 +18197,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
       if (!token) {
-        token = randomBytes(24).toString("hex");
+        token = newSiteToken();
         await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+      res.json({ token, url: siteBoardUrl(req, token) });
     } catch (error) {
       res.status(500).json({ error: "Failed to get trades portal token" });
     }
@@ -18200,10 +18211,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/projects/:id/trades-portal-token/regenerate", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
-      const token = randomBytes(24).toString("hex");
+      const token = newSiteToken();
       await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+      res.json({ token, url: siteBoardUrl(req, token) });
     } catch (error) {
       res.status(500).json({ error: "Failed to regenerate link" });
     }
@@ -18217,13 +18227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
       if (!token) {
-        token = randomBytes(24).toString("hex");
+        token = newSiteToken();
         await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
       }
-      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
-      const url = `${host}/portal/project/${token}/trades`;
       // Large enough to print at A4 and stay sharp.
-      const buffer = await QRCode.toBuffer(url, { width: 1000, margin: 2 });
+      const buffer = await qrPng(siteBoardUrl(req, token), 1000);
       res.set("Cache-Control", "private, no-store");
       res.set("Content-Type", "image/png");
       res.send(buffer);
@@ -21189,7 +21197,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
 
       res.json({
-        project: { id: project.id, name: (project as any).name, address: (project as any).address },
+        // The address lives in `location` ("Address" in the UI); there is no `address` column.
+        project: { id: project.id, name: project.name, address: project.location ?? null },
         companyName: (company as any)?.nickname || company?.name || null,
         selections: safeSelections,
       });
@@ -23047,6 +23056,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const wasPaid = bill.status === "paid";
+      // getOwnedBill has already checked the bill belongs to this company.
+      // (`companyId` was never declared here, so the paying payment threw a
+      // ReferenceError AFTER the insert: the user saw "failed" and Xero was
+      // never told.)
+      const companyId: string | undefined = (req as any).user?.companyId;
       const payment = await storage.createBillPayment(validationResult.data);
 
       // Keep Xero in sync: when this payment brings the bill fully paid, push a
@@ -27051,6 +27065,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         poNumber,
         poType: "main",
         supplierId: supplierId || null,
+        // Link the subcontractor team member as the supplier. Only the NAME was
+        // stored before, so the draft header read "Supplier —" and the person
+        // had to be picked again at send time.
+        supplierUserId: supplierId ? null : (subUser?.id ?? null),
         supplierName: supplierName || (subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"),
         title: `Subcontractor Timesheet PO - ${subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"}`,
         // Names the job on the PO document itself. Without it the subcontractor's
@@ -43460,7 +43478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     userId: string,
     companyId: string,
     res: import("express").Response
-  ): Promise<{ message: Message; channelId: string } | null> {
+  ): Promise<{ message: import("@shared/schema").Message; channelId: string } | null> {
     const message = await storage.getMessage(messageId);
     if (!message) { res.status(404).json({ error: "Message not found" }); return null; }
     const channel = await storage.getChannel(message.channelId, companyId);
@@ -44901,11 +44919,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Open RFIs and RFQs
-      const openRFIs = rfis.filter(r => r.status === 'open' || r.status === 'pending');
+      // RFI statuses are draft | submitted | under_review | answered | closed —
+      // 'open'/'pending' never matched, so this always reported zero.
+      const openRFIs = rfis.filter(r => r.status === 'submitted' || r.status === 'under_review');
       const openRFQs = rfqs.filter(r => r.status === 'draft' || r.status === 'sent');
 
       // Calculate budget info
-      const totalBudget = estimates.reduce((sum, e) => sum + (Number(e.totalIncGst) || 0), 0);
+      // Estimates have no stored total (this summed a non-existent field, so
+      // the AI always saw $0 — and summing every revision would overcount).
+      // Use the contract sum: frozen at Mark as Contract, else the live
+      // cached price. Dollars inc GST.
+      const contractCents = (project as any).contractedTotalIncGstCents ?? (project as any).contractPrice ?? 0;
+      const totalBudget = Math.round(Number(contractCents) || 0) / 100;
 
       // Build context for AI
       const context = {
@@ -48791,7 +48816,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         id: projectsTable.id,
         name: projectsTable.name,
         projectStatus: projectsTable.projectStatus,
-        lockedContractPrice: projectsTable.lockedContractPrice,
+        // projects has no lockedContractPrice column — selecting it threw
+        // ("Cannot convert undefined or null to object") so this endpoint 500'd
+        // every time. The frozen contract sum (ex GST, to sit beside the Xero
+        // income figures) is the contracted value; the client keeps its name.
+        lockedContractPrice: projectsTable.contractedTotalExGstCents,
         percentComplete: projectsTable.percentComplete,
       })
         .from(projectsTable)

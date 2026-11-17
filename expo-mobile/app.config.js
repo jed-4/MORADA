@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "Morada",
     slug: "buildpro-mobile",
-    version: "1.1.0",
+    version: "1.2.0",
     scheme: "buildpro",
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -16,6 +16,8 @@ module.exports = {
     // existing EAS project (extra.eas.projectId). runtimeVersion uses the
     // appVersion policy so a published update only reaches native builds whose
     // version matches — bump `version` whenever a change requires a new build.
+    // 1.2.0 = Expo SDK 58 / React Native 0.88: an update built on it must never
+    // reach a 1.1.x (SDK 54) binary.
     runtimeVersion: {
       policy: "appVersion",
     },
@@ -30,7 +32,7 @@ module.exports = {
       bundleIdentifier: "com.buildpro.mobile",
       // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
       usesAppleSignIn: true,
-      buildNumber: "17",
+      buildNumber: "18",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -41,7 +43,7 @@ module.exports = {
         backgroundColor: "#7C6B86",
       },
       package: "com.buildpro.mobile",
-      versionCode: 14,
+      versionCode: 15,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
@@ -54,6 +56,8 @@ module.exports = {
     plugins: [
       "expo-secure-store",
       "expo-web-browser",
+      "expo-sharing",
+      "expo-status-bar",
       "expo-font",
       "expo-notifications",
       "expo-apple-authentication",

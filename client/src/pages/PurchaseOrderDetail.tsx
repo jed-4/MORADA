@@ -63,7 +63,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -301,6 +300,104 @@ function StatusStepper({ status, withAccepted }: StatusStepperProps) {
 }
 
 // ---------- Sortable line-item row ----------
+// The draft rows mirror the sent-PO document table (PODocumentLines): same
+// column order, type size, row dividers and top alignment, so a PO reads the
+// same while you type it as after it's sent. Inputs look like plain text until
+// hovered or focused.
+const PO_LINE_GRID =
+  // Description always keeps a readable width; cost code shrinks before it
+  // does, and below ~780px the lines scroll sideways rather than crushing text.
+  "grid grid-cols-[20px_minmax(220px,1fr)_56px_64px_92px_48px_minmax(150px,220px)_96px_24px] gap-x-2 min-w-[780px]";
+const PO_CELL_INPUT =
+  "h-7 px-1.5 text-body-sm border-0 bg-transparent shadow-none rounded hover:bg-muted/50 focus:bg-card focus-visible:ring-1 focus-visible:ring-border focus-visible:ring-offset-0";
+
+/**
+ * Multi-line description that grows with its text (timesheet POs carry 3–4
+ * lines). Edits stay local until blur: saving per keystroke let the item
+ * refetch write a stale copy back over the box mid-typing — letters vanished
+ * and the cursor jumped.
+ */
+function GrowingDescription({
+  value,
+  onCommit,
+  disabled,
+  testId,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  disabled?: boolean;
+  testId?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? value;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [shown]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={shown}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== null && draft !== value) onCommit(draft);
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          setDraft(null);
+          e.currentTarget.blur();
+        }
+      }}
+      placeholder="Item description"
+      disabled={disabled}
+      className="w-full resize-none overflow-hidden px-1.5 py-1 text-body-sm leading-snug bg-transparent rounded outline-none whitespace-pre-wrap break-words hover:bg-muted/50 focus:bg-card focus:ring-1 focus:ring-border placeholder:text-muted-foreground"
+      data-testid={testId}
+    />
+  );
+}
+
+/** Single-line text that saves on blur/Enter (same reason as GrowingDescription). */
+function DraftTextInput({
+  value,
+  onCommit,
+  placeholder,
+  className,
+  disabled,
+  testId,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+  testId?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== null && draft !== value) onCommit(draft);
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
+      }}
+      placeholder={placeholder}
+      className={className}
+      disabled={disabled}
+      data-testid={testId}
+    />
+  );
+}
+
 interface SortableItemRowProps {
   item: PurchaseOrderItem;
   index: number;
@@ -341,8 +438,8 @@ function SortableItemRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 items-center px-3 py-2 group transition-colors ${
-        isDragging ? "shadow-lg" : ""
+      className={`${PO_LINE_GRID} items-start px-3 py-2 border-b border-border/60 group transition-colors ${
+        isDragging ? "shadow-lg bg-card" : ""
       }`}
       data-testid={`po-item-row-${item.id}`}
       onMouseEnter={(e) => {
@@ -354,25 +451,23 @@ function SortableItemRow({
           isDragging ? TOKENS.ghost : "transparent";
       }}
     >
-      <div className="flex items-center justify-center">
+      <div className="flex items-center justify-center h-7">
         <button
           {...attributes}
           {...listeners}
-          className="p-1 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
+          className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
           disabled={disabled}
           data-testid={`po-item-drag-${item.id}`}
         >
-          <GripVertical className="w-4 h-4 text-muted-foreground" />
+          <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </div>
 
-      <Input
-        value={item.description}
-        onChange={(e) => onUpdate(item.id, { description: e.target.value })}
-        placeholder="Item description"
-        className="h-8 text-sm border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
+      <GrowingDescription
+        value={item.description || ""}
+        onCommit={(v) => onUpdate(item.id, { description: v })}
         disabled={disabled}
-        data-testid={`po-item-description-${item.id}`}
+        testId={`po-item-description-${item.id}`}
       />
 
       <DraftNumberInput
@@ -385,73 +480,79 @@ function SortableItemRow({
           });
         }}
         placeholder="1"
-        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
+        className={`${PO_CELL_INPUT} text-right tabular-nums`}
         disabled={disabled}
         testId={`po-item-qty-${item.id}`}
       />
 
-      <Input
+      <DraftTextInput
         value={item.unit || ""}
-        onChange={(e) => onUpdate(item.id, { unit: e.target.value })}
+        onCommit={(v) => onUpdate(item.id, { unit: v })}
         placeholder="each"
-        className="h-8 text-sm border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
+        className={`${PO_CELL_INPUT} text-muted-foreground`}
         disabled={disabled}
-        data-testid={`po-item-unit-${item.id}`}
+        testId={`po-item-unit-${item.id}`}
       />
 
-      <DraftNumberInput
-        value={(unitPrice / 100).toFixed(2)}
-        onCommit={(raw) => {
-          const price = parseCurrency(raw);
-          onUpdate(item.id, {
-            unitPrice: price,
-            total: Math.round(quantity * price),
-          });
-        }}
-        placeholder="0.00"
-        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-muted/50 focus:bg-card focus:border focus:border-border focus-visible:ring-0 rounded px-2"
-        disabled={disabled}
-        testId={`po-item-price-${item.id}`}
-      />
-
-      <div
-        className="text-sm text-right font-semibold text-foreground"
-        data-testid={`po-item-total-${item.id}`}
-      >
-        {formatCurrency(lineTotal)}
+      <div className="relative">
+        <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-body-sm text-muted-foreground">$</span>
+        <DraftNumberInput
+          value={(unitPrice / 100).toFixed(2)}
+          onCommit={(raw) => {
+            const price = parseCurrency(raw);
+            onUpdate(item.id, {
+              unitPrice: price,
+              total: Math.round(quantity * price),
+            });
+          }}
+          placeholder="0.00"
+          className={`${PO_CELL_INPUT} pl-4 text-right tabular-nums`}
+          disabled={disabled}
+          testId={`po-item-price-${item.id}`}
+        />
       </div>
 
-      <div className="flex items-center justify-center">
-        <Switch
-          checked={item.isGstFree}
+      <div className="flex items-center justify-center h-7">
+        <Checkbox
+          checked={!!item.isGstFree}
           onCheckedChange={(checked) =>
-            onUpdate(item.id, { isGstFree: checked })
+            onUpdate(item.id, { isGstFree: checked === true })
           }
           disabled={disabled}
+          aria-label="GST free"
           data-testid={`po-item-gstfree-${item.id}`}
         />
       </div>
 
-      <div className="w-full">
+      <div className="min-w-0">
         <CostCodeSelect
           value={item.costCodeId || ""}
           onValueChange={(value) =>
             onUpdate(item.id, { costCodeId: value || null })
           }
           placeholder="Cost code"
-          className="h-8 text-xs"
+          className="w-full"
+          triggerClassName="h-7 w-full text-body-sm [border-color:transparent] bg-transparent shadow-none hover:bg-muted/50 px-1.5"
           disabled={disabled}
           data-testid={`po-item-costcode-${item.id}`}
         />
       </div>
 
+      <div
+        className="h-7 flex items-center justify-end text-body-sm font-semibold text-foreground tabular-nums"
+        data-testid={`po-item-total-${item.id}`}
+      >
+        {formatCurrency(lineTotal)}
+      </div>
+
       <button
         onClick={() => onDelete(item.id)}
-        className="p-1 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 rounded transition-opacity"
+        className="h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 rounded transition-opacity"
         disabled={disabled}
+        aria-label="Delete line"
         data-testid={`po-item-delete-${item.id}`}
       >
-        <Trash2 className="w-4 h-4" />
+        <Trash2 className="w-3.5 h-3.5" />
       </button>
     </div>
   );
@@ -496,7 +597,7 @@ function ChangeSupplierDialog({
     return contacts
       .filter(
         (c) =>
-          c.contactType === "supplier" || c.contactType === "subcontractor",
+          c.contactType === "supplier" || c.contactType === "trade", // trades are "trade" — there is no "subcontractor" contact type
       )
       .filter((c) => (q ? (c.name || "").toLowerCase().includes(q) : true))
       .slice(0, 100);
@@ -1654,7 +1755,8 @@ export default function PurchaseOrderDetail() {
   // ---------- render ----------
   const isTimesheetPO = items.some((i) => !!(i as any).sourceTimesheetId);
   const headerStrip = [
-    { label: "Supplier", value: supplier?.name || "—" },
+    // Fall back to the stored name: older timesheet POs carry only supplierName.
+    { label: "Supplier", value: supplier?.name || (purchaseOrder as any)?.supplierName || "—" },
     {
       label: "Required by",
       value: requiredByDate ? format(new Date(requiredByDate), "d MMM yyyy") : "—",
@@ -2149,7 +2251,7 @@ export default function PurchaseOrderDetail() {
                 </>
               }
             >
-              <div className="border-t border-border/60">
+              <div className="border-t border-border/60 overflow-x-auto">
                 {isLocked ? (
                   <PODocumentLines
                     lines={items.map((item) => {
@@ -2170,15 +2272,15 @@ export default function PurchaseOrderDetail() {
                   />
                 ) : (
                 <>
-                <div className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-3 py-2 bg-muted/40 border-b border-border/60">
+                <div className={`${PO_LINE_GRID} px-3 py-2 bg-muted/40 border-b border-border/60`}>
                   <div></div>
-                  <div className={labelCls}>Description</div>
-                  <div className={`${labelCls} justify-end`}>Qty</div>
-                  <div className={labelCls}>Unit</div>
-                  <div className={`${labelCls} justify-end`}>Price</div>
-                  <div className={`${labelCls} justify-end`}>Total</div>
-                  <div className={`${labelCls} justify-center`}>GST free</div>
-                  <div className={labelCls}>Cost code</div>
+                  <div className="doc-col-label px-1.5">Description</div>
+                  <div className="doc-col-label text-right px-1.5">Qty</div>
+                  <div className="doc-col-label px-1.5">Unit</div>
+                  <div className="doc-col-label text-right px-1.5">Unit price</div>
+                  <div className="doc-col-label text-center">GST free</div>
+                  <div className="doc-col-label px-1.5">Cost code</div>
+                  <div className="doc-col-label text-right">Amount</div>
                   <div></div>
                 </div>
 

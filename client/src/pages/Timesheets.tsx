@@ -87,7 +87,13 @@ type TimesheetTableRow = Timesheet & {
   _splitDuration?: string;
   _splitTotal?: string;
   _splitIsFirst?: boolean;
+  // Collapsed split timesheet: ONE row standing for all its splits.
+  _isSplitSummary?: true;
+  _splitCostCodeIds?: string[];
+  _splitCount?: number;
 };
+
+const EXPAND_SPLITS_KEY = "timesheets.expandSplits";
 
 const PICKER_COLUMNS: { id: string; label: string; pinned?: boolean }[] = [
   { id: "select", label: "Select", pinned: true },
@@ -144,6 +150,29 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
   const [selectedCostCodes, setSelectedCostCodes] = useState<string[]>([]);
+  // Split timesheets show as one row (codes comma-joined) unless expanded —
+  // all at once from the toolbar (remembered per browser) or one at a time.
+  const [expandAllSplits, setExpandAllSplits] = useState<boolean>(() => {
+    try { return localStorage.getItem(EXPAND_SPLITS_KEY) === "1"; } catch { return false; }
+  });
+  const [expandedSplitIds, setExpandedSplitIds] = useState<Set<string>>(() => new Set());
+  const toggleExpandAllSplits = () => {
+    setExpandAllSplits((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(EXPAND_SPLITS_KEY, next ? "1" : "0"); } catch { /* storage blocked */ }
+      return next;
+    });
+    setExpandedSplitIds(new Set());
+  };
+  const toggleSplitRow = (id: string) => {
+    setExpandedSplitIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  // In expand-all mode the per-row set holds the ones the user CLOSED.
+  const isSplitExpanded = (id: string) => expandAllSplits !== expandedSplitIds.has(id);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
@@ -667,6 +696,13 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     return u ? `${u.firstName} ${u.lastName}`.trim() || u.username : "Unknown User";
   };
 
+  // Subcontractors are costed through their bills; their timesheets are
+  // hours only, so rate and total read "—" instead of a misleading figure.
+  const isSubbieUser = (userId: string) => {
+    const u = users.find((usr) => usr.id === userId) ?? allUsersInclArchived.find((usr) => usr.id === userId);
+    return (u as { isSubcontractor?: boolean } | undefined)?.isSubcontractor === true;
+  };
+
   const getCostCodeName = (costCodeId: string | null) => {
     if (!costCodeId) return "-";
     const costCode = costCodes.find((c) => c.id === costCodeId);
@@ -727,7 +763,21 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     const rows: TimesheetTableRow[] = [];
     for (const ts of filteredTimesheets) {
       const splits = (ts as any).costCodeSplits as any[] | undefined;
-      if (splits && splits.length > 0) {
+      if (splits && splits.length > 0 && !isSplitExpanded(ts.id)) {
+        // Totals come from the splits so the collapsed row always equals the
+        // sum of its expanded rows.
+        const hours = splits.reduce((sum, sp) => sum + (parseFloat(sp.duration ?? "0") || 0), 0);
+        const total = splits.reduce((sum, sp) => sum + (parseFloat(sp.total ?? "0") || 0), 0);
+        rows.push({
+          ...ts,
+          _rowKey: `timesheet-${ts.id}`,
+          _isSplitSummary: true,
+          _splitCostCodeIds: splits.map((sp) => sp.costCodeId || ""),
+          _splitCount: splits.length,
+          _splitDuration: hours.toString(),
+          _splitTotal: total.toString(),
+        });
+      } else if (splits && splits.length > 0) {
         splits.forEach((split, idx) => {
           rows.push({
             ...ts,
@@ -737,6 +787,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             _splitDuration: split.duration?.toString() ?? "0",
             _splitTotal: split.total?.toString() ?? "0",
             _splitIsFirst: idx === 0,
+            _splitCount: splits.length,
           });
         });
       } else {
@@ -744,7 +795,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       }
     }
     return rows;
-  }, [filteredTimesheets]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredTimesheets, expandAllSplits, expandedSplitIds]);
 
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
@@ -959,7 +1011,20 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
           if (t._isSplitRow && !t._splitIsFirst) {
             return <span className="text-table truncate text-muted-foreground/30">—</span>;
           }
-          return <span className="text-table truncate">{getUserName(t.userId)}</span>;
+          return (
+            <span className="flex items-center gap-1 min-w-0">
+              <span className="text-table truncate">{getUserName(t.userId)}</span>
+              {isSubbieUser(t.userId) && (
+                <span
+                  className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground"
+                  title="Subcontractor — costed through their bills"
+                  data-testid={`badge-subbie-${t.id}`}
+                >
+                  Subbie
+                </span>
+              )}
+            </span>
+          );
         },
       },
       {
@@ -991,15 +1056,57 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       },
       {
         id: "costCode",
-        accessorFn: (t) => getCostCodeName(t._splitCostCodeId ?? t.costCodeId),
+        accessorFn: (t) =>
+          t._isSplitSummary
+            ? (t._splitCostCodeIds || []).map(getCostCodeName).join(", ")
+            : getCostCodeName(t._splitCostCodeId ?? t.costCodeId),
         header: "Cost Code",
         meta: { headerLabel: "Cost Code", defaultWidth: 100 },
         cell: ({ row }) => {
           const t = row.original;
+          // Split timesheets get an arrow: on the collapsed row, or on the
+          // first of its expanded rows. Clicking it never opens the dialog.
+          const showToggle = t._isSplitSummary || (t._isSplitRow && t._splitIsFirst);
+          const toggle = showToggle ? (
+            <button
+              type="button"
+              className="shrink-0 h-4 w-4 -ml-0.5 rounded hover:bg-muted flex items-center justify-center"
+              onClick={(e) => { e.stopPropagation(); toggleSplitRow(t.id); }}
+              title={t._isSplitSummary ? `Show ${t._splitCount} split rows` : "Show as one row"}
+              aria-label={t._isSplitSummary ? "Expand split" : "Collapse split"}
+              data-testid={`button-toggle-split-${t.id}`}
+            >
+              {t._isSplitSummary
+                ? <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+            </button>
+          ) : null;
+          if (t._isSplitSummary) {
+            const ids = t._splitCostCodeIds || [];
+            const title = ids.map(getCostCodeName).join(", ");
+            return (
+              <span className="flex items-center gap-1 min-w-0" title={title}>
+                {toggle}
+                <span className="text-table truncate text-muted-foreground">
+                  {ids.map((id, i) => (
+                    <span key={`${id}-${i}`}>
+                      {i > 0 && ", "}
+                      <span className={selectedCostCodes.includes(id) ? "text-foreground font-semibold" : undefined}>
+                        {getCostCodeName(id)}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              </span>
+            );
+          }
           const codeId = t._splitCostCodeId ?? t.costCodeId;
           return (
-            <span className="text-table truncate text-muted-foreground">
-              {getCostCodeName(codeId)}
+            <span className="flex items-center gap-1 min-w-0">
+              {toggle}
+              <span className={`text-table truncate text-muted-foreground ${t._isSplitRow && !t._splitIsFirst ? "pl-4" : ""}`}>
+                {getCostCodeName(codeId)}
+              </span>
             </span>
           );
         },
@@ -1071,7 +1178,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         enableSorting: false,
         meta: { headerLabel: "Rate", defaultWidth: 50 },
         cell: ({ row }) => {
-          const rate = row.original.hourlyRate ? parseFloat(row.original.hourlyRate) : 0;
+          const rate = isSubbieUser(row.original.userId) ? 0 : (row.original.hourlyRate ? parseFloat(row.original.hourlyRate) : 0);
           if (rate > 0) {
             return (
               <span className="text-table text-muted-foreground tabular-nums">
@@ -1090,6 +1197,9 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         meta: { headerLabel: "Total", defaultWidth: 60, align: "right" },
         cell: ({ row }) => {
           const t = row.original;
+          if (isSubbieUser(t.userId)) {
+            return <span className="text-table text-muted-foreground tabular-nums" title="Costed through their bills">&mdash;</span>;
+          }
           if (t._splitTotal != null) {
             const val = parseFloat(t._splitTotal);
             return (
@@ -1187,12 +1297,23 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         accessorKey: "description",
         header: "Description",
         enableSorting: false,
-        meta: { headerLabel: "Description", defaultWidth: 180 },
-        cell: ({ row }) => (
-          <span className="text-table text-muted-foreground truncate">
-            {row.original.description || "-"}
-          </span>
-        ),
+        // flex: soaks up the leftover width so the text runs to the actions
+        // column instead of stopping short in front of a blank gap.
+        meta: { headerLabel: "Description", defaultWidth: 180, flex: true },
+        cell: ({ row }) => {
+          const text = row.original.description;
+          if (!text) return <span className="text-table text-muted-foreground">-</span>;
+          return (
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <span className="block text-table text-muted-foreground truncate">{text}</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start" className="max-w-sm whitespace-pre-wrap break-words">
+                {text}
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
       },
       {
         // Far-right per-row 3-dot actions menu. Pinned so it can't be
@@ -1306,7 +1427,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     // Hide cost columns from users without timesheets.rates permission
     return canViewTimesheetRates ? cols : cols.filter(c => c.id !== "rate" && c.id !== "total");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, canViewTimesheetRates, user?.id, user?.roleName, duplicateMutation.isPending]);
+  }, [filteredTimesheets, selectedTimesheets, selectedCostCodes, projects, users, costCodes, tsDateFormat, canApproveTimesheets, canViewTimesheetRates, user?.id, user?.roleName, duplicateMutation.isPending]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1724,6 +1845,26 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {activeView === "table" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggleExpandAllSplits}
+                  aria-pressed={expandAllSplits}
+                  className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${expandAllSplits ? "bg-primary/10 text-primary border-primary/30" : ""}`}
+                  data-testid="button-toggle-expand-splits"
+                >
+                  {expandAllSplits ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  Splits
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {expandAllSplits ? "Show each split timesheet as one row" : "Show every cost-code split as its own row"}
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {activeView === "table" && (
             <Popover>
@@ -2172,7 +2313,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 </div>
 
                 {/* Day headers — sticks just below the nav (nav = py-2 + h-7 = 44px) */}
-                <div ref={calHeadersRef} className="sticky top-[44px] z-20 flex border-b-2 border-border bg-card">
+                <div ref={calHeadersRef} className="sticky top-[44px] z-20 flex border-b border-border bg-card">
                   <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="border-r border-border" />
                   {calendarDays.map(day => {
                     const isToday = isSameDay(day, new Date());
@@ -2181,15 +2322,20 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       <div
                         key={day.toISOString()}
                         style={{ flex }}
-                        className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
-                          isToday ? "bg-teal/10" : "bg-muted/30 dark:bg-muted/10"
-                        }`}
+                        className="text-center py-1.5 border-r border-border/60 last:border-r-0 min-w-0"
                       >
-                        <div className={isToday ? "text-teal" : "text-muted-foreground"}>
-                          {format(day, "EEE")}
-                        </div>
-                        <div className={`text-data font-semibold ${isToday ? "text-teal" : ""}`}>
-                          {format(day, "d")}
+                        {/* Notion-style single line: "Mon 26", today's date in a filled circle */}
+                        <div className="flex items-center justify-center gap-1 text-[12px] leading-5">
+                          <span className={isToday ? "text-destructive font-medium" : "text-muted-foreground"}>
+                            {format(day, "EEE")}
+                          </span>
+                          <span
+                            className={isToday
+                              ? "inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-destructive text-destructive-foreground font-semibold"
+                              : "text-foreground font-medium"}
+                          >
+                            {format(day, "d")}
+                          </span>
                         </div>
                         {/* Per-user lane labels (only when 2–5 users) */}
                         {useLanes && (
@@ -2235,7 +2381,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                         <div
                           key={dk}
                           style={{ flex }}
-                          className={`border-r border-border last:border-r-0 min-h-[28px] min-w-0 flex ${isToday ? "bg-teal/5" : ""}`}
+                          className="border-r border-border/60 last:border-r-0 min-h-[28px] min-w-0 flex"
                         >
                           {useLanes ? (
                             laneUsers.map(uid => {
@@ -2302,17 +2448,32 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                   {/* Hour labels */}
                   <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="relative select-none border-r border-border">
                     {Array.from({ length: totalHours }, (_, i) => {
+                      if (i === 0) return null; // the top edge label would sit half under the header
                       const h = CAL_START_HOUR + i;
                       return (
                         <div
                           key={h}
-                          className="absolute right-0 pr-2 text-data text-muted-foreground leading-none"
-                          style={{ top: i * CAL_HOUR_PX - 6 }}
+                          className="absolute right-0 pr-2 text-[11px] text-muted-foreground leading-none tabular-nums"
+                          style={{ top: i * CAL_HOUR_PX - 5 }}
                         >
-                          {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
+                          {String(h).padStart(2, "0")}:00
                         </div>
                       );
                     })}
+                    {/* Current time, Notion-style, in the gutter (when this week includes today) */}
+                    {calendarDays.some((d) => isSameDay(d, nowTick)) && (() => {
+                      const nowDec = nowTick.getHours() + nowTick.getMinutes() / 60;
+                      if (nowDec < CAL_START_HOUR || nowDec > CAL_END_HOUR) return null;
+                      return (
+                        <div
+                          className="absolute right-0 pr-1.5 text-[11px] font-medium text-destructive leading-none tabular-nums bg-card z-10"
+                          style={{ top: (nowDec - CAL_START_HOUR) * CAL_HOUR_PX - 5 }}
+                          data-testid="cal-now-label"
+                        >
+                          {format(nowTick, "HH:mm")}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Day columns */}
@@ -2326,22 +2487,14 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       <div
                         key={dk}
                         style={{ flex }}
-                        className={`border-r border-border last:border-r-0 relative min-w-0 ${isToday ? "bg-teal/5" : ""}`}
+                        className="border-r border-border/60 last:border-r-0 relative min-w-0"
                       >
-                        {/* Hour lines */}
+                        {/* Hour lines only (Notion-style — no half-hour rules) */}
                         {Array.from({ length: totalHours }, (_, i) => (
                           <div
                             key={i}
-                            className="absolute left-0 right-0 border-t border-border/50"
+                            className="absolute left-0 right-0 border-t border-border/60"
                             style={{ top: i * CAL_HOUR_PX }}
-                          />
-                        ))}
-                        {/* Half-hour lines */}
-                        {Array.from({ length: totalHours }, (_, i) => (
-                          <div
-                            key={`h${i}`}
-                            className="absolute left-0 right-0 border-t border-border/25"
-                            style={{ top: i * CAL_HOUR_PX + CAL_HOUR_PX / 2 }}
                           />
                         ))}
 
@@ -2366,7 +2519,13 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           } else {
                             blockLanesMap.set("all", computeBlockLanes(daySegs));
                           }
-                          const INSET = 1;
+                          const INSET = 2;
+                          const hhmm = (dec: number) => {
+                            const d = ((dec % 24) + 24) % 24;
+                            const h = Math.floor(d);
+                            const m = Math.round((d - h) * 60);
+                            return `${String(m === 60 ? h + 1 : h).padStart(2, "0")}:${String(m === 60 ? 0 : m).padStart(2, "0")}`;
+                          };
                           return daySegs.map(sg => {
                             const { ts } = sg;
                             // Segments fully outside the 5am–10pm window are no
@@ -2422,17 +2581,17 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                               <div
                                 key={sg.segKey}
                                 onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`absolute rounded text-label px-1 py-0.5 cursor-pointer hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                className={`absolute rounded-md px-1.5 py-1 cursor-pointer hover-elevate text-foreground text-[11px] leading-[14px] overflow-clip${projColor ? "" : " bg-muted/70 border-l-[3px] border-border"}`}
                                 style={projColor ? {
-                                  top,
-                                  height,
+                                  top: top + 1,
+                                  height: height - 2,
                                   left: `calc(${leftPct}% + ${INSET}px)`,
                                   width: `calc(${widthPct}% - ${INSET * 2}px)`,
-                                  backgroundColor: hexToRgba(projColor, 0.15),
+                                  backgroundColor: hexToRgba(projColor, 0.2),
                                   borderLeft: `3px solid ${projColor}`,
                                 } : {
-                                  top,
-                                  height,
+                                  top: top + 1,
+                                  height: height - 2,
                                   left: `calc(${leftPct}% + ${INSET}px)`,
                                   width: `calc(${widthPct}% - ${INSET * 2}px)`,
                                 }}
@@ -2445,18 +2604,25 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                                   />
                                 )}
                                 <div
-                                  className="font-bold truncate leading-tight pr-2"
+                                  className="font-semibold truncate pr-2"
                                   style={{ position: "sticky", top: calStickyOffset + 2 }}
                                 >
                                   {clippedTop ? "↑ " : ""}{getProjectName(ts.projectId)}{clippedBottom ? " ↓" : ""}
                                 </div>
-                                {height > 28 && (
-                                  <div className="truncate leading-tight opacity-70">
+                                {/* Time range, Notion-style, right under the title */}
+                                {height > 30 && (
+                                  <div className="truncate text-muted-foreground tabular-nums" data-testid={`cal-time-${sg.segKey}`}>
+                                    {hhmm(sg.start)}–{hhmm(sg.end)}
+                                    <span className="opacity-70"> · {formatDuration(getNetHours(ts))}</span>
+                                  </div>
+                                )}
+                                {height > 46 && getCostCodeName(ts.costCodeId) !== "-" && (
+                                  <div className="truncate opacity-80">
                                     {getCostCodeName(ts.costCodeId)}
                                   </div>
                                 )}
-                                {height > 42 && (
-                                  <div className="truncate leading-tight opacity-50">
+                                {height > 62 && ts.description && (
+                                  <div className="opacity-60 line-clamp-2 whitespace-pre-wrap break-words">
                                     {ts.description}
                                   </div>
                                 )}
@@ -2474,8 +2640,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                               className="absolute left-0 right-0 z-10 pointer-events-none"
                               style={{ top: (nowDec - CAL_START_HOUR) * CAL_HOUR_PX }}
                             >
-                              <div className="h-[2px] bg-[hsl(var(--teal))]" />
-                              <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-[hsl(var(--teal))]" />
+                              <div className="h-[2px] bg-destructive" />
+                              <div className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-destructive" />
                             </div>
                           );
                         })()}
