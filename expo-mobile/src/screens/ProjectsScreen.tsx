@@ -94,7 +94,7 @@ export default function ProjectsScreen({ navigation, route }: Props) {
   const [error, setError] = useState(false);
   const insets = useSafeAreaInsets();
   // Phone: a tap pushes the project. Duo unfolded: it opens on the right.
-  const { selectedId, open, isWide } = useTwoPaneSelection({
+  const { selectedId, open, isWide, paneProps } = useTwoPaneSelection({
     navigation,
     route,
     detailRoute: 'ProjectDetail',
@@ -425,6 +425,7 @@ const colors = {
 
   return (
     <TwoPane
+      {...paneProps}
       list={listPane}
       emptyTitle="Select a project"
       emptyIcon="briefcase-outline"

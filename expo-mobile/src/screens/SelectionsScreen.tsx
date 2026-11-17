@@ -132,7 +132,7 @@ export default function SelectionsScreen({ navigation, route }: Props) {
 
   // Phone: a tap pushes SelectionDetail, as before. Duo unfolded: the item
   // opens on the right and the spec list stays put on the left.
-  const { selectedId, open, isWide } = useTwoPaneSelection({
+  const { selectedId, open, isWide, paneProps } = useTwoPaneSelection({
     navigation,
     route,
     detailRoute: 'SelectionDetail',
@@ -277,6 +277,7 @@ export default function SelectionsScreen({ navigation, route }: Props) {
   // photo page carried over from the previous one).
   return (
     <TwoPane
+      {...paneProps}
       list={list}
       detail={
         selectedId ? (

@@ -22,6 +22,7 @@ import { usePermission } from '../lib/usePermission';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReturnToTwoPane } from '../lib/twoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { useTwoPaneDetail } from '../components/ui/TwoPane';
 import { haptic } from '../lib/haptics';
 import { SkeletonList } from '../components/ui/Skeleton';
 
@@ -108,6 +109,9 @@ type Props = {
 export default function ProjectDetailScreen({ navigation, route, embedded }: Props) {
   const { projectId } = route.params as { projectId: string };
   const insets = useSafeAreaInsets();
+  // Folded with this project open on the right: a back button floats top-left.
+  const { heldOnFold } = useTwoPaneDetail();
+  const embeddedTop = insets.top + (heldOnFold ? 50 : 12);
   // Unfolding on this screen (pushed from the list) goes back to the list with
   // this project open on the right, so you keep your place.
   useReturnToTwoPane({ navigation, listRoute: 'ProjectsList', id: projectId, embedded });
@@ -448,7 +452,7 @@ const colors = {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, readableFrame, embedded && { paddingTop: insets.top + 12 }]}
+        contentContainerStyle={[styles.scrollContent, readableFrame, embedded && { paddingTop: embeddedTop }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
         <View style={styles.compactHeader}>

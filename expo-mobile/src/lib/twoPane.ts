@@ -8,10 +8,15 @@ import { useLayout } from './useLayout';
  *   Duo unfolded        → tapping a row opens it in the right panel.
  *
  * Keeping your place when the phone changes shape:
- *   - Fold while an item is open on the right → its detail screen is pushed,
- *     so the outer screen shows the same item, not the list.
+ *   - Fold while an item is open on the right → the SAME detail (still
+ *     mounted, so a half-typed comment or an open document survives) fills the
+ *     outer screen, with a back bar to the list. We deliberately do NOT push
+ *     the detail screen here: a pushed screen is a new instance and would
+ *     start empty.
  *   - Unfold while on a pushed detail screen → useReturnToTwoPane (below) pops
  *     back to the list and opens that item on the right.
+ *
+ * Spread `paneProps` onto <TwoPane>.
  */
 
 /** Route param the detail screen sends back to the list on unfold. */
@@ -35,35 +40,54 @@ interface SelectionOptions<P> {
 export function useTwoPaneSelection<P extends object>({ navigation, route, detailRoute, paramsFor }: SelectionOptions<P>) {
   const { isWide } = useLayout();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // True after a fold with an item open: the detail stays on screen, full width.
+  const [heldOnFold, setHeldOnFold] = useState(false);
 
-  // Keep the latest callbacks without re-running the fold effect for them.
+  // Keep the latest callback without re-creating `open` for it.
   const paramsRef = useRef(paramsFor);
   paramsRef.current = paramsFor;
 
   const open = useCallback(
     (id: string) => {
       setSelectedId(id);
+      setHeldOnFold(false);
       if (!isWide) navigation.navigate(detailRoute, paramsRef.current(id));
     },
     [isWide, navigation, detailRoute],
   );
 
-  // Folded with something open on the right → push it so you stay on it.
+  const close = useCallback(() => {
+    setSelectedId(null);
+    setHeldOnFold(false);
+  }, []);
+
+  // Folded with something open on the right → keep it showing.
   const wasWide = useRef(isWide);
   useEffect(() => {
-    if (wasWide.current && !isWide && selectedId && navigation.isFocused()) {
-      navigation.navigate(detailRoute, paramsRef.current(selectedId));
-    }
+    if (wasWide.current && !isWide && selectedId) setHeldOnFold(true);
     wasWide.current = isWide;
-  }, [isWide, selectedId, navigation, detailRoute]);
+  }, [isWide, selectedId]);
 
   // Unfolded on the detail screen → it popped back here with its id.
   const handedBack = route?.params?.[TWO_PANE_SELECT_PARAM] as string | undefined;
   useEffect(() => {
-    if (handedBack) setSelectedId(handedBack);
+    if (handedBack) {
+      setSelectedId(handedBack);
+      setHeldOnFold(false);
+    }
   }, [handedBack]);
 
-  return { selectedId, setSelectedId, open, isWide };
+  const narrowDetail = !isWide && heldOnFold && !!selectedId;
+
+  return {
+    selectedId,
+    setSelectedId,
+    open,
+    close,
+    isWide,
+    /** Spread onto <TwoPane>. */
+    paneProps: { narrowDetail, onCloseDetail: close },
+  };
 }
 
 interface ReturnOptions {
@@ -83,6 +107,8 @@ interface ReturnOptions {
 /**
  * On a detail screen: when the phone unfolds and the screen right below this
  * one is its list, go back to the list with this item open on the right.
+ * (That swaps to a fresh copy of the detail, so callers should skip it while
+ * something unsaved is open — pass id undefined then.)
  */
 export function useReturnToTwoPane({ navigation, listRoute, id, embedded }: ReturnOptions) {
   const { isWide } = useLayout();
