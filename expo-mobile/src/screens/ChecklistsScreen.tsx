@@ -510,7 +510,11 @@ const colors = {
         onPress={() => toggleItemStatus(item)}
         activeOpacity={0.7}
         disabled={item.status === 'na'}
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        // Box is 34 x 22 (22pt icon + padding); this makes the target 48 x 44.
+        hitSlop={{ top: 11, bottom: 11, left: 10, right: 4 }}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.status === 'completed', disabled: item.status === 'na' }}
+        accessibilityLabel={item.description}
       >
         <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
       </TouchableOpacity>
@@ -550,7 +554,10 @@ const colors = {
           style={styles.itemMenuBtn}
           onPress={() => openItemMenu(item)}
           activeOpacity={0.6}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          // 24pt button + 10 each side = 44pt.
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Item actions"
         >
           <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
         </TouchableOpacity>
@@ -634,6 +641,70 @@ const colors = {
 
     const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
 
+    const collapseAllButton = (
+      <TouchableOpacity
+        onPress={toggleAllInstanceGroups}
+        style={styles.collapseAllBelowBtn}
+        activeOpacity={0.7}
+        hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
+      >
+        <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+        <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+          {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+        </Text>
+      </TouchableOpacity>
+    );
+
+    // Phone / Duo folded: a compact card — name, status and chevron on one
+    // line, then ONE short line of facts and the progress bar. The description
+    // and Expand/Collapse All move into the opened card. Big screen keeps the
+    // full card (below). Rows are stateless, so switching on fold loses nothing.
+    if (!isWide) {
+      const facts = [
+        `${instance.completedCount}/${instance.totalCount} done`,
+        instance.dueDate ? `Due ${formatDate(instance.dueDate)}` : null,
+        instance.assigneeName || null,
+      ].filter(Boolean).join(' · ');
+      return (
+        <View
+          key={instance.id}
+          style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <TouchableOpacity
+            style={styles.instanceHeader}
+            onPress={() => toggleExpand(instance.id)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isExpanded }}
+          >
+            <View style={styles.instanceTitleRow}>
+              <Text style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                  {statusLabels[instance.status] || instance.status}
+                </Text>
+              </View>
+              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+            </View>
+            <Text style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>{facts}</Text>
+            <View style={[styles.progressBar, styles.compactProgress, { backgroundColor: colors.border }]}>
+              <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? '#22c55e' : colors.accent }]} />
+            </View>
+          </TouchableOpacity>
+
+          {isExpanded && (!!instance.description || hasGroups) && (
+            <View style={[styles.compactIntro, { borderTopColor: colors.border }]}>
+              {!!instance.description && (
+                <Text style={[styles.instanceDesc, styles.compactDesc, { color: colors.secondary }]}>{instance.description}</Text>
+              )}
+              {hasGroups && <View style={styles.compactCollapseRow}>{collapseAllButton}</View>}
+            </View>
+          )}
+          {isExpanded && renderExpandedItems(instance.id)}
+        </View>
+      );
+    }
+
     return (
       <View
         key={instance.id}
@@ -703,7 +774,7 @@ const colors = {
                   onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
                   style={styles.collapseAllBelowBtn}
                   activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
                 >
                   <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
                   <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
@@ -764,7 +835,7 @@ const colors = {
                 onPress={toggleAllInstanceGroups}
                 style={[styles.collapseAllBelowBtn, { alignSelf: 'flex-end', marginTop: 6 }]}
                 activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
               >
                 <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
                 <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
@@ -806,6 +877,7 @@ const colors = {
             ]}
             onPress={() => setSelectedProjectId(null)}
             activeOpacity={0.7}
+            hitSlop={{ top: 6, bottom: 6 }}
           >
             <Text style={[styles.filterPillText, { color: !selectedProjectId ? colors.accent : colors.secondary }]}>All</Text>
           </TouchableOpacity>
@@ -821,6 +893,7 @@ const colors = {
               ]}
               onPress={() => setSelectedProjectId(p.id)}
               activeOpacity={0.7}
+              hitSlop={{ top: 6, bottom: 6 }}
             >
               <Text
                 style={[styles.filterPillText, { color: selectedProjectId === p.id ? colors.accent : colors.secondary }]}
@@ -923,7 +996,7 @@ const colors = {
                 {menuMode === 'activity' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
                       <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
@@ -986,7 +1059,7 @@ const colors = {
                 {menuMode === 'attachments' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
                       <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Attachments</Text>
@@ -1048,7 +1121,7 @@ const colors = {
                 {menuMode === 'assignee' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
                       <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Assign To</Text>
@@ -1137,6 +1210,12 @@ const styles = StyleSheet.create({
   statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: '600' },
   instanceDesc: { fontSize: 12, marginTop: 4 },
+  // Phone (compact) card
+  compactFacts: { fontSize: 12, marginTop: 4 },
+  compactProgress: { marginTop: 8 },
+  compactIntro: { borderTopWidth: 1, paddingHorizontal: 14, paddingTop: 8, gap: 4 },
+  compactDesc: { marginTop: 0, fontSize: 13, lineHeight: 18 },
+  compactCollapseRow: { alignItems: 'flex-end' },
   instanceMeta: { gap: 6 },
   progressSection: { gap: 3 },
   progressBar: {
@@ -1187,6 +1266,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 44,
     paddingVertical: 10,
     marginTop: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,

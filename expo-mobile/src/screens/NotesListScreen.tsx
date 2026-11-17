@@ -156,7 +156,10 @@ function SwipeableNoteRow({
             </Text>
             <TouchableOpacity
               onPress={onLongPress}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              // 18pt icon + 13 each side = 44pt.
+              hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
+              accessibilityRole="button"
+              accessibilityLabel="Note actions"
             >
               <Ionicons name="ellipsis-horizontal" size={18} color={colors.placeholder} />
             </TouchableOpacity>
@@ -548,7 +551,7 @@ const colors = {
             returnKeyType="search"
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }} accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={colors.placeholder} />
             </TouchableOpacity>
           )}

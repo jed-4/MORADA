@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SheetTextInput } from './ui/Sheet';
 import { apiFetch, apiRequest } from '../services/api';
 import { timeAgo, getInitials } from '../lib/format';
 import { useTheme } from '../theme';
@@ -58,6 +59,12 @@ interface TaskCommentsProps {
   currentUserId?: string;
   colors: ThemeColors;
   isDark: boolean;
+  /**
+   * Rendered inside a <Sheet> (gorhom bottom sheet): use the sheet's text
+   * input so the sheet lifts above the keyboard instead of the comment box
+   * being hidden under it. Leave unset in a plain ScrollView / Modal.
+   */
+  inSheet?: boolean;
 }
 
 const MENTION_MARKUP = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
@@ -121,7 +128,8 @@ function renderContent(content: string, accent: string, textColor: string) {
   return <Text style={{ color: textColor, fontSize: 14, lineHeight: 20 }}>{parts}</Text>;
 }
 
-export default function TaskComments({ taskId, currentUserId, colors, isDark }: TaskCommentsProps) {
+export default function TaskComments({ taskId, currentUserId, colors, isDark, inSheet }: TaskCommentsProps) {
+  const Input = inSheet ? SheetTextInput : TextInput;
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<TaskActivityItem[]>([]);
   const [showActivity, setShowActivity] = useState(true);
@@ -264,6 +272,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
           <TouchableOpacity
             onPress={() => setShowActivity((v) => !v)}
             style={styles.activityToggle}
+            hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
           >
             <Ionicons name="pulse-outline" size={14} color={colors.secondary} />
             <Text style={[styles.activityToggleText, { color: colors.secondary }]}>
@@ -313,7 +322,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
 
                 {isEditing ? (
                   <View>
-                    <TextInput
+                    <Input
                       value={editValue}
                       onChangeText={setEditValue}
                       multiline
@@ -355,11 +364,12 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                         setEditMentions(extractMentions(c.content));
                       }}
                       style={styles.iconAction}
+                      hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
                     >
                       <Ionicons name="pencil" size={14} color={colors.secondary} />
                       <Text style={[styles.iconActionText, { color: colors.secondary }]}>Edit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction}>
+                    <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction} hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}>
                       <Ionicons name="trash-outline" size={14} color={danger} />
                       <Text style={[styles.iconActionText, { color: danger }]}>Delete</Text>
                     </TouchableOpacity>
@@ -385,7 +395,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
             ))}
           </View>
         )}
-        <TextInput
+        <Input
           value={input}
           onChangeText={onChangeInput}
           multiline
