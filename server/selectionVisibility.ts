@@ -307,6 +307,175 @@ export function redactProductForViewer<T extends Record<string, any>>(product: T
 }
 
 /**
+ * Money on the selection row itself. `allowance` is the budget in cents — a
+ * trade without pricing access gets none of it (the read routes already drop
+ * it; this is the list the WRITE paths share).
+ */
+export const SELECTION_MONEY_FIELDS = ["allowance"] as const;
+
+/** As stripOptionMoneyForWrite, for the selection row (its allowance). */
+export function stripSelectionMoneyForWrite<T extends Record<string, any>>(data: T, viewer: SelectionViewer): T {
+  if (viewer.canSeePricing && !viewer.isClient) return data;
+  const copy: any = { ...data };
+  for (const field of SELECTION_MONEY_FIELDS) delete copy[field];
+  return copy;
+}
+
+/**
+ * A selection row handed back by a WRITE route (create, update, duplicate,
+ * mark received, create-from-estimate, create PO). The read routes have
+ * redacted money for a while, but these responses handed the saved row —
+ * allowance and every option's cost and markup — straight back to whoever made
+ * the change. Unlike applySelectionVisibilityToOne this never collapses the row
+ * to the "awaiting approval" stub: the caller just wrote it, so it keeps its
+ * shape, minus the money (and the share token, as on the read routes).
+ */
+export function redactSelectionForViewer<T extends Record<string, any>>(selection: T, viewer: SelectionViewer): any {
+  if (!selection) return selection;
+  if (viewer.isClient) return redactForClient(selection, viewer.canSeePricing);
+  if (viewer.canSeePricing) {
+    if (viewer.canSeePending) return selection;
+    const copy: any = { ...selection };
+    delete copy.portalToken;
+    return copy;
+  }
+  const out: any = { ...selection };
+  for (const field of SELECTION_MONEY_FIELDS) delete out[field];
+  if (!viewer.canSeePending) delete out.portalToken;
+  if (Array.isArray(out.options)) out.options = out.options.map(stripOptionMoney);
+  return out;
+}
+
+// ── Selection templates ─────────────────────────────────────────────────────
+//
+// A template is company-wide, not tied to a job, but it carries exactly the
+// same money as the selections it becomes: per-option cost / markup / charge
+// inside `templateData`, and a budget (`budgetAmount`) on the template and, in
+// the legacy `itemName` format, on each item. Every team member could read all
+// of it from GET /api/selection-templates(/:id).
+
+/** Money on a template option inside templateData (both blob formats). */
+export const TEMPLATE_OPTION_MONEY_FIELDS = [...OPTION_MONEY_FIELDS, "unitCostOverride"] as const;
+/** Money on the template row, and on a legacy-format item. */
+export const TEMPLATE_MONEY_FIELDS = ["budgetAmount"] as const;
+
+const isLegacyTemplateData = (data: any[]): boolean =>
+  data.length > 0 && data[0] != null && typeof data[0] === "object" && "itemName" in data[0];
+
+function stripFields(row: any, fields: readonly string[]): any {
+  if (!row || typeof row !== "object") return row;
+  const copy = { ...row };
+  for (const f of fields) delete copy[f];
+  return copy;
+}
+
+/** templateData with every cost, markup, charge and budget removed. */
+export function stripTemplateDataMoney(data: any): any {
+  if (!Array.isArray(data)) return data;
+  if (isLegacyTemplateData(data)) {
+    return data.map((item) => {
+      const out = stripFields(item, TEMPLATE_MONEY_FIELDS);
+      if (Array.isArray(out?.options)) out.options = out.options.map((o: any) => stripFields(o, TEMPLATE_OPTION_MONEY_FIELDS));
+      return out;
+    });
+  }
+  return data.map((o) => stripFields(o, TEMPLATE_OPTION_MONEY_FIELDS));
+}
+
+/** A selection template as `viewer` may read it. */
+export function redactTemplateForViewer<T extends Record<string, any>>(template: T, viewer: SelectionViewer): any {
+  if (!template || (viewer.canSeePricing && !viewer.isClient)) return template;
+  const out: any = stripFields(template, TEMPLATE_MONEY_FIELDS);
+  if ("templateData" in out) out.templateData = stripTemplateDataMoney(out.templateData);
+  return out;
+}
+
+const optionSignature = (o: any) =>
+  [o?.name, o?.brand, o?.sku].map((v) => String(v ?? "").trim().toLowerCase()).join("|");
+
+/**
+ * A template write from a viewer without pricing access. Their editor never
+ * received the money, so the blob it sends back has none — saved as-is, that
+ * would wipe every price on the template. Instead: anything money-shaped they
+ * send is dropped, and each option they send keeps the price it already has.
+ *
+ * Options are matched to the stored blob by id, then — for stored options that
+ * never had one (ids were historically minted in the browser on read) — by the
+ * `old-<item>-<option>` id the editor gives legacy options, then by
+ * name + brand + sku. An option that matches nothing is new, and has no price.
+ */
+export function mergeTemplateWriteForViewer<T extends Record<string, any>>(
+  data: T,
+  existing: any,
+  viewer: SelectionViewer,
+): T {
+  if (viewer.canSeePricing && !viewer.isClient) return data;
+  const out: any = stripFields(data, TEMPLATE_MONEY_FIELDS);
+  if (!Array.isArray(out.templateData)) return out;
+
+  const stored: any[] = Array.isArray(existing?.templateData) ? existing.templateData : [];
+  const storedLegacy = isLegacyTemplateData(stored);
+
+  // Every stored option, wherever it sits, under each key it can be found by.
+  const byId = new Map<string, any>();
+  const bySignature = new Map<string, any[]>();
+  const register = (option: any, positional?: string) => {
+    if (!option || typeof option !== "object") return;
+    const keys: string[] = [];
+    if (option.id) keys.push(String(option.id));
+    if (positional) keys.push(positional);
+    for (const k of keys) if (!byId.has(k)) byId.set(k, option);
+    const sig = optionSignature(option);
+    if (!bySignature.has(sig)) bySignature.set(sig, []);
+    bySignature.get(sig)!.push(option);
+  };
+  if (storedLegacy) {
+    stored.forEach((item, i) => (Array.isArray(item?.options) ? item.options : []).forEach((o: any, j: number) => register(o, `old-${i}-${j}`)));
+  } else {
+    stored.forEach((o) => register(o));
+  }
+
+  const used = new Set<any>();
+  const findStored = (option: any) => {
+    const id = option?.id ? String(option.id) : null;
+    const hit = id ? byId.get(id) : undefined;
+    if (hit && !used.has(hit)) return hit;
+    for (const candidate of bySignature.get(optionSignature(option)) ?? []) {
+      // Only fall back to the signature for a stored option that has no id of
+      // its own — one WITH an id is only ever claimed by that id.
+      if (!used.has(candidate) && !candidate.id) return candidate;
+    }
+    return undefined;
+  };
+
+  const withStoredMoney = (option: any) => {
+    const clean = stripFields(option, TEMPLATE_OPTION_MONEY_FIELDS);
+    const match = findStored(option);
+    if (!match) return clean;
+    used.add(match);
+    for (const f of TEMPLATE_OPTION_MONEY_FIELDS) {
+      if (match[f] !== undefined) clean[f] = match[f];
+    }
+    return clean;
+  };
+
+  if (isLegacyTemplateData(out.templateData)) {
+    out.templateData = out.templateData.map((item: any, i: number) => {
+      const clean = stripFields(item, TEMPLATE_MONEY_FIELDS);
+      const storedItem = storedLegacy
+        ? stored.find((s) => item?.id && s?.id === item.id) ?? stored.find((s) => s?.itemName === item?.itemName) ?? stored[i]
+        : undefined;
+      if (storedItem && storedItem.budgetAmount !== undefined) clean.budgetAmount = storedItem.budgetAmount;
+      if (Array.isArray(item?.options)) clean.options = item.options.map(withStoredMoney);
+      return clean;
+    });
+  } else {
+    out.templateData = out.templateData.map(withStoredMoney);
+  }
+  return out;
+}
+
+/**
  * Apply the caller's visibility to a list of selections. Safe to call with
  * rows that carry `options` (with-options routes) or without (bare list).
  */

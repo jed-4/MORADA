@@ -333,6 +333,10 @@ import {
   redactDecisionLogPrices,
   stripOptionMoneyForWrite,
   stripProductMoneyForWrite,
+  stripSelectionMoneyForWrite,
+  redactSelectionForViewer,
+  redactTemplateForViewer,
+  mergeTemplateWriteForViewer,
 } from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
@@ -16798,8 +16802,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The target project must belong to the caller's company.
       if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
-      const selection = await storage.createSelection(validationResult.data);
-      res.status(201).json(selection);
+      // A role without selections pricing can't set the allowance, and gets
+      // the saved row back without it.
+      const viewer = await resolveSelectionViewer(req);
+      const selection = await storage.createSelection(stripSelectionMoneyForWrite(validationResult.data, viewer));
+      res.status(201).json(redactSelectionForViewer(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to create selection" });
     }
@@ -16844,7 +16851,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
-      res.json({ selection: newSel, optionCount: opts.length });
+      const viewer = await resolveSelectionViewer(req);
+      res.json({ selection: redactSelectionForViewer(newSel, viewer), optionCount: opts.length });
     } catch (error) {
       console.error("Duplicate selection error:", error);
       res.status(500).json({ error: "Failed to duplicate selection" });
@@ -16874,8 +16882,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if a selection already exists for this estimate item
       const existing = await storage.getSelectionByEstimateItemId(estimateItemId);
+      const viewer = await resolveSelectionViewer(req);
       if (existing) {
-        return res.json({ selection: existing, created: false });
+        return res.json({ selection: redactSelectionForViewer(existing, viewer), created: false });
       }
 
       // Allowance = the line's pre-margin inc-GST amount. Recompute via
@@ -16911,7 +16920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const selection = await storage.createSelection(validationResult.data);
-      return res.status(201).json({ selection, created: true });
+      return res.status(201).json({ selection: redactSelectionForViewer(selection, viewer), created: true });
     } catch (error) {
       console.error("Error creating selection from estimate item:", error);
       res.status(500).json({ error: "Failed to create selection" });
@@ -17057,7 +17066,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (updated) updatedSelections.push(updated);
       }
 
-      res.status(201).json({ purchaseOrder: po, updatedSelections, skipped });
+      const viewer = await resolveSelectionViewer(req);
+      res.status(201).json({
+        purchaseOrder: po,
+        updatedSelections: updatedSelections.map((s) => redactSelectionForViewer(s, viewer)),
+        skipped,
+      });
     } catch (error) {
       console.error("Error creating PO from selections:", error);
       res.status(500).json({ error: "Failed to create purchase order from selections" });
@@ -17081,7 +17095,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         receivedAt: new Date(),
       } as any);
 
-      res.json(updated);
+      res.json(redactSelectionForViewer(updated as any, await resolveSelectionViewer(req)));
     } catch (error) {
       console.error("Error marking selection as received:", error);
       res.status(500).json({ error: "Failed to mark selection as received" });
@@ -17104,11 +17118,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, existingSelection.projectId, "Selection not found"))) return;
 
-      const selection = await storage.updateSelection(req.params.id, validationResult.data);
+      // The edit form of a role without selections pricing never received the
+      // allowance, so it must not be able to set (or blank) it either.
+      const viewer = await resolveSelectionViewer(req);
+      const selection = await storage.updateSelection(req.params.id, stripSelectionMoneyForWrite(validationResult.data, viewer));
       if (!selection) {
         return res.status(404).json({ error: "Selection not found" });
       }
-      res.json(selection);
+      res.json(redactSelectionForViewer(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to update selection" });
     }
@@ -17287,7 +17304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.selectionId) {
         await storage.updateSelection(existing.selectionId, { status: "submitted" });
       }
-      res.json(option);
+      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to unapprove selection option" });
     }
@@ -17310,7 +17327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // option's costing into the allowance (upsert — never duplicates).
         await syncSelectionCostingToAllowance(existing.selectionId);
       }
-      res.json(option);
+      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to approve selection option" });
     }
@@ -18104,7 +18121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Link the option back to the product
       await storage.updateSelectionOption(req.params.id, { productId: product.id } as any);
-      res.status(201).json(product);
+      res.status(201).json(redactProductForViewer(product, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to save to library" });
     }
@@ -18178,7 +18195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           thumbnailZoom: (img as any).thumbnailZoom ?? 100,
         });
       }
-      res.status(201).json(newOption);
+      res.status(201).json(redactOptionForViewer(newOption, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to add from library" });
     }
@@ -28667,7 +28684,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoiceable Selection Options picker
-  app.get("/api/projects/:projectId/selection-options/invoiceable", async (req, res) => {
+  // Same gate as the other invoice-selection routes: this is the client
+  // invoice picker, and it returns each option's charge.
+  app.get("/api/projects/:projectId/selection-options/invoiceable", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId } = req.params;
       if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
@@ -40934,7 +40953,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const category = req.query.category as string | undefined;
       const templates = await storage.getSelectionTemplates(user.companyId, category);
-      res.json(templates);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(templates.map((t: any) => redactTemplateForViewer(t, viewer)));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch selection templates",
@@ -40953,7 +40973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!template) {
         return res.status(404).json({ error: "Selection template not found" });
       }
-      res.json(template);
+      res.json(redactTemplateForViewer(template, await resolveSelectionViewer(req)));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch selection template",
@@ -40975,7 +40995,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { groupIds, ...rest } = validationResult.data;
+      // A role without selections pricing writes no cost, markup, charge or
+      // budget onto a template (and reads none back).
+      const viewer = await resolveSelectionViewer(req);
+      const { groupIds, ...rest } = mergeTemplateWriteForViewer(validationResult.data, null, viewer);
       const templateData = {
         ...rest,
         isPublic: false, // visible to every company — never user-settable
@@ -40997,7 +41020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       const enriched = await storage.getSelectionTemplate(template.id, user.companyId);
-      res.status(201).json(enriched ?? template);
+      res.status(201).json(redactTemplateForViewer(enriched ?? template, viewer));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to create selection template",
@@ -41026,7 +41049,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { groupIds, isPublic: _isPublic, ...updateData } = validationResult.data;
+      // The editor of a role without selections pricing was never sent the
+      // template's money, so what it saves back has none. Keep each option's
+      // stored price rather than wiping it, and ignore any money it does send.
+      const viewer = await resolveSelectionViewer(req);
+      const { groupIds, isPublic: _isPublic, ...updateData } = mergeTemplateWriteForViewer(
+        validationResult.data,
+        existingTemplate,
+        viewer,
+      );
       const updated = await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
       if (!updated) {
         return res.status(404).json({ error: "Selection template not found or access denied" });
@@ -41044,7 +41075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.replaceTemplateGroups(req.params.id, safeGroupIds, user.companyId);
       }
       const enriched = await storage.getSelectionTemplate(req.params.id, user.companyId);
-      res.json(enriched);
+      res.json(redactTemplateForViewer(enriched, viewer));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to update selection template",
@@ -41335,7 +41366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Mirroring it is what stops those templates being invisible to the
       // library until someone remembers to re-run the backfill.
       await syncTemplateOptions(template.id, user.companyId, templateData, template.category ?? null);
-      res.status(201).json(template);
+      res.status(201).json(redactTemplateForViewer(template, await resolveSelectionViewer(req)));
     } catch (error: any) {
       res.status(500).json({ error: "Failed to save as template", details: error.message });
     }
