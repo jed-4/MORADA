@@ -22,6 +22,8 @@ import { usePermission } from '../lib/usePermission';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReturnToTwoPane } from '../lib/twoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 
 interface Project {
@@ -388,6 +390,7 @@ const colors = {
   const toggleChecklistItem = (item: ChecklistItem) => {
     if (item.status === 'na') return;
     const newStatus = item.status === 'completed' ? 'pending' : 'completed';
+    if (newStatus === 'completed') haptic.success(); else haptic.select();
     setChecklistItems(prev => ({
       ...prev,
       [item.instanceId]: (prev[item.instanceId] || []).map(i => i.id === item.id ? { ...i, status: newStatus } : i),
@@ -428,8 +431,8 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg }, embedded && { paddingTop: insets.top }]}>
+        <SkeletonList />
       </View>
     );
   }

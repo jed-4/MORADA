@@ -18,6 +18,8 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme, darkTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
+import { SkeletonList } from '../components/ui/Skeleton';
 interface ScopeStage {
   id: string;
   name: string;
@@ -194,6 +196,7 @@ const colors = {
   const toggleCompletion = async (item: ScopeItem) => {
     if (!canEdit) return;
     const newVal = !item.isCompleted;
+    if (newVal) haptic.success(); else haptic.select();
     setItems(prev => prev.map(i => (i.id === item.id ? { ...i, isCompleted: newVal } : i)));
     try {
       await apiRequest(`/api/scope/${item.id}`, 'PATCH', { isCompleted: newVal });
@@ -261,8 +264,8 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.bg, flex: 1 }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={{ backgroundColor: colors.bg, flex: 1 }}>
+        <SkeletonList />
       </View>
     );
   }

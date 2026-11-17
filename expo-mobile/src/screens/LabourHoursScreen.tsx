@@ -14,6 +14,7 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 interface LabourHoursRow {
   id: string;
@@ -185,8 +186,8 @@ export default function LabourHoursScreen({ route }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator color={theme.primary} />
+      <View style={{ backgroundColor: theme.background, flex: 1 }}>
+        <SkeletonList />
       </View>
     );
   }

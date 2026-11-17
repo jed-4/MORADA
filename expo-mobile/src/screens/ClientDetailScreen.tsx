@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
   Linking,
@@ -16,6 +17,7 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 interface Contact {
   id: string;
@@ -97,6 +99,14 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
     }
   }, [contactId]);
 
+  // Pull to refresh, the same as every other list in the app.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchContact();
+    setRefreshing(false);
+  }, [fetchContact]);
+
   useEffect(() => {
     fetchContact();
   }, [fetchContact]);
@@ -120,8 +130,8 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        <SkeletonList count={4} />
       </View>
     );
   }
@@ -145,6 +155,7 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={[styles.content, readableFrame]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
     >
       {/* Identity header */}
       <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

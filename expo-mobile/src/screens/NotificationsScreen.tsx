@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  RefreshControl,
   TouchableOpacity,
   useColorScheme,
   ActivityIndicator,
@@ -20,6 +21,7 @@ import { resolveNotificationTarget } from '../navigation/notificationRouting';
 
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { SkeletonList } from '../components/ui/Skeleton';
 interface Notification {
   id: string;
   type: string;
@@ -85,6 +87,14 @@ const colors = {
       setLoading(false);
     }
   }, []);
+
+  // Pull to refresh, the same as every other list in the app.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+    setRefreshing(false);
+  }, [fetchNotifications]);
 
   // Live updates: poll while the screen is focused and the app foregrounded
   // (fires immediately on focus), plus refetch when a push arrives.
@@ -159,8 +169,8 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.center, { flex: 1, backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <SkeletonList />
       </View>
     );
   }
@@ -210,6 +220,7 @@ const colors = {
     <FlatList
       style={{ backgroundColor: colors.bg }}
       contentContainerStyle={[styles.list, readableFrame]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       data={rows}
       keyExtractor={r => r.key}
       renderItem={({ item: row }) => {

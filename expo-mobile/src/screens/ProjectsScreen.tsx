@@ -23,6 +23,7 @@ import { TwoPane } from '../components/ui/TwoPane';
 import { useTwoPaneSelection } from '../lib/twoPane';
 import { usePersistedState } from '../lib/usePersistedState';
 import ProjectDetailScreen from './ProjectDetailScreen';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 const toTitleCase = (str: string) =>
   str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -291,8 +292,8 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: insets.top + 64 }]}>
+        <SkeletonList />
       </View>
     );
   }

@@ -23,6 +23,8 @@ import { timeAgo } from '../lib/format';
 
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
+import { SkeletonList } from '../components/ui/Skeleton';
 type Props = {
   navigation: any;
   route?: any;
@@ -393,6 +395,7 @@ const colors = {
   const handleArchiveNote = async (noteId: string) => {
     try {
       await apiRequest(`/api/notes/${noteId}/archive`, 'POST');
+      haptic.success();
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to archive note.');
@@ -401,6 +404,7 @@ const colors = {
 
   const handleTogglePin = async (note: NoteItem) => {
     const nextPinned = !note.pinned;
+    haptic.select();
     // Optimistic: reflect the new pin state immediately.
     setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, pinned: nextPinned } : n)));
     try {
@@ -552,9 +556,7 @@ const colors = {
       </View>
 
       {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <SkeletonList />
       ) : fetchError && notes.length === 0 ? (
         <View style={styles.centerContainer}>
           <Ionicons name="cloud-offline-outline" size={56} color={colors.placeholder} />

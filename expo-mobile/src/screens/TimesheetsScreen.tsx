@@ -26,6 +26,7 @@ import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedAc
 import { useTheme, lightTheme, darkTheme } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
 
 const BUSINESS_ID = '__business__';
 
@@ -868,6 +869,8 @@ export default function TimesheetsScreen() {
         const msg = (errData as any).error || (errData as any).message || `Server error (${res.status})`;
         throw new Error(msg);
       }
+      // Clocked in/out: confirm with a tap you can feel without looking.
+      haptic.success();
 
       await fetchData();
       setClockInProjectId('');
@@ -918,6 +921,8 @@ export default function TimesheetsScreen() {
         const msg = (errData as any).error || (errData as any).message || `Server error (${res.status})`;
         throw new Error(msg);
       }
+      // Clocked in/out: confirm with a tap you can feel without looking.
+      haptic.success();
 
       await fetchData();
     } catch (e: unknown) {
@@ -1058,6 +1063,7 @@ export default function TimesheetsScreen() {
         }
       }
 
+      haptic.success();
       setShowLogSheet(false);
       resetForm();
       await fetchData();

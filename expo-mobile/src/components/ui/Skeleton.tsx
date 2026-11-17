@@ -61,7 +61,28 @@ export function SkeletonRow({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
+/**
+ * Placeholder list shown while a screen's first load is in flight, so the
+ * screen looks like what is coming instead of a lone spinner or "No items".
+ */
+export function SkeletonList({ count = 6, style }: { count?: number; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.list, style]} accessibilityLabel="Loading" accessibilityRole="progressbar">
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonRow key={i} />
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  list: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    padding: 16,
+    gap: 22,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
