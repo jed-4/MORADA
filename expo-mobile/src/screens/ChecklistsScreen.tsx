@@ -214,9 +214,17 @@ const colors = {
     setRefreshing(true);
     setItemsByInstance({});
     setLoadingItems({});
-    await Promise.all([fetchMeta(), fetchInstances()]);
+    // Reload the open checklist's items too — the cache was just cleared, and
+    // nothing else would refetch them until another card was tapped.
+    const openId = expandedId;
+    const reloadOpen = openId
+      ? apiFetch<ChecklistItem[]>(`/api/checklist-instances/${openId}/items`)
+          .then(items => setItemsByInstance(prev => ({ ...prev, [openId]: (items || []).sort(compareItems) })))
+          .catch(() => {})
+      : Promise.resolve();
+    await Promise.all([fetchMeta(), fetchInstances(), reloadOpen]);
     setRefreshing(false);
-  }, [fetchMeta, fetchInstances]);
+  }, [fetchMeta, fetchInstances, expandedId]);
 
   const fetchItems = useCallback(async (instanceId: string) => {
     if (itemsByInstance[instanceId]) return;
