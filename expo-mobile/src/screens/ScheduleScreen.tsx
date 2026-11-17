@@ -225,12 +225,17 @@ function getMondayOfWeek(date: Date): Date {
 
 const DAY_COL_WIDTH = 40;
 const NAME_COL_WIDTH = 140;
+// Wide screen (Duo unfolded): a roomier pinned name column. Day columns keep
+// their 40pt width, so the extra width shows more days rather than stretching
+// bars — and the bars' x positions don't change across a fold, so the
+// horizontal scroll stays on the same dates.
+const NAME_COL_WIDTH_WIDE = 220;
 const GANTT_ROW_HEIGHT = 36;
 const HOUR_HEIGHT = 60;
 
 export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
-  const { width: screenWidth } = useLayout();
+  const { width: screenWidth, isWide } = useLayout();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const isProjectContext = !!route?.params?.projectId;
@@ -937,7 +942,7 @@ const colors = {
         {/* Sticky date header */}
         <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
           {showNamesCol && (
-            <View style={[styles.ganttNamesCol, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
+            <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
               <Text style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
             </View>
           )}
@@ -956,14 +961,14 @@ const colors = {
         <ScrollView style={styles.flex1} showsVerticalScrollIndicator>
           <View style={styles.ganttContainer}>
             {showNamesCol && (
-              <View style={[styles.ganttNamesCol, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
+              <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
                 {sortedItems.map((item, idx) => (
                   <TouchableOpacity
                     key={item.id}
                     style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
                     onPress={() => openDetail(item)}
                   >
-                    <Text style={[styles.ganttNameText, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                    <Text style={[styles.ganttNameText, isWide && styles.ganttNameTextWide, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -2086,6 +2091,7 @@ const styles = StyleSheet.create({
   ganttHeaderText: { fontSize: 11, fontWeight: '600' },
   ganttNameRow: { height: GANTT_ROW_HEIGHT, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   ganttNameText: { fontSize: 11, fontWeight: '500' },
+  ganttNameTextWide: { fontSize: 13 },
   ganttMonthRow: { flexDirection: 'row', height: 20, borderBottomWidth: StyleSheet.hairlineWidth },
   ganttMonthCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
   ganttMonthText: { fontSize: 10, fontWeight: '600' },

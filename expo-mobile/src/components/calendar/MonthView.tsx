@@ -29,6 +29,10 @@ import {
 // the grid navigates months.
 
 const MAX_CELL_CHIPS = 2;
+// Wide screen (Duo unfolded): cells are ~2x wider, so taller cells fit more
+// titles and longer ones. Phone values above are unchanged.
+const MAX_CELL_CHIPS_WIDE = 4;
+const WIDE_CELL_MIN_HEIGHT = 104;
 
 export interface MonthCell {
   day: number;
@@ -74,8 +78,9 @@ function MonthViewInner({
   showStatusChips,
   taskStatusOptions,
 }: MonthViewProps) {
-  const { width: screenWidth } = useLayout();
+  const { width: screenWidth, isWide } = useLayout();
   const cellWidth = (screenWidth - 32) / 7;
+  const maxChips = isWide ? MAX_CELL_CHIPS_WIDE : MAX_CELL_CHIPS;
   const selectedKey = toLocalDateStr(selectedDate);
   const selectedEvents = eventsByDay[selectedKey] || [];
 
@@ -131,7 +136,7 @@ function MonthViewInner({
                 const isCurrentDay = isToday(cellDate);
                 const isSelected = isSameDay(cellDate, selectedDate);
                 const cellEvents = eventsByDay[cellKey] || [];
-                const visible = cellEvents.slice(0, MAX_CELL_CHIPS);
+                const visible = cellEvents.slice(0, maxChips);
                 const overflow = cellEvents.length - visible.length;
 
                 return (
@@ -140,6 +145,7 @@ function MonthViewInner({
                     style={[
                       styles.dayCell,
                       { width: cellWidth, borderColor: theme.border + '60' },
+                      isWide && styles.dayCellWide,
                       isSelected && { backgroundColor: theme.primary + '18', borderColor: theme.primary + '60' },
                     ]}
                     onPress={() => onSelectDay(cellDate)}
@@ -163,10 +169,14 @@ function MonthViewInner({
                     {visible.map(event => (
                       <View
                         key={event.id}
-                        style={[styles.cellChip, { backgroundColor: (event.color || theme.textMuted) + '30' }]}
+                        style={[
+                          styles.cellChip,
+                          { backgroundColor: (event.color || theme.textMuted) + '30' },
+                          isWide && { borderLeftWidth: 3, borderLeftColor: event.color || theme.textMuted },
+                        ]}
                       >
                         <Text
-                          style={[styles.cellChipText, { color: theme.textPrimary }]}
+                          style={[styles.cellChipText, { color: theme.textPrimary }, isWide && styles.cellChipTextWide]}
                           numberOfLines={1}
                         >
                           {event.title}
@@ -252,6 +262,8 @@ const styles = StyleSheet.create({
     paddingVertical: 1.5,
   },
   cellChipText: { fontSize: fontSize.label, fontWeight: fontWeight.medium },
+  dayCellWide: { minHeight: WIDE_CELL_MIN_HEIGHT, paddingHorizontal: 3 },
+  cellChipTextWide: { fontSize: fontSize.xs },
   cellOverflow: {
     fontSize: fontSize.label,
     fontWeight: fontWeight.semibold,

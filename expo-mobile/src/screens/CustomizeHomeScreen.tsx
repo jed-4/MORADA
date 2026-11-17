@@ -15,6 +15,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 interface ItemConfig {
   key: string;
   visible: boolean;
@@ -209,7 +210,9 @@ const colors = {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      {/* readableFrame: no-op on a phone; on the Duo unfolded keeps the toggle
+          rows from stretching across the whole screen. */}
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]}>
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Customize tiles</Text>
           <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>

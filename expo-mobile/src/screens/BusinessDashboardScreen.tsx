@@ -35,8 +35,10 @@ interface TimesheetEntry {
   clockInTime?: string;
 }
 
+const WIDE_COL_GAP = 16;
+
 export default function BusinessDashboardScreen({ navigation }: any) {
-  const { width: screenWidth } = useLayout();
+  const { width: screenWidth, isWide } = useLayout();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [loading, setLoading] = useState(true);
@@ -107,7 +109,11 @@ const colors = {
   // its clockInTime, so that alone must not count as an active timer.
   const activeTimers = timesheets.filter(ts => ts.isActive).length;
 
-  const tileSize = Math.floor((screenWidth - 32 - 30) / 4);
+  // Wide screen (Duo unfolded): the stat tiles and the overview card sit side
+  // by side, each in half the width, so the four square tiles are sized from
+  // a half column (about phone size) instead of ballooning across 7.6".
+  const tileRowWidth = isWide ? (screenWidth - 32 - WIDE_COL_GAP) / 2 : screenWidth - 32;
+  const tileSize = Math.floor((tileRowWidth - 30) / 4);
 
   const statTiles = [
     { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: theme.statusInfo },
@@ -138,7 +144,8 @@ const colors = {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <View style={styles.statRow}>
+        <View style={isWide ? styles.wideRow : undefined}>
+        <View style={[styles.statRow, isWide && styles.wideHalf]}>
           {statTiles.map((stat, i) => (
             <View key={i} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, width: tileSize, height: tileSize }]}>
               <View style={[styles.statIconBg, { backgroundColor: stat.color + '15' }]}>
@@ -150,12 +157,13 @@ const colors = {
           ))}
         </View>
 
-        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }, isWide && styles.wideHalf]}>
           <Ionicons name="business-outline" size={32} color={colors.muted} style={{ marginBottom: 12 }} />
           <Text style={[styles.infoTitle, { color: colors.text }]}>Company Overview</Text>
           <Text style={[styles.infoSub, { color: colors.secondary }]}>
             Showing aggregated stats across all projects and team members.
           </Text>
+        </View>
         </View>
       </ScrollView>
     </View>
@@ -199,6 +207,9 @@ const styles = StyleSheet.create({
   },
   statValue: { fontSize: 18, fontWeight: '700' },
   statLabel: { fontSize: 10, fontWeight: '500', marginTop: 2, textAlign: 'center' },
+  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: WIDE_COL_GAP },
+  // flex:1 halves; statRow's phone marginBottom isn't needed beside the card.
+  wideHalf: { flex: 1, marginBottom: 0 },
   infoCard: {
     borderRadius: 10,
     borderWidth: 1,
