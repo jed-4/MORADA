@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Project } from "@shared/schema";
 
 /**
- * The project's site view: a public, read-only page of its selections, and the
- * QR code that opens it. Print the code and put it up on site.
+ * The project's site QR: one code per job that opens a public, read-only page
+ * of its selections and on-site files (Site board). Print it and put it up.
  */
 export function SiteQrDialog({
   projectId,
@@ -49,19 +50,57 @@ export function SiteQrDialog({
     }
   };
 
+  // Name, address and company for the print sheet (the logo route is public).
+  const { data: project } = useQuery<Project>({ queryKey: [`/api/projects/${projectId}`], enabled: open });
+
   const print = () => {
-    if (!qrSrc) return;
-    const w = window.open("", "_blank", "width=600,height=800");
-    if (!w) return;
-    const title = (projectName || "Selections").replace(/[<>&]/g, "");
-    w.document.write(
-      `<html><head><title>${title} selections QR</title></head>` +
-      `<body style="font-family:system-ui,sans-serif;text-align:center;padding:48px">` +
-      `<h1 style="font-size:28px;margin:0 0 4px">${title}</h1>` +
-      `<p style="font-size:18px;margin:0 0 24px;color:#555">Scan for the current selections</p>` +
-      `<img src="${window.location.origin}${qrSrc}" style="width:420px;height:420px" onload="window.print()" />` +
-      `</body></html>`,
-    );
+    if (!qrSrc || !data) return;
+    const w = window.open("", "_blank", "width=800,height=1000");
+    if (!w) {
+      toast({ title: "Allow pop-ups to print the sign", variant: "destructive" });
+      return;
+    }
+    const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+    const name = esc(project?.name || projectName || "This project");
+    const address = project?.location ? esc(project.location) : "";
+    const origin = window.location.origin;
+    const logo = project?.companyId
+      ? `<img class="logo" src="${origin}/api/public/company/${encodeURIComponent(project.companyId)}/logo" onerror="this.remove();ready()" onload="ready()" />`
+      : "";
+    const images = project?.companyId ? 2 : 1;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${name} — site QR</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: #2C2825; }
+  .sheet { min-height: 265mm; display: flex; flex-direction: column; align-items: center; text-align: center;
+           border: 3px solid #2C2825; border-radius: 10mm; padding: 14mm 12mm 10mm; }
+  .logo { max-height: 22mm; max-width: 70mm; object-fit: contain; margin-bottom: 8mm; }
+  .eyebrow { font-size: 13pt; letter-spacing: .18em; text-transform: uppercase; color: #6B6561; margin: 0 0 3mm; }
+  h1 { font-size: 30pt; line-height: 1.1; margin: 0 0 2mm; }
+  .addr { font-size: 14pt; color: #6B6561; margin: 0; }
+  .qr { width: 125mm; height: 125mm; margin: 10mm 0 6mm; }
+  .scan { font-size: 20pt; font-weight: 700; margin: 0 0 2mm; }
+  .what { font-size: 13pt; color: #6B6561; margin: 0 0 auto; }
+  .how { margin-top: 8mm; font-size: 10.5pt; color: #6B6561; }
+  .url { font-family: ui-monospace, Menlo, monospace; font-size: 8.5pt; color: #6B6561; word-break: break-all; margin-top: 2mm; }
+</style></head><body>
+<div class="sheet">
+  ${logo}
+  <p class="eyebrow">On site</p>
+  <h1>${name}</h1>
+  ${address ? `<p class="addr">${address}</p>` : ""}
+  <img class="qr" src="${origin}${qrSrc}" onload="ready()" />
+  <p class="scan">Scan for plans &amp; selections</p>
+  <p class="what">Always the current version — check here before ordering, building or installing.</p>
+  <p class="how">Open your phone's camera and point it at the code. No app or login needed.</p>
+  <p class="url">${esc(data.url)}</p>
+</div>
+<script>
+  var left = ${images};
+  function ready() { if (--left <= 0) setTimeout(function () { window.focus(); window.print(); }, 150); }
+</script>
+</body></html>`);
     w.document.close();
   };
 
@@ -72,8 +111,9 @@ export function SiteQrDialog({
           <DialogHeader>
             <DialogTitle>Site QR code</DialogTitle>
             <DialogDescription>
-              Anyone who scans this sees the project's current selections: photos, specs and what's
-              been chosen. It never shows prices, internal notes or options hidden from the client.
+              One code for the job. Anyone who scans it sees the project's selections and the files
+              you've switched on in Site board. It never shows prices, internal notes or options hidden
+              from the client.
             </DialogDescription>
           </DialogHeader>
 
@@ -91,10 +131,10 @@ export function SiteQrDialog({
             <div className="flex flex-wrap justify-center gap-2">
               <Button size="sm" variant="outline" onClick={print} disabled={!qrSrc} data-testid="button-print-qr">
                 <Printer className="w-3.5 h-3.5 mr-1.5" />
-                Print
+                Print sign
               </Button>
               <Button size="sm" variant="outline" asChild disabled={!qrSrc}>
-                <a href={qrSrc ?? "#"} download="selections-qr.png" data-testid="link-download-qr">
+                <a href={qrSrc ?? "#"} download="site-qr.png" data-testid="link-download-qr">
                   <Download className="w-3.5 h-3.5 mr-1.5" />
                   Download
                 </a>

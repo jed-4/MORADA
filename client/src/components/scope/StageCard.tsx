@@ -90,6 +90,9 @@ export interface StageCardProps {
   isDraggingStage?: boolean;
   children?: ScopeStage[];
   allStages?: ScopeStage[];
+  /** Page-level expanded map + toggle, threaded down so nested stages can render. */
+  expandedStages?: Record<string, boolean>;
+  onToggleStage?: (stageName: string) => void;
   collapsedItems?: Set<string>; // Scope 2.0
   onToggleItemCollapse?: (itemId: string) => void; // Scope 2.0
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0
@@ -148,6 +151,8 @@ export function StageCard({
   isDraggingStage = false,
   children = [],
   allStages = [],
+  expandedStages,
+  onToggleStage,
   collapsedItems = new Set(), // Scope 2.0
   onToggleItemCollapse, // Scope 2.0
   getTypeLabel, // Scope 2.0
@@ -624,14 +629,8 @@ export function StageCard({
                 key={childStage.id}
                 stageData={childStage}
                 items={childItems}
-                // NOTE (Scope-PR2): `stageExpanded` is not in scope here and never
-                // has been — it is the page's state, never threaded through as a
-                // prop. Rendering a nested child stage therefore throws a
-                // ReferenceError. Carried across verbatim from ProjectScope.tsx
-                // so this refactor stays behaviour-neutral; fixing it is its own
-                // change.
-                isExpanded={stageExpanded[childStage.name] ?? true}
-                onToggleExpand={onToggleExpand}
+                isExpanded={expandedStages?.[childStage.name] ?? true}
+                onToggleExpand={onToggleStage ? () => onToggleStage(childStage.name) : onToggleExpand}
                 onUpdate={onUpdate}
                 onDelete={onDelete}
                 onToggleSelect={onToggleSelect}
@@ -655,6 +654,8 @@ export function StageCard({
                 isDraggingStage={isDraggingStage}
                 children={allStages.filter(s => s.parentId === childStage.id)}
                 allStages={allStages}
+                expandedStages={expandedStages}
+                onToggleStage={onToggleStage}
                 collapsedItems={collapsedItems} // Scope 2.0
                 onToggleItemCollapse={onToggleItemCollapse} // Scope 2.0
                 getTypeLabel={getTypeLabel} // Scope 2.0

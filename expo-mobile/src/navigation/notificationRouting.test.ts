@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Where a tapped notification lands. Pure, so it runs directly:
  *   npx tsx src/navigation/notificationRouting.test.ts

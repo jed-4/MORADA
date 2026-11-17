@@ -5090,9 +5090,13 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  type: z.enum(["builder", "subcontractor", "client", "warranty"]).default("builder"),
-  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
-  status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
+  // Type / priority / status come from the company's Field Settings, which can
+  // add and rename options. These were hard-coded enums of the default keys,
+  // so any custom option made every create/edit fail with a 400 — and the
+  // form, validating against the same enums, refused to submit at all.
+  type: z.string().trim().min(1).max(64).default("builder"),
+  priority: z.string().trim().min(1).max(64).default("medium"),
+  status: z.string().trim().min(1).max(64).default("open"),
   dateIdentified: z.coerce.date().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   dateResolved: z.coerce.date().nullable().optional(),
@@ -9899,3 +9903,44 @@ export type AssetDetail = AssetListRow & {
   documents: AssetDocument[];
   prestarts: AssetPrestart[];
 };
+
+// ── Project files (migration 0129) ───────────────────────────────────────────
+// Files uploaded into Morada against a project, grouped by a plain folder name
+// ("Plans" to start). `onSite` puts a file on the project's site QR page,
+// which ANYONE holding the printed code can open — so it is off by default and
+// switched on file by file.
+export const PROJECT_FILE_DEFAULT_FOLDER = "Plans";
+
+export const projectFiles = pgTable("project_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  folder: text("folder").notNull().default(PROJECT_FILE_DEFAULT_FOLDER),
+  name: text("name").notNull(),
+  objectPath: text("object_path").notNull(), // /objects/company/<companyId>/...
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  onSite: boolean("on_site").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_files_project_idx").on(table.projectId),
+}));
+
+export const createProjectFileSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  objectPath: z.string().startsWith("/objects/"),
+  folder: z.string().trim().min(1).max(80).optional(),
+  mimeType: z.string().max(255).nullable().optional(),
+  fileSize: z.number().int().nonnegative().nullable().optional(),
+  onSite: z.boolean().optional(),
+});
+export const updateProjectFileSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  folder: z.string().trim().min(1).max(80).optional(),
+  onSite: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+export type ProjectFile = typeof projectFiles.$inferSelect;

@@ -8,42 +8,56 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "sdk-58"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "simulator": {
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "sdk-58"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "preview": {
       "distribution": "store",
       "channel": "preview",
       "ios": {
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "sdk-58"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     },
     "production": {
       "channel": "production",
       "ios": {
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "sdk-58"
       },
       "android": {
         "buildType": "apk"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_ORG": "buildpro-be",
+        "SENTRY_PROJECT": "react-native"
       }
     }
   },
