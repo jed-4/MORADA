@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,9 +15,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
+import { apiFetch, uploadFileFromUri, isPermanentError } from '../services/api';
+import { addToQueue, sendReceipt, type ReceiptPayload } from '../services/offlineQueue';
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { UploadProgress } from '../components/photo/UploadProgress';
+import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
+import { usePhotoMarkup } from '../components/photo/PhotoMarkup';
+import { usePhotoUploads, PhotoUploadError, type PhotoUploader, type PhotoUploadItem } from '../lib/photosUpload';
+import { isDocumentScannerAvailable, isPhotoMarkupAvailable, persistPhoto, scanDocument } from '../lib/photos';
+import { useLayout } from '../lib/useLayout';
+import { haptic } from '../lib/haptics';
 
 interface CostCode {
   id: string;
@@ -29,6 +37,11 @@ interface Contact {
   id: string;
   name: string;
 }
+
+// Each page goes up as its own JPEG; the bill gets page 1 inline and the rest
+// as extra attachments (see sendReceipt in offlineQueue).
+const uploadReceiptPage: PhotoUploader = (uri, onProgress) =>
+  uploadFileFromUri(uri, `receipt_${Date.now()}.jpg`, 'image/jpeg', onProgress);
 
 export default function ReceiptCaptureScreen({ route, navigation }: any) {
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
@@ -45,7 +58,16 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     amber: '#F59E0B',
   }), [theme]);
 
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const { isWide } = useLayout();
+  const photos = usePhotoUploads({ uploader: uploadReceiptPage });
+  const { markupPhoto, markupElement } = usePhotoMarkup();
+  // Native modules a build might not have yet (an OTA update on an older
+  // binary): hide the actions rather than crash.
+  const canScan = useMemo(() => isDocumentScannerAvailable(), []);
+  const canMarkup = useMemo(() => isPhotoMarkupAvailable(), []);
+  // Set once a submit has started sending, so a retry resumes the same bill
+  // instead of creating a second one.
+  const sentRef = useRef<ReceiptPayload | null>(null);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -64,6 +86,14 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     handleTakePhoto().catch(e => console.warn('Auto camera launch failed:', e));
   }, []);
 
+  // With one photo, the camera and library REPLACE it (Retake), as before
+  // multi-page receipts. With several pages (a scan), they add another page.
+  const addOrReplacePhoto = useCallback((uri: string) => {
+    const current = photos.snapshot();
+    if (current.length === 1) photos.replace(current[0].id, uri);
+    else photos.add([uri]);
+  }, [photos.snapshot, photos.replace, photos.add]);
+
   const handleTakePhoto = useCallback(async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -77,13 +107,39 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
         allowsEditing: false,
       });
       if (!result.canceled && result.assets[0]) {
-        setPhotoUri(result.assets[0].uri);
+        addOrReplacePhoto(result.assets[0].uri);
       }
     } catch (e) {
       console.warn('Camera launch failed:', e);
       Alert.alert('Camera Unavailable', 'Could not open the camera. You can choose a photo from your library instead.');
     }
-  }, []);
+  }, [addOrReplacePhoto]);
+
+  const handleScan = useCallback(async () => {
+    try {
+      const pages = await scanDocument();
+      if (pages?.length) {
+        photos.add(pages);
+        haptic.success();
+      }
+    } catch (e) {
+      console.warn('Document scan failed:', e);
+      Alert.alert('Scanner Unavailable', 'Could not open the scanner. You can take a photo instead.');
+    }
+  }, [photos.add]);
+
+  const handleMarkup = useCallback(async (item: PhotoUploadItem) => {
+    const edited = await markupPhoto(item.uri);
+    if (edited) photos.replace(item.id, edited);
+  }, [markupPhoto, photos.replace]);
+
+  const handleRemovePage = useCallback((item: PhotoUploadItem) => {
+    haptic.warning();
+    Alert.alert('Remove photo?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => photos.remove(item.id) },
+    ]);
+  }, [photos.remove]);
 
   const handlePickFromLibrary = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -96,9 +152,9 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       quality: 0.85,
     });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      addOrReplacePhoto(result.assets[0].uri);
     }
-  }, []);
+  }, [addOrReplacePhoto]);
 
   const selectedCostCode = costCodes.find(c => c.id === costCodeId);
 
@@ -118,42 +174,123 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       return;
     }
 
+    // Amount entered is inc GST — split into ex-GST subtotal + GST (10%).
+    const totalCents = Math.round(amountNum * 100);
+    const subtotal = Math.round(totalCents / 1.1);
+    const tax = totalCents - subtotal;
+    const bill = {
+      projectId,
+      billType: 'receipt',
+      billDate: new Date().toISOString(),
+      status: 'draft',
+      total: totalCents,
+      subtotal,
+      tax,
+      notes: description.trim(),
+      costCodeId,
+      supplierName: supplierName.trim() || undefined,
+      paidByEmployee: paidByMe,
+    };
+    const label = `Receipt · $${(totalCents / 100).toFixed(2)}${supplierName.trim() ? ` · ${supplierName.trim()}` : ''}`;
+
     setSubmitting(true);
     try {
-      let objectPath: string | undefined;
-      if (photoUri) {
-        const fileName = `receipt_${Date.now()}.jpg`;
-        const uploadResult = await uploadFileFromUri(photoUri, fileName, 'image/jpeg');
-        objectPath = uploadResult.objectPath;
-      }
+      // Pages upload one by one, each with its own progress ring. A page that
+      // already went up on an earlier attempt isn't sent again.
+      const objectPaths = await photos.uploadAll();
 
-      // Amount entered is inc GST — split into ex-GST subtotal + GST (10%).
-      const totalCents = Math.round(amountNum * 100);
-      const subtotal = Math.round(totalCents / 1.1);
-      const tax = totalCents - subtotal;
-      await apiRequest('/api/bills', 'POST', {
-        projectId,
-        billType: 'receipt',
-        billDate: new Date().toISOString(),
-        status: 'draft',
-        total: totalCents,
-        subtotal,
-        tax,
-        notes: description.trim(),
-        costCodeId,
-        supplierName: supplierName.trim() || undefined,
-        paidByEmployee: paidByMe,
-        ...(objectPath ? { objectPath } : {}),
-      });
+      // Resume a bill an earlier attempt already created; otherwise start one.
+      const payload: ReceiptPayload = sentRef.current?.billId
+        ? sentRef.current
+        : { bill, label, photos: [] };
+      payload.photos = photos.snapshot().map((p, i) => ({ uri: p.uri, objectPath: objectPaths[i] }));
+      sentRef.current = payload;
+      await sendReceipt(payload);
 
+      haptic.success();
       Alert.alert('Receipt Submitted', 'Your receipt has been submitted successfully.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to submit receipt. Please try again.');
+      const cause = err instanceof PhotoUploadError ? err.cause : err;
+      haptic.error();
+      if (isPermanentError(cause)) {
+        // The server said no — saving it for later won't change that.
+        Alert.alert('Error', (cause as Error)?.message || 'Failed to submit receipt. Please try again.');
+      } else {
+        // Most likely no signal on site: offer to keep it and send later.
+        Alert.alert(
+          "Couldn't Send",
+          `${err instanceof PhotoUploadError ? err.message : 'The receipt could not be sent.'} Check your connection, or save it and it will send by itself when you're back online.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Try Again', onPress: () => { handleSubmit(); } },
+            { text: 'Send Later', onPress: () => { queueForLater(bill, label); } },
+          ],
+        );
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Hand the receipt to the offline queue, which sends it when the phone is
+  // back online (sendReceipt again — so pages that already uploaded, or a
+  // bill that already exists, are not repeated).
+  const queueForLater = async (bill: Record<string, any>, label: string) => {
+    try {
+      const base: ReceiptPayload = sentRef.current?.billId
+        ? sentRef.current
+        : { bill, label, photos: [] };
+      // Cache files can be cleared while the app is closed; keep a copy.
+      const queuedPhotos = await Promise.all(photos.snapshot().map(async p => ({
+        uri: p.objectPath ? p.uri : await persistPhoto(p.uri),
+        objectPath: p.objectPath,
+      })));
+      await addToQueue({ type: 'create-receipt', payload: { ...base, photos: queuedPhotos } });
+      photos.markQueued();
+      haptic.success();
+      Alert.alert('Saved', "Your receipt will send by itself when you're back online.", [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e: any) {
+      haptic.error();
+      Alert.alert('Error', e?.message || 'Could not save the receipt for later.');
+    }
+  };
+
+  const retryPage = (item: PhotoUploadItem) => {
+    haptic.light();
+    photos.upload(item.id).catch(() => {});
+  };
+
+  const renderPageActions = (item: PhotoUploadItem, compact: boolean) => {
+    const busy = submitting || item.status === 'uploading';
+    return (
+      <View style={styles.pageActions} pointerEvents={busy ? 'none' : 'auto'}>
+        {canMarkup && (
+          <TouchableOpacity
+            style={[styles.pageActionBtn, busy && styles.pageActionBusy]}
+            onPress={() => handleMarkup(item)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Mark up photo"
+          >
+            <Ionicons name="brush-outline" size={15} color="#fff" />
+            {!compact && <Text style={styles.pageActionText}>Mark up</Text>}
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.pageActionBtn, busy && styles.pageActionBusy]}
+          onPress={() => handleRemovePage(item)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Remove photo"
+        >
+          <Ionicons name="close" size={16} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   // Memoised on theme — recreating a StyleSheet on every keystroke is wasteful.
@@ -171,7 +308,53 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       marginBottom: 16,
       overflow: 'hidden',
     },
-    photo: { width: '100%', height: 200, resizeMode: 'cover' },
+    photo: { width: '100%', height: '100%', resizeMode: 'cover' },
+    singlePage: { width: '100%', position: 'relative', overflow: 'hidden' },
+    pageStrip: { padding: 12, gap: 10 },
+    pageThumb: {
+      width: 120,
+      height: 160,
+      borderRadius: 8,
+      overflow: 'hidden',
+      position: 'relative',
+      backgroundColor: colors.background,
+    },
+    pageNumber: {
+      position: 'absolute',
+      left: 6,
+      top: 6,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+    },
+    pageNumberText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+    pageActions: { position: 'absolute', top: 6, right: 6, flexDirection: 'row', gap: 6 },
+    pageActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      minWidth: 28,
+      height: 28,
+      paddingHorizontal: 7,
+      borderRadius: 14,
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.55)',
+    },
+    pageActionBusy: { opacity: 0.4 },
+    pageActionText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+    scanBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginHorizontal: 12,
+      marginTop: 12,
+      paddingVertical: 12,
+      borderRadius: 8,
+      backgroundColor: colors.accent,
+    },
+    scanBtnText: { fontSize: 14, color: '#fff', fontWeight: '600' },
     photoPlaceholder: {
       height: 160,
       alignItems: 'center',
@@ -316,22 +499,58 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     >
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]} keyboardShouldPersistTaps="handled">
 
-        {/* Photo section */}
+        <PendingUploadsBanner projectId={projectId} types={['create-receipt']} noun="receipt" />
+
+        {/* Photo section — one or more pages (a scan can return several) */}
         <View style={styles.photoContainer}>
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.photo} />
+          {photos.items.length === 1 ? (
+            <View style={[styles.singlePage, { height: isWide ? 320 : 200 }]}>
+              <Image source={{ uri: photos.items[0].uri }} style={styles.photo} />
+              <UploadProgress
+                status={photos.items[0].status}
+                progress={photos.items[0].progress}
+                onRetry={() => retryPage(photos.items[0])}
+              />
+              {renderPageActions(photos.items[0], false)}
+            </View>
+          ) : photos.items.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pageStrip}>
+              {photos.items.map((item, i) => (
+                <View key={item.id} style={styles.pageThumb}>
+                  <Image source={{ uri: item.uri }} style={styles.photo} />
+                  <UploadProgress status={item.status} progress={item.progress} size={34} onRetry={() => retryPage(item)} />
+                  <View style={styles.pageNumber} pointerEvents="none">
+                    <Text style={styles.pageNumberText}>{i + 1}</Text>
+                  </View>
+                  {renderPageActions(item, true)}
+                </View>
+              ))}
+            </ScrollView>
           ) : (
             <View style={styles.photoPlaceholder}>
               <Ionicons name="receipt-outline" size={40} color={colors.muted} />
               <Text style={styles.photoPlaceholderText}>No photo taken yet</Text>
             </View>
           )}
-          <View style={[styles.photoButtons, { borderTopWidth: photoUri ? 1 : 0 }]}>
-            <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhoto} activeOpacity={0.7}>
-              <Ionicons name="camera-outline" size={16} color={colors.accent} />
-              <Text style={styles.photoBtnText}>{photoUri ? 'Retake' : 'Take Photo'}</Text>
+          {canScan && (
+            <TouchableOpacity
+              style={styles.scanBtn}
+              onPress={handleScan}
+              disabled={submitting}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityHint="Opens the document scanner, which crops and straightens the receipt"
+            >
+              <Ionicons name="scan-outline" size={18} color="#fff" />
+              <Text style={styles.scanBtnText}>{photos.items.length ? 'Scan More Pages' : 'Scan Receipt'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.photoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
+          )}
+          <View style={[styles.photoButtons, { borderTopWidth: photos.items.length && !canScan ? 1 : 0 }]}>
+            <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhoto} disabled={submitting} activeOpacity={0.7}>
+              <Ionicons name="camera-outline" size={16} color={colors.accent} />
+              <Text style={styles.photoBtnText}>{photos.items.length === 1 ? 'Retake' : photos.items.length ? 'Add Photo' : 'Take Photo'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoBtn} onPress={handlePickFromLibrary} disabled={submitting} activeOpacity={0.7}>
               <Ionicons name="images-outline" size={16} color={colors.accent} />
               <Text style={styles.photoBtnText}>Choose Photo</Text>
             </TouchableOpacity>
@@ -458,10 +677,13 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
           ) : (
             <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
           )}
-          <Text style={styles.submitBtnText}>{submitting ? 'Submitting…' : 'Submit Receipt'}</Text>
+          <Text style={styles.submitBtnText}>
+            {submitting ? (photos.isUploading ? 'Uploading photos…' : 'Submitting…') : 'Submit Receipt'}
+          </Text>
         </TouchableOpacity>
 
       </ScrollView>
+      {markupElement}
     </KeyboardAvoidingView>
   );
 }
