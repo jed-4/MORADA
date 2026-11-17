@@ -672,7 +672,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
                 <View style={styles.olderSpinner}>
                   <ActivityIndicator size="small" color={colors.muted} />
                 </View>
-              ) : null
+              ) : undefined
             }
             ListEmptyComponent={
               <View style={styles.emptyThread}>

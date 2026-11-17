@@ -26,6 +26,8 @@ import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedBu
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, lightTheme, typeColors as themeTypeColors } from '../theme';
+import type { ScrollViewInstance } from 'react-native';
+import type { JSX } from 'react';
 interface ScheduleItem {
   id: string;
   scheduleId: string;
@@ -292,9 +294,9 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showAddPriorityPicker, setShowAddPriorityPicker] = useState(false);
   const [showAddStatusPicker, setShowAddStatusPicker] = useState(false);
 
-  const ganttScrollRef = useRef<ScrollView>(null);
+  const ganttScrollRef = useRef<ScrollViewInstance>(null);
   const ganttScrolledRef = useRef(false);
-  const ganttHeaderScrollRef = useRef<ScrollView>(null);
+  const ganttHeaderScrollRef = useRef<ScrollViewInstance>(null);
   const isSyncingRef = useRef(false);
   const [showNamesCol, setShowNamesCol] = useState(true);
   const [showBarStatus, setShowBarStatus] = useState(false);
