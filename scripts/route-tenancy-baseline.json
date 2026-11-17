@@ -32,7 +32,6 @@
     "server/routes.ts GET /api/portal/selections/:token",
     "server/routes.ts GET /api/portal/selections/:token/attachments/:attachmentId",
     "server/routes.ts GET /api/portal/variation/:token/attachments/:index",
-    "server/routes.ts GET /api/projects/:projectId/cost-codes",
     "server/routes.ts GET /api/proposals/:id/client-view",
     "server/routes.ts GET /api/reminder-notifications",
     "server/routes.ts GET /api/reminder-notifications/unread-count",
