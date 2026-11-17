@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, fontSize, fontWeight } from '../../theme';
 import { haptic } from '../../lib/haptics';
+import { useLayout } from '../../lib/useLayout';
 
 // Gesture-driven bottom sheet — the app-wide replacement for hand-rolled
 // <Modal> forms, detail views, and pickers.
@@ -25,6 +26,14 @@ import { haptic } from '../../lib/haptics';
 // Sizing: dynamic by default (grows to content, up to 88%). Pass snapPoints
 // (e.g. ['50%', '88%']) for fixed-height sheets. Use scrollable for long
 // content, and SheetTextInput inside sheets so the keyboard is handled.
+//
+// Width: full width on a phone. On a big screen (iPhone Duo unfolded) the
+// sheet is centred and capped at SHEET_MAX_WIDTH so forms and pickers don't
+// stretch edge to edge. Done here, in the primitive, so every sheet gets it —
+// never add per-call-site width tweaks.
+
+/** Widest a sheet gets on a big screen, in points. */
+export const SHEET_MAX_WIDTH = 560;
 
 export type SheetRef = BottomSheetModal;
 
@@ -46,6 +55,13 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
 ) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width, isWide } = useLayout();
+  // Equal side margins centre the sheet; the backdrop still covers the screen.
+  const sideMargin = isWide ? Math.max(0, (width - SHEET_MAX_WIDTH) / 2) : 0;
+  const sheetStyle = useMemo(
+    () => (sideMargin > 0 ? { marginHorizontal: sideMargin } : undefined),
+    [sideMargin],
+  );
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -82,6 +98,7 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
       onAnimate={(_from, to) => {
         if (to === 0) haptic.light();
       }}
+      style={sheetStyle}
       backdropComponent={renderBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
