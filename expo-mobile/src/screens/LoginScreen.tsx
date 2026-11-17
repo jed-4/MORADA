@@ -20,6 +20,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { API_BASE_URL, apiRequest } from '../services/api';
 import { useTheme } from '../theme';
 
+/** Widest the sign-in form gets, in points — wider than any phone. */
+const AUTH_MAX_WIDTH = 480;
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
@@ -44,6 +47,11 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       backgroundColor: theme.background,
     },
     inner: {
+      // On a big screen (iPhone Duo unfolded) keep the form at phone width,
+      // centred, instead of stretching buttons edge to edge. No-op on phones.
+      width: '100%',
+      maxWidth: AUTH_MAX_WIDTH,
+      alignSelf: 'center',
       flex: 1,
       justifyContent: 'center',
       padding: 24,

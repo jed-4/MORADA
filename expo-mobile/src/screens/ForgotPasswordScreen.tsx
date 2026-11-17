@@ -13,6 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../services/api';
 import { useTheme } from '../theme';
 
+/** Widest the sign-in form gets, in points — wider than any phone. */
+const AUTH_MAX_WIDTH = 480;
+
 interface Props {
   navigation: any;
 }
@@ -29,6 +32,11 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       backgroundColor: theme.background,
     },
     inner: {
+      // On a big screen (iPhone Duo unfolded) keep the form at phone width,
+      // centred, instead of stretching buttons edge to edge. No-op on phones.
+      width: '100%',
+      maxWidth: AUTH_MAX_WIDTH,
+      alignSelf: 'center',
       flex: 1,
       padding: 24,
       paddingTop: 60,
