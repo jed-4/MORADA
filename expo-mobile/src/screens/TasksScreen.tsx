@@ -11,7 +11,6 @@ import {
   FlatList,
   SectionList,
   Platform,
-  useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +23,8 @@ import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } 
 import TaskComments from '../components/TaskComments';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
 import { haptic } from '../lib/haptics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -568,8 +569,15 @@ const colors = {
     </TouchableOpacity>
   );
 
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const columnWidth = Math.max(screenWidth * 0.7, 260);
+  const { width: screenWidth, height: screenHeight, isWide } = useLayout();
+  // Phone: ~70% of the screen so the next column peeks in. Big screen (Duo
+  // unfolded): three columns side by side — width minus the 16pt content
+  // padding each side, minus each column's 12pt marginRight + the 12pt gap
+  // between columns, split three ways. Recomputed live on fold/unfold; only
+  // widths change, so the board's scroll views stay mounted.
+  const columnWidth = isWide
+    ? Math.floor((screenWidth - 32 - 3 * 12 - 2 * 12) / 3)
+    : Math.max(screenWidth * 0.7, 260);
 
   if (loading) {
     return (
@@ -652,7 +660,9 @@ const colors = {
       {viewMode === 'list' ? (
         <SectionList
           style={styles.listScroll}
-          contentContainerStyle={styles.listContent}
+          // Big screen: keep task rows (title + notes preview) to a readable
+          // width instead of running edge to edge. Style only — no remount.
+          contentContainerStyle={[styles.listContent, isWide && readableFrame]}
           sections={groupedTasks.map(group => ({
             ...group,
             data: collapsedSections[group.key] ? [] : group.tasks,
@@ -891,32 +901,36 @@ const colors = {
                 />
               </View>
 
-              <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
-                <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                  onPress={() => statusSheetRef.current?.present()}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                  <Text style={[styles.editSelectText, { color: colors.text }]}>
-                    {getStatusLabel(editStatus)}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                </TouchableOpacity>
-              </View>
+              {/* Big screen: status + priority side by side. The wrapper is always
+                  rendered (only its style changes) so folding never remounts the form. */}
+              <View style={isWide ? styles.fieldPair : undefined}>
+                <View style={[styles.editField, isWide && styles.fieldHalf]}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
+                    onPress={() => statusSheetRef.current?.present()}
+                  >
+                    <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
+                    <Text style={[styles.editSelectText, { color: colors.text }]}>
+                      {getStatusLabel(editStatus)}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
 
-              <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
-                <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                  onPress={() => prioritySheetRef.current?.present()}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
-                  <Text style={[styles.editSelectText, { color: colors.text }]}>
-                    {PRIORITY_LABELS[editPriority] || editPriority}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                </TouchableOpacity>
+                <View style={[styles.editField, isWide && styles.fieldHalf]}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
+                    onPress={() => prioritySheetRef.current?.present()}
+                  >
+                    <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
+                    <Text style={[styles.editSelectText, { color: colors.text }]}>
+                      {PRIORITY_LABELS[editPriority] || editPriority}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.editField}>
@@ -1533,6 +1547,14 @@ const styles = StyleSheet.create({
   },
   editField: {
     marginBottom: 16,
+  },
+  fieldPair: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  fieldHalf: {
+    flex: 1,
   },
   editLabel: {
     fontSize: 13,
