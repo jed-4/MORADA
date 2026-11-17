@@ -39,6 +39,8 @@ import { TwoPane } from '../components/ui/TwoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useLayout } from '../lib/useLayout';
 import { DiaryPhotoGallery, DiaryPhotoViewer } from '../components/diary/DiaryPhotos';
+import { useDirtyGuard } from '../lib/useDirtyGuard';
+import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 interface TemplateField {
   id: string;
   title: string;
@@ -149,10 +151,25 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
 
-  // Full-screen photo viewer (big screen only). Kept here, not in the
+  // Full-screen photo viewer (phone and big screen). Kept here, not in the
   // gallery, so it survives the detail moving between the right pane and the
   // full-screen modal when the phone folds or unfolds.
   const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
+
+  // New/edit entry form: everything the user can change, so leaving with a
+  // half-written entry (Cancel, Android back) asks before throwing it away.
+  const entryDirty = useDirtyGuard(
+    { formTitle, formDateTime, formFieldValues, formOverallPhotos, templateId: activeTemplate?.id },
+    showEntryModal,
+  );
+  const closeEntryModal = () => {
+    setShowEntryModal(false);
+    resetForm();
+  };
+  const cancelEntryModal = () => entryDirty.guard(closeEntryModal);
+  // Scrolls the focused field back above the keyboard (the KeyboardAvoidingView
+  // shrinks the form but doesn't scroll to the field you tapped).
+  const entryKb = useKeyboardAwareScroll({ extraSpace: 24 });
 
   const { isWide } = useLayout();
   // Duo unfolded: short form fields pair up two per row. Only these styles
@@ -682,6 +699,7 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
@@ -698,6 +716,7 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              onFocus={entryKb.onInputFocus}
               style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
@@ -717,6 +736,7 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value?.toString() || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
@@ -734,6 +754,7 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
@@ -1102,13 +1123,13 @@ const colors = {
         }
       />
 
-      <Modal visible={showEntryModal} animationType="slide" presentationStyle="fullScreen">
+      <Modal visible={showEntryModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={cancelEntryModal}>
         <KeyboardAvoidingView
           style={[styles.modalContainer, { backgroundColor: colors.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => { setShowEntryModal(false); resetForm(); }}>
+            <TouchableOpacity onPress={cancelEntryModal}>
               <Text style={[styles.modalHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
             </TouchableOpacity>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
@@ -1138,13 +1159,14 @@ const colors = {
 
           {/* readableFrame keeps the full-screen form to a sensible column on
               the Duo unfolded; a phone is narrower than its cap. */}
-          <ScrollView contentContainerStyle={[styles.formContent, readableFrame]} keyboardShouldPersistTaps="handled">
+          <ScrollView {...entryKb.scrollProps} contentContainerStyle={[styles.formContent, readableFrame]}>
             {/* Wrapper is always here (no style on a phone) so the inputs sit at
                 the same place in the tree folded or unfolded. */}
             <View style={isWide ? styles.fieldGrid : undefined}>
             <View style={[styles.fieldContainer, halfField]}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
               <TextInput
+                onFocus={entryKb.onInputFocus}
                 style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 value={formTitle}
                 onChangeText={setFormTitle}

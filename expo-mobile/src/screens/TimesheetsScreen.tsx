@@ -25,6 +25,8 @@ import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
 import { useTheme, lightTheme, darkTheme } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
+import { useDirtyGuard } from '../lib/useDirtyGuard';
+import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
 
@@ -703,6 +705,20 @@ export default function TimesheetsScreen() {
   const [pickerDateObj, setPickerDateObj] = useState<Date>(new Date());
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
+
+  // Log Hours / Edit form: closing it (X, Android back) with changes asks
+  // first. Baseline is taken once the sheet is visible — for an edit that's
+  // after the existing values (and cost code) have loaded.
+  const logDirty = useDirtyGuard(
+    {
+      formProjectId, formDate, formStartTime, formEndTime, formBreakDuration,
+      formBreakStartTime, formHourlyRate, formCostCodeId, formDescription,
+    },
+    showLogSheet,
+  );
+  // Description is the last field; keep it AND the Save button under it
+  // (24 margin + 50 button + a little) above the keyboard.
+  const logKb = useKeyboardAwareScroll({ extraSpace: 90 });
 
   const colors = useMemo(() => ({
     bg: theme.background,
@@ -1587,7 +1603,12 @@ export default function TimesheetsScreen() {
       </Modal>
 
       {/* Log Hours / Edit Modal */}
-      <Modal visible={showLogSheet} animationType="slide" transparent>
+      <Modal
+        visible={showLogSheet}
+        animationType="slide"
+        transparent
+        onRequestClose={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}
+      >
         <KeyboardAvoidingView
           style={styles.pickerOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1597,11 +1618,11 @@ export default function TimesheetsScreen() {
               <Text style={[styles.pickerTitle, { color: colors.text }]}>
                 {isEditMode ? 'Edit Timesheet' : 'Log Hours'}
               </Text>
-              <TouchableOpacity onPress={() => { setShowLogSheet(false); resetForm(); }}>
+              <TouchableOpacity onPress={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}>
                 <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.formScroll} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+            <ScrollView {...logKb.scrollProps} style={styles.formScroll} contentContainerStyle={styles.formContent}>
               {/* Clock-in info banner (read-only, shown when editing a clocked-in timesheet) */}
               {isEditMode && (() => {
                 const editingTs = timesheets.find(ts => ts.id === editingId);
@@ -1725,6 +1746,7 @@ export default function TimesheetsScreen() {
                 style={[styles.formTextarea, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={formDescription}
                 onChangeText={setFormDescription}
+                onFocus={logKb.onInputFocus}
                 multiline
                 numberOfLines={3}
                 placeholder="What did you work on?"

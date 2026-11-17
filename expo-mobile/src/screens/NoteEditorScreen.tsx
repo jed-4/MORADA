@@ -23,6 +23,9 @@ import { apiRequest, uploadPhoto, getAuthedImageSource } from '../services/api';
 import { useTheme } from '../theme';
 import type { TextInputInstance } from 'react-native';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { usePreventRemove } from '@react-navigation/native';
+import { confirmDiscard } from '../lib/useDirtyGuard';
+import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 type Props = {
   navigation: any;
   route: any;
@@ -341,6 +344,17 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>({});
+  // True from the first keystroke until a save lands with nothing newer
+  // waiting (debounce pending, save in flight, or last save failed). While
+  // true, leaving the screen saves first — see usePreventRemove below.
+  const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
+  // Set right before a deliberate exit that must NOT save (note deleted).
+  const skipSaveOnLeaveRef = useRef(false);
+  const leavingRef = useRef(false);
+  // Keeps the line being typed above the keyboard AND the format toolbar that
+  // sits on top of it (~50pt) — the toolbar only appears once the keyboard is
+  // up, which shrinks the editor a second time.
+  const noteKb = useKeyboardAwareScroll({ extraSpace: 66 });
 
   const toggleBlockCollapsed = (blockId: string) => {
     setCollapsedBlocks(prev => ({ ...prev, [blockId]: !prev[blockId] }));
@@ -397,12 +411,39 @@ const colors = {
     };
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', () => {
-      flushPendingSaveRef.current();
-    });
-    return unsubscribe;
-  }, [navigation]);
+  // The note autosaves (1.5s after the last edit), so there's no "Discard
+  // changes?" prompt. What was missing: leaving fired the pending save and
+  // forgot about it — if it failed (no signal on site) the last edits were
+  // lost silently, and a note whose last autosave had already failed was left
+  // without retrying. Now leaving with anything unsaved (back button, swipe,
+  // Android back) waits for the save; only if it fails does it ask.
+  usePreventRemove(hasUnsavedEdits, ({ data }) => {
+    if (skipSaveOnLeaveRef.current) {
+      navigation.dispatch(data.action);
+      return;
+    }
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    (async () => {
+      let result = await saveNowRef.current();
+      // A first save (POST) is still creating the note — wait for it, then
+      // save the latest edits on top.
+      for (let i = 0; result === 'deferred' && i < 20; i++) {
+        await new Promise(r => setTimeout(r, 300));
+        result = await saveNowRef.current();
+      }
+      leavingRef.current = false;
+      if (result === 'saved' || result === 'empty') {
+        navigation.dispatch(data.action);
+        return;
+      }
+      confirmDiscard(
+        () => navigation.dispatch(data.action),
+        "Your latest changes couldn't be saved — check your connection. Leave anyway and lose them?",
+        'Note not saved',
+      );
+    })();
+  });
 
   useEffect(() => {
     if (noteId) {
@@ -450,23 +491,35 @@ const colors = {
     userEditedRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('idle');
+    setHasUnsavedEdits(true);
     saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
       doSave();
     }, 1500);
   }, []);
 
-  const doSave = async () => {
+  type SaveResult = 'saved' | 'empty' | 'deferred' | 'failed';
+  // Nothing newer is waiting once this save lands -> the note is clean.
+  const markCleanIfIdle = () => {
+    if (!saveTimerRef.current) setHasUnsavedEdits(false);
+  };
+
+  const doSave = async (): Promise<SaveResult> => {
     const currentTitle = titleRef.current;
     const currentBlocks = blocksRef.current;
     const currentSavedId = savedNoteIdRef.current;
 
     if (!currentTitle.trim() && currentBlocks.every((b) => !b.text.trim() && b.type !== 'divider' && b.type !== 'image')) {
-      return;
+      markCleanIfIdle();
+      return 'empty';
     }
 
     if (!currentSavedId && isCreatingRef.current) {
-      saveTimerRef.current = setTimeout(() => doSave(), 500);
-      return;
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+        doSave();
+      }, 500);
+      return 'deferred';
     }
 
     const contentHtml = blocksToHtml(currentBlocks);
@@ -494,6 +547,8 @@ const colors = {
         if (!preserveOriginalHtml) patchBody.contentHtml = contentHtml;
         await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', patchBody);
         setSaveStatus('saved');
+        markCleanIfIdle();
+        return 'saved';
       } else {
         isCreatingRef.current = true;
         try {
@@ -512,6 +567,8 @@ const colors = {
           setSavedNoteId(newNote.id);
           savedNoteIdRef.current = newNote.id;
           setSaveStatus('saved');
+          markCleanIfIdle();
+          return 'saved';
         } finally {
           isCreatingRef.current = false;
         }
@@ -519,6 +576,7 @@ const colors = {
     } catch {
       isCreatingRef.current = false;
       setSaveStatus('error');
+      return 'failed';
     }
   };
 
@@ -533,6 +591,17 @@ const colors = {
   };
   const flushPendingSaveRef = useRef(flushPendingSave);
   flushPendingSaveRef.current = flushPendingSave;
+
+  // Leave path: cancel the debounce and save right now, whatever the state.
+  const saveNow = (): Promise<SaveResult> => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    return doSave();
+  };
+  const saveNowRef = useRef(saveNow);
+  saveNowRef.current = saveNow;
 
   const updateTitle = (val: string) => {
     setTitle(val);
@@ -739,7 +808,7 @@ const colors = {
                 setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, text: val } : b)));
                 scheduleSave();
               }}
-              onFocus={() => setFocusedBlockId(block.id)}
+              onFocus={() => { setFocusedBlockId(block.id); noteKb.onInputFocus(); }}
               multiline
               scrollEnabled={false}
             />
@@ -814,7 +883,7 @@ const colors = {
           value={block.text}
           onChangeText={(val) => updateBlockText(block.id, val)}
           onKeyPress={({ nativeEvent }) => handleBlockKeyPress(block.id, nativeEvent.key)}
-          onFocus={() => setFocusedBlockId(block.id)}
+          onFocus={() => { setFocusedBlockId(block.id); noteKb.onInputFocus(); }}
           placeholder={
             index === 0 && blocks.length === 1
               ? 'Start writing...'
@@ -1085,6 +1154,7 @@ const colors = {
                               clearTimeout(saveTimerRef.current);
                               saveTimerRef.current = null;
                             }
+                            skipSaveOnLeaveRef.current = true;
                             navigation.goBack();
                           } catch (err) {
                             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete note.');
@@ -1110,14 +1180,15 @@ const colors = {
         keyboardVerticalOffset={0}
       >
         <ScrollView
+          {...noteKb.scrollProps}
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, readableFrame]}
-          keyboardShouldPersistTaps="handled"
         >
           <TextInput
             style={[styles.titleInput, { color: colors.text }]}
             value={title}
             onChangeText={updateTitle}
+            onFocus={noteKb.onInputFocus}
             placeholder="Untitled"
             placeholderTextColor={colors.placeholder}
             multiline

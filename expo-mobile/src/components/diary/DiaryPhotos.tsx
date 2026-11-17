@@ -18,7 +18,8 @@ import { useLayout } from '../../lib/useLayout';
 /**
  * Photos on a site diary entry (SiteDiaryScreen + SiteDiaryListScreen only).
  *
- * Phone: the same horizontal strip of 100pt thumbnails as before (not tappable).
+ * Phone: the same horizontal strip of 100pt thumbnails as before, now tappable
+ * to open the full-size viewer.
  * Wide (Duo unfolded): a wrapping grid of tappable thumbnails, 3 or 4 across depending on the room
  * the grid actually has — it may sit in the narrow right pane or a full-width
  * modal, so it measures itself rather than guessing from the screen width.
@@ -48,10 +49,22 @@ export function DiaryPhotoGallery({
   if (!isWide) {
     return (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={scrollStyle}>
-        {/* Phone: exactly the old non-tappable strip (phone behaviour must not
-            change). The viewer is a big-screen addition only. */}
+        {/* Phone: the same strip and thumbnail style as before; a tap opens
+            the viewer. The screens render the phone copy of the viewer inside
+            the entry's detail modal (iOS can't present a root modal over it).
+            Only used on read-only detail views — the edit forms' thumbnails
+            (with their remove buttons) are their own markup and unchanged.
+            A horizontal drag still scrolls the strip; only a tap opens. */}
         {uris.map((uri, idx) => (
-          <Image key={idx} source={{ uri: getUrl(uri) }} style={thumbStyle} />
+          <TouchableOpacity
+            key={idx}
+            activeOpacity={0.8}
+            onPress={() => onOpen(idx)}
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`Open photo ${idx + 1} of ${uris.length}`}
+          >
+            <Image source={{ uri: getUrl(uri) }} style={thumbStyle} />
+          </TouchableOpacity>
         ))}
       </ScrollView>
     );
