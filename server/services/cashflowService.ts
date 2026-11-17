@@ -268,17 +268,21 @@ export async function loadJobCostInputs(companyId: string, projectId?: string): 
           : undefined,
       )),
     // Employee labour (subcontractors are paid through POs and bills).
+    // poStatus alone missed subbie hours not yet queued for a PO — their split
+    // rows still carried a rate — so exclude subcontractors by the user flag.
     db
       .select({ id: timesheets.id, projectId: timesheets.projectId, costCodeId: timesheets.costCodeId, total: timesheets.total })
       .from(timesheets)
       .innerJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+      .innerJoin(users, eq(timesheets.userId, users.id))
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`, eq(users.isSubcontractor, false))),
     db
       .select({ timesheetId: timesheetCostCodes.timesheetId, costCodeId: timesheetCostCodes.costCodeId, total: timesheetCostCodes.total })
       .from(timesheetCostCodes)
       .innerJoin(timesheets, eq(timesheetCostCodes.timesheetId, timesheets.id))
       .innerJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`)),
+      .innerJoin(users, eq(timesheets.userId, users.id))
+      .where(and(eq(projects.companyId, companyId), oneProject, eq(timesheets.status, "approved"), sql`${timesheets.poStatus} is null`, eq(users.isSubcontractor, false))),
     // Subbie hours approved but not on a PO yet: hours × the subbie's profile rate.
     db
       .select({ projectId: timesheets.projectId, costCodeId: timesheets.costCodeId, duration: timesheets.duration, rate: users.hourlyRate })

@@ -35,8 +35,14 @@ export function attemptChunkReload(): boolean {
 }
 
 export function installChunkReloadHandlers(): void {
-  window.addEventListener("vite:preloadError", (event) => {
-    event.preventDefault();
+  // Don't preventDefault(): that makes Vite RESOLVE the dynamic import with
+  // `undefined`, so React.lazy then crashes reading `.default` ("Cannot read
+  // properties of undefined (reading 'default')" — the Sentry issue seen after
+  // deploys) and, when the 10s guard blocks the reload, the user is stuck on
+  // "Something went wrong". Letting the import REJECT hands the real
+  // "Failed to fetch dynamically imported module" error to the error
+  // boundaries, which already show "Updating Morada…" and reload.
+  window.addEventListener("vite:preloadError", () => {
     attemptChunkReload();
   });
 

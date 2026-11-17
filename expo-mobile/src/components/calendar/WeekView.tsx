@@ -23,6 +23,7 @@ import {
   type CalendarEvent,
   type EventsByDay,
 } from './shared';
+import type { ScrollViewInstance } from 'react-native';
 
 // Scrolling 28-day time grid. Receives pre-bucketed eventsByDay and the
 // minute tick (nowMinutes) — the only view that re-renders on the tick.
@@ -61,9 +62,9 @@ interface WeekViewProps {
   anyAllDayEvents: boolean;
   allDayExpanded: boolean;
   initialOffset: number;
-  weekScrollRef: RefObject<ScrollView | null>;
-  timeGridScrollRef: RefObject<ScrollView | null>;
-  timeLabelScrollRef: RefObject<ScrollView | null>;
+  weekScrollRef: RefObject<ScrollViewInstance | null>;
+  timeGridScrollRef: RefObject<ScrollViewInstance | null>;
+  timeLabelScrollRef: RefObject<ScrollViewInstance | null>;
   onWeekScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEventPress: (event: CalendarEvent) => void;
   /** Long-press on an empty time slot → create a task at that day + hour. */
@@ -578,7 +579,7 @@ const styles = StyleSheet.create({
   },
   overlapBadgeText: { fontSize: fontSize.xxs, fontWeight: fontWeight.semibold },
   emptyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

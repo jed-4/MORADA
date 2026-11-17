@@ -358,8 +358,11 @@ export default function Allowances() {
 
   // Filter by selected estimate first (these counts feed PC/PS toggle)
   const estimateScoped = useMemo(() => {
-    if (!selectedEstimateId) return allowances;
-    return allowances.filter((a) => a.item.estimateId === selectedEstimateId);
+    // Drop any row without its estimate item: Sentry caught the page crashing
+    // ("reading 'allowance'") on one, transiently, during a refetch.
+    const rows = allowances.filter((a) => !!a?.item);
+    if (!selectedEstimateId) return rows;
+    return rows.filter((a) => a.item.estimateId === selectedEstimateId);
   }, [allowances, selectedEstimateId]);
 
   const pcCount = estimateScoped.filter((a) => a.item.allowance === "Prime Cost").length;

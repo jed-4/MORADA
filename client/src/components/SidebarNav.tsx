@@ -58,6 +58,7 @@ import { ClipboardCheck,
   Building2,
   Briefcase,
   Package,
+  QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +127,7 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
       { title: "Site Diary", url: "/site-diary", icon: BookOpen },
       { title: "Timesheets", url: "/timesheets", icon: Timer },
       { title: "Files", url: "/files", icon: FolderOpen },
+      { title: "Site Board", url: "/site-board", icon: QrCode },
       { title: "Team", url: "/team", icon: Users },
     ],
   },
@@ -205,6 +207,7 @@ const projectFlatOrder: { section: ProjectFlatSection; title: string }[] = [
   { section: "management", title: "Timesheets" },
   { section: "finance", title: "Budget" },
   { section: "management", title: "Files" },
+  { section: "management", title: "Site Board" },
   { section: "management", title: "Team" },
   { section: "management", title: "RFIs" },
 ];

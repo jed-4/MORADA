@@ -1453,6 +1453,8 @@ export default function ProjectScope() {
                       setEditingStageId={setEditingStageId}
                       setEditingStageName={setEditingStageName}
                       children={scopeStages.filter(s => s.parentId === stage.id)}
+                      expandedStages={stageExpanded}
+                      onToggleStage={toggleStage}
                       allStages={scopeStages}
                       collapsedItems={collapsedItems} // Scope 2.0
                       onToggleItemCollapse={toggleItemCollapse} // Scope 2.0

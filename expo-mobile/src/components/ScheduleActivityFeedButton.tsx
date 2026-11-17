@@ -267,7 +267,7 @@ const colors = {
                     <Text style={{ color: colors.accent, fontWeight: '600' }}>Load more</Text>
                   )}
                 </TouchableOpacity>
-              ) : null}
+              ) : undefined}
               contentContainerStyle={{ padding: 12 }}
             />
           )}

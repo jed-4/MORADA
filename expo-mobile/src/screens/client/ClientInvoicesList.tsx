@@ -65,7 +65,7 @@ export default function ClientInvoicesList() {
             <Text style={[styles.summary, { color: theme.textSecondary }]}>
               {balance > 0 ? `${formatMoney(balance)} to pay` : 'Everything is paid'}
             </Text>
-          ) : null
+          ) : undefined
         }
         ListEmptyComponent={
           failed ? (

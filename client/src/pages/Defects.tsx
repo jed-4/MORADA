@@ -764,8 +764,12 @@ function DefectListTable({
             </div>
 
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              {/* The row's own project. This said projectId, which isn't in
+                  scope here (it lives in the page component), so the list
+                  crashed the page — "projectId is not defined" — as soon as
+                  there was a single defect to show. */}
               <PinRowButton
-                projectId={projectId}
+                projectId={defect.projectId}
                 itemType="defect"
                 itemId={defect.id}
                 itemName={defect.title}

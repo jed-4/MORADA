@@ -159,10 +159,11 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
       form.reset();
       setPhotos([]);
     },
-    onError: () => {
+    // Say WHY — this used to be a bare "Failed to create defect".
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to create defect",
+        title: "Couldn't create the defect",
+        description: error?.payload?.details || error?.payload?.error || error?.message || "Please try again",
         variant: "destructive",
       });
     },
@@ -181,14 +182,27 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
       });
       onOpenChange(false);
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to update defect",
+        title: "Couldn't save the defect",
+        description: error?.payload?.details || error?.payload?.error || error?.message || "Please try again",
         variant: "destructive",
       });
     },
   });
+
+  // A form that won't submit used to do nothing visible when a field was
+  // invalid but had no message on screen. Name the fields instead.
+  const onInvalid = (errors: Record<string, any>) => {
+    const fields = Object.keys(errors);
+    toast({
+      title: "Check the defect details",
+      description: fields.length
+        ? `Fix: ${fields.map((f) => f.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ")}${errors[fields[0]]?.message ? ` — ${errors[fields[0]].message}` : ""}`
+        : "Some details aren't valid.",
+      variant: "destructive",
+    });
+  };
 
   const onSubmit = (data: InsertDefect) => {
     if (defect) {
@@ -213,7 +227,7 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4">
             <FormField
               control={form.control}
               name="title"
