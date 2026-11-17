@@ -23,7 +23,9 @@ import { apiFetch, apiRequest } from '../services/api';
 import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
 import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } from '../lib/taskStatus';
 import { useAuth } from '../contexts/AuthContext';
-import TaskComments from '../components/TaskComments';
+import { TaskDetail, TaskDetailPane, stripHtml, getPriorityColor, PRIORITY_LABELS } from '../components/tasks/TaskDetail';
+import { useTaskPane, confirmDiscard } from '../components/tasks/useTaskPane';
+import { TwoPane } from '../components/ui/TwoPane';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -55,23 +57,6 @@ type Props = {
 };
 
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
-const PRIORITY_LABELS: Record<string, string> = {
-  urgent: 'Urgent',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-};
-
-function getPriorityColor(priority?: string): string {
-  switch (priority) {
-    case 'urgent': return lightTheme.statusDanger;
-    case 'high': return lightTheme.coral;
-    case 'medium': return lightTheme.statusWarning;
-    case 'low': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
-  }
-}
-
 function getStatusColorFallback(status?: string): string {
   switch (status) {
     case 'todo': return lightTheme.textMuted;
@@ -97,24 +82,6 @@ function getRelativeDate(dateStr?: string): string {
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 }
 
-function stripHtml(html?: string): string {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<li>/gi, '• ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 function isOverdue(dateStr?: string): boolean {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -125,7 +92,9 @@ function isOverdue(dateStr?: string): boolean {
 }
 
 export default function ProjectTasksScreen({ navigation, route }: Props) {
-  const { width: screenWidth, isWide } = useLayout();
+  const { width: screenWidth } = useLayout();
+  // Big screen, list view: tasks on the left, the open task on the right.
+  const { isWide, paneTaskId, openInPane, close: closePane, paneProps } = useTaskPane();
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -284,30 +253,101 @@ const colors = {
   };
 
   const openViewTask = (task: Task) => {
+    // Big screen, list view: the right-hand panel. Phone, or the board (its
+    // columns already use the full width): the modal, as before.
+    if (isWide && viewMode === 'list') {
+      openInPane(task.id);
+      return;
+    }
+    editOnlyRef.current = false;
     setSelectedTask(task);
     setIsEditing(false);
     setShowViewModal(true);
   };
 
+  // The modal was opened straight into Edit from the right-hand panel, so
+  // Cancel closes it instead of showing the task's details again.
+  const editOnlyRef = useRef(false);
+
   // Plain text seeded into the description field — only PATCH `content` when
   // the user actually edited it, so rich text authored on web isn't destroyed.
   const seededDescriptionRef = useRef('');
 
-  const openEditTask = () => {
-    if (!selectedTask) return;
-    setEditTitle(selectedTask.title || '');
-    setEditStatus(selectedTask.status || defaultStatus);
-    setEditPriority(selectedTask.priority || 'medium');
-    setEditDueDate(selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '');
-    const seeded = stripHtml(selectedTask.contentText || selectedTask.content || '');
+  const openEditTask = (task: Task | null = selectedTask) => {
+    if (!task) return;
+    setEditTitle(task.title || '');
+    setEditStatus(task.status || defaultStatus);
+    setEditPriority(task.priority || 'medium');
+    setEditDueDate(task.dueDate ? dateStrOf(task.dueDate) : '');
+    const seeded = stripHtml(task.contentText || task.content || '');
     seededDescriptionRef.current = seeded;
     setEditDescription(seeded);
-    setEditChecklist(selectedTask.checklist ? [...selectedTask.checklist] : []);
+    setEditChecklist(task.checklist ? [...task.checklist] : []);
     setEditChecklistInput('');
     setShowStatusPicker(false);
     setShowPriorityPicker(false);
     setShowEditDatePicker(false);
     setIsEditing(true);
+  };
+
+  // Edit from the right-hand panel: the existing modal, opened on the form.
+  const openPaneEdit = (task: Task) => {
+    setSelectedTask(task);
+    openEditTask(task);
+    editOnlyRef.current = true;
+    setShowViewModal(true);
+  };
+
+  // Unsaved edits in the edit form?
+  const isEditDirty = !!selectedTask && isEditing && (
+    editTitle !== (selectedTask.title || '')
+    || editStatus !== (selectedTask.status || defaultStatus)
+    || editPriority !== (selectedTask.priority || 'medium')
+    || editDueDate !== (selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '')
+    || editDescription !== seededDescriptionRef.current
+    || JSON.stringify(editChecklist) !== JSON.stringify(selectedTask.checklist || [])
+    || editChecklistInput.trim() !== ''
+  );
+
+  const closeViewModal = () => {
+    setShowViewModal(false);
+    setIsEditing(false);
+    setSelectedTask(null);
+    editOnlyRef.current = false;
+  };
+
+  // X, Android back: ask first if the form has unsaved edits.
+  const requestCloseViewModal = () => {
+    if (isEditDirty) confirmDiscard(closeViewModal);
+    else closeViewModal();
+  };
+
+  const handleCancelEdit = () => {
+    const leave = () => {
+      if (editOnlyRef.current) closeViewModal();
+      else {
+        setIsEditing(false);
+        setShowStatusPicker(false);
+        setShowPriorityPicker(false);
+        setShowEditDatePicker(false);
+      }
+    };
+    if (isEditDirty) confirmDiscard(leave);
+    else leave();
+  };
+
+  const isCreateDirty =
+    newTitle.trim() !== ''
+    || newDescription.trim() !== ''
+    || newDueDate !== ''
+    || newStatus !== ''
+    || newPriority !== 'medium'
+    || newChecklist.length > 0
+    || newChecklistInput.trim() !== '';
+
+  const requestCloseCreateModal = () => {
+    if (isCreateDirty) confirmDiscard(() => setShowCreateModal(false));
+    else setShowCreateModal(false);
   };
 
   const handleSaveTask = async () => {
@@ -325,9 +365,7 @@ const colors = {
         body.content = editDescription;
       }
       await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', body);
-      setShowViewModal(false);
-      setIsEditing(false);
-      setSelectedTask(null);
+      closeViewModal();
       await fetchData();
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to save task.');
@@ -336,8 +374,8 @@ const colors = {
     }
   };
 
-  const handleDeleteTask = () => {
-    if (!selectedTask) return;
+  const handleDeleteTask = (task: Task | null = selectedTask) => {
+    if (!task) return;
     Alert.alert('Delete Task', 'Are you sure you want to delete this task?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -346,9 +384,10 @@ const colors = {
         onPress: async () => {
           setDeleting(true);
           try {
-            await apiRequest(`/api/tasks/${selectedTask.id}`, 'DELETE');
+            await apiRequest(`/api/tasks/${task.id}`, 'DELETE');
             setShowViewModal(false);
             setSelectedTask(null);
+            if (paneTaskId === task.id) closePane();
             await fetchData();
           } catch (e: any) {
             Alert.alert('Error', e?.message || 'Failed to delete task.');
@@ -392,32 +431,46 @@ const colors = {
     }
   };
 
-  const handleToggleChecklistItem = async (itemId: string) => {
-    if (!selectedTask) return;
-    const updated = (selectedTask.checklist || []).map((item: any) =>
+  // Works for the modal's task and the right-hand panel's (read from `tasks`).
+  const handleToggleChecklistItem = async (task: Task, itemId: string) => {
+    const previous = task.checklist || [];
+    const updated = previous.map((item: any) =>
       item.id === itemId ? { ...item, completed: !item.completed } : item,
     );
-    const updatedTask = { ...selectedTask, checklist: updated };
-    setSelectedTask(updatedTask);
+    const apply = (checklist: Task['checklist']) => {
+      setSelectedTask(prev => (prev && prev.id === task.id ? { ...prev, checklist } : prev));
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist } : t));
+    };
+    apply(updated);
     try {
-      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', { checklist: updated });
-      setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, checklist: updated } : t));
+      await apiRequest(`/api/tasks/${task.id}`, 'PATCH', { checklist: updated });
     } catch (e: any) {
-      setSelectedTask(selectedTask);
+      apply(previous);
       Alert.alert('Error', e?.message || 'Failed to update checklist item.');
     }
   };
 
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
-  const renderTaskRow = (task: Task) => {
+  // `inOtherGroup`: the row sits under "Other", whose header doesn't name
+  // the task's status — so the row has to.
+  const renderTaskRow = (task: Task, inOtherGroup = false) => {
     const done = isTaskDone(task.status);
     const overdue = !done && isOverdue(task.dueDate);
     const statusColor = getStatusColor(task.status);
+    // Phone: the list is grouped by status, so the row's status pill repeats
+    // its section header — show it only where the header doesn't say it.
+    // The chevron goes too (the whole row is the tap). Big screen unchanged.
+    const showStatus = isWide || inOtherGroup;
+    const hasMeta = showStatus || !!task.dueDate;
     return (
       <TouchableOpacity
         key={task.id}
-        style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[
+          styles.taskRow,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          isWide && paneTaskId === task.id && { borderColor: colors.accent },
+        ]}
         onPress={() => openViewTask(task)}
         activeOpacity={0.7}
       >
@@ -426,6 +479,9 @@ const colors = {
           style={styles.checkArea}
           onPress={() => handleToggleDone(task)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: done }}
+          accessibilityLabel={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
         >
           <View style={[
             styles.checkCircle,
@@ -446,20 +502,24 @@ const colors = {
           >
             {task.title}
           </Text>
-          <View style={styles.taskMeta}>
-            <View style={[styles.statusPill, { backgroundColor: statusColor + '20' }]}>
-              <Text style={[styles.statusPillText, { color: statusColor }]}>
-                {getStatusLabel(task.status)}
-              </Text>
+          {hasMeta ? (
+            <View style={styles.taskMeta}>
+              {showStatus ? (
+                <View style={[styles.statusPill, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.statusPillText, { color: statusColor }]}>
+                    {getStatusLabel(task.status)}
+                  </Text>
+                </View>
+              ) : null}
+              {task.dueDate ? (
+                <Text style={[styles.dueText, { color: overdue ? '#ef4444' : colors.secondary }]}>
+                  {getRelativeDate(task.dueDate)}
+                </Text>
+              ) : null}
             </View>
-            {task.dueDate ? (
-              <Text style={[styles.dueText, { color: overdue ? '#ef4444' : colors.secondary }]}>
-                {getRelativeDate(task.dueDate)}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+        {isWide ? <Ionicons name="chevron-forward" size={16} color={colors.muted} /> : null}
       </TouchableOpacity>
     );
   };
@@ -493,7 +553,10 @@ const colors = {
           <TouchableOpacity
             style={styles.boardCardDoneBtn}
             onPress={() => handleToggleDone(task)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            // 18pt icon + 13 each side = 44pt.
+            hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isTaskDone(task.status) }}
           >
             <Ionicons
               name={isTaskDone(task.status) ? 'checkbox' : 'square-outline'}
@@ -513,6 +576,27 @@ const colors = {
   const columnWidth = isWide
     ? Math.floor((screenWidth - 32 - 2 * 12) / 3)
     : Math.max(screenWidth * 0.68, 240);
+
+  const renderDeleteButton = (task: Task) => (
+    <TouchableOpacity
+      style={[styles.deleteBtn, { borderColor: '#ef444440' }]}
+      onPress={() => handleDeleteTask(task)}
+      disabled={deleting}
+    >
+      {deleting ? (
+        <ActivityIndicator size="small" color="#ef4444" />
+      ) : (
+        <>
+          <Ionicons name="trash-outline" size={16} color="#ef4444" />
+          <Text style={styles.deleteBtnText}>Delete Task</Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+
+  // The task open in the right-hand panel, read live from the list so a tick
+  // or a save shows straight away. Deleted → empty panel.
+  const paneTask = paneTaskId ? tasks.find(t => t.id === paneTaskId) ?? null : null;
 
   // ─── Loading ─────────────────────────────────────────────────────────────────
 
@@ -563,18 +647,24 @@ const colors = {
               backgroundColor: hideDone ? colors.accent + '15' : 'transparent',
             }]}
             onPress={() => setHideDone(v => !v)}
+            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
+            accessibilityLabel={hideDone ? 'Show done tasks' : 'Hide done tasks'}
           >
             <Ionicons name={hideDone ? 'eye-off-outline' : 'eye-outline'} size={18} color={hideDone ? colors.accent : colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.headerIconBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-            onPress={() => setViewMode(v => v === 'list' ? 'board' : 'list')}
+            onPress={() => { if (viewMode === 'list') closePane(); setViewMode(v => v === 'list' ? 'board' : 'list'); }}
+            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
+            accessibilityLabel={viewMode === 'list' ? 'Board view' : 'List view'}
           >
             <Ionicons name={viewMode === 'list' ? 'grid-outline' : 'list-outline'} size={18} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: colors.accent }]}
             onPress={() => { setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription(''); setNewChecklist([]); setNewChecklistInput(''); setShowCreateModal(true); }}
+            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
+            accessibilityLabel="New task"
           >
             <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>
@@ -583,6 +673,28 @@ const colors = {
 
       {/* List view */}
       {viewMode === 'list' ? (
+        // Always wrapped in TwoPane so the list keeps its place in the tree —
+        // folding/unfolding never remounts it. The board stays full width.
+        <TwoPane
+          {...paneProps}
+          emptyTitle="Select a task"
+          emptyIcon="checkbox-outline"
+          detail={paneTask ? (
+            <TaskDetailPane
+              key={paneTask.id}
+              task={paneTask}
+              statusLabel={getStatusLabel(paneTask.status)}
+              statusColor={getStatusColor(paneTask.status)}
+              descriptionLabel="Description"
+              onToggleChecklistItem={itemId => handleToggleChecklistItem(paneTask, itemId)}
+              colors={colors}
+              isDark={isDark}
+              currentUserId={user?.id}
+              onEdit={() => openPaneEdit(paneTask)}
+              footer={renderDeleteButton(paneTask)}
+            />
+          ) : null}
+          list={
         <SectionList
           style={styles.scroll}
           // Big screen: keep task rows to a readable width. Style only — no remount.
@@ -592,7 +704,7 @@ const colors = {
             data: collapsedSections[group.key] ? [] : group.tasks,
           }))}
           keyExtractor={t => t.id}
-          renderItem={({ item }) => <View style={styles.sectionRowGap}>{renderTaskRow(item)}</View>}
+          renderItem={({ item, section }) => <View style={styles.sectionRowGap}>{renderTaskRow(item, section.key === 'other')}</View>}
           renderSectionHeader={({ section }) => (
             <TouchableOpacity
               style={styles.sectionHeader}
@@ -623,6 +735,8 @@ const colors = {
             </View>
           }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        />
+          }
         />
       ) : (
         /* Board view */
@@ -660,140 +774,68 @@ const colors = {
       )}
 
       {/* View / Edit Task Modal */}
-      <Modal visible={showViewModal} animationType="slide" transparent>
+      {/* Keyboard: viewing, the sheet hugs its content and the KeyboardAvoidingView
+          lifts it (comment box). Editing, the sheet is a fixed 90% so its header
+          — with Save — stays above the keyboard, and the ScrollView insets itself
+          and scrolls the focused field into view. */}
+      <Modal visible={showViewModal} animationType="slide" transparent onRequestClose={requestCloseViewModal}>
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            enabled={!isEditing}
+            style={styles.modalContainer}
+          >
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }, isEditing && styles.modalSheetForm]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => { setShowViewModal(false); setIsEditing(false); setSelectedTask(null); }}>
+                <TouchableOpacity
+                  onPress={requestCloseViewModal}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
                   <Ionicons name="close" size={24} color={colors.secondary} />
                 </TouchableOpacity>
                 <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
                   {isEditing ? 'Edit Task' : 'Task Details'}
                 </Text>
                 {!isEditing ? (
-                  <TouchableOpacity onPress={openEditTask}>
+                  <TouchableOpacity onPress={() => openEditTask()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                     <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
                   </TouchableOpacity>
                 ) : (
-                  <View style={{ width: 40 }} />
+                  <TouchableOpacity
+                    onPress={handleSaveTask}
+                    disabled={saving || !editTitle.trim()}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save task"
+                  >
+                    {saving
+                      ? <ActivityIndicator size="small" color={colors.accent} />
+                      : <Text style={{ color: editTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Save</Text>}
+                  </TouchableOpacity>
                 )}
               </View>
 
-              <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 40 }}>
+              <ScrollView
+                style={styles.modalBody}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                automaticallyAdjustKeyboardInsets={isEditing}
+              >
                 {!isEditing && selectedTask ? (
-                  <>
-                    <Text style={[styles.viewTitle, { color: colors.text }]}>{selectedTask.title}</Text>
-                    <View style={styles.viewBadgeRow}>
-                      <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
-                        <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
-                          {getStatusLabel(selectedTask.status)}
-                        </Text>
-                      </View>
-                      <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
-                        <Text style={[styles.viewBadgeText, { color: getPriorityColor(selectedTask.priority) }]}>
-                          {PRIORITY_LABELS[selectedTask.priority || 'low'] || 'Low'}
-                        </Text>
-                      </View>
-                    </View>
-                    {selectedTask.dueDate ? (
-                      <View style={styles.viewField}>
-                        <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
-                        <Text style={[styles.viewFieldText, { color: colors.text }]}>
-                          {new Date(selectedTask.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {(() => {
-                      const desc = stripHtml(selectedTask.contentText || selectedTask.content);
-                      return desc ? (
-                        <View style={styles.viewSection}>
-                          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Description</Text>
-                          <Text style={[styles.viewDescription, { color: colors.text }]}>{desc}</Text>
-                        </View>
-                      ) : null;
-                    })()}
-                    {(selectedTask.assigneeNames || []).length > 0 ? (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
-                        {(selectedTask.assigneeNames || []).map((name: string, idx: number) => (
-                          <View key={idx} style={styles.assigneeRow}>
-                            <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
-                              <Text style={styles.assigneeAvatarText}>
-                                {(name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                              </Text>
-                            </View>
-                            <Text style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    ) : null}
-                    {(selectedTask.checklist || []).length > 0 ? (
-                      <View style={styles.viewSection}>
-                        <View style={styles.checklistHeader}>
-                          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
-                          <Text style={[styles.checklistProgress, { color: colors.muted }]}>
-                            {(selectedTask.checklist || []).filter((i: any) => i.completed).length}/{(selectedTask.checklist || []).length}
-                          </Text>
-                        </View>
-                        {(selectedTask.checklist || []).map((item: any) => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={styles.checklistRow}
-                            onPress={() => handleToggleChecklistItem(item.id)}
-                            activeOpacity={0.6}
-                          >
-                            <Ionicons
-                              name={item.completed ? 'checkbox' : 'square-outline'}
-                              size={22}
-                              color={item.completed ? '#22c55e' : colors.muted}
-                            />
-                            <Text style={[
-                              styles.checklistText,
-                              { color: item.completed ? colors.muted : colors.text },
-                              item.completed ? { textDecorationLine: 'line-through' } : null,
-                            ]}>
-                              {item.text}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    ) : null}
-                    {(selectedTask.tags || []).length > 0 ? (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
-                        <View style={styles.tagsRow}>
-                          {(selectedTask.tags || []).map((tag: string, idx: number) => (
-                            <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
-                              <Text style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    ) : null}
-
-                    <TaskComments
-                      taskId={selectedTask.id}
-                      currentUserId={user?.id}
-                      colors={colors}
-                      isDark={isDark}
-                    />
-
-                    <TouchableOpacity
-                      style={[styles.deleteBtn, { borderColor: '#ef444440' }]}
-                      onPress={handleDeleteTask}
-                      disabled={deleting}
-                    >
-                      {deleting ? (
-                        <ActivityIndicator size="small" color="#ef4444" />
-                      ) : (
-                        <>
-                          <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                          <Text style={styles.deleteBtnText}>Delete Task</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </>
+                  <TaskDetail
+                    task={selectedTask}
+                    statusLabel={getStatusLabel(selectedTask.status)}
+                    statusColor={getStatusColor(selectedTask.status)}
+                    descriptionLabel="Description"
+                    onToggleChecklistItem={itemId => handleToggleChecklistItem(selectedTask, itemId)}
+                    colors={colors}
+                    isDark={isDark}
+                    currentUserId={user?.id}
+                    footer={renderDeleteButton(selectedTask)}
+                  />
                 ) : null}
 
                 {isEditing ? (
@@ -921,13 +963,13 @@ const colors = {
                       </View>
                       {editChecklist.map((item, idx) => (
                         <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
-                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))}>
+                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}>
                             <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
                           </TouchableOpacity>
                           <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
                             {item.text}
                           </Text>
-                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.filter((_, i) => i !== idx))}>
+                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityLabel="Remove item">
                             <Ionicons name="close-circle-outline" size={20} color={colors.muted} />
                           </TouchableOpacity>
                         </View>
@@ -960,7 +1002,7 @@ const colors = {
                     <View style={styles.editActions}>
                       <TouchableOpacity
                         style={[styles.editCancelBtn, { borderColor: colors.border }]}
-                        onPress={() => setIsEditing(false)}
+                        onPress={handleCancelEdit}
                       >
                         <Text style={[styles.editCancelText, { color: colors.secondary }]}>Cancel</Text>
                       </TouchableOpacity>
@@ -984,22 +1026,35 @@ const colors = {
 
 
       {/* Create Task Modal */}
-      <Modal visible={showCreateModal} animationType="slide" transparent>
+      {/* A form: fixed 90% sheet, so the header's Add stays above the keyboard;
+          the ScrollView insets itself and scrolls the focused field into view. */}
+      <Modal visible={showCreateModal} animationType="slide" transparent onRequestClose={requestCloseCreateModal}>
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
+          <View style={styles.modalContainer}>
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }, styles.modalSheetForm]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                <TouchableOpacity
+                  onPress={requestCloseCreateModal}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
                   <Ionicons name="close" size={24} color={colors.secondary} />
                 </TouchableOpacity>
                 <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>New Task</Text>
-                <TouchableOpacity onPress={handleCreateTask} disabled={!newTitle.trim() || creating}>
+                <TouchableOpacity onPress={handleCreateTask} disabled={!newTitle.trim() || creating} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   {creating
                     ? <ActivityIndicator size="small" color={colors.accent} />
                     : <Text style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>}
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 40 }}>
+              <ScrollView
+                style={styles.modalBody}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                automaticallyAdjustKeyboardInsets
+              >
                 <View style={styles.editField}>
                   <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
                   <TextInput
@@ -1126,13 +1181,13 @@ const colors = {
                   </View>
                   {newChecklist.map((item, idx) => (
                     <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
-                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))}>
+                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}>
                         <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
                       </TouchableOpacity>
                       <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
                         {item.text}
                       </Text>
-                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.filter((_, i) => i !== idx))}>
+                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityLabel="Remove item">
                         <Ionicons name="close-circle-outline" size={20} color={colors.muted} />
                       </TouchableOpacity>
                     </View>
@@ -1164,7 +1219,7 @@ const colors = {
                 </View>
               </ScrollView>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </View>
       </Modal>
 
@@ -1300,8 +1355,11 @@ const styles = StyleSheet.create({
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContainer: { justifyContent: 'flex-end' },
+  // flex: 1 so the sheet's percentage heights resolve against the screen.
+  modalContainer: { flex: 1, justifyContent: 'flex-end' },
   modalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  // Forms: a fixed height, so the header (Save / Add) sits well above the keyboard.
+  modalSheetForm: { height: '90%' },
 
   modalHeader: {
     flexDirection: 'row',
@@ -1314,31 +1372,12 @@ const styles = StyleSheet.create({
   modalHeaderTitle: { fontSize: 16, fontWeight: '700' },
   modalBody: { paddingHorizontal: 20, paddingTop: 20 },
 
-  // View mode
-  viewTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
-  viewBadgeRow: { flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
-  viewBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  viewBadgeText: { fontSize: 13, fontWeight: '600' },
-  viewField: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  viewFieldText: { fontSize: 14 },
-  viewSection: { marginBottom: 16 },
-  viewSectionLabel: { fontSize: 12, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  viewDescription: { fontSize: 14, lineHeight: 20 },
-  assigneeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-  assigneeAvatar: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  assigneeAvatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  assigneeName: { fontSize: 14 },
   checklistHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   checklistProgress: { fontSize: 12, fontWeight: '600' },
-  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
-  checklistText: { fontSize: 14, flex: 1 },
   editChecklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   editChecklistItemText: { flex: 1, fontSize: 14 },
   checklistAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 6 },
   checklistAddInput: { flex: 1, fontSize: 14, paddingVertical: 4 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tagBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  tagText: { fontSize: 13, fontWeight: '500' },
   deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, marginBottom: 8, paddingVertical: 12, borderRadius: 10, borderWidth: 1 },
   deleteBtnText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
 

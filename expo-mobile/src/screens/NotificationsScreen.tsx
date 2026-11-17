@@ -22,6 +22,7 @@ import { resolveNotificationTarget } from '../navigation/notificationRouting';
 import { useTheme } from '../theme';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
+import { useLayout } from '../lib/useLayout';
 interface Notification {
   id: string;
   type: string;
@@ -56,6 +57,9 @@ export default function NotificationsScreen({ navigation }: Props) {
   const isDark = colorScheme === 'dark';
 
   const theme = useTheme();
+  // Phone / Duo folded: the time moves up beside the title, so a notification
+  // is title + message (+ project) — one line shorter. Big screen unchanged.
+  const { isWide } = useLayout();
 const colors = {
     bg: theme.background,
     card: theme.card,
@@ -247,24 +251,33 @@ const colors = {
               />
             </View>
             <View style={styles.rowContent}>
-              <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                {notif.title}
-              </Text>
+              <View style={styles.titleRow}>
+                <Text style={[styles.rowTitle, styles.titleText, { color: colors.text }]} numberOfLines={1}>
+                  {notif.title}
+                </Text>
+                {!isWide && (
+                  <Text style={[styles.rowTime, { color: colors.muted }]}>{timeAgo(notif.createdAt)}</Text>
+                )}
+              </View>
               {notif.message ? (
                 <Text style={[styles.rowMsg, { color: colors.secondary }]} numberOfLines={2}>
                   {notif.message}
                 </Text>
               ) : null}
-              <View style={styles.rowMeta}>
-                {notif.projectName ? (
-                  <Text style={[styles.projectTag, { color: colors.accent }]} numberOfLines={1}>
-                    {notif.projectName}
-                  </Text>
-                ) : null}
-                <Text style={[styles.rowTime, { color: colors.muted }]}>
-                  {timeAgo(notif.createdAt)}
-                </Text>
-              </View>
+              {(isWide || notif.projectName) ? (
+                <View style={styles.rowMeta}>
+                  {notif.projectName ? (
+                    <Text style={[styles.projectTag, { color: colors.accent }]} numberOfLines={1}>
+                      {notif.projectName}
+                    </Text>
+                  ) : null}
+                  {isWide && (
+                    <Text style={[styles.rowTime, { color: colors.muted }]}>
+                      {timeAgo(notif.createdAt)}
+                    </Text>
+                  )}
+                </View>
+              ) : null}
             </View>
             {!notif.isRead && (
               <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
@@ -334,6 +347,14 @@ const styles = StyleSheet.create({
   rowContent: {
     flex: 1,
     gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  titleText: {
+    flex: 1,
   },
   rowTitle: {
     fontSize: 14,

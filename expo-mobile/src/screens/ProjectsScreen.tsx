@@ -245,8 +245,33 @@ const colors = {
             )}
           </View>
 
+          {/* Phone / Duo folded: ONE line under the name — status chip, then
+              client and finish date, then % complete — and the progress bar.
+              Big screen keeps the roomier card below. Same facts either way. */}
+          {!isWide && (
+            <View style={[styles.cardRow, styles.compactRow]}>
+              <View style={[styles.chip, { backgroundColor: chip.bg }]}>
+                <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
+                <Text style={[styles.chipLabel, { color: chip.text }]}>{toTitleCase(chipLabel)}</Text>
+              </View>
+              <Text style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>
+                {[item.clientName, dateStr].filter(Boolean).join(' · ')}
+              </Text>
+              {hasProgress && pct > 0 && (
+                <Text style={[styles.compactPct, { color: colors.secondary }]}>{Math.round(pct)}%</Text>
+              )}
+            </View>
+          )}
+          {!isWide && hasProgress && (
+            <View style={[styles.progressBg, { backgroundColor: theme.border, marginTop: 8 }]}>
+              {pct > 0 && (
+                <View style={[styles.progressFill, { backgroundColor: projectColor, width: `${Math.min(pct, 100)}%` }]} />
+              )}
+            </View>
+          )}
+
           {/* Client name */}
-          {!!item.clientName && (
+          {isWide && !!item.clientName && (
             <View style={[styles.cardRow, { marginTop: 3, justifyContent: 'flex-start' }]}>
               <Ionicons name="person-outline" size={11} color={colors.secondary} style={{ marginRight: 4 }} />
               <Text style={[styles.cardClient, { color: colors.secondary }]} numberOfLines={1}>
@@ -256,6 +281,7 @@ const colors = {
           )}
 
           {/* Row 2: Status chip + date */}
+          {isWide && (
           <View style={[styles.cardRow, { marginTop: 6 }]}>
             <View style={[styles.chip, { backgroundColor: chip.bg }]}>
               <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
@@ -265,9 +291,10 @@ const colors = {
               <Text style={[styles.cardDate, { color: colors.secondary }]}>{dateStr}</Text>
             )}
           </View>
+          )}
 
           {/* Row 3: Progress bar in the project's own colour + % label. */}
-          {hasProgress && (
+          {isWide && hasProgress && (
             <View style={{ marginTop: 10 }}>
               <View style={[styles.progressBg, { backgroundColor: theme.border }]}>
                 {pct > 0 && (
@@ -329,6 +356,9 @@ const colors = {
           style={styles.searchIconBtn}
           onPress={() => { setSearchVisible(v => !v); if (searchVisible) setSearch(''); }}
           activeOpacity={0.7}
+          // 38pt button + 3 each side = 44pt.
+          hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
+          accessibilityLabel={searchVisible ? 'Close search' : 'Search projects'}
         >
           <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.secondary} />
         </TouchableOpacity>
@@ -349,7 +379,7 @@ const colors = {
             autoFocus
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7} hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={16} color={colors.secondary} />
             </TouchableOpacity>
           )}
@@ -536,6 +566,9 @@ const styles = StyleSheet.create({
   cardDate: {
     fontSize: 11,
   },
+  compactRow: { marginTop: 6, justifyContent: 'flex-start', gap: 8 },
+  compactFacts: { flex: 1, fontSize: 12 },
+  compactPct: { fontSize: 11, fontWeight: '600' },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -346,6 +346,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
         <PressableScale
           haptics
           style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          // 36pt circle + 4 each side = 44pt.
+          hitSlop={4}
           onPress={() => { loadTeamUsers(); newDmSheetRef.current?.present(); }}
         >
           <Ionicons name="person-add-outline" size={18} color={colors.accent} />
@@ -353,6 +355,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
         <PressableScale
           haptics
           style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          // 36pt circle + 4 each side = 44pt.
+          hitSlop={4}
           onPress={() => newChannelSheetRef.current?.present()}
         >
           <Ionicons name="add" size={20} color={colors.accent} />
@@ -566,6 +570,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 44,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
