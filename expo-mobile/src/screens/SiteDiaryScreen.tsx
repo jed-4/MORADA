@@ -34,6 +34,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
+import { sheetFrame } from '../components/ui/Sheet';
 interface TemplateField {
   id: string;
   title: string;
@@ -1128,7 +1129,7 @@ const colors = {
 
       <Modal visible={showTemplatePicker} transparent animationType="slide">
         <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.tpSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.tpSheet, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
                 Select Template

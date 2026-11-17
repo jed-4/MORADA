@@ -26,6 +26,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, lightTheme, typeColors as themeTypeColors } from '../theme';
 import { useLayout } from '../lib/useLayout';
+import { sheetFrame } from '../components/ui/Sheet';
 import type { ScrollViewInstance } from 'react-native';
 import type { JSX } from 'react';
 interface ScheduleItem {
@@ -1867,7 +1868,7 @@ const colors = {
   const renderProjectPickerModal = () => (
     <Modal visible={showProjectPicker} animationType="slide" transparent>
       <View style={styles.pickerOverlay}>
-        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
           <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
             <TouchableOpacity onPress={() => setShowProjectPicker(false)}>

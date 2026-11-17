@@ -29,6 +29,7 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme } from '../theme';
 import { useLayout } from '../lib/useLayout';
+import { sheetFrame } from '../components/ui/Sheet';
 interface Task {
   id: string;
   title: string;
@@ -654,7 +655,7 @@ const colors = {
       <Modal visible={showViewModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => { setShowViewModal(false); setIsEditing(false); setSelectedTask(null); }}>
                   <Ionicons name="close" size={24} color={colors.secondary} />
@@ -974,7 +975,7 @@ const colors = {
       <Modal visible={showCreateModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => setShowCreateModal(false)}>
                   <Ionicons name="close" size={24} color={colors.secondary} />

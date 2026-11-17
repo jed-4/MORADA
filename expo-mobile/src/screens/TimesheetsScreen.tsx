@@ -24,6 +24,7 @@ import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
 import { useTheme, lightTheme, darkTheme } from '../theme';
+import { sheetFrame } from '../components/ui/Sheet';
 
 const BUSINESS_ID = '__business__';
 
@@ -1243,7 +1244,7 @@ export default function TimesheetsScreen() {
   ) => (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={[styles.pickerOverlay]}>
-        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
           <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
             <TouchableOpacity onPress={onClose}>
@@ -1490,7 +1491,7 @@ export default function TimesheetsScreen() {
       {/* Detail Modal */}
       <Modal visible={showDetail} animationType="slide" transparent>
         <View style={styles.pickerOverlay}>
-          <View style={[styles.detailContainer, { backgroundColor: colors.card }]}>
+          <View style={[styles.detailContainer, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.pickerTitle, { color: colors.text }]}>Timesheet Detail</Text>
               <TouchableOpacity onPress={() => setShowDetail(false)}>
@@ -1584,7 +1585,7 @@ export default function TimesheetsScreen() {
           style={styles.pickerOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <View style={[styles.logSheetContainer, { backgroundColor: colors.card }]}>
+          <View style={[styles.logSheetContainer, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.pickerTitle, { color: colors.text }]}>
                 {isEditMode ? 'Edit Timesheet' : 'Log Hours'}
@@ -1789,7 +1790,7 @@ export default function TimesheetsScreen() {
               Platform.OS === 'ios' ? (
                 <Modal visible animationType="slide" transparent>
                   <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-                    <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
+                    <View style={{ ...sheetFrame, backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                         <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
                           <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>

@@ -35,6 +35,17 @@ import { useLayout } from '../../lib/useLayout';
 /** Widest a sheet gets on a big screen, in points. */
 export const SHEET_MAX_WIDTH = 560;
 
+/**
+ * For the hand-built bottom sheets (a transparent <Modal> with a panel pinned
+ * to the bottom) that don't use <Sheet>: spread onto the panel's style so it
+ * gets the same cap. A no-op on phones, which are narrower than the cap.
+ */
+export const sheetFrame = {
+  width: '100%',
+  maxWidth: SHEET_MAX_WIDTH,
+  alignSelf: 'center',
+} as const;
+
 export type SheetRef = BottomSheetModal;
 
 interface SheetProps {
