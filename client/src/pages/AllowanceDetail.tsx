@@ -15,7 +15,8 @@ import { useMemo, useRef, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
-import { SectionCard } from "@/components/detail/SectionCard";
+import { DocumentHeader } from "@/components/detail/DocumentHeader";
+import { DocumentSection, DocumentCard } from "@/components/detail/DocumentSection";
 import {
   LineItemsTable,
   LineItemColumnsButton,
@@ -1389,160 +1390,99 @@ export default function AllowanceDetail() {
     };
   });
 
+  const hbtn = "h-7 px-2.5 text-xs border rounded-md flex items-center gap-1 whitespace-nowrap flex-shrink-0 bg-card hover-elevate active-elevate-2";
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-4 max-w-5xl mx-auto">
-
-        {/* Back link */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setLocation(`/projects/${projectId}/allowances`)}
-          className="mb-1 -ml-2"
-          data-testid="button-back"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Allowances
-        </Button>
-
-        {/* ── HEADER CARD ─────────────────────────────────────────────────── */}
-        <div className="relative bg-card rounded-xl border border-border overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />
-          <div className="px-5 py-4 pl-6">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <h1 className="text-lg font-semibold text-foreground truncate mb-2" data-testid="allowance-name">
-                  {item.name}
-                </h1>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-secondary text-primary">
-                    {isPrimeCost ? "Prime Cost" : "Provisional Sum"}
-                  </span>
-                  <span className="text-muted-foreground text-xs">·</span>
-                  <span className="text-xs text-muted-foreground">
-                    {item.estimateName} (v{item.estimateVersion})
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                <span
-                  className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
-                  style={{ background: statusBgColor, color: statusTextColor }}
-                  data-testid="badge-status"
-                >
-                  ● {statusInfo.name}
-                </span>
-                {item.allowanceStatus !== "finalized" ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={updateAllowanceStatusMutation.isPending}
-                    onClick={() => updateAllowanceStatusMutation.mutate("finalized")}
-                    data-testid="button-finalise-allowance"
-                  >
-                    {updateAllowanceStatusMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-                    )}
-                    Finalise
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={updateAllowanceStatusMutation.isPending}
-                    onClick={() => updateAllowanceStatusMutation.mutate("in_progress")}
-                    data-testid="button-reopen-allowance"
-                  >
-                    {updateAllowanceStatusMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                    )}
-                    Reopen
-                  </Button>
-                )}
-              </div>
+    <div className="flex h-full flex-col" data-testid="page-allowance-detail">
+      {/* ── Header ── the same document header as POs, variations and RFQs. */}
+      <div className="mx-3 mt-3 flex-shrink-0">
+        <DocumentHeader
+          backTo="/allowances"
+          projectId={projectId}
+          title={item.name}
+          status={
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-primary/10 text-primary">
+                {isPrimeCost ? "Prime Cost" : "Provisional Sum"}
+              </span>
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                style={{ background: statusBgColor, color: statusTextColor }}
+                data-testid="badge-status"
+              >
+                {statusInfo.name}
+              </span>
             </div>
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="text-xs text-muted-foreground">
-                {isPrimeCost ? "PC" : "PS"} allowance · {item.estimateName}
-              </p>
-            </div>
-          </div>
+          }
+          context={`${item.estimateName} (v${item.estimateVersion})`}
+          strip={[
+            { label: "Estimate ex GST", value: formatCurrency(estimateExGst) },
+            { label: "Actual ex GST", value: formatCurrency(actualExGst) },
+            {
+              label: "Variance ex GST",
+              value: `${isOverBudget ? "↑" : "↓"} ${formatCurrency(varianceExGst)}`,
+              className: isOverBudget ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]",
+            },
+            { label: "Used", value: `${percentUsed}%` },
+          ]}
+          headline={{
+            label: isOverBudget ? "Over by (ex GST)" : "Remaining (ex GST)",
+            value: formatCurrency(Math.abs(estimateExGst - actualExGst)),
+            className: isOverBudget ? "text-[hsl(var(--coral))]" : undefined,
+          }}
+          data-testid="header-allowance"
+          primaryAction={
+            item.allowanceStatus !== "finalized" ? (
+              <button
+                type="button"
+                className={hbtn}
+                disabled={updateAllowanceStatusMutation.isPending}
+                onClick={() => updateAllowanceStatusMutation.mutate("finalized")}
+                data-testid="button-finalise-allowance"
+              >
+                {updateAllowanceStatusMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                Finalise
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={hbtn}
+                disabled={updateAllowanceStatusMutation.isPending}
+                onClick={() => updateAllowanceStatusMutation.mutate("in_progress")}
+                data-testid="button-reopen-allowance"
+              >
+                {updateAllowanceStatusMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                Reopen
+              </button>
+            )
+          }
+        />
+        {/* How much of the allowance is spent — kept from the old summary card. */}
+        <div className="h-1 mt-2 mx-1 bg-muted rounded-full overflow-hidden" data-testid="allowance-progress">
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${Math.min(100, percentUsed)}%`, background: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--primary))" }}
+          />
         </div>
+      </div>
 
-        {/* ── FINANCIAL SUMMARY ───────────────────────────────────────────── */}
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <div className="grid grid-cols-3 divide-x divide-border">
-            <div className="p-4">
-              <p className="text-[11px] font-medium text-muted-foreground mb-1">Estimate</p>
-              <p className="text-2xl font-bold text-foreground" data-testid="text-estimate-price">
-                {formatCurrency(estimateExGst)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">ex GST</p>
-              <p className="text-[10px] text-muted-foreground">{formatCurrency(estimateIncGst)} inc GST</p>
-            </div>
-            <div className="p-4">
-              <p className="text-[11px] font-medium text-muted-foreground mb-1">Actual Spend</p>
-              <p className="text-2xl font-bold text-foreground" data-testid="text-actual-price">
-                {formatCurrency(actualExGst)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">ex GST</p>
-              <p className="text-[10px] text-muted-foreground">{formatCurrency(actualIncGst)} inc GST</p>
-            </div>
-            <div className="p-4">
-              <p className="text-[11px] font-medium text-muted-foreground mb-1">Variance</p>
-              <p
-                className="text-2xl font-bold"
-                style={{ color: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--sage))" }}
-                data-testid="text-variance"
-              >
-                {isOverBudget ? "↑" : "↓"} {formatCurrency(varianceExGst)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">ex GST</p>
-              <p
-                className="text-[10px] font-medium"
-                style={{ color: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--sage))" }}
-              >
-                {isOverBudget ? "Over budget" : "Under budget"}
-              </p>
-            </div>
-          </div>
-          <div className="px-4 pb-4 pt-1">
-            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${percentUsed}%`,
-                  background: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--primary))",
-                }}
-              />
-            </div>
-            <div className="flex justify-between mt-1">
-              <p className="text-[10px] text-muted-foreground">{percentUsed}% used</p>
-              <p
-                className="text-[10px] font-medium"
-                style={{ color: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--sage))" }}
-              >
-                {formatCurrency(Math.abs(estimateExGst - actualExGst))} ex remaining
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* ── Body ── */}
+      <div className="flex-1 overflow-auto">
+      <div className="max-w-6xl mx-auto px-3 py-3 space-y-3">
 
         {/* ── PS SECTIONS ─────────────────────────────────────────────────── */}
         {!isPrimeCost && (
           <>
             {/* Bills */}
-            <SectionCard
-              accent="amber"
-              icon="$"
+            <DocumentCard>
+            <DocumentSection
               title="Bills"
-              subtitle="Supplier invoices for this allowance"
+              role="supplier"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary="Supplier invoices for this allowance"
               actions={
-                <Button size="sm" onClick={() => setIsPsBillModalOpen(true)} className="text-xs h-7 px-3">
+                <Button size="sm" variant="outline" onClick={() => setIsPsBillModalOpen(true)} className="h-6 px-2 text-xs">
                   + Add Bills
                 </Button>
               }
@@ -1691,16 +1631,20 @@ export default function AllowanceDetail() {
                   )}
                 </div>
               )}
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
 
             {/* Timesheets */}
-            <SectionCard
-              accent="teal"
-              icon="T"
+            <DocumentCard>
+            <DocumentSection
               title="Timesheets"
-              subtitle={`Labour entries · ${timesheetDisplayPref === "date" ? "grouped by date" : timesheetDisplayPref === "person-summary" ? "one line per person" : "grouped by person"}`}
+              role="labour"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary={`Labour entries · ${timesheetDisplayPref === "date" ? "grouped by date" : timesheetDisplayPref === "person-summary" ? "one line per person" : "grouped by person"}`}
               actions={
-                <Button size="sm" onClick={() => setIsTimesheetModalOpen(true)} className="text-xs h-7 px-3">
+                <Button size="sm" variant="outline" onClick={() => setIsTimesheetModalOpen(true)} className="h-6 px-2 text-xs">
                   + Add Timesheets
                 </Button>
               }
@@ -1894,14 +1838,18 @@ export default function AllowanceDetail() {
                   </div>
                 </div>
               )}
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
 
             {/* Custom Lines */}
-            <SectionCard
-              accent="sage"
-              icon="+"
+            <DocumentCard>
+            <DocumentSection
               title="Custom Lines"
-              subtitle="Manual line items not covered above"
+              role="manual"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary="Manual line items not covered above"
               actions={<LineItemColumnsButton columns={customLineColumns} />}
             >
               <div className="pt-2">
@@ -1921,7 +1869,8 @@ export default function AllowanceDetail() {
                   addLabel="Add line"
                 />
               </div>
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
           </>
         )}
 
@@ -1929,11 +1878,14 @@ export default function AllowanceDetail() {
         {isPrimeCost && (
           <>
             {/* Linked selection */}
-            <SectionCard
-              accent="primary"
-              icon="S"
+            <DocumentCard>
+            <DocumentSection
               title="Linked Selection"
-              subtitle="Client selection driving this Prime Cost item"
+              role="client"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary="Client selection driving this Prime Cost item"
             >
               <div className="pt-3">
                 {linkedSelection ? (
@@ -2030,14 +1982,18 @@ export default function AllowanceDetail() {
                   </div>
                 )}
               </div>
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
 
             {/* Cost entries */}
-            <SectionCard
-              accent="sage"
-              icon="$"
+            <DocumentCard>
+            <DocumentSection
               title="Cost Entries"
-              subtitle="Actual costs recorded against this Prime Cost item"
+              role="manual"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary="Actual costs recorded against this Prime Cost item"
               actions={<LineItemColumnsButton columns={pcEntryColumns} />}
             >
               <div className="pt-2">
@@ -2089,16 +2045,20 @@ export default function AllowanceDetail() {
                   addLabel="Add cost entry"
                 />
               </div>
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
 
             {/* Bills */}
-            <SectionCard
-              accent="amber"
-              icon="$"
+            <DocumentCard>
+            <DocumentSection
               title="Bills"
-              subtitle="Supplier invoices allocated to this Prime Cost item"
+              role="supplier"
+              defaultOpen
+              isEmpty={false}
+              bodyClassName="px-4 pb-4"
+              summary="Supplier invoices allocated to this Prime Cost item"
               actions={
-                <Button size="sm" onClick={() => setIsBillModalOpen(true)} className="text-xs h-7 px-3">
+                <Button size="sm" variant="outline" onClick={() => setIsBillModalOpen(true)} className="h-6 px-2 text-xs">
                   + Select from Bills
                 </Button>
               }
@@ -2227,7 +2187,8 @@ export default function AllowanceDetail() {
                  </div>
                 </div>
               )}
-            </SectionCard>
+            </DocumentSection>
+            </DocumentCard>
 
           </>
         )}
@@ -2610,6 +2571,7 @@ export default function AllowanceDetail() {
         </DialogContent>
       </Dialog>
 
+      </div>
     </div>
   );
 }

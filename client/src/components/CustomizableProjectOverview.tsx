@@ -4,7 +4,7 @@ import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus } from "lucide-react";
+import { ClipboardCheck, Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X, User, UserPlus, QrCode } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLocation } from "wouter";
@@ -26,6 +26,7 @@ const Tasks = lazy(() => import("@/pages/Tasks"));
 const Timesheets = lazy(() => import("@/pages/Timesheets"));
 const ProjectFiles = lazy(() => import("@/pages/ProjectFiles"));
 const Takeoff = lazy(() => import("@/pages/Takeoff"));
+const SiteBoard = lazy(() => import("@/pages/SiteBoard"));
 const ProjectEstimates = lazy(() => import("@/pages/ProjectEstimates"));
 const Proposals = lazy(() => import("@/pages/Proposals"));
 const Bills = lazy(() => import("@/pages/Bills"));
@@ -155,6 +156,7 @@ const PROJECT_TAB_GROUPS = [
       { id: "site-diary", label: "Site Diary", icon: BookOpen, path: "/site-diary" },
       { id: "timesheets", label: "Timesheets", icon: Timer, path: "/timesheets" },
       { id: "files", label: "Files", icon: FolderOpen, path: "/files" },
+      { id: "site-board", label: "Site board", icon: QrCode, path: "/site-board" },
       { id: "team", label: "Team", icon: Users, path: "/team" },
     ]
   },
@@ -241,13 +243,22 @@ export default function CustomizableProjectOverview() {
 
   // Resolve the project's client contact so the header chip can open the
   // existing contact details dialog. Only fetch when a client is assigned.
-  const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts"],
+  // Fetch just that ONE contact. This wrapper renders on every project tab
+  // (Site Diary, Schedule, …) and used to download the whole contacts list
+  // each time — Sentry's top "Large HTTP payload" (GET /api/contacts).
+  // The key sits under ["/api/contacts"], so contact edits still refresh it.
+  const { data: clientContactData } = useQuery<Contact>({
+    queryKey: ["/api/contacts", currentProject?.clientId],
     enabled: !!currentProject?.clientId && !isClient,
   });
-  const clientContact = currentProject?.clientId
-    ? contacts.find((c) => c.id === currentProject.clientId) ?? null
-    : null;
+  const clientContact =
+    currentProject?.clientId && clientContactData?.id === currentProject.clientId
+      ? clientContactData
+      : null;
+  // clientName is only on the projects LIST payload, not the single-project
+  // one — fall back to the client contact so the badge shows either way.
+  const projectClientName: string | undefined =
+    (currentProject as { clientName?: string } | null | undefined)?.clientName || clientContact?.name || undefined;
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
   const fmtAud = (cents: number) =>
@@ -1010,6 +1021,8 @@ export default function CustomizableProjectOverview() {
         return <ProjectFiles />;
       case "takeoff":
         return <Takeoff />;
+      case "site-board":
+        return <SiteBoard />;
       case "estimates":
         return <ProjectEstimates embedded />;
       case "proposals":
@@ -1236,16 +1249,16 @@ export default function CustomizableProjectOverview() {
         </div>
       )}
       <div className="flex items-center pl-1 self-stretch">
-        {currentProject.clientId && currentProject.clientName ? (
+        {currentProject.clientId && projectClientName ? (
           <Badge
             variant="outline"
             className="text-xs gap-1 max-w-[180px] cursor-pointer"
             onClick={() => clientContact && setClientDialogOpen(true)}
-            title={currentProject.clientName}
+            title={projectClientName}
             data-testid="badge-project-client"
           >
             <User className="h-3 w-3 shrink-0" />
-            <span className="truncate">{currentProject.clientName}</span>
+            <span className="truncate">{projectClientName}</span>
           </Badge>
         ) : isClient ? null : (
           <Badge

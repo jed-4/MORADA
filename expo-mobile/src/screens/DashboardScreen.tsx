@@ -673,7 +673,7 @@ export default function DashboardScreen({ navigation }: Props) {
         })}
         style={[styles.projectCard, { backgroundColor: theme.card, borderColor: color + '55', borderWidth: 1 }]}
       >
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: color + '33' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: color + '33' }]} />
         <View style={styles.projectCardTop}>
           <View style={[styles.projectDot, { backgroundColor: color }]} />
         </View>
@@ -1554,7 +1554,7 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
   userMenuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 99,
     elevation: 9,
   },

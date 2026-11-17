@@ -38,7 +38,7 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
       t.status === "approved"
     );
     
-    const hoursLogged = userTimesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    const hoursLogged = userTimesheets.reduce((sum, t) => sum + (Number(t.duration) || 0), 0); // timesheets store `duration` (net hours) — `hours` never existed
     const utilizationPercent = (hoursLogged / TARGET_HOURS_PER_WEEK) * 100;
     
     const userTasks = tasks.filter(t => 

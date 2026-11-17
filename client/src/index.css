@@ -863,6 +863,21 @@
     z-index: 0;
   }
 
+  /* The rule above out-ranks Tailwind's single-class .absolute/.fixed/.sticky,
+     so a positioned element that also hovers silently became position:relative
+     and dropped into normal flow. On the timesheet calendar every bar then sat
+     BELOW the bars drawn before it that day (hours never matched the scale).
+     Absolute/fixed/sticky are already containing blocks for ::after — keep them. */
+  .absolute:is(.hover-elevate, .active-elevate, .hover-elevate-2, .active-elevate-2) {
+    position: absolute;
+  }
+  .fixed:is(.hover-elevate, .active-elevate, .hover-elevate-2, .active-elevate-2) {
+    position: fixed;
+  }
+  .sticky:is(.hover-elevate, .active-elevate, .hover-elevate-2, .active-elevate-2) {
+    position: sticky;
+  }
+
   .hover-elevate:not(.no-default-hover-elevate)::after,
   .active-elevate:not(.no-default-active-elevate)::after,
   .hover-elevate-2:not(.no-default-hover-elevate)::after,

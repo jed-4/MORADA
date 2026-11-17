@@ -223,23 +223,18 @@ export function RapidApprovalModal({
       id: string; 
       startTime?: string;
       endTime?: string;
-      duration: string; 
+      // Net hours + total, both already worked out by the caller — sent only
+      // when start/end exist to derive them from.
+      duration?: string;
+      total?: string;
       breakDuration: string;
       date?: string;
       projectId?: string | null;
       costCodeId?: string | null;
       description?: string;
     }) => {
-      const hours = parseFloat(data.duration) || 0;
-      const breakHours = parseFloat(data.breakDuration) || 0;
-      const netHoursCalc = Math.max(0, hours - breakHours);
-      const rateVal = parseFloat(currentTimesheet?.hourlyRate || "0");
-      const total = (netHoursCalc * rateVal).toFixed(2);
-      
-      return await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
-        ...data,
-        total,
-      });
+      const { id, ...patch } = data;
+      return await apiRequest(`/api/timesheets/${id}`, "PATCH", patch);
     },
   });
 
@@ -249,18 +244,28 @@ export function RapidApprovalModal({
         editedStartTime !== (currentTimesheet.startTime || "") ||
         editedEndTime !== (currentTimesheet.endTime || "") ||
         editedBreak !== (currentTimesheet.breakDuration || "0") ||
-        format(editedDate!, "yyyy-MM-dd") !== currentTimesheet.date ||
+        // `date` arrives as an ISO string at runtime; comparing it to
+        // "yyyy-MM-dd" was never equal, so EVERY approve re-saved the entry.
+        format(editedDate!, "yyyy-MM-dd") !== String(currentTimesheet.date).slice(0, 10) ||
         editedProjectId !== (currentTimesheet.projectId || "") ||
         editedCostCodeId !== (currentTimesheet.costCodeId || "") ||
         editedDescription !== (currentTimesheet.description || "")
       );
       
       if (hasChanges && editedDate) {
+        // duration is stored NET of the break (as the timesheet dialog does).
+        // This wrote the gross span — and 0 for hours-only entries with no
+        // start/end, wiping their hours on approve. Keep the existing hours
+        // when there are no times to derive them from.
+        const hasTimes = !!editedStartTime && !!editedEndTime && calculatedDuration > 0;
+        const timeFields = hasTimes
+          ? { duration: netHours.toFixed(2), total: calculatedTotal }
+          : {};
         await updateMutation.mutateAsync({
           id: timesheetId,
           startTime: editedStartTime,
           endTime: editedEndTime,
-          duration: calculatedDuration.toFixed(2),
+          ...timeFields,
           breakDuration: editedBreak,
           date: format(editedDate, "yyyy-MM-dd"),
           projectId: editedProjectId || null,

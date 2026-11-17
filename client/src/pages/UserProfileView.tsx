@@ -249,7 +249,7 @@ export default function UserProfileView() {
       queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({
-        title: "Subcontractor settings updated",
+        title: "Saved",
       });
     },
     onError: () => {
@@ -582,17 +582,82 @@ export default function UserProfileView() {
           </Card>
         </div>
 
-        {/* Subcontractor Settings - Only for admins */}
-        {isAdmin && !isCurrentUser && (
+        {/* Rates & subcontractor settings - admins only (their own profile too).
+            Rates were only shown once someone was marked a subcontractor, but
+            every team member's timesheets are costed and charged from them. */}
+        {isAdmin && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <HardHat className="h-5 w-5" />
-                Subcontractor Settings
+                <DollarSign className="h-5 w-5" />
+                Rates
               </CardTitle>
-              <CardDescription>Configure subcontractor status and rates for this user</CardDescription>
+              <CardDescription>What this person costs you, and what you charge the client, per hour (ex GST)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-user-rates">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                    Cost Rate ($/hr)
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    {user.isSubcontractor ? "What you pay the subcontractor per hour" : "What this person costs you per hour (wage plus on-costs)"}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className="w-full md:w-[200px]"
+                      value={subcontractorHourlyRate}
+                      onChange={(e) => setSubcontractorHourlyRate(e.target.value)}
+                      data-testid="input-hourly-rate"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={updateSubcontractorMutation.isPending || subcontractorHourlyRate === (user.hourlyRate || "")}
+                      onClick={() => updateSubcontractorMutation.mutate({ hourlyRate: subcontractorHourlyRate || null })}
+                      data-testid="button-save-hourly-rate"
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                    Charge Rate ($/hr)
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    What you charge the client for this person per hour
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className="w-full md:w-[200px]"
+                      value={subcontractorChargeRate}
+                      onChange={(e) => setSubcontractorChargeRate(e.target.value)}
+                      data-testid="input-charge-rate"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={updateSubcontractorMutation.isPending || subcontractorChargeRate === (user.chargeRate || "")}
+                      onClick={() => updateSubcontractorMutation.mutate({ chargeRate: subcontractorChargeRate || null })}
+                      data-testid="button-save-charge-rate"
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <Separator />
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <label className="text-sm font-medium">Subcontractor</label>
@@ -628,75 +693,6 @@ export default function UserProfileView() {
                       disabled={updateSubcontractorMutation.isPending}
                       data-testid="switch-gst-registered"
                     />
-                  </div>
-                  <Separator />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium flex items-center gap-1.5">
-                        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                        Pay Rate ($/hr)
-                      </label>
-                      <p className="text-xs text-muted-foreground">
-                        What you pay the subcontractor per hour
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          className="w-full md:w-[200px]"
-                          value={subcontractorHourlyRate}
-                          onChange={(e) => setSubcontractorHourlyRate(e.target.value)}
-                          data-testid="input-hourly-rate"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={updateSubcontractorMutation.isPending}
-                          onClick={() => {
-                            updateSubcontractorMutation.mutate({
-                              hourlyRate: subcontractorHourlyRate || null,
-                            });
-                          }}
-                        >
-                          Save
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium flex items-center gap-1.5">
-                        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                        Charge Rate ($/hr)
-                      </label>
-                      <p className="text-xs text-muted-foreground">
-                        What you charge the client for this subcontractor per hour
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          className="w-full md:w-[200px]"
-                          value={subcontractorChargeRate}
-                          onChange={(e) => setSubcontractorChargeRate(e.target.value)}
-                          data-testid="input-charge-rate"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={updateSubcontractorMutation.isPending}
-                          onClick={() => {
-                            updateSubcontractorMutation.mutate({
-                              chargeRate: subcontractorChargeRate || null,
-                            });
-                          }}
-                        >
-                          Save
-                        </Button>
-                      </div>
-                    </div>
                   </div>
                 </>
               )}

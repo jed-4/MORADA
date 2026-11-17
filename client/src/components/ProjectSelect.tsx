@@ -71,7 +71,7 @@ export function ProjectSelect({
       return jnA.localeCompare(jnB, undefined, { numeric: true });
     });
     sorted.forEach((p) =>
-      opts.push({ value: p.id, label: p.name, address: p.address || undefined, color: p.color })
+      opts.push({ value: p.id, label: p.name, address: p.location || undefined, color: p.color })
     );
     return opts;
   }, [projects, allowNone]);

@@ -49,14 +49,19 @@ export default function BusinessAlertsWidget({}: WidgetProps) {
     t.priority === "high"
   );
 
-  const pendingBillsCount = bills.filter(b => b.status === "pending").length;
+  // Bills waiting on someone in the office. There is no "pending" bill
+  // status, so this alert never appeared.
+  const pendingBillsCount = bills.filter(b => b.status === "needs_review" || b.status === "awaiting_approval").length;
 
-  const upcomingReminders = reminders.filter(r =>
-    !r.completed &&
-    r.reminderDate &&
-    isAfter(new Date(r.reminderDate), now) &&
-    isBefore(new Date(r.reminderDate), upcomingThreshold)
-  );
+  // Reminders carry status + dueAt (not completed/reminderDate, which don't
+  // exist — every reminder was filtered out). Snoozed ones resurface at
+  // snoozedUntil.
+  const reminderWhen = (r: Reminder) => (r.status === "snoozed" && r.snoozedUntil ? r.snoozedUntil : r.dueAt);
+  const upcomingReminders = reminders.filter(r => {
+    if (r.status !== "active" && r.status !== "snoozed") return false;
+    const when = reminderWhen(r);
+    return !!when && isAfter(new Date(when), now) && isBefore(new Date(when), upcomingThreshold);
+  });
 
   const alerts = [
     ...overdueTasks.map(task => ({
@@ -84,7 +89,7 @@ export default function BusinessAlertsWidget({}: WidgetProps) {
       color: "text-blue-500",
       bgColor: "bg-status-info-bg",
       title: reminder.title,
-      description: formatDistanceToNow(new Date(reminder.reminderDate!), { addSuffix: true }),
+      description: formatDistanceToNow(new Date(reminderWhen(reminder)!), { addSuffix: true }),
     })),
   ].slice(0, 10);
 

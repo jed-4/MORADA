@@ -42,7 +42,7 @@ import { type ContactInsurance } from "@shared/schema";
 import { format, differenceInDays } from "date-fns";
 
 const insuranceFormSchema = z.object({
-  insuranceType: z.enum(["public_liability", "workers_compensation", "professional_indemnity", "contractors_all_risk", "other"]),
+  insuranceType: z.enum(["public_liability", "workers_comp", "professional_indemnity", "contractors_all_risk", "other"]),
   expiryDate: z.string().optional(),
   policyNumber: z.string().optional(),
   insurerName: z.string().optional(),
@@ -185,7 +185,7 @@ export function ContactInsuranceSection({ contactId, contactName }: ContactInsur
   const getInsuranceTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
       public_liability: "Public Liability",
-      workers_compensation: "Workers Compensation",
+      workers_comp: "Workers Compensation",
       professional_indemnity: "Professional Indemnity",
       contractors_all_risk: "Contractors All Risk",
       other: "Other",
@@ -294,7 +294,7 @@ export function ContactInsuranceSection({ contactId, contactName }: ContactInsur
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="public_liability">Public Liability</SelectItem>
-                        <SelectItem value="workers_compensation">Workers Compensation</SelectItem>
+                        <SelectItem value="workers_comp">Workers Compensation</SelectItem>
                         <SelectItem value="professional_indemnity">Professional Indemnity</SelectItem>
                         <SelectItem value="contractors_all_risk">Contractors All Risk</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
