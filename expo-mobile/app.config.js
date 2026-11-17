@@ -79,11 +79,3 @@ module.exports = {
     ],
   },
 };
-
-// LOCAL TESTING ONLY (test/duo-combined): with EXPO_GO_UNLINKED=1 the dev
-// server serves the app without the EAS project link, so Expo Go can open it
-// over Wi-Fi without signing this Mac in to Expo. Never set it for a build.
-if (process.env.EXPO_GO_UNLINKED === "1") {
-  delete module.exports.expo.extra.eas;
-  delete module.exports.expo.updates;
-}
