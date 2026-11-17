@@ -122,7 +122,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains, max } from "drizzle-orm";
 import { resolveTimesheetViewScope } from "./timesheet-view-scope";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import * as schema from "@shared/schema";
@@ -387,7 +387,7 @@ export interface IStorage {
   getDoc(id: string): Promise<schema.Doc | undefined>;
   createDoc(data: schema.InsertDoc): Promise<schema.Doc>;
   updateDoc(id: string, data: Partial<schema.InsertDoc>): Promise<schema.Doc | undefined>;
-  deleteDoc(id: string): Promise<void>;
+  deleteDoc(id: string, companyId: string): Promise<void>;
   getDocFolders(companyId: string): Promise<schema.DocFolder[]>;
   createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
   updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
@@ -15931,9 +15931,6 @@ export class DbStorage implements IStorage {
     const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
     return (result.rowCount ?? 0) > 0;
   }
-  async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
-  async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
-  async deleteSelectionComment(id: string): Promise<boolean> { return false; }
 
   async getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]> {
     try {
@@ -30795,9 +30792,11 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteDoc(id: string): Promise<void> {
+  async deleteDoc(id: string, companyId: string): Promise<void> {
     try {
-      await db.delete(schema.docs).where(eq(schema.docs.id, id));
+      // Scoped by company as well as id, so the delete can never reach another
+      // tenant's doc even if a caller skips the ownership check.
+      await db.delete(schema.docs).where(and(eq(schema.docs.id, id), eq(schema.docs.companyId, companyId)));
     } catch (error) {
       console.error("Database error in deleteDoc:", error);
       throw error;

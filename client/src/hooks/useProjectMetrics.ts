@@ -447,8 +447,12 @@ export function useProjectMetrics() {
     // Bills calculations
     const now = new Date();
     const paidBillsList = bills.filter(b => b.status === 'paid');
-    const pendingBillsList = bills.filter(b => b.status === 'pending' || b.status === 'draft' || b.status === 'needs_review');
-    const approvedBillsList = bills.filter(b => b.status === 'approved');
+    // Bill statuses are draft | needs_review | awaiting_approval |
+    // awaiting_payment | paid. This used to test 'pending' and 'approved',
+    // which never exist: "Approved" always read $0 and bills awaiting approval
+    // were missing from "Pending".
+    const pendingBillsList = bills.filter(b => b.status === 'draft' || b.status === 'needs_review' || b.status === 'awaiting_approval');
+    const approvedBillsList = bills.filter(b => b.status === 'awaiting_payment');
     const overdueBillsList = bills.filter(b => {
       if (b.status === 'paid') return false;
       if (!b.dueDate) return false;

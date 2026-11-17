@@ -48,7 +48,7 @@ export function TaskTemplateSelect({
     filteredTemplates.forEach((template) => {
       opts.push({
         value: template.id,
-        label: template.name,
+        label: template.title, // task templates have `title`, not `name` — the picker listed blanks
         description: template.description || undefined,
       });
     });

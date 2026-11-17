@@ -243,13 +243,22 @@ export default function CustomizableProjectOverview() {
 
   // Resolve the project's client contact so the header chip can open the
   // existing contact details dialog. Only fetch when a client is assigned.
-  const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts"],
+  // Fetch just that ONE contact. This wrapper renders on every project tab
+  // (Site Diary, Schedule, …) and used to download the whole contacts list
+  // each time — Sentry's top "Large HTTP payload" (GET /api/contacts).
+  // The key sits under ["/api/contacts"], so contact edits still refresh it.
+  const { data: clientContactData } = useQuery<Contact>({
+    queryKey: ["/api/contacts", currentProject?.clientId],
     enabled: !!currentProject?.clientId && !isClient,
   });
-  const clientContact = currentProject?.clientId
-    ? contacts.find((c) => c.id === currentProject.clientId) ?? null
-    : null;
+  const clientContact =
+    currentProject?.clientId && clientContactData?.id === currentProject.clientId
+      ? clientContactData
+      : null;
+  // clientName is only on the projects LIST payload, not the single-project
+  // one — fall back to the client contact so the badge shows either way.
+  const projectClientName: string | undefined =
+    (currentProject as { clientName?: string } | null | undefined)?.clientName || clientContact?.name || undefined;
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
   const fmtAud = (cents: number) =>
@@ -1240,16 +1249,16 @@ export default function CustomizableProjectOverview() {
         </div>
       )}
       <div className="flex items-center pl-1 self-stretch">
-        {currentProject.clientId && currentProject.clientName ? (
+        {currentProject.clientId && projectClientName ? (
           <Badge
             variant="outline"
             className="text-xs gap-1 max-w-[180px] cursor-pointer"
             onClick={() => clientContact && setClientDialogOpen(true)}
-            title={currentProject.clientName}
+            title={projectClientName}
             data-testid="badge-project-client"
           >
             <User className="h-3 w-3 shrink-0" />
-            <span className="truncate">{currentProject.clientName}</span>
+            <span className="truncate">{projectClientName}</span>
           </Badge>
         ) : isClient ? null : (
           <Badge

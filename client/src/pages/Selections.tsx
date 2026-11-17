@@ -376,7 +376,7 @@ export default function Selections() {
     enabled: !!projectId,
   });
   const supplierContacts = useMemo(
-    () => contacts.filter((c) => c.contactType === "supplier" || c.contactType === "subcontractor"),
+    () => contacts.filter((c) => c.contactType === "supplier" || c.contactType === "trade"), // was "subcontractor", which never exists
     [contacts],
   );
 
