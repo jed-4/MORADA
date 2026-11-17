@@ -1,6 +1,5 @@
 import { memo, useMemo } from 'react';
 import {
-  Dimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +12,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { fontSize, fontWeight, radius, type Theme } from '../../theme';
 import { toLocalDateStr } from '../../lib/dates';
+import { useLayout } from '../../lib/useLayout';
 import {
   DAY_NAMES,
   EventCard,
@@ -28,7 +28,6 @@ import {
 // + overflow count) and the selected day's agenda below. Horizontal swipe on
 // the grid navigates months.
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const MAX_CELL_CHIPS = 2;
 
 export interface MonthCell {
@@ -75,7 +74,8 @@ function MonthViewInner({
   showStatusChips,
   taskStatusOptions,
 }: MonthViewProps) {
-  const cellWidth = (SCREEN_WIDTH - 32) / 7;
+  const { width: screenWidth } = useLayout();
+  const cellWidth = (screenWidth - 32) / 7;
   const selectedKey = toLocalDateStr(selectedDate);
   const selectedEvents = eventsByDay[selectedKey] || [];
 

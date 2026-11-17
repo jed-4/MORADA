@@ -14,7 +14,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-  Dimensions,
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +25,10 @@ import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedBu
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, lightTheme, typeColors as themeTypeColors } from '../theme';
+import { useLayout } from '../lib/useLayout';
+import { sheetFrame } from '../components/ui/Sheet';
+import type { ScrollViewInstance } from 'react-native';
+import type { JSX } from 'react';
 interface ScheduleItem {
   id: string;
   scheduleId: string;
@@ -220,7 +223,6 @@ function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const DAY_COL_WIDTH = 40;
 const NAME_COL_WIDTH = 140;
 const GANTT_ROW_HEIGHT = 36;
@@ -228,6 +230,7 @@ const HOUR_HEIGHT = 60;
 
 export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
+  const { width: screenWidth } = useLayout();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const isProjectContext = !!route?.params?.projectId;
@@ -292,9 +295,9 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showAddPriorityPicker, setShowAddPriorityPicker] = useState(false);
   const [showAddStatusPicker, setShowAddStatusPicker] = useState(false);
 
-  const ganttScrollRef = useRef<ScrollView>(null);
+  const ganttScrollRef = useRef<ScrollViewInstance>(null);
   const ganttScrolledRef = useRef(false);
-  const ganttHeaderScrollRef = useRef<ScrollView>(null);
+  const ganttHeaderScrollRef = useRef<ScrollViewInstance>(null);
   const isSyncingRef = useRef(false);
   const [showNamesCol, setShowNamesCol] = useState(true);
   const [showBarStatus, setShowBarStatus] = useState(false);
@@ -978,7 +981,7 @@ const colors = {
                 if (ganttScrolledRef.current) return;
                 ganttScrolledRef.current = true;
                 const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY) * DAY_COL_WIDTH;
-                const scrollX = Math.max(0, todayOffset - SCREEN_WIDTH / 3);
+                const scrollX = Math.max(0, todayOffset - screenWidth / 3);
                 ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
                 ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
               }}
@@ -1865,7 +1868,7 @@ const colors = {
   const renderProjectPickerModal = () => (
     <Modal visible={showProjectPicker} animationType="slide" transparent>
       <View style={styles.pickerOverlay}>
-        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
           <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
             <TouchableOpacity onPress={() => setShowProjectPicker(false)}>

@@ -25,6 +25,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme } from '../theme';
+import { sheetFrame } from '../components/ui/Sheet';
 interface Project {
   id: string;
   name: string;
@@ -767,7 +768,7 @@ const colors = {
         <Pressable style={styles.modalOverlay} onPress={closeMenu}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ justifyContent: 'flex-end', flex: 1 }}>
             <Pressable onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+              <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
                 <View style={[styles.modalHandle, { backgroundColor: colors.muted }]} />
 
                 {menuMode === 'actions' && menuItem && (

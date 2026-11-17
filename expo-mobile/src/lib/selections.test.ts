@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Derivation tests for src/lib/selections.ts — the logic behind what the spec
  * sheet says. Pure TypeScript, no React Native imports, so it runs directly:

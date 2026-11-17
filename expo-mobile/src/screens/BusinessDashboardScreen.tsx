@@ -8,13 +8,13 @@ import {
   TouchableOpacity,
   useColorScheme,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
 import { toLocalDateStr, dateStrOf } from '../lib/dates';
 
 import { useTheme } from '../theme';
+import { useLayout } from '../lib/useLayout';
 interface Project {
   id: string;
   status?: string;
@@ -36,6 +36,7 @@ interface TimesheetEntry {
 }
 
 export default function BusinessDashboardScreen({ navigation }: any) {
+  const { width: screenWidth } = useLayout();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [loading, setLoading] = useState(true);
@@ -106,7 +107,6 @@ const colors = {
   // its clockInTime, so that alone must not count as an active timer.
   const activeTimers = timesheets.filter(ts => ts.isActive).length;
 
-  const screenWidth = Dimensions.get('window').width;
   const tileSize = Math.floor((screenWidth - 32 - 30) / 4);
 
   const statTiles = [

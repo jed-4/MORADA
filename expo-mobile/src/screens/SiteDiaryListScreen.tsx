@@ -10,7 +10,6 @@ import {
   Alert,
   Animated,
   PanResponder,
-  Dimensions,
   Modal,
   TextInput,
   KeyboardAvoidingView,
@@ -35,6 +34,8 @@ import { toLocalDateStr, dateStrOf, localDayISOString } from '../lib/dates';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
+import { useLayout } from '../lib/useLayout';
+import { sheetFrame } from '../components/ui/Sheet';
 interface TemplateField {
   id: string;
   title: string;
@@ -189,7 +190,6 @@ type FeedItem =
   | { type: 'entry'; entry: SiteDiaryEntry };
 
 const SWIPE_THRESHOLD = 50;
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function SiteDiaryListScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -250,7 +250,15 @@ const colors = {
     success: theme.statusSuccess,
 };
 
+  // The pan responder below is created once and keeps the first goToDay it
+  // saw, so the width is read through a ref — otherwise a fold/unfold would
+  // leave the slide animation using the old screen width.
+  const { width: screenWidth } = useLayout();
+  const screenWidthRef = useRef(screenWidth);
+  screenWidthRef.current = screenWidth;
+
   const goToDay = useCallback((direction: number) => {
+    const SCREEN_WIDTH = screenWidthRef.current;
     const toValue = direction > 0 ? -SCREEN_WIDTH : SCREEN_WIDTH;
     Animated.timing(translateX, { toValue, duration: 150, useNativeDriver: true }).start(() => {
       setCurrentDate(prev => {
@@ -1680,7 +1688,7 @@ const colors = {
 
           <Modal visible={showProjectPicker} transparent animationType="slide">
             <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
+              <View style={[styles.pickerSheet, sheetFrame, { backgroundColor: colors.card }]}>
                 <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                     Select Project
@@ -1729,7 +1737,7 @@ const colors = {
 
           <Modal visible={showTemplatePicker} transparent animationType="slide">
             <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.tpSheet, { backgroundColor: colors.card }]}>
+              <View style={[styles.tpSheet, sheetFrame, { backgroundColor: colors.card }]}>
                 <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
                     Select Template
@@ -1851,7 +1859,7 @@ const colors = {
 
       <Modal visible={showFilterPicker} transparent animationType="slide">
         <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.pickerSheet, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                 Filter by Project
@@ -1907,7 +1915,7 @@ const colors = {
 
       <Modal visible={showCalendar} transparent animationType="slide">
         <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.calendarSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.calendarSheet, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.calendarHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                 Select Date

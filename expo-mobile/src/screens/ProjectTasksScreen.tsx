@@ -14,7 +14,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
   Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -29,6 +28,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme } from '../theme';
+import { useLayout } from '../lib/useLayout';
+import { sheetFrame } from '../components/ui/Sheet';
 interface Task {
   id: string;
   title: string;
@@ -123,6 +124,7 @@ function isOverdue(dateStr?: string): boolean {
 }
 
 export default function ProjectTasksScreen({ navigation, route }: Props) {
+  const { width: screenWidth } = useLayout();
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -503,7 +505,6 @@ const colors = {
     );
   };
 
-  const screenWidth = Dimensions.get('window').width;
   const columnWidth = Math.max(screenWidth * 0.68, 240);
 
   // ─── Loading ─────────────────────────────────────────────────────────────────
@@ -654,7 +655,7 @@ const colors = {
       <Modal visible={showViewModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => { setShowViewModal(false); setIsEditing(false); setSelectedTask(null); }}>
                   <Ionicons name="close" size={24} color={colors.secondary} />
@@ -974,7 +975,7 @@ const colors = {
       <Modal visible={showCreateModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => setShowCreateModal(false)}>
                   <Ionicons name="close" size={24} color={colors.secondary} />
