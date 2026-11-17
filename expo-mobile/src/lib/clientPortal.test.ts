@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Tests for src/lib/clientPortal.ts — what client mode says about a job.
  *

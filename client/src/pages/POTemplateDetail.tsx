@@ -105,7 +105,7 @@ function SortableItem({ item, costCodes, onEdit, onDelete }: SortableItemProps) 
         <p className="text-sm font-medium line-clamp-1">{item.description}</p>
         {costCode && (
           <p className="text-xs text-muted-foreground line-clamp-1">
-            {costCode.code} - {costCode.name}
+            {costCode.code} - {costCode.title}
           </p>
         )}
       </div>
