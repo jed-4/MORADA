@@ -22,6 +22,7 @@ import { apiRequest, apiFetch, ApiError } from '../services/api';
 import { timeAgo } from '../lib/format';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 type Props = {
   navigation: any;
   route?: any;
@@ -589,7 +590,7 @@ const colors = {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => fetchNotes(true)} tintColor={colors.accent} />
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, readableFrame]}
         />
       )}
 

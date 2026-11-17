@@ -19,6 +19,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme, lightTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { compareProjects } from '../lib/projects';
+import { TwoPane } from '../components/ui/TwoPane';
+import { useTwoPaneSelection } from '../lib/twoPane';
+import { usePersistedState } from '../lib/usePersistedState';
+import ProjectDetailScreen from './ProjectDetailScreen';
 
 const toTitleCase = (str: string) =>
   str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -52,6 +56,7 @@ interface Project {
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
+  route: { params?: any };
 };
 
 const phases = [
@@ -62,7 +67,7 @@ const phases = [
   { key: 'post_construction', label: 'Post-Con' },
 ];
 
-export default function ProjectsScreen({ navigation }: Props) {
+export default function ProjectsScreen({ navigation, route }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -81,11 +86,19 @@ export default function ProjectsScreen({ navigation }: Props) {
   const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
-  const [activePhase, setActivePhase] = useState('all');
+  // Remembered between launches, so the list opens on the phase you last used.
+  const [activePhase, setActivePhase] = usePersistedState('projects.phase', 'all');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const insets = useSafeAreaInsets();
+  // Phone: a tap pushes the project. Duo unfolded: it opens on the right.
+  const { selectedId, open, isWide } = useTwoPaneSelection({
+    navigation,
+    route,
+    detailRoute: 'ProjectDetail',
+    paramsFor: (id: string) => ({ projectId: id, projectName: projects.find(p => p.id === id)?.name }),
+  });
 
   const theme = useTheme();
 const colors = {
@@ -208,8 +221,12 @@ const colors = {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => open(item.id)}
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          isWide && selectedId === item.id && { borderColor: colors.accent, borderWidth: 2 },
+        ]}
       >
         {/* Top colour band */}
         <View style={[styles.cardTopBand, { backgroundColor: projectColor }]} />
@@ -302,7 +319,7 @@ const colors = {
 
   const screenBg = isDark ? theme.background : '#F0EBE3';
 
-  return (
+  const listPane = (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* Header — matches Dashboard header exactly */}
       <View style={[styles.header, { backgroundColor: screenBg, paddingTop: insets.top + 12 }]}>
@@ -403,6 +420,24 @@ const colors = {
         </View>
       </View>
     </View>
+  );
+
+  return (
+    <TwoPane
+      list={listPane}
+      emptyTitle="Select a project"
+      emptyIcon="briefcase-outline"
+      detail={
+        selectedId ? (
+          <ProjectDetailScreen
+            key={selectedId}
+            embedded
+            navigation={navigation}
+            route={{ key: `embedded-${selectedId}`, name: 'ProjectDetail', params: { projectId: selectedId } } as any}
+          />
+        ) : null
+      }
+    />
   );
 }
 

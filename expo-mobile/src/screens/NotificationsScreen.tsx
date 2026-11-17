@@ -19,6 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { resolveNotificationTarget } from '../navigation/notificationRouting';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 interface Notification {
   id: string;
   type: string;
@@ -208,7 +209,7 @@ const colors = {
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={[styles.list, readableFrame]}
       data={rows}
       keyExtractor={r => r.key}
       renderItem={({ item: row }) => {

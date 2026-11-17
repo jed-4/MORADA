@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 interface Contact {
   id: string;
@@ -143,7 +144,7 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, readableFrame]}
     >
       {/* Identity header */}
       <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

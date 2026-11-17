@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 interface CostCode {
   id: string;
@@ -313,7 +314,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]} keyboardShouldPersistTaps="handled">
 
         {/* Photo section */}
         <View style={styles.photoContainer}>

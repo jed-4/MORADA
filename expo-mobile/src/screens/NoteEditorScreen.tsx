@@ -22,6 +22,7 @@ import { apiRequest, uploadPhoto, getAuthedImageSource } from '../services/api';
 
 import { useTheme } from '../theme';
 import type { TextInputInstance } from 'react-native';
+import { readableFrame } from '../components/ui/ReadableColumn';
 type Props = {
   navigation: any;
   route: any;
@@ -1110,7 +1111,7 @@ const colors = {
       >
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, readableFrame]}
           keyboardShouldPersistTaps="handled"
         >
           <TextInput

@@ -19,6 +19,9 @@ import type { RouteProp } from '@react-navigation/native';
 import { useTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermission } from '../lib/usePermission';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useReturnToTwoPane } from '../lib/twoPane';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 
 interface Project {
@@ -92,10 +95,20 @@ interface SiteDiaryEntry {
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
+  /**
+   * Rendered in the right panel of the Projects list on a big screen (iPhone
+   * Duo unfolded). There is no stack header there, so we pad for the status
+   * bar ourselves, and never pop back to the list on unfold.
+   */
+  embedded?: boolean;
 };
 
-export default function ProjectDetailScreen({ navigation, route }: Props) {
+export default function ProjectDetailScreen({ navigation, route, embedded }: Props) {
   const { projectId } = route.params as { projectId: string };
+  const insets = useSafeAreaInsets();
+  // Unfolding on this screen (pushed from the list) goes back to the list with
+  // this project open on the right, so you keep your place.
+  useReturnToTwoPane({ navigation, listRoute: 'ProjectsList', id: projectId, embedded });
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -432,7 +445,7 @@ const colors = {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, readableFrame, embedded && { paddingTop: insets.top + 12 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
         <View style={styles.compactHeader}>

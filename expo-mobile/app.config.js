@@ -2,9 +2,13 @@ module.exports = {
   expo: {
     name: "Morada",
     slug: "buildpro-mobile",
-    version: "1.2.0",
+    version: "1.3.0",
     scheme: "buildpro",
-    orientation: "portrait",
+    // "default" so the iPhone Duo can turn sideways when unfolded. Phones are
+    // still held in portrait: the expo-screen-orientation plugin below starts
+    // the app locked to portrait, and src/lib/orientation.ts only unlocks it
+    // on a big screen.
+    orientation: "default",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     splash: {
@@ -18,6 +22,7 @@ module.exports = {
     // version matches — bump `version` whenever a change requires a new build.
     // 1.2.0 = Expo SDK 58 / React Native 0.88: an update built on it must never
     // reach a 1.1.x (SDK 54) binary.
+    // 1.3.0 = adds expo-screen-orientation (native module, iPhone Duo).
     runtimeVersion: {
       policy: "appVersion",
     },
@@ -32,7 +37,7 @@ module.exports = {
       bundleIdentifier: "com.buildpro.mobile",
       // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
       usesAppleSignIn: true,
-      buildNumber: "18",
+      buildNumber: "19",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -43,7 +48,7 @@ module.exports = {
         backgroundColor: "#7C6B86",
       },
       package: "com.buildpro.mobile",
-      versionCode: 15,
+      versionCode: 16,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
@@ -58,6 +63,7 @@ module.exports = {
       "expo-web-browser",
       "expo-sharing",
       "expo-status-bar",
+      ["expo-screen-orientation", { initialOrientation: "PORTRAIT_UP" }],
       "expo-font",
       "expo-notifications",
       "expo-apple-authentication",

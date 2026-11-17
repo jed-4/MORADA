@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme, darkTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 interface ScopeStage {
   id: string;
   name: string;
@@ -283,7 +284,7 @@ const colors = {
         keyExtractor={item => item.id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         stickySectionHeadersEnabled
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, readableFrame]}
         renderSectionHeader={({ section }) => {
           const isCollapsed = collapsedStages.has(section.stage.id);
           return (

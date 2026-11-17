@@ -18,6 +18,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -208,7 +209,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]}>
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Push notifications</Text>
           <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>

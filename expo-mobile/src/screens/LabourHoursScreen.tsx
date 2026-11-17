@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 interface LabourHoursRow {
   id: string;
@@ -227,7 +228,7 @@ export default function LabourHoursScreen({ route }: Props) {
         sections={sections}
         keyExtractor={item => item.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         renderSectionHeader={({ section }) => {
           const tone = toneFor(section.budgeted, section.used);

@@ -13,6 +13,8 @@ import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { useTheme } from '../theme';
 import { navigationIntegration } from '../lib/sentry';
+import { useOrientationPolicy } from '../lib/orientation';
+import { useRestoredNavigationState } from './navigationPersistence';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -371,8 +373,12 @@ export default function AppNavigator() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useTheme();
+  // Phones stay portrait; the Duo unfolded may rotate.
+  useOrientationPolicy();
+  // Reopen where you were (same tab, project and screen) after a relaunch.
+  const nav = useRestoredNavigationState(isAuthenticated && !isClient ? user?.id : undefined, isLoading);
 
-  if (isLoading) {
+  if (isLoading || !nav.ready) {
     // Match the app background while the stored session is validated,
     // instead of flashing a blank white frame.
     return (
@@ -385,6 +391,8 @@ export default function AppNavigator() {
   return (
     <NavigationContainer
       ref={navigationRef}
+      initialState={nav.initialState}
+      onStateChange={nav.save}
       onReady={() => {
         navigationIntegration.registerNavigationContainer(navigationRef);
       }}

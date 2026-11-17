@@ -25,6 +25,7 @@ import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
 import { useTheme, lightTheme, darkTheme } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 const BUSINESS_ID = '__business__';
 
@@ -1333,7 +1334,7 @@ export default function TimesheetsScreen() {
       {viewMode === 'list' ? (
         <FlatList
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, readableFrame]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           data={filteredTimesheets}
           keyExtractor={item => item.id}
