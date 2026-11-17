@@ -85,7 +85,6 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
   const { user } = useAuth();
   // The Selections tile is only offered to roles that can view selections.
   const canViewSelections = usePermission('projects.selections');
-  const canDoPrestarts = usePermission('assets.prestart', 'add');
 
   const sheetRef = useRef<SheetRef>(null);
   const taskSheetRef = useRef<SheetRef>(null);
@@ -200,7 +199,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
           <SectionHeader title="Workspace" />
           <View style={styles.grid}>
             {workspaceItems
-              .filter((tile) => (tile.id !== 'selections' || canViewSelections) && (tile.id !== 'prestart' || canDoPrestarts))
+              .filter((tile) => tile.id !== 'selections' || canViewSelections)
               .map((tile) => (
               <Tile
                 key={tile.id}

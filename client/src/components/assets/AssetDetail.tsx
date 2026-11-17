@@ -48,7 +48,6 @@ import {
   type MeterType,
 } from "@shared/assets";
 import { AssetDialog, ComplianceDialog, EventDialog, ScheduleDialog, type EventPreset } from "./AssetDialogs";
-import { PrestartDefectBanner, PrestartsSection } from "./AssetPrestarts";
 import { AssetCostsSection } from "./AssetCosts";
 import {
   ASSIGNABLE_USERS_KEY,
@@ -433,8 +432,6 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         )}
       </div>
 
-      <PrestartDefectBanner asset={asset} prestarts={asset.prestarts ?? []} canEdit={canEdit} />
-
       {/* Details: only what's filled in */}
       <Card className="px-3 py-2.5" data-testid="card-asset-details">
         <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
@@ -582,8 +579,6 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         </div>
 
         <div className="flex flex-col gap-3 min-w-0">
-          <PrestartsSection asset={asset} prestarts={asset.prestarts ?? []} />
-
           {/* Documents */}
           <Section
             icon={FileText}
