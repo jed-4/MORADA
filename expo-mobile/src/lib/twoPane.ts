@@ -62,11 +62,15 @@ export function useTwoPaneSelection<P extends object>({ navigation, route, detai
   }, []);
 
   // Folded with something open on the right → keep it showing.
-  const wasWide = useRef(isWide);
-  useEffect(() => {
-    if (wasWide.current && !isWide && selectedId) setHeldOnFold(true);
-    wasWide.current = isWide;
-  }, [isWide, selectedId]);
+  // Detected DURING RENDER (React's "adjust state when a prop changes"
+  // pattern), not in an effect: an effect runs after the folded frame is
+  // committed, and in that frame TwoPane would drop the detail — unmounting it
+  // and losing a half-typed comment — before remounting it a frame later.
+  const [prevWide, setPrevWide] = useState(isWide);
+  if (prevWide !== isWide) {
+    setPrevWide(isWide);
+    if (prevWide && !isWide && selectedId) setHeldOnFold(true);
+  }
 
   // Unfolded on the detail screen → it popped back here with its id.
   const handedBack = route?.params?.[TWO_PANE_SELECT_PARAM] as string | undefined;
