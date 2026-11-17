@@ -26,6 +26,9 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
+import { TwoPane } from '../components/ui/TwoPane';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
 interface Project {
   id: string;
   name: string;
@@ -147,6 +150,9 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const { user } = useAuth();
+  // Big screen (Duo unfolded): checklists on the left, the open checklist's
+  // items on the right. Phone: items expand inline under the card, as before.
+  const { isWide } = useLayout();
 
   const theme = useTheme();
 const colors = {
@@ -227,6 +233,9 @@ const colors = {
   }, [itemsByInstance]);
 
   const toggleExpand = (instanceId: string) => {
+    // Side by side, tapping the open checklist again keeps it open (there is
+    // nothing inline to collapse); on a phone it folds the card shut.
+    if (expandedId === instanceId && isWide) return;
     if (expandedId === instanceId) {
       setExpandedId(null);
     } else {
@@ -590,14 +599,12 @@ const colors = {
     );
   };
 
-  const renderInstance = (instance: ChecklistInstance) => {
-    const isExpanded = expandedId === instance.id;
-    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
-    const statusColor = statusColors[instance.status] || theme.textMuted;
-
-    const items = itemsByInstance[instance.id] || [];
+  // Expand/Collapse All for one checklist's groups. Shared by the inline card
+  // (phone) and the right-hand panel header (big screen).
+  const groupCollapseFor = (instanceId: string) => {
+    const items = itemsByInstance[instanceId] || [];
     const { groups: instanceGroups } = groupItems(items);
-    const groupKeys = Object.keys(instanceGroups).map(g => `${instance.id}:${g}`);
+    const groupKeys = Object.keys(instanceGroups).map(g => `${instanceId}:${g}`);
     const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
     const hasGroups = groupKeys.length > 1;
 
@@ -609,9 +616,24 @@ const colors = {
         return updated;
       });
     };
+    return { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups };
+  };
+
+  const renderInstance = (instance: ChecklistInstance) => {
+    const isExpanded = expandedId === instance.id;
+    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
+    const statusColor = statusColors[instance.status] || theme.textMuted;
+
+    const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
 
     return (
-      <View key={instance.id} style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        key={instance.id}
+        style={[
+          styles.instanceCard,
+          { backgroundColor: colors.card, borderColor: isWide && isExpanded ? colors.accent : colors.border },
+        ]}
+      >
         <TouchableOpacity
           style={styles.instanceHeader}
           onPress={() => toggleExpand(instance.id)}
@@ -661,10 +683,14 @@ const colors = {
           <View style={styles.expandIndicatorRow}>
             <View style={styles.expandIndicatorSpacer} />
             <View style={styles.expandIndicatorCenter}>
-              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+              <Ionicons
+                name={isWide ? 'chevron-forward' : isExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={isWide && isExpanded ? colors.accent : colors.muted}
+              />
             </View>
             <View style={styles.expandIndicatorRight}>
-              {isExpanded && hasGroups && (
+              {isExpanded && hasGroups && !isWide && (
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
                   style={styles.collapseAllBelowBtn}
@@ -681,8 +707,67 @@ const colors = {
           </View>
         </TouchableOpacity>
 
-        {isExpanded && renderExpandedItems(instance.id)}
+        {/* Big screen: the items show in the right-hand panel instead. */}
+        {isExpanded && !isWide && renderExpandedItems(instance.id)}
       </View>
+    );
+  };
+
+  // Right-hand panel on a big screen: the open checklist's items. Rows are
+  // stateless (their data lives in this screen), so showing them here or
+  // inline under the card on fold/unfold loses nothing.
+  const renderDetail = () => {
+    const instance = expandedId ? instances.find(i => i.id === expandedId) : undefined;
+    if (!instance) return null;
+    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
+    const statusColor = statusColors[instance.status] || theme.textMuted;
+    const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
+    return (
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, readableFrame]}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+      >
+        <View style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.instanceHeader}>
+            <View style={styles.instanceTop}>
+              <View style={styles.instanceTitleRow}>
+                <Text style={[styles.detailTitle, { color: colors.text }]}>{instance.name}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                    {statusLabels[instance.status] || instance.status}
+                  </Text>
+                </View>
+              </View>
+              {!!instance.description && (
+                <Text style={[styles.instanceDesc, { color: colors.secondary }]}>{instance.description}</Text>
+              )}
+            </View>
+            <View style={styles.progressSection}>
+              <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? '#22c55e' : colors.accent }]} />
+              </View>
+              <Text style={[styles.progressText, { color: colors.secondary }]}>
+                {instance.completedCount}/{instance.totalCount} completed
+              </Text>
+            </View>
+            {hasGroups && (
+              <TouchableOpacity
+                onPress={toggleAllInstanceGroups}
+                style={[styles.collapseAllBelowBtn, { alignSelf: 'flex-end', marginTop: 6 }]}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+                <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+                  {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {renderExpandedItems(instance.id)}
+        </View>
+      </ScrollView>
     );
   };
 
@@ -740,22 +825,31 @@ const colors = {
         </ScrollView>
       )}
 
-      <FlatList
-        data={instances}
-        keyExtractor={inst => inst.id}
-        renderItem={({ item }) => renderInstance(item)}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        automaticallyAdjustContentInsets={false}
-        contentInsetAdjustmentBehavior="never"
-        ListEmptyComponent={
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
-            <Text style={[styles.emptyDesc, { color: colors.secondary }]}>
-              {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
-            </Text>
-          </View>
+      {/* Always wrapped in TwoPane so the list keeps its place in the tree —
+          folding/unfolding never remounts it (scroll position survives). */}
+      <TwoPane
+        emptyTitle="Select a checklist"
+        emptyIcon="checkmark-done-outline"
+        detail={renderDetail()}
+        list={
+          <FlatList
+            data={instances}
+            keyExtractor={inst => inst.id}
+            renderItem={({ item }) => renderInstance(item)}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+            automaticallyAdjustContentInsets={false}
+            contentInsetAdjustmentBehavior="never"
+            ListEmptyComponent={
+              <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
+                <Text style={[styles.emptyDesc, { color: colors.secondary }]}>
+                  {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
+                </Text>
+              </View>
+            }
+          />
         }
       />
 
@@ -1031,6 +1125,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   instanceName: { fontSize: 15, fontWeight: '600', flex: 1 },
+  detailTitle: { fontSize: 18, fontWeight: '700', flex: 1 },
   statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: '600' },
   instanceDesc: { fontSize: 12, marginTop: 4 },
