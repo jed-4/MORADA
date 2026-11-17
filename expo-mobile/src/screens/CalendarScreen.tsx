@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -39,7 +39,7 @@ import {
   type EventsByDay,
 } from '../components/calendar/shared';
 import { FeedView } from '../components/calendar/FeedView';
-import { WeekView, useWeekColWidth, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS } from '../components/calendar/WeekView';
+import { WeekView, useWeekColWidth, useWeekVisibleDays, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS_WIDE } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
 import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
 import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
@@ -209,6 +209,9 @@ export default function CalendarScreen({ navigation }: Props) {
 
   // Follows the screen size (fold/unfold) — must match WeekView's columns.
   const GRID_COL_WIDTH = useWeekColWidth();
+  // 3 on a phone, 7 (a whole Mon–Sun week) on a wide screen. Changes live.
+  const WEEK_VISIBLE = useWeekVisibleDays();
+  const isFullWeek = WEEK_VISIBLE >= WEEK_VISIBLE_DAYS_WIDE;
 
   const todayWeekIndex = useMemo(() => {
     const today = new Date();
@@ -216,9 +219,25 @@ export default function CalendarScreen({ navigation }: Props) {
     return weekDays.findIndex(d => isSameDay(d, today));
   }, [weekDays]);
 
+  /** Index (in weekDays) of the Monday on or before day `idx`. May be < 0. */
+  const mondayIndexOf = useCallback((idx: number) => {
+    const i = Math.max(0, Math.min(weekDays.length - 1, Math.round(idx)));
+    return i - ((weekDays[i].getDay() + 6) % 7);
+  }, [weekDays]);
+
+  /** Left-most visible day for "today": phone shows yesterday|today|tomorrow,
+   *  the full-week view starts on this week's Monday. */
+  const todayLeftIndex = useCallback(
+    (visible: number) => (visible >= WEEK_VISIBLE_DAYS_WIDE ? mondayIndexOf(todayWeekIndex) : todayWeekIndex - 1),
+    [mondayIndexOf, todayWeekIndex],
+  );
+
   // Initialise to the real starting offset so secondary refs sync correctly
   // even before the first onScroll event fires from weekScrollRef.
-  const weekScrollOffset = useRef(Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH));
+  const weekScrollOffset = useRef(Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH));
+  // The same position in DAYS (fractional). Pixels go stale when a fold or
+  // unfold changes the column width; days don't, so this is what we restore.
+  const weekLeftDay = useRef(weekScrollOffset.current / GRID_COL_WIDTH);
 
   const buildDateRange = useCallback(() => {
     const now = new Date();
@@ -603,7 +622,48 @@ export default function CalendarScreen({ navigation }: Props) {
     const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * GRID_COL_WIDTH));
     weekScrollRef.current?.scrollTo({ x: clamped, animated });
     weekScrollOffset.current = clamped;
+    weekLeftDay.current = clamped / GRID_COL_WIDTH;
   };
+
+  // Fold/unfold: the column width (and maybe the 3↔7 day count) just changed,
+  // so the old pixel offset points at a different day. Re-scroll to the same
+  // day instead of letting the view drift or jump back to today. Layout effect
+  // so it lands before the resized grid is painted.
+  const prevWeekLayout = useRef({ col: GRID_COL_WIDTH, visible: WEEK_VISIBLE });
+  useLayoutEffect(() => {
+    const prev = prevWeekLayout.current;
+    if (prev.col === GRID_COL_WIDTH && prev.visible === WEEK_VISIBLE) return;
+    prevWeekLayout.current = { col: GRID_COL_WIDTH, visible: WEEK_VISIBLE };
+    let left = weekLeftDay.current;
+    if (prev.visible !== WEEK_VISIBLE) {
+      // Keep the day the user was looking at on screen: today if it was
+      // visible, otherwise the middle visible day.
+      const prevLeft = Math.round(left);
+      const todayVisible = todayWeekIndex >= prevLeft && todayWeekIndex < prevLeft + prev.visible;
+      const focus = todayVisible ? todayWeekIndex : prevLeft + Math.floor(prev.visible / 2);
+      left = WEEK_VISIBLE >= WEEK_VISIBLE_DAYS_WIDE ? mondayIndexOf(focus) : focus - Math.floor(WEEK_VISIBLE / 2);
+    }
+    scrollWeekTo(left * GRID_COL_WIDTH, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [GRID_COL_WIDTH, WEEK_VISIBLE]);
+
+  // Where the week ScrollView starts when it mounts. Recomputed only when the
+  // column width or view mode changes (NOT every render — it's a contentOffset
+  // prop, and the minute tick re-renders WeekView), from the day ref above.
+  const weekInitialOffset = useMemo(
+    () => Math.max(0, weekLeftDay.current * GRID_COL_WIDTH),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [GRID_COL_WIDTH, viewMode],
+  );
+
+  // Full-week view pages a week at a time, landing on Mondays. The phone has
+  // no snapping (unchanged).
+  const weekSnapOffsets = useMemo(() => {
+    if (!isFullWeek) return undefined;
+    const offsets: number[] = [];
+    weekDays.forEach((d, i) => { if (d.getDay() === 1) offsets.push(i * GRID_COL_WIDTH); });
+    return offsets;
+  }, [isFullWeek, weekDays, GRID_COL_WIDTH]);
 
   const onNavigateMonth = useCallback((direction: number) => {
     haptic.select();
@@ -620,17 +680,25 @@ export default function CalendarScreen({ navigation }: Props) {
       onNavigateMonth(direction);
     } else if (viewMode === 'week') {
       haptic.select();
-      scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE_DAYS * GRID_COL_WIDTH);
+      if (isFullWeek) {
+        // Whole weeks, Monday-aligned, from the week currently in view.
+        const monday = mondayIndexOf(Math.round(weekLeftDay.current) + Math.floor(WEEK_VISIBLE / 2));
+        scrollWeekTo((monday + direction * 7) * GRID_COL_WIDTH);
+      } else {
+        scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE * GRID_COL_WIDTH);
+      }
     }
-  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH]);
+  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH, isFullWeek, mondayIndexOf, WEEK_VISIBLE]);
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === viewMode) return;
     haptic.select();
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
+      // Mount the week grid already at today (see weekInitialOffset).
+      weekLeftDay.current = Math.max(0, todayLeftIndex(WEEK_VISIBLE));
       setTimeout(() => {
-        const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
+        const x = Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH);
         scrollWeekTo(x, false);
         timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
       }, 50);
@@ -651,7 +719,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setSelectedDate(now);
     setWeekStartDate(getMondayOfWeek(now));
     if (viewMode === 'week') {
-      const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
+      const x = Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH);
       scrollWeekTo(x);
     }
   };
@@ -659,8 +727,9 @@ export default function CalendarScreen({ navigation }: Props) {
   const handleWeekScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     weekScrollOffset.current = offsetX;
+    weekLeftDay.current = offsetX / GRID_COL_WIDTH;
     const leftIndex = Math.round(offsetX / GRID_COL_WIDTH);
-    const centerIndex = Math.min(leftIndex + 1, weekDays.length - 1);
+    const centerIndex = Math.min(leftIndex + Math.floor(WEEK_VISIBLE / 2), weekDays.length - 1);
     const centerDay = weekDays[centerIndex];
     if (centerDay) {
       const monday = getMondayOfWeek(centerDay);
@@ -669,7 +738,7 @@ export default function CalendarScreen({ navigation }: Props) {
         return prev;
       });
     }
-  }, [weekDays, GRID_COL_WIDTH]);
+  }, [weekDays, GRID_COL_WIDTH, WEEK_VISIBLE]);
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
@@ -1039,7 +1108,8 @@ export default function CalendarScreen({ navigation }: Props) {
                 nowMinutes={nowMinutes}
                 anyAllDayEvents={anyAllDayEvents}
                 allDayExpanded={allDayExpanded}
-                initialOffset={Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH)}
+                initialOffset={weekInitialOffset}
+                snapOffsets={weekSnapOffsets}
                 weekScrollRef={weekScrollRef}
                 timeGridScrollRef={timeGridScrollRef}
                 timeLabelScrollRef={timeLabelScrollRef}
