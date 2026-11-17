@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiRequest, uploadPhoto, getAuthedImageSource } from '../services/api';
 
 import { useTheme } from '../theme';
+import type { TextInputInstance } from 'react-native';
 type Props = {
   navigation: any;
   route: any;
@@ -347,7 +348,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [visibility, setVisibility] = useState<'private' | 'team_only' | 'everyone'>('private');
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRefs = useRef<Record<string, TextInput | null>>({});
+  const inputRefs = useRef<Record<string, TextInputInstance | null>>({});
   const blocksRef = useRef(blocks);
   const titleRef = useRef(title);
   const savedNoteIdRef = useRef(savedNoteId);

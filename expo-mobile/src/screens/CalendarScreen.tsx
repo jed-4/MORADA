@@ -39,10 +39,11 @@ import {
   type EventsByDay,
 } from '../components/calendar/shared';
 import { FeedView } from '../components/calendar/FeedView';
-import { WeekView, GRID_COL_WIDTH, HOUR_HEIGHT, WEEK_TOTAL_DAYS } from '../components/calendar/WeekView';
+import { WeekView, useWeekColWidth, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
 import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
 import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
+import type { ScrollViewInstance } from 'react-native';
 
 interface Task {
   id: string;
@@ -186,9 +187,9 @@ export default function CalendarScreen({ navigation }: Props) {
   const createTaskSheetRef = useRef<SheetRef>(null);
   const projectPickerSheetRef = useRef<SheetRef>(null);
 
-  const timeGridScrollRef = useRef<ScrollView>(null);
-  const weekScrollRef = useRef<ScrollView>(null);
-  const timeLabelScrollRef = useRef<ScrollView>(null);
+  const timeGridScrollRef = useRef<ScrollViewInstance>(null);
+  const weekScrollRef = useRef<ScrollViewInstance>(null);
+  const timeLabelScrollRef = useRef<ScrollViewInstance>(null);
 
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
@@ -205,6 +206,9 @@ export default function CalendarScreen({ navigation }: Props) {
       return d;
     });
   }, []);
+
+  // Follows the screen size (fold/unfold) — must match WeekView's columns.
+  const GRID_COL_WIDTH = useWeekColWidth();
 
   const todayWeekIndex = useMemo(() => {
     const today = new Date();
@@ -616,9 +620,9 @@ export default function CalendarScreen({ navigation }: Props) {
       onNavigateMonth(direction);
     } else if (viewMode === 'week') {
       haptic.select();
-      scrollWeekTo(weekScrollOffset.current + direction * 3 * GRID_COL_WIDTH);
+      scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE_DAYS * GRID_COL_WIDTH);
     }
-  }, [viewMode, onNavigateMonth]);
+  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH]);
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === viewMode) return;
@@ -665,7 +669,7 @@ export default function CalendarScreen({ navigation }: Props) {
         return prev;
       });
     }
-  }, [weekDays]);
+  }, [weekDays, GRID_COL_WIDTH]);
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
