@@ -1782,7 +1782,7 @@ function getDefaultActionsForRole(
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
       'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
-      'business.assets', 'business.asset_costs', 'assets.prestart',
+      'business.assets', 'business.asset_costs',
       'operations.tasks', 'operations.library', 'operations.workflows',
     ];
     for (const key of keys) grantAll(key);
@@ -1814,7 +1814,6 @@ function getDefaultActionsForRole(
     // and anyone handed a task should be able to open its SOP.
     grant('operations.tasks', ['view']);
     grant('operations.library', ['view']);
-    grant('assets.prestart', ['view', 'add']);
     return result;
   }
 
@@ -2038,7 +2037,6 @@ export class MemStorage implements IStorage {
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
-      { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7311,7 +7309,6 @@ export class DbStorage implements IStorage {
       { key: "business.cashflow", name: "Cashflow Forecast", description: "See the cashflow forecast and manage business expenses and what-ifs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.assets", name: "Asset Register", description: "Vehicles, trailers, plant and tools: rego, insurance, servicing and who has them", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.asset_costs", name: "Asset Costs", description: "See what vehicles and plant cost: purchase price, finance, day rates, renewal and service costs, running costs and job charges", category: "business", actions: ["view"], isBuiltIn: true },
-      { key: "assets.prestart", name: "Pre-start checks", description: "Do vehicle and plant pre-start checks on the phone and see the asset list for them", category: "operations", actions: ["view", "add"], isBuiltIn: true },
       { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -7394,7 +7391,6 @@ export class DbStorage implements IStorage {
     await this.backfillClientPortalAccessGrants(createdKeys);
     await this.backfillAssetRegisterGrants(createdKeys);
     await this.backfillOperationsGrants(createdKeys);
-    await this.backfillPrestartGrants(createdKeys);
     await this.backfillAssetCostGrants(createdKeys);
   }
 
@@ -7440,56 +7436,6 @@ export class DbStorage implements IStorage {
       }
     } catch (error) {
       console.error("Database error in backfillAssetCostGrants:", error);
-    }
-  }
-
-  /**
-   * Pre-starts are done by whoever drives the ute, so the new key mirrors the
-   * people who already log their own hours: any non-client role holding
-   * timesheets.manage "add" gets assets.prestart view + add. Same once-only
-   * rule as the other backfills.
-   */
-  private async backfillPrestartGrants(createdKeys: Set<string>): Promise<void> {
-    if (!createdKeys.has("assets.prestart")) return;
-
-    try {
-      const allPermissions = await db.select().from(schema.permissions);
-      const prestartId = allPermissions.find((p) => p.key === "assets.prestart")?.id;
-      const timesheetsId = allPermissions.find((p) => p.key === "timesheets.manage")?.id;
-      if (!prestartId || !timesheetsId) return;
-
-      const sourceGrants = await db.select().from(schema.rolePermissions)
-        .where(eq(schema.rolePermissions.permissionId, timesheetsId));
-      if (sourceGrants.length === 0) return;
-
-      const roles = await db.select().from(schema.userRoles)
-        .where(inArray(schema.userRoles.id, sourceGrants.map((g) => g.roleId)));
-      const categoryByRole = new Map(roles.map((r) => [r.id, r.userCategory]));
-
-      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
-        .from(schema.rolePermissions)
-        .where(eq(schema.rolePermissions.permissionId, prestartId));
-      const alreadyHeld = new Set(existing.map((e) => e.roleId));
-
-      let granted = 0;
-      for (const grant of sourceGrants) {
-        if (categoryByRole.get(grant.roleId) === "client") continue;
-        if (alreadyHeld.has(grant.roleId)) continue;
-        const held = Array.isArray(grant.allowedActions) ? (grant.allowedActions as string[]) : [];
-        if (!held.includes("add")) continue;
-        await db.insert(schema.rolePermissions).values({
-          roleId: grant.roleId,
-          permissionId: prestartId,
-          allowedActions: ["view", "add"] as any,
-        });
-        alreadyHeld.add(grant.roleId);
-        granted++;
-      }
-      if (granted > 0) {
-        console.log(`[permissions] assets.prestart granted to ${granted} role(s), mirroring timesheets.manage`);
-      }
-    } catch (error) {
-      console.error("Database error in backfillPrestartGrants:", error);
     }
   }
 

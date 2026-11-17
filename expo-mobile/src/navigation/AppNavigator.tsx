@@ -3,13 +3,13 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Linking, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
 import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
-import { navigationRef, navigateFromPush, openPrestartFromUrl } from './navigationRef';
+import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { useTheme } from '../theme';
 import { navigationIntegration } from '../lib/sentry';
@@ -43,8 +43,6 @@ import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 import LabourHoursScreen from '../screens/LabourHoursScreen';
-import PrestartListScreen from '../screens/PrestartListScreen';
-import PrestartScreen from '../screens/PrestartScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -213,8 +211,6 @@ function MoreStack() {
       <Stack.Screen name="Notes" component={NotesListScreen} options={moreHeader('Notes')} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SelectionsProjects" component={SelectionsProjectsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="PrestartList" component={PrestartListScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Prestart" component={PrestartScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
@@ -240,19 +236,6 @@ function MainTabs() {
     await setAppBadgeCount(count || 0);
   };
   usePolling(syncBadge, 60000);
-
-  // Pre-start QR stickers: the phone camera opens buildpro://prestart/<id>.
-  // MainTabs only mounts once signed in, so a scan while logged out lands
-  // here after login via getInitialURL.
-  useEffect(() => {
-    Linking.getInitialURL()
-      .then((url) => setTimeout(() => openPrestartFromUrl(url), 400))
-      .catch(() => {});
-    const sub = Linking.addEventListener('url', ({ url }) => {
-      openPrestartFromUrl(url);
-    });
-    return () => sub.remove();
-  }, []);
 
   // Route notification taps to the right screen.
   useEffect(() => {

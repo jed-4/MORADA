@@ -18,7 +18,6 @@ import {
   MANUAL_EVENT_KINDS,
   ASSET_DOCUMENT_CATEGORIES,
   AU_STATES,
-  PRESTART_RESULTS,
 } from "./assets";
 import { minuteAttendeeSchema } from "./minuteAttendees";
 
@@ -9803,25 +9802,25 @@ export const insertAssetDocumentSchema = createInsertSchema(assetDocuments).omit
 export type AssetDocument = typeof assetDocuments.$inferSelect;
 
 /**
- * A pre-start check (migration 0114), done on the phone before using the
- * asset. `results` holds one answer per template item; the template is
- * recorded so a later change to the checklist can't rewrite history.
+ * Pre-start checks were REMOVED from the app (2026-11-17, Jed). The table from
+ * migration 0114 is declared here only because it still exists in the
+ * database with whatever checks were already saved; nothing reads or writes
+ * it. Dropping it is a separate, deliberate migration.
  */
 export const assetPrestarts = pgTable("asset_prestarts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
-  checkedAt: timestamp("checked_at").notNull(), // when it was done (may be earlier than sync, offline)
-  date: text("date").notNull(), // 'YYYY-MM-DD' in Sydney, for "done today?"
-  templateKey: text("template_key").notNull(), // PRESTART_TEMPLATE_KEYS
+  checkedAt: timestamp("checked_at").notNull(),
+  date: text("date").notNull(),
+  templateKey: text("template_key").notNull(),
   meter: integer("meter"),
-  results: jsonb("results").notNull().default([]), // PrestartAnswer[]
-  photos: jsonb("photos").notNull().default([]), // /objects/company/<companyId>/... paths
+  results: jsonb("results").notNull().default([]),
+  photos: jsonb("photos").notNull().default([]),
   hasDefect: boolean("has_defect").notNull().default(false),
-  // The checker said "not safe to use", or a critical item failed.
   unsafe: boolean("unsafe").notNull().default(false),
-  defectStatus: text("defect_status"), // null | "open" | "fixed"
+  defectStatus: text("defect_status"),
   defectFixedAt: timestamp("defect_fixed_at"),
   defectFixedById: varchar("defect_fixed_by_id").references(() => users.id, { onDelete: "set null" }),
   defectFixNotes: text("defect_fix_notes"),
@@ -9832,25 +9831,6 @@ export const assetPrestarts = pgTable("asset_prestarts", {
   assetCheckedIdx: index("asset_prestarts_asset_checked_idx").on(table.assetId, table.checkedAt),
   companyDefectIdx: index("asset_prestarts_company_defect_idx").on(table.companyId, table.defectStatus),
 }));
-
-export const prestartAnswerSchema = z.object({
-  key: z.string().min(1),
-  result: z.enum(PRESTART_RESULTS),
-  note: z.string().trim().max(500).nullable().optional(),
-});
-
-/** POST /api/assets/:id/prestarts — what the phone sends. Everything else is the server's. */
-export const submitPrestartSchema = z.object({
-  results: z.array(prestartAnswerSchema).min(1).max(40),
-  meter: z.number().int().min(0).nullable().optional(),
-  photos: z.array(z.string().startsWith("/objects/")).max(8).optional(),
-  unsafe: z.boolean().optional(),
-  notes: z.string().trim().max(2000).nullable().optional(),
-  signedName: z.string().trim().min(1, "Sign with your name").max(120),
-  /** When it was done, if it was queued offline. Clamped by the server. */
-  checkedAt: z.string().datetime().optional(),
-});
-export type AssetPrestart = typeof assetPrestarts.$inferSelect;
 
 /**
  * The asset is on a job for these days (migration 0116). Charges the job its
@@ -9909,7 +9889,6 @@ export type AssetListRow = Asset & {
 export type AssetDetail = AssetListRow & {
   events: AssetEvent[];
   documents: AssetDocument[];
-  prestarts: AssetPrestart[];
 };
 
 // ── Project files (migration 0129) ───────────────────────────────────────────
