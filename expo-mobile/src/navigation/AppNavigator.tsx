@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Linking, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -160,6 +160,33 @@ function MessagesStack() {
   );
 }
 
+/**
+ * Header for a More-menu screen that uses the stack's own header.
+ *
+ * The More panel opens these with navigate('More', { screen }), which makes the
+ * screen the ONLY route in this stack — so the native header has nothing to go
+ * back to and draws no back button (Schedule, Checklists, Notes had none).
+ * When the screen is the stack's first route we draw a back chevron ourselves;
+ * goBack() then falls through to the tab navigator, the same place the
+ * More screens with their own headers (Tasks, Timesheets...) already go.
+ */
+function moreHeader(title: string) {
+  return ({ navigation, route }: { navigation: any; route: { key: string } }) => {
+    const isFirst = navigation.getState()?.routes?.[0]?.key === route.key;
+    return {
+      headerShown: true,
+      title,
+      headerLeft: isFirst
+        ? ({ tintColor }: { tintColor?: string }) => (
+            <Pressable onPress={() => navigation.goBack()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={24} color={tintColor} />
+            </Pressable>
+          )
+        : undefined,
+    };
+  };
+}
+
 function MoreStack() {
   const theme = useTheme();
 
@@ -178,12 +205,12 @@ function MoreStack() {
       }}
     >
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
-      <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
-      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
+      <Stack.Screen name="Schedule" component={ScheduleScreen} options={moreHeader('Schedule')} />
+      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={moreHeader('Checklists')} />
       <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Timesheets" component={TimesheetsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
+      <Stack.Screen name="Notes" component={NotesListScreen} options={moreHeader('Notes')} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SelectionsProjects" component={SelectionsProjectsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="PrestartList" component={PrestartListScreen} options={{ headerShown: false }} />

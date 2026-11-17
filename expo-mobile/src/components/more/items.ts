@@ -54,7 +54,6 @@ export const workspaceItems: MoreTile[] = [
   { id: 'schedule', label: 'Schedule', icon: 'calendar', color: 'rose', action: { type: 'more-screen', screen: 'Schedule' } },
   // Shown only to roles that can view selections (MorePanel filters it).
   { id: 'selections', label: 'Selections', icon: 'color-palette', color: 'teal', action: { type: 'more-screen', screen: 'SelectionsProjects' } },
-  { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: 'teal', action: { type: 'tab', tab: 'Messages' }, showUnreadBadge: true },
 ];
 
 export const createItems: MoreTile[] = [
