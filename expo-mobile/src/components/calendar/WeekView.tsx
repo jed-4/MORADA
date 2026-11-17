@@ -1,6 +1,5 @@
 import { memo, useState, type RefObject } from 'react';
 import {
-  Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -13,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { fontSize, fontWeight, radius, type Theme } from '../../theme';
 import { toLocalDateStr } from '../../lib/dates';
+import { useLayout } from '../../lib/useLayout';
 import {
   DAY_NAMES,
   formatTimeShort,
@@ -28,10 +28,20 @@ import type { ScrollViewInstance } from 'react-native';
 // Scrolling 28-day time grid. Receives pre-bucketed eventsByDay and the
 // minute tick (nowMinutes) — the only view that re-renders on the tick.
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 export const HOUR_HEIGHT = 56;
 export const TIME_LABEL_WIDTH = 50;
-export const GRID_COL_WIDTH = Math.floor((SCREEN_WIDTH - TIME_LABEL_WIDTH) / 3);
+/** How many day columns fit on screen at once. */
+export const WEEK_VISIBLE_DAYS = 3;
+
+/**
+ * Width of one day column. A hook (not a constant) because the screen can
+ * change size while the app runs — fold/unfold on a foldable. CalendarScreen
+ * reads the same hook for its scroll maths, so the two always agree.
+ */
+export function useWeekColWidth(): number {
+  const { width } = useLayout();
+  return Math.floor((width - TIME_LABEL_WIDTH) / WEEK_VISIBLE_DAYS);
+}
 export const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
 export const MIN_EVENT_HEIGHT = 24;
 export const DAY_HEADER_HEIGHT = 56;
@@ -80,6 +90,7 @@ function WeekViewInner({
   isEmpty,
 }: WeekViewProps) {
   const [allDayRowHeight, setAllDayRowHeight] = useState(0);
+  const GRID_COL_WIDTH = useWeekColWidth();
   const dayColsWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH;
 
   return (

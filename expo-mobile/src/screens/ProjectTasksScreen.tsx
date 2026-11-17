@@ -14,7 +14,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
   Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -29,6 +28,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme, lightTheme } from '../theme';
+import { useLayout } from '../lib/useLayout';
 interface Task {
   id: string;
   title: string;
@@ -123,6 +123,7 @@ function isOverdue(dateStr?: string): boolean {
 }
 
 export default function ProjectTasksScreen({ navigation, route }: Props) {
+  const { width: screenWidth } = useLayout();
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -503,7 +504,6 @@ const colors = {
     );
   };
 
-  const screenWidth = Dimensions.get('window').width;
   const columnWidth = Math.max(screenWidth * 0.68, 240);
 
   // ─── Loading ─────────────────────────────────────────────────────────────────

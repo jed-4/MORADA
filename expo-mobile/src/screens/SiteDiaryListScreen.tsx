@@ -10,7 +10,6 @@ import {
   Alert,
   Animated,
   PanResponder,
-  Dimensions,
   Modal,
   TextInput,
   KeyboardAvoidingView,
@@ -35,6 +34,7 @@ import { toLocalDateStr, dateStrOf, localDayISOString } from '../lib/dates';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
+import { useLayout } from '../lib/useLayout';
 interface TemplateField {
   id: string;
   title: string;
@@ -189,7 +189,6 @@ type FeedItem =
   | { type: 'entry'; entry: SiteDiaryEntry };
 
 const SWIPE_THRESHOLD = 50;
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function SiteDiaryListScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -250,7 +249,15 @@ const colors = {
     success: theme.statusSuccess,
 };
 
+  // The pan responder below is created once and keeps the first goToDay it
+  // saw, so the width is read through a ref — otherwise a fold/unfold would
+  // leave the slide animation using the old screen width.
+  const { width: screenWidth } = useLayout();
+  const screenWidthRef = useRef(screenWidth);
+  screenWidthRef.current = screenWidth;
+
   const goToDay = useCallback((direction: number) => {
+    const SCREEN_WIDTH = screenWidthRef.current;
     const toValue = direction > 0 ? -SCREEN_WIDTH : SCREEN_WIDTH;
     Animated.timing(translateX, { toValue, duration: 150, useNativeDriver: true }).start(() => {
       setCurrentDate(prev => {

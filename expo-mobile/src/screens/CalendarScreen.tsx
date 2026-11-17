@@ -39,7 +39,7 @@ import {
   type EventsByDay,
 } from '../components/calendar/shared';
 import { FeedView } from '../components/calendar/FeedView';
-import { WeekView, GRID_COL_WIDTH, HOUR_HEIGHT, WEEK_TOTAL_DAYS } from '../components/calendar/WeekView';
+import { WeekView, useWeekColWidth, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
 import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
 import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
@@ -206,6 +206,9 @@ export default function CalendarScreen({ navigation }: Props) {
       return d;
     });
   }, []);
+
+  // Follows the screen size (fold/unfold) — must match WeekView's columns.
+  const GRID_COL_WIDTH = useWeekColWidth();
 
   const todayWeekIndex = useMemo(() => {
     const today = new Date();
@@ -617,9 +620,9 @@ export default function CalendarScreen({ navigation }: Props) {
       onNavigateMonth(direction);
     } else if (viewMode === 'week') {
       haptic.select();
-      scrollWeekTo(weekScrollOffset.current + direction * 3 * GRID_COL_WIDTH);
+      scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE_DAYS * GRID_COL_WIDTH);
     }
-  }, [viewMode, onNavigateMonth]);
+  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH]);
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === viewMode) return;
@@ -666,7 +669,7 @@ export default function CalendarScreen({ navigation }: Props) {
         return prev;
       });
     }
-  }, [weekDays]);
+  }, [weekDays, GRID_COL_WIDTH]);
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
