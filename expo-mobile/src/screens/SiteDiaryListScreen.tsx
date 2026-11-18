@@ -22,7 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
+import { apiFetch, apiRequest, API_BASE_URL, isPermanentError } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -41,6 +41,14 @@ import { readableFrame } from '../components/ui/ReadableColumn';
 import { DiaryPhotoGallery, DiaryPhotoViewer } from '../components/diary/DiaryPhotos';
 import { useDirtyGuard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
+import { haptic } from '../lib/haptics';
+import { PhotoUploadError } from '../lib/photosUpload';
+import { useDiaryPhotos, collectLocalPhotoUris, mapPhotoUris, isLocalPhotoUri } from '../components/diary/useDiaryPhotos';
+import { DiaryFormPhoto, DIARY_FORM_THUMB } from '../components/diary/DiaryFormPhoto';
+import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
+import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
+import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
+import { BottomActionBar, BOTTOM_ACTION_BAR_HEIGHT } from '../components/form/BottomActionBar';
 interface TemplateField {
   id: string;
   title: string;
@@ -239,6 +247,20 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
 
+  // Per-photo upload progress / Retry / "Waiting to send" + Mark up.
+  const diaryPhotos = useDiaryPhotos();
+  // New entries: fill the template's weather fields from the site forecast
+  // once a project is picked.
+  const weatherPrefill = useDiaryWeatherPrefill(setFormFieldValues);
+  // Return key "Next": title, then the template's typed fields in order.
+  const focusChain = useFieldFocusChain([
+    'title',
+    ...[...(activeTemplate?.fields || [])]
+      .sort((a, b) => a.order - b.order)
+      .filter(f => f.type === 'text' || f.type === 'textarea' || f.type === 'number' || f.type === 'date')
+      .map(f => f.id),
+  ]);
+
   const translateX = useRef(new Animated.Value(0)).current;
 
   const theme = useTheme();
@@ -281,7 +303,8 @@ const colors = {
   const cancelEntryModal = () => entryDirty.guard(closeEntryModal);
   // Scrolls the focused field back above the keyboard (the KeyboardAvoidingView
   // shrinks the form but doesn't scroll to the field you tapped).
-  const entryKb = useKeyboardAwareScroll({ extraSpace: 24 });
+  // Extra room for the Save bar pinned above the keyboard.
+  const entryKb = useKeyboardAwareScroll({ extraSpace: 24 + BOTTOM_ACTION_BAR_HEIGHT });
 
   // Duo unfolded: short form fields pair up two per row. Only these styles
   // change with the fold — the tree doesn't — so half-typed fields survive it.
@@ -657,6 +680,8 @@ const colors = {
     setFormOverallPhotos([]);
     setIsEditMode(false);
     setSelectedEntry(null);
+    diaryPhotos.reset();
+    weatherPrefill.cancel();
   };
 
   const applyTemplateDefaults = (t: SiteDiaryTemplate | null) => {
@@ -688,6 +713,8 @@ const colors = {
     applyTemplateDefaults(t);
     if (!isEditMode) {
       setFormTitle(buildDefaultTitle(t, formProjectId));
+      // The defaults above cleared the fields: fill the new template's weather.
+      weatherPrefill.prefill(formProjectId, t.fields);
     }
     setShowTemplatePicker(false);
   };
@@ -712,6 +739,10 @@ const colors = {
     setFormDateTime(entry.entryDateTime);
     setFormFieldValues(entry.fieldValues || {});
     setFormOverallPhotos(entry.overallPhotos || []);
+    // Photos still on this device (an entry saved offline) get upload state;
+    // an entry already in the queue shows them as "Waiting to send".
+    diaryPhotos.reset();
+    diaryPhotos.track(collectLocalPhotoUris(entry), { queued: entry.id.startsWith('_offline_') });
     const entryTemplate = allTemplates.find(t => t.id === entry.templateId) || template;
     setActiveTemplate(entryTemplate);
     setShowDetailModal(false);
@@ -792,9 +823,44 @@ const colors = {
     } else {
       setFormOverallPhotos(prev => [...prev, uri]);
     }
+    // Upload state for its thumbnail (a photo over the field's limit is
+    // tracked but never in the form, so it is never sent).
+    diaryPhotos.track([uri]);
   };
 
+  // Mark up a photo still on this device; the edited copy takes its place.
+  const markupPhotoAt = async (fieldId: string | null, index: number, uri: string) => {
+    const edited = await diaryPhotos.markup(uri);
+    if (!edited) return;
+    const swap = (list: string[]) => list.map((u, i) => (i === index && u === uri ? edited : u));
+    if (fieldId) {
+      setFormFieldValues(prev => ({
+        ...prev,
+        [fieldId]: Array.isArray(prev[fieldId]) ? swap(prev[fieldId]) : prev[fieldId],
+      }));
+    } else {
+      setFormOverallPhotos(prev => swap(prev));
+    }
+  };
+
+  const renderFormPhoto = (fieldId: string | null, uri: string, idx: number) => (
+    <DiaryFormPhoto
+      key={`${idx}:${uri}`}
+      index={idx}
+      imageUri={getPhotoUrl(uri)}
+      item={diaryPhotos.itemFor(uri)}
+      busy={submitting}
+      dangerColor={colors.danger}
+      onRemove={() => removePhoto(fieldId, idx)}
+      onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
+      onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(uri) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
+    />
+  );
+
   const removePhoto = (fieldId: string | null, index: number) => {
+    const list = fieldId ? formFieldValues[fieldId] : formOverallPhotos;
+    const removed = Array.isArray(list) ? list[index] : undefined;
+    if (typeof removed === 'string') diaryPhotos.untrack(removed);
     if (fieldId) {
       setFormFieldValues(prev => {
         const current = Array.isArray(prev[fieldId]) ? [...prev[fieldId]] : [];
@@ -808,22 +874,6 @@ const colors = {
         return copy;
       });
     }
-  };
-
-  // Throws on upload failure — a device-local URI must never reach the server
-  // (it can't render on any other device). The caller aborts the save and
-  // surfaces the error, keeping the form state intact.
-  const uploadAllPhotos = async (photos: string[]): Promise<string[]> => {
-    const uploaded: string[] = [];
-    for (const uri of photos) {
-      if (uri.startsWith('file://') || uri.startsWith('content://')) {
-        const { objectPath } = await uploadPhoto(uri);
-        uploaded.push(objectPath);
-      } else {
-        uploaded.push(uri);
-      }
-    }
-    return uploaded;
   };
 
   const getPhotoUrl = (path: string): string => {
@@ -887,57 +937,12 @@ const colors = {
     }
 
     setSubmitting(true);
+    const formPayload = buildEntryPayload();
     try {
-      const payload = buildEntryPayload();
       const online = await isOnline();
 
       if (!online) {
-        if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
-          // Offline edit of a server entry — queue a PATCH. The queue uploads
-          // any local photo assets before sending.
-          await addToQueue({
-            type: 'edit-diary-entry',
-            payload: { id: selectedEntry.id, ...payload },
-          });
-          Alert.alert('Queued for Sync', 'Your edit will be synced when you reconnect.');
-        } else {
-          const isOfflineEdit = !!(isEditMode && selectedEntry?.id.startsWith('_offline_'));
-          const entryId = isOfflineEdit
-            ? selectedEntry!.id
-            : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-          const offlineEntry: SiteDiaryEntry = {
-            id: entryId,
-            templateId: payload.templateId || '',
-            projectId: payload.projectId,
-            title: payload.title,
-            entryDateTime: payload.entryDateTime,
-            fieldValues: payload.fieldValues,
-            overallPhotos: payload.overallPhotos,
-            createdBy: user?.id,
-            createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
-            createdAt: selectedEntry?.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-
-          const updated = isOfflineEdit
-            ? offlineEntries.map(e => (e.id === entryId ? offlineEntry : e))
-            : [...offlineEntries, offlineEntry];
-          await saveOfflineEntries(updated);
-
-          // Keep the queued create in step with the local copy.
-          const updatedInQueue = isOfflineEdit && (await updateQueuedCreate(entryId, payload));
-          if (!updatedInQueue) {
-            await addToQueue({
-              type: 'create-diary-entry',
-              payload: { ...payload, _offlineId: entryId, _storageKey: DIARY_LIST_OFFLINE_KEY },
-            });
-          }
-          Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
-        }
-
-        setShowEntryModal(false);
-        resetForm();
+        await saveOffline(formPayload);
         return;
       }
 
@@ -945,6 +950,7 @@ const colors = {
       // create is still pending, update it in place (the queue handles the
       // uploads) and drain the queue now.
       if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
+        const payload = await payloadForQueue(formPayload);
         const updatedInQueue = await updateQueuedCreate(selectedEntry.id, payload);
         if (updatedInQueue) {
           const updated = offlineEntries.map(e =>
@@ -969,21 +975,12 @@ const colors = {
         // it now, removing the local copy on success so it doesn't duplicate.
       }
 
-      const uploadedFieldValues = { ...payload.fieldValues };
-      for (const [key, val] of Object.entries(uploadedFieldValues)) {
-        if (key.startsWith('_')) continue; // internal keys are not photo arrays
-        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
-          uploadedFieldValues[key] = await uploadAllPhotos(val as string[]);
-        }
-      }
-
-      const uploadedOverallPhotos = await uploadAllPhotos(formOverallPhotos);
-
-      const body: any = {
-        ...payload,
-        fieldValues: uploadedFieldValues,
-        overallPhotos: uploadedOverallPhotos,
-      };
+      // Photos go up one at a time with a ring on each thumbnail. One that
+      // already went up on an earlier attempt isn't sent again. Throws
+      // (PhotoUploadError) before anything is saved if a photo fails — a
+      // device-local URI must never reach the server.
+      const uploadedMap = await diaryPhotos.uploadLocal(collectLocalPhotoUris(formPayload));
+      const body: any = mapPhotoUris(formPayload, uploadedMap);
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
@@ -995,15 +992,102 @@ const colors = {
         }
       }
 
+      haptic.success();
       setShowEntryModal(false);
       resetForm();
       await fetchData();
       fetchFeedData();
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to save diary entry. Please try again.');
+      const cause = e instanceof PhotoUploadError ? e.cause : e;
+      haptic.error();
+      if (isPermanentError(cause)) {
+        // The server said no — keeping it for later won't change that.
+        Alert.alert('Error', (cause as Error)?.message || 'Failed to save diary entry. Please try again.');
+      } else {
+        // Most likely patchy signal on site: offer to keep it and send later.
+        Alert.alert(
+          "Couldn't Send",
+          `${e instanceof PhotoUploadError ? e.message : 'The diary entry could not be sent.'} Check your connection, or save it and it will send by itself when you're back online.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Try Again', onPress: () => { handleSaveEntry(); } },
+            {
+              text: 'Send Later',
+              onPress: () => {
+                saveOffline(formPayload).catch((err: any) =>
+                  Alert.alert('Error', err?.message || 'Could not save the entry for later.'),
+                );
+              },
+            },
+          ],
+        );
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // The form's photos, made ready to wait in the offline queue: photos that
+  // already uploaded become their server path (never sent twice), the rest
+  // are copied somewhere permanent (and deleted by the queue once sent).
+  const payloadForQueue = async <T extends ReturnType<typeof buildEntryPayload>>(formPayload: T) => {
+    const { map, persisted } = await diaryPhotos.prepareForQueue(collectLocalPhotoUris(formPayload));
+    const payload = mapPhotoUris(formPayload, map) as T & { _persistedPhotos?: string[] };
+    if (persisted.length) payload._persistedPhotos = persisted;
+    return payload;
+  };
+
+  // Keep the entry on the phone and queue it; the app-level sync sends it
+  // when there's signal (and the "waiting to send" banner shows it meanwhile).
+  const saveOffline = async (formPayload: ReturnType<typeof buildEntryPayload>) => {
+    const payload = await payloadForQueue(formPayload);
+    if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
+      // Offline edit of a server entry — queue a PATCH. The queue uploads
+      // any local photo assets before sending.
+      await addToQueue({
+        type: 'edit-diary-entry',
+        payload: { id: selectedEntry.id, ...payload },
+      });
+      Alert.alert('Queued for Sync', 'Your edit will be synced when you reconnect.');
+    } else {
+      const isOfflineEdit = !!(isEditMode && selectedEntry?.id.startsWith('_offline_'));
+      const entryId = isOfflineEdit
+        ? selectedEntry!.id
+        : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const offlineEntry: SiteDiaryEntry = {
+        id: entryId,
+        templateId: payload.templateId || '',
+        projectId: payload.projectId,
+        title: payload.title,
+        entryDateTime: payload.entryDateTime,
+        fieldValues: payload.fieldValues,
+        overallPhotos: payload.overallPhotos,
+        createdBy: user?.id,
+        createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
+        createdAt: selectedEntry?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updated = isOfflineEdit
+        ? offlineEntries.map(e => (e.id === entryId ? offlineEntry : e))
+        : [...offlineEntries, offlineEntry];
+      await saveOfflineEntries(updated);
+
+      // Keep the queued create in step with the local copy.
+      const updatedInQueue = isOfflineEdit && (await updateQueuedCreate(entryId, payload));
+      if (!updatedInQueue) {
+        await addToQueue({
+          type: 'create-diary-entry',
+          payload: { ...payload, _offlineId: entryId, _storageKey: DIARY_LIST_OFFLINE_KEY },
+        });
+      }
+      Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
+    }
+
+    haptic.success();
+    setShowEntryModal(false);
+    resetForm();
   };
 
   const handleDeleteEntry = (entry: SiteDiaryEntry) => {
@@ -1048,6 +1132,14 @@ const colors = {
 
   const renderFieldInput = (field: TemplateField) => {
     const value = formFieldValues[field.id];
+    const last = focusChain.isLast(field.id);
+    // Single-line fields: Return moves to the next field, "done" on the last.
+    const chainProps = {
+      ref: focusChain.ref(field.id),
+      returnKeyType: last ? ('done' as const) : ('next' as const),
+      submitBehavior: last ? ('blurAndSubmit' as const) : ('submit' as const),
+      onSubmitEditing: () => focusChain.next(field.id),
+    };
 
     switch (field.type) {
       case 'text':
@@ -1057,23 +1149,29 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              {...chainProps}
               onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
               placeholderTextColor={colors.secondary}
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </View>
         );
 
       case 'textarea':
+        // Long prose: multiline with autocorrect so the keyboard's dictation
+        // mic works. Return adds a new line (no "next" here).
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              ref={focusChain.ref(field.id)}
               onFocus={entryKb.onInputFocus}
               style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
@@ -1083,6 +1181,8 @@ const colors = {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </View>
         );
@@ -1094,13 +1194,14 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              {...chainProps}
               onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value?.toString() || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
               placeholderTextColor={colors.secondary}
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
             />
           </View>
         );
@@ -1112,12 +1213,16 @@ const colors = {
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
+              {...chainProps}
               onFocus={entryKb.onInputFocus}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder="DD/MM/YYYY"
               placeholderTextColor={colors.secondary}
+              keyboardType="numbers-and-punctuation"
+              autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
         );
@@ -1177,18 +1282,12 @@ const colors = {
               {field.title} ({photos.length}/{maxPhotos})
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
-              {photos.map((uri, idx) => (
-                <View key={idx} style={styles.photoThumbContainer}>
-                  <Image source={{ uri: getPhotoUrl(uri) }} style={styles.photoThumb} />
-                  <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removePhoto(field.id, idx)}>
-                    <Ionicons name="close-circle" size={22} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {photos.map((uri, idx) => renderFormPhoto(field.id, uri, idx))}
               {photos.length < maxPhotos && (
                 <TouchableOpacity
                   style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => pickPhoto(field.id)}
+                  disabled={submitting}
                 >
                   <Ionicons name="camera-outline" size={28} color={colors.accent} />
                   <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
@@ -1424,7 +1523,7 @@ const colors = {
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
         <TouchableOpacity
-          onPress={openCreateModal}
+          onPress={() => openCreateModal()}
           style={[styles.addBtn, { backgroundColor: colors.accent }]}
         >
           <Ionicons name="add" size={22} color="#ffffff" />
@@ -1532,6 +1631,15 @@ const colors = {
           </Text>
         </View>
       )}
+
+      {/* Diary photos sitting in the offline queue (every project, or the
+          filtered one), with Send now / Retry. */}
+      <PendingUploadsBanner
+        projectId={filterProjectId || undefined}
+        types={['create-diary-entry', 'edit-diary-entry']}
+        noun="diary upload"
+        style={styles.pendingBanner}
+      />
 
       {viewMode === 'feed' ? (
         feedLoading ? (
@@ -1794,12 +1902,18 @@ const colors = {
             <View style={styles.fieldContainer}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
               <TextInput
+                ref={focusChain.ref('title')}
                 onFocus={entryKb.onInputFocus}
                 style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 value={formTitle}
                 onChangeText={setFormTitle}
                 placeholder="Entry title"
                 placeholderTextColor={colors.secondary}
+                autoCapitalize="sentences"
+                autoCorrect
+                returnKeyType={focusChain.isLast('title') ? 'done' : 'next'}
+                submitBehavior={focusChain.isLast('title') ? 'blurAndSubmit' : 'submit'}
+                onSubmitEditing={() => focusChain.next('title')}
               />
             </View>
 
@@ -1847,25 +1961,31 @@ const colors = {
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
-              {formOverallPhotos.map((uri, idx) => (
-                <View key={idx} style={styles.photoThumbContainer}>
-                  <Image source={{ uri: getPhotoUrl(uri) }} style={styles.photoThumb} />
-                  <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removePhoto(null, idx)}>
-                    <Ionicons name="close-circle" size={22} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {formOverallPhotos.map((uri, idx) => renderFormPhoto(null, uri, idx))}
               <TouchableOpacity
                 style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                 onPress={() => pickPhoto()}
+                disabled={submitting}
               >
                 <Ionicons name="camera-outline" size={28} color={colors.accent} />
                 <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
               </TouchableOpacity>
             </ScrollView>
 
-            <View style={{ height: 40 }} />
+            <View style={{ height: 24 }} />
           </ScrollView>
+
+          {/* Save in thumb reach, riding above the keyboard. The header Save
+              stays too. */}
+          <BottomActionBar
+            label={isEditMode ? 'Save Changes' : 'Save Entry'}
+            busyLabel={diaryPhotos.isUploading ? 'Uploading photos…' : 'Saving…'}
+            onPress={handleSaveEntry}
+            busy={submitting}
+          />
+
+          {/* Inside the form's modal: iOS can't present a root modal over it. */}
+          {diaryPhotos.markupElement}
 
           <Modal visible={showProjectPicker} transparent animationType="slide">
             <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
@@ -1897,6 +2017,8 @@ const colors = {
                           setFormProjectId(item.id);
                           if (!isEditMode) {
                             setFormTitle(buildDefaultTitle(activeTemplate, item.id));
+                            // New entry: that site's forecast into the weather fields.
+                            weatherPrefill.prefill(item.id, activeTemplate?.fields);
                           }
                           setShowProjectPicker(false);
                         }}
@@ -2479,9 +2601,12 @@ const styles = StyleSheet.create({
     top: -6,
     right: -6,
   },
+  pendingBanner: { marginHorizontal: 16, marginTop: 8, marginBottom: 4 },
   addPhotoBtn: {
-    width: 80,
-    height: 80,
+    // Matches DiaryFormPhoto (thumbnail size, and its top room for the remove button).
+    width: DIARY_FORM_THUMB,
+    height: DIARY_FORM_THUMB,
+    marginTop: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderStyle: 'dashed',
