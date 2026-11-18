@@ -38,6 +38,10 @@ export const DEFECT_DEFAULT_DUE_DAYS: Record<DefectJobStage, number> = {
 
 export const DEFECT_EVENT_TYPES = [
   "created", "updated", "transition", "comment", "photo", "watcher_added", "watcher_removed",
+  // Stages 2–3: sent to the trade, trade opened their link, link turned off,
+  // backcharge recorded/cleared (no amount in the event — events are visible
+  // to everyone who can see the defect), client signed the handover list.
+  "sent_to_trade", "trade_viewed", "link_revoked", "backcharge", "handover_signed",
 ] as const;
 export type DefectEventType = (typeof DEFECT_EVENT_TYPES)[number];
 
@@ -320,6 +324,9 @@ export interface DefectView {
   dateIdentified: string;
   closedAt: string | null;
   closedByName: string | null;
+  sentToTradeAt: string | null;
+  tradeViewedAt: string | null;
+  tradeMarkedFixedAt: string | null;
   attachments: DefectPhoto[];
   createdBy: string | null;
   createdByName: string | null;

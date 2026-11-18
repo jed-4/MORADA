@@ -510,6 +510,11 @@ app.use((req, res, next) => {
     import("./services/variationReminders")
       .then((m) => m.startVariationReminderScheduler())
       .catch((e) => console.error("[VariationReminders] failed to start", e));
+    // Defects: each trade's 7am digest of new/overdue defects, link tidy-up,
+    // and owners' overdue reminders (services/defectTrades.ts).
+    import("./services/defectTrades")
+      .then((m) => m.startDefectDigestScheduler())
+      .catch((e) => console.error("[defect-digest] failed to start", e));
 
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in

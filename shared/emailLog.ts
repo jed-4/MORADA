@@ -107,6 +107,8 @@ const TYPE_LABELS: Record<string, string> = {
   client_invoice: "Client invoice",
   selection: "Selection",
   review_item: "Review",
+  defect_trade: "Defects to trade",
+  defect_digest: "Defects digest",
   client_decision: "Client decision",
   password_reset: "Password reset",
   team_invite: "Team invite",
@@ -154,6 +156,9 @@ export function emailContextHref(
       return `${p}/selections/${contextId}`;
     case "review_item":
       return `${p}/reviews/${contextId}`;
+    case "defect_trade":
+    case "defect_digest":
+      return `${p}/defects`;
     default:
       return null;
   }
