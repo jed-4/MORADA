@@ -34,9 +34,20 @@ import { fromLocalDateStr, dateStrOf } from '../lib/dates';
 import { StageChip } from '../components/defects/StageChip';
 import { DefectPhotoViewer } from '../components/defects/DefectPhotoViewer';
 import { DefectEditModal } from '../components/defects/DefectEditModal';
+import { PickerSheet, type PickerOption } from '../components/defects/PickerSheet';
+import { isOnline } from '../services/offlineQueue';
 import {
   JOB_STAGE_LABEL,
+  SENDABLE_STAGES,
   STAGE_LABEL,
+  activeMentionQuery,
+  insertMention,
+  loadTradeContacts,
+  mentionIdsInText,
+  mentionSuggestions,
+  sendDefectToTrade,
+  tradeStatusLine,
+  userName,
   TRANSITIONS,
   defectRef,
   loadDefectRefs,
@@ -50,6 +61,8 @@ import {
   type DefectEvent,
   type DefectStage,
   type PhotoKind,
+  type TeamUser,
+  type TradeContact,
 } from '../lib/defects';
 
 type Props = {
@@ -81,7 +94,8 @@ function describeEvent(e: DefectEvent): { icon: keyof typeof Ionicons.glyphMap; 
     case 'transition': {
       const to = STAGE_LABEL[data.to as DefectStage] ?? data.to;
       const from = STAGE_LABEL[data.from as DefectStage] ?? data.from;
-      return { icon: 'swap-horizontal-outline', text: `${who} moved it ${from ? `from ${from} ` : ''}to ${to}`, body: data.note || undefined };
+      const via = data.via === 'trade_link' ? ' from their link' : '';
+      return { icon: 'swap-horizontal-outline', text: `${who} moved it ${from ? `from ${from} ` : ''}to ${to}${via}`, body: data.note || undefined };
     }
     case 'comment':
       return { icon: 'chatbubble-outline', text: who, body: data.text };
@@ -95,6 +109,16 @@ function describeEvent(e: DefectEvent): { icon: keyof typeof Ionicons.glyphMap; 
       return { icon: 'eye-outline', text: `${who} started watching` };
     case 'watcher_removed':
       return { icon: 'eye-off-outline', text: `${who} stopped watching` };
+    case 'sent_to_trade':
+      return { icon: 'paper-plane-outline', text: `${who} sent it to ${data.contactName || 'the trade'}${data.emailed ? ' (emailed)' : ''}` };
+    case 'trade_viewed':
+      return { icon: 'eye-outline', text: `${who} opened their link` };
+    case 'link_revoked':
+      return { icon: 'link-outline', text: 'Trade link turned off' };
+    case 'backcharge':
+      return { icon: 'receipt-outline', text: `${who} ${data.action === 'cleared' ? 'removed the backcharge' : 'recorded a backcharge'}` };
+    case 'handover_signed':
+      return { icon: 'checkmark-done-outline', text: `${who} signed off the handover list` };
     default:
       return { icon: 'ellipse-outline', text: who };
   }
@@ -156,6 +180,10 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
   const [editing, setEditing] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
+  // Send to trade (online only) and @mentions in comments.
+  const [tradePicker, setTradePicker] = useState<TradeContact[] | null>(null);
+  const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
+  const [mentioned, setMentioned] = useState<TeamUser[]>([]);
 
   // Unfolding on this pushed screen pops back to the list with this defect
   // on the right — unless that would lose something (a typed comment, an
@@ -308,9 +336,12 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
     if (!defect || !comment.trim()) return;
     setSending(true);
     try {
-      await apiRequest(`/api/defects/${defect.id}/comments`, 'POST', { text: comment.trim() });
+      const text = comment.trim();
+      const mentions = mentionIdsInText(text, mentioned);
+      await apiRequest(`/api/defects/${defect.id}/comments`, 'POST', { text, ...(mentions.length ? { mentions } : {}) });
       haptic.success();
       setComment('');
+      setMentioned([]);
       await load();
     } catch (e: any) {
       haptic.error();
@@ -326,8 +357,10 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
   useEffect(() => {
     if (!detailProjectId) return;
     let alive = true;
-    const apply = (r: { trades: { key: string; name: string }[] } | null) => {
-      if (alive && r) setTradeNames(Object.fromEntries(r.trades.map((t) => [t.key, t.name])));
+    const apply = (r: { trades: { key: string; name: string }[]; users?: TeamUser[] } | null) => {
+      if (!alive || !r) return;
+      setTradeNames(Object.fromEntries(r.trades.map((t) => [t.key, t.name])));
+      if (r.users?.length) setTeamUsers(r.users);
     };
     // The pickers' cached lists are enough; fetch only when there are none.
     readDefectRefs(detailProjectId).then((cached) =>
@@ -338,13 +371,81 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
     };
   }, [detailProjectId]);
 
+  // ── Send to trade (stage 2) ────────────────────────────────────────────
+
+  const canSendToTrade = !!defect && canEdit && SENDABLE_STAGES.includes(defect.stage);
+
+  const startSendToTrade = async () => {
+    if (!defect) return;
+    haptic.light();
+    if (!(await isOnline())) {
+      Alert.alert('Needs signal', 'Sending to a trade needs a connection — try again when you have signal.');
+      return;
+    }
+    setBusy('send');
+    try {
+      setTradePicker(await loadTradeContacts());
+    } catch (e: any) {
+      Alert.alert("Couldn't load contacts", e?.message || 'Try again shortly.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sendTo = (contact: TradeContact) => {
+    if (!defect) return;
+    const go = async (emailNow: boolean) => {
+      setBusy('send');
+      try {
+        const r = await sendDefectToTrade(defect.id, { contactId: contact.id, emailNow });
+        haptic.success();
+        if (r.defect?.id) applyUpdate(r.defect);
+        else load();
+        if (r.emailError) Alert.alert(`Sent to ${r.contactName}`, r.emailError);
+        else toast.success(r.emailed ? `Emailed ${r.contactName}` : `Sent to ${r.contactName} — in their 7am digest`);
+      } catch (e: any) {
+        haptic.error();
+        Alert.alert("Couldn't send", e?.status ? e.message : 'No signal — try again when you are back online.');
+      } finally {
+        setBusy(null);
+      }
+    };
+    const urgent = defect.priority === 'critical' || defect.priority === 'high';
+    Alert.alert(
+      `Send to ${contact.label}?`,
+      contact.email
+        ? `Email them their link now${urgent ? ' (urgent)' : ''}, or let it go in tomorrow's 7am digest.`
+        : "They have no email address — it'll be on their link; send the link yourself from the web.",
+      [
+        ...(contact.email ? [{ text: 'Email now', onPress: () => go(true) }] : []),
+        { text: contact.email ? 'In the digest' : 'Send', onPress: () => go(false) },
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    );
+  };
+
+  const tradeOptions: PickerOption[] = useMemo(
+    () => (tradePicker ?? []).map((c) => ({ value: c.id, label: c.label, hint: c.email ?? 'No email' })),
+    [tradePicker],
+  );
+
+  const mentionQuery = activeMentionQuery(comment);
+  const suggestions = mentionQuery !== null ? mentionSuggestions(teamUsers, mentionQuery) : [];
+  const pickMention = (u: TeamUser) => {
+    haptic.select();
+    setComment((c) => insertMention(c, u));
+    setMentioned((m) => (m.some((x) => x.id === u.id) ? m : [...m, u]));
+  };
+
   const photos = useMemo(() => photosByKind(defect?.attachments), [defect?.attachments]);
   const events = useMemo(() => [...(defect?.events ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [defect?.events]);
 
   const actions = useMemo(() => {
     if (!defect) return [];
+    // "Sent" is reached through Send to trade, which picks the trade and
+    // stamps the send — not a bare stage move.
     return (TRANSITIONS[defect.stage] ?? []).filter((to) =>
-      transitionAction(defect.stage, to) === 'close' ? canClose : canEdit,
+      to !== 'sent' && (transitionAction(defect.stage, to) === 'close' ? canClose : canEdit),
     );
   }, [defect, canClose, canEdit]);
 
@@ -473,6 +574,36 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
           ) : null}
         </View>
 
+        {tradeStatusLine(defect) && (
+          <View style={styles.tradeStatus}>
+            <Ionicons name="paper-plane-outline" size={13} color={theme.textMuted} />
+            <Text style={[styles.tradeStatusText, { color: theme.textSecondary }]}>
+              {[defect.assignedContactName, tradeStatusLine(defect)].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
+        )}
+
+        {canSendToTrade && (
+          <Pressable
+            onPress={startSendToTrade}
+            disabled={busy !== null}
+            style={[styles.sendTradeBtn, { borderColor: theme.primary, opacity: busy !== null ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Send to trade"
+          >
+            {busy === 'send' ? (
+              <ActivityIndicator color={theme.primary} />
+            ) : (
+              <>
+                <Ionicons name="paper-plane-outline" size={17} color={theme.primary} />
+                <Text style={[styles.actionText, { color: theme.primary }]}>
+                  {defect.stage === 'open' ? 'Send to trade' : 'Send to trade again'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        )}
+
         {/* Actions — only transitions this person may make from here. */}
         {actions.length > 0 && (
           <View style={styles.actions}>
@@ -589,12 +720,27 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
 
       {/* Comment box */}
       <View style={[styles.composer, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: embedded ? 10 : insets.bottom + 8 }]}>
+        {suggestions.length > 0 && (
+          <View style={[styles.mentionList, readableFrame]}>
+            {suggestions.map((u) => (
+              <Pressable
+                key={u.id}
+                onPress={() => pickMention(u)}
+                style={[styles.mentionChip, { backgroundColor: theme.primaryLight }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Mention ${userName(u)}`}
+              >
+                <Text style={[styles.mentionText, { color: theme.primary }]}>@{userName(u)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         <View style={[styles.composerInner, readableFrame]}>
           <TextInput
             value={comment}
             onChangeText={setComment}
             onFocus={kb.onInputFocus}
-            placeholder="Add a comment"
+            placeholder="Add a comment — @ to mention"
             placeholderTextColor={theme.textMuted}
             multiline
             style={[styles.composerInput, { color: theme.textPrimary, backgroundColor: theme.background, borderColor: theme.border }]}
@@ -631,6 +777,20 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
           toast.success(`${defectRef(defect)} deleted`);
           if (!embedded) goBack();
         }}
+      />
+
+      <PickerSheet
+        visible={tradePicker !== null}
+        title="Send to which trade?"
+        options={tradeOptions}
+        selected={defect.assignedContactId ?? null}
+        searchable
+        onSelect={(o) => {
+          const c = o ? (tradePicker ?? []).find((x) => x.id === o.value) : null;
+          setTradePicker(null);
+          if (c) setTimeout(() => sendTo(c), 350);
+        }}
+        onClose={() => setTradePicker(null)}
       />
 
       {/* Reject needs a note: what's still wrong. */}
@@ -677,6 +837,21 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
 }
 
 const styles = StyleSheet.create({
+  tradeStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  tradeStatusText: { fontSize: fontSize.sm, flexShrink: 1 },
+  sendTradeBtn: {
+    marginTop: 12,
+    minHeight: 46,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  mentionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 6 },
+  mentionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  mentionText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   screen: { flex: 1 },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 40 },
   emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, textAlign: 'center' },
