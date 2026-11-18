@@ -18,6 +18,7 @@ interface ChannelRow {
   id: string;
   name: string;
   type: string; // "channel" | "dm"
+  emoji?: string | null;
 }
 
 interface MessageRow {
@@ -178,7 +179,7 @@ export default function MessagesWidget({ widget, onUpdate, isConfiguring, onClos
               <SelectContent>
                 {channels.map(c => (
                   <SelectItem key={c.id} value={c.id} className="text-xs">
-                    {c.type === "dm" ? c.name : `# ${c.name}`}
+                    {c.type === "dm" ? c.name : `${c.emoji ?? "#"} ${c.name}`}
                   </SelectItem>
                 ))}
               </SelectContent>

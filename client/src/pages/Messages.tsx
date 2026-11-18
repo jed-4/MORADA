@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/select";
 import { format, isToday, isYesterday, isThisWeek, isSameDay, differenceInMinutes } from "date-fns";
 import type { Channel, Message, ChannelMember, MessageReaction, MessageAttachment } from "@shared/schema";
+import { ChannelEmojiPicker, ChannelEmoji } from "@/components/ChannelEmojiPicker";
 
 // Messages augmented with attachments returned by the API
 interface MessageWithAttachments extends Message {
@@ -389,6 +390,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelEmoji, setNewChannelEmoji] = useState<string | null>(null);
   const [isClientFacing, setIsClientFacing] = useState(false);
   
   const [isCreateDmOpen, setIsCreateDmOpen] = useState(false);
@@ -1232,8 +1234,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   };
 
   const createChannelMutation = useMutation({
-    mutationFn: async ({ name, isClientFacing }: { name: string; isClientFacing: boolean }) => {
+    mutationFn: async ({ name, isClientFacing, emoji }: { name: string; isClientFacing: boolean; emoji?: string | null }) => {
       const body: Record<string, unknown> = { name, type: "channel", isClientFacing };
+      if (emoji) body.emoji = emoji;
       if (projectId) body.projectId = projectId;
       const response = await fetch("/api/channels", {
         method: "POST",
@@ -1326,11 +1329,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   const renameChannelMutation = useMutation({
-    mutationFn: async ({ channelId, name }: { channelId: string; name: string }) => {
+    mutationFn: async ({ channelId, ...patch }: { channelId: string; name?: string; emoji?: string | null }) => {
       const response = await fetch(`/api/channels/${channelId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(patch),
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to rename channel");
@@ -1961,6 +1964,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         )}
                         {channel.type === "dm" ? (
                           <User className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        ) : channel.emoji ? (
+                          <ChannelEmoji emoji={channel.emoji} />
                         ) : channel.isClientFacing ? (
                           <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
                         ) : (
@@ -2019,7 +2024,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       the top of the conversation, and a hash in front of it. */}
                   {selectedChannel.type === "dm"
                     ? <User className="h-4 w-4 text-primary shrink-0" />
-                    : <Hash className="h-4 w-4 text-primary shrink-0" />}
+                    : selectedChannel.emoji
+                      ? <ChannelEmoji emoji={selectedChannel.emoji} className="text-base" />
+                      : <Hash className="h-4 w-4 text-primary shrink-0" />}
                   <span className="text-base font-semibold truncate">{getDmDisplayName(selectedChannel)}</span>
                   {selectedChannel.isClientFacing && (
                     <Badge variant="secondary" className="h-5 text-data shrink-0">
@@ -3014,13 +3021,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="channel-name">Channel Name *</Label>
-              <Input
-                id="channel-name"
-                placeholder="e.g., General, Project Updates"
-                value={newChannelName}
-                onChange={(e) => setNewChannelName(e.target.value)}
-                data-testid="input-channel-name"
-              />
+              <div className="flex gap-2">
+                <ChannelEmojiPicker
+                  value={newChannelEmoji}
+                  onChange={setNewChannelEmoji}
+                  data-testid="button-new-channel-emoji"
+                />
+                <Input
+                  id="channel-name"
+                  placeholder="e.g., General, Project Updates"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  data-testid="input-channel-name"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Switch
@@ -3040,6 +3054,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               onClick={() => {
                 setIsCreateChannelOpen(false);
                 setNewChannelName("");
+                setNewChannelEmoji(null);
                 setIsClientFacing(false);
               }}
               data-testid="button-cancel"
@@ -3051,10 +3066,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 if (newChannelName.trim()) {
                   createChannelMutation.mutate({ 
                     name: newChannelName, 
-                    isClientFacing 
+                    isClientFacing,
+                    emoji: newChannelEmoji,
                   });
                   setIsCreateChannelOpen(false);
                   setNewChannelName("");
+                  setNewChannelEmoji(null);
                   setIsClientFacing(false);
                 }
               }}
@@ -3497,6 +3514,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <div className="space-y-1.5">
                       <Label htmlFor="channel-rename" className="text-xs">Channel name</Label>
                       <div className="flex gap-2">
+                        <ChannelEmojiPicker
+                          value={selectedChannel?.emoji}
+                          disabled={renameChannelMutation.isPending}
+                          onChange={(emoji) => selectedChannel && renameChannelMutation.mutate({
+                            channelId: selectedChannel.id,
+                            emoji,
+                          })}
+                        />
                         <Input
                           id="channel-rename"
                           value={channelRenameValue}
