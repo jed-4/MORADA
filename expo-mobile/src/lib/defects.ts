@@ -40,6 +40,10 @@ export interface Defect {
   dateIdentified?: string | null;
   closedAt?: string | null;
   closedByName?: string | null;
+  /** Stage 2 trade stamps (server sets them; never money). */
+  sentToTradeAt?: string | null;
+  tradeViewedAt?: string | null;
+  tradeMarkedFixedAt?: string | null;
   attachments?: DefectAttachment[] | null;
   createdBy?: string | null;
   createdByName?: string | null;
@@ -57,7 +61,13 @@ export type DefectEventType =
   | 'comment'
   | 'photo'
   | 'watcher_added'
-  | 'watcher_removed';
+  | 'watcher_removed'
+  // Stages 2–3
+  | 'sent_to_trade'
+  | 'trade_viewed'
+  | 'link_revoked'
+  | 'backcharge'
+  | 'handover_signed';
 
 export interface DefectEvent {
   id: string;
@@ -344,4 +354,80 @@ export async function addLocationPath(
     parent = withPath;
   }
   return { created, leaf: parent! };
+}
+
+// ── Trades (stage 2) ──────────────────────────────────────────────────────
+
+/** Stages "Send to trade" works from (open moves to sent; the rest re-send). */
+export const SENDABLE_STAGES: DefectStage[] = ['open', 'sent', 'accepted', 'rejected'];
+
+export interface TradeContact {
+  id: string;
+  label: string;
+  email: string | null;
+}
+
+/** Company contacts for the trade picker. Online only. */
+export async function loadTradeContacts(): Promise<TradeContact[]> {
+  const rows = await apiFetch<any[]>('/api/contacts');
+  return (Array.isArray(rows) ? rows : [])
+    .filter((c) => c && c.id)
+    .map((c) => ({ id: String(c.id), label: String(c.company?.trim() || c.name || 'Unnamed'), email: c.email ?? null }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+export interface SendToTradeResult {
+  contactName: string;
+  sent: number;
+  emailed: boolean;
+  emailError: string | null;
+  defect?: DefectDetail;
+}
+
+/** POST /api/defects/:id/send-to-trade — moves open → sent, optional email now. */
+export async function sendDefectToTrade(
+  defectId: string,
+  body: { contactId?: string; emailNow: boolean },
+): Promise<SendToTradeResult> {
+  const res = await apiRequest(`/api/defects/${defectId}/send-to-trade`, 'POST', body);
+  return (await res.json()) as SendToTradeResult;
+}
+
+/** "Sent 12 Nov · Viewed 13 Nov · Fixed by trade 14 Nov" — or null if never sent. */
+export function tradeStatusLine(d: Pick<Defect, 'sentToTradeAt' | 'tradeViewedAt' | 'tradeMarkedFixedAt'>): string | null {
+  if (!d.sentToTradeAt) return null;
+  const f = (v: string) => new Date(v).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  return [
+    `Sent ${f(d.sentToTradeAt)}`,
+    d.tradeViewedAt ? `Viewed ${f(d.tradeViewedAt)}` : 'Not viewed yet',
+    d.tradeMarkedFixedAt ? `Fixed by trade ${f(d.tradeMarkedFixedAt)}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+// ── @mentions in comments ─────────────────────────────────────────────────
+
+/** The "@partial" being typed at the end of the text, or null. */
+export function activeMentionQuery(text: string): string | null {
+  const m = /(?:^|\s)@([^\s@]{0,30})$/.exec(text);
+  return m ? m[1] : null;
+}
+
+/** Team users matching the partial name (first 6). */
+export function mentionSuggestions(users: TeamUser[], query: string): TeamUser[] {
+  const q = query.trim().toLowerCase();
+  return users
+    .filter((u) => !q || userName(u).toLowerCase().split(/\s+/).some((part) => part.startsWith(q)) || userName(u).toLowerCase().startsWith(q))
+    .slice(0, 6);
+}
+
+/** Replace the trailing "@partial" with "@Full Name ". */
+export function insertMention(text: string, user: TeamUser): string {
+  return text.replace(/(^|\s)@([^\s@]{0,30})$/, (_m, pre) => `${pre}@${userName(user)} `);
+}
+
+/** Ids of picked users whose "@Name" is still in the text when it's sent. */
+export function mentionIdsInText(text: string, picked: TeamUser[]): string[] {
+  const ids = new Set<string>();
+  for (const u of picked) if (text.includes(`@${userName(u)}`)) ids.add(u.id);
+  return Array.from(ids);
 }
