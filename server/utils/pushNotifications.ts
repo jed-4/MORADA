@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import type { Notification as InAppNotification } from "@shared/schema";
 import { getPushGroupForType, expandGroupKeys, PUSH_PREFS_VIEW_KEY } from "@shared/notificationGroups";
+import { pushCategoryFor, channelIdFromLink } from "@shared/pushCategories";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const EXPO_RECEIPT_URL = "https://exp.host/--/api/v2/push/getReceipts";
@@ -34,6 +35,8 @@ interface ExpoMessage {
   data?: Record<string, any>;
   priority: "high";
   badge?: number;
+  /** iOS notification category: which action buttons the phone shows (Expo push API `categoryId`). */
+  categoryId?: string;
 }
 
 function isExpoPushToken(token: unknown): token is string {
@@ -53,7 +56,7 @@ function isExpoPushToken(token: unknown): token is string {
  */
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body?: string; data?: Record<string, any>; badge?: number },
+  payload: { title: string; body?: string; data?: Record<string, any>; badge?: number; categoryId?: string },
 ): Promise<void> {
   try {
     if (!userId) return;
@@ -104,11 +107,17 @@ export async function sendPushForNotification(notification: InAppNotification): 
   if (notification.link) data.link = notification.link;
   if (notification.entityType) data.entityType = notification.entityType;
   if (notification.entityId) data.entityId = notification.entityId;
+  const categoryId = pushCategoryFor(notification.type, notification.entityType);
+  if (categoryId === "message" && notification.link) {
+    const channelId = channelIdFromLink(notification.link);
+    if (channelId) data.channelId = channelId;
+  }
 
   await sendPushToUser(notification.userId, {
     title: notification.title,
     body: notification.message ?? undefined,
     data,
+    ...(categoryId ? { categoryId } : {}),
   });
 }
 
@@ -118,7 +127,7 @@ export async function sendPushForNotification(notification: InAppNotification): 
  */
 export async function sendExpoPush(
   tokens: string[],
-  payload: { title: string; body?: string; data?: Record<string, any>; badge?: number },
+  payload: { title: string; body?: string; data?: Record<string, any>; badge?: number; categoryId?: string },
 ): Promise<{ sent: number; errors: number; pruned: number }> {
   const valid = Array.from(new Set(tokens.filter(isExpoPushToken)));
   if (!valid.length) return { sent: 0, errors: 0, pruned: 0 };
@@ -134,6 +143,7 @@ export async function sendExpoPush(
     data: payload.data || {},
     priority: "high",
     ...(typeof payload.badge === "number" ? { badge: payload.badge } : {}),
+    ...(payload.categoryId ? { categoryId: payload.categoryId } : {}),
   }));
 
   const tokensToPrune: string[] = [];
