@@ -20,6 +20,7 @@ import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subM
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
 import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
+import { registerDeliveryRoutes, deliverySummaryFor } from "./deliveries";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -18189,6 +18190,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Site board: project files + their public routes (server/siteBoard.ts).
   registerSiteBoardRoutes(app);
 
+  // Delivery check-in against a PO (server/deliveries.ts). Outside the PO
+  // money gate on purpose, and price-free — see the module header.
+  registerDeliveryRoutes(app);
+
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -22802,6 +22807,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[GET /api/purchase-orders/:id/bills]", err);
       res.status(500).json({ error: "Failed to fetch bills for PO" });
+    }
+  });
+
+  // What has been delivered against a PO, in money: received value (qty
+  // received × unit price, inc GST) beside what has been billed. Behind the PO
+  // gate like every /api/purchase-orders route — the crew's price-free view
+  // is /api/deliveries.
+  app.get("/api/purchase-orders/:id/delivery-summary", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const summary = await deliverySummaryFor(companyId, req.params.id);
+      if (!summary) return res.status(404).json({ error: "Purchase order not found" });
+      res.json(summary);
+    } catch (err) {
+      console.error("[GET /api/purchase-orders/:id/delivery-summary]", err);
+      res.status(500).json({ error: "Failed to fetch delivery summary" });
     }
   });
 

@@ -523,6 +523,7 @@
     "server/routes.ts GET /api/purchase-orders",
     "server/routes.ts GET /api/purchase-orders/:id",
     "server/routes.ts GET /api/purchase-orders/:id/bills",
+    "server/routes.ts GET /api/purchase-orders/:id/delivery-summary",
     "server/routes.ts GET /api/purchase-orders/:poId/acceptance",
     "server/routes.ts GET /api/purchase-orders/:poId/attachments",
     "server/routes.ts GET /api/purchase-orders/:poId/items",
