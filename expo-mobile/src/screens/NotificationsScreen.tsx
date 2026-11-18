@@ -48,6 +48,7 @@ function getNotifIcon(type: string): keyof typeof Ionicons.glyphMap {
     case 'reminder': return 'alarm-outline';
     case 'timesheet_submitted': return 'time-outline';
     case 'timesheet_approved': return 'checkmark-done-outline';
+    case 'defect': return 'construct-outline';
     default: return 'notifications-outline';
   }
 }

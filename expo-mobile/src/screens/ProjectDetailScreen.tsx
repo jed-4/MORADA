@@ -157,6 +157,7 @@ const colors = {
   // permission; this only stops the UI offering it.
   const canViewLabourHours = usePermission('financial.budget_labour');
   const canViewSelections = usePermission('projects.selections');
+  const canViewDefects = usePermission('projects.defects');
 
   const fetchData = useCallback(async () => {
     try {
@@ -303,6 +304,9 @@ const colors = {
     ...(canViewSelections
       ? [{ key: 'selections', icon: 'color-palette-outline' as const, label: 'Selections', showCount: false }]
       : []),
+    ...(canViewDefects
+      ? [{ key: 'defects', icon: 'construct-outline' as const, label: 'Defects', showCount: false }]
+      : []),
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
@@ -331,8 +335,11 @@ const colors = {
       case 'selections':
         navigation.navigate('Selections', { projectId, projectName: project.name });
         break;
+      case 'defects':
+        navigation.navigate('DefectsList', { projectId, projectName: project.name });
+        break;
       case 'notes':
-        navigation.navigate('Notes', { projectId, projectName: project.name });
+        navigation.navigate('Notes',{ projectId, projectName: project.name });
         break;
       case 'tasks':
         navigation.navigate('ProjectTasks', { projectId, projectName: project.name });

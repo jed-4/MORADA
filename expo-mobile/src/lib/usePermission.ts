@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-export type PermissionAction = 'view' | 'add' | 'edit' | 'delete' | 'approve';
+export type PermissionAction = 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'close';
 
 /**
  * Native counterpart to the web client's usePermission. Reads the
