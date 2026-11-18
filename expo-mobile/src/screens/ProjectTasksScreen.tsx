@@ -29,10 +29,13 @@ import { TwoPane } from '../components/ui/TwoPane';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, lightTheme } from '../theme';
+import { useTheme, currentTheme, MAX_FONT_SCALE } from '../theme';
+import { SwipeRow } from '../components/ui/SwipeRow';
 import { useLayout } from '../lib/useLayout';
 import { sheetFrame } from '../components/ui/Sheet';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
+import type { TextInputInstance } from 'react-native';
 interface Task {
   id: string;
   title: string;
@@ -59,12 +62,12 @@ type Props = {
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
 function getStatusColorFallback(status?: string): string {
   switch (status) {
-    case 'todo': return lightTheme.textMuted;
+    case 'todo': return currentTheme().textMuted;
     case 'in_progress':
-    case 'in-progress': return lightTheme.statusInfo;
+    case 'in-progress': return currentTheme().statusInfo;
     case 'done':
-    case 'completed': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
+    case 'completed': return currentTheme().statusSuccess;
+    default: return currentTheme().textMuted;
   }
 }
 
@@ -100,6 +103,14 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  // Edit / create forms: the KeyboardAvoidingView resizes the sheet so the
+  // bottom Save bar sits on the keyboard; these scroll the focused field into
+  // the smaller window (extraSpace leaves room above that bar).
+  const editKb = useKeyboardAwareScroll({ extraSpace: 24 });
+  const createKb = useKeyboardAwareScroll({ extraSpace: 24 });
+  // Title → Next → Description.
+  const editDescRef = useRef<TextInputInstance>(null);
+  const newDescRef = useRef<TextInputInstance>(null);
 
   const theme = useTheme();
 const colors = {
@@ -463,9 +474,21 @@ const colors = {
     // The chevron goes too (the whole row is the tap). Big screen unchanged.
     const showStatus = isWide || inOtherGroup;
     const hasMeta = showStatus || !!task.dueDate;
+    // Swipe right to complete / reopen — same action and permission (any
+    // signed-in user) as the checkbox; the tap still opens the task.
     return (
-      <TouchableOpacity
+      <SwipeRow
         key={task.id}
+        containerStyle={styles.taskRowSwipe}
+        left={{
+          label: done ? 'Reopen' : 'Done',
+          icon: done ? 'arrow-undo' : 'checkmark',
+          color: done ? theme.textSecondary : theme.statusSuccessSolid,
+          haptic: 'medium',
+          onAction: () => handleToggleDone(task),
+        }}
+      >
+      <TouchableOpacity
         style={[
           styles.taskRow,
           { backgroundColor: colors.card, borderColor: colors.border },
@@ -492,7 +515,7 @@ const colors = {
           </View>
         </TouchableOpacity>
         <View style={styles.taskContent}>
-          <Text
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
             style={[
               styles.taskTitle,
               { color: done ? colors.muted : colors.text },
@@ -506,13 +529,13 @@ const colors = {
             <View style={styles.taskMeta}>
               {showStatus ? (
                 <View style={[styles.statusPill, { backgroundColor: statusColor + '20' }]}>
-                  <Text style={[styles.statusPillText, { color: statusColor }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusPillText, { color: statusColor }]}>
                     {getStatusLabel(task.status)}
                   </Text>
                 </View>
               ) : null}
               {task.dueDate ? (
-                <Text style={[styles.dueText, { color: overdue ? '#ef4444' : colors.secondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dueText, { color: overdue ? theme.statusDanger : colors.secondary }]}>
                   {getRelativeDate(task.dueDate)}
                 </Text>
               ) : null}
@@ -521,6 +544,7 @@ const colors = {
         </View>
         {isWide ? <Ionicons name="chevron-forward" size={16} color={colors.muted} /> : null}
       </TouchableOpacity>
+      </SwipeRow>
     );
   };
 
@@ -535,17 +559,17 @@ const colors = {
       >
         <View style={[styles.boardCardPriorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
         <View style={styles.boardCardInner}>
-          <Text style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
             {task.title}
           </Text>
           <View style={styles.boardCardMeta}>
             <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) + '20' }]}>
-              <Text style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
                 {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
               </Text>
             </View>
             {task.dueDate ? (
-              <Text style={[styles.boardCardDate, { color: overdue ? '#ef4444' : colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardDate, { color: overdue ? theme.statusDanger : colors.secondary }]}>
                 {getRelativeDate(task.dueDate)}
               </Text>
             ) : null}
@@ -579,7 +603,7 @@ const colors = {
 
   const renderDeleteButton = (task: Task) => (
     <TouchableOpacity
-      style={[styles.deleteBtn, { borderColor: '#ef444440' }]}
+      style={[styles.deleteBtn, { borderColor: theme.statusDanger + '40' }]}
       onPress={() => handleDeleteTask(task)}
       disabled={deleting}
     >
@@ -588,7 +612,7 @@ const colors = {
       ) : (
         <>
           <Ionicons name="trash-outline" size={16} color="#ef4444" />
-          <Text style={styles.deleteBtnText}>Delete Task</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.deleteBtnText, { color: theme.statusDanger }]}>Delete Task</Text>
         </>
       )}
     </TouchableOpacity>
@@ -637,8 +661,8 @@ const colors = {
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Tasks</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.secondary }]} numberOfLines={1}>{projectName}</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Tasks</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerSubtitle, { color: colors.secondary }]} numberOfLines={1}>{projectName}</Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -713,9 +737,9 @@ const colors = {
             >
               <View style={styles.sectionHeaderLeft}>
                 <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
                 <View style={[styles.sectionCount, { backgroundColor: section.color + '20' }]}>
-                  <Text style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
                 </View>
               </View>
               <Ionicons
@@ -730,8 +754,8 @@ const colors = {
           ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="checkbox-outline" size={44} color={colors.muted} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
             </View>
           }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
@@ -751,9 +775,9 @@ const colors = {
             <View key={group.key} style={[styles.boardColumn, { width: columnWidth }]}>
               <View style={[styles.boardColumnHeader, { borderBottomColor: group.color }]}>
                 <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                <Text style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
                 <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                  <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
                 </View>
               </View>
               <FlatList
@@ -764,7 +788,7 @@ const colors = {
                 contentContainerStyle={{ gap: 8 }}
                 ListEmptyComponent={
                   <View style={[styles.boardEmptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
                   </View>
                 }
               />
@@ -782,7 +806,6 @@ const colors = {
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            enabled={!isEditing}
             style={styles.modalContainer}
           >
             <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }, isEditing && styles.modalSheetForm]}>
@@ -795,12 +818,12 @@ const colors = {
                 >
                   <Ionicons name="close" size={24} color={colors.secondary} />
                 </TouchableOpacity>
-                <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]}>
                   {isEditing ? 'Edit Task' : 'Task Details'}
                 </Text>
                 {!isEditing ? (
                   <TouchableOpacity onPress={() => openEditTask()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                    <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
@@ -812,17 +835,16 @@ const colors = {
                   >
                     {saving
                       ? <ActivityIndicator size="small" color={colors.accent} />
-                      : <Text style={{ color: editTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Save</Text>}
+                      : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: editTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Save</Text>}
                   </TouchableOpacity>
                 )}
               </View>
 
               <ScrollView
+                {...editKb.scrollProps}
                 style={styles.modalBody}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
                 keyboardDismissMode="interactive"
-                automaticallyAdjustKeyboardInsets={isEditing}
               >
                 {!isEditing && selectedTask ? (
                   <TaskDetail
@@ -841,7 +863,7 @@ const colors = {
                 {isEditing ? (
                   <>
                     <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
                       <TextInput
                         style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                         value={editTitle}
@@ -849,19 +871,24 @@ const colors = {
                         placeholder="Task title"
                         placeholderTextColor={colors.muted}
                         autoFocus
+                        autoCapitalize="sentences"
+                        returnKeyType="next"
+                        submitBehavior="submit"
+                        onSubmitEditing={() => editDescRef.current?.focus()}
+                        onFocus={editKb.onInputFocus}
                       />
                     </View>
                     {/* Big screen: status + priority side by side. The wrapper is always
                         rendered (only its style changes) so folding never remounts the form. */}
                     <View style={isWide ? styles.fieldPair : undefined}>
                       <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                        <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
                         <TouchableOpacity
                           style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showStatusPicker ? colors.accent : colors.border }]}
                           onPress={() => { setShowStatusPicker(v => !v); setShowPriorityPicker(false); }}
                         >
                           <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                          <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(editStatus)}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(editStatus)}</Text>
                           <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                         </TouchableOpacity>
                         {showStatusPicker && (
@@ -873,7 +900,7 @@ const colors = {
                                 onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
                               >
                                 <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                                <Text style={[styles.inlinePickerText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>{opt.name}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlinePickerText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>{opt.name}</Text>
                                 {editStatus === opt.key && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                               </TouchableOpacity>
                             ))}
@@ -881,13 +908,13 @@ const colors = {
                         )}
                       </View>
                       <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                        <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
                         <TouchableOpacity
                           style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showPriorityPicker ? colors.accent : colors.border }]}
                           onPress={() => { setShowPriorityPicker(v => !v); setShowStatusPicker(false); }}
                         >
                           <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
-                          <Text style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[editPriority] || editPriority}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[editPriority] || editPriority}</Text>
                           <Ionicons name={showPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                         </TouchableOpacity>
                         {showPriorityPicker && (
@@ -899,7 +926,7 @@ const colors = {
                                 onPress={() => { setEditPriority(p); setShowPriorityPicker(false); }}
                               >
                                 <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                                <Text style={[styles.inlinePickerText, { color: editPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlinePickerText, { color: editPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
                                 {editPriority === p && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                               </TouchableOpacity>
                             ))}
@@ -908,13 +935,13 @@ const colors = {
                       </View>
                     </View>
                     <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
                       <TouchableOpacity
                         style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showEditDatePicker ? colors.accent : colors.border }]}
                         onPress={() => { setShowEditDatePicker(v => !v); setShowStatusPicker(false); setShowPriorityPicker(false); }}
                       >
                         <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
                           {editDueDate ? fromLocalDateStr(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
                         </Text>
                         {editDueDate ? (
@@ -940,9 +967,12 @@ const colors = {
                       )}
                     </View>
                     <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
                       <TextInput
                         style={[styles.editTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                        ref={editDescRef}
+                        onFocus={editKb.onInputFocus}
+                        autoCapitalize="sentences"
                         value={editDescription}
                         onChangeText={setEditDescription}
                         placeholder="Add a description..."
@@ -954,9 +984,9 @@ const colors = {
                     </View>
                     <View style={styles.editField}>
                       <View style={styles.checklistHeader}>
-                        <Text style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
                         {editChecklist.length > 0 ? (
-                          <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistProgress, { color: colors.muted }]}>
                             {editChecklist.filter(i => i.completed).length}/{editChecklist.length}
                           </Text>
                         ) : null}
@@ -964,9 +994,9 @@ const colors = {
                       {editChecklist.map((item, idx) => (
                         <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
                           <TouchableOpacity onPress={() => setEditChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}>
-                            <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
+                            <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? theme.statusSuccess : colors.muted} />
                           </TouchableOpacity>
-                          <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
                             {item.text}
                           </Text>
                           <TouchableOpacity onPress={() => setEditChecklist(prev => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityLabel="Remove item">
@@ -981,6 +1011,10 @@ const colors = {
                           onChangeText={setEditChecklistInput}
                           placeholder="Add item..."
                           placeholderTextColor={colors.muted}
+                          onFocus={editKb.onInputFocus}
+                          autoCapitalize="sentences"
+                          // Keep the keyboard up to add the next item.
+                          submitBehavior="submit"
                           returnKeyType="done"
                           onSubmitEditing={() => {
                             if (!editChecklistInput.trim()) return;
@@ -999,26 +1033,32 @@ const colors = {
                         </TouchableOpacity>
                       </View>
                     </View>
-                    <View style={styles.editActions}>
-                      <TouchableOpacity
-                        style={[styles.editCancelBtn, { borderColor: colors.border }]}
-                        onPress={handleCancelEdit}
-                      >
-                        <Text style={[styles.editCancelText, { color: colors.secondary }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.editSaveBtn, { backgroundColor: colors.accent }]}
-                        onPress={handleSaveTask}
-                        disabled={saving}
-                      >
-                        {saving
-                          ? <ActivityIndicator size="small" color="#fff" />
-                          : <Text style={styles.editSaveText}>Save</Text>}
-                      </TouchableOpacity>
-                    </View>
                   </>
                 ) : null}
               </ScrollView>
+              {/* Primary action at the bottom, in thumb reach and above the
+                  keyboard; the header Save stays too. */}
+              {isEditing ? (
+                <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) }]}>
+                  <TouchableOpacity
+                    style={[styles.editCancelBtn, { borderColor: colors.border }]}
+                    onPress={handleCancelEdit}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.editCancelText, { color: colors.secondary }]} maxFontSizeMultiplier={1.4}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.editSaveBtn, { backgroundColor: colors.accent, opacity: saving || !editTitle.trim() ? 0.6 : 1 }]}
+                    onPress={handleSaveTask}
+                    disabled={saving || !editTitle.trim()}
+                    accessibilityRole="button"
+                  >
+                    {saving
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.editSaveText} maxFontSizeMultiplier={1.4}>Save</Text>}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           </KeyboardAvoidingView>
         </View>
@@ -1030,7 +1070,10 @@ const colors = {
           the ScrollView insets itself and scrolls the focused field into view. */}
       <Modal visible={showCreateModal} animationType="slide" transparent onRequestClose={requestCloseCreateModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalContainer}
+          >
             <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }, styles.modalSheetForm]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity
@@ -1041,22 +1084,21 @@ const colors = {
                 >
                   <Ionicons name="close" size={24} color={colors.secondary} />
                 </TouchableOpacity>
-                <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>New Task</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]}>New Task</Text>
                 <TouchableOpacity onPress={handleCreateTask} disabled={!newTitle.trim() || creating} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   {creating
                     ? <ActivityIndicator size="small" color={colors.accent} />
-                    : <Text style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>}
+                    : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>}
                 </TouchableOpacity>
               </View>
               <ScrollView
+                {...createKb.scrollProps}
                 style={styles.modalBody}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
                 keyboardDismissMode="interactive"
-                automaticallyAdjustKeyboardInsets
               >
                 <View style={styles.editField}>
-                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
                   <TextInput
                     style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                     value={newTitle}
@@ -1064,19 +1106,24 @@ const colors = {
                     placeholder="Task title"
                     placeholderTextColor={colors.muted}
                     autoFocus
+                    autoCapitalize="sentences"
+                    returnKeyType="next"
+                    submitBehavior="submit"
+                    onSubmitEditing={() => newDescRef.current?.focus()}
+                    onFocus={createKb.onInputFocus}
                   />
                 </View>
                 {/* Big screen: status + priority side by side. The wrapper is always
                     rendered (only its style changes) so folding never remounts the form. */}
                 <View style={isWide ? styles.fieldPair : undefined}>
                   <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                    <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
                     <TouchableOpacity
                       style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewStatusPicker ? colors.accent : colors.border }]}
                       onPress={() => { setShowNewStatusPicker(v => !v); setShowNewPriorityPicker(false); }}
                     >
                       <View style={[styles.selectDot, { backgroundColor: getStatusColor(newStatus || defaultStatus) }]} />
-                      <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(newStatus || defaultStatus)}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(newStatus || defaultStatus)}</Text>
                       <Ionicons name={showNewStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                     </TouchableOpacity>
                     {showNewStatusPicker && (
@@ -1090,7 +1137,7 @@ const colors = {
                               onPress={() => { setNewStatus(opt.key); setShowNewStatusPicker(false); }}
                             >
                               <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                              <Text style={[styles.inlinePickerText, { color: active ? colors.accent : colors.text }]}>{opt.name}</Text>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlinePickerText, { color: active ? colors.accent : colors.text }]}>{opt.name}</Text>
                               {active && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                             </TouchableOpacity>
                           );
@@ -1099,13 +1146,13 @@ const colors = {
                     )}
                   </View>
                   <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                    <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
                     <TouchableOpacity
                       style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewPriorityPicker ? colors.accent : colors.border }]}
                       onPress={() => { setShowNewPriorityPicker(v => !v); setShowNewStatusPicker(false); }}
                     >
                       <View style={[styles.selectDot, { backgroundColor: getPriorityColor(newPriority) }]} />
-                      <Text style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[newPriority] || newPriority}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[newPriority] || newPriority}</Text>
                       <Ionicons name={showNewPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                     </TouchableOpacity>
                     {showNewPriorityPicker && (
@@ -1117,7 +1164,7 @@ const colors = {
                             onPress={() => { setNewPriority(p); setShowNewPriorityPicker(false); }}
                           >
                             <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                            <Text style={[styles.inlinePickerText, { color: newPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlinePickerText, { color: newPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
                             {newPriority === p && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                           </TouchableOpacity>
                         ))}
@@ -1126,13 +1173,13 @@ const colors = {
                   </View>
                 </View>
                 <View style={styles.editField}>
-                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
                   <TouchableOpacity
                     style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewDatePicker ? colors.accent : colors.border }]}
                     onPress={() => { setShowNewDatePicker(v => !v); setShowNewStatusPicker(false); setShowNewPriorityPicker(false); }}
                   >
                     <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                    <Text style={[styles.editSelectText, { color: newDueDate ? colors.text : colors.muted }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: newDueDate ? colors.text : colors.muted }]}>
                       {newDueDate ? fromLocalDateStr(newDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
                     </Text>
                     {newDueDate ? (
@@ -1158,9 +1205,12 @@ const colors = {
                   )}
                 </View>
                 <View style={styles.editField}>
-                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
                   <TextInput
                     style={[styles.editTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                    ref={newDescRef}
+                    onFocus={createKb.onInputFocus}
+                    autoCapitalize="sentences"
                     value={newDescription}
                     onChangeText={setNewDescription}
                     placeholder="Add a description..."
@@ -1172,9 +1222,9 @@ const colors = {
                 </View>
                 <View style={styles.editField}>
                   <View style={styles.checklistHeader}>
-                    <Text style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
                     {newChecklist.length > 0 ? (
-                      <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistProgress, { color: colors.muted }]}>
                         {newChecklist.filter(i => i.completed).length}/{newChecklist.length}
                       </Text>
                     ) : null}
@@ -1182,9 +1232,9 @@ const colors = {
                   {newChecklist.map((item, idx) => (
                     <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
                       <TouchableOpacity onPress={() => setNewChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}>
-                        <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
+                        <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? theme.statusSuccess : colors.muted} />
                       </TouchableOpacity>
-                      <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
                         {item.text}
                       </Text>
                       <TouchableOpacity onPress={() => setNewChecklist(prev => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityLabel="Remove item">
@@ -1199,6 +1249,10 @@ const colors = {
                       onChangeText={setNewChecklistInput}
                       placeholder="Add item..."
                       placeholderTextColor={colors.muted}
+                      onFocus={createKb.onInputFocus}
+                      autoCapitalize="sentences"
+                      // Keep the keyboard up to add the next item.
+                      submitBehavior="submit"
                       returnKeyType="done"
                       onSubmitEditing={() => {
                         if (!newChecklistInput.trim()) return;
@@ -1218,8 +1272,21 @@ const colors = {
                   </View>
                 </View>
               </ScrollView>
+              {/* Primary action at the bottom (the header Add stays too). */}
+              <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) }]}>
+                <TouchableOpacity
+                  style={[styles.editSaveBtn, { backgroundColor: colors.accent, opacity: creating || !newTitle.trim() ? 0.6 : 1 }]}
+                  onPress={handleCreateTask}
+                  disabled={creating || !newTitle.trim()}
+                  accessibilityRole="button"
+                >
+                  {creating
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.editSaveText} maxFontSizeMultiplier={1.4}>Add task</Text>}
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1291,6 +1358,7 @@ const styles = StyleSheet.create({
   sectionCount: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
   sectionCountText: { fontSize: 12, fontWeight: '600' },
 
+  taskRowSwipe: { borderRadius: 10, overflow: 'hidden' },
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1392,9 +1460,16 @@ const styles = StyleSheet.create({
   selectDot: { width: 10, height: 10, borderRadius: 5 },
   editTextArea: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, minHeight: 100 },
   editActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  editCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  bottomBar: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  editCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 10, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
   editCancelText: { fontSize: 15, fontWeight: '600' },
-  editSaveBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  editSaveBtn: { flex: 1, borderRadius: 10, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
   editSaveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Inline pickers (accordion-style, no separate modal)

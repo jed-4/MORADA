@@ -15,7 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { goBackOrHome } from '../navigation/back';
 import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -202,17 +203,17 @@ export default function SettingsScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity onPress={() => goBackOrHome(navigation)} style={styles.backBtn} activeOpacity={0.7} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={colors.secondary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
         <View style={styles.backBtn} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]}>
         <View style={styles.sectionBlock}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Push notifications</Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Push notifications</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionSubtitle, { color: colors.secondary }]}>
             Choose which alerts can show up on your phone. Turning one off stops those banners — you'll still see them in the app.
           </Text>
 
@@ -227,8 +228,8 @@ export default function SettingsScreen({ navigation }: Props) {
                   <Ionicons name={group.icon} size={18} color={colors.accent} />
                 </View>
                 <View style={styles.itemText}>
-                  <Text style={[styles.itemLabel, { color: colors.text }]}>{group.label}</Text>
-                  <Text style={[styles.itemDescription, { color: colors.secondary }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: colors.text }]}>{group.label}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
                     {group.description}
                   </Text>
                 </View>
@@ -245,7 +246,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.sectionBlock}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
           <TouchableOpacity
             style={[styles.itemRow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={confirmDeleteAccount}
@@ -257,8 +258,8 @@ export default function SettingsScreen({ navigation }: Props) {
               <Ionicons name="trash-outline" size={18} color={theme.statusDanger} />
             </View>
             <View style={styles.itemText}>
-              <Text style={[styles.itemLabel, { color: theme.statusDanger }]}>Delete account</Text>
-              <Text style={[styles.itemDescription, { color: colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: theme.statusDanger }]}>Delete account</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
                 Removes your login and personal details. Work you recorded stays with your company.
               </Text>
             </View>
@@ -269,7 +270,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* Build identity. Every build so far has reported version "1.0.2", so
             nothing on screen distinguished build 13 from build 16 — which made
             "is the new build actually running?" unanswerable from the device. */}
-        <Text style={[styles.buildInfo, { color: colors.secondary }]}>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.buildInfo, { color: colors.secondary }]}>
           Morada {buildLabel}
         </Text>
       </ScrollView>
@@ -304,8 +305,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   backBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
+    marginLeft: -10,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   scroll: {
@@ -358,7 +361,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 16,
   },
+  // Full-size switch (was scaled to 0.85) — an easier target in gloves.
   switchStyle: {
-    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+    marginLeft: 8,
   },
 });

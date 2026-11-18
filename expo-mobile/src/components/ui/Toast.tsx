@@ -11,7 +11,7 @@ import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native'
 import Animated, { FadeOutDown, SlideInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, lightTheme, darkTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, lightTheme, darkTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../../theme';
 import { haptic } from '../../lib/haptics';
 
 // Toast system — replaces Alert.alert for non-blocking feedback.
@@ -137,7 +137,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 color={t.variant === 'info' ? theme.background : variantColor[t.variant]}
                 style={t.variant !== 'info' && { opacity: 0.95 }}
               />
-              <Text numberOfLines={2} style={[styles.message, { color: theme.background }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} numberOfLines={2} style={[styles.message, { color: theme.background }]}>
                 {t.message}
               </Text>
               {t.action && (
@@ -149,7 +149,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     t.action!.onPress();
                   }}
                 >
-                  <Text style={[styles.action, { color: theme.lavender }]}>{t.action.label}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.action, { color: theme.lavender }]}>{t.action.label}</Text>
                 </Pressable>
               )}
               <Pressable hitSlop={8} onPress={() => dismiss(t.id)}>

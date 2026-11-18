@@ -11,7 +11,9 @@ import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
-import { useTheme } from '../theme';
+import { useTheme, type Theme } from '../theme';
+import { goBackOrHome, isFirstRoute } from './back';
+import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
 import { useOrientationPolicy } from '../lib/orientation';
 import { useRestoredNavigationState } from './navigationPersistence';
@@ -54,6 +56,43 @@ import DeliveryCheckInScreen from '../screens/DeliveryCheckInScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+/**
+ * Shared options for every tab's stack.
+ *
+ * Back on a stack's FIRST route: screens are often opened across stacks — the
+ * More panel (navigate('More', { screen })), dashboard cards
+ * (navigate('Projects', { screen: 'ProjectDetail' })) and notification taps —
+ * which makes them the only route in their stack, so the native header has
+ * nothing to go back to and draws no back button. Whenever a header is shown
+ * on a first route we draw the chevron ourselves; goBackOrHome() then falls
+ * through to the tab you came from (backBehavior="history" below), or home.
+ * Tab roots (WorkspaceHome, ProjectsList, MessagesList) hide the header, so
+ * they never get one.
+ */
+function stackScreenOptions(theme: Theme, headerShown: boolean) {
+  return ({ navigation, route }: { navigation: any; route: { key: string } }) => ({
+    headerShown,
+    headerStyle: { backgroundColor: theme.card },
+    headerTintColor: theme.textPrimary,
+    headerTitleStyle: { fontWeight: '600' as const },
+    headerShadowVisible: false,
+    headerBackButtonDisplayMode: 'minimal' as const,
+    headerLeft: isFirstRoute(navigation, route.key)
+      ? ({ tintColor }: { tintColor?: string }) => (
+          <Pressable
+            onPress={() => goBackOrHome(navigation)}
+            hitSlop={10}
+            style={{ width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="chevron-back" size={26} color={tintColor} />
+          </Pressable>
+        )
+      : undefined,
+  });
+}
+
 // Re-pressing the focused tab pops its nested stack back to the root with the
 // native back (slide-right) animation, instead of re-navigating forward.
 const popToTopOnRepress = ({ navigation, route }: any) => ({
@@ -70,14 +109,7 @@ function WorkspaceStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
       <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
@@ -95,13 +127,7 @@ function ProjectsStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, true)}
     >
       <Stack.Screen name="ProjectsList" component={ProjectsScreen} options={{ headerShown: false }} />
       <Stack.Screen
@@ -164,14 +190,7 @@ function MessagesStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="MessagesList" component={MessagesScreen} />
       <Stack.Screen name="MessageThread" component={MessageThreadScreen} />
@@ -180,30 +199,12 @@ function MessagesStack() {
 }
 
 /**
- * Header for a More-menu screen that uses the stack's own header.
- *
- * The More panel opens these with navigate('More', { screen }), which makes the
- * screen the ONLY route in this stack — so the native header has nothing to go
- * back to and draws no back button (Schedule, Checklists, Notes had none).
- * When the screen is the stack's first route we draw a back chevron ourselves;
- * goBack() then falls through to the tab navigator, the same place the
- * More screens with their own headers (Tasks, Timesheets...) already go.
+ * A More-menu screen that uses the stack's own header. The back chevron for
+ * these (they are usually the More stack's only route) comes from
+ * stackScreenOptions.
  */
 function moreHeader(title: string) {
-  return ({ navigation, route }: { navigation: any; route: { key: string } }) => {
-    const isFirst = navigation.getState()?.routes?.[0]?.key === route.key;
-    return {
-      headerShown: true,
-      title,
-      headerLeft: isFirst
-        ? ({ tintColor }: { tintColor?: string }) => (
-            <Pressable onPress={() => navigation.goBack()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
-              <Ionicons name="chevron-back" size={24} color={tintColor} />
-            </Pressable>
-          )
-        : undefined,
-    };
-  };
+  return { headerShown: true, title };
 }
 
 function MoreStack() {
@@ -214,14 +215,7 @@ function MoreStack() {
       // The More tab press is intercepted to toggle MorePanel, so this stack is
       // only entered via navigate('More', { screen }); Settings is a safety net.
       initialRouteName="Settings"
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={moreHeader('Schedule')} />
@@ -306,6 +300,9 @@ function MainTabs() {
   return (
     <>
       <Tab.Navigator
+        // Back from a screen opened across tabs (More panel, dashboard card,
+        // notification) returns to the tab you came from, not always Home.
+        backBehavior="history"
         screenListeners={{
           tabPress: () => haptic.select(),
         }}
@@ -416,6 +413,8 @@ export default function AppNavigator() {
   }
 
   return (
+    // Global offline bar (mounted once; pushes content, never remounts it).
+    <OfflineFrame>
     <NavigationContainer
       ref={navigationRef}
       initialState={nav.initialState}
@@ -454,5 +453,6 @@ export default function AppNavigator() {
         )}
       </Stack.Navigator>
     </NavigationContainer>
+    </OfflineFrame>
   );
 }

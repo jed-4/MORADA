@@ -150,3 +150,24 @@ export function resolveNotificationTarget(
   // Fallback: the in-app notifications list.
   return { tab: 'Workspace', screen: 'Notifications' };
 }
+
+/**
+ * The params for `navigate(target.tab, ...)` — shared by push taps and the
+ * in-app list so both build the same stack.
+ *
+ * `initial: false` keeps the tab's own root under the target when that tab's
+ * stack hasn't been opened yet (cold start from a push): a project opened
+ * from a notification has the Projects list behind it, a chat thread has the
+ * Messages list, so Back goes somewhere sensible. The More stack has no
+ * meaningful root (its initial route is a Settings safety net), so its
+ * targets stay the first route and their back control returns to the tab you
+ * came from instead.
+ */
+export function tabNavigationParams(target: NotificationTarget): Record<string, any> | undefined {
+  if (!target.screen) return target.params;
+  return {
+    screen: target.screen,
+    params: target.params,
+    ...(target.tab === 'More' ? {} : { initial: false }),
+  };
+}

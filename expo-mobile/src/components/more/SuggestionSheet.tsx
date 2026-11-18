@@ -2,7 +2,7 @@ import { forwardRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { apiRequest } from '../../services/api';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../../theme';
 import { haptic } from '../../lib/haptics';
 import { Sheet, SheetTextInput, type SheetRef } from '../ui/Sheet';
 import { useToast } from '../ui/Toast';
@@ -60,7 +60,7 @@ export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
     return (
       <Sheet ref={ref} title="Suggest an Idea" scrollable>
         <View style={styles.form}>
-          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Which area?</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: theme.textSecondary }]}>Which area?</Text>
           <View style={styles.chipWrap}>
             {SUGGESTION_SECTIONS.map((s) => {
               const selected = section === s.value;
@@ -77,7 +77,7 @@ export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
                     },
                   ]}
                 >
-                  <Text style={[styles.chipText, { color: selected ? '#FFFFFF' : theme.textPrimary }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.chipText, { color: selected ? '#FFFFFF' : theme.textPrimary }]}>
                     {s.label}
                   </Text>
                 </PressableScale>
@@ -90,6 +90,7 @@ export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
               { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border },
             ]}
             value={message}
+            autoCapitalize="sentences"
             onChangeText={setMessage}
             placeholder="What would make Morada better?"
             placeholderTextColor={theme.textMuted}
@@ -105,7 +106,7 @@ export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
             {saving ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.submitText}>Send Suggestion</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.submitText}>Send Suggestion</Text>
             )}
           </PressableScale>
         </View>

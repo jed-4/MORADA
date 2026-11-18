@@ -17,9 +17,10 @@ import { apiFetch, apiRequest } from '../services/api';
 import { usePolling } from '../lib/usePolling';
 import { timeAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { resolveNotificationTarget } from '../navigation/notificationRouting';
+import { resolveNotificationTarget, tabNavigationParams } from '../navigation/notificationRouting';
 
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { SwipeRow } from '../components/ui/SwipeRow';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { useLayout } from '../lib/useLayout';
@@ -137,7 +138,7 @@ const colors = {
               style={{ marginRight: 4, paddingHorizontal: 10, paddingVertical: 6 }}
               disabled={markingAll}
             >
-              <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '600' }}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 13, fontWeight: '600' }}>
                 {markingAll ? 'Marking...' : 'Mark all read'}
               </Text>
             </TouchableOpacity>
@@ -145,6 +146,14 @@ const colors = {
         : undefined,
     });
   }, [unreadCount, markingAll, colors.accent, handleMarkAllRead]);
+
+  const markRead = useCallback((notif: Notification) => {
+    if (notif.isRead) return;
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n));
+    apiRequest(`/api/notifications/${notif.id}/read`, 'PATCH').catch(() => {
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: false } : n));
+    });
+  }, []);
 
   const handleTap = useCallback(async (notif: Notification) => {
     if (!notif.isRead) {
@@ -165,11 +174,7 @@ const colors = {
       entityType: notif.entityType,
       entityId: notif.entityId,
     });
-    if (target.screen) {
-      navigation.navigate(target.tab as any, { screen: target.screen, params: target.params });
-    } else {
-      navigation.navigate(target.tab as any);
-    }
+    navigation.navigate(target.tab as any, tabNavigationParams(target));
   }, [navigation]);
 
   if (loading) {
@@ -184,14 +189,14 @@ const colors = {
     return (
       <View style={[styles.center, { flex: 1, backgroundColor: colors.bg }]}>
         <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notifications</Text>
-        <Text style={[styles.emptyMsg, { color: colors.secondary }]}>Check your connection and try again</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notifications</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyMsg, { color: colors.secondary }]}>Check your connection and try again</Text>
         <TouchableOpacity
           style={[styles.retryBtn, { backgroundColor: colors.accent }]}
           onPress={() => { setLoading(true); fetchNotifications(); }}
           activeOpacity={0.8}
         >
-          <Text style={styles.retryBtnText}>Retry</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.retryBtnText}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
@@ -201,8 +206,8 @@ const colors = {
     return (
       <View style={[styles.center, { flex: 1, backgroundColor: colors.bg }]}>
         <Ionicons name="notifications-off-outline" size={48} color={colors.muted} />
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>No notifications</Text>
-        <Text style={[styles.emptyMsg, { color: colors.secondary }]}>You're all caught up</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No notifications</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyMsg, { color: colors.secondary }]}>You're all caught up</Text>
       </View>
     );
   }
@@ -231,11 +236,24 @@ const colors = {
       renderItem={({ item: row }) => {
         if (row.kind === 'header') {
           return (
-            <Text style={[styles.sectionLabel, { color: colors.secondary }]}>{row.label}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionLabel, { color: colors.secondary }]}>{row.label}</Text>
           );
         }
         const notif = row.item;
+        // Swipe right on an unread row to mark it read without opening it.
+        // (Your own notifications — no permission gate; there is no
+        // mark-unread endpoint, so read rows have no swipe.)
         return (
+          <SwipeRow
+            containerStyle={styles.rowSwipe}
+            left={notif.isRead ? null : {
+              label: 'Read',
+              icon: 'mail-open-outline',
+              color: theme.primary,
+              haptic: 'select',
+              onAction: () => markRead(notif),
+            }}
+          >
           <TouchableOpacity
             onPress={() => handleTap(notif)}
             activeOpacity={0.7}
@@ -253,27 +271,27 @@ const colors = {
             </View>
             <View style={styles.rowContent}>
               <View style={styles.titleRow}>
-                <Text style={[styles.rowTitle, styles.titleText, { color: colors.text }]} numberOfLines={1}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.rowTitle, styles.titleText, { color: colors.text }]} numberOfLines={1}>
                   {notif.title}
                 </Text>
                 {!isWide && (
-                  <Text style={[styles.rowTime, { color: colors.muted }]}>{timeAgo(notif.createdAt)}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.rowTime, { color: colors.muted }]}>{timeAgo(notif.createdAt)}</Text>
                 )}
               </View>
               {notif.message ? (
-                <Text style={[styles.rowMsg, { color: colors.secondary }]} numberOfLines={2}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.rowMsg, { color: colors.secondary }]} numberOfLines={2}>
                   {notif.message}
                 </Text>
               ) : null}
               {(isWide || notif.projectName) ? (
                 <View style={styles.rowMeta}>
                   {notif.projectName ? (
-                    <Text style={[styles.projectTag, { color: colors.accent }]} numberOfLines={1}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectTag, { color: colors.accent }]} numberOfLines={1}>
                       {notif.projectName}
                     </Text>
                   ) : null}
                   {isWide && (
-                    <Text style={[styles.rowTime, { color: colors.muted }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.rowTime, { color: colors.muted }]}>
                       {timeAgo(notif.createdAt)}
                     </Text>
                   )}
@@ -284,6 +302,7 @@ const colors = {
               <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
             )}
           </TouchableOpacity>
+          </SwipeRow>
         );
       }}
     />
@@ -329,6 +348,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     paddingHorizontal: 4,
   },
+  rowSwipe: { borderRadius: 10, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',

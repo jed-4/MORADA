@@ -24,7 +24,7 @@ import { fromLocalDateStr, toLocalDateStr } from '../lib/dates';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, lightTheme, typeColors as themeTypeColors } from '../theme';
+import { useTheme, currentTheme, typeColors as themeTypeColors, MAX_FONT_SCALE } from '../theme';
 import { useLayout } from '../lib/useLayout';
 import { sheetFrame } from '../components/ui/Sheet';
 import type { ScrollViewInstance } from 'react-native';
@@ -145,13 +145,19 @@ const TYPE_COLORS: Record<string, string> = {
   meeting: themeTypeColors.meeting,
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  not_started: lightTheme.textMuted,
-  in_progress: lightTheme.statusInfo,
-  completed: lightTheme.statusSuccess,
-  on_hold: lightTheme.statusWarning,
-  cancelled: lightTheme.statusDanger,
-};
+// A getter, not a constant: the inks differ in dark mode and a module
+// constant would freeze the light ones.
+function statusColorFor(status?: string | null): string | undefined {
+  const t = currentTheme();
+  switch (status) {
+    case 'not_started': return t.textMuted;
+    case 'in_progress': return t.statusInfo;
+    case 'completed': return t.statusSuccess;
+    case 'on_hold': return t.statusWarning;
+    case 'cancelled': return t.statusDanger;
+    default: return undefined;
+  }
+}
 
 const STATUS_LABELS: Record<string, string> = {
   not_started: 'Not Started',
@@ -203,7 +209,7 @@ function formatNoteDate(dateStr: string): string {
 }
 
 function getItemColor(item: ScheduleItem): string {
-  return item.color || item.assignedToColor || lightTheme.textMuted;
+  return item.color || item.assignedToColor || currentTheme().textMuted;
 }
 
 function isSameDay(d1: Date, d2: Date): boolean {
@@ -709,7 +715,7 @@ const colors = {
     const dotColors: string[] = [];
     const seen = new Set<string>();
     dayItems.forEach(item => {
-      const c = STATUS_COLORS[item.status] || theme.statusInfo;
+      const c = statusColorFor(item.status) || theme.statusInfo;
       if (!seen.has(c) && dotColors.length < 3) {
         seen.add(c);
         dotColors.push(c);
@@ -770,14 +776,14 @@ const colors = {
 
   const getStatusOption = (key: string) => {
     const opt = statusOptions.find(s => s.key === key);
-    return opt || { name: STATUS_LABELS[key] || key, color: STATUS_COLORS[key] || theme.textMuted };
+    return opt || { name: STATUS_LABELS[key] || key, color: statusColorFor(key) || theme.textMuted };
   };
 
   // Server-defined statuses drive the pickers (same source as the cards);
   // the hardcoded five are only a fallback while options haven't loaded.
   const pickerStatusOptions = statusOptions.length > 0
     ? statusOptions
-    : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: STATUS_COLORS[key] || theme.textMuted }));
+    : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: statusColorFor(key) || theme.textMuted }));
 
   const renderItemCard = (item: ScheduleItem) => {
     const status = getStatusOption(item.status);
@@ -791,21 +797,21 @@ const colors = {
       >
         <View style={styles.itemContent}>
           <View style={styles.itemTopRow}>
-            <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
             <View style={[styles.itemStatusPill, { borderColor: status.color }]}>
-              <Text style={[styles.itemStatusPillText, { color: status.color }]}>{status.name}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemStatusPillText, { color: status.color }]}>{status.name}</Text>
             </View>
           </View>
           <View style={styles.itemMetaLine}>
             <Ionicons name="calendar-outline" size={12} color={colors.secondary} />
-            <Text style={[styles.itemMetaText, { color: colors.secondary }]}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>
               {formatDateRange(item.startDate, item.endDate)}
             </Text>
           </View>
           {item.assignedToName && (
             <View style={styles.itemMetaLine}>
               <Ionicons name="person-outline" size={12} color={colors.secondary} />
-              <Text style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
             </View>
           )}
         </View>
@@ -821,7 +827,7 @@ const colors = {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="calendar-outline" size={48} color={colors.secondary} />
-          <Text style={[styles.emptyText, { color: colors.secondary }]}>No schedule items found</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items found</Text>
         </View>
       );
     }
@@ -836,7 +842,7 @@ const colors = {
         const label = `${DAY_NAMES[d.getDay()]} - ${MONTHS[d.getMonth()]} ${d.getDate()}`;
         rows.push(
           <View key={`div-${dateKey}`} style={styles.dateDivider}>
-            <Text style={[styles.dateDividerText, { color: colors.secondary }]}>{label}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dateDividerText, { color: colors.secondary }]}>{label}</Text>
             <View style={[styles.dateDividerLine, { borderColor: colors.border }]} />
           </View>
         );
@@ -869,7 +875,7 @@ const colors = {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="bar-chart-outline" size={48} color={colors.secondary} />
-          <Text style={[styles.emptyText, { color: colors.secondary }]}>No schedule items to display</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items to display</Text>
         </View>
       );
     }
@@ -914,7 +920,7 @@ const colors = {
           <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
             {monthBreaks.map((mb, i) => (
               <View key={i} style={[styles.ganttMonthCell, { width: mb.count * DAY_COL_WIDTH, backgroundColor: colors.card, borderRightColor: colors.border }]}>
-                <Text style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
               </View>
             ))}
           </View>
@@ -927,7 +933,7 @@ const colors = {
               : dh.isWeekend ? weekendBg : colors.card;
             return (
               <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
-                <Text style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
                   {dh.label}
                 </Text>
               </View>
@@ -943,7 +949,7 @@ const colors = {
         <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
           {showNamesCol && (
             <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
-              <Text style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
             </View>
           )}
           <ScrollView
@@ -968,7 +974,7 @@ const colors = {
                     style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
                     onPress={() => openDetail(item)}
                   >
-                    <Text style={[styles.ganttNameText, isWide && styles.ganttNameTextWide, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttNameText, isWide && styles.ganttNameTextWide, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1030,7 +1036,7 @@ const colors = {
                             maxWidth: Math.min(64, barLeft - 6),
                           }]}
                         >
-                          <Text style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
                         </View>
                       )}
                       <TouchableOpacity
@@ -1039,11 +1045,11 @@ const colors = {
                         activeOpacity={0.7}
                       >
                         {nameFits ? (
-                          <Text style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
                         ) : null}
                       </TouchableOpacity>
                       {!nameFits && (
-                        <Text
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                           style={[styles.ganttBarOuterText, { left: barLeft + barWidth + 8, color: colors.text }]}
                           numberOfLines={1}
                         >
@@ -1107,7 +1113,7 @@ const colors = {
   const renderCalendarModeToggle = () => (
     <View style={[styles.calModeToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
       {(['month', 'week'] as CalendarMode[]).map(mode => (
-        <TouchableOpacity
+        <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
           key={mode}
           style={[styles.calModeBtn, calendarMode === mode && { backgroundColor: colors.accent }]}
           onPress={() => {
@@ -1115,7 +1121,7 @@ const colors = {
             if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
           }}
         >
-          <Text style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
             {mode.charAt(0).toUpperCase() + mode.slice(1)}
           </Text>
         </TouchableOpacity>
@@ -1131,18 +1137,18 @@ const colors = {
       <>
         <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.calendarNav}>
-            <TouchableOpacity onPress={() => {
+            <TouchableOpacity hitSlop={12} onPress={() => {
               if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); }
               else setCalendarMonth(m => m - 1);
             }}>
               <Ionicons name="chevron-back" size={24} color={colors.text} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setCalendarMonth(new Date().getMonth()); setCalendarYear(new Date().getFullYear()); setSelectedDate(new Date()); }}>
-              <Text style={[styles.calendarTitle, { color: colors.text }]}>
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => { setCalendarMonth(new Date().getMonth()); setCalendarYear(new Date().getFullYear()); setSelectedDate(new Date()); }}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarTitle, { color: colors.text }]}>
                 {MONTHS_FULL[calendarMonth]} {calendarYear}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
+            <TouchableOpacity hitSlop={12} onPress={() => {
               if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); }
               else setCalendarMonth(m => m + 1);
             }}>
@@ -1153,7 +1159,7 @@ const colors = {
           <View style={styles.calendarDayNames}>
             {DAY_NAMES.map(d => (
               <View key={d} style={styles.calendarDayNameCell}>
-                <Text style={[styles.calendarDayNameText, { color: colors.secondary }]}>{d}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarDayNameText, { color: colors.secondary }]}>{d}</Text>
               </View>
             ))}
           </View>
@@ -1176,7 +1182,7 @@ const colors = {
                     ]}
                     onPress={() => setSelectedDate(cellDate)}
                   >
-                    <Text style={[
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
                       styles.calendarDayText,
                       { color: cell.isCurrentMonth ? colors.text : colors.secondary },
                       !cell.isCurrentMonth && { opacity: 0.4 },
@@ -1200,11 +1206,11 @@ const colors = {
         </View>
 
         <View style={styles.selectedDaySection}>
-          <Text style={[styles.selectedDayTitle, { color: colors.text }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.selectedDayTitle, { color: colors.text }]}>
             {selectedDate.getDate()} {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}
           </Text>
           {selectedDayItems.length === 0 ? (
-            <Text style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
           ) : (
             selectedDayItems.map(renderItemCard)
           )}
@@ -1228,16 +1234,16 @@ const colors = {
       <View style={styles.flex1}>
         {/* Nav bar */}
         <View style={[styles.calWeekNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={4}
             style={styles.calNavArrow}
             onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }}
           >
             <Ionicons name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setWeekStartDate(getMondayOfWeek(new Date()))}>
-            <Text style={[styles.calWeekNavTitle, { color: colors.accent }]}>{titleText}</Text>
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => setWeekStartDate(getMondayOfWeek(new Date()))}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calWeekNavTitle, { color: colors.accent }]}>{titleText}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={4}
             style={styles.calNavArrow}
             onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }}
           >
@@ -1263,11 +1269,11 @@ const colors = {
                       style={[styles.calDayHeaderCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
                         today && { backgroundColor: colors.accent + '14' }]}
                     >
-                      <Text style={[styles.calDayName, { color: today ? colors.accent : colors.secondary }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayName, { color: today ? colors.accent : colors.secondary }]}>
                         {DAY_NAMES_MON[i]}
                       </Text>
                       <View style={today ? [styles.calTodayCircle, { backgroundColor: colors.accent }] : styles.calDayNumWrap}>
-                        <Text style={[styles.calDayNum, { color: today ? '#fff' : colors.text }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayNum, { color: today ? '#fff' : colors.text }]}>
                           {day.getDate()}
                         </Text>
                       </View>
@@ -1299,8 +1305,8 @@ const colors = {
                               onPress={() => openDetail(item)}
                               activeOpacity={0.75}
                             >
-                              <Text style={[styles.calItemName, { color: colors.text }]} numberOfLines={3}>{item.name}</Text>
-                              <Text style={[styles.calItemSub, { color: colors.secondary }]} numberOfLines={1}>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemName, { color: colors.text }]} numberOfLines={3}>{item.name}</Text>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemSub, { color: colors.secondary }]} numberOfLines={1}>
                                 {TYPE_LABELS[item.type] || item.type}
                               </Text>
                             </TouchableOpacity>
@@ -1359,19 +1365,21 @@ const colors = {
       <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen">
         <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
           <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={closeDetail}>
+            <TouchableOpacity hitSlop={10} onPress={closeDetail}>
               <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Schedule Item</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Schedule Item</Text>
             <View style={{ width: 24 }} />
           </View>
 
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
             <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Name</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name</Text>
               <TextInput
                 style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44, fontSize: 16, fontWeight: '600' }]}
                 value={detailName}
+                autoCapitalize="sentences"
+                returnKeyType="done"
                 onChangeText={setDetailName}
                 placeholder="Item name"
                 placeholderTextColor={colors.secondary}
@@ -1381,8 +1389,8 @@ const colors = {
                 <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
                   <View style={styles.detailInfoRow}>
                     <Ionicons name="person-outline" size={16} color={colors.secondary} />
-                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
-                    <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
                   </View>
                 </View>
               )}
@@ -1390,22 +1398,22 @@ const colors = {
                 <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
                   <View style={styles.detailInfoRow}>
                     <Ionicons name="layers-outline" size={16} color={colors.secondary} />
-                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
-                    <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
                   </View>
                 </View>
               )}
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Details</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Details</Text>
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
                 <TouchableOpacity
                   style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}
                 >
                   <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || colors.accent }]} />
-                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
                   <Ionicons name={showDetailTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
                 {showDetailTypePicker && (
@@ -1420,7 +1428,7 @@ const colors = {
                           onPress={() => { setDetailType(key); setShowDetailTypePicker(false); }}
                         >
                           <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
                           {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                         </TouchableOpacity>
                       );
@@ -1428,33 +1436,37 @@ const colors = {
                   </View>
                 )}
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
                 <TextInput
                   style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
                   value={detailStartDate}
+                  returnKeyType="done"
+                  autoCorrect={false}
                   onChangeText={setDetailStartDate}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={colors.secondary}
                   keyboardType="numbers-and-punctuation"
                 />
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
                 <TextInput
                   style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
                   value={detailEndDate}
+                  returnKeyType="done"
+                  autoCorrect={false}
                   onChangeText={setDetailEndDate}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={colors.secondary}
                   keyboardType="numbers-and-punctuation"
                 />
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
                 <TouchableOpacity
                   style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}
                 >
                   <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || colors.accent }]} />
-                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
                   <Ionicons name={showDetailPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
                 {showDetailPriorityPicker && (
@@ -1469,7 +1481,7 @@ const colors = {
                           onPress={() => { setDetailPriority(key); setShowDetailPriorityPicker(false); }}
                         >
                           <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
                           {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                         </TouchableOpacity>
                       );
@@ -1477,10 +1489,11 @@ const colors = {
                   </View>
                 )}
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
                 <TextInput
                   style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={detailDescription}
+                  autoCapitalize="sentences"
                   onChangeText={setDetailDescription}
                   multiline
                   numberOfLines={2}
@@ -1490,15 +1503,15 @@ const colors = {
               </View>
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
                 <TouchableOpacity
                   style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => setShowStatusPicker(!showStatusPicker)}
                 >
                   <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{detailStatusOpt.name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{detailStatusOpt.name}</Text>
                   <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
 
@@ -1521,7 +1534,7 @@ const colors = {
                           }}
                         >
                           <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
                           {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                         </TouchableOpacity>
                       );
@@ -1529,7 +1542,7 @@ const colors = {
                   </View>
                 )}
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
                 <View style={styles.progressInputRow}>
                   <View style={[styles.progressTrackLarge, { backgroundColor: colors.border }]}>
                     <View style={[styles.progressFillLarge, { width: `${Math.min(parseInt(detailProgress) || 0, 100)}%`, backgroundColor: statusColor }]} />
@@ -1537,16 +1550,18 @@ const colors = {
                   <TextInput
                     style={[styles.progressInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     value={detailProgress}
+                    returnKeyType="done"
                     onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setDetailProgress(n ? String(Math.min(parseInt(n), 100)) : '0'); }}
                     keyboardType="number-pad"
                     maxLength={3}
                   />
                 </View>
 
-                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
                 <TextInput
                   style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={detailNotes}
+                  autoCapitalize="sentences"
                   onChangeText={setDetailNotes}
                   multiline
                   numberOfLines={3}
@@ -1559,7 +1574,7 @@ const colors = {
                 <View style={styles.switchRow}>
                   <View style={styles.switchLabelRow}>
                     <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                    <Text style={[styles.switchLabel, { color: colors.text }]}>Allow on weekends</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.switchLabel, { color: colors.text }]}>Allow on weekends</Text>
                   </View>
                   <Switch
                     value={detailWeekendOverride}
@@ -1571,38 +1586,42 @@ const colors = {
               </View>
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Checklist Steps</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Checklist Steps</Text>
                 {loadingSteps ? (
                   <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
                 ) : (
                   checklistSteps.map(step => (
                     <View key={step.id} style={[styles.stepRow, { borderBottomColor: colors.border }]}>
-                      <TouchableOpacity onPress={() => handleToggleStep(step)} style={styles.stepCheckbox}>
+                      <TouchableOpacity hitSlop={10} onPress={() => handleToggleStep(step)} style={styles.stepCheckbox}>
                         <Ionicons
                           name={step.isCompleted ? 'checkbox' : 'square-outline'}
                           size={20}
                           color={step.isCompleted ? colors.accent : colors.secondary}
                         />
                       </TouchableOpacity>
-                      <Text style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
-                      <TouchableOpacity onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
+                      <TouchableOpacity hitSlop={12} onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
                         <Ionicons name="trash-outline" size={16} color={theme.statusDanger} />
                       </TouchableOpacity>
                     </View>
                   ))
                 )}
                 {checklistSteps.length === 0 && !loadingSteps && (
-                  <Text style={[styles.noNotesText, { color: colors.secondary }]}>No checklist steps yet</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No checklist steps yet</Text>
                 )}
                 <View style={styles.addNoteRow}>
                   <TextInput
                     style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     value={newStepName}
+                    autoCapitalize="sentences"
+                    returnKeyType="done"
+                    submitBehavior="submit"
+                    onSubmitEditing={() => { if (newStepName.trim() && !addingStep) handleAddStep(); }}
                     onChangeText={setNewStepName}
                     placeholder="Add a step..."
                     placeholderTextColor={colors.secondary}
                   />
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={4}
                     style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newStepName.trim() || addingStep ? 0.5 : 1 }]}
                     onPress={handleAddStep}
                     disabled={!newStepName.trim() || addingStep}
@@ -1618,11 +1637,11 @@ const colors = {
 
               {linkedChecklists.length > 0 && (
                 <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Checklists</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Checklists</Text>
                   {linkedChecklists.map(cl => (
                     <View key={cl.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
                       <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
-                      <Text style={[styles.linkedItemName, { color: colors.text }]}>{cl.name}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{cl.name}</Text>
                     </View>
                   ))}
                 </View>
@@ -1630,43 +1649,46 @@ const colors = {
 
               {linkedTasks.length > 0 && (
                 <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Tasks</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Tasks</Text>
                   {linkedTasks.map(t => (
                     <View key={t.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
                       <Ionicons name="checkbox-outline" size={16} color={colors.accent} />
-                      <Text style={[styles.linkedItemName, { color: colors.text }]}>{t.title}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{t.title}</Text>
                     </View>
                   ))}
                 </View>
               )}
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
                 {loadingNotes ? (
                   <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
                 ) : (
                   activityNotes.map(note => (
                     <View key={note.id} style={[styles.activityNote, { borderColor: colors.border }]}>
                       <View style={styles.noteHeader}>
-                        <Text style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
-                        <Text style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
                       </View>
-                      <Text style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
                     </View>
                   ))
                 )}
                 {activityNotes.length === 0 && !loadingNotes && (
-                  <Text style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
                 )}
                 <View style={styles.addNoteRow}>
                   <TextInput
                     style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     value={newNoteText}
+                    autoCapitalize="sentences"
+                    returnKeyType="send"
+                    onSubmitEditing={() => { if (newNoteText.trim() && !addingNote) handleAddNote(); }}
                     onChangeText={setNewNoteText}
                     placeholder="Add a note..."
                     placeholderTextColor={colors.secondary}
                   />
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={4}
                     style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newNoteText.trim() || addingNote ? 0.5 : 1 }]}
                     onPress={handleAddNote}
                     disabled={!newNoteText.trim() || addingNote}
@@ -1685,7 +1707,7 @@ const colors = {
                   style={[styles.actionBtn, { backgroundColor: colors.border }]}
                   onPress={closeDetail}
                 >
-                  <Text style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: colors.accent, opacity: saving ? 0.6 : 1 }]}
@@ -1695,7 +1717,7 @@ const colors = {
                   {saving ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1711,37 +1733,39 @@ const colors = {
     <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen">
       <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
         <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => { setShowAddModal(false); resetAddForm(); }}>
-            <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>Cancel</Text>
+          <TouchableOpacity hitSlop={12} onPress={() => { setShowAddModal(false); resetAddForm(); }}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>New Schedule Item</Text>
-          <TouchableOpacity onPress={handleAddItem} disabled={addSaving} style={{ opacity: addSaving ? 0.5 : 1 }}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]}>New Schedule Item</Text>
+          <TouchableOpacity hitSlop={12} onPress={handleAddItem} disabled={addSaving} style={{ opacity: addSaving ? 0.5 : 1 }}>
             {addSaving ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
-              <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Save</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Save</Text>
             )}
           </TouchableOpacity>
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
           <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Name *</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name *</Text>
             <TextInput
               style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
               value={addName}
+              autoCapitalize="sentences"
+              returnKeyType="done"
               onChangeText={setAddName}
               placeholder="Schedule item name"
               placeholderTextColor={colors.secondary}
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
             <TouchableOpacity
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}
             >
               <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || colors.accent }]} />
-              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
               <Ionicons name={showAddTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddTypePicker && (
@@ -1756,7 +1780,7 @@ const colors = {
                       onPress={() => { setAddType(key); setShowAddTypePicker(false); }}
                     >
                       <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
                       {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                     </TouchableOpacity>
                   );
@@ -1764,33 +1788,37 @@ const colors = {
               </View>
             )}
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
             <TextInput
               style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
               value={addStartDate}
+              returnKeyType="done"
+              autoCorrect={false}
               onChangeText={setAddStartDate}
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.secondary}
               keyboardType="numbers-and-punctuation"
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
             <TextInput
               style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
               value={addEndDate}
+              returnKeyType="done"
+              autoCorrect={false}
               onChangeText={setAddEndDate}
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.secondary}
               keyboardType="numbers-and-punctuation"
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
             <TouchableOpacity
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}
             >
               <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || colors.accent }]} />
-              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
               <Ionicons name={showAddPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddPriorityPicker && (
@@ -1805,7 +1833,7 @@ const colors = {
                       onPress={() => { setAddPriority(key); setShowAddPriorityPicker(false); }}
                     >
                       <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
                       {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                     </TouchableOpacity>
                   );
@@ -1813,13 +1841,13 @@ const colors = {
               </View>
             )}
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
             <TouchableOpacity
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}
             >
               <View style={[styles.statusDot, { backgroundColor: getStatusOption(addStatus).color }]} />
-              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{getStatusOption(addStatus).name}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{getStatusOption(addStatus).name}</Text>
               <Ionicons name={showAddStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddStatusPicker && (
@@ -1834,7 +1862,7 @@ const colors = {
                       onPress={() => { setAddStatus(opt.key); setShowAddStatusPicker(false); }}
                     >
                       <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
                       {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                     </TouchableOpacity>
                   );
@@ -1842,10 +1870,11 @@ const colors = {
               </View>
             )}
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
             <TextInput
               style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
               value={addDescription}
+              autoCapitalize="sentences"
               onChangeText={setAddDescription}
               multiline
               numberOfLines={2}
@@ -1853,10 +1882,11 @@ const colors = {
               placeholderTextColor={colors.secondary}
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
             <TextInput
               style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
               value={addNotes}
+              autoCapitalize="sentences"
               onChangeText={setAddNotes}
               multiline
               numberOfLines={3}
@@ -1875,8 +1905,8 @@ const colors = {
       <View style={styles.pickerOverlay}>
         <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
           <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
-            <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
+            <TouchableOpacity hitSlop={10} onPress={() => setShowProjectPicker(false)}>
               <Ionicons name="close" size={24} color={colors.secondary} />
             </TouchableOpacity>
           </View>
@@ -1887,7 +1917,7 @@ const colors = {
               if (item.isHeader) {
                 return (
                   <View style={[styles.pickerSectionHeader, { backgroundColor: theme.nav }]}>
-                    <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
                   </View>
                 );
               }
@@ -1896,7 +1926,7 @@ const colors = {
                   style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                   onPress={() => { setSelectedProjectId(item.id); setShowProjectPicker(false); }}
                 >
-                  <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
                   {selectedProjectId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
                 </TouchableOpacity>
               );
@@ -1920,7 +1950,7 @@ const colors = {
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border, flex: 1 }]}>
           {(['list', 'gantt', 'calendar'] as ViewMode[]).map(mode => (
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 6, bottom: 6 }}
               key={mode}
               style={[styles.viewToggleBtn, viewMode === mode && { backgroundColor: colors.accent }]}
               onPress={() => setViewMode(mode)}
@@ -1930,7 +1960,7 @@ const colors = {
                 size={16}
                 color={viewMode === mode ? '#fff' : colors.secondary}
               />
-              <Text style={[styles.viewToggleText, { color: viewMode === mode ? '#fff' : colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewToggleText, { color: viewMode === mode ? '#fff' : colors.secondary }]}>
                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </Text>
             </TouchableOpacity>
@@ -1938,12 +1968,12 @@ const colors = {
         </View>
 
         {!isProjectContext && (
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
             style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
             onPress={() => setShowProjectPicker(true)}
           >
             <Ionicons name="folder-outline" size={15} color={colors.accent} />
-            <Text style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
               {getSelectedProjectLabel()}
             </Text>
             <Ionicons name="chevron-down" size={14} color={colors.secondary} />
@@ -1963,7 +1993,7 @@ const colors = {
 
         {viewMode === 'gantt' && (
           <View style={{ position: 'relative', zIndex: 200 }}>
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={4}
               style={[styles.headerMenuBtn, { borderColor: colors.border }]}
               onPress={() => setShowGanttMenu(v => !v)}
             >
@@ -1981,7 +2011,7 @@ const colors = {
                   }}
                 >
                   <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
-                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Table</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Table</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.ganttMenuRow}
@@ -1993,7 +2023,7 @@ const colors = {
                   }}
                 >
                   <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
-                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -2004,7 +2034,7 @@ const colors = {
       {!selectedProjectId && !isProjectContext ? (
         <View style={[styles.flex1, styles.center]}>
           <Ionicons name="folder-open-outline" size={56} color={colors.secondary} />
-          <Text style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
         </View>
       ) : loading ? (
         <View style={[styles.flex1, styles.center]}>

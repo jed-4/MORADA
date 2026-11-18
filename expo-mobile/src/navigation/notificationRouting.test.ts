@@ -4,7 +4,7 @@
  *   npx tsx src/navigation/notificationRouting.test.ts
  */
 import assert from 'node:assert';
-import { resolveNotificationTarget } from './notificationRouting';
+import { resolveNotificationTarget, tabNavigationParams } from './notificationRouting';
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -58,6 +58,18 @@ check('a defect notification with no defect id opens the project defects list', 
     resolveNotificationTarget({ type: 'defect', link: '/projects/p-1/defects' }),
     { tab: 'Projects', screen: 'DefectsList', params: { projectId: 'p-1' } },
   );
+});
+
+check('stack targets keep their tab root underneath, More targets do not', () => {
+  assert.deepEqual(
+    tabNavigationParams({ tab: 'Projects', screen: 'ProjectDetail', params: { projectId: 'p' } }),
+    { screen: 'ProjectDetail', params: { projectId: 'p' }, initial: false },
+  );
+  assert.deepEqual(
+    tabNavigationParams({ tab: 'More', screen: 'Timesheets' }),
+    { screen: 'Timesheets', params: undefined },
+  );
+  assert.equal(tabNavigationParams({ tab: 'Calendar' }), undefined);
 });
 
 console.log(`\n${passed} passed\n`);
