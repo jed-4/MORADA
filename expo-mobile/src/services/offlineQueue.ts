@@ -248,6 +248,41 @@ const uploadDiaryAssets = async (entryData: any): Promise<any> => {
   return { ...entryData, fieldValues, overallPhotos };
 };
 
+/**
+ * Upload a queued diary entry's device-local photos ONE AT A TIME, writing
+ * each object path straight back into `payload` and calling `onStep` (a
+ * checkpoint) after each, so a retry — or a drain after the app was killed —
+ * skips photos already on the server instead of sending them twice. Same
+ * resume rule as sendReceipt / sendDefect. Throws on the first failure.
+ * uploadDiaryAssets afterwards is then a no-op safety net.
+ */
+const uploadDiaryAssetsInPlace = async (
+  payload: any,
+  onStep?: () => Promise<void> | void,
+): Promise<void> => {
+  const lists: any[][] = [];
+  if (payload?.fieldValues && typeof payload.fieldValues === 'object') {
+    for (const [key, val] of Object.entries(payload.fieldValues)) {
+      if (!key.startsWith('_') && Array.isArray(val)) lists.push(val);
+    }
+  }
+  if (Array.isArray(payload?.overallPhotos)) lists.push(payload.overallPhotos);
+  for (const list of lists) {
+    for (let i = 0; i < list.length; i++) {
+      if (!isLocalUri(list[i])) continue;
+      const { objectPath } = await uploadPhoto(list[i]);
+      list[i] = objectPath;
+      await onStep?.();
+    }
+  }
+};
+
+/** Delete the permanent copies (persistPhoto) a queued diary entry kept. */
+const deleteDiaryPersistedPhotos = async (uris: unknown): Promise<void> => {
+  if (!Array.isArray(uris)) return;
+  await Promise.all(uris.filter((u): u is string => typeof u === 'string').map(deletePersistedPhoto));
+};
+
 type ProcessResult = 'success' | 'retry' | 'permanent';
 
 const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
@@ -291,22 +326,28 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
         return 'success';
       }
       case 'create-diary-entry': {
-        const { localPhotos, _offlineId, _storageKey, ...entryData } = action.payload;
+        // Photos go up one by one, each saved the moment it's on the server,
+        // so a retry after a dropped signal only sends the rest.
+        await uploadDiaryAssetsInPlace(action.payload, () => checkpointAction(action));
+        const { localPhotos, _offlineId, _storageKey, _persistedPhotos, ...entryData } = action.payload;
         const uploaded = await uploadDiaryAssets(entryData);
         await apiRequest('/api/site-diary-entries', 'POST', uploaded);
         // Entry is on the server — drop the local offline copy it mirrored.
         if (_offlineId && _storageKey) {
           await removeOfflineDiaryEntry(_storageKey, _offlineId);
         }
+        await deleteDiaryPersistedPhotos(_persistedPhotos);
         return 'success';
       }
       case 'edit-diary-entry': {
-        const { id, _offlineId, _storageKey, ...data } = action.payload;
+        await uploadDiaryAssetsInPlace(action.payload, () => checkpointAction(action));
+        const { id, _offlineId, _storageKey, _persistedPhotos, ...data } = action.payload;
         const uploaded = await uploadDiaryAssets(data);
         await apiRequest(`/api/site-diary-entries/${id}`, 'PATCH', uploaded);
         if (_offlineId && _storageKey) {
           await removeOfflineDiaryEntry(_storageKey, _offlineId);
         }
+        await deleteDiaryPersistedPhotos(_persistedPhotos);
         return 'success';
       }
       case 'delete-diary-entry': {

@@ -38,6 +38,7 @@ import { useLayout } from '../lib/useLayout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { compareProjects } from '../lib/projects';
 import { SuggestionSheet } from '../components/more/SuggestionSheet';
+import { QuickCaptureRow } from '../components/home/QuickCaptureRow';
 import { getInitials, timeAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -871,6 +872,15 @@ export default function DashboardScreen({ navigation }: Props) {
               </View>
             </Animated.View>
           )}
+
+          {/* Quick capture: photo to diary, receipt, defect, clock in */}
+          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, fullW]}>
+            <QuickCaptureRow
+              projects={sortedProjects}
+              navigation={navigation}
+              isClockedIn={!!activeTimesheet}
+            />
+          </Animated.View>
 
           {/* Projects */}
           {projects.length > 0 && (

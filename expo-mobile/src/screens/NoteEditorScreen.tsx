@@ -811,6 +811,8 @@ const colors = {
               onFocus={() => { setFocusedBlockId(block.id); noteKb.onInputFocus(); }}
               multiline
               scrollEnabled={false}
+              autoCapitalize="sentences"
+              autoCorrect
             />
             <TouchableOpacity
               onPress={() => toggleBlockCollapsed(block.id)}
@@ -894,6 +896,9 @@ const colors = {
           placeholderTextColor={colors.placeholder}
           multiline
           scrollEnabled={false}
+          // Prose: keep autocorrect on so the keyboard's dictation mic works.
+          autoCapitalize="sentences"
+          autoCorrect
         />
       </View>
     );
@@ -1192,6 +1197,9 @@ const colors = {
             placeholder="Untitled"
             placeholderTextColor={colors.placeholder}
             multiline
+            autoCapitalize="sentences"
+            autoCorrect
+            returnKeyType="next"
             blurOnSubmit
             onSubmitEditing={() => {
               const firstBlock = blocks[0];

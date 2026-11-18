@@ -11,8 +11,9 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
+  type TextInputInstance,
 } from 'react-native';
+import { BottomActionBar } from '../components/form/BottomActionBar';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { apiFetch, uploadFileFromUri, isPermanentError } from '../services/api';
@@ -68,6 +69,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
   // Set once a submit has started sending, so a retry resumes the same bill
   // instead of creating a second one.
   const sentRef = useRef<ReceiptPayload | null>(null);
+  const descriptionRef = useRef<TextInputInstance>(null);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -462,18 +464,6 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       marginTop: 8,
     },
     amberBannerText: { fontSize: 12, color: colors.amber, fontWeight: '500' },
-    submitBtn: {
-      backgroundColor: colors.accent,
-      borderRadius: 12,
-      paddingVertical: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexDirection: 'row',
-      gap: 8,
-      marginTop: 4,
-    },
-    submitBtnDisabled: { opacity: 0.6 },
-    submitBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
     pickerList: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -572,7 +562,9 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
                 placeholder="0.00"
                 placeholderTextColor={colors.muted}
                 keyboardType="decimal-pad"
-                returnKeyType="done"
+                returnKeyType="next"
+                autoCorrect={false}
+                onSubmitEditing={() => descriptionRef.current?.focus()}
               />
             </View>
           </View>
@@ -581,6 +573,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
           <View style={styles.field}>
             <Text style={styles.label}>Description <Text style={styles.required}>*</Text></Text>
             <TextInput
+              ref={descriptionRef}
               style={styles.textInput}
               value={description}
               onChangeText={setDescription}
@@ -589,6 +582,8 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
               multiline
               numberOfLines={3}
               returnKeyType="default"
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </View>
 
@@ -637,6 +632,8 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
               placeholder="e.g. Bunnings Kiama"
               placeholderTextColor={colors.muted}
               returnKeyType="done"
+              autoCapitalize="words"
+              textContentType="organizationName"
             />
           </View>
 
@@ -665,24 +662,14 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
 
         </View>
 
-        {/* Submit */}
-        <TouchableOpacity
-          style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-          activeOpacity={0.8}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
-          )}
-          <Text style={styles.submitBtnText}>
-            {submitting ? (photos.isUploading ? 'Uploading photos…' : 'Submitting…') : 'Submit Receipt'}
-          </Text>
-        </TouchableOpacity>
-
       </ScrollView>
+      {/* Submit in thumb reach, riding above the keyboard. */}
+      <BottomActionBar
+        label="Submit Receipt"
+        busyLabel={photos.isUploading ? 'Uploading photos…' : 'Submitting…'}
+        onPress={handleSubmit}
+        busy={submitting}
+      />
       {markupElement}
     </KeyboardAvoidingView>
   );
