@@ -1591,6 +1591,9 @@ const colors = {
             onChangeText={setSearchQuery}
             placeholder="Search entries..."
             placeholderTextColor={colors.muted}
+            returnKeyType="search"
+            autoCapitalize="none"
+            clearButtonMode="never"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
