@@ -1387,7 +1387,7 @@ export interface IStorage {
   removeTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
 
   // Calendar Views CRUD
-  getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
+  getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]>;
   getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined>;
   createCalendarView(view: InsertCalendarView): Promise<CalendarView>;
   findOrCreateCalendarView(view: InsertCalendarView & { userId: string; companyId: string }): Promise<CalendarView>;
@@ -6637,7 +6637,7 @@ export class MemStorage implements IStorage {
   }
 
   // Calendar Views CRUD
-  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+  async getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]> {
     return Array.from(this.calendarViews.values())
       .filter(v => v.userId === userId && v.calendarType === calendarType && v.companyId === companyId && !v.isArchived)
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -18026,14 +18026,20 @@ export class DbStorage implements IStorage {
 
   async getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null> {
     try {
-      // Scope by company through the project relation when provided to prevent cross-tenant matches
+      // Scope by company to prevent cross-tenant matches. LEFT join so bills
+      // with no project (email-intake / business bills) are still found via
+      // bills.companyId — an inner join made them invisible to Xero webhooks
+      // and imports (paid-in-Xero never landed, re-import duplicated them).
       if (companyId) {
         const result = await db.select({ bill: schema.bills })
           .from(schema.bills)
-          .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+          .leftJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
           .where(and(
             eq(schema.bills.xeroInvoiceId, xeroInvoiceId),
-            eq(schema.projects.companyId, companyId),
+            or(
+              eq(schema.bills.companyId, companyId),
+              eq(schema.projects.companyId, companyId),
+            ),
           ))
           .limit(1);
         return (result[0]?.bill as Bill) || null;
@@ -18888,31 +18894,30 @@ export class DbStorage implements IStorage {
         return false;
       }
 
-      const billsApprovePermission = await db.select()
+      // The seeder creates `financial.bills` with an `approve` action; the
+      // legacy `bills.approve` key is still honoured so nobody who was
+      // granted it by hand is locked out.
+      const billsApprovePermissions = await db.select()
         .from(schema.permissions)
-        .where(eq(schema.permissions.key, 'bills.approve'))
-        .limit(1);
+        .where(inArray(schema.permissions.key, ['financial.bills', 'bills.approve']));
 
-      if (!billsApprovePermission.length) {
+      if (!billsApprovePermissions.length) {
         return false;
       }
 
-      const rolePermission = await db.select()
+      const rolePermissions = await db.select()
         .from(schema.rolePermissions)
         .where(
           and(
             eq(schema.rolePermissions.roleId, user[0].roleId),
-            eq(schema.rolePermissions.permissionId, billsApprovePermission[0].id)
+            inArray(schema.rolePermissions.permissionId, billsApprovePermissions.map(p => p.id))
           )
-        )
-        .limit(1);
+        );
 
-      if (!rolePermission.length) {
-        return false;
-      }
-
-      const allowedActions = rolePermission[0].allowedActions as string[];
-      return allowedActions && allowedActions.includes('approve');
+      return rolePermissions.some(rp => {
+        const allowedActions = rp.allowedActions as string[] | null;
+        return Array.isArray(allowedActions) && allowedActions.includes('approve');
+      });
     } catch (error) {
       console.error("Database error in canUserApproveBills:", error);
       return false;
@@ -24682,7 +24687,7 @@ export class DbStorage implements IStorage {
   }
 
   // Calendar Views CRUD
-  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+  async getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]> {
     try {
       const ownViews = await db.select()
         .from(schema.calendarViews)
@@ -24694,11 +24699,12 @@ export class DbStorage implements IStorage {
         ))
         .orderBy(asc(schema.calendarViews.sortOrder));
 
-      if (calendarType === "business") {
+      // Business calendar and schedule views can be shared with people.
+      if (calendarType === "business" || calendarType === "schedule") {
         const allCompanyViews = await db.select()
           .from(schema.calendarViews)
           .where(and(
-            eq(schema.calendarViews.calendarType, "business"),
+            eq(schema.calendarViews.calendarType, calendarType),
             eq(schema.calendarViews.companyId, companyId),
             eq(schema.calendarViews.isArchived, false),
             not(eq(schema.calendarViews.userId, userId)),

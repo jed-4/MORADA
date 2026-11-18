@@ -5061,7 +5061,8 @@ export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  calendarType: z.enum(["personal", "business"]),
+  // "schedule" = saved views on Business → Schedule → Projects (11-18).
+  calendarType: z.enum(["personal", "business", "schedule"]),
   // The business calendar also has agenda / roster / people; saving a view in
   // one of those 400'd as "Failed to save view".
   calendarMode: z.enum(["month", "week", "day", "agenda", "roster", "people"]).default("month"),
@@ -5679,10 +5680,13 @@ export const channels = pgTable("channels", {
   description: text("description"),
   isArchived: boolean("is_archived").notNull().default(false),
   isClientFacing: boolean("is_client_facing").notNull().default(false),
-  
+  // Optional emoji shown beside the channel name. NULL = fall back to the
+  // default # / lock icon. Migration 0132.
+  emoji: text("emoji"),
+
   // Multi-tenant isolation
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  
+
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5695,6 +5699,22 @@ export const insertChannelSchema = createInsertSchema(channels).omit({
 }).extend({
   type: z.enum(["channel", "dm"]).default("channel"),
   dmParticipants: z.array(z.string()).optional(),
+  // A single emoji (a few code points once ZWJ sequences / skin tones / the
+  // variation selector are counted), or null to clear it. Must actually
+  // contain a pictographic character so it can't be used as a second name.
+  emoji: z
+    .string()
+    .trim()
+    .max(16, "Emoji is too long")
+    .refine(
+      // RegExp constructor, not a literal: the tsconfig target predates the
+      // literal `u` flag (TS1501), but the runtime supports it.
+      (s) => s === "" || new RegExp("\\p{Extended_Pictographic}|\\p{Regional_Indicator}|\\u20E3", "u").test(s),
+      "Must be an emoji",
+    )
+    .transform((s) => (s === "" ? null : s))
+    .nullable()
+    .optional(),
 });
 
 export type InsertChannel = z.infer<typeof insertChannelSchema>;

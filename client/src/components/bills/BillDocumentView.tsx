@@ -94,7 +94,19 @@ export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentV
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-body-sm">
+        {/* Fixed widths for everything but the description, so long
+            descriptions wrap instead of squeezing the numbers (Jed, 11-18). */}
+        <table className="w-full text-body-sm table-fixed min-w-[760px]">
+          <colgroup>
+            <col />
+            {showCostCode && <col className="w-[170px]" />}
+            <col className="w-[64px]" />
+            <col className="w-[112px]" />
+            <col className="w-[64px]" />
+            {showAccount && <col className="w-[170px]" />}
+            {showAllowance && <col className="w-[150px]" />}
+            <col className="w-[120px]" />
+          </colgroup>
           <thead>
             <tr className="border-b">
               <th className="doc-col-label text-left px-3 py-2">Description</th>
@@ -115,17 +127,17 @@ export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentV
             ) : (
               lines.map((l) => (
                 <tr key={l.key} className="border-b last:border-b-0 align-top" data-testid={`bill-document-line-${l.key}`}>
-                  <td className="px-3 py-2 whitespace-pre-wrap">{l.description || <Dash />}</td>
+                  <td className="px-3 py-2 whitespace-pre-wrap break-words">{l.description || <Dash />}</td>
                   {showCostCode && <td className="px-3 py-2">{l.costCode || <Dash />}</td>}
-                  <td className="px-3 py-2 money">
+                  <td className="px-3 py-2 money whitespace-nowrap">
                     {l.quantity}
                     {l.unit && l.unit !== "Unit" ? <span className="text-muted-foreground"> {l.unit}</span> : null}
                   </td>
-                  <td className="px-3 py-2 money">{formatCents(l.unitPriceCents, { alwaysShowDecimals: true })}</td>
+                  <td className="px-3 py-2 money whitespace-nowrap">{formatCents(l.unitPriceCents, { alwaysShowDecimals: true })}</td>
                   <td className="px-3 py-2 text-muted-foreground">{l.tax === "GST on expenses" ? "GST" : "No GST"}</td>
                   {showAccount && <td className="px-3 py-2">{l.account || <Dash />}</td>}
                   {showAllowance && <td className="px-3 py-2">{l.allowance || <Dash />}</td>}
-                  <td className="px-3 py-2 money-figure">{formatCents(l.amountCents, { alwaysShowDecimals: true })}</td>
+                  <td className="px-3 py-2 money-figure whitespace-nowrap">{formatCents(l.amountCents, { alwaysShowDecimals: true })}</td>
                 </tr>
               ))
             )}
@@ -143,6 +155,7 @@ export function BillDocumentLines({ lines, taxMode, totals }: Omit<BillDocumentV
           ]}
           total={{ label: "Amount due", cents: totals.dueCents }}
           alwaysShowDecimals
+          align="right"
         />
       </div>
     </Card>

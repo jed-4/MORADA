@@ -38,6 +38,7 @@ import { verifyResendSignature, parseResendEvent, deliveryPatch } from "./servic
 import { listEmailDeliveries, getEmailDelivery, getEmailDeliveryDetail, findAddressProblems, resendDelivery, replaceAddressInAddressBook, ResendRefused, type EmailLogScope } from "./services/emailLog";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
+import { computeDueDate } from "@shared/paymentTerms";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { isVendorCredit } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
@@ -22094,6 +22095,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
 
+      // A bill can only be moved onto a project of the caller's own company
+      // (POST already enforced this; PATCH didn't), and its supplier must be
+      // one of the company's own contacts.
+      {
+        const d = validationResult.data as any;
+        if (d.projectId && d.projectId !== (previous as any).projectId) {
+          if (!(await enforceProjectCompany(req, res, d.projectId, "Project not found"))) return;
+        }
+        if (d.supplierId && d.supplierId !== (previous as any).supplierId) {
+          const callerCompanyId = (req as any).user?.companyId;
+          const supplier = callerCompanyId
+            ? await storage.getContact(d.supplierId, callerCompanyId)
+            : undefined;
+          if (!supplier) {
+            return res.status(400).json({ error: "Supplier not found in your contacts" });
+          }
+        }
+      }
+
       // A save must not quietly walk a bill's total away from the invoice it
       // came from. BILL-1483 lost $4.43 exactly this way: a single Save flipped
       // its tax mode and inflated the total 10% above the printed docket, and
@@ -22262,7 +22282,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const onlySyncFields = Object.keys(validationResult.data).every(k =>
         k === "xeroLastSyncAt" || k === "xeroLastSyncStatus" || k === "xeroLastSyncError" || k === "xeroPaidStatus"
       );
-      if (companyId && !onlySyncFields) {
+      // skipXeroAutoPush: the bill screen's "Xero refused it, put the bill back"
+      // undo. Pushing the restored version would just repeat the failure.
+      const skipXeroAutoPush = req.body?.skipXeroAutoPush === true;
+      if (companyId && !onlySyncFields && !skipXeroAutoPush) {
         if (bill.xeroInvoiceId && bill.status !== "paid") {
           scheduleAutoPushBill(bill.id, companyId);
         } else if (
@@ -22408,7 +22431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills/:id/duplicate", async (req, res) => {
+  app.post("/api/bills/:id/duplicate", requireAuth, async (req, res) => {
     try {
       const originalBill = await getOwnedBill(req, res, req.params.id);
       if (!originalBill) return;
@@ -22431,6 +22454,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal: originalBill.subtotal,
         tax: originalBill.tax,
         total: originalBill.total,
+        // Without the tax mode a copy of an inc-GST bill was re-read as ex-GST
+        // and came out ~10% bigger. Rounding travels with the lines; the
+        // document total does not — the copy is a new document.
+        taxMode: (originalBill as any).taxMode ?? "exclusive",
+        roundingCents: (originalBill as any).roundingCents ?? 0,
         paidAmount: 0,
         sendToXero: false,
         attachmentUrls: [],
@@ -22444,7 +22472,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lineType: item.lineType as "estimate" | "item" | "custom",
           description: item.description,
           costCodeId: item.costCodeId,
+          priceListItemId: item.priceListItemId,
           quantity: item.quantity,
+          unit: item.unit,
           unitPrice: item.unitPrice,
           tax: item.tax as "GST on expenses" | "No GST",
           account: item.account,
@@ -22471,27 +22501,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!objectPath || typeof objectPath !== "string") {
         return res.status(400).json({ error: "objectPath is required" });
       }
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-
-      // Authorization — require an authenticated user with a companyId, and
-      // require the bill's project (when present) to belong to that company.
+      // Tenant check via the shared helper: no admin-role bypass of the
+      // company check, and business bills (no project, e.g. email intake) are
+      // owned through bills.companyId instead of being refused outright.
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       const userId = (req as any).user?.id;
-      const userCompanyId = (req as any).user?.companyId;
-      const userRole = (req as any).user?.role;
-      if (!userCompanyId && userRole !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-      if (bill.projectId) {
-        const project = await storage.getProject(bill.projectId);
-        if (!project) return res.status(403).json({ error: "Forbidden" });
-        if (userRole !== "admin" && project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Forbidden" });
-        }
-      } else if (userRole !== "admin") {
-        // Bills without a project are admin-only for safety.
-        return res.status(403).json({ error: "Forbidden" });
-      }
 
       const allowedSources = ["manual", "ai_reader", "email", "xero"] as const;
       type SourceLiteral = typeof allowedSources[number];
@@ -23051,7 +23066,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recomputeBillTotals(billId).catch((e) =>
         console.error("[bills line-items PUT] recompute failed:", e));
       await recalcBudgetForBill(billId);
-      void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+      // skipXeroAutoPush: the bill screen's undo after Xero refused a save.
+      if (req.body?.skipXeroAutoPush !== true) {
+        void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+      }
 
       res.json(saved);
     } catch (error: any) {
@@ -23157,6 +23175,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!validationResult.data.amount || validationResult.data.amount <= 0) {
         return res.status(400).json({ error: "Payment amount must be greater than zero." });
+      }
+
+      // A bill is paid only after it has been approved — paying a draft or a
+      // bill still in review/approval skips the approval step entirely.
+      if (bill.status === "draft" || bill.status === "needs_review" || bill.status === "awaiting_approval") {
+        return res.status(409).json({
+          error: "Approve this bill before recording a payment against it.",
+          code: "BILL_NOT_APPROVED",
+        });
+      }
+
+      // Never record more than is still owing (paying exactly the balance is fine).
+      {
+        const existingPayments = await storage.getBillPayments(req.params.id);
+        const paidSoFar = existingPayments
+          .filter((p) => !p.isVoided)
+          .reduce((sum, p) => sum + (p.amount ?? 0), 0);
+        const outstanding = Math.max(0, (bill.total ?? 0) - paidSoFar);
+        if (validationResult.data.amount > outstanding) {
+          const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+          return res.status(409).json({
+            error: outstanding === 0
+              ? "This bill is already fully paid."
+              : `That payment is more than the ${money(outstanding)} still owing on this bill.`,
+            code: "PAYMENT_EXCEEDS_OUTSTANDING",
+            outstandingCents: outstanding,
+          });
+        }
       }
 
       const wasPaid = bill.status === "paid";
@@ -23569,6 +23615,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedBill = await getOwnedBill(req, res, req.params.id);
       if (!ownedBill) return;
 
+      // Approving moves a bill INTO awaiting_payment. From awaiting_payment it
+      // would only write a duplicate approval record; from paid it would
+      // silently un-pay the bill.
+      if (ownedBill.status === "awaiting_payment" || ownedBill.status === "paid") {
+        return res.status(409).json({
+          error: ownedBill.status === "paid"
+            ? "This bill is already paid."
+            : "This bill is already approved.",
+          code: "BILL_ALREADY_APPROVED",
+        });
+      }
+
       // An approved bill with no due date can't be paid on time and fails the
       // Xero push. Approving is the last gate before Xero, so it is held here.
       if (!ownedBill.dueDate) {
@@ -23603,8 +23661,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Xero for good. Send it now. It still arrives as "Awaiting Approval":
       // approving happens in Xero (Jed, 20 Oct, confirmed 3 Nov), so a bill
       // already in Xero is left alone.
+      //
+      // Pushed NOW, not on a timer: a timed push that failed only surfaced as a
+      // toast after "Approved and saved", which is easy to miss (Jed, 11-18:
+      // "it shouldn't save in that case"). If Xero refuses it, the approval is
+      // undone and the reason goes back to the screen.
       const approverCompanyId = (req as any).user?.companyId;
-      if (!ownedBill.xeroInvoiceId && approverCompanyId) {
+      if (!ownedBill.xeroInvoiceId && approverCompanyId && (ownedBill as any).sendToXero) {
+        const pushed = await pushBillToXeroInternal(req.params.id, approverCompanyId);
+        // In flight = it will land; not connected = not a refusal of this bill.
+        if (!pushed.ok && pushed.error !== "PUSH_IN_FLIGHT" && pushed.error !== "NO_CONNECTION") {
+          await storage.updateBill(req.params.id, { status: ownedBill.status } as any);
+          await db.delete(schema.billApprovals).where(eq(schema.billApprovals.id, approval.id)).catch(() => {});
+          return res.status(409).json({
+            error: "XERO_PUSH_FAILED",
+            code: pushed.error,
+            message: pushed.message || "Xero didn't accept this bill.",
+            validationErrors: (pushed as any).validationErrors,
+            supplierName: (pushed as any).supplierName,
+            supplierId: (pushed as any).supplierId,
+          });
+        }
+      } else if (!ownedBill.xeroInvoiceId && approverCompanyId) {
         scheduleAutoPushBill(req.params.id, approverCompanyId);
       }
 
@@ -23655,6 +23733,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const ownedBill = await getOwnedBill(req, res, req.params.id);
       if (!ownedBill) return;
+
+      // Rejecting resets the bill to draft. That must not happen to a bill
+      // that is paid, has payments recorded, or is already approved/paid in
+      // Xero — the two systems would then disagree with no way back.
+      {
+        const xeroStatus = String((ownedBill as any).xeroPaidStatus || "").toUpperCase();
+        if (ownedBill.status === "paid") {
+          return res.status(409).json({ error: "This bill is already paid and can't be rejected.", code: "BILL_NOT_REJECTABLE" });
+        }
+        if ((ownedBill.paidAmount ?? 0) > 0) {
+          return res.status(409).json({
+            error: "This bill has payments recorded against it. Reverse the payments before rejecting it.",
+            code: "BILL_NOT_REJECTABLE",
+          });
+        }
+        if (xeroStatus === "AUTHORISED" || xeroStatus === "PAID") {
+          return res.status(409).json({
+            error: "This bill is already approved in Xero. Void or revert it in Xero before rejecting it here.",
+            code: "BILL_NOT_REJECTABLE",
+          });
+        }
+      }
 
       const validationResult = insertBillApprovalSchema.safeParse({
         billId: req.params.id,
@@ -30931,6 +31031,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Already read — skip
         if (bill.ocrProcessed) { results.push({ billId, billNumber, status: "skipped", reason: "Already read" }); continue; }
 
+        // The read rewrites the bill's totals and moves it into approval, so it
+        // only runs on bills that haven't got that far yet. An approved or paid
+        // bill must not be pulled back into the approval queue.
+        if (bill.status !== "draft" && bill.status !== "needs_review") {
+          results.push({ billId, billNumber, status: "skipped", reason: "Only draft or needs-review bills can be read" });
+          continue;
+        }
+
         // Find first processable attachment
         type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
         const attachments: Att[] = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as Att[]) : [];
@@ -31039,14 +31147,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const docTotalCents = invoiceData.totalAmount ?? null;
           const docHasGst = (invoiceData.totalTax ?? 0) > 0;
 
-          // Move straight to awaiting_approval after AI extraction — the PM
-          // approves from the Awaiting Approval queue. Consistent with the
-          // individual "Read & Apply" button.
+          // The supplier contact (bills.supplierId references contacts) supplies
+          // the fallbacks the document doesn't: payment terms for the due date
+          // and the Xero account code for the lines.
+          const supplierContact = resolvedSupplierId
+            ? await storage.getContact(resolvedSupplierId, companyId).catch(() => undefined)
+            : undefined;
+          const resolvedBillDate = invoiceData.invoiceDate
+            ? new Date(invoiceData.invoiceDate)
+            : (bill.billDate ? new Date(bill.billDate) : new Date());
+          // Due date: the invoice's own, else the supplier's payment terms, else
+          // whatever the bill already had.
+          const resolvedDueDate: Date | null =
+            (invoiceData.dueDate ? new Date(invoiceData.dueDate) : null) ??
+            computeDueDate(resolvedBillDate, (supplierContact as any)?.paymentTerms) ??
+            (bill.dueDate ? new Date(bill.dueDate) : null);
+
+          // Move to awaiting_approval after AI extraction — the PM approves from
+          // the Awaiting Approval queue. Consistent with the individual "Read &
+          // Apply" button. Without a due date the bill can't be approved (and
+          // Xero rejects it), so it waits in needs_review for one instead.
           await storage.updateBill(billId, {
-            status: "awaiting_approval",
+            status: resolvedDueDate ? "awaiting_approval" : "needs_review",
             supplierId: resolvedSupplierId,
-            billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : (bill.billDate ?? new Date()),
-            dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
+            billDate: resolvedBillDate,
+            dueDate: resolvedDueDate ?? undefined,
             billReference: invoiceData.invoiceNumber || bill.billReference,
             taxMode: detectedTaxMode,
             documentTotalCents: docTotalCents,
@@ -31102,7 +31227,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 quantity: qty,
                 unitPrice: unitPriceCents,
                 tax: lineTax,
-                account: "Expenses",
+                // "Expenses" was hard-coded here — not a Xero account code, and
+                // because a line's account outranks the supplier default at
+                // push time it overrode the supplier's real code. Use the
+                // supplier's default; with none, leave it blank so the push
+                // falls back to the company default.
+                account: (supplierContact as any)?.xeroDefaultAccountCode || null,
                 total: lineTotalCents,
                 order: i,
               });
@@ -41927,12 +42057,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/calendar-views", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { calendarType } = req.query;
-      if (!calendarType || (calendarType !== "personal" && calendarType !== "business")) {
-        return res.status(400).json({ error: "Invalid calendar type. Must be 'personal' or 'business'" });
+      if (!calendarType || (calendarType !== "personal" && calendarType !== "business" && calendarType !== "schedule")) {
+        return res.status(400).json({ error: "Invalid calendar type. Must be 'personal', 'business' or 'schedule'" });
       }
-      
+
       const actor = req.user as any;
       const companyId = actor.companyId as string;
+
+      // Business → Schedule → Projects: each person gets their own "All
+      // projects" starting view (the one-company-default index is per
+      // company, not per type, so it can't have a company default).
+      if (calendarType === "schedule") {
+        const [mine] = await db.select({ id: schema.calendarViews.id })
+          .from(schema.calendarViews)
+          .where(and(
+            eq(schema.calendarViews.companyId, companyId),
+            eq(schema.calendarViews.userId, actor.id),
+            eq(schema.calendarViews.calendarType, "schedule"),
+            eq(schema.calendarViews.isDefault, true),
+            eq(schema.calendarViews.isArchived, false),
+          ))
+          .limit(1);
+        if (!mine) {
+          await db.insert(schema.calendarViews).values({
+            companyId,
+            userId: actor.id,
+            name: "All projects",
+            calendarType: "schedule",
+            calendarMode: "week",
+            filters: {},
+            isDefault: true,
+            sortOrder: 0,
+          });
+        }
+      }
 
       // The business calendar needs a default view to open on. It used to be
       // created by the client, once per user, which gave a company of fifteen
@@ -41966,7 +42124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const views = await storage.getCalendarViews(
         actor.id,
-        calendarType as "personal" | "business",
+        calendarType as "personal" | "business" | "schedule",
         companyId
       );
       res.json(views);
