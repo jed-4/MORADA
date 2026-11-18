@@ -495,8 +495,23 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   // (including the range segment) or the optimistic update misses the cache.
   const tsQueryKey = projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets", rangeQueryString];
 
+  // Bulk edit (rate / cost code / project). Each field has a "change" tick so
+  // "leave as is" and "clear" aren't confused.
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkEdit, setBulkEdit] = useState<{
+    rateOn: boolean; rate: string; costOn: boolean; costCodeId: string; projectOn: boolean; projectId: string;
+  }>({ rateOn: false, rate: "", costOn: false, costCodeId: "", projectOn: false, projectId: "" });
+  const submitBulkEdit = () => {
+    const fields: Record<string, unknown> = {};
+    if (bulkEdit.rateOn) fields.hourlyRate = bulkEdit.rate === "" ? 0 : Number(bulkEdit.rate);
+    if (bulkEdit.costOn) fields.costCodeId = bulkEdit.costCodeId || null;
+    if (bulkEdit.projectOn) fields.projectId = bulkEdit.projectId && bulkEdit.projectId !== "none" ? bulkEdit.projectId : null;
+    if (Object.keys(fields).length === 0) return;
+    bulkActionMutation.mutate({ ids: selectedTimesheets, action: "edit", fields });
+  };
+
   const bulkActionMutation = useMutation({
-    mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
+    mutationFn: (data: { ids: string[]; action: string; status?: string; fields?: Record<string, unknown> }) =>
       apiRequest("/api/timesheets/bulk-action", "POST", data),
     onMutate: async (variables) => {
       // Optimistically update the cache so the UI responds immediately
@@ -517,24 +532,32 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       });
       return { previous };
     },
-    onSuccess: (result: { success: number; errors: string[] }, variables) => {
+    onSuccess: (result: { success: number; errors: string[]; skippedSplitCostCode?: number }, variables) => {
       setSelectedTimesheets([]);
+      setBulkEditOpen(false);
       const actionLabels: Record<string, string> = {
         changeStatus: "updated",
         delete: "deleted",
+        edit: "updated",
       };
+      const notes: string[] = [];
+      if (result.errors?.length > 0) notes.push(`${result.errors.length} failed`);
+      if (result.skippedSplitCostCode) {
+        notes.push(`cost code left alone on ${result.skippedSplitCostCode} split timesheet${result.skippedSplitCostCode === 1 ? "" : "s"}`);
+      }
       toast({
         title: `${result.success} timesheet${result.success !== 1 ? "s" : ""} ${actionLabels[variables.action] || "updated"}`,
-        description: result.errors?.length > 0 ? `${result.errors.length} failed` : undefined,
+        description: notes.length ? notes.join(" · ") : undefined,
       });
     },
-    onError: (_err, _variables, context: any) => {
+    onError: (err: any, _variables, context: any) => {
       // Roll back optimistic update on failure
       if (context?.previous !== undefined) {
         queryClient.setQueryData(tsQueryKey, context.previous);
       }
       toast({
         title: "Bulk action failed",
+        description: err?.payload?.error || undefined,
         variant: "destructive",
       });
     },
@@ -2755,6 +2778,76 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         </div>
       )}
 
+      <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-bulk-edit-timesheets">
+          <DialogHeader>
+            <DialogTitle>Edit {selectedTimesheets.length} timesheet{selectedTimesheets.length === 1 ? "" : "s"}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-1">Tick what to change — everything else stays as it is.</p>
+          <div className="space-y-3">
+            {canViewTimesheetRates && (
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox checked={bulkEdit.rateOn} onCheckedChange={(v) => setBulkEdit((b) => ({ ...b, rateOn: v === true }))} data-testid="check-bulk-rate" />
+                  Rate ($ per hour)
+                </label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="e.g. 75"
+                  value={bulkEdit.rate}
+                  disabled={!bulkEdit.rateOn}
+                  onChange={(e) => setBulkEdit((b) => ({ ...b, rate: e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1") }))}
+                  data-testid="input-bulk-rate"
+                />
+                <p className="text-[11px] text-muted-foreground">Totals are recalculated. Split timesheets get the rate on every split; subcontractors stay $0.</p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={bulkEdit.costOn} onCheckedChange={(v) => setBulkEdit((b) => ({ ...b, costOn: v === true }))} data-testid="check-bulk-costcode" />
+                Cost code
+              </label>
+              <CostCodeSelect
+                value={bulkEdit.costCodeId}
+                onValueChange={(v) => setBulkEdit((b) => ({ ...b, costCodeId: v }))}
+                disabled={!bulkEdit.costOn}
+                placeholder="Select cost code"
+                data-testid="select-bulk-costcode"
+              />
+              <p className="text-[11px] text-muted-foreground">Not applied to split timesheets (they have several cost codes).</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={bulkEdit.projectOn} onCheckedChange={(v) => setBulkEdit((b) => ({ ...b, projectOn: v === true }))} data-testid="check-bulk-project" />
+                Project
+              </label>
+              <ProjectSelect
+                value={bulkEdit.projectId || undefined}
+                onValueChange={(v) => setBulkEdit((b) => ({ ...b, projectId: v }))}
+                disabled={!bulkEdit.projectOn}
+                data-testid="select-bulk-project"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setBulkEditOpen(false)}>Cancel</Button>
+            <Button
+              onClick={submitBulkEdit}
+              disabled={
+                bulkActionMutation.isPending ||
+                (!bulkEdit.rateOn && !bulkEdit.costOn && !bulkEdit.projectOn) ||
+                (bulkEdit.rateOn && bulkEdit.rate === "")
+              }
+              data-testid="button-bulk-edit-apply"
+            >
+              {bulkActionMutation.isPending ? "Saving…" : "Apply"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Floating bulk action bar (fixed at bottom, doesn't push layout) ── */}
       <BulkActionBar
         count={selectedTimesheets.length}
@@ -2788,6 +2881,19 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          onClick={() => {
+            setBulkEdit({ rateOn: false, rate: "", costOn: false, costCodeId: "", projectOn: false, projectId: "" });
+            setBulkEditOpen(true);
+          }}
+          data-testid="button-bulk-edit-timesheets"
+        >
+          <Pencil className="h-3.5 w-3.5 mr-1" />
+          Bulk edit
+        </Button>
         <Tooltip>
           <TooltipTrigger asChild>
             <span>

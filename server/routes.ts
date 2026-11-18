@@ -35773,9 +35773,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids array is required" });
       }
-      if (!["changeStatus", "delete"].includes(action)) {
+      if (!["changeStatus", "delete", "edit"].includes(action)) {
         return res.status(400).json({ error: "Invalid action" });
       }
+      // Bulk edit (Jed, 11-18): rate, cost code and/or project on many
+      // timesheets at once. Only the fields sent are changed.
+      const editFields = (action === "edit" && req.body.fields && typeof req.body.fields === "object") ? req.body.fields : null;
+      let editRate: number | null = null;
+      if (action === "edit") {
+        if (!editFields) return res.status(400).json({ error: "fields is required" });
+        if (editFields.hourlyRate !== undefined) {
+          editRate = Number(editFields.hourlyRate);
+          if (!Number.isFinite(editRate) || editRate < 0 || editRate > 10000) {
+            return res.status(400).json({ error: "Rate must be a number between 0 and 10,000" });
+          }
+        }
+        if (editFields.projectId) {
+          if (!(await enforceProjectCompany(req, res, editFields.projectId, "Project not found"))) return;
+        }
+        if (editFields.costCodeId) {
+          const cc = await storage.getCostCode(editFields.costCodeId, user.companyId).catch(() => undefined);
+          if (!cc) {
+            return res.status(400).json({ error: "Cost code not found" });
+          }
+        }
+      }
+      let skippedSplitCostCode = 0;
       const validStatuses = ["submitted", "approved", "rejected"];
       if (action === "changeStatus" && (!status || !validStatuses.includes(status))) {
         return res.status(400).json({ error: "Invalid status" });
@@ -35788,6 +35811,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (action === "changeStatus" && (status === "approved" || status === "rejected") && !hasApprovalAccess) {
         return res.status(403).json({ error: "You do not have permission to approve or reject timesheets" });
+      }
+      // Changing pay rates is a manager's job — even on your own timesheets.
+      if (action === "edit" && editRate !== null && !hasApprovalAccess) {
+        return res.status(403).json({ error: "You do not have permission to change timesheet rates" });
       }
 
       let successCount = 0;
@@ -35818,6 +35845,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           if (timesheet.userId !== user.id && !hasApprovalAccess) {
             errors.push(`Not authorized for timesheet ${id}`);
+            continue;
+          }
+
+          if (action === "edit" && editFields) {
+            const update: Record<string, unknown> = {};
+            const splits = await storage.getTimesheetCostCodes(id);
+            const isSplit = splits.length > 0;
+            if (editFields.projectId !== undefined) update.projectId = editFields.projectId || null;
+            if (editFields.costCodeId !== undefined) {
+              // A split timesheet has several cost codes — one bulk value
+              // would flatten them, so those are left alone and counted.
+              if (isSplit) skippedSplitCostCode++;
+              else update.costCodeId = editFields.costCodeId || null;
+            }
+            if (editRate !== null) {
+              const rate = editRate;
+              if (isSplit) {
+                const rebuilt = splits.map((sp) => {
+                  const hrs = parseFloat(String(sp.duration ?? "0")) || 0;
+                  return {
+                    costCodeId: sp.costCodeId,
+                    duration: String(sp.duration),
+                    hourlyRate: rate.toFixed(2),
+                    total: (hrs * rate).toFixed(2),
+                  };
+                });
+                await storage.replaceTimesheetCostCodes(id, rebuilt as any);
+                update.hourlyRate = rate.toFixed(2);
+                update.total = rebuilt.reduce((s, r) => s + parseFloat(r.total), 0).toFixed(2);
+              } else {
+                const hrs = parseFloat(String(timesheet.duration ?? "0")) || 0;
+                update.hourlyRate = rate.toFixed(2);
+                update.total = (hrs * rate).toFixed(2);
+              }
+            }
+            // storage.updateTimesheet zeroes rate/total for subcontractors.
+            if (Object.keys(update).length > 0) await storage.updateTimesheet(id, update as any);
+            successCount++;
             continue;
           }
 
@@ -35879,7 +35944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ success: successCount, errors });
+      res.json({ success: successCount, errors, skippedSplitCostCode });
     } catch (error: any) {
       console.error("Error in bulk timesheet action:", error);
       res.status(500).json({ error: "Failed to perform bulk action" });
