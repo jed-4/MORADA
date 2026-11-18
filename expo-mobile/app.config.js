@@ -42,7 +42,7 @@ module.exports = {
       bundleIdentifier: "com.buildpro.mobile",
       // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
       usesAppleSignIn: true,
-      buildNumber: "19",
+      buildNumber: "20",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
