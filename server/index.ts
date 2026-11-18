@@ -535,6 +535,11 @@ app.use((req, res, next) => {
       .then((m) => m.startVariationReminderScheduler())
       .catch((e) => console.error("[VariationReminders] failed to start", e));
 
+    // Arriving on site: site visits are kept for 12 months. Daily sweep.
+    import("./services/siteVisits")
+      .then((m) => m.startSiteVisitCleanup())
+      .catch((e) => console.error("[SiteVisits] failed to start", e));
+
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in
     // production — instead of discovering it when a customer's checkout fails.
