@@ -593,6 +593,7 @@ export default function DashboardScreen({ navigation }: Props) {
       await apiRequest('/api/timesheets/clock-out', 'POST', {
         timesheetId: activeTimesheet.id,
         breakDuration: breakMinutes,
+        clientTime: new Date().toISOString(), // the tap, not when it lands
       });
       setActiveTimesheet(null);
       clockOutSheetRef.current?.dismiss();

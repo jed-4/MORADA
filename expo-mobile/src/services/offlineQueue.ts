@@ -197,12 +197,15 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
         await apiRequest('/api/timesheets/clock-in', 'POST', {
           projectId: action.payload.projectId,
           costCodeId: action.payload.costCodeId,
+          // When the button was pressed — not when signal came back.
+          clientTime: action.payload.clientTime ?? action.createdAt,
         });
         return 'success';
       }
       case 'clock-out': {
         await apiRequest('/api/timesheets/clock-out', 'POST', {
           timesheetId: action.payload.timesheetId,
+          clientTime: action.payload.clientTime ?? action.createdAt,
         });
         return 'success';
       }

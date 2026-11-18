@@ -857,6 +857,9 @@ export default function TimesheetsScreen() {
       return;
     }
     setClockingIn(true);
+    // Clock-in time = this tap, even if it only reaches the server later
+    // from the offline queue (server/clockTime.ts).
+    const clientTime = new Date().toISOString();
     const resolvedClockInProjectId = clockInProjectId === BUSINESS_ID ? null : clockInProjectId;
     let networkError = false;
     try {
@@ -864,7 +867,7 @@ export default function TimesheetsScreen() {
       if (!online) {
         await addToQueue({
           type: 'clock-in',
-          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId },
+          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId, clientTime },
         });
         Alert.alert('Saved Offline', 'Your clock-in has been queued and will sync when you have a connection.');
         setClockInProjectId('');
@@ -874,7 +877,7 @@ export default function TimesheetsScreen() {
 
       let res: Response;
       try {
-        res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId });
+        res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId, clientTime });
       } catch {
         networkError = true;
         throw new Error('Network error');
@@ -896,7 +899,7 @@ export default function TimesheetsScreen() {
       if (networkError) {
         await addToQueue({
           type: 'clock-in',
-          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId },
+          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId, clientTime },
         });
         Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
         setClockInProjectId('');
@@ -912,13 +915,15 @@ export default function TimesheetsScreen() {
   const handleClockOut = async () => {
     if (!activeTimesheet) return;
     setClockingOut(true);
+    // Clock-out time = this tap (see handleClockIn).
+    const clientTime = new Date().toISOString();
     let networkError = false;
     try {
       const online = await isOnline();
       if (!online) {
         await addToQueue({
           type: 'clock-out',
-          payload: { timesheetId: activeTimesheet.id },
+          payload: { timesheetId: activeTimesheet.id, clientTime },
         });
         Alert.alert('Saved Offline', 'Your clock-out has been queued and will sync when you have a connection.');
         return;
@@ -926,7 +931,7 @@ export default function TimesheetsScreen() {
 
       let res: Response;
       try {
-        res = await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id });
+        res = await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id, clientTime });
       } catch {
         networkError = true;
         throw new Error('Network error');
@@ -946,7 +951,7 @@ export default function TimesheetsScreen() {
       if (networkError) {
         await addToQueue({
           type: 'clock-out',
-          payload: { timesheetId: activeTimesheet.id },
+          payload: { timesheetId: activeTimesheet.id, clientTime },
         });
         Alert.alert('Saved Offline', 'Clock-out saved and will sync when connection is restored.');
       } else {
