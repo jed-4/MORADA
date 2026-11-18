@@ -33,16 +33,16 @@ async function drainOnce(): Promise<void> {
       const { storage } = await import("../storage");
       const bill = await storage.getBillById(job.billId).catch(() => null);
       if (!bill) {
-        await markPushDone(job.id);
+        await markPushDone(job);
         continue;
       }
       if (!isAutoPushEligible(bill as any)) {
-        await markPushDone(job.id);
+        await markPushDone(job);
         continue;
       }
       const result = await pushBillToXeroInternal(job.billId, job.companyId);
       if (result.ok) {
-        await markPushDone(job.id);
+        await markPushDone(job);
         continue;
       }
       // INVOICE_LOCKED is not a failure: Xero refused the edit because the
@@ -51,14 +51,14 @@ async function drainOnce(): Promise<void> {
       // as a failed job leaves a dead-lettered row and a red badge for a bill
       // that is now correct.
       if (result.error === "INVOICE_LOCKED") {
-        await markPushDone(job.id);
+        await markPushDone(job);
         continue;
       }
       // Waiting on a human, not on Xero: a voided link is re-created only from
       // the review queue, and a duplicate only goes once the copy is resolved.
       // Retrying would just repeat the same refusal.
       if (result.error === "XERO_VOIDED" || result.error === "DUPLICATE_BILL") {
-        await markPushDone(job.id);
+        await markPushDone(job);
         continue;
       }
       const reason = result.message || result.error || "Push failed";
