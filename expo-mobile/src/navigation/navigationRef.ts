@@ -1,5 +1,5 @@
 import { createNavigationContainerRef } from '@react-navigation/native';
-import { resolveNotificationTarget } from './notificationRouting';
+import { resolveNotificationTarget, tabNavigationParams } from './notificationRouting';
 import { resolveClientNotificationTarget } from '../lib/clientPortal';
 
 export const navigationRef = createNavigationContainerRef<any>();
@@ -18,12 +18,7 @@ export function navigateFromPush(data: Record<string, any> | undefined | null) {
   const navigate = navigationRef.navigate as (name: string, params?: any) => void;
 
   try {
-    navigate('Main', {
-      screen: target.tab,
-      params: target.screen
-        ? { screen: target.screen, params: target.params }
-        : target.params,
-    });
+    navigate('Main', { screen: target.tab, params: tabNavigationParams(target) });
   } catch {
     // Navigation tree may not be fully ready on cold start; safe to ignore.
   }

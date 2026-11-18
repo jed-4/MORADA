@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TaskComments from '../TaskComments';
 import { useTwoPaneDetail } from '../ui/TwoPane';
 import { readableFrame } from '../ui/ReadableColumn';
-import { lightTheme } from '../../theme';
+import { currentTheme, MAX_FONT_SCALE } from '../../theme';
 
 /**
  * One task's read-only view: title, status/priority, due date, project,
@@ -52,11 +52,11 @@ export const PRIORITY_LABELS: Record<string, string> = {
 
 export function getPriorityColor(priority?: string): string {
   switch (priority) {
-    case 'urgent': return lightTheme.statusDanger;
-    case 'high': return lightTheme.coral;
-    case 'medium': return lightTheme.statusWarning;
-    case 'low': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
+    case 'urgent': return currentTheme().statusDanger;
+    case 'high': return currentTheme().coral;
+    case 'medium': return currentTheme().statusWarning;
+    case 'low': return currentTheme().statusSuccess;
+    default: return currentTheme().textMuted;
   }
 }
 
@@ -118,14 +118,14 @@ export function TaskDetail({
 
   return (
     <>
-      <Text style={[styles.viewTitle, { color: colors.text }]}>{task.title}</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewTitle, { color: colors.text }]}>{task.title}</Text>
 
       <View style={styles.viewBadgeRow}>
         <View style={[styles.viewBadge, { backgroundColor: statusColor + '20' }]}>
-          <Text style={[styles.viewBadgeText, { color: statusColor }]}>{statusLabel}</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewBadgeText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
         <View style={[styles.viewBadge, { backgroundColor: priorityColor + '20' }]}>
-          <Text style={[styles.viewBadgeText, { color: priorityColor }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewBadgeText, { color: priorityColor }]}>
             {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
           </Text>
         </View>
@@ -134,7 +134,7 @@ export function TaskDetail({
       {task.dueDate ? (
         <View style={styles.viewField}>
           <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
-          <Text style={[styles.viewFieldText, { color: colors.text }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewFieldText, { color: colors.text }]}>
             {new Date(task.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
           </Text>
         </View>
@@ -143,28 +143,28 @@ export function TaskDetail({
       {projectName ? (
         <View style={styles.viewField}>
           <Ionicons name="briefcase-outline" size={18} color={colors.secondary} />
-          <Text style={[styles.viewFieldText, { color: colors.text }]}>{projectName}</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewFieldText, { color: colors.text }]}>{projectName}</Text>
         </View>
       ) : null}
 
       {description ? (
         <View style={styles.viewSection}>
-          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>{descriptionLabel}</Text>
-          <Text style={[styles.viewDescription, { color: colors.text }]}>{description}</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>{descriptionLabel}</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewDescription, { color: colors.text }]}>{description}</Text>
         </View>
       ) : null}
 
       {assignees.length > 0 ? (
         <View style={styles.viewSection}>
-          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
           {assignees.map((name, idx) => (
             <View key={idx} style={styles.assigneeRow}>
               <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
-                <Text style={styles.assigneeAvatarText}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.assigneeAvatarText}>
                   {(name || '').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                 </Text>
               </View>
-              <Text style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
             </View>
           ))}
         </View>
@@ -173,9 +173,9 @@ export function TaskDetail({
       {checklist.length > 0 ? (
         <View style={styles.viewSection}>
           <View style={styles.checklistHeader}>
-            <Text style={[styles.viewSectionLabel, { color: colors.secondary, marginBottom: 0 }]}>Checklist</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary, marginBottom: 0 }]}>Checklist</Text>
             {onToggleChecklistItem ? (
-              <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistProgress, { color: colors.muted }]}>
                 {checklist.filter(i => i.completed).length}/{checklist.length}
               </Text>
             ) : null}
@@ -186,9 +186,9 @@ export function TaskDetail({
                 <Ionicons
                   name={item.completed ? 'checkbox' : 'square-outline'}
                   size={22}
-                  color={item.completed ? lightTheme.statusSuccess : colors.muted}
+                  color={item.completed ? currentTheme().statusSuccess : colors.muted}
                 />
-                <Text
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                   style={[
                     styles.checklistText,
                     { color: item.completed ? colors.muted : colors.text },
@@ -219,11 +219,11 @@ export function TaskDetail({
 
       {tags.length > 0 ? (
         <View style={styles.viewSection}>
-          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
           <View style={styles.tagsRow}>
             {tags.map((tag, idx) => (
               <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
-                <Text style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
               </View>
             ))}
           </View>
@@ -269,14 +269,14 @@ export function TaskDetailPane({ onEdit, ...detail }: TaskDetailPaneProps) {
           heldOnFold && { paddingLeft: 60, paddingTop: insets.top + 14 },
         ]}
       >
-        <Text style={[styles.paneHeaderTitle, { color: colors.text }]}>Task Details</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.paneHeaderTitle, { color: colors.text }]}>Task Details</Text>
         <TouchableOpacity
           onPress={onEdit}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           accessibilityRole="button"
           accessibilityLabel="Edit task"
         >
-          <Text style={[styles.paneEdit, { color: colors.accent }]}>Edit</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.paneEdit, { color: colors.accent }]}>Edit</Text>
         </TouchableOpacity>
       </View>
       <ScrollView

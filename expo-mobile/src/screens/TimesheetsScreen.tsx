@@ -23,12 +23,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
-import { useTheme, lightTheme, darkTheme } from '../theme';
+import { useTheme, lightTheme, darkTheme, MAX_FONT_SCALE } from '../theme';
 import { sheetFrame } from '../components/ui/Sheet';
 import { useDirtyGuard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BackButton from '../components/ui/BackButton';
 
 const BUSINESS_ID = '__business__';
 
@@ -214,7 +216,7 @@ function ElapsedTimer({ clockInTime, style }: { clockInTime: string; style: obje
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
   }, [clockInTime]);
-  return <Text style={style}>{elapsed}</Text>;
+  return <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={style}>{elapsed}</Text>;
 }
 
 const GRID_START_HOUR = 5;
@@ -370,18 +372,18 @@ function WeeklyTimeGrid({
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* Week navigation */}
       <View style={[gridStyles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={gridStyles.weekArrow}>
+        <TouchableOpacity hitSlop={8} onPress={() => setWeekOffset(w => w - 1)} style={gridStyles.weekArrow}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </TouchableOpacity>
         <View style={gridStyles.weekCenter}>
-          <Text style={[gridStyles.weekRange, { color: colors.text }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.weekRange, { color: colors.text }]}>
             {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
           </Text>
-          <Text style={[gridStyles.weekHours, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.weekHours, { color: colors.secondary }]}>
             {totalHours.toFixed(1)} hours this week
           </Text>
         </View>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={gridStyles.weekArrow}>
+        <TouchableOpacity hitSlop={8} onPress={() => setWeekOffset(w => w + 1)} style={gridStyles.weekArrow}>
           <Ionicons name="chevron-forward" size={20} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -390,7 +392,7 @@ function WeeklyTimeGrid({
       {untimedEntries.length > 0 && (
         <View style={[gridStyles.untimedStrip, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={{ width: GUTTER_WIDTH, alignSelf: 'flex-start', paddingTop: 2 }}>
-            <Text style={[gridStyles.untimedLabel, { color: colors.secondary }]}>No{'\n'}time</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.untimedLabel, { color: colors.secondary }]}>No{'\n'}time</Text>
           </View>
           <View style={{ flex: 1, flexDirection: 'row' }}>
             {weekDates.map((date, dayIdx) => {
@@ -404,7 +406,7 @@ function WeeklyTimeGrid({
                       style={[gridStyles.untimedChip, { backgroundColor: getStatusBg(ts.status, isDark), borderColor: getStatusBorder(ts.status, isDark) }]}
                       onPress={() => onSelectTimesheet(ts)}
                     >
-                      <Text style={[gridStyles.untimedChipText, { color: getStatusText(ts.status, isDark) }]} numberOfLines={2}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.untimedChipText, { color: getStatusText(ts.status, isDark) }]} numberOfLines={2}>
                         {getProjectName(ts.projectId)}
                       </Text>
                     </TouchableOpacity>
@@ -424,11 +426,11 @@ function WeeklyTimeGrid({
           const isToday = dateStr === today;
           return (
             <View key={idx} style={[gridStyles.dayHeaderCell, { width: dayWidth }]}>
-              <Text style={[gridStyles.dayHeaderLabel, { color: isToday ? colors.accent : colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.dayHeaderLabel, { color: isToday ? colors.accent : colors.secondary }]}>
                 {DAY_LABELS[idx]}
               </Text>
               <View style={[gridStyles.dayHeaderDate, isToday && { backgroundColor: colors.accent }]}>
-                <Text style={[gridStyles.dayHeaderDateText, { color: isToday ? '#fff' : colors.text }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.dayHeaderDateText, { color: isToday ? '#fff' : colors.text }]}>
                   {date.getDate()}
                 </Text>
               </View>
@@ -454,7 +456,7 @@ function WeeklyTimeGrid({
                   { top: (hour - GRID_START_HOUR) * HOUR_HEIGHT - 7, height: HOUR_HEIGHT },
                 ]}
               >
-                <Text style={[gridStyles.gutterText, { color: colors.secondary }]}>{label}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[gridStyles.gutterText, { color: colors.secondary }]}>{label}</Text>
               </View>
             ))}
           </View>
@@ -539,14 +541,14 @@ function WeeklyTimeGrid({
                       onPress={() => onSelectTimesheet(ts)}
                       activeOpacity={0.7}
                     >
-                      <Text
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                         style={[gridStyles.blockProject, { color: textColor, maxWidth: innerWidth }]}
                         numberOfLines={1}
                       >
                         {projectName}
                       </Text>
                       {pos.height > 32 && ccName ? (
-                        <Text
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                           style={[gridStyles.blockCostCode, { color: textColor, maxWidth: innerWidth }]}
                           numberOfLines={1}
                         >
@@ -554,7 +556,7 @@ function WeeklyTimeGrid({
                         </Text>
                       ) : null}
                       {pos.height > 52 && ts.description ? (
-                        <Text
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                           style={[gridStyles.blockDesc, { color: textColor, maxWidth: innerWidth }]}
                           numberOfLines={2}
                         >
@@ -663,6 +665,7 @@ export default function TimesheetsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
@@ -1199,27 +1202,27 @@ export default function TimesheetsScreen() {
       >
         <View style={styles.entryTop}>
           <View style={styles.entryLeft}>
-            <Text style={[styles.entryDate, { color: colors.text }]}>{formatDayDate(ts.date)}</Text>
-            <Text style={[styles.entryProject, { color: colors.secondary }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.entryDate, { color: colors.text }]}>{formatDayDate(ts.date)}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.entryProject, { color: colors.secondary }]} numberOfLines={1}>
               {getProjectName(ts.projectId)}
             </Text>
           </View>
           <View style={styles.entryRight}>
-            <Text style={[styles.entryHours, { color: colors.accent }]}>{parseFloat(ts.duration || '0').toFixed(1)}h</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.entryHours, { color: colors.accent }]}>{parseFloat(ts.duration || '0').toFixed(1)}h</Text>
             <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
-              <Text style={[styles.statusText, { color: statusColor.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusText, { color: statusColor.text }]}>
                 {ts.status.charAt(0).toUpperCase() + ts.status.slice(1)}
               </Text>
             </View>
           </View>
         </View>
         {ts.startTime && ts.endTime ? (
-          <Text style={[styles.entryTime, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.entryTime, { color: colors.secondary }]}>
             {formatTime12h(ts.startTime)} - {formatTime12h(ts.endTime)}
           </Text>
         ) : null}
         {ts.description ? (
-          <Text style={[styles.entryDesc, { color: colors.secondary }]} numberOfLines={1}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.entryDesc, { color: colors.secondary }]} numberOfLines={1}>
             {ts.description}
           </Text>
         ) : null}
@@ -1274,8 +1277,8 @@ export default function TimesheetsScreen() {
       <View style={[styles.pickerOverlay]}>
         <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
           <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity hitSlop={10} onPress={onClose}>
               <Ionicons name="close" size={24} color={colors.secondary} />
             </TouchableOpacity>
           </View>
@@ -1293,7 +1296,7 @@ export default function TimesheetsScreen() {
               if (item.isHeader) {
                 return (
                   <View style={[styles.pickerSectionHeader, { backgroundColor: theme.subtle }]}>
-                    <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
                   </View>
                 );
               }
@@ -1302,12 +1305,12 @@ export default function TimesheetsScreen() {
                   style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                   onPress={() => { onSelect(item.id); onClose(); }}
                 >
-                  <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
                   {selectedId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
                 </TouchableOpacity>
               );
             }}
-            ListEmptyComponent={<Text style={[styles.emptyText, { color: colors.secondary }]}>No options available</Text>}
+            ListEmptyComponent={<Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No options available</Text>}
           />
         </View>
       </View>
@@ -1316,8 +1319,14 @@ export default function TimesheetsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Timesheets</Text>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 8 }]}>
+        {/* Timesheets is only ever opened across stacks (More panel, a
+            dashboard card, a timesheet notification), so it is usually its
+            stack's only route — BackButton falls through to the tab you came from. */}
+        <View style={styles.headerTitleRow}>
+          <BackButton color={colors.text} />
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Timesheets</Text>
+        </View>
         <View style={styles.headerToggle}>
           <TouchableOpacity
             style={[styles.toggleBtn, viewMode === 'list' && { backgroundColor: colors.accent }]}
@@ -1336,15 +1345,7 @@ export default function TimesheetsScreen() {
         </View>
       </View>
 
-      {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: theme.amberLight }]}>
-          <Ionicons name="cloud-offline" size={16} color={theme.amber} />
-          <Text style={{ color: theme.amber, fontSize: 13, marginLeft: 6, flex: 1 }}>
-            You're offline. Actions will be saved and synced when connected.
-          </Text>
-        </View>
-      )}
-
+      {/* Offline itself is shown by the app-wide bar (OfflineBanner). */}
       {pendingQueueCount > 0 && networkOnline && (
         <TouchableOpacity
           style={[styles.offlineBanner, { backgroundColor: theme.statusInfoBg }]}
@@ -1352,8 +1353,8 @@ export default function TimesheetsScreen() {
           disabled={syncing}
         >
           <Ionicons name={syncing ? 'sync' : 'cloud-upload'} size={16} color={theme.statusInfo} />
-          <Text style={{ color: theme.statusInfo, fontSize: 13, marginLeft: 6, flex: 1 }}>
-            {syncing ? 'Syncing...' : `${pendingQueueCount} pending action(s) to sync`}
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: theme.statusInfo, fontSize: 13, marginLeft: 6, flex: 1 }}>
+            {syncing ? 'Sending…' : `${pendingQueueCount} waiting to send · tap to send now`}
           </Text>
         </TouchableOpacity>
       )}
@@ -1385,18 +1386,18 @@ export default function TimesheetsScreen() {
                     <View style={styles.clockHeader}>
                       <View style={styles.clockStatusRow}>
                         <View style={[styles.pulseDot, { backgroundColor: colors.green }]} />
-                        <Text style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
                       </View>
-                      <Text style={[styles.clockProject, { color: colors.secondary }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockProject, { color: colors.secondary }]}>
                         {getProjectName(activeTimesheet.projectId)}
                       </Text>
                     </View>
                     {activeTimesheet.clockInTime ? (
                       <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
                     ) : (
-                      <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
                     )}
-                    <Text style={[styles.clockStarted, { color: colors.secondary }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockStarted, { color: colors.secondary }]}>
                       Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
                     </Text>
                     <TouchableOpacity
@@ -1409,7 +1410,7 @@ export default function TimesheetsScreen() {
                       ) : (
                         <>
                           <Ionicons name="stop" size={22} color="#fff" />
-                          <Text style={styles.clockButtonText}>Clock Out</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.clockButtonText}>Clock Out</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -1418,13 +1419,13 @@ export default function TimesheetsScreen() {
                   <>
                     <View style={styles.clockInRow}>
                       <Ionicons name="time-outline" size={18} color={colors.secondary} />
-                      <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project or Business to clock in</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project or Business to clock in</Text>
                     </View>
                     <TouchableOpacity
                       style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                       onPress={() => setShowProjectPicker(true)}
                     >
-                      <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
                         {clockInProjectId ? getProjectName(clockInProjectId) : 'Select project or Business...'}
                       </Text>
                       <Ionicons name="chevron-down" size={18} color={colors.secondary} />
@@ -1434,7 +1435,7 @@ export default function TimesheetsScreen() {
                         style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                         onPress={() => setShowClockInCostCodePicker(true)}
                       >
-                        <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
                           {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
                         </Text>
                         <Ionicons name="chevron-down" size={18} color={colors.secondary} />
@@ -1450,7 +1451,7 @@ export default function TimesheetsScreen() {
                       ) : (
                         <>
                           <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
-                          <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -1460,25 +1461,25 @@ export default function TimesheetsScreen() {
 
               {/* Week Navigation */}
               <View style={[styles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
+                <TouchableOpacity hitSlop={8} onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
                   <Ionicons name="chevron-back" size={20} color={colors.text} />
                 </TouchableOpacity>
                 <View style={styles.weekCenter}>
-                  <Text style={[styles.weekRange, { color: colors.text }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.weekRange, { color: colors.text }]}>
                     {formatShortDate(weekStart)} - {formatShortDate(weekEnd)}
                   </Text>
-                  <Text style={[styles.weekHours, { color: colors.secondary }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.weekHours, { color: colors.secondary }]}>
                     {totalHours.toFixed(1)} hours this week
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
+                <TouchableOpacity hitSlop={8} onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
                   <Ionicons name="chevron-forward" size={20} color={colors.text} />
                 </TouchableOpacity>
               </View>
             </>
           }
           ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
           }
         />
       ) : (
@@ -1521,62 +1522,62 @@ export default function TimesheetsScreen() {
         <View style={styles.pickerOverlay}>
           <View style={[styles.detailContainer, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>Timesheet Detail</Text>
-              <TouchableOpacity onPress={() => setShowDetail(false)}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>Timesheet Detail</Text>
+              <TouchableOpacity hitSlop={10} onPress={() => setShowDetail(false)}>
                 <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
             {selectedTimesheet && (
               <ScrollView style={styles.detailScroll}>
                 <View style={styles.detailSection}>
-                  <Text style={[styles.detailLabel, { color: colors.secondary }]}>Date</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>{formatDayDate(selectedTimesheet.date)}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Date</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{formatDayDate(selectedTimesheet.date)}</Text>
                 </View>
                 <View style={styles.detailSection}>
-                  <Text style={[styles.detailLabel, { color: colors.secondary }]}>Project</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>{getProjectName(selectedTimesheet.projectId)}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Project</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{getProjectName(selectedTimesheet.projectId)}</Text>
                 </View>
                 {selectedTimesheet.clockInTime && (
                   <View style={styles.detailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Clocked In</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Clocked In</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
                       {formatTime12h(new Date(selectedTimesheet.clockInTime).toTimeString().slice(0, 5))}
                     </Text>
                   </View>
                 )}
                 {selectedTimesheet.startTime && selectedTimesheet.endTime && (
                   <View style={styles.detailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Start / End</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Start / End</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
                       {formatTime12h(selectedTimesheet.startTime)} – {formatTime12h(selectedTimesheet.endTime)}
                     </Text>
                   </View>
                 )}
                 <View style={styles.detailSection}>
-                  <Text style={[styles.detailLabel, { color: colors.secondary }]}>Duration</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>{parseFloat(selectedTimesheet.duration || '0').toFixed(1)} hours</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Duration</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{parseFloat(selectedTimesheet.duration || '0').toFixed(1)} hours</Text>
                 </View>
                 {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
                   <View style={styles.detailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Break</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Break</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
                       {BREAK_OPTIONS.find(o => o.value === selectedTimesheet.breakDuration)?.label ?? `${selectedTimesheet.breakDuration} hrs`}
                       {selectedTimesheet.breakStartTime ? ` from ${formatTime12h(selectedTimesheet.breakStartTime)}` : ''}
                     </Text>
                   </View>
                 )}
                 <View style={styles.detailSection}>
-                  <Text style={[styles.detailLabel, { color: colors.secondary }]}>Status</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Status</Text>
                   <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedTimesheet.status).bg, alignSelf: 'flex-start' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(selectedTimesheet.status).text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusText, { color: getStatusColor(selectedTimesheet.status).text }]}>
                       {selectedTimesheet.status.charAt(0).toUpperCase() + selectedTimesheet.status.slice(1)}
                     </Text>
                   </View>
                 </View>
                 {selectedTimesheet.description && (
                   <View style={styles.detailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Description</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>{selectedTimesheet.description}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Description</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{selectedTimesheet.description}</Text>
                   </View>
                 )}
 
@@ -1589,14 +1590,14 @@ export default function TimesheetsScreen() {
                         onPress={() => openEditSheet(selectedTimesheet)}
                       >
                         <Ionicons name="pencil" size={18} color="#fff" />
-                        <Text style={styles.detailButtonText}>Edit</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.detailButtonText}>Edit</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.detailButton, { backgroundColor: colors.red }]}
                         onPress={() => handleDeleteTimesheet(selectedTimesheet.id)}
                       >
                         <Ionicons name="trash" size={18} color="#fff" />
-                        <Text style={styles.detailButtonText}>Delete</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.detailButtonText}>Delete</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -1620,10 +1621,15 @@ export default function TimesheetsScreen() {
         >
           <View style={[styles.logSheetContainer, sheetFrame, { backgroundColor: colors.card }]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>
                 {isEditMode ? 'Edit Timesheet' : 'Log Hours'}
               </Text>
-              <TouchableOpacity onPress={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}>
+              <TouchableOpacity
+                onPress={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
                 <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
@@ -1638,12 +1644,12 @@ export default function TimesheetsScreen() {
                     <Ionicons name="time-outline" size={16} color={colors.secondary} />
                     <View style={{ flex: 1, marginLeft: 8 }}>
                       {editingTs?.clockInTime && (
-                        <Text style={[styles.clockInfoText, { color: colors.secondary }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockInfoText, { color: colors.secondary }]}>
                           Clocked in at {formatTime12h(new Date(editingTs.clockInTime).toTimeString().slice(0, 5))}
                         </Text>
                       )}
                       {editingTs?.startTime && editingTs?.endTime && (
-                        <Text style={[styles.clockInfoText, { color: colors.secondary }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockInfoText, { color: colors.secondary }]}>
                           Recorded: {formatTime12h(editingTs.startTime)} – {formatTime12h(editingTs.endTime)}
                         </Text>
                       )}
@@ -1653,19 +1659,19 @@ export default function TimesheetsScreen() {
               })()}
 
               {/* Project / Business */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Project / Business</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Project / Business</Text>
               <TouchableOpacity
                 style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                 onPress={() => setShowFormProjectPicker(true)}
               >
-                <Text style={[styles.formPickerText, { color: formProjectId ? colors.text : colors.secondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: formProjectId ? colors.text : colors.secondary }]}>
                   {formProjectId ? getProjectName(formProjectId) : 'Select project or Business...'}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
 
               {/* Date */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
               <TouchableOpacity
                 style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                 onPress={() => {
@@ -1677,30 +1683,30 @@ export default function TimesheetsScreen() {
                   setShowDatePicker(true);
                 }}
               >
-                <Text style={[styles.formPickerText, { color: colors.text }]}>{formatDisplayDate(formDate)}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatDisplayDate(formDate)}</Text>
                 <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
               </TouchableOpacity>
 
               {/* Break Start + Break Duration row */}
               <View style={styles.timeRow}>
                 <View style={styles.timeCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break Start</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Break Start</Text>
                   <TouchableOpacity
                     style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowBreakStartPicker(true)}
                   >
-                    <Text style={[styles.formPickerText, { color: parseFloat(formBreakDuration) > 0 ? colors.text : colors.secondary }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: parseFloat(formBreakDuration) > 0 ? colors.text : colors.secondary }]}>
                       {parseFloat(formBreakDuration) > 0 ? formatTime12h(formBreakStartTime) : '—'}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <View style={styles.timeCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break Duration</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Break Duration</Text>
                   <TouchableOpacity
                     style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowBreakPicker(true)}
                   >
-                    <Text style={[styles.formPickerText, { color: colors.text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>
                       {BREAK_OPTIONS.find(o => o.value === formBreakDuration)?.label ?? 'None'}
                     </Text>
                     <Ionicons name="chevron-down" size={16} color={colors.secondary} />
@@ -1711,42 +1717,42 @@ export default function TimesheetsScreen() {
               {/* Start / End time */}
               <View style={styles.timeRow}>
                 <View style={styles.timeCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Start</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Start</Text>
                   <TouchableOpacity
                     style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowTimePicker('start')}
                   >
-                    <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formStartTime)}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formStartTime)}</Text>
                   </TouchableOpacity>
                 </View>
                 <View style={styles.timeCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>End</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>End</Text>
                   <TouchableOpacity
                     style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowTimePicker('end')}
                   >
-                    <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formEndTime)}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formEndTime)}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
-              <Text style={[styles.calcDuration, { color: colors.accent }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calcDuration, { color: colors.accent }]}>
                 Calculated: {calculateDuration(formStartTime, formEndTime, formBreakDuration)} hours
               </Text>
 
               {/* Cost Code */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Cost Code</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Cost Code</Text>
               <TouchableOpacity
                 style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                 onPress={() => setShowCostCodePicker(true)}
               >
-                <Text style={[styles.formPickerText, { color: formCostCodeId ? colors.text : colors.secondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: formCostCodeId ? colors.text : colors.secondary }]}>
                   {formCostCodeId ? getCostCodeName(formCostCodeId) || 'Selected' : 'Select cost code...'}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
 
               {/* Description */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Description</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Description</Text>
               <TextInput
                 style={[styles.formTextarea, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={formDescription}
@@ -1757,21 +1763,26 @@ export default function TimesheetsScreen() {
                 placeholder="What did you work on?"
                 placeholderTextColor={colors.secondary}
                 textAlignVertical="top"
+                autoCapitalize="sentences"
               />
+            </ScrollView>
 
-              {/* Submit */}
+            {/* Primary action in a bottom bar: always in thumb reach, above the
+                keyboard (KeyboardAvoidingView) and the home indicator. */}
+            <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) }]}>
               <TouchableOpacity
                 style={[styles.submitButton, { backgroundColor: colors.accent, opacity: submitting ? 0.7 : 1 }]}
                 onPress={handleSubmitTimesheet}
                 disabled={submitting}
+                accessibilityRole="button"
               >
                 {submitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.submitButtonText}>{isEditMode ? 'Update' : 'Save Timesheet'}</Text>
+                  <Text style={styles.submitButtonText} maxFontSizeMultiplier={1.4}>{isEditMode ? 'Update' : 'Save Timesheet'}</Text>
                 )}
               </TouchableOpacity>
-            </ScrollView>
+            </View>
 
             {/* Form picker modals — rendered inside the Log Hours modal so they stack
                 correctly on top of it. Sibling modals cannot present over an already-open
@@ -1826,18 +1837,18 @@ export default function TimesheetsScreen() {
                   <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
                     <View style={{ ...sheetFrame, backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                        <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
-                          <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
+                        <TouchableOpacity hitSlop={10} onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
                         </TouchableOpacity>
-                        <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
-                        <TouchableOpacity
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
+                        <TouchableOpacity hitSlop={10}
                           onPress={() => {
                             setFormDate(toLocalDateStr(pickerDateObj));
                             setShowDatePicker(false);
                           }}
                           style={{ padding: 4 }}
                         >
-                          <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
                         </TouchableOpacity>
                       </View>
                       <DateTimePicker
@@ -1888,11 +1899,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  headerTitle: { fontSize: 22, fontWeight: '700', flexShrink: 1 },
   headerToggle: {
     flexDirection: 'row',
     borderRadius: 8,
@@ -1902,8 +1913,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   toggleBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2088,7 +2099,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   formScroll: { flex: 1 },
-  formContent: { padding: 16, paddingBottom: 60 },
+  formContent: { padding: 16, paddingBottom: 24 },
+  bottomBar: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   formLabel: { fontSize: 12, fontWeight: '500', marginBottom: 6, marginTop: 14 },
   formInput: {
     height: 44,
@@ -2122,11 +2138,10 @@ const styles = StyleSheet.create({
   timeCol: { flex: 1 },
   calcDuration: { fontSize: 13, fontWeight: '500', marginTop: 8 },
   submitButton: {
-    height: 50,
+    minHeight: 52,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
   },
   submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../../theme';
 
 // Uppercase section header row used above every dashboard/list section.
 // Optional count badge, right accessory node, and onPress (adds a chevron
@@ -20,10 +20,10 @@ export function SectionHeader({ title, count, right, onPress }: SectionHeaderPro
   const content = (
     <>
       <View style={styles.titleWrap}>
-        <Text style={[styles.title, { color: theme.textSecondary }]}>{title}</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.title, { color: theme.textSecondary }]}>{title}</Text>
         {count !== undefined && (
           <View style={[styles.countBadge, { backgroundColor: theme.subtle }]}>
-            <Text style={[styles.countText, { color: theme.textSecondary }]}>{count}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.countText, { color: theme.textSecondary }]}>{count}</Text>
           </View>
         )}
       </View>

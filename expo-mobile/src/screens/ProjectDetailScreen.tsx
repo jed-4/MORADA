@@ -16,7 +16,7 @@ import { formatCents } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermission } from '../lib/usePermission';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -218,11 +218,12 @@ const colors = {
 
   const getPhaseColor = (phase?: string) => {
     switch (phase) {
-      case 'lead': return '#f59e0b';
-      case 'pre_construction': return '#8b5cf6';
-      case 'construction': return '#22c55e';
-      case 'completed': return '#6b7280';
-      default: return '#94a3b8';
+      // Used as badge TEXT — theme inks so it reads in sun and in dark mode.
+      case 'lead': return theme.statusWarning;
+      case 'pre_construction': return theme.primary;
+      case 'construction': return theme.statusSuccess;
+      case 'completed': return theme.textSecondary;
+      default: return theme.textMuted;
     }
   };
 
@@ -364,11 +365,11 @@ const colors = {
 
   const renderSectionHeader = (title: string, key: string, count?: number) => (
     <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(key)} activeOpacity={0.7}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
       <View style={styles.sectionHeaderRight}>
         {count !== undefined && count > 0 && (
           <View style={[styles.sectionBadge, { backgroundColor: colors.accent + '20' }]}>
-            <Text style={[styles.sectionBadgeText, { color: colors.accent }]}>{count}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionBadgeText, { color: colors.accent }]}>{count}</Text>
           </View>
         )}
         <Ionicons name={collapsed[key] ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.secondary} />
@@ -451,7 +452,7 @@ const colors = {
   if (!project) {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <Text style={{ color: colors.secondary }}>Project not found</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary }}>Project not found</Text>
       </View>
     );
   }
@@ -465,12 +466,12 @@ const colors = {
         <View style={styles.compactHeader}>
           <View style={styles.compactHeaderLeft}>
             {project.jobNumber && (
-              <Text style={[styles.projectNumber, { color: colors.accent }]}>#{project.jobNumber}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectNumber, { color: colors.accent }]}>#{project.jobNumber}</Text>
             )}
-            <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={2}>{project.name}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectName, { color: colors.text }]} numberOfLines={2}>{project.name}</Text>
           </View>
           <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(project.currentSystemPhase) + '20' }]}>
-            <Text style={[styles.phaseBadgeText, { color: getPhaseColor(project.currentSystemPhase) }]}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.phaseBadgeText, { color: getPhaseColor(project.currentSystemPhase) }]}>
               {getPhaseLabel(project.currentSystemPhase)}
             </Text>
           </View>
@@ -491,11 +492,11 @@ const colors = {
             >
               {tile.showCount && tile.count != null && tile.count > 0 && (
                 <View style={[styles.tileBadge, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.tileBadgeText}>{tile.count}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.tileBadgeText}>{tile.count}</Text>
                 </View>
               )}
               <Ionicons name={tile.icon} size={22} color={colors.accent} />
-              <Text style={[styles.tileLabel, { color: colors.secondary }]} numberOfLines={2}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.tileLabel, { color: colors.secondary }]} numberOfLines={2}>
                 {tile.label}
               </Text>
             </TouchableOpacity>
@@ -521,9 +522,9 @@ const colors = {
                     <Ionicons name="person" size={18} color="#FFFFFF" />
                   </View>
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Client</Text>
-                    <Text style={[styles.clientName, { color: colors.text }]}>{clientContact.name}</Text>
-                    <Text style={[styles.clientHint, { color: colors.accent }]}>Tap to view details</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Client</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientName, { color: colors.text }]}>{clientContact.name}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientHint, { color: colors.accent }]}>Tap to view details</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={colors.accent} />
                 </TouchableOpacity>
@@ -532,8 +533,8 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="location-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Address</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.location}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Address</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{project.location}</Text>
                   </View>
                 </View>
               )}
@@ -541,8 +542,8 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="mail-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Email</Text>
-                    <Text style={[styles.infoValue, { color: colors.accent }]}>{clientContact.email}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Email</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.accent }]}>{clientContact.email}</Text>
                   </View>
                 </View>
               )}
@@ -550,8 +551,8 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="call-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Phone</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{clientContact.phone || clientContact.mobile}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Phone</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{clientContact.phone || clientContact.mobile}</Text>
                   </View>
                 </View>
               )}
@@ -559,8 +560,8 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="cash-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Contract Value</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{formatCents(project.contractCost)}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Contract Value</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{formatCents(project.contractCost)}</Text>
                   </View>
                 </View>
               )}
@@ -568,8 +569,8 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Timeline</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Timeline</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>
                       {project.startDate ? new Date(project.startDate).toLocaleDateString('en-AU') : '—'}
                       {' to '}
                       {project.endDate ? new Date(project.endDate).toLocaleDateString('en-AU') : '—'}
@@ -581,13 +582,13 @@ const colors = {
                 <View style={styles.infoRow}>
                   <Ionicons name="barcode-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Job Number</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.jobNumber}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Job Number</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{project.jobNumber}</Text>
                   </View>
                 </View>
               )}
               {!clientContact?.name && !project.location && !project.contractCost && !project.startDate && !project.endDate && !project.jobNumber && (
-                <Text style={[styles.infoLabel, { color: colors.muted, padding: 4 }]}>No project details on file</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.muted, padding: 4 }]}>No project details on file</Text>
               )}
             </View>
           )}
@@ -600,15 +601,15 @@ const colors = {
               {tasksToShow.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="checkbox-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
                 </View>
               ) : (
                 tasksToShow.map(task => (
                   <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(task.priority) }]} />
-                    <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
                     {task.status && (
-                      <Text style={[styles.taskStatus, { color: colors.secondary }]}>{task.status.replace(/_/g, ' ')}</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.taskStatus, { color: colors.secondary }]}>{task.status.replace(/_/g, ' ')}</Text>
                     )}
                   </View>
                 ))
@@ -618,7 +619,7 @@ const colors = {
                 onPress={() => navigation.navigate('ProjectTasks', { projectId, projectName: project.name })}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View All Tasks</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewAllBtnText, { color: colors.accent }]}>View All Tasks</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.accent} />
               </TouchableOpacity>
             </View>
@@ -641,16 +642,16 @@ const colors = {
             const renderScheduleCard = (item: ScheduleItem) => (
               <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.scheduleContent}>
-                  <Text style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                   {item.startDate && (
-                    <Text style={[styles.scheduleDate, { color: colors.secondary }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDate, { color: colors.secondary }]}>
                       {new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
                       {item.endDate ? ` – ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
                     </Text>
                   )}
                 </View>
                 {item.status && (
-                  <Text style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
                 )}
               </View>
             );
@@ -659,20 +660,20 @@ const colors = {
                 {todayItems.length === 0 && tomorrowOnlyItems.length === 0 ? (
                   <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
                   </View>
                 ) : (
                   <>
                     {todayItems.length > 0 && (
                       <>
-                        <Text style={[styles.scheduleDayLabel, { color: colors.accent }]}>Today</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDayLabel, { color: colors.accent }]}>Today</Text>
                         {todayItems.map(renderScheduleCard)}
                       </>
                     )}
                     {tomorrowOnlyItems.length > 0 && (
                       <>
                         <View style={[styles.scheduleDivider, { backgroundColor: colors.border }]} />
-                        <Text style={[styles.scheduleDayLabel, { color: colors.accent }]}>Tomorrow</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDayLabel, { color: colors.accent }]}>Tomorrow</Text>
                         {tomorrowOnlyItems.map(renderScheduleCard)}
                       </>
                     )}
@@ -683,7 +684,7 @@ const colors = {
                   onPress={() => navigation.navigate('Schedule', { projectId })}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
                   <Ionicons name="chevron-forward" size={14} color={colors.accent} />
                 </TouchableOpacity>
               </View>
@@ -694,16 +695,16 @@ const colors = {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <TouchableOpacity style={styles.sectionHeaderRowLeft} onPress={() => toggleSection('siteDiary')} activeOpacity={0.7}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Site Diary</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Site Diary</Text>
               <Ionicons name={collapsed.siteDiary ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.secondary} />
             </TouchableOpacity>
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
               style={[styles.sectionActionBtn, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' }]}
               onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
               activeOpacity={0.7}
             >
               <Ionicons name="add" size={14} color={colors.accent} />
-              <Text style={[styles.sectionActionBtnText, { color: colors.accent }]}>New Entry</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionActionBtnText, { color: colors.accent }]}>New Entry</Text>
             </TouchableOpacity>
           </View>
           {!collapsed.siteDiary && (
@@ -715,8 +716,8 @@ const colors = {
                   activeOpacity={0.7}
                 >
                   <Ionicons name="book-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No diary entries yet</Text>
-                  <Text style={[styles.emptySectionText, { color: colors.accent, fontSize: 12 }]}>Tap to add first entry</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No diary entries yet</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.accent, fontSize: 12 }]}>Tap to add first entry</Text>
                 </TouchableOpacity>
               ) : (
                 <>
@@ -733,22 +734,22 @@ const colors = {
                         onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
                         activeOpacity={0.75}
                       >
-                        <Text style={[styles.diaryCardDate, { color: colors.secondary }]}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardDate, { color: colors.secondary }]}>
                           {formatDiaryDate(entry.entryDateTime)}
                         </Text>
-                        <Text style={[styles.diaryCardTitle, { color: colors.text }]} numberOfLines={2}>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardTitle, { color: colors.text }]} numberOfLines={2}>
                           {entry.title || 'Site Diary Entry'}
                         </Text>
                         {entry.weather?.condition && (
                           <View style={styles.diaryCardWeather}>
                             <Ionicons name={getWeatherIcon(entry.weather.condition)} size={13} color={colors.secondary} />
-                            <Text style={[styles.diaryCardWeatherText, { color: colors.secondary }]}>
+                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardWeatherText, { color: colors.secondary }]}>
                               {entry.weather.condition}{entry.weather.temp != null ? ` ${entry.weather.temp}°` : ''}
                             </Text>
                           </View>
                         )}
                         {entry.createdByName && (
-                          <Text style={[styles.diaryCardAuthor, { color: colors.muted }]} numberOfLines={1}>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardAuthor, { color: colors.muted }]} numberOfLines={1}>
                             {entry.createdByName}
                           </Text>
                         )}
@@ -760,7 +761,7 @@ const colors = {
                       activeOpacity={0.7}
                     >
                       <Ionicons name="book-outline" size={22} color={colors.accent} />
-                      <Text style={[styles.diaryCardViewAllText, { color: colors.accent }]}>All Entries</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardViewAllText, { color: colors.accent }]}>All Entries</Text>
                     </TouchableOpacity>
                   </ScrollView>
                 </>
@@ -775,28 +776,28 @@ const colors = {
             checklistInstances.length === 0 ? (
               <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Ionicons name="checkmark-done-outline" size={28} color={colors.muted} />
-                <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No checklists</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No checklists</Text>
               </View>
             ) : (
               checklistInstances.map(inst => {
                 const isExpanded = expandedChecklist === inst.id;
                 const progress = inst.totalCount > 0 ? inst.completedCount / inst.totalCount : 0;
-                const statusColor = inst.status === 'completed' ? '#22c55e' : inst.status === 'in_progress' ? '#3b82f6' : inst.status === 'cancelled' ? '#ef4444' : '#94a3b8';
+                const statusColor = inst.status === 'completed' ? theme.statusSuccess : inst.status === 'in_progress' ? theme.statusInfo : inst.status === 'cancelled' ? theme.statusDanger : theme.textMuted;
                 return (
                   <View key={inst.id} style={[styles.checklistCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity onPress={() => toggleChecklistExpand(inst.id)} style={styles.checklistHeader} activeOpacity={0.7}>
                       <View style={{ flex: 1, gap: 4 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={[styles.checklistName, { color: colors.text }]} numberOfLines={1}>{inst.name}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistName, { color: colors.text }]} numberOfLines={1}>{inst.name}</Text>
                           <View style={[styles.checklistStatusBadge, { backgroundColor: statusColor + '20' }]}>
-                            <Text style={{ fontSize: 10, fontWeight: '600', color: statusColor }}>{inst.status.replace('_', ' ')}</Text>
+                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, fontWeight: '600', color: statusColor }}>{inst.status.replace('_', ' ')}</Text>
                           </View>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <View style={[styles.checklistProgress, { backgroundColor: colors.border }]}>
-                            <View style={[styles.checklistProgressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? '#22c55e' : colors.accent }]} />
+                            <View style={[styles.checklistProgressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
                           </View>
-                          <Text style={{ fontSize: 11, color: colors.secondary }}>{inst.completedCount}/{inst.totalCount}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 11, color: colors.secondary }}>{inst.completedCount}/{inst.totalCount}</Text>
                         </View>
                       </View>
                       <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
@@ -806,7 +807,7 @@ const colors = {
                         <View style={{ padding: 16, alignItems: 'center' }}><ActivityIndicator size="small" color={colors.accent} /></View>
                       ) : (() => {
                         const items = checklistItems[inst.id] || [];
-                        if (items.length === 0) return <View style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: colors.secondary, fontSize: 12 }}>No items</Text></View>;
+                        if (items.length === 0) return <View style={{ padding: 12, alignItems: 'center' }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 12 }}>No items</Text></View>;
                         const { groups, ungrouped } = groupChecklistItems(items);
                         const groupKeys = Object.keys(groups).map(g => `${inst.id}:${g}`);
                         const allCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedChecklistGroups[k]);
@@ -822,14 +823,14 @@ const colors = {
                                 });
                               }} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }} activeOpacity={0.7}>
                                 <Ionicons name={allCollapsed ? 'chevron-down' : 'chevron-up'} size={11} color={colors.secondary} />
-                                <Text style={{ fontSize: 10, color: colors.secondary, fontWeight: '500' }}>{allCollapsed ? 'Expand All' : 'Collapse All'}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, color: colors.secondary, fontWeight: '500' }}>{allCollapsed ? 'Expand All' : 'Collapse All'}</Text>
                               </TouchableOpacity>
                             )}
                             {ungrouped.map(item => (
                               <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
-                                <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? '#22c55e' : item.status === 'na' ? colors.muted : colors.secondary} />
-                                <Text style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
-                                {item.isRequired && <View style={{ backgroundColor: '#ef444420', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text style={{ fontSize: 9, fontWeight: '600', color: '#ef4444' }}>Req</Text></View>}
+                                <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? theme.statusSuccess : item.status === 'na' ? colors.muted : colors.secondary} />
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
+                                {item.isRequired && <View style={{ backgroundColor: theme.statusDangerBg, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 9, fontWeight: '600', color: theme.statusDanger }}>Req</Text></View>}
                               </TouchableOpacity>
                             ))}
                             {Object.entries(groups).map(([groupName, grpItems]) => {
@@ -840,14 +841,14 @@ const colors = {
                                 <View key={groupName}>
                                   <TouchableOpacity style={[styles.checklistGroupHeader, { borderColor: colors.border }]} onPress={() => toggleChecklistGroup(gk)} activeOpacity={0.7}>
                                     <Ionicons name={gCollapsed ? 'chevron-forward' : 'chevron-down'} size={13} color={colors.accent} />
-                                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.accent, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }} numberOfLines={1}>{groupName}</Text>
-                                    <Text style={{ fontSize: 10, color: colors.secondary }}>{doneInGroup}/{grpItems.length}</Text>
+                                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 11, fontWeight: '600', color: colors.accent, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }} numberOfLines={1}>{groupName}</Text>
+                                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, color: colors.secondary }}>{doneInGroup}/{grpItems.length}</Text>
                                   </TouchableOpacity>
                                   {!gCollapsed && grpItems.map(item => (
                                     <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
-                                      <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? '#22c55e' : item.status === 'na' ? colors.muted : colors.secondary} />
-                                      <Text style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
-                                      {item.isRequired && <View style={{ backgroundColor: '#ef444420', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text style={{ fontSize: 9, fontWeight: '600', color: '#ef4444' }}>Req</Text></View>}
+                                      <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? theme.statusSuccess : item.status === 'na' ? colors.muted : colors.secondary} />
+                                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
+                                      {item.isRequired && <View style={{ backgroundColor: theme.statusDangerBg, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 9, fontWeight: '600', color: theme.statusDanger }}>Req</Text></View>}
                                     </TouchableOpacity>
                                   ))}
                                 </View>
@@ -1041,6 +1042,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
+    minHeight: 44,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 8,
   },
@@ -1049,6 +1051,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingVertical: 8,
+    minHeight: 44,
     marginTop: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
