@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +33,16 @@ export const useTwoPaneDetail = () => useContext(DetailContext);
 
 /** Width of the left list panel on a big screen. */
 export const LIST_PANE_WIDTH = 360;
+/** Width of the collapsed sidebar (`rail`) when an item is open. */
+export const RAIL_WIDTH = 76;
+
+/**
+ * For the `rail` content: expand the full list as an overlay. The rail itself
+ * should show a compact item per row (e.g. a coloured badge) and call the
+ * screen's own select handler on tap.
+ */
+const RailContext = createContext<{ expand: () => void }>({ expand: () => {} });
+export const useTwoPaneRail = () => useContext(RailContext);
 
 interface TwoPaneProps {
   /** The list. Rendered at every size. */
@@ -48,6 +58,17 @@ interface TwoPaneProps {
   narrowDetail?: boolean;
   /** From useTwoPaneSelection: the back button on a full-width held detail. */
   onCloseDetail?: () => void;
+  /**
+   * Collapsible sidebar (Jed, 11-19: "projects on the side is no good"). When
+   * wide and an item is open, the list shrinks to this slim rail and the
+   * detail gets the room. Tapping the rail's menu button slides the full list
+   * over the detail; picking an item collapses it again. With nothing open
+   * the list takes the whole width. Without `rail`, the classic side-by-side
+   * layout is used.
+   */
+  rail?: ReactNode;
+  /** Changes when a different item opens — collapses the expanded list. */
+  detailKey?: string | null;
 }
 
 export function TwoPane({
@@ -58,18 +79,63 @@ export function TwoPane({
   listWidth,
   narrowDetail = false,
   onCloseDetail,
+  rail,
+  detailKey,
 }: TwoPaneProps) {
   const { isWide } = useLayout();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const showDetail = isWide || narrowDetail;
+  const hasDetail = detail != null;
+  const collapsible = !!rail && isWide;
+  // Collapsible mode: nothing open → the list is the whole screen.
+  const showDetail = narrowDetail || (isWide && (!collapsible || hasDetail));
+  const railMode = collapsible && hasDetail;
+  const [expanded, setExpanded] = useState(false);
+  // A different item opened (or the rail went away) → fold the list back.
+  useEffect(() => setExpanded(false), [detailKey, railMode]);
+  const width = listWidth ?? LIST_PANE_WIDTH;
 
+  // Children are KEYED so the rail appearing before the list never shifts the
+  // list's position — it must stay mounted (scroll, search) through every
+  // fold, unfold, collapse and expand.
   return (
     <View style={styles.row}>
+      {railMode ? (
+        <View key="rail" style={[styles.rail, { backgroundColor: theme.card, borderRightColor: theme.border, paddingTop: insets.top + 8 }]}>
+          <Pressable
+            onPress={() => setExpanded((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? 'Collapse list' : 'Show full list'}
+            style={[styles.railToggle, { backgroundColor: expanded ? theme.primaryLight : 'transparent' }]}
+          >
+            <Ionicons name={expanded ? 'chevron-back' : 'menu'} size={24} color={theme.textPrimary} />
+          </Pressable>
+          {onCloseDetail ? (
+            <Pressable
+              onPress={onCloseDetail}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Close and show the full list"
+              style={styles.railToggle}
+            >
+              <Ionicons name="close" size={24} color={theme.textSecondary} />
+            </Pressable>
+          ) : null}
+          <View style={[styles.railDivider, { backgroundColor: theme.border }]} />
+          <RailContext.Provider value={{ expand: () => setExpanded(true) }}>{rail}</RailContext.Provider>
+        </View>
+      ) : null}
       <View
+        key="list"
         style={[
           styles.list,
-          isWide && { width: listWidth ?? LIST_PANE_WIDTH, flex: 0, borderRightColor: theme.border, borderRightWidth: StyleSheet.hairlineWidth },
+          isWide && !collapsible && { width, flex: 0, borderRightColor: theme.border, borderRightWidth: StyleSheet.hairlineWidth },
+          // Collapsed to the rail: the list floats over the detail when
+          // expanded, and is hidden (never unmounted) otherwise.
+          railMode && (expanded
+            ? [styles.overlay, { left: RAIL_WIDTH, width, backgroundColor: theme.background, borderRightColor: theme.border }]
+            : styles.hidden),
           // Hidden, never unmounted: the list keeps its scroll and search.
           narrowDetail && styles.hidden,
         ]}
@@ -77,7 +143,7 @@ export function TwoPane({
         {list}
       </View>
       {showDetail ? (
-        <View style={[styles.detail, { backgroundColor: theme.background }]}>
+        <View key="detail" style={[styles.detail, { backgroundColor: theme.background }]}>
           <DetailContext.Provider value={{ heldOnFold: narrowDetail }}>
             {detail ?? (
             <View style={styles.empty}>
@@ -86,6 +152,14 @@ export function TwoPane({
             </View>
             )}
           </DetailContext.Provider>
+          {railMode && expanded ? (
+            // Tap the detail to fold the expanded list away.
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setExpanded(false)}
+              accessibilityLabel="Close list"
+            />
+          ) : null}
           {narrowDetail && onCloseDetail ? (
             <Pressable
               onPress={onCloseDetail}
@@ -108,6 +182,21 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   detail: { flex: 1 },
   hidden: { display: 'none' },
+  rail: { width: RAIL_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, alignItems: 'center' },
+  railDivider: { width: 40, height: StyleSheet.hairlineWidth, marginBottom: 10 },
+  railToggle: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    zIndex: 10,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 4, height: 0 },
+    elevation: 12,
+  },
   back: {
     position: 'absolute',
     left: 12,

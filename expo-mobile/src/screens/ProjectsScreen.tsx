@@ -23,6 +23,8 @@ import { TwoPane } from '../components/ui/TwoPane';
 import { useTwoPaneSelection } from '../lib/twoPane';
 import { usePersistedState } from '../lib/usePersistedState';
 import ProjectDetailScreen from './ProjectDetailScreen';
+import { ProjectRail } from '../components/projects/ProjectRail';
+import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
 
 const toTitleCase = (str: string) =>
@@ -391,7 +393,7 @@ const colors = {
         data={filteredProjects}
         keyExtractor={item => item.id}
         style={{ backgroundColor: screenBg }}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, isWide && readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         renderItem={renderProjectCard}
         ListEmptyComponent={
@@ -457,6 +459,9 @@ const colors = {
     <TwoPane
       {...paneProps}
       list={listPane}
+      // Unfolded: a job open → the list collapses to a sidebar of job badges.
+      rail={<ProjectRail projects={filteredProjects} selectedId={selectedId} onSelect={open} />}
+      detailKey={selectedId}
       emptyTitle="Select a project"
       emptyIcon="briefcase-outline"
       detail={
