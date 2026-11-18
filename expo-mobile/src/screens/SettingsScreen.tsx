@@ -20,6 +20,8 @@ import { goBackOrHome } from '../navigation/back';
 import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import { authenticate, getBiometricSupport, setAppLockEnabled, useAppLockEnabled, type BiometricSupport } from '../lib/appLock';
+import { haptic } from '../lib/haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -112,6 +114,22 @@ export default function SettingsScreen({ navigation }: Props) {
   const theme = useTheme();
   const { deleteAccount } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Face ID lock (per device — see lib/appLock.ts). Switching it ON asks for
+  // Face ID once, so nobody turns on a lock they can't open.
+  const appLockEnabled = useAppLockEnabled();
+  const [biometrics, setBiometrics] = useState<BiometricSupport | null>(null);
+  useEffect(() => {
+    getBiometricSupport().then(setBiometrics).catch(() => {});
+  }, []);
+  const toggleAppLock = useCallback(async (next: boolean) => {
+    haptic.select();
+    if (next) {
+      const ok = await authenticate(`Turn on ${biometrics?.label ?? 'Face ID'} for Morada`);
+      if (!ok) return;
+    }
+    await setAppLockEnabled(next);
+  }, [biometrics?.label]);
 
   // Two steps on purpose: deletion can't be undone. The server refuses the
   // only Owner of a company that still has a team, and we show its message.
@@ -243,6 +261,39 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Security</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionSubtitle, { color: colors.secondary }]}>
+            Only on this phone. Morada asks when it opens, and when you come back after more than 5 minutes away.
+          </Text>
+          <View style={[styles.itemRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.itemIconWrap, { backgroundColor: colors.accent + '15' }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.accent} />
+            </View>
+            <View style={styles.itemText}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: colors.text }]}>
+                Require {biometrics?.label ?? 'Face ID'}
+              </Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
+                {biometrics && !biometrics.available
+                  ? biometrics.reason
+                  : "Your phone's passcode works too if it can't see you."}
+              </Text>
+            </View>
+            <Switch
+              value={!!appLockEnabled}
+              onValueChange={toggleAppLock}
+              // Can't switch it on without Face ID / Touch ID set up; can
+              // always switch it off.
+              disabled={!appLockEnabled && !biometrics?.available}
+              trackColor={{ false: colors.muted, true: colors.accent + '80' }}
+              thumbColor={appLockEnabled ? colors.accent : isDark ? '#94a3b8' : '#f4f3f4'}
+              style={styles.switchStyle}
+              accessibilityLabel={`Require ${biometrics?.label ?? 'Face ID'}`}
+            />
+          </View>
         </View>
 
         <View style={styles.sectionBlock}>

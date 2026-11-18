@@ -27,6 +27,7 @@ import { usePhotoUploads, PhotoUploadError, type PhotoUploader, type PhotoUpload
 import { isDocumentScannerAvailable, isPhotoMarkupAvailable, persistPhoto, scanDocument } from '../lib/photos';
 import { useLayout } from '../lib/useLayout';
 import { haptic } from '../lib/haptics';
+import { isPdfUri } from '../lib/shareIntake';
 
 interface CostCode {
   id: string;
@@ -41,11 +42,19 @@ interface Contact {
 
 // Each page goes up as its own JPEG; the bill gets page 1 inline and the rest
 // as extra attachments (see sendReceipt in offlineQueue).
+// A page can also be a PDF shared in from Mail / Files (#44).
 const uploadReceiptPage: PhotoUploader = (uri, onProgress) =>
-  uploadFileFromUri(uri, `receipt_${Date.now()}.jpg`, 'image/jpeg', onProgress);
+  isPdfUri(uri)
+    ? uploadFileFromUri(uri, `receipt_${Date.now()}.pdf`, 'application/pdf', onProgress)
+    : uploadFileFromUri(uri, `receipt_${Date.now()}.jpg`, 'image/jpeg', onProgress);
 
 export default function ReceiptCaptureScreen({ route, navigation }: any) {
-  const { projectId, projectName } = route.params as { projectId: string; projectName: string };
+  const { projectId, projectName, sharedUris } = route.params as {
+    projectId: string;
+    projectName: string;
+    /** Photos / PDFs shared into Morada — become the pages, no camera. */
+    sharedUris?: string[];
+  };
   const theme = useTheme();
   const colors = useMemo(() => ({
     background: theme.background,
@@ -84,8 +93,10 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     apiFetch<CostCode[]>(`/api/projects/${projectId}/cost-codes`)
       .then(data => setCostCodes(data || []))
       .catch(() => {});
-    // Launch camera immediately on open
-    handleTakePhoto().catch(e => console.warn('Auto camera launch failed:', e));
+    // Shared in from another app: those are the pages. Otherwise launch the
+    // camera immediately on open.
+    if (sharedUris?.length) photos.add(sharedUris);
+    else handleTakePhoto().catch(e => console.warn('Auto camera launch failed:', e));
   }, []);
 
   // With one photo, the camera and library REPLACE it (Retake), as before
@@ -266,11 +277,19 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     photos.upload(item.id).catch(() => {});
   };
 
+  // A shared-in PDF page: <Image> can't draw a PDF.
+  const renderPdfPage = () => (
+    <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card }}>
+      <Ionicons name="document-outline" size={36} color={colors.accent} />
+      <Text style={{ color: colors.secondary, fontSize: 12, fontWeight: '600', marginTop: 4 }}>PDF</Text>
+    </View>
+  );
+
   const renderPageActions = (item: PhotoUploadItem, compact: boolean) => {
     const busy = submitting || item.status === 'uploading';
     return (
       <View style={styles.pageActions} pointerEvents={busy ? 'none' : 'auto'}>
-        {canMarkup && (
+        {canMarkup && !isPdfUri(item.uri) && (
           <TouchableOpacity
             style={[styles.pageActionBtn, busy && styles.pageActionBusy]}
             onPress={() => handleMarkup(item)}
@@ -495,7 +514,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
         <View style={styles.photoContainer}>
           {photos.items.length === 1 ? (
             <View style={[styles.singlePage, { height: isWide ? 320 : 200 }]}>
-              <Image source={{ uri: photos.items[0].uri }} style={styles.photo} />
+              {isPdfUri(photos.items[0].uri) ? renderPdfPage() : <Image source={{ uri: photos.items[0].uri }} style={styles.photo} />}
               <UploadProgress
                 status={photos.items[0].status}
                 progress={photos.items[0].progress}
@@ -507,7 +526,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pageStrip}>
               {photos.items.map((item, i) => (
                 <View key={item.id} style={styles.pageThumb}>
-                  <Image source={{ uri: item.uri }} style={styles.photo} />
+                  {isPdfUri(item.uri) ? renderPdfPage() : <Image source={{ uri: item.uri }} style={styles.photo} />}
                   <UploadProgress status={item.status} progress={item.progress} size={34} onRetry={() => retryPage(item)} />
                   <View style={styles.pageNumber} pointerEvents="none">
                     <Text style={styles.pageNumberText}>{i + 1}</Text>

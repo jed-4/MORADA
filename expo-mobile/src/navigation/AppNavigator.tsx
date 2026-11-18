@@ -17,6 +17,8 @@ import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
 import { useOrientationPolicy } from '../lib/orientation';
 import { useRestoredNavigationState } from './navigationPersistence';
+import { useShareIntentRouting } from './useShareIntentRouting';
+import type { NavigationState } from '@react-navigation/native';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -52,9 +54,18 @@ import DefectDetailScreen from '../screens/DefectDetailScreen';
 import DefectCaptureScreen from '../screens/DefectCaptureScreen';
 import DeliveriesListScreen from '../screens/DeliveriesListScreen';
 import DeliveryCheckInScreen from '../screens/DeliveryCheckInScreen';
+import ShareTargetScreen from '../screens/ShareTargetScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Share into Morada is a one-off modal over the files just shared: never
+// reopen it from the remembered navigation state after a relaunch.
+function withoutShareTarget(state: NavigationState | undefined): NavigationState | undefined {
+  if (!state || !state.routes.some(r => r.name === 'ShareTarget')) return state;
+  const routes = state.routes.filter(r => r.name !== 'ShareTarget');
+  return { ...state, routes, index: Math.min(state.index, routes.length - 1) } as NavigationState;
+}
 
 /**
  * Shared options for every tab's stack.
@@ -401,6 +412,9 @@ export default function AppNavigator() {
   useOrientationPolicy();
   // Reopen where you were (same tab, project and screen) after a relaunch.
   const nav = useRestoredNavigationState(isAuthenticated && !isClient ? user?.id : undefined, isLoading);
+  // Photos / PDFs shared from another app open ShareTarget (#44).
+  const [navReady, setNavReady] = useState(false);
+  useShareIntentRouting({ navReady, isAuthenticated, isClient });
 
   if (isLoading || !nav.ready) {
     // Match the app background while the stored session is validated,
@@ -418,9 +432,10 @@ export default function AppNavigator() {
     <NavigationContainer
       ref={navigationRef}
       initialState={nav.initialState}
-      onStateChange={nav.save}
+      onStateChange={(state) => nav.save(withoutShareTarget(state))}
       onReady={() => {
         navigationIntegration.registerNavigationContainer(navigationRef);
+        setNavReady(true);
       }}
       theme={{
         dark: isDark,
@@ -444,7 +459,15 @@ export default function AppNavigator() {
         {isAuthenticated && isClient ? (
           <Stack.Screen name="Client" component={ClientNavigator} />
         ) : isAuthenticated ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            {/* Share into Morada: params { files: SharedFiles } (lib/shareIntake) */}
+            <Stack.Screen
+              name="ShareTarget"
+              component={ShareTargetScreen}
+              options={{ presentation: 'modal', headerShown: false }}
+            />
+          </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />

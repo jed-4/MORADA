@@ -49,6 +49,7 @@ import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
 import { BottomActionBar, BOTTOM_ACTION_BAR_HEIGHT } from '../components/form/BottomActionBar';
+import { VoiceInputButton } from '../components/VoiceInputButton';
 interface TemplateField {
   id: string;
   title: string;
@@ -1167,9 +1168,16 @@ const colors = {
         // mic works. Return adds a new line (no "next" here).
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
-              {field.title}{field.required ? ' *' : ''}
-            </Text>
+            <View style={styles.voiceLabelRow}>
+              <Text style={[styles.fieldLabel, { color: colors.text, flexShrink: 1 }]}>
+                {field.title}{field.required ? ' *' : ''}
+              </Text>
+              <VoiceInputButton
+                value={value || ''}
+                onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
+                label={`Dictate ${field.title}`}
+              />
+            </View>
             <TextInput
               ref={focusChain.ref(field.id)}
               onFocus={entryKb.onInputFocus}
@@ -2530,6 +2538,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 8,
   },
+  // Field label with the dictation mic on the right (#56).
+  voiceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   fieldLabel: {
     fontSize: 14,
     fontWeight: '500',

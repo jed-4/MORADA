@@ -79,7 +79,7 @@ const PENDING_DIR = `${documentDirectory}pending-uploads/`;
 export async function persistPhoto(uri: string): Promise<string> {
   if (uri.startsWith(PENDING_DIR)) return uri;
   await makeDirectoryAsync(PENDING_DIR, { intermediates: true }).catch(() => {});
-  const ext = (uri.split('?')[0].match(/\.(jpe?g|png|heic|webp)$/i)?.[1] || 'jpg').toLowerCase();
+  const ext = (uri.split('?')[0].match(/\.(jpe?g|png|heic|webp|pdf)$/i)?.[1] || 'jpg').toLowerCase();
   const to = `${PENDING_DIR}${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   await copyAsync({ from: uri, to });
   return to;

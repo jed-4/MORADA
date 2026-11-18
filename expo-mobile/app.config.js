@@ -3,6 +3,17 @@
 const CAMERA_PERMISSION =
   "Morada uses your camera so you can photograph site progress, checklist items and receipts, and scan receipts.";
 
+// Face ID lock (#50) — Settings → Require Face ID. Set in ios.infoPlist and
+// on the expo-local-authentication plugin so whichever writes last, it reads right.
+const FACE_ID_PERMISSION = "Morada uses Face ID to unlock the app when you turn on Require Face ID in Settings.";
+
+// Share into Morada (#44). The share extension and the app swap files through
+// this App Group; both identifiers must exist in the Apple Developer account
+// (EAS creates them on the next build when it manages credentials).
+const IOS_BUNDLE_ID = "com.buildpro.mobile";
+const IOS_APP_GROUP = `group.${IOS_BUNDLE_ID}`;
+const IOS_SHARE_EXTENSION_ID = `${IOS_BUNDLE_ID}.share-extension`;
+
 module.exports = {
   expo: {
     name: "Morada",
@@ -39,12 +50,13 @@ module.exports = {
       // iPhone only for now: the screens are laid out for a phone and have
       // never been tested on iPad. App Review tests on iPad when this is true.
       supportsTablet: false,
-      bundleIdentifier: "com.buildpro.mobile",
+      bundleIdentifier: IOS_BUNDLE_ID,
       // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
       usesAppleSignIn: true,
       buildNumber: "19",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSFaceIDUsageDescription: FACE_ID_PERMISSION,
       },
     },
     android: {
@@ -84,6 +96,33 @@ module.exports = {
       // module — needs a new build. Same camera text as expo-image-picker so
       // whichever plugin writes NSCameraUsageDescription last, it reads right.
       ["react-native-document-scanner-plugin", { cameraPermission: CAMERA_PERMISSION }],
+      // Face ID lock (#50).
+      ["expo-local-authentication", { faceIDPermission: FACE_ID_PERMISSION }],
+      // Voice notes (#56): on-phone speech-to-text, no audio kept.
+      [
+        "expo-speech-recognition",
+        {
+          microphonePermission: "Morada uses the microphone when you tap the mic to dictate diary notes, defects and comments. No recording is kept.",
+          speechRecognitionPermission: "Morada turns what you say into text for diary notes, defects and comments. On most iPhones this happens on the phone itself.",
+        },
+      ],
+      // Share into Morada (#44): adds an iOS share extension ("Morada" in the
+      // share sheet) for photos and files (PDFs), and Android share intents.
+      // Opens the app at buildpro://dataUrl=... which useShareIntentRouting handles.
+      [
+        "expo-share-intent",
+        {
+          iosActivationRules: {
+            NSExtensionActivationSupportsImageWithMaxCount: 20,
+            NSExtensionActivationSupportsFileWithMaxCount: 10,
+          },
+          iosAppGroupIdentifier: IOS_APP_GROUP,
+          iosShareExtensionBundleIdentifier: IOS_SHARE_EXTENSION_ID,
+          iosShareExtensionName: "MoradaShareExtension",
+          androidIntentFilters: ["image/*", "application/pdf"],
+          androidMultiIntentFilters: ["image/*"],
+        },
+      ],
       [
         "@sentry/react-native/expo",
         {

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SheetTextInput } from './ui/Sheet';
+import { VoiceInputButton } from './VoiceInputButton';
 import { apiFetch, apiRequest } from '../services/api';
 import { timeAgo, getInitials } from '../lib/format';
 import { useTheme } from '../theme';
@@ -403,16 +404,20 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
           placeholderTextColor={colors.muted}
           style={[styles.input, { backgroundColor: inputBg, color: colors.text, borderColor: colors.border }]}
         />
-        <TouchableOpacity
-          onPress={submit}
-          disabled={!input.trim() || posting}
-          style={[
-            styles.postBtn,
-            { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
-          ]}
-        >
-          <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
-        </TouchableOpacity>
+        <View style={styles.composerActions}>
+          {/* Dictate a comment (#56). */}
+          <VoiceInputButton value={input} onChangeText={onChangeInput} label="Dictate a comment" />
+          <TouchableOpacity
+            onPress={submit}
+            disabled={!input.trim() || posting}
+            style={[
+              styles.postBtn,
+              { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
+            ]}
+          >
+            <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -441,6 +446,7 @@ const styles = StyleSheet.create({
   btnGhost: { paddingHorizontal: 16, paddingVertical: 8 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   postBtn: { alignSelf: 'flex-end', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  composerActions: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   mentionList: { borderWidth: 1, borderRadius: 8, marginBottom: 6, overflow: 'hidden' },
   mentionItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
   mentionAvatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

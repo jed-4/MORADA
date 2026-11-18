@@ -39,7 +39,9 @@ export interface ReceiptPayload {
   label?: string;
 }
 
-const pageFileName = (index: number) => `receipt_${Date.now()}_p${index + 1}.jpg`;
+const pageFileName = (index: number, pdf = false) => `receipt_${Date.now()}_p${index + 1}.${pdf ? 'pdf' : 'jpg'}`;
+/** A page shared in as a PDF (Share into Morada, #44) rather than a photo. */
+const isPdfPage = (photo: { uri: string }) => /\.pdf$/i.test(photo.uri.split('?')[0]);
 
 /**
  * Create a receipt bill with every page attached. Page 1 rides inline on
@@ -58,13 +60,17 @@ export const sendReceipt = async (
   for (let i = 0; i < payload.photos.length; i++) {
     const photo = payload.photos[i];
     if (photo.objectPath) continue;
-    const { objectPath } = await uploadFileFromUri(photo.uri, pageFileName(i), 'image/jpeg');
+    const pdf = isPdfPage(photo);
+    const { objectPath } = await uploadFileFromUri(photo.uri, pageFileName(i, pdf), pdf ? 'application/pdf' : 'image/jpeg');
     photo.objectPath = objectPath;
     await onStep?.();
   }
 
+  // The inline page is always filed as image/jpeg by the server, so a PDF
+  // first page goes through the attachments call (with its real type) instead.
+  const inlineFirst = !!payload.photos[0] && !isPdfPage(payload.photos[0]);
   if (!payload.billId) {
-    const first = payload.photos[0]?.objectPath;
+    const first = inlineFirst ? payload.photos[0]?.objectPath : undefined;
     const res = await apiRequest('/api/bills', 'POST', {
       ...payload.bill,
       ...(first ? { objectPath: first } : {}),
@@ -75,12 +81,16 @@ export const sendReceipt = async (
     await onStep?.();
   }
 
-  const rest = payload.photos.slice(1);
+  const rest = inlineFirst ? payload.photos.slice(1) : payload.photos;
   if (payload.billId) {
     for (let i = payload.attached || 0; i < rest.length; i++) {
       const objectPath = rest[i].objectPath;
       if (objectPath) {
-        await attachFileToBill(payload.billId, objectPath, objectPath.split('/').pop() || pageFileName(i + 1));
+        const pdf = isPdfPage(rest[i]);
+        const pageNo = inlineFirst ? i + 1 : i;
+        let filename = objectPath.split('/').pop() || pageFileName(pageNo, pdf);
+        if (pdf && !/\.pdf$/i.test(filename)) filename = `${filename}.pdf`;
+        await attachFileToBill(payload.billId, objectPath, filename, pdf ? 'application/pdf' : 'image/jpeg');
       }
       payload.attached = i + 1;
       await onStep?.();
