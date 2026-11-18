@@ -32,4 +32,32 @@ check('messages still open their thread', () => {
   assert.equal(resolveNotificationTarget({ type: 'mention', link: '/messages?channel=c-1' }).screen, 'MessageThread');
 });
 
+check('a defect push opens that defect', () => {
+  assert.deepEqual(
+    resolveNotificationTarget({ type: 'defect', projectId: 'p-1', defectId: 'd-7' }),
+    { tab: 'Projects', screen: 'DefectDetail', params: { defectId: 'd-7', projectId: 'p-1' } },
+  );
+});
+
+check('an in-app defect row (entityId + link) opens that defect', () => {
+  assert.deepEqual(
+    resolveNotificationTarget({ type: 'defect', entityType: 'defect', entityId: 'd-7', link: '/projects/p-1/defects' }),
+    { tab: 'Projects', screen: 'DefectDetail', params: { defectId: 'd-7', projectId: 'p-1' } },
+  );
+});
+
+check('a defect link with the id in the path opens that defect', () => {
+  assert.deepEqual(
+    resolveNotificationTarget({ link: '/projects/p-1/defects/d-9' }),
+    { tab: 'Projects', screen: 'DefectDetail', params: { defectId: 'd-9', projectId: 'p-1' } },
+  );
+});
+
+check('a defect notification with no defect id opens the project defects list', () => {
+  assert.deepEqual(
+    resolveNotificationTarget({ type: 'defect', link: '/projects/p-1/defects' }),
+    { tab: 'Projects', screen: 'DefectsList', params: { projectId: 'p-1' } },
+  );
+});
+
 console.log(`\n${passed} passed\n`);

@@ -45,6 +45,9 @@ import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 import LabourHoursScreen from '../screens/LabourHoursScreen';
+import DefectsListScreen from '../screens/DefectsListScreen';
+import DefectDetailScreen from '../screens/DefectDetailScreen';
+import DefectCaptureScreen from '../screens/DefectCaptureScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -136,6 +139,13 @@ function ProjectsStack() {
         component={LabourHoursScreen}
         options={{ headerShown: true, title: 'Labour Hours' }}
       />
+      <Stack.Screen name="DefectsList" component={DefectsListScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DefectCapture"
+        component={DefectCaptureScreen}
+        options={{ headerShown: true, title: 'Add defects' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -213,6 +223,14 @@ function MoreStack() {
       <Stack.Screen name="Notes" component={NotesListScreen} options={moreHeader('Notes')} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SelectionsProjects" component={SelectionsProjectsScreen} options={{ headerShown: false }} />
+      {/* My defects: the same list in cross-project mode (/api/defects/mine). */}
+      <Stack.Screen
+        name="MyDefects"
+        component={DefectsListScreen}
+        initialParams={{ mine: true }}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );

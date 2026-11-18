@@ -10,7 +10,7 @@ const MAX_RETRIES = 5;
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt' | 'create-defect';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -86,6 +86,66 @@ export const sendReceipt = async (
     }
   }
   return payload.billId;
+};
+
+/**
+ * Payload of a queued 'create-defect' action (see sendDefect). Same resume
+ * rule as a receipt: each photo's objectPath, then `defectId`, is saved the
+ * moment that step succeeds, so a retry never uploads a photo twice. The
+ * create itself carries `clientRequestId`, and the server answers a repeat of
+ * that id with the defect it already made — so even a create whose response
+ * was lost (signal dropped mid-request) can't make a duplicate.
+ */
+export interface DefectPayload {
+  projectId: string;
+  /** uuid, made once on the phone when the defect is saved. */
+  clientRequestId: string;
+  /** POST /api/projects/:projectId/defects body, without photos/clientRequestId. */
+  defect: Record<string, any>;
+  /** Local URIs should come from persistPhoto(). */
+  photos: Array<{ uri: string; objectPath?: string; kind?: 'before' | 'after' | 'trade' }>;
+  /** Set once the defect exists on the server. */
+  defectId?: string;
+  /** Shown in "waiting to send" lists, e.g. "Defect at Kitchen". */
+  label?: string;
+}
+
+/**
+ * Upload a defect's photos (skipping ones already up), then create it.
+ * Mutates `payload` and calls `onStep` after each step so the caller can save
+ * progress. Throws on the first failure; calling again resumes. Returns the
+ * defect id.
+ */
+export const sendDefect = async (
+  payload: DefectPayload,
+  onStep?: () => Promise<void> | void,
+): Promise<string | undefined> => {
+  for (let i = 0; i < payload.photos.length; i++) {
+    const photo = payload.photos[i];
+    if (photo.objectPath) continue;
+    const { objectPath } = await uploadFileFromUri(photo.uri, `defect_${Date.now()}_${i + 1}.jpg`, 'image/jpeg');
+    photo.objectPath = objectPath;
+    await onStep?.();
+  }
+
+  if (!payload.defectId) {
+    const res = await apiRequest(`/api/projects/${payload.projectId}/defects`, 'POST', {
+      ...payload.defect,
+      clientRequestId: payload.clientRequestId,
+      photos: payload.photos
+        .filter(p => p.objectPath)
+        .map((p, i) => ({
+          url: p.objectPath,
+          name: p.objectPath!.split('/').pop() || `photo-${i + 1}.jpg`,
+          type: 'image/jpeg',
+          kind: p.kind || 'before',
+        })),
+    });
+    const created = await res.json().catch(() => null);
+    payload.defectId = created?.id;
+    await onStep?.();
+  }
+  return payload.defectId;
 };
 
 let syncListeners: Array<() => void> = [];
@@ -270,6 +330,12 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
         await Promise.all(payload.photos.map(p => deletePersistedPhoto(p.uri)));
         return 'success';
       }
+      case 'create-defect': {
+        const payload = action.payload as DefectPayload;
+        await sendDefect(payload, () => checkpointAction(action));
+        await Promise.all(payload.photos.map(p => deletePersistedPhoto(p.uri)));
+        return 'success';
+      }
       default:
         return 'permanent';
     }
@@ -421,6 +487,9 @@ const countLocalPhotos = (action: QueuedAction): number => {
   if (action.type === 'create-receipt') {
     return ((p as ReceiptPayload).photos || []).filter(ph => !ph.objectPath).length;
   }
+  if (action.type === 'create-defect') {
+    return ((p as DefectPayload).photos || []).filter(ph => !ph.objectPath).length;
+  }
   let n = action.photoUri && isLocalUri(action.photoUri) ? 1 : 0;
   if (Array.isArray(p.overallPhotos)) n += p.overallPhotos.filter(isLocalUri).length;
   if (p.fieldValues && typeof p.fieldValues === 'object') {
@@ -434,6 +503,7 @@ const countLocalPhotos = (action: QueuedAction): number => {
 const labelFor = (action: QueuedAction): string => {
   switch (action.type) {
     case 'create-receipt': return (action.payload as ReceiptPayload)?.label || 'Receipt';
+    case 'create-defect': return (action.payload as DefectPayload)?.label || 'Defect';
     case 'create-diary-entry':
     case 'edit-diary-entry': return 'Site diary entry';
     case 'update-checklist-item':
@@ -445,7 +515,7 @@ const labelFor = (action: QueuedAction): string => {
 const toPendingUploads = (queue: QueuedAction[], syncing: boolean): PendingUpload[] =>
   queue
     .map(action => ({ action, photoCount: countLocalPhotos(action) }))
-    .filter(({ action, photoCount }) => photoCount > 0 || action.type === 'create-receipt')
+    .filter(({ action, photoCount }) => photoCount > 0 || action.type === 'create-receipt' || action.type === 'create-defect')
     .map(({ action, photoCount }): PendingUpload => ({
       id: action.id,
       type: action.type,
