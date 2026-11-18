@@ -39,6 +39,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { compareProjects } from '../lib/projects';
 import { SuggestionSheet } from '../components/more/SuggestionSheet';
 import { QuickCaptureRow } from '../components/home/QuickCaptureRow';
+import { clockedOutOnThisPhone } from '../services/liveActivity';
+import { refreshWidgetSnapshot } from '../services/widgetSnapshot';
 import { getInitials, timeAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -422,6 +424,8 @@ export default function DashboardScreen({ navigation }: Props) {
       setCached('projects', data.projects || []);
       setCached('costCodes', data.costCodes || []);
       setCached('companySettings', data.companySettings || null);
+      // Home Screen widgets follow the dashboard (own small, money-free fetch).
+      refreshWidgetSnapshot();
     } catch {
       console.error('Failed to fetch dashboard data');
     } finally {
@@ -597,6 +601,7 @@ export default function DashboardScreen({ navigation }: Props) {
         clientTime: new Date().toISOString(), // the tap, not when it lands
       });
       setActiveTimesheet(null);
+      clockedOutOnThisPhone();
       clockOutSheetRef.current?.dismiss();
       toast.success(`Clocked out — ${duration} logged`);
       fetchData();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { apiRequest, uploadPhoto, uploadFileFromUri, attachFileToBill, isPermanentError } from './api';
+import { refreshWidgetSnapshot } from './widgetSnapshot';
 import { removeOfflineDiaryEntry } from './diaryOffline';
 import { deletePersistedPhoto } from '../lib/photos';
 import { storeDeliveryPO, type DeliveryPayload } from '../lib/deliveries';
@@ -498,6 +499,7 @@ const doSyncQueue = async (): Promise<{ synced: number; failed: number }> => {
 
   let synced = 0;
   let failed = 0;
+  let clockSynced = false;
   const remaining: QueuedAction[] = [];
 
   for (const action of queue) {
@@ -509,6 +511,7 @@ const doSyncQueue = async (): Promise<{ synced: number; failed: number }> => {
     const result = await processAction(action);
     if (result === 'success') {
       synced++;
+      if (action.type === 'clock-in' || action.type === 'clock-out') clockSynced = true;
     } else if (result === 'permanent') {
       // Server rejected it — retrying is pointless.
       action.status = 'failed';
@@ -533,6 +536,9 @@ const doSyncQueue = async (): Promise<{ synced: number; failed: number }> => {
   const known = new Set(queue.map(a => a.id));
   const addedMeanwhile = (await getQueue()).filter(a => !known.has(a.id));
   await saveQueue([...remaining, ...addedMeanwhile]);
+  // A queued clock-in/out just reached the server: refresh the Home Screen
+  // widgets and Live Activity from the server's view (fire-and-forget).
+  if (clockSynced) refreshWidgetSnapshot();
   return { synced, failed };
 };
 

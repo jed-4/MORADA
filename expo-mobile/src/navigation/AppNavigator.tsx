@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -17,6 +17,8 @@ import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
 import { useOrientationPolicy } from '../lib/orientation';
 import { useRestoredNavigationState } from './navigationPersistence';
+import { navigateFromDeepLink } from './deepLinks';
+import { startWidgetSync } from '../services/widgetSnapshot';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -286,6 +288,25 @@ function MainTabs() {
       cancelled = true;
       receivedSub.remove();
       responseSub.remove();
+    };
+  }, []);
+
+  // buildpro:// links from the Home/Lock Screen widgets and the clock-in Live
+  // Activity (deepLinkRouting.ts), plus keeping the widgets fresh: now and on
+  // every return to the foreground.
+  useEffect(() => {
+    let cancelled = false;
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url && !cancelled) setTimeout(() => navigateFromDeepLink(url), 400);
+      })
+      .catch(() => {});
+    const urlSub = Linking.addEventListener('url', ({ url }) => navigateFromDeepLink(url));
+    const stopWidgetSync = startWidgetSync();
+    return () => {
+      cancelled = true;
+      urlSub.remove();
+      stopWidgetSync();
     };
   }, []);
 
