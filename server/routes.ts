@@ -6560,7 +6560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Site location (0132) ──────────────────────────────────────────────────
+  // ── Site location (0133) ──────────────────────────────────────────────────
   // Coordinates for the job site, used by the Site map / Job map widgets and,
   // later, the "arriving on site" geofence. Same gates as editing the project
   // (requireAuth + requireTeamMember + enforceProjectCompany) — the PATCH above

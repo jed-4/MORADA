@@ -1008,7 +1008,7 @@ export const projects = pgTable("projects", {
   color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
   icon: text("icon").default("Building2"), // Lucide icon name
   location: text("location"), // Project address/location (displayed as "Address")
-  // ── Site location (0132) ────────────────────────────────────────────────
+  // ── Site location (0133) ────────────────────────────────────────────────
   // Coordinates of the job site. Written ONLY by PUT /api/projects/:id/site-location
   // (omitted from insertProjectSchema so the generic PATCH can't set them, or
   // forge who set them). Shared with the planned "arriving on site" geofence.
