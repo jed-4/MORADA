@@ -48,6 +48,8 @@ import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, FieldOption, Estima
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { MORADA_PALETTE_HEXES } from "@/lib/colors";
 import AddContactDialog from "@/components/AddContactDialog";
+import { SiteLocationEditor } from "@/components/maps/SiteLocationEditor";
+import { geocodeAndSaveProject, MAPS_CONFIG_KEY, type MapsConfig } from "@/lib/googleMaps";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import * as LucideIcons from "lucide-react";
 
@@ -305,6 +307,15 @@ export default function ProjectSettings() {
       return await apiRequest(`/api/projects/${currentProject.id}`, 'PATCH', data) as Project;
     },
     onSuccess: (updatedProject: Project) => {
+      // New or changed address → look it up and drop the site point there.
+      // The server keeps a manually placed pin / on-site point regardless.
+      const addressChanged = (updatedProject.location || "").trim() !== (currentProject?.location || "").trim();
+      const mapsKey = queryClient.getQueryData<MapsConfig>(MAPS_CONFIG_KEY)?.apiKey;
+      if (mapsKey && updatedProject.location?.trim() && (addressChanged || updatedProject.siteLatitude == null)) {
+        geocodeAndSaveProject(mapsKey, updatedProject.id, updatedProject.location).catch((e) =>
+          console.warn("[site-location] geocode after address save failed", e),
+        );
+      }
       setCurrentProject(updatedProject);
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id] });
@@ -573,6 +584,13 @@ export default function ProjectSettings() {
               </div>
             )}
           </div>
+
+          {/* Saves on its own (PUT /site-location), independent of Edit/Save. */}
+          <SiteLocationEditor
+            projectId={currentProject.id}
+            address={currentProject.location}
+            color={currentProject.color}
+          />
 
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>

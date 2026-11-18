@@ -35,6 +35,8 @@ import {
   GitBranch,
   Rocket,
   MessageSquare,
+  MapPin,
+  Map as MapIcon,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 
@@ -60,6 +62,7 @@ import ClientActivityWidget from "@/components/widgets/ClientActivityWidget";
 import ProgrammeScheduleWidget from "@/components/widgets/ProgrammeScheduleWidget";
 import ProjectDocumentsWidget from "@/components/widgets/ProjectDocumentsWidget";
 import QuickNotesWidget from "@/components/widgets/QuickNotesWidget";
+import SiteMapWidget from "@/components/widgets/SiteMapWidget";
 
 // Personal dashboard widgets
 import PersonalTasksWidget from "@/components/user-workspace/widgets/PersonalTasksWidget";
@@ -91,6 +94,7 @@ import BusinessProfitabilityWidget from "@/components/business-widgets/BusinessP
 import BusinessUtilizationWidget from "@/components/business-widgets/BusinessUtilizationWidget";
 import BusinessVariationsPendingWidget from "@/components/business-widgets/BusinessVariationsPendingWidget";
 import BusinessPnLWidget from "@/components/business-widgets/BusinessPnLWidget";
+import BusinessJobMapWidget from "@/components/business-widgets/BusinessJobMapWidget";
 
 // Shared (merged) widgets
 import { ProjectPinnedItemsWidget, PersonalPinnedItemsWidget } from "./PinnedItemsWidget";
@@ -329,6 +333,18 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "md",
     configurable: true,
     accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  siteMap: {
+    type: "siteMap",
+    name: "Site Map",
+    description: "The job site on Google Maps, with Open in Maps and Directions links",
+    icon: MapPin,
+    component: SiteMapWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "teal",
     defaultColumns: 3,
     defaultRowSpan: 3,
   },
@@ -696,6 +712,18 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     accent: "amber",
     defaultColumns: 4,
     defaultRowSpan: 2,
+  },
+  businessJobMap: {
+    type: "businessJobMap",
+    name: "Job Map",
+    description: "Every live job on a Google map, coloured by project, with a lookup for jobs missing a location",
+    icon: MapIcon,
+    component: BusinessJobMapWidget,
+    defaultSize: "lg",
+    configurable: false,
+    accent: "project",
+    defaultColumns: 5,
+    defaultRowSpan: 3,
   },
 };
 
