@@ -43,7 +43,7 @@ export interface CalendarViewSnapshot {
 }
 
 interface Props {
-  calendarType: "personal" | "business";
+  calendarType: "personal" | "business" | "schedule";
   views: CalendarView[];
   selectedViewId?: string;
   currentUserId?: string;
