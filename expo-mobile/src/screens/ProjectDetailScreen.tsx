@@ -158,6 +158,7 @@ const colors = {
   const canViewLabourHours = usePermission('financial.budget_labour');
   const canViewSelections = usePermission('projects.selections');
   const canViewDefects = usePermission('projects.defects');
+  const canViewDeliveries = usePermission('projects.deliveries');
 
   const fetchData = useCallback(async () => {
     try {
@@ -307,6 +308,9 @@ const colors = {
     ...(canViewDefects
       ? [{ key: 'defects', icon: 'construct-outline' as const, label: 'Defects', showCount: false }]
       : []),
+    ...(canViewDeliveries
+      ? [{ key: 'deliveries', icon: 'cube-outline' as const, label: 'Deliveries', showCount: false }]
+      : []),
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
@@ -337,6 +341,9 @@ const colors = {
         break;
       case 'defects':
         navigation.navigate('DefectsList', { projectId, projectName: project.name });
+        break;
+      case 'deliveries':
+        navigation.navigate('DeliveriesList', { projectId, projectName: project.name });
         break;
       case 'notes':
         navigation.navigate('Notes',{ projectId, projectName: project.name });

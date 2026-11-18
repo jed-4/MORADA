@@ -48,6 +48,8 @@ import LabourHoursScreen from '../screens/LabourHoursScreen';
 import DefectsListScreen from '../screens/DefectsListScreen';
 import DefectDetailScreen from '../screens/DefectDetailScreen';
 import DefectCaptureScreen from '../screens/DefectCaptureScreen';
+import DeliveriesListScreen from '../screens/DeliveriesListScreen';
+import DeliveryCheckInScreen from '../screens/DeliveryCheckInScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -145,6 +147,13 @@ function ProjectsStack() {
         name="DefectCapture"
         component={DefectCaptureScreen}
         options={{ headerShown: true, title: 'Add defects' }}
+      />
+      {/* Deliveries: params { projectId, projectName? } / { projectId, poId, poNumber? } */}
+      <Stack.Screen name="DeliveriesList" component={DeliveriesListScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DeliveryCheckIn"
+        component={DeliveryCheckInScreen}
+        options={({ route }: any) => ({ headerShown: true, title: route.params?.poNumber || 'Check in delivery' })}
       />
     </Stack.Navigator>
   );
