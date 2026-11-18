@@ -38,6 +38,7 @@ import {
   Search,
   Pencil,
   Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { rankedCommandFilter } from "@/components/ui/searchable-select";
@@ -221,7 +222,7 @@ type XeroValidationIssue = {
 };
 
 /** Error thrown by bill push handlers; may carry parsed Xero validation issues. */
-type XeroPushError = Error & { validationErrors?: XeroValidationIssue[] };
+type XeroPushError = Error & { validationErrors?: XeroValidationIssue[]; code?: string };
 
 function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
@@ -1496,7 +1497,7 @@ export default function BillDetail() {
             }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
-              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
+              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined, code: errData.error as string | undefined },
             );
             throw err;
           }
@@ -1507,13 +1508,31 @@ export default function BillDetail() {
             toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
           }
         } catch (e) {
-          const desc = formatXeroErrorDescription(e);
-          toast({
-            title: "Bill created — Xero sync failed",
-            description: desc,
-            variant: "destructive",
+          // Xero refused the new bill: take it back out, so nothing is saved,
+          // and keep the form filled in to fix and save again (Xero gate).
+          if ((e as any)?.code === "NO_CONNECTION") {
+            setXeroRefusal({
+              title: "Saved here — but Xero isn't connected",
+              description: "This bill wasn't sent to Xero because the Xero connection is missing or has expired. Reconnect Xero in Settings → Integrations, then open the bill and save it again to send it.",
+            });
+            return;
+          }
+          let removed = false;
+          try {
+            await apiRequest(`/api/bills/${newBill.id}`, "DELETE");
+            removed = true;
+            createdBillIdRef.current = null;
+            queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+          } catch { /* left in place — said so below */ }
+          setXeroRefusal({
+            title: removed ? "Not saved — Xero didn't accept this bill" : "Created here, but Xero didn't accept it",
+            description:
+              formatXeroErrorDescription(e) +
+              (removed
+                ? "\n\nThe bill wasn't saved. Everything you entered is still on screen — fix the problem and save again."
+                : "\n\nThe bill couldn't be removed again, so it exists in Morada but not in Xero. Fix the problem and save again."),
           });
-          return; // stay on page so user can see the error
+          return; // stay on page with the form filled in
         } finally {
           setIsSyncingToXero(false);
         }
@@ -1554,6 +1573,61 @@ export default function BillDetail() {
     },
   });
 
+  // ── Xero gate (Jed, 11-18: "it saves, then later a toast says it didn't go
+  // to Xero, so I don't pick up on it. It shouldn't save in that case.") ──
+  // When the bill is set to go to Xero, the page pushes it straight after
+  // saving. If Xero refuses, the save is UNDONE (the server copy is put back
+  // from a snapshot taken just before saving), the edits stay on screen, and a
+  // dialog — not a toast — says why.
+  const xeroSnapshotRef = useRef<{ writeId: string; header: any; lines: any[]; links: any[]; keys: string[] } | null>(null);
+  const xeroBlockedRef = useRef(false);
+  const [xeroRefusal, setXeroRefusal] = useState<{ title: string; description: string } | null>(null);
+  const restoreXeroSnapshot = async () => {
+    const snap = xeroSnapshotRef.current;
+    if (!snap) return false;
+    const header: Record<string, unknown> = {};
+    for (const k of snap.keys) if (k in snap.header) header[k] = snap.header[k];
+    const linkByLine = new Map<string, string>();
+    for (const l of snap.links) {
+      const lineId = l.billLineItemId ?? l.lineItemId;
+      const allowanceId = l.estimateItemId ?? l.allowanceItemId;
+      if (lineId && allowanceId) linkByLine.set(lineId, allowanceId);
+    }
+    try {
+      await apiRequest(`/api/bills/${snap.writeId}`, "PATCH", {
+        ...header,
+        acknowledgeDocumentMismatch: true,
+        skipXeroAutoPush: true,
+      });
+      await apiRequest(`/api/bills/${snap.writeId}/line-items`, "PUT", {
+        skipXeroAutoPush: true,
+        lineItems: snap.lines.map((li: any, i: number) => ({
+          id: li.id,
+          billId: snap.writeId,
+          lineType: li.lineType,
+          description: li.description,
+          costCodeId: li.costCodeId,
+          quantity: li.quantity,
+          unit: li.unit ?? null,
+          unitPrice: li.unitPrice,
+          tax: li.tax,
+          account: li.account,
+          total: li.total,
+          order: li.order ?? i,
+          allowanceItemId: linkByLine.get(li.id) ?? null,
+        })),
+      });
+      return true;
+    } catch (e) {
+      console.error("[xero gate] could not restore the bill after Xero refused it", e);
+      return false;
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
+    }
+  };
+
   const updateMutation = useMutation({
     // __stayOnPage: save without navigating away afterwards — used by
     // save-then-approve so the approve call runs against the just-saved bill.
@@ -1580,8 +1654,28 @@ export default function BillDetail() {
       };
 
       const writeId = billIdForWrite();
+      // Going to Xero from this page: snapshot the server copy first so a
+      // refusal can be undone, and tell the server not to start its own
+      // background push (this page pushes, and waits for the answer).
+      const willPushToXero = !!(data.sendToXero && id);
+      xeroBlockedRef.current = false;
+      xeroSnapshotRef.current = null;
+      if (willPushToXero && writeId) {
+        try {
+          const [header, lines, links] = await Promise.all([
+            apiRequest(`/api/bills/${writeId}`, "GET"),
+            apiRequest(`/api/bills/${writeId}/line-items`, "GET"),
+            apiRequest(`/api/bills/${writeId}/line-item-allowances`, "GET").catch(() => []),
+          ]);
+          xeroSnapshotRef.current = {
+            writeId, header, lines: Array.isArray(lines) ? lines : [], links: Array.isArray(links) ? links : [],
+            keys: Object.keys(billData),
+          };
+        } catch { /* no snapshot: a refusal is still reported, just not undone */ }
+      }
       const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", {
         ...billData,
+        ...(willPushToXero ? { skipXeroAutoPush: true } : {}),
         // Set only after the user confirms the total really does differ from
         // the invoice; the server refuses the save otherwise.
         ...(data.__acknowledgeDocumentMismatch ? { acknowledgeDocumentMismatch: true } : {}),
@@ -1594,6 +1688,7 @@ export default function BillDetail() {
       // them. Round-trip latency to the database region made that the reason
       // saving a bill took seconds.
       await apiRequest(`/api/bills/${writeId}/line-items`, "PUT", {
+        ...(willPushToXero ? { skipXeroAutoPush: true } : {}),
         lineItems: lineItems.map((item, i) => ({
           id: item.id || undefined,
           billId: id,
@@ -1676,7 +1771,7 @@ export default function BillDetail() {
             }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
-              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
+              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined, code: errData.error as string | undefined },
             );
             throw err;
           }
@@ -1688,13 +1783,27 @@ export default function BillDetail() {
               : result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
           });
         } catch (e) {
-          // Stay on page so user can see the error and retry
-          toast({
-            title: "Bill saved — Xero sync failed",
-            description: formatXeroErrorDescription(e),
-            variant: "destructive",
+          // Xero refused it: undo the save, keep the edits on screen, and say
+          // so in a dialog that has to be dismissed. Xero not being connected
+          // at all isn't a refusal of THIS bill — keep the save, but say so.
+          if ((e as any)?.code === "NO_CONNECTION") {
+            setXeroRefusal({
+              title: "Saved here — but Xero isn't connected",
+              description: "This bill wasn't sent to Xero because the Xero connection is missing or has expired. Reconnect Xero in Settings → Integrations, then save the bill again to send it.",
+            });
+            return;
+          }
+          xeroBlockedRef.current = true;
+          const undone = await restoreXeroSnapshot();
+          setXeroRefusal({
+            title: undone ? "Not saved — Xero didn't accept this bill" : "Saved here, but Xero didn't accept it",
+            description:
+              formatXeroErrorDescription(e) +
+              (undone
+                ? "\n\nNothing was changed. Your edits are still on screen — fix the problem and save again."
+                : "\n\nThe bill couldn't be put back, so Morada and Xero now differ. Fix the problem and save again."),
           });
-          return; // don't navigate away so they can see the error
+          return; // stay on the page with the edits
         } finally {
           setIsSyncingToXero(false);
         }
@@ -1834,7 +1943,25 @@ export default function BillDetail() {
         description: "Approved and saved.",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      // The server pushes an approved bill to Xero there and then, and undoes
+      // the approval if Xero refuses it.
+      if (error?.payload?.error === "XERO_PUSH_FAILED") {
+        const p = error.payload;
+        if (p.code === "UNMAPPED_CONTACT") {
+          setUnmappedSupplierName(p.supplierName || "Unknown Supplier");
+          setUnmappedSupplierId(p.supplierId || null);
+          setPendingXeroBillId(id || null);
+          setUnmappedContactDialogOpen(true);
+        }
+        setXeroRefusal({
+          title: "Not approved — Xero didn't accept this bill",
+          description:
+            formatXeroErrorDescription(Object.assign(new Error(p.message || "Xero sync failed"), { validationErrors: p.validationErrors })) +
+            "\n\nThe bill is still waiting for approval. Fix the problem and approve again.",
+        });
+        return;
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to approve bill",
@@ -1891,6 +2018,7 @@ export default function BillDetail() {
       } catch {
         return; // save failed — updateMutation.onError already showed the toast
       }
+      if (xeroBlockedRef.current) return; // Xero refused the save; it was undone
     }
     // Approving is the end of the job on this bill either way: "Approve"
     // returns to the awaiting-approval list, "Approve & next" opens the next
@@ -4744,6 +4872,26 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      {/* Xero refused a save or an approval — must be dismissed, unlike a toast. */}
+      <AlertDialog open={!!xeroRefusal} onOpenChange={(o) => { if (!o) setXeroRefusal(null); }}>
+        <AlertDialogContent data-testid="dialog-xero-refused">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+              {xeroRefusal?.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {xeroRefusal?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setXeroRefusal(null)} data-testid="button-xero-refused-ok">
+              OK, I'll fix it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!documentMismatch} onOpenChange={(o) => { if (!o) setDocumentMismatch(null); }}>
         <AlertDialogContent data-testid="dialog-document-mismatch">
