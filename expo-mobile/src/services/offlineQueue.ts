@@ -4,13 +4,14 @@ import NetInfo from '@react-native-community/netinfo';
 import { apiRequest, uploadPhoto, uploadFileFromUri, attachFileToBill, isPermanentError } from './api';
 import { removeOfflineDiaryEntry } from './diaryOffline';
 import { deletePersistedPhoto } from '../lib/photos';
+import { storeDeliveryPO, type DeliveryPayload } from '../lib/deliveries';
 
 const QUEUE_KEY = 'buildpro_offline_queue';
 const MAX_RETRIES = 5;
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt' | 'create-defect';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt' | 'create-defect' | 'create-delivery';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -146,6 +147,70 @@ export const sendDefect = async (
     await onStep?.();
   }
   return payload.defectId;
+};
+
+export type { DeliveryPayload };
+
+/**
+ * Upload a delivery check-in's docket photos, then each line's photos
+ * (skipping any already up), then POST the check-in. Mutates `payload` and
+ * calls `onStep` after each step so the caller can save progress. Throws on
+ * the first failure; calling again resumes. A 200 `replayed: true` (this
+ * clientRequestId was already saved) counts as success. Returns the delivery id.
+ */
+export const sendDelivery = async (
+  payload: DeliveryPayload,
+  onStep?: () => Promise<void> | void,
+): Promise<string | undefined> => {
+  const upload = async (photo: { uri: string; objectPath?: string }, name: string) => {
+    if (photo.objectPath) return;
+    const { objectPath } = await uploadFileFromUri(photo.uri, name, 'image/jpeg');
+    photo.objectPath = objectPath;
+    await onStep?.();
+  };
+  for (let i = 0; i < payload.docketPhotos.length; i++) {
+    await upload(payload.docketPhotos[i], `docket_${Date.now()}_${i + 1}.jpg`);
+  }
+  for (let li = 0; li < payload.items.length; li++) {
+    const item = payload.items[li];
+    for (let i = 0; i < item.photos.length; i++) {
+      await upload(item.photos[i], `delivery_${Date.now()}_${li + 1}_${i + 1}.jpg`);
+    }
+  }
+
+  if (!payload.deliveryId) {
+    const res = await apiRequest(`/api/deliveries/pos/${payload.poId}/check-ins`, 'POST', {
+      clientRequestId: payload.clientRequestId,
+      receivedAt: payload.receivedAt,
+      docketNumber: payload.docketNumber,
+      notes: payload.notes,
+      docketPhotoUrls: payload.docketPhotos.map(p => p.objectPath).filter((p): p is string => !!p),
+      items: payload.items.map(item => ({
+        purchaseOrderItemId: item.purchaseOrderItemId,
+        qtyReceived: item.qtyReceived,
+        condition: item.condition,
+        note: item.note,
+        photoUrls: item.photos.map(p => p.objectPath).filter((p): p is string => !!p),
+      })),
+    });
+    const body = await res.json().catch(() => null);
+    // The id doubles as the "sent" flag; fall back to the request id so a
+    // body that won't parse can't make the next drain post again (the server
+    // would replay it anyway).
+    payload.deliveryId = body?.delivery?.id || payload.clientRequestId;
+    await onStep?.();
+    if (body?.po) await storeDeliveryPO(payload.projectId, body.po).catch(() => {});
+  }
+  return payload.deliveryId;
+};
+
+/** Check-ins still waiting in the queue (not failed), optionally for one project. */
+export const getPendingDeliveries = async (projectId?: string): Promise<DeliveryPayload[]> => {
+  const queue = await getQueue();
+  return queue
+    .filter(a => a.type === 'create-delivery' && a.status !== 'failed')
+    .map(a => a.payload as DeliveryPayload)
+    .filter(p => !projectId || p?.projectId === projectId);
 };
 
 let syncListeners: Array<() => void> = [];
@@ -336,6 +401,15 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
         await Promise.all(payload.photos.map(p => deletePersistedPhoto(p.uri)));
         return 'success';
       }
+      case 'create-delivery': {
+        const payload = action.payload as DeliveryPayload;
+        await sendDelivery(payload, () => checkpointAction(action));
+        await Promise.all([
+          ...payload.docketPhotos.map(p => deletePersistedPhoto(p.uri)),
+          ...payload.items.flatMap(item => item.photos.map(p => deletePersistedPhoto(p.uri))),
+        ]);
+        return 'success';
+      }
       default:
         return 'permanent';
     }
@@ -490,6 +564,10 @@ const countLocalPhotos = (action: QueuedAction): number => {
   if (action.type === 'create-defect') {
     return ((p as DefectPayload).photos || []).filter(ph => !ph.objectPath).length;
   }
+  if (action.type === 'create-delivery') {
+    const d = p as DeliveryPayload;
+    return [...(d.docketPhotos || []), ...(d.items || []).flatMap(i => i.photos || [])].filter(ph => !ph.objectPath).length;
+  }
   let n = action.photoUri && isLocalUri(action.photoUri) ? 1 : 0;
   if (Array.isArray(p.overallPhotos)) n += p.overallPhotos.filter(isLocalUri).length;
   if (p.fieldValues && typeof p.fieldValues === 'object') {
@@ -504,6 +582,7 @@ const labelFor = (action: QueuedAction): string => {
   switch (action.type) {
     case 'create-receipt': return (action.payload as ReceiptPayload)?.label || 'Receipt';
     case 'create-defect': return (action.payload as DefectPayload)?.label || 'Defect';
+    case 'create-delivery': return (action.payload as DeliveryPayload)?.label || 'Delivery';
     case 'create-diary-entry':
     case 'edit-diary-entry': return 'Site diary entry';
     case 'update-checklist-item':
@@ -515,7 +594,7 @@ const labelFor = (action: QueuedAction): string => {
 const toPendingUploads = (queue: QueuedAction[], syncing: boolean): PendingUpload[] =>
   queue
     .map(action => ({ action, photoCount: countLocalPhotos(action) }))
-    .filter(({ action, photoCount }) => photoCount > 0 || action.type === 'create-receipt' || action.type === 'create-defect')
+    .filter(({ action, photoCount }) => photoCount > 0 || action.type === 'create-receipt' || action.type === 'create-defect' || action.type === 'create-delivery')
     .map(({ action, photoCount }): PendingUpload => ({
       id: action.id,
       type: action.type,
