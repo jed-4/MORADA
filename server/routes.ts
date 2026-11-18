@@ -22177,7 +22177,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const onlySyncFields = Object.keys(validationResult.data).every(k =>
         k === "xeroLastSyncAt" || k === "xeroLastSyncStatus" || k === "xeroLastSyncError" || k === "xeroPaidStatus"
       );
-      if (companyId && !onlySyncFields) {
+      // skipXeroAutoPush: the bill screen's "Xero refused it, put the bill back"
+      // undo. Pushing the restored version would just repeat the failure.
+      const skipXeroAutoPush = req.body?.skipXeroAutoPush === true;
+      if (companyId && !onlySyncFields && !skipXeroAutoPush) {
         if (bill.xeroInvoiceId && bill.status !== "paid") {
           scheduleAutoPushBill(bill.id, companyId);
         } else if (
@@ -22958,7 +22961,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recomputeBillTotals(billId).catch((e) =>
         console.error("[bills line-items PUT] recompute failed:", e));
       await recalcBudgetForBill(billId);
-      void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+      // skipXeroAutoPush: the bill screen's undo after Xero refused a save.
+      if (req.body?.skipXeroAutoPush !== true) {
+        void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+      }
 
       res.json(saved);
     } catch (error: any) {
@@ -23550,8 +23556,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Xero for good. Send it now. It still arrives as "Awaiting Approval":
       // approving happens in Xero (Jed, 20 Oct, confirmed 3 Nov), so a bill
       // already in Xero is left alone.
+      //
+      // Pushed NOW, not on a timer: a timed push that failed only surfaced as a
+      // toast after "Approved and saved", which is easy to miss (Jed, 11-18:
+      // "it shouldn't save in that case"). If Xero refuses it, the approval is
+      // undone and the reason goes back to the screen.
       const approverCompanyId = (req as any).user?.companyId;
-      if (!ownedBill.xeroInvoiceId && approverCompanyId) {
+      if (!ownedBill.xeroInvoiceId && approverCompanyId && (ownedBill as any).sendToXero) {
+        const pushed = await pushBillToXeroInternal(req.params.id, approverCompanyId);
+        // In flight = it will land; not connected = not a refusal of this bill.
+        if (!pushed.ok && pushed.error !== "PUSH_IN_FLIGHT" && pushed.error !== "NO_CONNECTION") {
+          await storage.updateBill(req.params.id, { status: ownedBill.status } as any);
+          await db.delete(schema.billApprovals).where(eq(schema.billApprovals.id, approval.id)).catch(() => {});
+          return res.status(409).json({
+            error: "XERO_PUSH_FAILED",
+            code: pushed.error,
+            message: pushed.message || "Xero didn't accept this bill.",
+            validationErrors: (pushed as any).validationErrors,
+            supplierName: (pushed as any).supplierName,
+            supplierId: (pushed as any).supplierId,
+          });
+        }
+      } else if (!ownedBill.xeroInvoiceId && approverCompanyId) {
         scheduleAutoPushBill(req.params.id, approverCompanyId);
       }
 
