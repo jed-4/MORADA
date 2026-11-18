@@ -49,6 +49,7 @@ import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
 import { BottomActionBar, BOTTOM_ACTION_BAR_HEIGHT } from '../components/form/BottomActionBar';
+import DailyReportButton from '../components/diary/DailyReportButton';
 
 const DIARY_QUEUE_TYPES = ['create-diary-entry', 'edit-diary-entry'] as const;
 
@@ -1169,9 +1170,13 @@ const colors = {
       <>
       <View style={[styles.headerArea, { borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
-        <Text style={[styles.headerCount, { color: colors.secondary }]}>
-          {allEntries.length} {plural(allEntries.length, 'entry', 'entries')}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={[styles.headerCount, { color: colors.secondary }]}>
+            {allEntries.length} {plural(allEntries.length, 'entry', 'entries')}
+          </Text>
+          {/* One-page PDF of the day for the client (diary, photos, crew hours). */}
+          <DailyReportButton projectId={projectId} projectName={projectName} />
+        </View>
       </View>
 
       {allEntries.length === 0 ? (
