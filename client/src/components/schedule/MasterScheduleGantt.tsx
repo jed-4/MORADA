@@ -396,7 +396,9 @@ function SortableProjectRow({
 
 export default function MasterScheduleGantt({ className }: { className?: string }) {
   const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
-  const [windowStart, setWindowStart] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  // Open with a week of lead-in so today sits inside the view, not on its
+  // left edge.
+  const [windowStart, setWindowStart] = useState<Date>(() => addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), -1));
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFilter, setShowFilter] = useState(false);
   const [showOffline, setShowOffline] = useState(false);
@@ -474,7 +476,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
   }, [windowStart, windowEnd]);
 
   const goToToday = useCallback(() => {
-    setWindowStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    setWindowStart(addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), -1));
   }, []);
 
   const goPrev = useCallback(() => {

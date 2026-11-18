@@ -1387,7 +1387,7 @@ export interface IStorage {
   removeTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
 
   // Calendar Views CRUD
-  getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
+  getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]>;
   getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined>;
   createCalendarView(view: InsertCalendarView): Promise<CalendarView>;
   findOrCreateCalendarView(view: InsertCalendarView & { userId: string; companyId: string }): Promise<CalendarView>;
@@ -6637,7 +6637,7 @@ export class MemStorage implements IStorage {
   }
 
   // Calendar Views CRUD
-  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+  async getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]> {
     return Array.from(this.calendarViews.values())
       .filter(v => v.userId === userId && v.calendarType === calendarType && v.companyId === companyId && !v.isArchived)
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -24682,7 +24682,7 @@ export class DbStorage implements IStorage {
   }
 
   // Calendar Views CRUD
-  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+  async getCalendarViews(userId: string, calendarType: "personal" | "business" | "schedule", companyId: string): Promise<CalendarView[]> {
     try {
       const ownViews = await db.select()
         .from(schema.calendarViews)
@@ -24694,11 +24694,12 @@ export class DbStorage implements IStorage {
         ))
         .orderBy(asc(schema.calendarViews.sortOrder));
 
-      if (calendarType === "business") {
+      // Business calendar and schedule views can be shared with people.
+      if (calendarType === "business" || calendarType === "schedule") {
         const allCompanyViews = await db.select()
           .from(schema.calendarViews)
           .where(and(
-            eq(schema.calendarViews.calendarType, "business"),
+            eq(schema.calendarViews.calendarType, calendarType),
             eq(schema.calendarViews.companyId, companyId),
             eq(schema.calendarViews.isArchived, false),
             not(eq(schema.calendarViews.userId, userId)),

@@ -5017,7 +5017,8 @@ export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  calendarType: z.enum(["personal", "business"]),
+  // "schedule" = saved views on Business → Schedule → Projects (11-18).
+  calendarType: z.enum(["personal", "business", "schedule"]),
   // The business calendar also has agenda / roster / people; saving a view in
   // one of those 400'd as "Failed to save view".
   calendarMode: z.enum(["month", "week", "day", "agenda", "roster", "people"]).default("month"),

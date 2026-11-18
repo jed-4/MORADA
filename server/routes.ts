@@ -41822,12 +41822,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/calendar-views", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { calendarType } = req.query;
-      if (!calendarType || (calendarType !== "personal" && calendarType !== "business")) {
-        return res.status(400).json({ error: "Invalid calendar type. Must be 'personal' or 'business'" });
+      if (!calendarType || (calendarType !== "personal" && calendarType !== "business" && calendarType !== "schedule")) {
+        return res.status(400).json({ error: "Invalid calendar type. Must be 'personal', 'business' or 'schedule'" });
       }
-      
+
       const actor = req.user as any;
       const companyId = actor.companyId as string;
+
+      // Business → Schedule → Projects: each person gets their own "All
+      // projects" starting view (the one-company-default index is per
+      // company, not per type, so it can't have a company default).
+      if (calendarType === "schedule") {
+        const [mine] = await db.select({ id: schema.calendarViews.id })
+          .from(schema.calendarViews)
+          .where(and(
+            eq(schema.calendarViews.companyId, companyId),
+            eq(schema.calendarViews.userId, actor.id),
+            eq(schema.calendarViews.calendarType, "schedule"),
+            eq(schema.calendarViews.isDefault, true),
+            eq(schema.calendarViews.isArchived, false),
+          ))
+          .limit(1);
+        if (!mine) {
+          await db.insert(schema.calendarViews).values({
+            companyId,
+            userId: actor.id,
+            name: "All projects",
+            calendarType: "schedule",
+            calendarMode: "week",
+            filters: {},
+            isDefault: true,
+            sortOrder: 0,
+          });
+        }
+      }
 
       // The business calendar needs a default view to open on. It used to be
       // created by the client, once per user, which gave a company of fifteen
@@ -41861,7 +41889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const views = await storage.getCalendarViews(
         actor.id,
-        calendarType as "personal" | "business",
+        calendarType as "personal" | "business" | "schedule",
         companyId
       );
       res.json(views);
