@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
-export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send";
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "close";
 
 interface AuthUserWithPerms {
   roleId?: string | null;

@@ -167,7 +167,7 @@ export function isAdminRole(role: { name?: string | null; isBuiltIn?: boolean | 
 /**
  * Role-based permission checker
  */
-export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send' | 'convert' | 'summary_only') {
+export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send' | 'convert' | 'summary_only' | 'close') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Development bypass
     if (process.env.NODE_ENV === 'development') {
@@ -228,7 +228,7 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
 export async function userHasPermission(
   user: { roleId?: string | null; companyId?: string | null } | null | undefined,
   permissionKey: string,
-  action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send',
+  action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send' | 'close',
 ): Promise<boolean> {
   if (process.env.NODE_ENV === 'development') return true;
   if (!user?.roleId || !user.companyId) return false;

@@ -540,7 +540,7 @@ export type UserWithRole = User & {
   isAdminLike?: boolean;
 };
 
-export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only" | "close";
 export type UserCategory = "team" | "supplier" | "client";
 
 // Note Groups for organizing notes
@@ -5090,12 +5090,87 @@ export const defects = pgTable("defects", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+
+  // ── Defects v2 (migration 0131, docs/DEFECTS_V2.md) ──
+  // Denormalised from projects for tenant-scoped queries ("my defects").
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  // Per project, shown as D-014. Assigned by the server on create.
+  number: integer("number"),
+  // Canonical workflow stage (shared/defects.ts). `status` above is kept in sync.
+  stage: text("stage").notNull().default("open"),
+  jobStage: text("job_stage").notNull().default("construction"),
+  // Internal person responsible (assignedContact* is the trade).
+  ownerUserId: varchar("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+  // When set, `location` holds the location's full path text.
+  locationId: varchar("location_id").references((): AnyPgColumn => projectLocations.id, { onDelete: "set null" }),
+  // Offline idempotency key from the phone.
+  clientRequestId: varchar("client_request_id"),
+  closedAt: timestamp("closed_at"),
+  closedBy: varchar("closed_by").references(() => users.id, { onDelete: "set null" }),
+  closedByName: text("closed_by_name"),
+}, (table) => ({
+  companyProjectStageIdx: index("defects_company_project_stage_idx").on(table.companyId, table.projectId, table.stage),
+  projectNumberUnique: uniqueIndex("defects_project_number_unique").on(table.projectId, table.number),
+  projectClientRequestUnique: uniqueIndex("defects_project_client_request_unique").on(table.projectId, table.clientRequestId),
+}));
+
+// A project's location tree, e.g. Level 1 › Kitchen › Island.
+export const projectLocations = pgTable("project_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  parentId: varchar("parent_id").references((): AnyPgColumn => projectLocations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_locations_project_idx").on(table.projectId),
+}));
+export type ProjectLocation = typeof projectLocations.$inferSelect;
+
+export const defectWatchers = pgTable("defect_watchers", {
+  defectId: varchar("defect_id").notNull().references(() => defects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.defectId, table.userId] }),
+  userIdx: index("defect_watchers_user_idx").on(table.userId),
+}));
+
+export const defectEvents = pgTable("defect_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  defectId: varchar("defect_id").notNull().references(() => defects.id, { onDelete: "cascade" }),
+  // created | updated | transition | comment | photo | watcher_added | watcher_removed
+  type: text("type").notNull(),
+  actorUserId: varchar("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name"),
+  data: jsonb("data").notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  defectIdx: index("defect_events_defect_idx").on(table.defectId, table.createdAt),
+}));
+export type DefectEvent = typeof defectEvents.$inferSelect;
+
+export const defectPhotoSchema = z.object({
+  url: z.string().min(1).max(2048),
+  name: z.string().max(255).default(""),
+  type: z.string().max(100).optional(),
+  kind: z.enum(["before", "after", "trade"]).optional(),
+  size: z.number().optional(),
 });
 
 export const insertDefectSchema = createInsertSchema(defects).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Server-owned (v2): tenancy, numbering, workflow and close stamps.
+  companyId: true,
+  number: true,
+  closedAt: true,
+  closedBy: true,
+  closedByName: true,
 }).extend({
   // Type / priority / status come from the company's Field Settings, which can
   // add and rename options. These were hard-coded enums of the default keys,
@@ -5108,12 +5183,9 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   dueDate: z.coerce.date().nullable().optional(),
   dateResolved: z.coerce.date().nullable().optional(),
   costImpact: z.number().optional(),
-  attachments: z.array(z.object({
-    url: z.string(),
-    name: z.string(),
-    type: z.string().optional(),
-    size: z.number().optional(),
-  })).optional(),
+  attachments: z.array(defectPhotoSchema).optional(),
+  stage: z.enum(["open", "sent", "accepted", "fixed", "closed", "rejected"]).optional(),
+  jobStage: z.enum(["construction", "pre_handover", "handover", "dlp", "warranty"]).optional(),
 });
 
 export type InsertDefect = z.infer<typeof insertDefectSchema>;

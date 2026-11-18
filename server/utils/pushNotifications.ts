@@ -104,6 +104,12 @@ export async function sendPushForNotification(notification: InAppNotification): 
   if (notification.link) data.link = notification.link;
   if (notification.entityType) data.entityType = notification.entityType;
   if (notification.entityId) data.entityId = notification.entityId;
+  // Defects v2: the phone routes a tap straight to the defect.
+  if (notification.entityType === "defect" && notification.entityId) {
+    data.defectId = notification.entityId;
+    const m = /^\/projects\/([^/?#]+)\//.exec(notification.link ?? "");
+    if (m) data.projectId = m[1];
+  }
 
   await sendPushToUser(notification.userId, {
     title: notification.title,

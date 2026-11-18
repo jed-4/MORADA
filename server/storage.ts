@@ -1786,6 +1786,8 @@ function getDefaultActionsForRole(
       'operations.tasks', 'operations.library', 'operations.workflows',
     ];
     for (const key of keys) grantAll(key);
+    // Deleting a defect takes its history with it — admin-like roles only.
+    grant('projects.defects', ['view', 'add', 'edit', 'close']);
     return result;
   }
 
@@ -1799,6 +1801,7 @@ function getDefaultActionsForRole(
     grant('projects.notes', ['view', 'add', 'edit']);
     grant('projects.timesheet', ['view', 'add', 'edit']);
     grant('projects.rfi', ['view', 'add']);
+    grant('projects.defects', ['view', 'add', 'edit', 'close']);
     grant('tasks.manage', ['view', 'add', 'edit', 'delete']);
     grant('tasks.project', ['view', 'add', 'edit', 'delete']);
     grant('files.manage', ['view', 'add']);
@@ -1986,6 +1989,7 @@ export class MemStorage implements IStorage {
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.defects", name: "Defects", description: "Raise, update, close and delete project defects", category: "projects", actions: ["view", "add", "edit", "close", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7258,6 +7262,7 @@ export class DbStorage implements IStorage {
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.defects", name: "Defects", description: "Raise, update, close and delete project defects", category: "projects", actions: ["view", "add", "edit", "close", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7392,6 +7397,52 @@ export class DbStorage implements IStorage {
     await this.backfillAssetRegisterGrants(createdKeys);
     await this.backfillOperationsGrants(createdKeys);
     await this.backfillAssetCostGrants(createdKeys);
+    await this.backfillDefectGrants(createdKeys);
+  }
+
+  /**
+   * `projects.defects` arrived after the Defects screen did. Until then every
+   * defect route checked only the company, so every signed-in team member
+   * could read, change and delete every defect. On the boot that creates the
+   * key, every existing TEAM role gets view/add/edit/close, so nobody loses
+   * anything they use on deploy. Delete goes only to Owner / General Manager
+   * named roles (admin-like built-in roles bypass checks and need no row).
+   * Client and supplier roles get nothing. Runs only on the creating boot, so
+   * a later untick in Roles & Permissions is never re-granted.
+   */
+  private async backfillDefectGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("projects.defects")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const permissionId = allPermissions.find((p) => p.key === "projects.defects")?.id;
+      if (!permissionId) return;
+
+      const teamRoles = (await db.select().from(schema.userRoles))
+        .filter((r) => (r.userCategory || "team") === "team");
+      if (teamRoles.length === 0) return;
+
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, permissionId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      const rows = teamRoles
+        .filter((r) => !alreadyHeld.has(r.id))
+        .map((r) => {
+          const n = (r.name || "").toLowerCase();
+          const canDelete = n.includes("admin") || n.includes("owner") || n.includes("general manage");
+          const actions = canDelete
+            ? ["view", "add", "edit", "close", "delete"]
+            : ["view", "add", "edit", "close"];
+          return { roleId: r.id, permissionId, allowedActions: actions as any };
+        });
+      if (rows.length === 0) return;
+      await db.insert(schema.rolePermissions).values(rows);
+      console.log(`[permissions] projects.defects granted to ${rows.length} team role(s) — matches pre-permission access, delete for owner/GM only`);
+    } catch (error) {
+      console.error("Database error in backfillDefectGrants:", error);
+    }
   }
 
   /**

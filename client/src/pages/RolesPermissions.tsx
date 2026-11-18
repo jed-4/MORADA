@@ -69,7 +69,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ClientPortalPermissions } from "@/components/roles/ClientPortalPermissions";
 import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 
-type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
+type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only" | "close";
 
 interface PermissionMatrix {
   [roleId: string]: {
@@ -669,6 +669,7 @@ export default function RolesPermissions() {
                               { key: "view", label: "View" },
                               { key: "add", label: "Add" },
                               { key: "edit", label: "Edit" },
+                              { key: "close", label: "Close" },
                               { key: "delete", label: "Delete" },
                               { key: "approve", label: "Approve" },
                               { key: "send", label: "Send" },
