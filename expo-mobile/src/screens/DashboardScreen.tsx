@@ -963,7 +963,7 @@ export default function DashboardScreen({ navigation }: Props) {
             <SectionHeader
               title="Timesheets"
               count={recentTimesheets.length}
-              onPress={() => navigation.navigate('Timesheets')}
+              onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
             />
             {recentTimesheets.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -1249,7 +1249,7 @@ export default function DashboardScreen({ navigation }: Props) {
               style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
               onPress={() => {
                 timesheetSheetRef.current?.dismiss();
-                navigation.navigate('Timesheets');
+                navigation.navigate('More', { screen: 'Timesheets' });
               }}
               activeOpacity={0.8}
             >
