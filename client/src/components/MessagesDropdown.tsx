@@ -349,7 +349,7 @@ export function MessagesDropdown() {
                       >
                         <Avatar className="h-7 w-7 shrink-0 mt-0.5">
                           <AvatarFallback className="text-table">
-                            {isDm ? getDmInitials(channel) : <Hash className="h-3 w-3" />}
+                            {isDm ? getDmInitials(channel) : channel.emoji ? <span className="text-sm leading-none" aria-hidden>{channel.emoji}</span> : <Hash className="h-3 w-3" />}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -411,7 +411,9 @@ export function MessagesDropdown() {
               <span className="text-sm font-medium flex-1 truncate min-w-0 px-1">
                 {selectedChannel?.type === "dm"
                   ? getDmDisplayName(selectedChannel)
-                  : `#${selectedChannel?.name}`}
+                  : selectedChannel?.emoji
+                    ? `${selectedChannel.emoji} ${selectedChannel.name}`
+                    : `#${selectedChannel?.name}`}
               </span>
               <Button
                 variant="ghost"

@@ -63,6 +63,8 @@ export function Messages() {
   const getChannelIcon = (channel: Channel) => {
     return channel.type === "dm" ? (
       <User className="w-4 h-4" />
+    ) : channel.emoji ? (
+      <span className="w-4 text-center text-sm leading-none" aria-hidden>{channel.emoji}</span>
     ) : (
       <Hash className="w-4 h-4" />
     );
