@@ -293,7 +293,7 @@ const colors = {
   // New/edit entry form: everything the user can change, so leaving with a
   // half-written entry (Cancel, Android back) asks before throwing it away.
   const entryDirty = useDirtyGuard(
-    { formTitle, formProjectId, formDateTime, formFieldValues, formOverallPhotos, templateId: activeTemplate?.id },
+    { formTitle, formProjectId, formDateTime, formFieldValues: weatherPrefill.withoutAutoFilled(formFieldValues), formOverallPhotos, templateId: activeTemplate?.id },
     showEntryModal,
   );
   const closeEntryModal = () => {

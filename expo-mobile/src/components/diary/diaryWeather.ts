@@ -134,5 +134,18 @@ export function useDiaryWeatherPrefill(setValues: SetValues) {
     });
   }, [setValues]);
 
-  return { prefill, cancel };
+  /**
+   * The form values minus anything weather filled in by itself and nobody
+   * has changed since — for the "Discard changes?" check, so an untouched
+   * new entry doesn't ask just because the forecast arrived.
+   */
+  const withoutAutoFilled = useCallback(<V extends Record<string, unknown>>(values: V): V => {
+    const out: Record<string, unknown> = { ...values };
+    for (const [id, value] of Object.entries(autoFilled.current)) {
+      if (out[id] === value) delete out[id];
+    }
+    return out as V;
+  }, []);
+
+  return { prefill, cancel, withoutAutoFilled };
 }
