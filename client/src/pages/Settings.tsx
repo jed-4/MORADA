@@ -2239,7 +2239,7 @@ function TimesheetSettingsSection() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PATCH", "/api/company-settings", {
+      await apiRequest("/api/company-settings", "PATCH", {
         timesheetReminderEnabled: reminderEnabled,
         timesheetReminderThresholdHours: thresholdHours,
         timesheetAutoRound: autoRound,
