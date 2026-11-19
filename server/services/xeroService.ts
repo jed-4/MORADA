@@ -1669,6 +1669,45 @@ export class XeroService {
     return Array.isArray(data.Invoices) ? data.Invoices : [];
   }
 
+  /**
+   * Supplier bills (ACCPAY) for linking a Morada bill to one that already
+   * exists in Xero — e.g. a bill entered in Xero by hand, so sending the
+   * Morada copy would duplicate it. Read-only. Same filters as the sales
+   * version, but drafts are included: a bill keyed into Xero is often a draft.
+   */
+  async listBillsForLinking(
+    connectionId: string,
+    opts: { contactId?: string; searchTerm?: string },
+  ): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const params = new URLSearchParams();
+    params.set("where", 'Type=="ACCPAY"');
+    params.set("Statuses", "DRAFT,SUBMITTED,AUTHORISED,PAID");
+    params.set("order", "Date DESC");
+    params.set("page", "1");
+    params.set("summaryOnly", "true");
+    if (opts.contactId) params.set("ContactIDs", opts.contactId);
+    if (opts.searchTerm?.trim()) params.set("SearchTerm", opts.searchTerm.trim());
+
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    }, { label: "listBillsForLinking" });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to list Xero bills: ${response.status} ${errorText}`);
+    }
+    const data = (await response.json()) as any;
+    return Array.isArray(data.Invoices) ? data.Invoices : [];
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

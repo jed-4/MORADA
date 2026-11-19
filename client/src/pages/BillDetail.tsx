@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { BillDeliveryWarning, usePODeliverySummary } from "@/components/purchase-orders/PODeliveriesSection";
+import { XeroBillLinkDialog } from "@/components/bills/XeroBillLinkDialog";
 import { useParams, useLocation } from "wouter";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1618,6 +1619,7 @@ export default function BillDetail() {
   const xeroSnapshotRef = useRef<{ writeId: string; header: any; lines: any[]; links: any[]; keys: string[] } | null>(null);
   const xeroBlockedRef = useRef(false);
   const [xeroRefusal, setXeroRefusal] = useState<{ title: string; description: string } | null>(null);
+  const [linkXeroOpen, setLinkXeroOpen] = useState(false);
   const restoreXeroSnapshot = async () => {
     const snap = xeroSnapshotRef.current;
     if (!snap) return false;
@@ -2979,6 +2981,15 @@ export default function BillDetail() {
                     <Copy className="h-3.5 w-3.5 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
+                  {xeroStatus?.connected && !(bill as any)?.xeroInvoiceId && (
+                    <DropdownMenuItem
+                      onSelect={() => setLinkXeroOpen(true)}
+                      data-testid="menu-link-xero-bill"
+                    >
+                      <Link2 className="h-3.5 w-3.5 mr-2" />
+                      Link to bill in Xero
+                    </DropdownMenuItem>
+                  )}
                   {bill?.billType === "bill" && (
                     <DropdownMenuItem
                       onSelect={() => setConvertDialogOpen(true)}
@@ -4546,6 +4557,14 @@ export default function BillDetail() {
                             )}
                           </button>
                         </CollapsibleTrigger>
+                        {(bill as any)?.xeroInvoiceId ? (
+                          // In Xero: paid in Xero, comes back here by itself
+                          // (webhook + nightly reconcile). Recording it here too
+                          // would count it twice.
+                          <span className="text-data text-muted-foreground" data-testid="text-payments-from-xero">
+                            Paid in Xero — payments come through automatically
+                          </span>
+                        ) : (
                         <Button
                           type="button"
                           size="sm"
@@ -4563,6 +4582,7 @@ export default function BillDetail() {
                           <Plus className="h-3 w-3 mr-1" />
                           Record
                         </Button>
+                        )}
                       </div>
                       <CollapsibleContent className="mt-2">
                     {billPayments.length === 0 ? (
@@ -4966,6 +4986,15 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      {id && (
+        <XeroBillLinkDialog
+          open={linkXeroOpen}
+          onOpenChange={setLinkXeroOpen}
+          invoiceId={id}
+          invoiceNumber={bill?.billNumber}
+        />
+      )}
 
       {/* Xero refused a save or an approval — must be dismissed, unlike a toast. */}
       <AlertDialog open={!!xeroRefusal} onOpenChange={(o) => { if (!o) setXeroRefusal(null); }}>

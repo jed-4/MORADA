@@ -84,6 +84,7 @@ export default function ProjectSettings() {
     projectType: currentProject?.projectType || "",
     clientId: currentProject?.clientId || null,
     location: currentProject?.location || "",
+    projectArea: (currentProject as any)?.projectArea != null ? String((currentProject as any).projectArea) : "",
     projectStatus: currentProject?.projectStatus || null,
     projectSubStatus: currentProject?.projectSubStatus || null,
     clientBudget: currentProject?.clientBudget || null,
@@ -262,6 +263,7 @@ export default function ProjectSettings() {
         projectType: currentProject.projectType || "",
         clientId: currentProject.clientId || null,
         location: currentProject.location || "",
+        projectArea: (currentProject as any).projectArea != null ? String((currentProject as any).projectArea) : "",
         projectStatus: currentProject.projectStatus || null,
         projectSubStatus: currentProject.projectSubStatus || null,
         clientBudget: currentProject.clientBudget || null,
@@ -335,7 +337,8 @@ export default function ProjectSettings() {
   });
 
   const handleSave = () => {
-    updateProjectMutation.mutate(formData);
+    const area = formData.projectArea === "" ? null : Number(formData.projectArea);
+    updateProjectMutation.mutate({ ...formData, projectArea: area != null && Number.isFinite(area) && area > 0 ? area : null } as any);
   };
 
   const handleCancel = () => {
@@ -347,6 +350,7 @@ export default function ProjectSettings() {
         projectType: currentProject.projectType || "",
         clientId: currentProject.clientId || null,
         location: currentProject.location || "",
+        projectArea: (currentProject as any).projectArea != null ? String((currentProject as any).projectArea) : "",
         projectStatus: currentProject.projectStatus || null,
         projectSubStatus: currentProject.projectSubStatus || null,
         clientBudget: currentProject.clientBudget || null,
@@ -591,6 +595,27 @@ export default function ProjectSettings() {
             address={currentProject.location}
             color={currentProject.color}
           />
+
+          <div className="space-y-2">
+            <Label htmlFor="project-area">Floor area (m²)</Label>
+            {isEditing ? (
+              <Input
+                id="project-area"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={formData.projectArea}
+                onChange={(e) => setFormData({ ...formData, projectArea: e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1") })}
+                placeholder="e.g. 245"
+                data-testid="input-project-area"
+              />
+            ) : (
+              <div className="p-2 bg-muted rounded-md" data-testid="text-project-area">
+                {(currentProject as any).projectArea ? `${(currentProject as any).projectArea} m²` : "Not set"}
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Used for price and cost per m² in the project figures.</p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>

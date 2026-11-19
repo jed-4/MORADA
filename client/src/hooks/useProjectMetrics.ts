@@ -711,11 +711,14 @@ export const metricDefinitions = [
   { id: "approvedChangeOrders", name: "Approved Variations", category: "contract", type: "currency", group: "Contract & Revenue" },
   { id: "revisedContractPrice", name: "Revised Contract", category: "contract", type: "currency", group: "Contract & Revenue" },
   { id: "earnedRevenue", name: "Earned Revenue", category: "contract", type: "currency", group: "Contract & Revenue" },
+  // Need the project's floor area (Project settings → Floor area, 0137).
+  { id: "pricePerArea", name: "Price per m²", category: "contract", type: "currency", group: "Contract & Revenue" },
   
   // Costs & Budget
   { id: "totalProjectCosts", name: "Total Project Costs", category: "costs", type: "currency", group: "Costs & Budget" },
   { id: "actualCosts", name: "Actual Costs", category: "costs", type: "currency", group: "Costs & Budget" },
   { id: "costToComplete", name: "Cost to Complete", category: "costs", type: "currency", group: "Costs & Budget" },
+  { id: "costPerArea", name: "Cost per m²", category: "costs", type: "currency", group: "Costs & Budget" },
   
   // Profit & Margins
   { id: "grossProfit", name: "Gross Profit", category: "margins", type: "currency", group: "Profit & Margins" },

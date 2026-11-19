@@ -1018,6 +1018,7 @@ export const projects = pgTable("projects", {
   siteLocationSource: text("site_location_source"), // SITE_LOCATION_SOURCES: 'pin' | 'on_site' | 'geocoded'
   siteLocationSetAt: timestamp("site_location_set_at"),
   siteLocationSetBy: varchar("site_location_set_by"), // users.id (no FK — a deleted user must not block)
+  projectArea: doublePrecision("project_area"), // Floor area in m² (0137) — drives price/cost per m²
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
   // New hierarchical status fields

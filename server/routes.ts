@@ -22632,7 +22632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  app.post("/api/bills", requireAuth, async (req, res) => {
+  app.post("/api/bills", requireAuth, requirePermission("financial.bills", "add"), async (req, res) => {
     try {
       const currentUser = (req as any).user;
       // companyId is never accepted from the body — it was only *defaulted*
@@ -22728,7 +22728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bills/:id", requireAuth, async (req, res) => {
+  app.patch("/api/bills/:id", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const validationResult = insertBillSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -22955,34 +22955,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scheduleAutoPushBill(bill.id, companyId);
         }
 
-        // Push payment to Xero when bill is marked paid locally (and was previously not paid)
-        if (bill.xeroInvoiceId && bill.status === "paid" && previous?.status !== "paid" && (bill.paidAmount || 0) > 0) {
-          (async () => {
-            try {
-              const connection = await storage.getXeroConnectionByCompanyId(companyId);
-              if (!connection) return;
-              await xeroService.createPayment(connection.id, {
-                invoiceId: bill.xeroInvoiceId!,
-                amount: (bill.paidAmount || bill.total || 0) / 100,
-                date: new Date().toISOString().slice(0, 10),
-                accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
-                reference: `Morada bill ${bill.billNumber || bill.id}`,
-              });
-              await storage.updateBill(bill.id, {
-                xeroLastSyncAt: new Date(),
-                xeroLastSyncStatus: "success",
-                xeroLastSyncError: null,
-              } as any);
-            } catch (err: any) {
-              console.error("[auto-payment-push] failed:", err?.message || err);
-              await storage.updateBill(bill.id, {
-                xeroLastSyncAt: new Date(),
-                xeroLastSyncStatus: "failed",
-                xeroLastSyncError: (err?.message || "Payment push failed").slice(0, 500),
-              } as any).catch(() => {});
-            }
-          })();
-        }
+        // Payments are NOT sent from Morada to Xero (Jed, 11-18). They are
+        // made in the bank and reconciled in Xero, then come back here via the
+        // Xero webhook and the nightly reconcile. Pushing them from here sent
+        // one lump payment, dated today, to a hard-coded bank account — and
+        // double-counted anything already paid in Xero.
       }
 
       // Keep the project budget live after a bill is edited. Recalc both the
@@ -23024,7 +23001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // storage rollups all do `billType === "credit" ? -1 : 1`), so the conversion
   // is the type flip and nothing else — no amount rewriting, no new record, and
   // the attachment, line items and history stay with it.
-  app.post("/api/bills/:id/convert-to-credit", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/convert-to-credit", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -23083,7 +23060,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills/:id/duplicate", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/duplicate", requireAuth, requirePermission("financial.bills", "add"),async (req, res) => {
     try {
       const originalBill = await getOwnedBill(req, res, req.params.id);
       if (!originalBill) return;
@@ -23147,7 +23124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Atomic append of an attachment to a bill (prevents read-modify-write races).
   // Stays wire-compatible with the existing string[] shape of bills.attachmentUrls.
-  app.post("/api/bills/:id/attachments", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/attachments", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const { objectPath, filename, mimeType, size, source } = req.body || {};
       if (!objectPath || typeof objectPath !== "string") {
@@ -23183,7 +23160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Reimbursement action routes ────────────────────────────────────────────
 
   // Approve a reimbursement claim
-  app.patch("/api/bills/:id/reimbursement/approve", requireAuth, async (req, res) => {
+  app.patch("/api/bills/:id/reimbursement/approve", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const user = (req as any).user;
       const roleName = (user?.roleName || "").toLowerCase();
@@ -23228,7 +23205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mark a reimbursement as paid
-  app.patch("/api/bills/:id/reimbursement/mark-paid", requireAuth, async (req, res) => {
+  app.patch("/api/bills/:id/reimbursement/mark-paid", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const user = (req as any).user;
       const roleName = (user?.roleName || "").toLowerCase();
@@ -23282,7 +23259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reject / return a reimbursement claim
-  app.patch("/api/bills/:id/reimbursement/reject", requireAuth, async (req, res) => {
+  app.patch("/api/bills/:id/reimbursement/reject", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const user = (req as any).user;
       const roleName = (user?.roleName || "").toLowerCase();
@@ -23327,7 +23304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Atomic remove of an attachment by objectPath
-  app.delete("/api/bills/:id/attachments", requireAuth, async (req, res) => {
+  app.delete("/api/bills/:id/attachments", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const objectPath = (req.query.objectPath as string) || (req.body && req.body.objectPath);
       if (!objectPath || typeof objectPath !== "string") {
@@ -23343,7 +23320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/bills/:id", requireAuth, async (req, res) => {
+  app.delete("/api/bills/:id", requireAuth, requirePermission("financial.bills", "delete"),async (req, res) => {
     try {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
@@ -23360,7 +23337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Link a bill to a PO (any PO type). Recomputes PO status from bills. ───
-  app.post("/api/bills/:id/link-po", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/link-po", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const { purchaseOrderId } = req.body || {};
       if (!purchaseOrderId || typeof purchaseOrderId !== "string") {
@@ -23395,7 +23372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills/:id/unlink-po", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/unlink-po", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const previous = await storage.getBillById(req.params.id);
       if (!previous) return res.status(404).json({ error: "Bill not found" });
@@ -23416,7 +23393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Re-run PO suggestions for a single bill ───────────────────────────────
   // Used by the BillDetail "Resuggest" affordance and as a building block for
   // the company-wide backfill below.
-  app.post("/api/bills/:id/resuggest-po", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/resuggest-po", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const companyId = (req as any).user?.companyId;
       const bill = await storage.getBillById(req.params.id);
@@ -23605,7 +23582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {}
   };
 
-  app.post("/api/bills/:billId/line-items", async (req, res) => {
+  app.post("/api/bills/:billId/line-items", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const ownedBill = await getOwnedBill(req, res, req.params.billId);
       if (!ownedBill) return;
@@ -23642,7 +23619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // recalc and its own Xero auto-push. At Sydney→Neon latency a ten-line bill
   // was a dozen serial round-trips and a dozen redundant recalcs before Xero
   // was even touched, which is why saving a bill took seconds.
-  app.put("/api/bills/:billId/line-items", requireAuth, async (req, res) => {
+  app.put("/api/bills/:billId/line-items", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const ownedBill = await getOwnedBill(req, res, req.params.billId);
       if (!ownedBill) return;
@@ -23747,7 +23724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bills/:billId/line-items/:id", async (req, res) => {
+  app.patch("/api/bills/:billId/line-items/:id", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       // Resolve the line item by its OWN id first, then authorize against the
       // bill it actually belongs to (not the :billId from the URL). This blocks
@@ -23786,7 +23763,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/bills/:billId/line-items/:id", async (req, res) => {
+  app.delete("/api/bills/:billId/line-items/:id", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       // Resolve the line item by its OWN id first, then authorize against the
       // bill it actually belongs to (not the :billId from the URL). Blocks the
@@ -23826,7 +23803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills/:id/payments", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/payments", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -23844,6 +23821,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!validationResult.data.amount || validationResult.data.amount <= 0) {
         return res.status(400).json({ error: "Payment amount must be greater than zero." });
+      }
+
+      // A bill that's in Xero is paid in Xero, and the payment comes back
+      // here on its own (webhook + nightly reconcile). Recording it here too
+      // would count it twice (Jed, 11-18: payments only come in from Xero).
+      if ((bill as any).xeroInvoiceId) {
+        return res.status(409).json({
+          error: "This bill is in Xero — record the payment in Xero and it will come through to Morada automatically.",
+          code: "PAYMENTS_FROM_XERO",
+        });
       }
 
       // A bill is paid only after it has been approved — paying a draft or a
@@ -23874,45 +23861,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const wasPaid = bill.status === "paid";
-      // getOwnedBill has already checked the bill belongs to this company.
-      // (`companyId` was never declared here, so the paying payment threw a
-      // ReferenceError AFTER the insert: the user saw "failed" and Xero was
-      // never told.)
-      const companyId: string | undefined = (req as any).user?.companyId;
       const payment = await storage.createBillPayment(validationResult.data);
-
-      // Keep Xero in sync: when this payment brings the bill fully paid, push a
-      // matching payment to Xero (best-effort — never block the local record).
-      const updated = await storage.getBillById(req.params.id);
-      if (updated && !wasPaid && updated.status === "paid" && updated.xeroInvoiceId && companyId) {
-        (async () => {
-          try {
-            const connection = await storage.getXeroConnectionByCompanyId(companyId);
-            if (!connection) return;
-            await xeroService.createPayment(connection.id, {
-              invoiceId: updated.xeroInvoiceId!,
-              amount: (updated.paidAmount || updated.total || 0) / 100,
-              date: new Date().toISOString().slice(0, 10),
-              accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
-              reference: `Morada bill ${updated.billNumber || updated.id}`,
-            });
-            await storage.updateBill(updated.id, {
-              xeroLastSyncAt: new Date(),
-              xeroLastSyncStatus: "success",
-              xeroLastSyncError: null,
-            } as any);
-          } catch (err: any) {
-            console.error("[bill-payment-push] failed:", err?.message || err);
-            await storage.updateBill(updated.id, {
-              xeroLastSyncAt: new Date(),
-              xeroLastSyncStatus: "failed",
-              xeroLastSyncError: (err?.message || "Payment push failed").slice(0, 500),
-            } as any).catch(() => {});
-          }
-        })();
-      }
-
+      // Payments are never sent to Xero from here — see the PATCH route.
       res.status(201).json(payment);
     } catch (error) {
       console.error("Error creating bill payment:", error);
@@ -23920,7 +23870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bill-payments/:id/void", requireAuth, async (req, res) => {
+  app.patch("/api/bill-payments/:id/void", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const payment = await storage.getBillPaymentById(req.params.id);
       if (!payment) return res.status(404).json({ error: "Bill payment not found" });
@@ -23937,7 +23887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/bill-payments/:id", requireAuth, async (req, res) => {
+  app.delete("/api/bill-payments/:id", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const payment = await storage.getBillPaymentById(req.params.id);
       if (!payment) return res.status(404).json({ error: "Bill payment not found" });
@@ -24118,7 +24068,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Link a bill line item to a price list item
-  app.patch("/api/bill-line-items/:id/link-price-item", async (req, res) => {
+  app.patch("/api/bill-line-items/:id/link-price-item", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const { billLineItems: billLineItemsTbl } = await import("@shared/schema");
       const [existing] = await db
@@ -24193,7 +24143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return true;
   };
 
-  app.post("/api/bill-line-item-allowances", async (req, res) => {
+  app.post("/api/bill-line-item-allowances", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const validationResult = insertBillLineItemAllowanceSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -24211,7 +24161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bill-line-item-allowances/:id", async (req, res) => {
+  app.patch("/api/bill-line-item-allowances/:id", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
       const [aRow] = await db
@@ -24241,7 +24191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/bill-line-item-allowances/:id", async (req, res) => {
+  app.delete("/api/bill-line-item-allowances/:id", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
     try {
       const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
       const [aRow] = await db
@@ -31589,7 +31539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Run OCR on an attachment that is already stored in object storage.
   // Used by the bill detail page when the bill was auto-imported from email
   // and already has an attachment but ocrProcessed is still false.
-  app.post("/api/bills/ocr-from-path", requireAuth, async (req, res) => {
+  app.post("/api/bills/ocr-from-path", requireAuth, requirePermission("financial.bills", "add"),async (req, res) => {
     try {
       const { objectPath, mimeType: mimeHint, filename: filenameHint, uploadGrant } = req.body;
       if (!objectPath) return res.status(400).json({ error: "objectPath required" });
@@ -31663,7 +31613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Process multiple bills in one request. Each bill must belong to the caller's
   // company. Bills with ocrProcessed=true are silently skipped. Returns a summary
   // { processed, skipped } so the client can show a meaningful toast.
-  app.post("/api/bills/bulk-ai-read", requireAuth, async (req, res) => {
+  app.post("/api/bills/bulk-ai-read", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId as string | undefined;
       if (!companyId) return res.status(400).json({ error: "No company" });
@@ -31958,7 +31908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills/:id/ocr-from-attachment", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/ocr-from-attachment", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -32066,7 +32016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Promote a bill from `needs_review` (AI-extracted, awaiting human sign-off)
   // to `awaiting_approval` (in the approver's queue).
-  app.post("/api/bills/:id/confirm-extraction", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/confirm-extraction", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -36549,9 +36499,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids array is required" });
       }
-      if (!["changeStatus", "delete"].includes(action)) {
+      if (!["changeStatus", "delete", "edit"].includes(action)) {
         return res.status(400).json({ error: "Invalid action" });
       }
+      // Bulk edit (Jed, 11-18): rate, cost code and/or project on many
+      // timesheets at once. Only the fields sent are changed.
+      const editFields = (action === "edit" && req.body.fields && typeof req.body.fields === "object") ? req.body.fields : null;
+      let editRate: number | null = null;
+      if (action === "edit") {
+        if (!editFields) return res.status(400).json({ error: "fields is required" });
+        if (editFields.hourlyRate !== undefined) {
+          editRate = Number(editFields.hourlyRate);
+          if (!Number.isFinite(editRate) || editRate < 0 || editRate > 10000) {
+            return res.status(400).json({ error: "Rate must be a number between 0 and 10,000" });
+          }
+        }
+        if (editFields.projectId) {
+          if (!(await enforceProjectCompany(req, res, editFields.projectId, "Project not found"))) return;
+        }
+        if (editFields.costCodeId) {
+          const cc = await storage.getCostCode(editFields.costCodeId, user.companyId).catch(() => undefined);
+          if (!cc) {
+            return res.status(400).json({ error: "Cost code not found" });
+          }
+        }
+      }
+      let skippedSplitCostCode = 0;
       const validStatuses = ["submitted", "approved", "rejected"];
       if (action === "changeStatus" && (!status || !validStatuses.includes(status))) {
         return res.status(400).json({ error: "Invalid status" });
@@ -36564,6 +36537,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (action === "changeStatus" && (status === "approved" || status === "rejected") && !hasApprovalAccess) {
         return res.status(403).json({ error: "You do not have permission to approve or reject timesheets" });
+      }
+      // Changing pay rates is a manager's job — even on your own timesheets.
+      if (action === "edit" && editRate !== null && !hasApprovalAccess) {
+        return res.status(403).json({ error: "You do not have permission to change timesheet rates" });
       }
 
       let successCount = 0;
@@ -36594,6 +36571,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           if (timesheet.userId !== user.id && !hasApprovalAccess) {
             errors.push(`Not authorized for timesheet ${id}`);
+            continue;
+          }
+
+          if (action === "edit" && editFields) {
+            const update: Record<string, unknown> = {};
+            const splits = await storage.getTimesheetCostCodes(id);
+            const isSplit = splits.length > 0;
+            if (editFields.projectId !== undefined) update.projectId = editFields.projectId || null;
+            if (editFields.costCodeId !== undefined) {
+              // A split timesheet has several cost codes — one bulk value
+              // would flatten them, so those are left alone and counted.
+              if (isSplit) skippedSplitCostCode++;
+              else update.costCodeId = editFields.costCodeId || null;
+            }
+            if (editRate !== null) {
+              const rate = editRate;
+              if (isSplit) {
+                const rebuilt = splits.map((sp) => {
+                  const hrs = parseFloat(String(sp.duration ?? "0")) || 0;
+                  return {
+                    costCodeId: sp.costCodeId,
+                    duration: String(sp.duration),
+                    hourlyRate: rate.toFixed(2),
+                    total: (hrs * rate).toFixed(2),
+                  };
+                });
+                await storage.replaceTimesheetCostCodes(id, rebuilt as any);
+                update.hourlyRate = rate.toFixed(2);
+                update.total = rebuilt.reduce((s, r) => s + parseFloat(r.total), 0).toFixed(2);
+              } else {
+                const hrs = parseFloat(String(timesheet.duration ?? "0")) || 0;
+                update.hourlyRate = rate.toFixed(2);
+                update.total = (hrs * rate).toFixed(2);
+              }
+            }
+            // storage.updateTimesheet zeroes rate/total for subcontractors.
+            if (Object.keys(update).length > 0) await storage.updateTimesheet(id, update as any);
+            successCount++;
             continue;
           }
 
@@ -36655,7 +36670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ success: successCount, errors });
+      res.json({ success: successCount, errors, skippedSplitCostCode });
     } catch (error: any) {
       console.error("Error in bulk timesheet action:", error);
       res.status(500).json({ error: "Failed to perform bulk action" });
@@ -48394,7 +48409,114 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
   // Dismiss: "Xero is wrong, or I'll fix it there." Records the Xero-side
   // fingerprint so the nightly sweep stays quiet until Xero moves again.
-  app.post("/api/bills/:id/xero-review/dismiss", requireAuth, async (req, res) => {
+  // ── Link a Morada bill to a bill that ALREADY exists in Xero ─────────────
+  // For a bill keyed into Xero by hand (or pushed before Morada lost track of
+  // it): sending the Morada copy would create a duplicate there. Linking
+  // adopts the Xero bill instead, then pulls its status and payments across.
+  // Mirrors the client-invoice link (#395).
+  const xeroBillsLinkedTo = async (companyId: string, xeroIds: string[]) => {
+    const map = new Map<string, { id: string; billNumber: string | null }>();
+    if (xeroIds.length === 0) return map;
+    const rows = await db.select({ id: schema.bills.id, billNumber: schema.bills.billNumber, xeroInvoiceId: schema.bills.xeroInvoiceId })
+      .from(schema.bills)
+      .leftJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+      .where(and(
+        inArray(schema.bills.xeroInvoiceId, xeroIds),
+        or(eq(schema.bills.companyId, companyId), eq(schema.projects.companyId, companyId)),
+      ));
+    for (const r of rows) if (r.xeroInvoiceId) map.set(r.xeroInvoiceId, { id: r.id, billNumber: r.billNumber });
+    return map;
+  };
+
+  app.get("/api/bills/:id/xero-link-candidates", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+      const companyId = (req as any).user.companyId as string;
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero isn't connected" });
+
+      let contactId: string | undefined;
+      let supplierName: string | null = null;
+      if ((bill as any).supplierId) {
+        const supplier = await storage.getContact((bill as any).supplierId, companyId).catch(() => null);
+        contactId = (supplier as any)?.xeroContactId || undefined;
+        supplierName = supplier ? ((supplier as any).company || supplier.name || null) : null;
+      }
+      const searchTerm = typeof req.query.q === "string" ? req.query.q : undefined;
+      const found = await xeroService.listBillsForLinking(connection.id, {
+        contactId: searchTerm ? undefined : contactId,
+        searchTerm,
+      });
+      const linked = await xeroBillsLinkedTo(companyId, found.map((x: any) => x.InvoiceID).filter(Boolean));
+      res.json({
+        supplierName,
+        filteredBySupplier: !!contactId && !searchTerm,
+        moradaTotalCents: (bill as any).total ?? 0,
+        candidates: found.slice(0, 50).map((x: any) => {
+          const other = linked.get(x.InvoiceID);
+          return {
+            xeroInvoiceId: x.InvoiceID,
+            invoiceNumber: x.InvoiceNumber || null,
+            reference: x.Reference || null,
+            contactName: x.Contact?.Name || null,
+            date: x.DateString || x.Date || null,
+            status: x.Status,
+            totalCents: Math.round((x.Total || 0) * 100),
+            amountPaidCents: Math.round((x.AmountPaid || 0) * 100),
+            linkedToBillId: other && other.id !== bill.id ? other.id : null,
+            linkedToBillNumber: other && other.id !== bill.id ? other.billNumber : null,
+          };
+        }),
+      });
+    } catch (error: any) {
+      console.error("Error listing Xero bills to link:", error);
+      res.status(500).json({ error: error.message || "Could not load bills from Xero" });
+    }
+  });
+
+  app.post("/api/bills/:id/link-xero", requireAuth, requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+      const companyId = (req as any).user.companyId as string;
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero isn't connected" });
+      const xeroInvoiceId = typeof req.body?.xeroInvoiceId === "string" ? req.body.xeroInvoiceId.trim() : "";
+      if (!xeroInvoiceId) return res.status(400).json({ error: "xeroInvoiceId is required" });
+      if ((bill as any).xeroInvoiceId && (bill as any).xeroInvoiceId !== xeroInvoiceId) {
+        return res.status(409).json({ error: "This bill is already linked to a different Xero bill." });
+      }
+      // Re-read from Xero rather than trusting the picker.
+      const xeroBill = await xeroService.getInvoice(connection.id, xeroInvoiceId).catch(() => null);
+      if (!xeroBill) return res.status(404).json({ error: "That bill wasn't found in Xero" });
+      if (xeroBill.Type !== "ACCPAY") return res.status(422).json({ error: "That's a sales invoice in Xero, not a bill" });
+      if (xeroBill.Status === "VOIDED" || xeroBill.Status === "DELETED") {
+        return res.status(422).json({ error: `That Xero bill is ${String(xeroBill.Status).toLowerCase()} — pick the live copy` });
+      }
+      const already = (await xeroBillsLinkedTo(companyId, [xeroInvoiceId])).get(xeroInvoiceId);
+      if (already && already.id !== bill.id) {
+        return res.status(409).json({ error: `That Xero bill is already linked to ${already.billNumber || "another bill"}` });
+      }
+
+      await storage.updateBill(bill.id, { xeroInvoiceId, sendToXero: true } as any);
+      const synced = await syncBillFromXeroInternal(bill.id, companyId, xeroBill);
+      const xeroTotalCents = Math.round((xeroBill.Total || 0) * 100);
+      res.json({
+        success: true,
+        xeroInvoiceNumber: xeroBill.InvoiceNumber || null,
+        xeroStatus: xeroBill.Status,
+        synced: synced.ok,
+        totalsMatch: xeroTotalCents === ((bill as any).total ?? 0),
+        xeroTotalCents,
+      });
+    } catch (error: any) {
+      console.error("Error linking bill to Xero:", error);
+      res.status(500).json({ error: error.message || "Could not link to the Xero bill" });
+    }
+  });
+
+  app.post("/api/bills/:id/xero-review/dismiss", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -48425,7 +48547,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // Unlink: sever the Xero link entirely. The Morada bill survives untouched but
   // stops being reconciled — the answer for an invoice deleted in Xero, or a
   // void the builder wants to keep a local record of.
-  app.post("/api/bills/:id/xero-review/unlink", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/xero-review/unlink", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
@@ -48508,7 +48630,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     return { billId, billNumber: bill.billNumber, ...result };
   }
 
-  app.post("/api/bills/:id/xero-review/recreate", requireAuth, async (req, res) => {
+  app.post("/api/bills/:id/xero-review/recreate", requireAuth, requirePermission("financial.bills", "edit"),async (req, res) => {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
