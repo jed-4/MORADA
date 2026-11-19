@@ -131,6 +131,7 @@ const ProposalPortal = lazy(() => import("@/pages/ProposalPortal"));
 const SelectionPortal = lazy(() => import("@/pages/SelectionPortal"));
 const ReviewPortal = lazy(() => import("@/pages/ReviewPortal"));
 const TradesPortal = lazy(() => import("@/pages/TradesPortal"));
+const DefectsTradePortal = lazy(() => import("@/pages/DefectsTradePortal"));
 const ProductLibrary = lazy(() => import("@/pages/ProductLibrary"));
 const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
@@ -166,6 +167,7 @@ function Router() {
       <Route path="/portal/selections/:token" component={SelectionPortal} />
       <Route path="/portal/reviews/:token" component={ReviewPortal} />
       <Route path="/portal/project/:token/trades" component={TradesPortal} />
+      <Route path="/portal/defects/:token" component={DefectsTradePortal} />
       
       <Route path="/">
         {() => {
@@ -415,6 +417,7 @@ function UnauthenticatedRoutes() {
         <Route path="/portal/selections/:token" component={SelectionPortal} />
         <Route path="/portal/reviews/:token" component={ReviewPortal} />
         <Route path="/portal/project/:token/trades" component={TradesPortal} />
+        <Route path="/portal/defects/:token" component={DefectsTradePortal} />
         <Route path="/" component={AuthPage} />
         <Route component={AuthPage} />
       </Switch>

@@ -583,6 +583,29 @@ const ALLOW_RULES: AllowRule[] = [
     project: projectViaReviewItem,
   },
 
+  // --- Handover defects (Defects v2 stage 3) ---
+  // Read-only list + photos, and the client's sign-off. The route itself also
+  // refuses unless the project has "Share handover list with client" on, and
+  // drops trade names; no money is ever in it.
+  {
+    methods: ["GET"],
+    pattern: /^\/projects\/[^/]+\/handover$/,
+    permission: [PORTAL_KEYS.handover, "view"],
+    project: projectParam,
+  },
+  {
+    methods: ["GET"],
+    pattern: /^\/projects\/[^/]+\/handover\/photos\/[^/]+\/\d+$/,
+    permission: [PORTAL_KEYS.handover, "view"],
+    project: projectParam,
+  },
+  {
+    methods: ["POST"],
+    pattern: /^\/projects\/[^/]+\/handover\/signoff$/,
+    permission: [PORTAL_KEYS.handover, "approve"],
+    project: projectParam,
+  },
+
   // --- Variations ---
   {
     methods: ["GET"],

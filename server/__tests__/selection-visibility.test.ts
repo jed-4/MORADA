@@ -18,6 +18,10 @@ import {
   redactDecisionLogPrices,
   stripOptionMoneyForWrite,
   stripProductMoneyForWrite,
+  stripSelectionMoneyForWrite,
+  redactSelectionForViewer,
+  redactTemplateForViewer,
+  mergeTemplateWriteForViewer,
   type SelectionViewer,
 } from "../selectionVisibility";
 import { getTableColumns } from "drizzle-orm";
@@ -482,6 +486,128 @@ check("malformed template crops are ignored rather than applied", () => {
     "/a.jpg": { x: 10, y: 10, zoom: 150 },
   });
   assert.equal(cropsOf(null), null);
+});
+
+// ── Write responses + templates ────────────────────────────────────────────
+const savedSelection = () => ({
+  id: "sel-w", projectId: "p", name: "Tiles", status: "draft", allowance: 500_000,
+  portalToken: "tok", notes: "trade note",
+  options: [{ id: "o1", name: "Zellige", unitCost: 100_000, unitTax: 10_000, markupPercent: 20, unitCharge: 132_000, totalCost: 264_000, gstInclusive: false, quantity: 2 }],
+});
+
+check("write response: a trade gets the saved row without allowance, token or option money", () => {
+  const out = redactSelectionForViewer(savedSelection(), TRADE);
+  assert.equal(out.id, "sel-w");
+  assert.equal(out.status, "draft", "a write response is never collapsed to the awaiting-approval stub");
+  assert.equal("allowance" in out, false);
+  assert.equal("portalToken" in out, false);
+  for (const f of OPTION_MONEY_FIELDS) assert.equal(f in out.options[0], false, `${f} leaked`);
+  assert.equal(out.options[0].name, "Zellige");
+});
+
+check("write response: a foreman (pending, no pricing) keeps the token but loses the money", () => {
+  const out = redactSelectionForViewer(savedSelection(), FOREMAN);
+  assert.equal(out.portalToken, "tok");
+  assert.equal("allowance" in out, false);
+  assert.equal("unitCost" in out.options[0], false);
+});
+
+check("write response: a pricing role gets the row untouched", () => {
+  const row = savedSelection();
+  assert.equal(redactSelectionForViewer(row, PM), row);
+});
+
+check("write response: a client never gets cost or markup", () => {
+  const out = redactSelectionForViewer(savedSelection(), CLIENT);
+  assert.equal("allowance" in out, false);
+  assert.equal("notes" in out, false);
+  assert.equal("unitCost" in out.options[0], false);
+  assert.equal("markupPercent" in out.options[0], false);
+});
+
+check("selection write: allowance is dropped for a role without pricing, kept for one with it", () => {
+  assert.equal("allowance" in stripSelectionMoneyForWrite({ name: "x", allowance: 0 }, TRADE), false);
+  assert.equal("allowance" in stripSelectionMoneyForWrite({ name: "x", allowance: null }, FOREMAN), false);
+  assert.equal(stripSelectionMoneyForWrite({ name: "x", allowance: 5 }, PM).allowance, 5);
+});
+
+const flatTemplate = () => ({
+  id: "t1", name: "Tapware", budgetAmount: 300_000, allowanceType: "PC",
+  templateData: [
+    { id: "a", name: "Mixer", brand: "Phoenix", unitCost: 40_000, markupPercent: 15, unitCharge: 50_600, totalCost: 50_600, gstInclusive: true },
+    { name: "Spout", brand: "Phoenix", sku: "SP1", unitCost: 20_000, markupPercent: 10, totalCost: 22_000 },
+  ],
+});
+const legacyTemplate = () => ({
+  id: "t2", name: "Whole house", budgetAmount: 1,
+  templateData: [
+    { itemName: "Kitchen tiles", budgetAmount: 900_000, options: [{ name: "Subway", unitCost: 5_000, markupPercent: 10, totalCost: 5_500 }] },
+  ],
+});
+
+check("template read: a trade sees no budget and no option money, in either blob format", () => {
+  const flat = redactTemplateForViewer(flatTemplate(), TRADE);
+  assert.equal("budgetAmount" in flat, false);
+  assert.equal(flat.allowanceType, "PC", "PC/PS is not money");
+  for (const o of flat.templateData) {
+    for (const f of ["unitCost", "markupPercent", "unitCharge", "totalCost", "gstInclusive"]) assert.equal(f in o, false, `${f} leaked`);
+  }
+  assert.equal(flat.templateData[0].name, "Mixer");
+  const legacy = redactTemplateForViewer(legacyTemplate(), FOREMAN);
+  assert.equal("budgetAmount" in legacy, false);
+  assert.equal("budgetAmount" in legacy.templateData[0], false);
+  assert.equal("unitCost" in legacy.templateData[0].options[0], false);
+  assert.equal(legacy.templateData[0].itemName, "Kitchen tiles");
+});
+
+check("template read: a pricing role gets the template untouched", () => {
+  const t = flatTemplate();
+  assert.equal(redactTemplateForViewer(t, PM), t);
+});
+
+check("template write by a trade keeps the stored prices instead of wiping them", () => {
+  // What the trade's editor sends back: the redacted blob, one option renamed,
+  // the id-less one given a fresh browser id, a new option, and a price attempt.
+  const sent = {
+    budgetAmount: 1,
+    templateData: [
+      { id: "a", name: "Mixer (matt black)", brand: "Phoenix", unitCost: 1 },
+      { id: "browser-uuid", name: "Spout", brand: "Phoenix", sku: "SP1" },
+      { id: "new", name: "Shower rail" },
+    ],
+  };
+  const out: any = mergeTemplateWriteForViewer(sent, flatTemplate(), TRADE);
+  assert.equal("budgetAmount" in out, false, "a trade can't set the budget");
+  assert.equal(out.templateData[0].name, "Mixer (matt black)");
+  assert.equal(out.templateData[0].unitCost, 40_000, "matched by id; the trade's 1 is ignored");
+  assert.equal(out.templateData[0].unitCharge, 50_600);
+  assert.equal(out.templateData[0].gstInclusive, true);
+  assert.equal(out.templateData[1].unitCost, 20_000, "id-less stored option matched by name/brand/sku");
+  assert.equal(out.templateData[1].markupPercent, 10);
+  assert.equal("unitCost" in out.templateData[2], false, "a new option has no price");
+});
+
+check("template write: a stored option WITH an id is only claimed by that id", () => {
+  const stored = { templateData: [{ id: "a", name: "Mixer", unitCost: 40_000 }] };
+  const out: any = mergeTemplateWriteForViewer({ templateData: [{ id: "other", name: "Mixer" }] }, stored, TRADE);
+  assert.equal("unitCost" in out.templateData[0], false);
+});
+
+check("template write: legacy item budgets and option prices survive a trade's save", () => {
+  const sent = { templateData: [{ itemName: "Kitchen tiles", options: [{ id: "old-0-0", name: "Subway" }] }] };
+  const out: any = mergeTemplateWriteForViewer(sent, legacyTemplate(), TRADE);
+  assert.equal(out.templateData[0].budgetAmount, 900_000);
+  assert.equal(out.templateData[0].options[0].unitCost, 5_000);
+});
+
+check("template write: a legacy template saved back flat keeps its option prices", () => {
+  const out: any = mergeTemplateWriteForViewer({ templateData: [{ id: "old-0-0", name: "Subway" }] }, legacyTemplate(), FOREMAN);
+  assert.equal(out.templateData[0].unitCost, 5_000);
+});
+
+check("template write by a pricing role passes through unchanged", () => {
+  const sent = { budgetAmount: 7, templateData: [{ id: "a", unitCost: 1 }] };
+  assert.equal(mergeTemplateWriteForViewer(sent, flatTemplate(), PM), sent);
 });
 
 console.log(`\n${passed} passed\n`);

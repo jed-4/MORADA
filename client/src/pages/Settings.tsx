@@ -3,6 +3,7 @@ import { LibraryPropertiesManager } from "@/components/library/LibraryProperties
 import { BookOpen } from "lucide-react";
 import { VariationRemindersSettings } from "@/components/variations/VariationRemindersSettings";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { ArrivingOnSiteSettings } from "@/components/settings/ArrivingOnSiteSettings";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,6 +150,13 @@ const SETTINGS_CATEGORIES = [
     label: "Timesheet Settings",
     icon: Clock,
     description: "Clock-in reminders, rounding, and default break durations",
+    group: "general"
+  },
+  {
+    id: "arriving-on-site",
+    label: "Arriving on Site",
+    icon: MapPin,
+    description: "Phone prompts to clock in when someone arrives at a job site",
     group: "general"
   },
   // Schedule section
@@ -2163,6 +2171,7 @@ export default function Settings() {
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
             {activeSection === "timesheet-settings" && <TimesheetSettingsSection />}
+            {activeSection === "arriving-on-site" && <ArrivingOnSiteSettings />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
             {activeSection === "integrations" && <IntegrationsSection />}
             {activeSection === "schedule-settings" && <ScheduleSettingsSection />}
@@ -2183,7 +2192,7 @@ export default function Settings() {
             {activeSection === "variation-reminders" && <VariationRemindersSettings />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing", "library", "variation-reminders"].includes(activeSection) && (
+            {!["branding", "timesheet-settings", "arriving-on-site", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing", "library", "variation-reminders"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -2239,7 +2248,7 @@ function TimesheetSettingsSection() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PATCH", "/api/company-settings", {
+      await apiRequest("/api/company-settings", "PATCH", {
         timesheetReminderEnabled: reminderEnabled,
         timesheetReminderThresholdHours: thresholdHours,
         timesheetAutoRound: autoRound,
@@ -2685,6 +2694,49 @@ function ScheduleSettingsSection() {
 }
 
 // Default Values Section
+// Delivery check-in: whether site crew must photograph the docket.
+function DeliverySettingsCard() {
+  const { toast } = useToast();
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+  const required = (companySettings as any)?.deliveryDocketPhotoRequired ?? true;
+  const save = useMutation({
+    mutationFn: async (value: boolean) => {
+      await apiRequest("/api/company-settings", "PATCH", { deliveryDocketPhotoRequired: value });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Delivery settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    },
+  });
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-base font-semibold">Deliveries</CardTitle>
+        <p className="text-sm text-muted-foreground">Checking in deliveries against a purchase order on site</p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label className="text-sm font-medium">Require a docket photo</Label>
+            <p className="text-table text-muted-foreground">The crew can't check a delivery in without photographing the supplier's docket</p>
+          </div>
+          <Switch
+            checked={required}
+            disabled={!companySettings || save.isPending}
+            onCheckedChange={(v) => save.mutate(v)}
+            data-testid="switch-delivery-docket-photo-required"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DefaultValuesSection() {
   const { toast } = useToast();
   const [defaults, setDefaults] = useState({
@@ -2794,6 +2846,7 @@ function DefaultValuesSection() {
 
   return (
     <div className="space-y-6">
+      <DeliverySettingsCard />
       <Card className="border-2">
         <CardHeader className="pb-4">
           <CardTitle className="text-base font-semibold">Financial Defaults</CardTitle>

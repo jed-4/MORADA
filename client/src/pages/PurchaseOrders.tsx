@@ -63,6 +63,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SiXero } from "react-icons/si";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DeliveryStatusChip } from "@/components/purchase-orders/PODeliveriesSection";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { PurchaseOrder, Project, Contact, CostCode } from "@shared/schema";
 import { PO_STATUS_LABELS } from "@shared/poStatus";
@@ -658,6 +659,20 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
         ),
         size: 110,
         meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
+        id: "delivery",
+        header: "Delivery",
+        accessorFn: (po) => (po as any).deliveryStatus ?? "none",
+        cell: ({ row }) => {
+          const s = (row.original as any).deliveryStatus ?? "none";
+          if (s === "none" && (row.original.status === "draft" || row.original.status === "cancelled")) {
+            return <span className="text-muted-foreground/60">—</span>;
+          }
+          return <DeliveryStatusChip status={s} />;
+        },
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Delivery" },
       },
       {
         id: "amount",

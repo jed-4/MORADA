@@ -519,7 +519,7 @@ interface DeliveryRecord {
 export const REDACTED_CONTEXT_TYPES = new Set(["password_reset", "team_invite", "client_portal_invite"]);
 
 /** Sends that nobody is waiting on — a failure here is otherwise silent. */
-const BACKGROUND_CONTEXT_TYPES = new Set(["rfq_reminder", "proposal_reminder", "reminder", "client_decision"]);
+const BACKGROUND_CONTEXT_TYPES = new Set(["rfq_reminder", "proposal_reminder", "reminder", "client_decision", "defect_digest"]);
 
 /**
  * Where each context type's document lives, for resolving the project at write
@@ -536,6 +536,9 @@ const PROJECT_TABLE_FOR_CONTEXT: Record<string, string> = {
   client_invoice: "client_invoices",
   selection: "selections",
   review_item: "review_items",
+  // Defects to a trade: the id is the trade link (one per trade per job).
+  defect_trade: "defect_trade_links",
+  defect_digest: "defect_trade_links",
 };
 
 /** Attachments over this are listed but not kept. */

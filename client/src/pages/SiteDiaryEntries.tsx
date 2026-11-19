@@ -76,6 +76,7 @@ import { insertSiteDiaryEntrySchema } from "@shared/schema";
 import { z } from "zod";
 import { Image as ImageIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DailyReportDialog } from "@/components/site-diary/DailyReportDialog";
 
 const HIDE_SUMMARY_KEY = "site-diary-hide-summary";
 
@@ -201,6 +202,7 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "feed">("feed");
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [dailyReportOpen, setDailyReportOpen] = useState(false);
   const [hideSummary, setHideSummary] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(HIDE_SUMMARY_KEY) === "1";
@@ -602,6 +604,17 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
 
         {/* Right: Add + Options (PDF lives inside Options) */}
         <div className="flex items-center gap-1.5">
+          {isProjectFromUrl && selectedProjectId && (
+            <button
+              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              onClick={() => setDailyReportOpen(true)}
+              data-testid="button-daily-report"
+              title="Daily site report for the client"
+            >
+              <FileText className="w-3 h-3 text-muted-foreground" />
+              <span>Daily report</span>
+            </button>
+          )}
           <button
             className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
             onClick={() => handleAddEntry()}
@@ -774,6 +787,9 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
           </span>
         </div>
       </div>
+      {isProjectFromUrl && selectedProjectId && (
+        <DailyReportDialog projectId={selectedProjectId} open={dailyReportOpen} onOpenChange={setDailyReportOpen} />
+      )}
     </div>
   );
 }

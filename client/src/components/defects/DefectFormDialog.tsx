@@ -1,10 +1,7 @@
 import { useEffect, useState, useRef } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useParams } from "wouter";
-import { insertDefectSchema, type Defect, type InsertDefect } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -13,14 +10,6 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
@@ -33,133 +22,108 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useDefectStatusOptions } from "@/hooks/useDefectStatusOptions";
+import { useUpload } from "@/hooks/use-upload";
 import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
 import { useDefectTradeOptions } from "@/hooks/useDefectTradeOptions";
-import { Upload, X, Image as ImageIcon, Bell } from "lucide-react";
-import { SetReminderDialog } from "@/components/SetReminderDialog";
+import { Upload, X } from "lucide-react";
+import {
+  DEFECT_DEFAULT_DUE_DAYS,
+  DEFECT_JOB_STAGES,
+  DEFECT_JOB_STAGE_LABELS,
+  type DefectJobStage,
+} from "@shared/defects";
+import { invalidateDefectQueries } from "./defectStyles";
+import { useDefectPermissions, useTeamUsers } from "./defectHooks";
+import { DefectLocationPicker } from "./DefectLocationPicker";
+import { OwnerSelect } from "./DefectDrawer";
 
 interface DefectFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defect?: Defect;
+  /** Defaults to the route's project. */
+  projectId?: string;
 }
 
-export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialogProps) {
-  const { projectId } = useParams<{ projectId: string }>();
+const NONE = "__none__";
+
+type Photo = { url: string; name: string; type?: string; preview: string };
+
+/**
+ * Raise a defect. Editing happens in the drawer; this is create only.
+ * Photos upload to object storage first, then the paths go with the defect.
+ */
+export function DefectFormDialog({ open, onOpenChange, projectId: projectIdProp }: DefectFormDialogProps) {
+  const params = useParams<{ projectId: string }>();
+  const projectId = projectIdProp ?? params.projectId;
   const { toast } = useToast();
+  const perms = useDefectPermissions();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [photos, setPhotos] = useState<Array<{ url: string; name: string; file?: File }>>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [showReminderDialog, setShowReminderDialog] = useState(false);
-  
-  const { statusOptions } = useDefectStatusOptions();
+  const { uploadFile, isUploading } = useUpload();
+
   const { priorityOptions } = useDefectPriorityOptions();
   const { typeOptions } = useDefectTypeOptions();
   const tradeOptions = useDefectTradeOptions();
+  const teamUsers = useTeamUsers();
 
-  const getDefaultValues = (): Partial<InsertDefect> => ({
-    projectId: projectId || "",
-    title: "",
-    description: "",
-    location: "",
-    status: (statusOptions[0]?.key as InsertDefect["status"]) || "open",
-    priority: (priorityOptions[0]?.key as InsertDefect["priority"]) || "medium",
-    type: (typeOptions[0]?.key as InsertDefect["type"]) || "builder",
-    trade: "",
-  });
-
-  const form = useForm<InsertDefect>({
-    resolver: zodResolver(insertDefectSchema),
-    defaultValues: getDefaultValues(),
-  });
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("medium");
+  const [type, setType] = useState("builder");
+  const [trade, setTrade] = useState("");
+  const [jobStage, setJobStage] = useState<DefectJobStage>("construction");
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  const [location, setLocation] = useState<{ id: string | null; path: string | null }>({ id: null, path: null });
+  const [dueDate, setDueDate] = useState("");
+  const [photos, setPhotos] = useState<Photo[]>([]);
 
   useEffect(() => {
-    if (open) {
-      if (defect) {
-        form.reset({
-          projectId: defect.projectId,
-          title: defect.title,
-          description: defect.description || "",
-          location: defect.location || "",
-          status: defect.status as InsertDefect["status"],
-          priority: defect.priority as InsertDefect["priority"],
-          type: defect.type as InsertDefect["type"],
-          trade: defect.trade || "",
-          notes: defect.notes || "",
-          assignedContactId: defect.assignedContactId || undefined,
-          assignedContactName: defect.assignedContactName || undefined,
-          dueDate: defect.dueDate || undefined,
-          dateIdentified: defect.dateIdentified || undefined,
-        });
-        const existingAttachments = (defect.attachments as Array<{ url: string; name: string }>) || [];
-        setPhotos(existingAttachments);
+    if (!open) return;
+    setTitle("");
+    setDescription("");
+    setPriority(priorityOptions.find((o: any) => o.isDefault)?.key ?? priorityOptions[0]?.key ?? "medium");
+    setType(typeOptions.find((o: any) => o.isDefault)?.key ?? typeOptions[0]?.key ?? "builder");
+    setTrade("");
+    setDueDate("");
+    setPhotos([]);
+    // Location, owner and job stage stay as they were — raising several in a
+    // row on a walkthrough usually means the same room and the same person.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const onFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    for (const f of Array.from(files)) {
+      const r = await uploadFile(f);
+      if (r?.objectPath) {
+        setPhotos((p) => [...p, { url: r.objectPath, name: f.name, type: f.type || undefined, preview: URL.createObjectURL(f) }]);
       } else {
-        form.reset(getDefaultValues());
-        setPhotos([]);
+        toast({ title: `Couldn't upload ${f.name}`, variant: "destructive" });
       }
     }
-  }, [open, defect, projectId, statusOptions, priorityOptions, typeOptions]);
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsUploading(true);
-    try {
-      const newPhotos: Array<{ url: string; name: string; file?: File }> = [];
-      
-      for (const file of Array.from(files)) {
-        const reader = new FileReader();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        
-        newPhotos.push({
-          url: dataUrl,
-          name: file.name,
-          file,
-        });
-      }
-      
-      setPhotos(prev => [...prev, ...newPhotos]);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to upload photos",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data: InsertDefect) => {
-      const attachments = photos.map(p => ({ url: p.url, name: p.name }));
-      return apiRequest("/api/defects", "POST", { ...data, attachments });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
-      toast({
-        title: "Success",
-        description: "Defect created successfully",
-      });
+    mutationFn: () =>
+      apiRequest(`/api/projects/${projectId}/defects`, "POST", {
+        title: title.trim() || undefined,
+        description: description.trim() || null,
+        priority,
+        type,
+        trade: trade || null,
+        jobStage,
+        ownerUserId,
+        locationId: location.id,
+        ...(dueDate ? { dueDate: new Date(`${dueDate}T00:00:00`).toISOString() } : {}),
+        clientRequestId: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+        photos: photos.map((p) => ({ url: p.url, name: p.name, type: p.type, kind: "before" as const })),
+      }),
+    onSuccess: (d: any) => {
+      invalidateDefectQueries(queryClient);
+      toast({ title: `${d?.ref ?? "Defect"} raised` });
       onOpenChange(false);
-      form.reset();
-      setPhotos([]);
     },
-    // Say WHY — this used to be a bare "Failed to create defect".
     onError: (error: any) => {
       toast({
         title: "Couldn't create the defect",
@@ -169,265 +133,129 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: InsertDefect) => {
-      const attachments = photos.map(p => ({ url: p.url, name: p.name }));
-      return apiRequest(`/api/defects/${defect?.id}`, "PATCH", { ...data, attachments });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
-      toast({
-        title: "Success",
-        description: "Defect updated successfully",
-      });
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Couldn't save the defect",
-        description: error?.payload?.details || error?.payload?.error || error?.message || "Please try again",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // A form that won't submit used to do nothing visible when a field was
-  // invalid but had no message on screen. Name the fields instead.
-  const onInvalid = (errors: Record<string, any>) => {
-    const fields = Object.keys(errors);
-    toast({
-      title: "Check the defect details",
-      description: fields.length
-        ? `Fix: ${fields.map((f) => f.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ")}${errors[fields[0]]?.message ? ` — ${errors[fields[0]].message}` : ""}`
-        : "Some details aren't valid.",
-      variant: "destructive",
-    });
-  };
-
-  const onSubmit = (data: InsertDefect) => {
-    if (defect) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
-    }
-  };
-
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const busy = createMutation.isPending || isUploading;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle data-testid="dialog-title">
-            {defect ? "Edit Defect" : "Create Defect"}
-          </DialogTitle>
-          <DialogDescription>
-            {defect ? "Update the details of this defect." : "Record a new defect for this project."}
-          </DialogDescription>
+          <DialogTitle data-testid="dialog-title">Raise a defect</DialogTitle>
+          <DialogDescription>Record a new defect for this project.</DialogDescription>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="Brief description of the defect"
-                      data-testid="input-title"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-status">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {statusOptions.map((option) => (
-                          <SelectItem
-                            key={option.key}
-                            value={option.key}
-                            data-testid={`select-item-status-${option.key}`}
-                          >
-                            {option.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-priority">
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {priorityOptions.map((option) => (
-                          <SelectItem
-                            key={option.key}
-                            value={option.key}
-                            data-testid={`select-item-priority-${option.key}`}
-                          >
-                            {option.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+        {!projectId ? (
+          <p className="text-sm text-muted-foreground">Open a project to raise a defect.</p>
+        ) : (
+          <form
+            onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label>Title</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={location.path ? `Defect at ${location.path}` : "Brief description of the defect"}
+                data-testid="input-title"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-type">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {typeOptions.map((option) => (
-                          <SelectItem
-                            key={option.key}
-                            value={option.key}
-                            data-testid={`select-item-type-${option.key}`}
-                          >
-                            {option.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-1.5">
+                <Label>Location</Label>
+                <DefectLocationPicker
+                  projectId={projectId}
+                  value={location.id}
+                  canAdd={perms.add}
+                  onChange={(id, path) => setLocation({ id, path })}
+                  testId="input-location"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Job stage</Label>
+                <Select value={jobStage} onValueChange={(v) => setJobStage(v as DefectJobStage)}>
+                  <SelectTrigger data-testid="select-job-stage"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DEFECT_JOB_STAGES.map((js) => (
+                      <SelectItem key={js} value={js}>{DEFECT_JOB_STAGE_LABELS[js]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-              <FormField
-                control={form.control}
-                name="trade"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Trade</FormLabel>
-                    <Select 
-                      onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)} 
-                      value={field.value || "__none__"}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-trade">
-                          <SelectValue placeholder="Select trade" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__" data-testid="select-item-trade-none">
-                          No trade
-                        </SelectItem>
-                        {tradeOptions.map((option) => (
-                          <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            data-testid={`select-item-trade-${option.value}`}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Owner</Label>
+                <OwnerSelect users={teamUsers} value={ownerUserId} onChange={setOwnerUserId} testId="select-owner" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Due</Label>
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  data-testid="input-due-date"
+                />
+                {!dueDate && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Defaults to {DEFECT_DEFAULT_DUE_DAYS[jobStage]} days for {DEFECT_JOB_STAGE_LABELS[jobStage].toLowerCase()}
+                  </p>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger data-testid="select-priority"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {priorityOptions.map((o) => <SelectItem key={o.key} value={o.key}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger data-testid="select-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((o) => <SelectItem key={o.key} value={o.key}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Trade</Label>
+                <Select value={trade || NONE} onValueChange={(v) => setTrade(v === NONE ? "" : v)}>
+                  <SelectTrigger data-testid="select-trade"><SelectValue placeholder="No trade" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>No trade</SelectItem>
+                    {tradeOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Detailed description of the defect"
+                rows={3}
+                data-testid="input-description"
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="location"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Location</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value || ""}
-                      placeholder="e.g., Kitchen, Bathroom 2, Upstairs hallway"
-                      data-testid="input-location"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      value={field.value || ""}
-                      placeholder="Detailed description of the defect"
-                      rows={4}
-                      data-testid="input-description"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Photos Section */}
             <div className="space-y-2">
               <Label>Photos</Label>
               <div className="flex flex-wrap gap-2">
                 {photos.map((photo, index) => (
-                  <div 
-                    key={index} 
-                    className="relative w-20 h-20 rounded-md overflow-hidden border bg-muted group"
-                  >
-                    <img 
-                      src={photo.url} 
-                      alt={photo.name}
-                      className="w-full h-full object-cover"
-                    />
+                  <div key={photo.url} className="relative w-20 h-20 rounded-md overflow-hidden border bg-muted group">
+                    <img src={photo.preview} alt={photo.name} className="w-full h-full object-cover" />
                     <button
                       type="button"
-                      onClick={() => removePhoto(index)}
+                      onClick={() => setPhotos((p) => p.filter((_, i) => i !== index))}
                       className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       data-testid={`button-remove-photo-${index}`}
                     >
@@ -435,8 +263,6 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
                     </button>
                   </div>
                 ))}
-                
-                {/* Upload Button */}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -444,71 +270,32 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
                   className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 hover:border-muted-foreground/50 hover:bg-muted/50 transition-colors"
                   data-testid="button-upload-photo"
                 >
-                  {isUploading ? (
-                    <span className="text-data text-muted-foreground">Uploading...</span>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-data text-muted-foreground">Add Photo</span>
-                    </>
-                  )}
+                  <Upload className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">{isUploading ? "Uploading..." : "Add Photo"}</span>
                 </button>
-                
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
                   multiple
-                  onChange={handlePhotoUpload}
+                  onChange={(e) => onFiles(e.target.files)}
                   className="hidden"
                   data-testid="input-photo-upload"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Upload photos of the defect to help document the issue.
-              </p>
             </div>
 
             <DialogFooter className="gap-2">
-              {defect && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowReminderDialog(true)}
-                  className="mr-auto"
-                  data-testid="button-set-reminder"
-                >
-                  <Bell className="h-4 w-4 mr-1.5" />
-                  Set Reminder
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isPending}
-                data-testid="button-cancel"
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending} data-testid="button-cancel">
                 Cancel
               </Button>
-              <Button type="submit" disabled={isPending} data-testid="button-submit">
-                {isPending ? "Saving..." : defect ? "Update" : "Create"}
+              <Button type="submit" disabled={busy} data-testid="button-submit">
+                {createMutation.isPending ? "Saving..." : "Create"}
               </Button>
             </DialogFooter>
           </form>
-        </Form>
+        )}
       </DialogContent>
-
-      {/* Set Reminder Dialog */}
-      <SetReminderDialog
-        open={showReminderDialog}
-        onOpenChange={setShowReminderDialog}
-        linkedItemType="defect"
-        linkedItemId={defect?.id}
-        linkedItemTitle={defect?.title}
-        projectId={projectId}
-      />
     </Dialog>
   );
 }

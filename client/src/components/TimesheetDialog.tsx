@@ -16,6 +16,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
+import { SiteVisitNote } from "@/components/SiteVisitNote";
 import { useAuth } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,21 @@ function getLabelChipClasses(key: string, isSelected: boolean): string {
       return "bg-primary/10 text-primary border-primary/30";
   }
 }
+
+/**
+ * Money/hours boxes are plain text boxes that only accept digits and one
+ * decimal point. They used to be <input type="number">, which a trackpad or
+ * mouse-wheel scroll over the focused box nudges up/down — the "I type 75 and
+ * it keeps changing to random numbers" bug (Jed, 11-18).
+ */
+const decimalOnly = (raw: string) =>
+  raw.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+const decimalInputProps = {
+  type: "text" as const,
+  inputMode: "decimal" as const,
+  autoComplete: "off",
+  spellCheck: false,
+};
 
 export function TimesheetDialog({
   open,
@@ -239,6 +255,8 @@ export function TimesheetDialog({
   // timesheet keeps the rate it was saved with.
   // Subcontractors are costed through their PO and bill, so their timesheet
   // is hours only: rate and total are $0 (the server enforces this too).
+  const defaultRateForUserRef = useRef<string | undefined>(undefined);
+  useEffect(() => { if (!open) defaultRateForUserRef.current = undefined; }, [open]);
   const isSubbieSelected = (users.find((u) => u.id === watchedUserId) as { isSubcontractor?: boolean } | undefined)?.isSubcontractor === true;
   useEffect(() => {
     if (!open) return;
@@ -248,7 +266,13 @@ export function TimesheetDialog({
       return;
     }
     if (timesheet) return;
+    // Only when the chosen PERSON changes. This also re-ran whenever the
+    // people list refetched, writing their profile rate over a rate already
+    // typed into a new timesheet.
+    if (defaultRateForUserRef.current === watchedUserId) return;
     const person = users.find((u) => u.id === watchedUserId) as { hourlyRate?: string | null } | undefined;
+    if (!person) return;
+    defaultRateForUserRef.current = watchedUserId;
     const rate = person?.hourlyRate ? parseFloat(person.hourlyRate) : 0;
     if (rate > 0) form.setValue("hourlyRate", rate.toString());
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1085,10 +1109,10 @@ export function TimesheetDialog({
                               <Label className={labelClass}>Rate ($)</Label>
                               <FormControl>
                                 <Input
-                                  type="number"
-                                  step="1"
-                                  min="0"
                                   {...field}
+                                  {...decimalInputProps}
+                                  value={field.value ?? ""}
+                                  onChange={(e) => field.onChange(decimalOnly(e.target.value))}
                                   disabled={isSubbieSelected}
                                   className={inputClass}
                                   data-testid="input-hourly-rate"
@@ -1140,10 +1164,9 @@ export function TimesheetDialog({
                               </div>
                               <div className="min-w-0">
                                 <Input
-                                  type="number"
-                                  step="0.25"
+                                  {...decimalInputProps}
                                   value={split.duration}
-                                  onChange={(e) => updateCostCodeSplit(split.id, "duration", e.target.value)}
+                                  onChange={(e) => updateCostCodeSplit(split.id, "duration", decimalOnly(e.target.value))}
                                   className={cn(inputClass, "w-full")}
                                   data-testid={`input-split-duration-${split.id}`}
                                 />
@@ -1151,10 +1174,9 @@ export function TimesheetDialog({
                               {canViewTimesheetRates && (
                                 <div className="min-w-0">
                                   <Input
-                                    type="number"
-                                    step="1"
+                                    {...decimalInputProps}
                                     value={split.hourlyRate}
-                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
+                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", decimalOnly(e.target.value))}
                                     disabled={isSubbieSelected}
                                     className={cn(inputClass, "w-full")}
                                     data-testid={`input-split-rate-${split.id}`}
@@ -1313,6 +1335,16 @@ export function TimesheetDialog({
                       )}
                     </span>
                   </div>
+                )}
+
+                {/* Arriving on site (#46) — the phone's site sign-in register */}
+                {timesheet && (
+                  <SiteVisitNote
+                    userId={timesheet.userId}
+                    projectId={timesheet.projectId}
+                    date={timesheet.date as any}
+                    className="bg-muted/20 rounded-md px-3 py-1.5"
+                  />
                 )}
 
                 {/* Approval / rejection note */}
