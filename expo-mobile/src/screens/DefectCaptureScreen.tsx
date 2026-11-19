@@ -30,6 +30,7 @@ import { usePhotoMarkup, PendingUploadsBanner } from '../components/photo';
 import { isPhotoMarkupAvailable, persistPhoto } from '../lib/photos';
 import { addToQueue, syncQueue, type DefectPayload } from '../services/offlineQueue';
 import { usePermission } from '../lib/usePermission';
+import { VoiceInputButton } from '../components/VoiceInputButton';
 import { DefectFieldRows, type DefectFieldValues } from '../components/defects/DefectFieldRows';
 import {
   defaultDefectTitle,
@@ -79,7 +80,12 @@ const MAX_PHOTOS = 6;
  * next defect, and are remembered per project for the next walkthrough.
  */
 export default function DefectCaptureScreen({ navigation, route }: Props) {
-  const { projectId, projectName } = (route.params ?? {}) as { projectId: string; projectName?: string };
+  const { projectId, projectName, sharedUris } = (route.params ?? {}) as {
+    projectId: string;
+    projectName?: string;
+    /** Photos shared into Morada (#44): start with these instead of the camera. */
+    sharedUris?: string[];
+  };
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -172,8 +178,14 @@ export default function DefectCaptureScreen({ navigation, route }: Props) {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Camera first: open it as soon as the screen appears.
+  // Camera first: open it as soon as the screen appears — unless photos were
+  // shared in, which are added after the first render so the dirty guard
+  // counts them (leaving asks before throwing them away).
   useEffect(() => {
+    if (sharedUris?.length) {
+      setPhotos(sharedUris.slice(0, MAX_PHOTOS));
+      return;
+    }
     if (canAdd) takePhoto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -399,16 +411,20 @@ export default function DefectCaptureScreen({ navigation, route }: Props) {
           maxLength={200}
           accessibilityLabel="Title (optional)"
         />
-        <TextInput
-          value={description}
-          onChangeText={setDescription}
-          onFocus={kb.onInputFocus}
-          placeholder="Notes (optional)"
-          placeholderTextColor={theme.textMuted}
-          style={[styles.input, styles.multiline, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
-          multiline
-          accessibilityLabel="Notes (optional)"
-        />
+        <View>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            onFocus={kb.onInputFocus}
+            placeholder="Notes (optional)"
+            placeholderTextColor={theme.textMuted}
+            style={[styles.input, styles.multiline, styles.voiceInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
+            multiline
+            accessibilityLabel="Notes (optional)"
+          />
+          {/* Dictate the notes (#56) — sits in the box's bottom-right corner. */}
+          <VoiceInputButton value={description} onChangeText={setDescription} label="Dictate notes" compact style={styles.voiceBtn} />
+        </View>
 
         <DefectFieldRows
           projectId={projectId}
@@ -519,6 +535,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
   },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
+  voiceInput: { paddingRight: 52 },
+  voiceBtn: { position: 'absolute', right: 8, bottom: 8 },
   footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, paddingHorizontal: 16 },
   footerInner: { flexDirection: 'row', gap: 10 },
   footerBtn: {

@@ -50,6 +50,7 @@ import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
 import { BottomActionBar, BOTTOM_ACTION_BAR_HEIGHT } from '../components/form/BottomActionBar';
 import DailyReportButton from '../components/diary/DailyReportButton';
+import { VoiceInputButton } from '../components/VoiceInputButton';
 
 const DIARY_QUEUE_TYPES = ['create-diary-entry', 'edit-diary-entry'] as const;
 
@@ -376,26 +377,30 @@ const colors = {
 
   // Home screen "Photo to diary": the camera photo arrives as a param and
   // opens a new entry with it attached. Waits for the templates to load.
-  const captureUri = (route.params as { captureUri?: string } | undefined)?.captureUri;
+  // Share into Morada sends several as `captureUris` (same flow).
+  const captureParams = route.params as { captureUri?: string; captureUris?: string[] } | undefined;
+  const captureUri = captureParams?.captureUri;
+  const captureUris = captureParams?.captureUris;
+  const captureKey = captureUri ?? (captureUris?.length ? captureUris.join('|') : undefined);
   const handledCapture = useRef<string | null>(null);
-  const pendingCapture = useRef<string | null>(null);
+  const pendingCapture = useRef<string[] | null>(null);
   useEffect(() => {
-    if (loading || !captureUri || handledCapture.current === captureUri) return;
-    handledCapture.current = captureUri;
-    navigation.setParams({ captureUri: undefined });
-    pendingCapture.current = captureUri;
+    if (loading || !captureKey || handledCapture.current === captureKey) return;
+    handledCapture.current = captureKey;
+    navigation.setParams({ captureUri: undefined, captureUris: undefined });
+    pendingCapture.current = captureUri ? [captureUri] : [...(captureUris ?? [])];
     openCreateModal();
     // openCreateModal reads the loaded templates; it isn't memoised.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, captureUri]);
+  }, [loading, captureKey]);
   // Attached once the form is open — after the dirty guard has taken its
   // baseline, so Cancel asks before throwing the photo away.
   useEffect(() => {
-    const uri = pendingCapture.current;
-    if (!showEntryModal || !uri) return;
+    const uris = pendingCapture.current;
+    if (!showEntryModal || !uris?.length) return;
     pendingCapture.current = null;
-    setFormOverallPhotos(prev => (prev.includes(uri) ? prev : [...prev, uri]));
-    diaryPhotos.track([uri]);
+    setFormOverallPhotos(prev => [...prev, ...uris.filter(u => !prev.includes(u))]);
+    diaryPhotos.track(uris);
   }, [showEntryModal, diaryPhotos.track]);
 
   const openEditModal = (entry: SiteDiaryEntry) => {
@@ -837,9 +842,16 @@ const colors = {
         // mic works. Return adds a new line (no "next" here).
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
-              {field.title}{field.required ? ' *' : ''}
-            </Text>
+            <View style={styles.voiceLabelRow}>
+              <Text style={[styles.fieldLabel, { color: colors.text, flexShrink: 1 }]}>
+                {field.title}{field.required ? ' *' : ''}
+              </Text>
+              <VoiceInputButton
+                value={value || ''}
+                onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
+                label={`Dictate ${field.title}`}
+              />
+            </View>
             <TextInput
               ref={focusChain.ref(field.id)}
               onFocus={entryKb.onInputFocus}
@@ -1615,6 +1627,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 8,
   },
+  // Field label with the dictation mic on the right (#56).
+  voiceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   fieldLabel: {
     fontSize: 14,
     fontWeight: '500',

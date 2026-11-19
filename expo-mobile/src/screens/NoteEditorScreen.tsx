@@ -1049,6 +1049,39 @@ const colors = {
     }
   };
 
+  // Share into Morada (#44): photos shared from another app open a NEW note
+  // with them as image blocks, uploaded the same way as a picked photo.
+  const sharedImageUris: string[] | undefined = route.params?.sharedImageUris;
+  const sharedHandledRef = useRef(false);
+  useEffect(() => {
+    if (sharedHandledRef.current || noteId || !sharedImageUris?.length) return;
+    sharedHandledRef.current = true;
+    navigation.setParams({ sharedImageUris: undefined });
+    const added = sharedImageUris.map((uri) => ({ uri, block: { id: makeBlockId(), type: 'image' as const, text: '', uploading: true } }));
+    setBlocks((prev) => {
+      // Replace the lone empty starter block; otherwise add to the end.
+      const start = prev.length === 1 && prev[0].type === 'text' && !prev[0].text ? [] : prev;
+      return [...start, ...added.map((a) => a.block), defaultBlock()];
+    });
+    (async () => {
+      let failed = 0;
+      for (const { uri, block } of added) {
+        try {
+          const { objectPath } = await uploadPhoto(uri);
+          setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, src: objectPath, uploading: false } : b)));
+        } catch {
+          failed += 1;
+          setBlocks((prev) => prev.filter((b) => b.id !== block.id));
+        }
+      }
+      if (failed < added.length) scheduleSave();
+      if (failed) {
+        Alert.alert('Upload Failed', `${failed === 1 ? 'A photo' : `${failed} photos`} couldn't be uploaded. Check your connection and add ${failed === 1 ? 'it' : 'them'} again.`);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const focusedBlock = blocks.find((b) => b.id === focusedBlockId);
 
   if (loadingNote) {
