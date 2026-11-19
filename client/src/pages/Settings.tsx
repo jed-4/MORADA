@@ -2685,6 +2685,49 @@ function ScheduleSettingsSection() {
 }
 
 // Default Values Section
+// Delivery check-in: whether site crew must photograph the docket.
+function DeliverySettingsCard() {
+  const { toast } = useToast();
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+  const required = (companySettings as any)?.deliveryDocketPhotoRequired ?? true;
+  const save = useMutation({
+    mutationFn: async (value: boolean) => {
+      await apiRequest("/api/company-settings", "PATCH", { deliveryDocketPhotoRequired: value });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Delivery settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    },
+  });
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-base font-semibold">Deliveries</CardTitle>
+        <p className="text-sm text-muted-foreground">Checking in deliveries against a purchase order on site</p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label className="text-sm font-medium">Require a docket photo</Label>
+            <p className="text-table text-muted-foreground">The crew can't check a delivery in without photographing the supplier's docket</p>
+          </div>
+          <Switch
+            checked={required}
+            disabled={!companySettings || save.isPending}
+            onCheckedChange={(v) => save.mutate(v)}
+            data-testid="switch-delivery-docket-photo-required"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DefaultValuesSection() {
   const { toast } = useToast();
   const [defaults, setDefaults] = useState({
@@ -2794,6 +2837,7 @@ function DefaultValuesSection() {
 
   return (
     <div className="space-y-6">
+      <DeliverySettingsCard />
       <Card className="border-2">
         <CardHeader className="pb-4">
           <CardTitle className="text-base font-semibold">Financial Defaults</CardTitle>

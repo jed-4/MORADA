@@ -92,6 +92,7 @@ import { MoneySummary } from "@/components/detail/MoneySummary";
 import { AddLineRow } from "@/components/detail/AddLineRow";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ImportProjectScopeDialog } from "@/components/purchase-orders/ImportProjectScopeDialog";
+import { PODeliveriesSection, usePODeliverySummary } from "@/components/purchase-orders/PODeliveriesSection";
 import type {
   PurchaseOrder,
   PurchaseOrderItem,
@@ -1330,6 +1331,15 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  // ── Delivery check-ins (received / outstanding per line) ────────────────
+  const { data: deliverySummary } = usePODeliverySummary(poId);
+  const receivedByLine = useMemo(() => {
+    const m = new Map<string, { qty: number; outstanding: number }>();
+    if (!deliverySummary || deliverySummary.deliveryCount === 0) return m;
+    for (const l of deliverySummary.lines) m.set(l.id, { qty: l.qtyReceived, outstanding: l.qtyOutstanding });
+    return m;
+  }, [deliverySummary]);
+
   // ── Bills linked to this PO ─────────────────────────────────────────────
   const { data: linkedBills = [] } = useQuery<Array<{
     id: string;
@@ -2267,6 +2277,7 @@ export default function PurchaseOrderDetail() {
                         totalCents: Math.round(qty * price),
                         gstFree: !!item.isGstFree,
                         costCode: cc ? `${cc.code} ${cc.title}` : null,
+                        received: receivedByLine.get(String(item.id)) ?? null,
                       };
                     })}
                   />
@@ -2348,6 +2359,16 @@ export default function PurchaseOrderDetail() {
 
           {/* ── Everything else ── */}
           <DocumentCard>
+            {poId && purchaseOrder && (
+              <PODeliveriesSection
+                poId={poId}
+                poNumber={purchaseOrder.poNumber}
+                supplierName={supplier?.name || purchaseOrder.supplierName}
+                supplierEmail={supplier?.email}
+                projectName={project?.name}
+                deliveryAddress={purchaseOrder.deliveryAddress}
+              />
+            )}
             <DocumentSection
               title="Bills"
               role="supplier"

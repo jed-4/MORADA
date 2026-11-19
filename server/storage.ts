@@ -1769,7 +1769,7 @@ function getDefaultActionsForRole(
     const keys = [
       'projects.view', 'projects.schedule', 'projects.variations', 'projects.todos',
       'projects.invoices', 'projects.site_diary', 'projects.selections', 'projects.timesheet',
-      'projects.reviews',
+      'projects.reviews', 'projects.deliveries',
       'projects.rfi', 'projects.team_calendars', 'projects.messages', 'projects.notes',
       'projects.contract', 'schedules.view_offline',
       'tasks.manage', 'tasks.project', 'tasks.business',
@@ -1802,6 +1802,7 @@ function getDefaultActionsForRole(
     grant('projects.timesheet', ['view', 'add', 'edit']);
     grant('projects.rfi', ['view', 'add']);
     grant('projects.defects', ['view', 'add', 'edit', 'close']);
+    grant('projects.deliveries', ['view', 'add']);
     grant('tasks.manage', ['view', 'add', 'edit', 'delete']);
     grant('tasks.project', ['view', 'add', 'edit', 'delete']);
     grant('files.manage', ['view', 'add']);
@@ -1832,6 +1833,7 @@ function getDefaultActionsForRole(
       'timesheets.manage', 'timesheets.rates',
     ];
     for (const key of keys) grantAll(key);
+    grant('projects.deliveries', ['view']);
     grant('operations.tasks', ['view']);
     grant('operations.library', ['view']);
     return result;
@@ -1857,6 +1859,7 @@ function getDefaultActionsForRole(
   if (n.includes('subcontractor') || n.includes('carpenter') || n.includes('apprentice')) {
     grant('projects.schedule', ['view']);
     grant('projects.site_diary', ['view', 'add']);
+    grant('projects.deliveries', ['view', 'add']);
     grant('projects.messages', ['view', 'add', 'send']);
     grant('files.manage', ['view']);
     grant('tasks.manage', ['view']);
@@ -1990,6 +1993,9 @@ export class MemStorage implements IStorage {
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.defects", name: "Defects", description: "Raise, update, close and delete project defects", category: "projects", actions: ["view", "add", "edit", "close", "delete"], isBuiltIn: true },
+      // Delivery check-in on site. Quantities only, never prices — so it is NOT
+      // financial.purchase_orders. See server/deliveries.ts and backfillDeliveryGrants.
+      { key: "projects.deliveries", name: "Deliveries", description: "See a job's purchase orders (items and quantities, no prices) and check in deliveries against them", category: "projects", actions: ["view", "add"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7263,6 +7269,9 @@ export class DbStorage implements IStorage {
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.minutes", name: "Meeting Minutes", description: "Read and write meeting minutes", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.defects", name: "Defects", description: "Raise, update, close and delete project defects", category: "projects", actions: ["view", "add", "edit", "close", "delete"], isBuiltIn: true },
+      // Delivery check-in on site. Quantities only, never prices — so it is NOT
+      // financial.purchase_orders. See server/deliveries.ts and backfillDeliveryGrants.
+      { key: "projects.deliveries", name: "Deliveries", description: "See a job's purchase orders (items and quantities, no prices) and check in deliveries against them", category: "projects", actions: ["view", "add"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
 
@@ -7398,6 +7407,7 @@ export class DbStorage implements IStorage {
     await this.backfillOperationsGrants(createdKeys);
     await this.backfillAssetCostGrants(createdKeys);
     await this.backfillDefectGrants(createdKeys);
+    await this.backfillDeliveryGrants(createdKeys);
   }
 
   /**
@@ -7442,6 +7452,45 @@ export class DbStorage implements IStorage {
       console.log(`[permissions] projects.defects granted to ${rows.length} team role(s) — matches pre-permission access, delete for owner/GM only`);
     } catch (error) {
       console.error("Database error in backfillDefectGrants:", error);
+    }
+  }
+
+  /**
+   * `projects.deliveries` is new with delivery check-in. Site crew are the
+   * point of it, so on the boot that creates the key every existing TEAM role
+   * gets view + add: anyone on the team can open a job's POs (items and
+   * quantities, never prices) and check a delivery in. Client and supplier
+   * roles get nothing. Admin-like built-in roles bypass checks and need no
+   * row. Runs only on the creating boot, so a later untick in Roles &
+   * Permissions is never re-granted.
+   */
+  private async backfillDeliveryGrants(createdKeys: Set<string>): Promise<void> {
+    if (!createdKeys.has("projects.deliveries")) return;
+
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const permissionId = allPermissions.find((p) => p.key === "projects.deliveries")?.id;
+      if (!permissionId) return;
+
+      const teamRoles = (await db.select().from(schema.userRoles))
+        .filter((r) => (r.userCategory || "team") === "team");
+      if (teamRoles.length === 0) return;
+
+      // role_permissions had no unique (role_id, permission_id) until 0110 —
+      // check first rather than rely on a refused insert.
+      const existing = await db.select({ roleId: schema.rolePermissions.roleId })
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, permissionId));
+      const alreadyHeld = new Set(existing.map((e) => e.roleId));
+
+      const rows = teamRoles
+        .filter((r) => !alreadyHeld.has(r.id))
+        .map((r) => ({ roleId: r.id, permissionId, allowedActions: ["view", "add"] as any }));
+      if (rows.length === 0) return;
+      await db.insert(schema.rolePermissions).values(rows);
+      console.log(`[permissions] projects.deliveries (view, add) granted to ${rows.length} team role(s)`);
+    } catch (error) {
+      console.error("Database error in backfillDeliveryGrants:", error);
     }
   }
 

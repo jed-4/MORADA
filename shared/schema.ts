@@ -1497,6 +1497,10 @@ export const companySettings = pgTable("company_settings", {
   clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
 
   documentStyle: text("document_style").notNull().default("style1"),
+
+  // Delivery check-in (migration 0134): site crew must photograph the docket
+  // unless the company turns this off.
+  deliveryDocketPhotoRequired: boolean("delivery_docket_photo_required").notNull().default(true),
   paymentDetails: text("payment_details"),
 
   takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
@@ -6815,6 +6819,12 @@ export const purchaseOrders = pgTable("purchase_orders", {
   matchedBillId: varchar("matched_bill_id"), // ID of the matched bill (no FK constraint to avoid circular dep)
   matchedAt: timestamp("matched_at"),
 
+  // What has physically arrived (migration 0134). Separate from `status`,
+  // which is the money lifecycle and is never touched by deliveries.
+  // none | partial | delivered | issues — recomputed from the check-ins by
+  // shared/deliveries.ts computeDeliveryStatus; never written by a client.
+  deliveryStatus: text("delivery_status").notNull().default("none"),
+
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   
@@ -6832,6 +6842,7 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   id: true,
   createdAt: true,
   updatedAt: true,
+  deliveryStatus: true, // derived from check-ins, never sent by a client
 }).extend({
   poType: z.enum(["main", "site"]).default("main"),
   status: z.enum(["draft", "sent", "accepted", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
@@ -6941,15 +6952,62 @@ export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   thumbnailX: integer("thumbnail_x").notNull().default(50),
   thumbnailY: integer("thumbnail_y").notNull().default(50),
+
+  // Set when the photo came from a delivery check-in (migration 0134).
+  deliveryId: varchar("delivery_id").references((): AnyPgColumn => purchaseOrderDeliveries.id, { onDelete: "cascade" }),
+  kind: text("kind"), // "docket" | "damage"
 });
 
 export const insertPurchaseOrderAttachmentSchema = createInsertSchema(purchaseOrderAttachments).omit({
   id: true,
   createdAt: true,
+  deliveryId: true, // only the delivery check-in route links a photo to a delivery
 });
 
 export type InsertPurchaseOrderAttachment = z.infer<typeof insertPurchaseOrderAttachmentSchema>;
 export type PurchaseOrderAttachment = typeof purchaseOrderAttachments.$inferSelect;
+
+// Delivery check-ins against a PO (migration 0134). One row per delivery the
+// crew records on site; the lines say how many of each PO line turned up and
+// in what condition. Quantities only — a delivery never carries a price.
+export const purchaseOrderDeliveries = pgTable("purchase_order_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  receivedById: varchar("received_by_id").references(() => users.id, { onDelete: "set null" }),
+  receivedByName: text("received_by_name"),
+  docketNumber: text("docket_number"),
+  notes: text("notes"),
+  hasIssues: boolean("has_issues").notNull().default(false),
+  // The phone's id for the submission, so an offline retry never doubles it.
+  clientRequestId: text("client_request_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  poIdx: index("purchase_order_deliveries_po_idx").on(table.purchaseOrderId),
+  companyIdx: index("purchase_order_deliveries_company_idx").on(table.companyId),
+  projectRequestUq: uniqueIndex("purchase_order_deliveries_project_request_uq").on(table.projectId, table.clientRequestId),
+}));
+
+export type PurchaseOrderDelivery = typeof purchaseOrderDeliveries.$inferSelect;
+
+export const purchaseOrderDeliveryItems = pgTable("purchase_order_delivery_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deliveryId: varchar("delivery_id").notNull().references(() => purchaseOrderDeliveries.id, { onDelete: "cascade" }),
+  purchaseOrderItemId: varchar("purchase_order_item_id").references(() => purchaseOrderItems.id, { onDelete: "set null" }),
+  descriptionSnapshot: text("description_snapshot").notNull().default(""),
+  qtyOrderedSnapshot: numeric("qty_ordered_snapshot", { precision: 10, scale: 2 }).notNull().default("0"),
+  qtyReceived: numeric("qty_received", { precision: 10, scale: 2 }).notNull().default("0"),
+  condition: text("condition").notNull().default("ok"), // ok | short | damaged | wrong
+  note: text("note"),
+  photoUrls: json("photo_urls").$type<string[]>().default([]),
+}, (table) => ({
+  deliveryIdx: index("purchase_order_delivery_items_delivery_idx").on(table.deliveryId),
+  poItemIdx: index("purchase_order_delivery_items_po_item_idx").on(table.purchaseOrderItemId),
+}));
+
+export type PurchaseOrderDeliveryItem = typeof purchaseOrderDeliveryItems.$inferSelect;
 
 // Purchase Order Signatures (for supplier acceptance)
 export const purchaseOrderSignatures = pgTable("purchase_order_signatures", {

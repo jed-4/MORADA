@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense } from "react";
+import { BillDeliveryWarning, usePODeliverySummary } from "@/components/purchase-orders/PODeliveriesSection";
 import { useParams, useLocation } from "wouter";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -2798,6 +2799,8 @@ export default function BillDetail() {
     },
     enabled: !!(matchedSitePOId && isEditMode),
   });
+  const { data: matchedPODelivery } = usePODeliverySummary(matchedSitePOId);
+  const deliveryNeedsWarning = matchedPODelivery?.deliveryStatus === "partial" || matchedPODelivery?.deliveryStatus === "issues";
 
   const linkSitePOMutation = useMutation({
     mutationFn: async (purchaseOrderId: string) => {
@@ -2879,6 +2882,9 @@ export default function BillDetail() {
           </button>
         ) : "",
       },
+      ...(matchedSitePOId && deliveryNeedsWarning
+        ? [{ label: "Delivery", value: <BillDeliveryWarning poId={matchedSitePOId} />, testId: "text-bill-delivery" }]
+        : []),
       {
         label: "Xero",
         value: (bill as any)?.xeroInvoiceId ? "Sent to Xero" : v.sendToXero ? "Not sent yet" : "Not synced",
@@ -3604,6 +3610,8 @@ export default function BillDetail() {
                             )}
                           </button>
                         )}
+                        {/* Part delivered / delivery problem: warn, never block approval. */}
+                        {matchedSitePOId && <BillDeliveryWarning poId={matchedSitePOId} />}
                       </div>
                     );
                   })()}
