@@ -21,6 +21,31 @@ import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subM
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
 import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
+import {
+  DefectError,
+  actorFromReq,
+  resolveDefectActions,
+  defectListQuerySchema,
+  createDefectSchema,
+  transitionSchema,
+  commentSchema,
+  photosSchema,
+  createLocationSchema,
+  updateLocationSchema,
+  listDefects as listDefectsV2,
+  getDefectDetail,
+  createDefect as createDefectV2,
+  updateDefect as updateDefectV2,
+  transitionDefect,
+  commentOnDefect,
+  addDefectPhotos,
+  setWatching,
+  deleteDefect as deleteDefectV2,
+  listLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+} from "./services/defects";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -4474,96 +4499,231 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Defects API Routes
-  app.get("/api/defects", async (req, res) => {
+  // ── Defects v2 (docs/DEFECTS_V2.md) ─────────────────────────────────────
+  // Every route: requireAuth + team member + projects.defects permission +
+  // the defect's/project's company (enforceProjectCompany, or the service's
+  // company-scoped query for by-id routes — a miss is a 404, never a 403).
+  // Team members see every project in their company; that is the app-wide
+  // project-access rule for team users (user_project_access only confines
+  // client logins).
+  const defectFail = (res: Response, error: any, fallback: string) => {
+    if (error instanceof DefectError) {
+      return res.status(error.status).json({ error: error.message, ...(error.details ? { details: error.details } : {}) });
+    }
+    console.error(`[defects] ${fallback}:`, error);
+    return res.status(500).json({ error: fallback });
+  };
+  const defectCompany = (req: Request, res: Response): string | null => {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) { res.status(401).json({ error: "Not authenticated" }); return null; }
+    return companyId;
+  };
+  const defectCreate = async (req: Request, res: Response, projectId: string | undefined) => {
     try {
-      const { projectId } = req.query;
-      // Tenant scoping: a projectId must belong to the caller's company; an
-      // omitted projectId previously returned every company's defects.
-      if (projectId) {
-        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
-      } else if (!(req.user as any)?.companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      const defects = await storage.getDefects(projectId as string | undefined);
-      const userCompanyId = (req.user as any)?.companyId;
-      const scoped = projectId ? defects : await (async () => {
-        const { projects: projectsTbl } = await import("@shared/schema");
-        const companyProjects = await db.select({ id: projectsTbl.id })
-          .from(projectsTbl).where(eq(projectsTbl.companyId, userCompanyId));
-        const ids = new Set(companyProjects.map((pr: any) => pr.id));
-        return defects.filter((d: any) => ids.has(d.projectId));
-      })();
-      res.json(scoped);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      const parsed = createDefectSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const result = await createDefectV2({ companyId, projectId, actor: actorFromReq(req), body: parsed.data });
+      res.status(result.created ? 201 : 200).json(result.defect);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defects" });
+      defectFail(res, error, "Failed to create defect");
+    }
+  };
+
+  app.get("/api/projects/:projectId/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const query = defectListQuerySchema.safeParse(req.query);
+      if (!query.success) return res.status(400).json({ error: "Bad query", details: fromZodError(query.error).toString() });
+      res.json(await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, projectId: req.params.projectId, query: query.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.get("/api/defects/:id", async (req, res) => {
+  app.post("/api/projects/:projectId/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+    return defectCreate(req, res, req.params.projectId);
+  });
+
+  // Legacy list (dashboard widgets, pinned items): a plain array, every row.
+  // Same shape per row as the v2 list, which still carries `status`.
+  app.get("/api/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const defect = await getOwnedDefect(req, res, req.params.id);
-      if (!defect) return;
-      res.json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const result = await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, projectId, query: {}, unpaged: true });
+      res.json(result.items);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defect" });
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.post("/api/defects", async (req, res) => {
+  // Legacy create: projectId in the body.
+  app.post("/api/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
+    if (!projectId) return res.status(400).json({ error: "projectId is required" });
+    if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+    return defectCreate(req, res, projectId);
+  });
+
+  // Before /api/defects/:id so "mine" isn't read as an id.
+  app.get("/api/defects/mine", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const validationResult = insertDefectSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
-
-      const defect = await storage.createDefect(validationResult.data);
-      res.status(201).json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const query = defectListQuerySchema.safeParse(req.query);
+      if (!query.success) return res.status(400).json({ error: "Bad query", details: fromZodError(query.error).toString() });
+      res.json(await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, mine: true, query: query.data }));
     } catch (error) {
-      res.status(500).json({ error: "Failed to create defect" });
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.patch("/api/defects/:id", async (req, res) => {
+  app.get("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const updateSchema = insertDefectSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      // A reassignment must land on a project the caller also owns.
-      if (validationResult.data.projectId && validationResult.data.projectId !== owned.projectId) {
-        if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
-      }
-      const defect = await storage.updateDefect(req.params.id, validationResult.data);
-      if (!defect) {
-        return res.status(404).json({ error: "Defect not found" });
-      }
-      res.json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getDefectDetail(req.params.id, companyId, (req.user as any)?.id ?? null));
     } catch (error) {
-      res.status(500).json({ error: "Failed to update defect" });
+      defectFail(res, error, "Failed to fetch defect");
     }
   });
 
-  app.delete("/api/defects/:id", async (req, res) => {
+  app.patch("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
     try {
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      await storage.deleteDefect(req.params.id);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await updateDefectV2({ id: req.params.id, companyId, actor: actorFromReq(req), body: req.body ?? {} }));
+    } catch (error) {
+      defectFail(res, error, "Failed to update defect");
+    }
+  });
+
+  // edit OR close is enough to reach the handler; transitionDefect decides
+  // per move (close/reopen need `close`, everything else `edit`).
+  app.post("/api/defects/:id/transition", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = transitionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      res.json(await transitionDefect({ id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to move defect");
+    }
+  });
+
+  // Commenting is part of working a defect, so it takes `view` like reading
+  // the thread does — a site lead with view-only can still say "done".
+  app.post("/api/defects/:id/comments", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = commentSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await commentOnDefect({ id: req.params.id, companyId, actor: actorFromReq(req), body: parsed.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to add comment");
+    }
+  });
+
+  app.post("/api/defects/:id/photos", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = photosSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await addDefectPhotos({ id: req.params.id, companyId, actor: actorFromReq(req), photos: parsed.data.photos }));
+    } catch (error) {
+      defectFail(res, error, "Failed to add photos");
+    }
+  });
+
+  app.post("/api/defects/:id/watch", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await setWatching({ id: req.params.id, companyId, actor: actorFromReq(req), watching: true }));
+    } catch (error) {
+      defectFail(res, error, "Failed to watch defect");
+    }
+  });
+
+  app.delete("/api/defects/:id/watch", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await setWatching({ id: req.params.id, companyId, actor: actorFromReq(req), watching: false }));
+    } catch (error) {
+      defectFail(res, error, "Failed to unwatch defect");
+    }
+  });
+
+  app.delete("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "delete"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await deleteDefectV2(req.params.id, companyId);
       res.status(204).send();
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete defect" });
+      defectFail(res, error, "Failed to delete defect");
+    }
+  });
+
+  // Project locations (the defect location tree).
+  app.get("/api/projects/:projectId/locations", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await listLocations(companyId, req.params.projectId));
+    } catch (error) {
+      defectFail(res, error, "Failed to fetch locations");
+    }
+  });
+
+  // Adding a location is part of raising a defect ("add location" inline), so `add`.
+  app.post("/api/projects/:projectId/locations", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = createLocationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await createLocation(companyId, req.params.projectId, parsed.data));
+    } catch (error) {
+      defectFail(res, error, "Failed to add location");
+    }
+  });
+
+  app.patch("/api/project-locations/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = updateLocationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.json(await updateLocation(req.params.id, companyId, parsed.data));
+    } catch (error) {
+      defectFail(res, error, "Failed to update location");
+    }
+  });
+
+  app.delete("/api/project-locations/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await deleteLocation(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      defectFail(res, error, "Failed to delete location");
     }
   });
 
@@ -16337,7 +16497,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const permissionSchema = z.object({
         permissionId: z.string(),
-        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only"])),
+        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only", "close"])),
         viewScope: z.enum(["own", "selected_roles", "all"]).optional(),
         viewableRoleIds: z.array(z.string()).optional(),
       });

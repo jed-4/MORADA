@@ -555,3 +555,36 @@ export async function notifyScheduleItemChange(params: {
     console.error("[Notify] notifyScheduleItemChange failed:", err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Defects (docs/DEFECTS_V2.md). Type "defect"; the phone routes on
+// entityType/entityId plus the projectId (see pushNotifications).
+// ---------------------------------------------------------------------------
+
+export async function notifyDefectUsers(params: {
+  userIds: string[];
+  companyId: string;
+  projectId: string;
+  defectId: string;
+  title: string;
+  message: string;
+  actorUserId: string | null;
+}): Promise<void> {
+  const { userIds, companyId, projectId, defectId, title, message, actorUserId } = params;
+  try {
+    const link = `/projects/${projectId}/defects?defect=${defectId}`;
+    await Promise.all(uniqueDefined(userIds).map((userId) => safeCreate({
+      userId,
+      companyId,
+      type: "defect",
+      title,
+      message,
+      link,
+      entityType: "defect",
+      entityId: defectId,
+      createdByUserId: actorUserId,
+    })));
+  } catch (err) {
+    console.error("[Notify] notifyDefectUsers failed:", err);
+  }
+}

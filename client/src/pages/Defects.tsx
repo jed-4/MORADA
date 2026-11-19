@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useQuery, useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useParams, useSearch } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Plus,
@@ -31,24 +38,31 @@ import {
   SlidersHorizontal,
   Settings2,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
-import type { Defect } from "@shared/schema";
+import {
+  DEFECT_JOB_STAGES,
+  DEFECT_JOB_STAGE_LABELS,
+  DEFECT_STAGE_LABELS,
+  type DefectListResponse,
+  type DefectStage,
+  type DefectView,
+} from "@shared/defects";
 import { DefectFormDialog } from "@/components/defects/DefectFormDialog";
 import { DefectBoardView } from "@/components/defects/DefectBoardView";
 import { DefectDrawer } from "@/components/defects/DefectDrawer";
 import {
-  statusBadgeClass,
+  stageBadgeClass,
   priorityBadgeClass,
-  typeBadgeClass,
-  statusLabel,
   priorityLabel,
-  typeLabel,
   ageInDays,
   ageColorClass,
+  STAGE_ORDER,
+  invalidateDefectQueries,
 } from "@/components/defects/defectStyles";
-import { useDefectStatusOptions } from "@/hooks/useDefectStatusOptions";
+import { useDefectPermissions, useProjectLocations, useTeamUsers } from "@/components/defects/defectHooks";
 import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
-import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
+import { useDefectTradeOptions } from "@/hooks/useDefectTradeOptions";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { EmptyState } from "@/components/EmptyState";
@@ -57,138 +71,184 @@ import { format } from "date-fns";
 type ViewMode = "list" | "kanban";
 const VIEW_KEY = "defects-view";
 const HIDE_STATS_KEY = "defects-hide-stats";
+const ALL = "All";
+const PAGE = 200;
+
+function readLocal(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+function writeLocal(key: string, v: string) {
+  try { window.localStorage.setItem(key, v); } catch { /* noop */ }
+}
 
 export default function Defects({ embedded }: { embedded?: boolean } = {}) {
   const { projectId } = useParams<{ projectId: string }>();
+  const search = useSearch();
   const { currentProject } = useProject();
   const { toast } = useToast();
+  const perms = useDefectPermissions();
 
-  const [currentView, setCurrentView] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "list";
-    const saved = window.localStorage.getItem(VIEW_KEY);
-    return saved === "kanban" ? "kanban" : "list";
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(VIEW_KEY, currentView);
-    } catch {
-      /* noop */
-    }
-  }, [currentView]);
-
-  const [hideStats, setHideStats] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(HIDE_STATS_KEY) === "1";
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(HIDE_STATS_KEY, hideStats ? "1" : "0");
-    } catch {
-      /* noop */
-    }
-  }, [hideStats]);
+  const [currentView, setCurrentView] = useState<ViewMode>(() => (readLocal(VIEW_KEY) === "kanban" ? "kanban" : "list"));
+  useEffect(() => writeLocal(VIEW_KEY, currentView), [currentView]);
+  const [hideStats, setHideStats] = useState<boolean>(() => readLocal(HIDE_STATS_KEY) === "1");
+  useEffect(() => writeLocal(HIDE_STATS_KEY, hideStats ? "1" : "0"), [hideStats]);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("All");
-  const [selectedPriority, setSelectedPriority] = useState("All");
-  const [selectedType, setSelectedType] = useState("All");
-  const [editingDefect, setEditingDefect] = useState<Defect | null>(null);
-  const [openDefect, setOpenDefect] = useState<Defect | null>(null);
-  const [deletingDefect, setDeletingDefect] = useState<Defect | null>(null);
+  const [stageFilter, setStageFilter] = useState<string>(ALL);
+  const [jobStageFilter, setJobStageFilter] = useState<string>(ALL);
+  const [ownerFilter, setOwnerFilter] = useState<string>(ALL);
+  const [tradeFilter, setTradeFilter] = useState<string>(ALL);
+  const [locationFilter, setLocationFilter] = useState<string>(ALL);
+  const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [openDefect, setOpenDefect] = useState<DefectView | null>(null);
+  const [deletingDefect, setDeletingDefect] = useState<DefectView | null>(null);
 
-  const { statusOptions } = useDefectStatusOptions();
   const { priorityOptions } = useDefectPriorityOptions();
-  const { typeOptions } = useDefectTypeOptions();
+  const tradeOptions = useDefectTradeOptions();
+  const teamUsers = useTeamUsers();
+  const { data: locations = [] } = useProjectLocations(projectId);
 
-  const { data: defects = [], isLoading } = useQuery<Defect[]>({
-    queryKey: ["/api/defects", projectId],
+  // One project: the v2 list, paged. All projects: the legacy array.
+  const projectQuery = useInfiniteQuery<DefectListResponse>({
+    queryKey: ["/api/projects", projectId, "defects"],
+    enabled: !!projectId,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const qs = new URLSearchParams({ limit: String(PAGE) });
+      if (pageParam) qs.set("cursor", String(pageParam));
+      const r = await fetch(`/api/projects/${projectId}/defects?${qs}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch defects");
+      return r.json();
+    },
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+  const allQuery = useQuery<DefectView[]>({
+    queryKey: ["/api/defects", "all-projects"],
+    enabled: !projectId,
     queryFn: async () => {
-      const url = projectId ? `/api/defects?projectId=${projectId}` : "/api/defects";
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to fetch defects");
-      return response.json();
+      const r = await fetch(`/api/defects`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch defects");
+      return r.json();
     },
   });
+
+  const defects: DefectView[] = useMemo(
+    () => (projectId ? (projectQuery.data?.pages.flatMap((p) => p.items) ?? []) : (allQuery.data ?? [])),
+    [projectId, projectQuery.data, allQuery.data],
+  );
+  const isLoading = projectId ? projectQuery.isLoading : allQuery.isLoading;
+
+  // Open the defect a notification linked to (?defect=<id>).
+  useEffect(() => {
+    const id = new URLSearchParams(search).get("defect");
+    if (!id || openDefect?.id === id) return;
+    const hit = defects.find((d) => d.id === id);
+    if (hit) setOpenDefect(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, defects]);
+
+  // Keep the open drawer's list copy fresh after a refetch.
+  useEffect(() => {
+    if (!openDefect) return;
+    const fresh = defects.find((d) => d.id === openDefect.id);
+    if (fresh && fresh !== openDefect) setOpenDefect(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defects]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => apiRequest(`/api/defects/${id}`, "DELETE", null),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/defects", projectId] });
+      invalidateDefectQueries(queryClient);
       toast({ title: "Deleted", description: "Defect removed" });
       setDeletingDefect(null);
       setOpenDefect(null);
     },
-    onError: () =>
-      toast({
-        title: "Error",
-        description: "Failed to delete defect",
-        variant: "destructive",
-      }),
+    onError: () => toast({ title: "Error", description: "Failed to delete defect", variant: "destructive" }),
   });
 
-  const filteredDefects = useMemo(() => {
-    const q = searchTerm.toLowerCase();
-    return defects.filter((defect) => {
-      const matchesSearch =
-        !q ||
-        defect.title.toLowerCase().includes(q) ||
-        defect.description?.toLowerCase().includes(q) ||
-        defect.location?.toLowerCase().includes(q);
-      const matchesStatus = selectedStatus === "All" || defect.status === selectedStatus;
-      const matchesPriority = selectedPriority === "All" || defect.priority === selectedPriority;
-      const matchesType = selectedType === "All" || defect.type === selectedType;
-      return matchesSearch && matchesStatus && matchesPriority && matchesType;
-    });
-  }, [defects, searchTerm, selectedStatus, selectedPriority, selectedType]);
+  // Location filter includes everything inside the picked location.
+  const locationIds = useMemo(() => {
+    if (locationFilter === ALL) return null;
+    const out = new Set([locationFilter]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const l of locations) if (l.parentId && out.has(l.parentId) && !out.has(l.id)) { out.add(l.id); grew = true; }
+    }
+    return out;
+  }, [locationFilter, locations]);
 
-  // Stats — computed from full data set, not filtered
+  const filteredDefects = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return defects.filter((d) => {
+      if (q && !(
+        d.title.toLowerCase().includes(q) ||
+        d.ref.toLowerCase().includes(q) ||
+        d.description?.toLowerCase().includes(q) ||
+        d.location?.toLowerCase().includes(q)
+      )) return false;
+      if (stageFilter !== ALL && d.stage !== stageFilter) return false;
+      if (jobStageFilter !== ALL && d.jobStage !== jobStageFilter) return false;
+      if (ownerFilter !== ALL && (ownerFilter === "none" ? !!d.ownerUserId : d.ownerUserId !== ownerFilter)) return false;
+      if (tradeFilter !== ALL && d.trade !== tradeFilter) return false;
+      if (locationIds && !(d.locationId && locationIds.has(d.locationId))) return false;
+      if (priorityFilter !== ALL && d.priority !== priorityFilter) return false;
+      if (overdueOnly && !d.overdue) return false;
+      return true;
+    });
+  }, [defects, searchTerm, stageFilter, jobStageFilter, ownerFilter, tradeFilter, locationIds, priorityFilter, overdueOnly]);
+
   const stats = useMemo(() => {
-    const open = defects.filter((d) => d.status === "open").length;
-    const inProgress = defects.filter((d) => d.status === "in_progress").length;
-    const resolved = defects.filter((d) => d.status === "resolved").length;
-    const closed = defects.filter((d) => d.status === "closed").length;
-    const critical = defects.filter(
-      (d) => d.priority === "critical" && d.status !== "closed" && d.status !== "resolved",
-    ).length;
-    const openItems = defects.filter(
-      (d) => d.status === "open" || d.status === "in_progress",
-    );
-    const avgAge = openItems.length
-      ? Math.round(
-          openItems.reduce((sum, d) => sum + ageInDays(d.dateIdentified), 0) /
-            openItems.length,
-        )
-      : 0;
-    return { open, inProgress, resolved, closed, critical, avgAge };
+    const by = (s: DefectStage) => defects.filter((d) => d.stage === s).length;
+    return {
+      open: by("open"),
+      withTrade: by("sent") + by("accepted"),
+      rejected: by("rejected"),
+      fixed: by("fixed"),
+      closed: by("closed"),
+      overdue: defects.filter((d) => d.overdue).length,
+    };
   }, [defects]);
 
-  // Filtered stats for footer
   const footerStats = useMemo(() => {
-    const open = filteredDefects.filter((d) => d.status === "open").length;
-    const inProgress = filteredDefects.filter((d) => d.status === "in_progress").length;
-    const critical = filteredDefects.filter(
-      (d) => d.priority === "critical" && d.status !== "closed" && d.status !== "resolved",
-    ).length;
-    const openItems = filteredDefects.filter(
-      (d) => d.status === "open" || d.status === "in_progress",
-    );
-    const avgAge = openItems.length
-      ? Math.round(
-          openItems.reduce((sum, d) => sum + ageInDays(d.dateIdentified), 0) /
-            openItems.length,
-        )
+    const live = filteredDefects.filter((d) => d.stage !== "closed");
+    const notFixed = live.filter((d) => d.stage !== "fixed");
+    const avgAge = notFixed.length
+      ? Math.round(notFixed.reduce((sum, d) => sum + ageInDays(d.dateIdentified), 0) / notFixed.length)
       : 0;
-    return { open, inProgress, critical, avgAge };
+    return {
+      live: live.length,
+      toCheck: filteredDefects.filter((d) => d.stage === "fixed").length,
+      overdue: filteredDefects.filter((d) => d.overdue).length,
+      avgAge,
+    };
   }, [filteredDefects]);
 
   const activeFilterCount =
-    (selectedStatus !== "All" ? 1 : 0) +
-    (selectedPriority !== "All" ? 1 : 0) +
-    (selectedType !== "All" ? 1 : 0);
+    [stageFilter, jobStageFilter, ownerFilter, tradeFilter, locationFilter, priorityFilter].filter((v) => v !== ALL).length +
+    (overdueOnly ? 1 : 0);
+
+  const clearFilters = () => {
+    setStageFilter(ALL);
+    setJobStageFilter(ALL);
+    setOwnerFilter(ALL);
+    setTradeFilter(ALL);
+    setLocationFilter(ALL);
+    setPriorityFilter(ALL);
+    setOverdueOnly(false);
+  };
+
+  const canAdd = perms.add && !!projectId;
+
+  if (!perms.view) {
+    return (
+      <div className="p-6">
+        <EmptyState title="You don't have access to defects. Ask an admin to turn on Defects for your role." variant="card" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -203,18 +263,12 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
       )}
       {/* Toolbar */}
       <div className="h-9 bg-background flex items-center justify-between px-6 gap-3 border-b border-border flex-shrink-0">
-        {/* Left: View toggle (icon only) + search + filter */}
         <div className="flex items-center gap-1.5">
-          <div
-            className="bg-muted/40 rounded-md p-0.5 h-[28px] flex"
-            data-testid="view-toggle"
-          >
+          <div className="bg-muted/40 rounded-md p-0.5 h-[28px] flex" data-testid="view-toggle">
             <button
               onClick={() => setCurrentView("list")}
               className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
-                currentView === "list"
-                  ? "bg-card shadow-sm text-foreground"
-                  : "text-muted-foreground"
+                currentView === "list" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
               }`}
               data-testid="button-list-view"
               aria-label="List view"
@@ -225,9 +279,7 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
             <button
               onClick={() => setCurrentView("kanban")}
               className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
-                currentView === "kanban"
-                  ? "bg-card shadow-sm text-foreground"
-                  : "text-muted-foreground"
+                currentView === "kanban" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
               }`}
               data-testid="button-kanban-view"
               aria-label="Kanban view"
@@ -237,7 +289,6 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
             </button>
           </div>
 
-          {/* Search icon → popover with input */}
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -247,9 +298,7 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
                 title="Search"
               >
                 <Search className="w-3.5 h-3.5 text-muted-foreground" />
-                {searchTerm && (
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
-                )}
+                {searchTerm && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-2" align="start">
@@ -257,7 +306,7 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                 <Input
                   autoFocus
-                  placeholder="Search defects..."
+                  placeholder="Search defects or D-014…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-7 pr-7 h-8 text-xs"
@@ -276,7 +325,6 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
             </PopoverContent>
           </Popover>
 
-          {/* Filter icon → popover with all three filters */}
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -293,40 +341,63 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-60 p-2" align="start">
+            <PopoverContent className="w-72 p-2" align="start">
               <div className="space-y-3">
                 <FilterGroup
-                  label="Status"
-                  value={selectedStatus}
-                  onChange={setSelectedStatus}
-                  allLabel="All statuses"
-                  options={statusOptions}
-                  testIdPrefix="filter-status"
+                  label="Stage"
+                  value={stageFilter}
+                  onChange={setStageFilter}
+                  allLabel="All stages"
+                  options={STAGE_ORDER.map((s) => ({ key: s, name: DEFECT_STAGE_LABELS[s] }))}
+                  testIdPrefix="filter-stage"
                 />
                 <FilterGroup
+                  label="Job stage"
+                  value={jobStageFilter}
+                  onChange={setJobStageFilter}
+                  allLabel="All"
+                  options={DEFECT_JOB_STAGES.map((s) => ({ key: s, name: DEFECT_JOB_STAGE_LABELS[s] }))}
+                  testIdPrefix="filter-job-stage"
+                />
+                <FilterSelect
+                  label="Owner"
+                  value={ownerFilter}
+                  onChange={setOwnerFilter}
+                  options={[{ key: "none", name: "No owner" }, ...teamUsers.map((u) => ({ key: u.id, name: u.name }))]}
+                  testId="filter-owner"
+                />
+                <FilterSelect
+                  label="Trade"
+                  value={tradeFilter}
+                  onChange={setTradeFilter}
+                  options={tradeOptions.map((t) => ({ key: t.value, name: t.label }))}
+                  testId="filter-trade"
+                />
+                {projectId && (
+                  <FilterSelect
+                    label="Location"
+                    value={locationFilter}
+                    onChange={setLocationFilter}
+                    options={locations.map((l) => ({ key: l.id, name: l.path }))}
+                    testId="filter-location"
+                  />
+                )}
+                <FilterGroup
                   label="Priority"
-                  value={selectedPriority}
-                  onChange={setSelectedPriority}
+                  value={priorityFilter}
+                  onChange={setPriorityFilter}
                   allLabel="All priorities"
                   options={priorityOptions}
                   testIdPrefix="filter-priority"
                 />
-                <FilterGroup
-                  label="Type"
-                  value={selectedType}
-                  onChange={setSelectedType}
-                  allLabel="All types"
-                  options={typeOptions}
-                  testIdPrefix="filter-type"
-                />
+                <label className="flex items-center justify-between gap-3 px-1 cursor-pointer" data-testid="filter-overdue">
+                  <span className="text-xs text-foreground">Overdue only</span>
+                  <Switch checked={overdueOnly} onCheckedChange={setOverdueOnly} />
+                </label>
                 {activeFilterCount > 0 && (
                   <div className="pt-1.5 border-t border-border">
                     <button
-                      onClick={() => {
-                        setSelectedStatus("All");
-                        setSelectedPriority("All");
-                        setSelectedType("All");
-                      }}
+                      onClick={clearFilters}
                       className="w-full h-7 text-xs text-muted-foreground hover:text-foreground rounded hover-elevate flex items-center justify-center gap-1"
                       data-testid="clear-filters"
                     >
@@ -340,16 +411,17 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
           </Popover>
         </div>
 
-        {/* Right: Add + options */}
         <div className="flex items-center gap-1.5">
-          <button
-            className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-            onClick={() => setIsCreateDialogOpen(true)}
-            data-testid="button-create-defect"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Add</span>
-          </button>
+          {canAdd && (
+            <button
+              className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+              onClick={() => setIsCreateDialogOpen(true)}
+              data-testid="button-create-defect"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add</span>
+            </button>
+          )}
 
           <Popover>
             <PopoverTrigger asChild>
@@ -364,26 +436,13 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
             </PopoverTrigger>
             <PopoverContent className="w-60 p-2" align="end">
               <div className="space-y-2">
-                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
-                  Display
-                </div>
-                <label
-                  className="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover-elevate cursor-pointer"
-                  data-testid="option-hide-stats"
-                >
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">Display</div>
+                <label className="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover-elevate cursor-pointer" data-testid="option-hide-stats">
                   <div className="flex flex-col">
-                    <span className="text-xs text-foreground">
-                      Hide summary cards
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      Hide the coloured Open / In Progress strip
-                    </span>
+                    <span className="text-xs text-foreground">Hide summary cards</span>
+                    <span className="text-[10px] text-muted-foreground">Hide the coloured stage strip</span>
                   </div>
-                  <Switch
-                    checked={hideStats}
-                    onCheckedChange={setHideStats}
-                    data-testid="switch-hide-stats"
-                  />
+                  <Switch checked={hideStats} onCheckedChange={setHideStats} data-testid="switch-hide-stats" />
                 </label>
               </div>
             </PopoverContent>
@@ -393,46 +452,13 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Summary strip */}
       {!hideStats && (
-        <div
-          className="flex items-center gap-3 px-6 py-2 border-b border-border flex-shrink-0"
-          data-testid="stats-strip"
-        >
-          <StatCard
-            label="Open"
-            value={stats.open}
-            variant="coral"
-            testId="stat-open"
-          />
-          <StatCard
-            label="In Progress"
-            value={stats.inProgress}
-            variant="amber"
-            testId="stat-in-progress"
-          />
-          <StatCard
-            label="Resolved"
-            value={stats.resolved}
-            variant="sage"
-            testId="stat-resolved"
-          />
-          <StatCard
-            label="Closed"
-            value={stats.closed}
-            variant="muted"
-            testId="stat-closed"
-          />
-          <StatCard
-            label="Critical"
-            value={stats.critical}
-            variant="coral"
-            testId="stat-critical"
-          />
-          <StatCard
-            label="Avg Open Age"
-            value={`${stats.avgAge}d`}
-            variant="default"
-            testId="stat-avg-age"
-          />
+        <div className="flex items-center gap-3 px-6 py-2 border-b border-border flex-shrink-0 overflow-x-auto" data-testid="stats-strip">
+          <StatCard label="Open" value={stats.open} variant="coral" testId="stat-open" onClick={() => setStageFilter("open")} />
+          <StatCard label="With trade" value={stats.withTrade} variant="amber" testId="stat-with-trade" />
+          <StatCard label="Rejected" value={stats.rejected} variant="coral" testId="stat-rejected" onClick={() => setStageFilter("rejected")} />
+          <StatCard label="Fixed – to check" value={stats.fixed} variant="sage" testId="stat-fixed" onClick={() => setStageFilter("fixed")} />
+          <StatCard label="Closed" value={stats.closed} variant="muted" testId="stat-closed" onClick={() => setStageFilter("closed")} />
+          <StatCard label="Overdue" value={stats.overdue} variant="coral" testId="stat-overdue" onClick={() => setOverdueOnly(true)} />
         </div>
       )}
 
@@ -446,7 +472,7 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
           <EmptyState
             title={defects.length === 0 ? "No defects found" : "No matching defects"}
             action={
-              defects.length === 0
+              defects.length === 0 && canAdd
                 ? {
                     label: "Add first defect",
                     onClick: () => setIsCreateDialogOpen(true),
@@ -460,20 +486,29 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
         ) : currentView === "list" ? (
           <DefectListTable
             defects={filteredDefects}
-            statusOptions={statusOptions}
             priorityOptions={priorityOptions}
-            typeOptions={typeOptions}
+            showProject={!projectId}
             onOpen={setOpenDefect}
-            onEdit={setEditingDefect}
-            onDelete={setDeletingDefect}
           />
         ) : (
           <div className="h-full pt-3">
             <DefectBoardView
               defects={filteredDefects}
               onOpen={setOpenDefect}
-              onAddDefect={() => setIsCreateDialogOpen(true)}
+              onAddDefect={canAdd ? () => setIsCreateDialogOpen(true) : undefined}
             />
+          </div>
+        )}
+        {projectId && projectQuery.hasNextPage && (
+          <div className="flex justify-center py-3">
+            <button
+              className="h-7 px-3 text-xs border rounded-md hover-elevate"
+              disabled={projectQuery.isFetchingNextPage}
+              onClick={() => projectQuery.fetchNextPage()}
+              data-testid="button-load-more"
+            >
+              {projectQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+            </button>
           </div>
         )}
       </div>
@@ -484,29 +519,16 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
           {filteredDefects.length} of {defects.length} defects shown
         </div>
         <div className="flex items-center gap-3">
-          <span>
-            <span className="text-foreground font-semibold">{footerStats.open}</span> open
-          </span>
+          <span><span className="text-foreground font-semibold">{footerStats.live}</span> not closed</span>
           <span className="text-border">·</span>
-          <span>
-            <span className="text-foreground font-semibold">{footerStats.inProgress}</span>{" "}
-            in progress
-          </span>
+          <span><span className="text-foreground font-semibold">{footerStats.toCheck}</span> to check</span>
           <span className="text-border">·</span>
-          <span>
-            <span className="text-[hsl(var(--coral))] font-semibold">
-              {footerStats.critical}
-            </span>{" "}
-            critical
-          </span>
+          <span><span className="text-[hsl(var(--coral))] font-semibold">{footerStats.overdue}</span> overdue</span>
           <span className="text-border">·</span>
-          <span>
-            avg age <span className="text-foreground font-semibold">{footerStats.avgAge}d</span>
-          </span>
+          <span>avg age <span className="text-foreground font-semibold">{footerStats.avgAge}d</span></span>
         </div>
       </div>
 
-      {/* Drawer */}
       <DefectDrawer
         defect={openDefect}
         open={!!openDefect}
@@ -514,29 +536,15 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
         onDelete={(d) => setDeletingDefect(d)}
       />
 
-      {/* Form dialog */}
-      <DefectFormDialog
-        open={isCreateDialogOpen || !!editingDefect}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsCreateDialogOpen(false);
-            setEditingDefect(null);
-          }
-        }}
-        defect={editingDefect || undefined}
-      />
+      <DefectFormDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
 
-      {/* Delete confirm */}
-      <AlertDialog
-        open={!!deletingDefect}
-        onOpenChange={(open) => !open && setDeletingDefect(null)}
-      >
+      <AlertDialog open={!!deletingDefect} onOpenChange={(open) => !open && setDeletingDefect(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Defect</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deletingDefect?.title}"? This action cannot be
-              undone.
+              Are you sure you want to delete {deletingDefect?.ref} "{deletingDefect?.title}"? Its history and
+              comments go with it. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -565,20 +573,11 @@ interface FilterGroupProps {
   testIdPrefix: string;
 }
 
-function FilterGroup({
-  label,
-  value,
-  onChange,
-  allLabel,
-  options,
-  testIdPrefix,
-}: FilterGroupProps) {
-  const items = [{ key: "All", name: allLabel }, ...options];
+function FilterGroup({ label, value, onChange, allLabel, options, testIdPrefix }: FilterGroupProps) {
+  const items = [{ key: ALL, name: allLabel }, ...options];
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 px-1">
-        {label}
-      </div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 px-1">{label}</div>
       <div className="flex flex-wrap gap-1">
         {items.map((opt) => {
           const isActive = value === opt.key;
@@ -602,14 +601,46 @@ function FilterGroup({
   );
 }
 
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ key: string; name: string }>;
+  testId: string;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 px-1">{label}</div>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-7 text-xs" data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>All</SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o.key} value={o.key}>{o.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 interface StatCardProps {
   label: string;
   value: number | string;
   variant: "coral" | "amber" | "sage" | "muted" | "default";
   testId: string;
+  onClick?: () => void;
 }
 
-function StatCard({ label, value, variant, testId }: StatCardProps) {
+function StatCard({ label, value, variant, testId, onClick }: StatCardProps) {
   const cls = (() => {
     switch (variant) {
       case "coral":
@@ -625,116 +656,90 @@ function StatCard({ label, value, variant, testId }: StatCardProps) {
     }
   })();
   return (
-    <div
-      className={`rounded-lg border px-3 py-2 w-[130px] flex flex-col ${cls}`}
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`rounded-lg border px-3 py-2 w-[130px] flex-shrink-0 flex flex-col text-left disabled:cursor-default ${cls}`}
       data-testid={testId}
     >
       <div className="text-[14px] font-bold leading-tight">{value}</div>
-      <div className="text-[8px] font-semibold uppercase tracking-wide mt-1 opacity-80">
-        {label}
-      </div>
-    </div>
+      <div className="text-[8px] font-semibold uppercase tracking-wide mt-1 opacity-80">{label}</div>
+    </button>
   );
 }
 
-interface DefectListTableProps {
-  defects: Defect[];
-  statusOptions: Array<{ key: string; name: string }>;
-  priorityOptions: Array<{ key: string; name: string }>;
-  typeOptions: Array<{ key: string; name: string }>;
-  onOpen: (defect: Defect) => void;
-  onEdit: (defect: Defect) => void;
-  onDelete: (defect: Defect) => void;
-}
+const GRID = "grid-cols-[64px_minmax(220px,2fr)_110px_80px_110px_120px_110px_130px_80px_50px_36px]";
 
 function DefectListTable({
   defects,
-  statusOptions,
   priorityOptions,
-  typeOptions,
+  showProject,
   onOpen,
-}: DefectListTableProps) {
+}: {
+  defects: DefectView[];
+  priorityOptions: Array<{ key: string; name: string }>;
+  showProject: boolean;
+  onOpen: (defect: DefectView) => void;
+}) {
   return (
     <div className="w-full">
-      {/* Header row */}
-      <div className="h-[34px] bg-muted/30 grid grid-cols-[28px_minmax(220px,2fr)_90px_80px_120px_110px_120px_90px_60px_36px] items-center px-6 gap-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground border-b border-border sticky top-0 z-10">
-        <div />
+      <div className={`h-[34px] bg-muted/30 grid ${GRID} items-center px-6 gap-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground border-b border-border sticky top-0 z-10`}>
+        <div>Ref</div>
         <div>Defect</div>
-        <div>Status</div>
+        <div>Stage</div>
         <div>Priority</div>
-        <div>Type</div>
+        <div>Job stage</div>
+        <div>Owner</div>
         <div>Trade</div>
         <div>Location</div>
-        <div>Reported</div>
+        <div>Due</div>
         <div>Age</div>
         <div />
       </div>
 
-      {/* Rows */}
       {defects.map((defect, idx) => {
         const age = ageInDays(defect.dateIdentified);
-        const isResolvedOrClosed = defect.status === "resolved" || defect.status === "closed";
+        const done = defect.stage === "fixed" || defect.stage === "closed";
         return (
           <div
             key={defect.id}
             onClick={() => onOpen(defect)}
-            className={`h-11 grid grid-cols-[28px_minmax(220px,2fr)_90px_80px_120px_110px_120px_90px_60px_36px] items-center px-6 gap-3 border-b border-border/40 cursor-pointer hover-elevate ${
+            className={`h-11 grid ${GRID} items-center px-6 gap-3 border-b border-border/40 cursor-pointer hover-elevate ${
               idx % 2 === 1 ? "bg-muted/10" : "bg-card"
             }`}
             data-testid={`defect-row-${defect.id}`}
           >
-            <div onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                className="w-3.5 h-3.5 rounded border-border"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
+            <div className="text-[11px] font-semibold text-muted-foreground">{defect.ref}</div>
 
             <div className="min-w-0">
-              <div className="text-[12px] font-medium text-foreground truncate">
-                {defect.title}
-              </div>
-              {defect.description && (
+              <div className="text-[12px] font-medium text-foreground truncate">{defect.title}</div>
+              {(showProject ? defect.projectName : defect.description) && (
                 <div className="text-[10px] text-muted-foreground/70 truncate">
-                  {defect.description}
+                  {showProject ? defect.projectName : defect.description}
                 </div>
               )}
             </div>
 
             <div>
-              <span
-                className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${statusBadgeClass(
-                  defect.status,
-                )}`}
-              >
-                {statusLabel(defect.status, statusOptions)}
+              <span className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${stageBadgeClass(defect.stage)}`}>
+                {DEFECT_STAGE_LABELS[defect.stage] ?? defect.stage}
               </span>
             </div>
 
             <div>
-              <span
-                className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${priorityBadgeClass(
-                  defect.priority,
-                )}`}
-              >
+              <span className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${priorityBadgeClass(defect.priority)}`}>
                 {priorityLabel(defect.priority, priorityOptions)}
               </span>
             </div>
 
-            <div>
-              <span
-                className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${typeBadgeClass(
-                  defect.type,
-                )}`}
-              >
-                {typeLabel(defect.type, typeOptions)}
-              </span>
+            <div className="text-[11px] text-muted-foreground truncate">
+              {DEFECT_JOB_STAGE_LABELS[defect.jobStage as keyof typeof DEFECT_JOB_STAGE_LABELS] ?? defect.jobStage}
             </div>
 
-            <div className="text-[11px] text-muted-foreground truncate">
-              {defect.trade || "—"}
-            </div>
+            <div className="text-[11px] text-muted-foreground truncate">{defect.ownerName || "—"}</div>
+
+            <div className="text-[11px] text-muted-foreground truncate">{defect.trade || "—"}</div>
 
             <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
               {defect.location ? (
@@ -747,33 +752,25 @@ function DefectListTable({
               )}
             </div>
 
-            <div className="text-[11px] text-muted-foreground">
-              {defect.dateIdentified
-                ? format(new Date(defect.dateIdentified), "MMM d")
-                : "—"}
+            <div className={`text-[11px] ${defect.overdue ? "text-[hsl(var(--coral))] font-semibold" : "text-muted-foreground"}`}>
+              {defect.dueDate ? (
+                <span className="inline-flex items-center gap-0.5">
+                  {defect.overdue && <AlertTriangle className="w-3 h-3" />}
+                  {format(new Date(defect.dueDate), "MMM d")}
+                </span>
+              ) : "—"}
             </div>
 
             <div className="text-[11px]">
-              {isResolvedOrClosed ? (
-                <span className="text-[hsl(var(--sage))]">
-                  {defect.status === "resolved" ? "Resolved" : "Closed"}
-                </span>
+              {done ? (
+                <span className="text-[hsl(var(--sage))]">{defect.stage === "fixed" ? "Fixed" : "Closed"}</span>
               ) : (
                 <span className={ageColorClass(age)}>{age}d</span>
               )}
             </div>
 
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              {/* The row's own project. This said projectId, which isn't in
-                  scope here (it lives in the page component), so the list
-                  crashed the page — "projectId is not defined" — as soon as
-                  there was a single defect to show. */}
-              <PinRowButton
-                projectId={defect.projectId}
-                itemType="defect"
-                itemId={defect.id}
-                itemName={defect.title}
-              />
+              <PinRowButton projectId={defect.projectId} itemType="defect" itemId={defect.id} itemName={defect.title} />
               <button
                 onClick={(e) => {
                   e.stopPropagation();
