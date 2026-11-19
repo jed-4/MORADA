@@ -59,7 +59,9 @@ export function MessageThread({ channelId }: Props) {
     return format(new Date(date), "h:mm a");
   };
 
-  const channelName = channel?.name ?? "Thread";
+  const channelName = channel
+    ? (channel.type !== "dm" && channel.emoji ? `${channel.emoji} ${channel.name}` : channel.name)
+    : "Thread";
 
   return (
     <div className="flex flex-col h-full">

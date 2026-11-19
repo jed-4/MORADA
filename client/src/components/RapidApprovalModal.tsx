@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { SiteVisitNote } from "@/components/SiteVisitNote";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -399,6 +400,14 @@ export function RapidApprovalModal({
               </span>
             </div>
           </div>
+
+          {/* Arriving on site (#46): "arrived on site about 6:42" */}
+          <SiteVisitNote
+            userId={currentTimesheet.userId}
+            projectId={currentTimesheet.projectId}
+            date={currentTimesheet.date as any}
+            className="px-2"
+          />
 
           {/* Break Row with start time on right */}
           <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">

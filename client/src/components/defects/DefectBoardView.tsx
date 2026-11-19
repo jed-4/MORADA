@@ -18,34 +18,35 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Defect } from "@shared/schema";
-import { MapPin, Image as ImageIcon, Plus } from "lucide-react";
+import { DEFECT_STAGE_LABELS, checkDefectTransition, type DefectStage, type DefectView } from "@shared/defects";
+import { MapPin, Image as ImageIcon, Plus, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useDefectStatusOptions } from "@/hooks/useDefectStatusOptions";
 import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
+import { useDefectPermissions } from "./defectHooks";
 import {
-  statusBadgeClass,
-  statusAccentBg,
+  stageBadgeClass,
+  stageAccentBg,
+  STAGE_ORDER,
+  invalidateDefectQueries,
   priorityBadgeClass,
   priorityAccentBg,
   typeBadgeClass,
   priorityLabel,
   typeLabel,
-  statusLabel,
   ageInDays,
   getInitials,
 } from "./defectStyles";
 
 interface DefectBoardViewProps {
-  defects: Defect[];
-  onOpen: (defect: Defect) => void;
+  defects: DefectView[];
+  onOpen: (defect: DefectView) => void;
   onAddDefect?: (statusKey: string) => void;
 }
 
 interface DefectCardProps {
-  defect: Defect;
-  onOpen: (defect: Defect) => void;
+  defect: DefectView;
+  onOpen: (defect: DefectView) => void;
   priorityOptions: Array<{ key: string; name: string }>;
   typeOptions: Array<{ key: string; name: string }>;
 }
@@ -66,10 +67,9 @@ function DefectCard({ defect, onOpen, priorityOptions, typeOptions }: DefectCard
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const attachments =
-    (defect.attachments as Array<{ url: string; name: string }> | undefined) || [];
+  const attachments = defect.attachments || [];
   const age = ageInDays(defect.dateIdentified);
-  const isOpenStatus = defect.status === "open" || defect.status === "in_progress";
+  const isOpenStatus = defect.stage !== "fixed" && defect.stage !== "closed";
   const ageStale = isOpenStatus && age > 30;
 
   return (
@@ -109,6 +109,7 @@ function DefectCard({ defect, onOpen, priorityOptions, typeOptions }: DefectCard
 
           {/* Title */}
           <h4 className="text-[12px] font-semibold text-foreground mt-2 line-clamp-2">
+            <span className="text-muted-foreground font-medium mr-1">{defect.ref}</span>
             {defect.title}
           </h4>
 
@@ -131,7 +132,12 @@ function DefectCard({ defect, onOpen, priorityOptions, typeOptions }: DefectCard
                   <span className="truncate">{defect.location}</span>
                 </div>
               )}
-              {isOpenStatus && (
+              {defect.overdue && (
+                <span className="flex items-center gap-0.5 text-[10px] text-[hsl(var(--coral))] font-semibold">
+                  <AlertTriangle className="h-3 w-3" /> Overdue
+                </span>
+              )}
+              {isOpenStatus && !defect.overdue && (
                 <span
                   className={`text-[10px] ${
                     ageStale
@@ -151,12 +157,12 @@ function DefectCard({ defect, onOpen, priorityOptions, typeOptions }: DefectCard
                   <span>{attachments.length}</span>
                 </div>
               )}
-              {defect.assignedContactName && (
+              {(defect.ownerName || defect.assignedContactName) && (
                 <div
                   className="w-[22px] h-[22px] rounded-full bg-primary text-white text-[8px] font-bold flex items-center justify-center"
-                  title={defect.assignedContactName}
+                  title={defect.ownerName ? `Owner: ${defect.ownerName}` : defect.assignedContactName ?? ""}
                 >
-                  {getInitials(defect.assignedContactName)}
+                  {getInitials(defect.ownerName || defect.assignedContactName)}
                 </div>
               )}
             </div>
@@ -186,13 +192,13 @@ function DroppableColumn({ id, children }: DroppableColumnProps) {
   );
 }
 
-const COLUMN_KEYS = ["open", "in_progress", "resolved", "closed"] as const;
+const COLUMN_KEYS = STAGE_ORDER;
 
 export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardViewProps) {
   const { toast } = useToast();
-  const [activeDefect, setActiveDefect] = useState<Defect | null>(null);
+  const perms = useDefectPermissions();
+  const [activeDefect, setActiveDefect] = useState<DefectView | null>(null);
 
-  const { statusOptions } = useDefectStatusOptions();
   const { priorityOptions } = useDefectPriorityOptions();
   const { typeOptions } = useDefectTypeOptions();
 
@@ -200,17 +206,14 @@ export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardVie
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return apiRequest(`/api/defects/${id}`, "PATCH", { status });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
-    },
-    onError: () => {
+  const moveStage = useMutation({
+    mutationFn: async ({ id, to }: { id: string; to: DefectStage }) =>
+      apiRequest(`/api/defects/${id}/transition`, "POST", { to }),
+    onSuccess: () => invalidateDefectQueries(queryClient),
+    onError: (e: any) => {
       toast({
-        title: "Error",
-        description: "Failed to move defect",
+        title: "Couldn't move the defect",
+        description: e?.payload?.error || e?.message,
         variant: "destructive",
       });
     },
@@ -228,28 +231,31 @@ export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardVie
     const defectId = active.id as string;
     const overId = over.id as string;
 
-    let newStatus: string | null = null;
-    if (COLUMN_KEYS.includes(overId as (typeof COLUMN_KEYS)[number])) {
-      newStatus = overId;
+    let to: DefectStage | null = null;
+    if ((COLUMN_KEYS as readonly string[]).includes(overId)) {
+      to = overId as DefectStage;
     } else {
-      const target = defects.find((d) => d.id === overId);
-      newStatus = target?.status ?? null;
+      to = defects.find((d) => d.id === overId)?.stage ?? null;
     }
 
-    if (!newStatus) return;
+    if (!to) return;
     const moving = defects.find((d) => d.id === defectId);
-    if (!moving || moving.status === newStatus) return;
-    updateStatus.mutate({ id: defectId, status: newStatus });
+    if (!moving || moving.stage === to) return;
+    // Rejecting needs a note — open the defect so it can be written.
+    if (moving.stage === "fixed" && to === "rejected") {
+      toast({ title: "Say why it was rejected", description: "Add the note in the defect, then reject." });
+      onOpen(moving);
+      return;
+    }
+    const check = checkDefectTransition(moving.stage, to, { canEdit: perms.edit, canClose: perms.close, note: "x" });
+    if (!check.ok) {
+      toast({ title: "Can't move it there", description: check.error, variant: "destructive" });
+      return;
+    }
+    moveStage.mutate({ id: defectId, to });
   };
 
-  // Order columns: spec wants Open / In Progress / Resolved / Closed
-  const orderedColumns = COLUMN_KEYS.map((key) => {
-    const opt = statusOptions.find((s) => s.key === key);
-    return {
-      key,
-      name: opt?.name ?? statusLabel(key, []),
-    };
-  });
+  const orderedColumns = COLUMN_KEYS.map((key) => ({ key, name: DEFECT_STAGE_LABELS[key] }));
 
   return (
     <DndContext
@@ -260,15 +266,15 @@ export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardVie
     >
       <div className="flex gap-3 h-full overflow-x-auto px-6 pb-2">
         {orderedColumns.map((col) => {
-          const colDefects = defects.filter((d) => d.status === col.key);
+          const colDefects = defects.filter((d) => d.stage === col.key);
           return (
             <div
               key={col.key}
-              className="flex flex-col rounded-xl bg-muted/20 overflow-hidden flex-1 min-w-[280px] max-w-[340px]"
+              className="flex flex-col rounded-xl bg-muted/20 overflow-hidden flex-1 min-w-[250px] max-w-[320px]"
               data-testid={`column-${col.key}`}
             >
               {/* Top accent strip */}
-              <div className={`h-1 ${statusAccentBg(col.key)}`} />
+              <div className={`h-1 ${stageAccentBg(col.key)}`} />
 
               {/* Header */}
               <div className="h-11 flex items-center justify-between px-3 border-b border-border">
@@ -279,9 +285,7 @@ export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardVie
                   {col.name}
                 </h3>
                 <span
-                  className={`inline-flex items-center justify-center min-w-[22px] h-[20px] rounded-full text-[10px] font-semibold px-1.5 ${statusBadgeClass(
-                    col.key,
-                  )}`}
+                  className={`inline-flex items-center justify-center min-w-[22px] h-[20px] rounded-full text-[10px] font-semibold px-1.5 ${stageBadgeClass(col.key)}`}
                   data-testid={`count-${col.key}`}
                 >
                   {colDefects.length}
@@ -308,7 +312,7 @@ export function DefectBoardView({ defects, onOpen, onAddDefect }: DefectBoardVie
                   </SortableContext>
 
                   {/* Ghost add card (inside droppable so empty columns still accept drops) */}
-                  {onAddDefect && (
+                  {onAddDefect && col.key === "open" && (
                     <button
                       type="button"
                       onClick={() => onAddDefect(col.key)}

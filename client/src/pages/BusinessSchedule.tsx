@@ -2,6 +2,9 @@ import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { CalendarViewBar, calendarSnapshotKey, lastViewStore } from "@/components/calendar/CalendarViewBar";
+import type { CalendarView } from "@/components/SavedViews";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -455,11 +458,9 @@ export default function BusinessSchedule() {
   const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">(
     () => bsLS.get("viewMode", "week")
   );
-  const [weekViewDate, setWeekViewDate] = useState<Date>(() => {
-    const stored = bsLS.get<string | null>("weekViewDate", null);
-    if (stored) { const d = new Date(stored); if (!isNaN(d.getTime())) return d; }
-    return new Date();
-  });
+  // Every tab opens on today (Jed, 11-18). This used to restore the last week
+  // looked at, so coming back days later opened on a stale week.
+  const [weekViewDate, setWeekViewDate] = useState<Date>(() => new Date());
   const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">(
     () => bsLS.get("weekSwimlaneGroup", "project")
   );
@@ -477,7 +478,6 @@ export default function BusinessSchedule() {
   );
 
   useEffect(() => { bsLS.set("viewMode", viewMode); }, [viewMode]);
-  useEffect(() => { bsLS.set("weekViewDate", weekViewDate.toISOString()); }, [weekViewDate]);
   useEffect(() => { bsLS.set("weekSwimlaneGroup", weekSwimlaneGroup); }, [weekSwimlaneGroup]);
   useEffect(() => { bsLS.set("weekCompanyOnly", weekCompanyOnly); }, [weekCompanyOnly]);
   useEffect(() => { bsLS.set("weekHideParents", weekHideParents); }, [weekHideParents]);
@@ -507,6 +507,54 @@ export default function BusinessSchedule() {
   }, [showOffline]);
   useEffect(() => { bsLS.set("hideNoDateProjects", hideNoDateProjects); }, [hideNoDateProjects]);
   useEffect(() => { bsLS.set("sortByStartDate", sortByStartDate); }, [sortByStartDate]);
+  // ── Saved views (Projects tab) ──────────────────────────────────────────
+  // Same bar as the calendars (calendarType "schedule"). A view holds the
+  // filters + zoom; the page reopens on the view you used last (per person).
+  const { user: scheduleUser } = useAuth();
+  const { data: scheduleViews = [] } = useQuery<CalendarView[]>({
+    queryKey: ["/api/calendar-views", "schedule"],
+    queryFn: async () => apiRequest("/api/calendar-views?calendarType=schedule", "GET"),
+  });
+  const [selectedScheduleViewId, setSelectedScheduleViewId] = useState<string | undefined>();
+  const [appliedScheduleKey, setAppliedScheduleKey] = useState<string | null>(null);
+  const scheduleViewFilters = {
+    scheduleTypeFilter, showOnline, showOffline, showProspective, hideNoDateProjects, sortByStartDate,
+  };
+  const applyScheduleView = (view: CalendarView) => {
+    const f = (view.filters || {}) as Record<string, any>;
+    const next = {
+      scheduleTypeFilter: (f.scheduleTypeFilter ?? "all") as 'all' | 'construction' | 'precon',
+      showOnline: f.showOnline ?? true,
+      showOffline: f.showOffline ?? false,
+      showProspective: f.showProspective ?? true,
+      hideNoDateProjects: f.hideNoDateProjects ?? false,
+      sortByStartDate: f.sortByStartDate ?? false,
+    };
+    const mode: "week" | "month" = view.calendarMode === "month" ? "month" : "week";
+    setScheduleTypeFilter(next.scheduleTypeFilter);
+    setShowOnline(next.showOnline);
+    setShowOffline(next.showOffline);
+    setShowProspective(next.showProspective);
+    setHideNoDateProjects(next.hideNoDateProjects);
+    setSortByStartDate(next.sortByStartDate);
+    setZoomLevel(mode);
+    setSelectedScheduleViewId(view.id);
+    setAppliedScheduleKey(calendarSnapshotKey(next, mode));
+    lastViewStore.write("schedule", scheduleUser?.id, view.id);
+  };
+  useEffect(() => {
+    if (selectedScheduleViewId || scheduleViews.length === 0) return;
+    const lastId = lastViewStore.read("schedule", scheduleUser?.id);
+    const start =
+      scheduleViews.find((v) => v.id === lastId) ??
+      scheduleViews.find((v) => v.isDefault && v.userId === scheduleUser?.id) ??
+      scheduleViews[0];
+    applyScheduleView(start);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleViews]);
+  const scheduleViewDirty =
+    appliedScheduleKey !== null && calendarSnapshotKey(scheduleViewFilters, zoomLevel) !== appliedScheduleKey;
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -1217,6 +1265,25 @@ export default function BusinessSchedule() {
           is a continuous gantt so there's no date range; zoom acts as the
           equivalent left-hand control. Legend stays right. */}
       <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+        <CalendarViewBar
+          calendarType="schedule"
+          views={scheduleViews}
+          selectedViewId={selectedScheduleViewId}
+          currentUserId={scheduleUser?.id}
+          isDirty={scheduleViewDirty}
+          getCurrent={() => ({ filters: scheduleViewFilters, calendarMode: zoomLevel })}
+          onSelect={applyScheduleView}
+          onDiscard={() => {
+            const v = scheduleViews.find((x) => x.id === selectedScheduleViewId);
+            if (v) applyScheduleView(v);
+          }}
+          onSaved={(view) => {
+            setSelectedScheduleViewId(view.id);
+            setAppliedScheduleKey(calendarSnapshotKey(scheduleViewFilters, zoomLevel));
+            lastViewStore.write("schedule", scheduleUser?.id, view.id);
+          }}
+        />
+        <div className="w-px h-4 bg-border" />
         <Popover open={showFilter} onOpenChange={setShowFilter}>
           <PopoverTrigger asChild>
             <Button
@@ -1379,41 +1446,43 @@ export default function BusinessSchedule() {
             onClick={() => setZoomLevel('month')}
           >Month</button>
         </div>
-        {/* Legend — right-aligned */}
-        <div className="flex items-center gap-4 ml-auto">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-default">
-                <div className="w-5 h-3 rounded-sm bg-primary" />
-                <span className="text-data text-muted-foreground">Online</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p className="text-xs">Schedule is published and visible to external users</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-default">
-                <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber" />
-                <span className="text-data text-muted-foreground">Offline</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p className="text-xs">Schedule is hidden from external users</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-default">
-                <div className="w-5 h-3 rounded-sm border-2 border-dotted border-border-strong" />
-                <span className="text-data text-muted-foreground">Prospective</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p className="text-xs">Lead or pre-construction projects not yet confirmed</p>
-            </TooltipContent>
-          </Tooltip>
+        {/* Legend — doubles as the show/hide toggles for each kind of
+            project (Jed, 11-18): subtle buttons, softly filled when on. */}
+        <div className="flex items-center gap-1 ml-auto" data-testid="schedule-legend-toggles">
+          {([
+            { key: "online", label: "Online", on: showOnline, set: setShowOnline,
+              swatch: "w-4 h-2.5 rounded-sm bg-primary",
+              tip: "Schedule is published and visible to external users" },
+            { key: "offline", label: "Offline", on: showOffline, set: setShowOffline,
+              swatch: "w-4 h-2.5 rounded-sm border-2 border-dashed border-amber",
+              tip: "Schedule is hidden from external users" },
+            { key: "prospective", label: "Prospective", on: showProspective, set: setShowProspective,
+              swatch: "w-4 h-2.5 rounded-sm border-2 border-dotted border-border-strong",
+              tip: "Lead or pre-construction projects not yet confirmed" },
+          ] as const).map((l) => (
+            <Tooltip key={l.key}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => l.set(!l.on)}
+                  aria-pressed={l.on}
+                  className={cn(
+                    "h-6 px-2 rounded-md flex items-center gap-1.5 text-data transition-colors border",
+                    l.on
+                      ? "bg-muted/70 border-border text-foreground"
+                      : "border-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/40",
+                  )}
+                  data-testid={`toggle-legend-${l.key}`}
+                >
+                  <span className={cn(l.swatch, !l.on && "opacity-40")} />
+                  {l.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">{l.tip} — click to {l.on ? "hide" : "show"}</p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
         </div>
       </div>
 

@@ -48,12 +48,35 @@ export interface MoneySummaryProps {
    *  invoices want it so every figure matches the supplier's document. */
   alwaysShowDecimals?: boolean;
   className?: string;
+  /** "split" (default): rows left, total hard right. "right": all of it right-aligned. */
+  align?: "split" | "right";
   "data-testid"?: string;
 }
 
-export function MoneySummary({ rows, total, alwaysShowDecimals, className, "data-testid": testId }: MoneySummaryProps) {
+export function MoneySummary({ rows, total, alwaysShowDecimals, className, align = "split", "data-testid": testId }: MoneySummaryProps) {
   const visible = rows.filter((r) => !r.hidden);
   const fmt = (cents: number) => formatCents(cents, { alwaysShowDecimals });
+
+  // "right": the whole summary sits on the right under the amount column, the
+  // total beneath the rows — how Xero lays out a bill (Jed, 11-18).
+  if (align === "right") {
+    return (
+      <div className={cn("flex justify-end px-3.5 py-3.5", className)} data-testid={testId}>
+        <div className="flex flex-col gap-0.5 min-w-[300px]">
+          {visible.map((row) => (
+            <div key={row.label} className={cn("money-line justify-between", row.rule && "money-line-rule")} data-testid={row.testId}>
+              <span className="money-line-label">{row.label}</span>
+              <span className={cn(TONE_CLASS[row.tone ?? "normal"], "text-right")}>{fmt(row.cents)}</span>
+            </div>
+          ))}
+          <div className="flex items-baseline justify-between gap-6 mt-2 pt-2 border-t border-border">
+            <span className="doc-field-label">{total.label}</span>
+            <span className="money-total" data-testid="text-total">{fmt(total.cents)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

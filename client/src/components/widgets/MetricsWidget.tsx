@@ -128,6 +128,8 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
   const formatValue = (id: MetricId, value: number): string => {
     const def = getMetricDef(id);
     if (!def) return String(value);
+    // Per-m² figures need the floor area; without it say so rather than "$0".
+    if ((id === "pricePerArea" || id === "costPerArea") && (metrics as any)[id] == null) return "Add floor area";
 
     switch (def.type) {
       case "currency":

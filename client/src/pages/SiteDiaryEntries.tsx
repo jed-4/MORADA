@@ -6,6 +6,7 @@ import { useParams } from "wouter";
 import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProjectSelect } from "@/components/ProjectSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -75,6 +76,7 @@ import { insertSiteDiaryEntrySchema } from "@shared/schema";
 import { z } from "zod";
 import { Image as ImageIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DailyReportDialog } from "@/components/site-diary/DailyReportDialog";
 
 const HIDE_SUMMARY_KEY = "site-diary-hide-summary";
 
@@ -200,6 +202,7 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "feed">("feed");
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [dailyReportOpen, setDailyReportOpen] = useState(false);
   const [hideSummary, setHideSummary] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(HIDE_SUMMARY_KEY) === "1";
@@ -291,6 +294,10 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
     }
     if (isStandalone && forProjectId) {
       setCreatingForProjectId(forProjectId);
+    } else if (isStandalone && !selectedProjectId) {
+      let last = "";
+      try { last = localStorage.getItem("site-diary:last-project") || ""; } catch { /* storage blocked */ }
+      if (last && projects.some((p) => p.id === last && p.isActive !== false)) setCreatingForProjectId(last);
     }
     setIsCreating(true);
   };
@@ -325,7 +332,7 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
   if (viewingEntry) {
     const entryTemplate = templates.find(t => t.id === viewingEntry.templateId);
     return (
-      <div className="flex flex-col h-full p-2">
+      <div className="flex flex-col h-full p-2 overflow-y-auto">
         <EntryViewDetail
           entry={viewingEntry}
           template={entryTemplate || null}
@@ -340,7 +347,7 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
     const editProjectId = editingEntry.projectId || selectedProjectId;
     const entryTemplate = templates.find(t => t.id === editingEntry.templateId);
     return (
-      <div className="flex flex-col h-full p-2">
+      <div className="flex flex-col h-full p-2 overflow-y-auto">
         <EntryEditForm
           entry={editingEntry}
           template={entryTemplate || null}
@@ -363,45 +370,18 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
     const createProjectId = effectiveProjectId;
     const createProject = projects.find(p => p.id === createProjectId);
 
-    if (!createProjectId && isStandalone) {
-      return (
-        <div className="flex flex-col h-full p-2">
-          <Card>
-            <CardHeader className="py-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">New Site Diary Entry</CardTitle>
-                <Button variant="ghost" size="icon" onClick={() => { setIsCreating(false); setCreatingForProjectId(""); }}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Select a project for this entry</p>
-            </CardHeader>
-            <CardContent className="py-2">
-              <div className="space-y-1">
-                {projects.filter(p => p.isActive !== false).map((project) => (
-                  <button
-                    key={project.id}
-                    onClick={() => setCreatingForProjectId(project.id)}
-                    className="w-full text-left px-3 py-2.5 text-sm rounded-md border hover-elevate active-elevate-2 flex items-center gap-2"
-                    data-testid={`select-project-${project.id}`}
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span>{project.name}</span>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      );
-    }
-
     return (
-      <div className="flex flex-col h-full p-2">
+      <div className="flex flex-col h-full p-2 overflow-y-auto">
         <EntryFormWithTemplateSelector
           templates={templates}
           projectId={createProjectId}
           projectName={createProject?.name || selectedProject?.name || ""}
+          // Company-wide diary: pick the project with a dropdown in the form
+          // (was a full-screen list that couldn't scroll). Remembered per browser.
+          onProjectChange={isStandalone ? (id: string) => {
+            setCreatingForProjectId(id);
+            try { localStorage.setItem("site-diary:last-project", id); } catch { /* storage blocked */ }
+          } : undefined}
           onCancel={() => { setIsCreating(false); setCreatingForProjectId(""); }}
           onSuccess={() => {
             setIsCreating(false);
@@ -624,6 +604,17 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
 
         {/* Right: Add + Options (PDF lives inside Options) */}
         <div className="flex items-center gap-1.5">
+          {isProjectFromUrl && selectedProjectId && (
+            <button
+              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              onClick={() => setDailyReportOpen(true)}
+              data-testid="button-daily-report"
+              title="Daily site report for the client"
+            >
+              <FileText className="w-3 h-3 text-muted-foreground" />
+              <span>Daily report</span>
+            </button>
+          )}
           <button
             className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
             onClick={() => handleAddEntry()}
@@ -796,6 +787,9 @@ export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = 
           </span>
         </div>
       </div>
+      {isProjectFromUrl && selectedProjectId && (
+        <DailyReportDialog projectId={selectedProjectId} open={dailyReportOpen} onOpenChange={setDailyReportOpen} />
+      )}
     </div>
   );
 }
@@ -1398,13 +1392,16 @@ function EntryFormWithTemplateSelector({
   projectId, 
   projectName,
   onCancel, 
-  onSuccess 
+  onSuccess,
+  onProjectChange,
 }: { 
   templates: SiteDiaryTemplate[];
   projectId: string;
   projectName: string;
   onCancel: () => void; 
   onSuccess: () => void;
+  /** When set, the form shows a Project dropdown (company-wide diary). */
+  onProjectChange?: (projectId: string) => void;
 }) {
   const { user } = useAuth();
   
@@ -1430,12 +1427,25 @@ function EntryFormWithTemplateSelector({
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <CardTitle className="text-base">New Site Diary Entry</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">{projectName}</p>
+            {!onProjectChange && <p className="text-xs text-muted-foreground mt-0.5">{projectName}</p>}
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-cancel-entry">
             <X className="h-4 w-4" />
           </Button>
         </div>
+        {onProjectChange && (
+          <div className="mt-3">
+            <Label className="text-xs font-medium">Project *</Label>
+            <ProjectSelect
+              value={projectId || undefined}
+              onValueChange={(v) => onProjectChange(v === "none" ? "" : v)}
+              allowNone={false}
+              placeholder="Select a project…"
+              className="mt-1"
+              data-testid="select-entry-project"
+            />
+          </div>
+        )}
         {/* Template Selector */}
         <div className="mt-3">
           <Label className="text-xs font-medium">Template</Label>
@@ -1447,13 +1457,19 @@ function EntryFormWithTemplateSelector({
         </div>
       </CardHeader>
       <CardContent className="py-2">
+        {!projectId ? (
+          <p className="text-sm text-muted-foreground py-6 text-center" data-testid="text-pick-project">
+            Choose a project above to start the entry.
+          </p>
+        ) : (
         <EntryFormFields
-          key={selectedTemplate.id}
+          key={`${selectedTemplate.id}-${projectId}`}
           template={selectedTemplate}
           projectId={projectId}
           projectName={projectName}
           onSuccess={onSuccess}
         />
+        )}
       </CardContent>
     </Card>
   );
@@ -1777,9 +1793,24 @@ function EntryFormFields({
     createMutation.mutate(data);
   };
 
+  // A blocked save used to do nothing visible: the "Required" messages sit
+  // beside fields scrolled out of view. Name them and jump to the first.
+  const onInvalid = (errors: Record<string, unknown>) => {
+    const keys = Object.keys(errors);
+    const labels = keys.map((k) =>
+      k === "title" ? "Entry Title" : k === "entryDateTime" ? "Date" : (templateFields.find((f) => f.id === k)?.title || k));
+    toast({
+      title: "Fill in the required fields",
+      description: labels.join(", "),
+      variant: "destructive",
+    });
+    const first = keys[0] && document.querySelector(`[name="${keys[0]}"], [data-field-id="${keys[0]}"]`);
+    (first as HTMLElement | null)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+      <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-3">
         <FormField
           control={form.control}
           name="title"

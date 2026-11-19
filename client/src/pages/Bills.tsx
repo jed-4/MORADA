@@ -681,15 +681,27 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const projectIdFromUrl = params.projectId || "";
   const pageTitle = usePageTitle({ pageName: "Bills" });
 
+  // The list remembers its tab, search and filters — per list (company-wide,
+  // or each project's) — so coming back from a bill, or back to Bills later,
+  // doesn't drop you on "All" with everything cleared (Jed, 11-18).
+  const listMemoryKey = `bills:list:${projectIdFromUrl || "all"}`;
+  const remembered = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(listMemoryKey) || "null") as null | {
+      status?: string; search?: string; suppliers?: string[]; projects?: string[]; dateRange?: string; overdue?: string[];
+    }; } catch { return null; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listMemoryKey]);
+  const listBasePath = projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills` : "/bills";
+
   const [selectedStatus, setSelectedStatus] = useState<string>(statusFromUrl);
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
   const [setupInstructionsOpen, setSetupInstructionsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(remembered?.search ?? "");
   // Faceted filters (see DataTableFilterBar).
-  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
-  const [filterProjects, setFilterProjects] = useState<string[]>([]);
-  const [filterDateRange, setFilterDateRange] = useState<string>("all");
-  const [filterOverdue, setFilterOverdue] = useState<string[]>([]);
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>(remembered?.suppliers ?? []);
+  const [filterProjects, setFilterProjects] = useState<string[]>(remembered?.projects ?? []);
+  const [filterDateRange, setFilterDateRange] = useState<string>(remembered?.dateRange ?? "all");
+  const [filterOverdue, setFilterOverdue] = useState<string[]>(remembered?.overdue ?? []);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<{ id: string; number: string } | null>(null);
   const [changeProjectDialogOpen, setChangeProjectDialogOpen] = useState(false);
@@ -844,7 +856,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       setConvertTarget(null);
       toast({
         title: "Converted to a credit note",
-        description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
+        description: "The amount now reduces what's owed. If it's set to go to Xero, Morada sends it as a credit note — don't also enter it in Xero by hand.",
       });
     },
     onError: (error: any) =>
@@ -860,6 +872,33 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   useEffect(() => {
     setSelectedStatus(statusFromUrl);
   }, [statusFromUrl]);
+
+  // Arriving with no tab in the address (back from a bill, or from the menu):
+  // reopen the tab you were on. An explicit ?status= (e.g. "Approve" sending
+  // you to Awaiting Approval) still wins.
+  useEffect(() => {
+    if (searchParams.has("status")) return;
+    const st = remembered?.status;
+    if (st && st !== "all") {
+      const p = new URLSearchParams();
+      p.set("status", st);
+      setLocation(`${listBasePath}?${p.toString()}`, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listMemoryKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(listMemoryKey, JSON.stringify({
+        status: selectedStatus,
+        search: searchTerm,
+        suppliers: filterSuppliers,
+        projects: filterProjects,
+        dateRange: filterDateRange,
+        overdue: filterOverdue,
+      }));
+    } catch { /* storage blocked */ }
+  }, [listMemoryKey, selectedStatus, searchTerm, filterSuppliers, filterProjects, filterDateRange, filterOverdue]);
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
@@ -1005,10 +1044,12 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const handleStatusChange = (status: string) => {
     setSelectedStatus(status);
     const p = new URLSearchParams();
-    if (status !== "all") p.set("status", status);
-    if (projectIdFromUrl) p.set("projectId", projectIdFromUrl);
-    const qs = p.toString();
-    setLocation(qs ? `/bills?${qs}` : "/bills");
+    // "all" is written out too, so it isn't mistaken for "no tab chosen" and
+    // swapped for the remembered one.
+    p.set("status", status);
+    // Stay on this list: a project's bills used to jump to the company-wide
+    // /bills (the project only lived in the route, not the query).
+    setLocation(`${listBasePath}?${p.toString()}`);
   };
 
   const webhookUrl = `${window.location.origin}/api/webhooks/email-invoice`;
@@ -1687,6 +1728,20 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         <DialogContent>
           <DialogHeader><DialogTitle>Delete {selectedBills.size} bill(s)?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">This action cannot be undone. Are you sure you want to delete the selected bills?</p>
+          {(() => {
+            // The bill page warns about these; bulk delete didn't. Deleting a
+            // bill here never removes it from Xero, and its payments go with it.
+            const chosen = bills.filter((b) => selectedBills.has(b.id));
+            const inXero = chosen.filter((b) => !!(b as any).xeroInvoiceId).length;
+            const withPayments = chosen.filter((b) => ((b as any).paidAmount || 0) > 0).length;
+            if (!inXero && !withPayments) return null;
+            return (
+              <div className="rounded-md border p-3 text-sm space-y-1" style={{ backgroundColor: "hsl(var(--coral-light))", borderColor: "hsl(var(--coral))" }} data-testid="warning-bulk-delete">
+                {inXero > 0 && <p><strong>{inXero}</strong> {inXero === 1 ? "is" : "are"} already in Xero — deleting here leaves {inXero === 1 ? "it" : "them"} in Xero. Void {inXero === 1 ? "it" : "them"} in Xero too.</p>}
+                {withPayments > 0 && <p><strong>{withPayments}</strong> {withPayments === 1 ? "has" : "have"} payments recorded — those payments will be deleted as well.</p>}
+              </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" disabled={bulkDeleteMutation.isPending} onClick={() => bulkDeleteMutation.mutate(Array.from(selectedBills))}>

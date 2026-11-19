@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from "react";
+import { BillDeliveryWarning, usePODeliverySummary } from "@/components/purchase-orders/PODeliveriesSection";
+import { XeroBillLinkDialog } from "@/components/bills/XeroBillLinkDialog";
 import { useParams, useLocation } from "wouter";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -38,6 +40,7 @@ import {
   Search,
   Pencil,
   Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { rankedCommandFilter } from "@/components/ui/searchable-select";
@@ -221,7 +224,7 @@ type XeroValidationIssue = {
 };
 
 /** Error thrown by bill push handlers; may carry parsed Xero validation issues. */
-type XeroPushError = Error & { validationErrors?: XeroValidationIssue[] };
+type XeroPushError = Error & { validationErrors?: XeroValidationIssue[]; code?: string };
 
 function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
@@ -239,6 +242,41 @@ const CREDIT_NOT_SUPPORTED_COPY =
  * pre-flight rejection), we join the messages so the user can see all issues
  * at once instead of a generic "Xero sync failed" toast.
  */
+/**
+ * Match an invoice's site address to a project by its address (project.location):
+ * same street number AND at least one street-name word. Returns the project id
+ * only when exactly one project fits — a wrong guess is worse than none.
+ */
+const ADDRESS_NOISE = new Set(["st", "street", "rd", "road", "ave", "avenue", "dr", "drive", "pde", "parade",
+  "cres", "crescent", "ct", "court", "pl", "place", "ln", "lane", "hwy", "highway", "way", "tce", "terrace",
+  "nsw", "qld", "vic", "sa", "wa", "tas", "act", "nt", "australia", "unit", "lot", "the"]);
+function addressTokens(a: string): { numbers: Set<string>; words: Set<string> } {
+  const parts = a.toLowerCase().replace(/[^a-z0-9/ ]/g, " ").split(/\s+/).filter(Boolean);
+  const numbers = new Set<string>();
+  const words = new Set<string>();
+  for (const p of parts) {
+    if (/^\d+[a-z]?$/.test(p) || /^\d+\/\d+$/.test(p)) {
+      if (!/^\d{4}$/.test(p)) numbers.add(p.split("/").pop()!); // skip postcodes
+    } else if (p.length >= 3 && !ADDRESS_NOISE.has(p)) words.add(p);
+  }
+  return { numbers, words };
+}
+function matchProjectBySiteAddress(site: string | undefined | null, projects: { id: string; location?: string | null; name?: string | null; isActive?: boolean | null }[]): string | null {
+  if (!site || !site.trim()) return null;
+  const s = addressTokens(site);
+  if (s.numbers.size === 0 || s.words.size === 0) return null;
+  const hits = projects.filter((p) => {
+    if (p.isActive === false) return false;
+    const src = p.location || p.name || "";
+    if (!src) return false;
+    const t = addressTokens(src);
+    const numberHit = Array.from(t.numbers).some((n) => s.numbers.has(n));
+    const wordHit = Array.from(t.words).some((w) => s.words.has(w));
+    return numberHit && wordHit;
+  });
+  return hits.length === 1 ? hits[0].id : null;
+}
+
 function formatXeroErrorDescription(e: unknown): string {
   const err = isXeroPushError(e) ? e : undefined;
   const issues = err?.validationErrors;
@@ -1496,7 +1534,7 @@ export default function BillDetail() {
             }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
-              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
+              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined, code: errData.error as string | undefined },
             );
             throw err;
           }
@@ -1507,13 +1545,31 @@ export default function BillDetail() {
             toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
           }
         } catch (e) {
-          const desc = formatXeroErrorDescription(e);
-          toast({
-            title: "Bill created — Xero sync failed",
-            description: desc,
-            variant: "destructive",
+          // Xero refused the new bill: take it back out, so nothing is saved,
+          // and keep the form filled in to fix and save again (Xero gate).
+          if ((e as any)?.code === "NO_CONNECTION") {
+            setXeroRefusal({
+              title: "Saved here — but Xero isn't connected",
+              description: "This bill wasn't sent to Xero because the Xero connection is missing or has expired. Reconnect Xero in Settings → Integrations, then open the bill and save it again to send it.",
+            });
+            return;
+          }
+          let removed = false;
+          try {
+            await apiRequest(`/api/bills/${newBill.id}`, "DELETE");
+            removed = true;
+            createdBillIdRef.current = null;
+            queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+          } catch { /* left in place — said so below */ }
+          setXeroRefusal({
+            title: removed ? "Not saved — Xero didn't accept this bill" : "Created here, but Xero didn't accept it",
+            description:
+              formatXeroErrorDescription(e) +
+              (removed
+                ? "\n\nThe bill wasn't saved. Everything you entered is still on screen — fix the problem and save again."
+                : "\n\nThe bill couldn't be removed again, so it exists in Morada but not in Xero. Fix the problem and save again."),
           });
-          return; // stay on page so user can see the error
+          return; // stay on page with the form filled in
         } finally {
           setIsSyncingToXero(false);
         }
@@ -1554,6 +1610,62 @@ export default function BillDetail() {
     },
   });
 
+  // ── Xero gate (Jed, 11-18: "it saves, then later a toast says it didn't go
+  // to Xero, so I don't pick up on it. It shouldn't save in that case.") ──
+  // When the bill is set to go to Xero, the page pushes it straight after
+  // saving. If Xero refuses, the save is UNDONE (the server copy is put back
+  // from a snapshot taken just before saving), the edits stay on screen, and a
+  // dialog — not a toast — says why.
+  const xeroSnapshotRef = useRef<{ writeId: string; header: any; lines: any[]; links: any[]; keys: string[] } | null>(null);
+  const xeroBlockedRef = useRef(false);
+  const [xeroRefusal, setXeroRefusal] = useState<{ title: string; description: string } | null>(null);
+  const [linkXeroOpen, setLinkXeroOpen] = useState(false);
+  const restoreXeroSnapshot = async () => {
+    const snap = xeroSnapshotRef.current;
+    if (!snap) return false;
+    const header: Record<string, unknown> = {};
+    for (const k of snap.keys) if (k in snap.header) header[k] = snap.header[k];
+    const linkByLine = new Map<string, string>();
+    for (const l of snap.links) {
+      const lineId = l.billLineItemId ?? l.lineItemId;
+      const allowanceId = l.estimateItemId ?? l.allowanceItemId;
+      if (lineId && allowanceId) linkByLine.set(lineId, allowanceId);
+    }
+    try {
+      await apiRequest(`/api/bills/${snap.writeId}`, "PATCH", {
+        ...header,
+        acknowledgeDocumentMismatch: true,
+        skipXeroAutoPush: true,
+      });
+      await apiRequest(`/api/bills/${snap.writeId}/line-items`, "PUT", {
+        skipXeroAutoPush: true,
+        lineItems: snap.lines.map((li: any, i: number) => ({
+          id: li.id,
+          billId: snap.writeId,
+          lineType: li.lineType,
+          description: li.description,
+          costCodeId: li.costCodeId,
+          quantity: li.quantity,
+          unit: li.unit ?? null,
+          unitPrice: li.unitPrice,
+          tax: li.tax,
+          account: li.account,
+          total: li.total,
+          order: li.order ?? i,
+          allowanceItemId: linkByLine.get(li.id) ?? null,
+        })),
+      });
+      return true;
+    } catch (e) {
+      console.error("[xero gate] could not restore the bill after Xero refused it", e);
+      return false;
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
+    }
+  };
+
   const updateMutation = useMutation({
     // __stayOnPage: save without navigating away afterwards — used by
     // save-then-approve so the approve call runs against the just-saved bill.
@@ -1580,8 +1692,28 @@ export default function BillDetail() {
       };
 
       const writeId = billIdForWrite();
+      // Going to Xero from this page: snapshot the server copy first so a
+      // refusal can be undone, and tell the server not to start its own
+      // background push (this page pushes, and waits for the answer).
+      const willPushToXero = !!(data.sendToXero && id);
+      xeroBlockedRef.current = false;
+      xeroSnapshotRef.current = null;
+      if (willPushToXero && writeId) {
+        try {
+          const [header, lines, links] = await Promise.all([
+            apiRequest(`/api/bills/${writeId}`, "GET"),
+            apiRequest(`/api/bills/${writeId}/line-items`, "GET"),
+            apiRequest(`/api/bills/${writeId}/line-item-allowances`, "GET").catch(() => []),
+          ]);
+          xeroSnapshotRef.current = {
+            writeId, header, lines: Array.isArray(lines) ? lines : [], links: Array.isArray(links) ? links : [],
+            keys: Object.keys(billData),
+          };
+        } catch { /* no snapshot: a refusal is still reported, just not undone */ }
+      }
       const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", {
         ...billData,
+        ...(willPushToXero ? { skipXeroAutoPush: true } : {}),
         // Set only after the user confirms the total really does differ from
         // the invoice; the server refuses the save otherwise.
         ...(data.__acknowledgeDocumentMismatch ? { acknowledgeDocumentMismatch: true } : {}),
@@ -1594,6 +1726,7 @@ export default function BillDetail() {
       // them. Round-trip latency to the database region made that the reason
       // saving a bill took seconds.
       await apiRequest(`/api/bills/${writeId}/line-items`, "PUT", {
+        ...(willPushToXero ? { skipXeroAutoPush: true } : {}),
         lineItems: lineItems.map((item, i) => ({
           id: item.id || undefined,
           billId: id,
@@ -1676,7 +1809,7 @@ export default function BillDetail() {
             }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
-              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
+              { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined, code: errData.error as string | undefined },
             );
             throw err;
           }
@@ -1688,13 +1821,27 @@ export default function BillDetail() {
               : result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
           });
         } catch (e) {
-          // Stay on page so user can see the error and retry
-          toast({
-            title: "Bill saved — Xero sync failed",
-            description: formatXeroErrorDescription(e),
-            variant: "destructive",
+          // Xero refused it: undo the save, keep the edits on screen, and say
+          // so in a dialog that has to be dismissed. Xero not being connected
+          // at all isn't a refusal of THIS bill — keep the save, but say so.
+          if ((e as any)?.code === "NO_CONNECTION") {
+            setXeroRefusal({
+              title: "Saved here — but Xero isn't connected",
+              description: "This bill wasn't sent to Xero because the Xero connection is missing or has expired. Reconnect Xero in Settings → Integrations, then save the bill again to send it.",
+            });
+            return;
+          }
+          xeroBlockedRef.current = true;
+          const undone = await restoreXeroSnapshot();
+          setXeroRefusal({
+            title: undone ? "Not saved — Xero didn't accept this bill" : "Saved here, but Xero didn't accept it",
+            description:
+              formatXeroErrorDescription(e) +
+              (undone
+                ? "\n\nNothing was changed. Your edits are still on screen — fix the problem and save again."
+                : "\n\nThe bill couldn't be put back, so Morada and Xero now differ. Fix the problem and save again."),
           });
-          return; // don't navigate away so they can see the error
+          return; // stay on the page with the edits
         } finally {
           setIsSyncingToXero(false);
         }
@@ -1834,7 +1981,25 @@ export default function BillDetail() {
         description: "Approved and saved.",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      // The server pushes an approved bill to Xero there and then, and undoes
+      // the approval if Xero refuses it.
+      if (error?.payload?.error === "XERO_PUSH_FAILED") {
+        const p = error.payload;
+        if (p.code === "UNMAPPED_CONTACT") {
+          setUnmappedSupplierName(p.supplierName || "Unknown Supplier");
+          setUnmappedSupplierId(p.supplierId || null);
+          setPendingXeroBillId(id || null);
+          setUnmappedContactDialogOpen(true);
+        }
+        setXeroRefusal({
+          title: "Not approved — Xero didn't accept this bill",
+          description:
+            formatXeroErrorDescription(Object.assign(new Error(p.message || "Xero sync failed"), { validationErrors: p.validationErrors })) +
+            "\n\nThe bill is still waiting for approval. Fix the problem and approve again.",
+        });
+        return;
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to approve bill",
@@ -1891,6 +2056,7 @@ export default function BillDetail() {
       } catch {
         return; // save failed — updateMutation.onError already showed the toast
       }
+      if (xeroBlockedRef.current) return; // Xero refused the save; it was undone
     }
     // Approving is the end of the job on this bill either way: "Approve"
     // returns to the awaiting-approval list, "Approve & next" opens the next
@@ -1947,7 +2113,7 @@ export default function BillDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
       toast({
         title: "Converted to a credit note",
-        description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
+        description: "The amount now reduces what's owed. If it's set to go to Xero, Morada sends it as a credit note — don't also enter it in Xero by hand.",
       });
     },
     onError: (error: any) => {
@@ -2147,8 +2313,29 @@ export default function BillDetail() {
       if (data.dueDate) {
         form.setValue("dueDate", format(new Date(data.dueDate), "yyyy-MM-dd"));
       }
+      // Project: the invoice's site address against the projects' addresses,
+      // only when the bill has none yet and exactly one project fits.
+      let matchedProjectId: string | null = null;
+      if (!form.getValues("projectId")) {
+        matchedProjectId = matchProjectBySiteAddress(data.siteAddress, projects as any[]);
+        if (matchedProjectId) form.setValue("projectId", matchedProjectId, { shouldDirty: true });
+      }
       let matchedSupplierId: string | null = null;
-      if (data.supplierName) {
+      // ABN, then email, then name — the same order the bulk read uses. Name
+      // alone missed every invoice printed under a trading name (Jed, 11-18:
+      // "the AI read doesn't pick the supplier").
+      const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+      const extractedAbn = digits(data.supplierAbn || data.abn);
+      const extractedEmail = String(data.supplierEmail || "").trim().toLowerCase();
+      const byAbn = extractedAbn.length === 11
+        ? (suppliers as any[]).filter((s) => digits(s.abn) === extractedAbn) : [];
+      const byEmail = !byAbn.length && extractedEmail
+        ? (suppliers as any[]).filter((s) => String(s.email || "").trim().toLowerCase() === extractedEmail) : [];
+      const exact = byAbn.length === 1 ? byAbn[0] : byEmail.length === 1 ? byEmail[0] : null;
+      if (exact) {
+        matchedSupplierId = exact.id;
+        form.setValue("supplierId", exact.id, { shouldDirty: true });
+      } else if (data.supplierName) {
         const candidates = (suppliers as any[]).map((s) => ({
           id: s.id,
           names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
@@ -2179,6 +2366,20 @@ export default function BillDetail() {
           setUnmatchedSupplierDialogOpen(true);
         }
       }
+      // No due date on the invoice: use the supplier's payment terms (else the
+      // company default), the same way a new bill does. Without one the save
+      // that follows the read was refused (DUE_DATE_REQUIRED) — silently.
+      let dueFromTerms: Date | null = null;
+      if (!data.dueDate && !form.getValues("dueDate")) {
+        const sid = matchedSupplierId || form.getValues("supplierId");
+        const sup = (suppliers as any[]).find((s) => s.id === sid);
+        const terms = sup?.paymentTerms || (companySettings as any)?.defaultPaymentTerms;
+        const bd = new Date(form.getValues("billDate") || data.billDate || data.invoiceDate || Date.now());
+        if (terms && !isNaN(bd.getTime())) {
+          dueFromTerms = computeDueDate(bd, terms);
+          if (dueFromTerms) form.setValue("dueDate", format(dueFromTerms, "yyyy-MM-dd"), { shouldDirty: true });
+        }
+      }
       // Detect the invoice's tax mode from the AI's own numbers instead of
       // forcing "inclusive": if the extracted line totals sum to the document's
       // ex-GST subtotal they are ex-GST lines (exclusive mode); if they sum to
@@ -2206,7 +2407,9 @@ export default function BillDetail() {
           quantity: item.quantity || 1,
           unitPrice: reconcileLineUnitPrice(item.unitPrice, item.totalAmount || 0, item.quantity || 1) / 100,
           unit: "",
-          tax: "GST on expenses" as const,
+          // GST-free only when the document's tax is genuinely zero — the bulk
+          // read's rule. Every line used to be marked GST regardless.
+          tax: (typeof data.totalTax === "number" && data.totalTax === 0 ? "No GST" : "GST on expenses") as "GST on expenses" | "No GST",
           account: defaultAccount,
           total: item.totalAmount ? item.totalAmount / 100 : 0,
           order: index,
@@ -2236,7 +2439,12 @@ export default function BillDetail() {
         const extractedBillDate = data.billDate || data.invoiceDate;
         if (extractedBillDate) persist.billDate = new Date(extractedBillDate);
         if (data.dueDate) persist.dueDate = new Date(data.dueDate);
+        else if (dueFromTerms) persist.dueDate = dueFromTerms;
         if (matchedSupplierId) persist.supplierId = matchedSupplierId;
+        if (matchedProjectId) persist.projectId = matchedProjectId;
+        // Not reviewed yet — don't let this save send it to Xero. Review and
+        // Save (or Approve) sends it.
+        persist.skipXeroAutoPush = true;
         if (typeof data.totalAmount === "number" && data.totalAmount > 0) {
           persist.documentTotalCents = data.totalAmount;
         }
@@ -2245,7 +2453,14 @@ export default function BillDetail() {
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
             queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
           })
-          .catch((err) => console.error("Failed to persist AI-extracted bill fields:", err));
+          .catch((err: any) => {
+            console.error("Failed to persist AI-extracted bill fields:", err);
+            toast({
+              title: "Read, but not saved yet",
+              description: (err?.payload?.error || err?.message || "The read couldn't be saved") + " — check the fields and press Save.",
+              variant: "destructive",
+            });
+          });
       }
       // Same bar the bulk read uses: a total plus either an invoice number or
       // line items. Below that the AI has effectively read nothing, and
@@ -2586,6 +2801,8 @@ export default function BillDetail() {
     },
     enabled: !!(matchedSitePOId && isEditMode),
   });
+  const { data: matchedPODelivery } = usePODeliverySummary(matchedSitePOId);
+  const deliveryNeedsWarning = matchedPODelivery?.deliveryStatus === "partial" || matchedPODelivery?.deliveryStatus === "issues";
 
   const linkSitePOMutation = useMutation({
     mutationFn: async (purchaseOrderId: string) => {
@@ -2667,6 +2884,9 @@ export default function BillDetail() {
           </button>
         ) : "",
       },
+      ...(matchedSitePOId && deliveryNeedsWarning
+        ? [{ label: "Delivery", value: <BillDeliveryWarning poId={matchedSitePOId} />, testId: "text-bill-delivery" }]
+        : []),
       {
         label: "Xero",
         value: (bill as any)?.xeroInvoiceId ? "Sent to Xero" : v.sendToXero ? "Not sent yet" : "Not synced",
@@ -2761,6 +2981,15 @@ export default function BillDetail() {
                     <Copy className="h-3.5 w-3.5 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
+                  {xeroStatus?.connected && !(bill as any)?.xeroInvoiceId && (
+                    <DropdownMenuItem
+                      onSelect={() => setLinkXeroOpen(true)}
+                      data-testid="menu-link-xero-bill"
+                    >
+                      <Link2 className="h-3.5 w-3.5 mr-2" />
+                      Link to bill in Xero
+                    </DropdownMenuItem>
+                  )}
                   {bill?.billType === "bill" && (
                     <DropdownMenuItem
                       onSelect={() => setConvertDialogOpen(true)}
@@ -2897,7 +3126,9 @@ export default function BillDetail() {
         <div className="flex-1 flex flex-col overflow-hidden">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-auto p-4 space-y-3">
+            {/* Content capped and centred, Xero-style — full width was too much
+                to take in on a big screen (Jed, 11-18). */}
+            <div className="flex-1 overflow-auto p-4 space-y-3 [&>*]:mx-auto [&>*]:max-w-[1240px]">
             {/* A Xero void is consequential enough to state outright on the bill,
                 and it outlives the review-queue entry that first surfaced it. */}
             {!!(bill as any)?.xeroVoidedAt && (
@@ -3390,6 +3621,8 @@ export default function BillDetail() {
                             )}
                           </button>
                         )}
+                        {/* Part delivered / delivery problem: warn, never block approval. */}
+                        {matchedSitePOId && <BillDeliveryWarning poId={matchedSitePOId} />}
                       </div>
                     );
                   })()}
@@ -4324,6 +4557,14 @@ export default function BillDetail() {
                             )}
                           </button>
                         </CollapsibleTrigger>
+                        {(bill as any)?.xeroInvoiceId ? (
+                          // In Xero: paid in Xero, comes back here by itself
+                          // (webhook + nightly reconcile). Recording it here too
+                          // would count it twice.
+                          <span className="text-data text-muted-foreground" data-testid="text-payments-from-xero">
+                            Paid in Xero — payments come through automatically
+                          </span>
+                        ) : (
                         <Button
                           type="button"
                           size="sm"
@@ -4341,6 +4582,7 @@ export default function BillDetail() {
                           <Plus className="h-3 w-3 mr-1" />
                           Record
                         </Button>
+                        )}
                       </div>
                       <CollapsibleContent className="mt-2">
                     {billPayments.length === 0 ? (
@@ -4744,6 +4986,35 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      {id && (
+        <XeroBillLinkDialog
+          open={linkXeroOpen}
+          onOpenChange={setLinkXeroOpen}
+          invoiceId={id}
+          invoiceNumber={bill?.billNumber}
+        />
+      )}
+
+      {/* Xero refused a save or an approval — must be dismissed, unlike a toast. */}
+      <AlertDialog open={!!xeroRefusal} onOpenChange={(o) => { if (!o) setXeroRefusal(null); }}>
+        <AlertDialogContent data-testid="dialog-xero-refused">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+              {xeroRefusal?.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {xeroRefusal?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setXeroRefusal(null)} data-testid="button-xero-refused-ok">
+              OK, I'll fix it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!documentMismatch} onOpenChange={(o) => { if (!o) setDocumentMismatch(null); }}>
         <AlertDialogContent data-testid="dialog-document-mismatch">

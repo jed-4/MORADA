@@ -65,7 +65,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { UserSelect } from "@/components/UserSelect";
-import type { TaskTemplate, UserRole, Doc } from "@shared/schema";
+import type { TaskTemplate, TaskTemplateStatus, UserRole, Doc } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permission";
 import { useLocation } from "wouter";
 
@@ -154,6 +154,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const { user } = useAuth();
   const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
   const { statusOptions: taskStatusOptions } = useTaskStatusOptions();
+  const { data: templateStatusesAll = [] } = useQuery<TaskTemplateStatus[]>({ queryKey: ["/api/task-template-statuses"] });
+  const templateStatuses = templateStatusesAll
+    .filter((st) => st.isActive !== false)
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  const templateStatusById = new Map(templateStatusesAll.map((st) => [st.id, st]));
+  const defaultTemplateStatusId = templateStatuses.find((st) => st.isDefault)?.id || "";
   
   // Sensors for drag and drop
   const sensors = useSensors(
@@ -193,7 +199,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     frequency: "once",
     category: "",
     estimatedDuration: 0,
-    status: "published" as "published" | "draft" | "archived",
+    // The template's status is one of the company's own task-template statuses
+    // (Field Settings → Template Statuses). This used to be a fixed Published/Draft/Archived field
+    // the table doesn't have — nothing saved, and the filter hid everything.
+    statusId: "" as string,
     isActive: true,
     dueTime: "",
     dueDayOfWeek: [] as number[],
@@ -436,7 +445,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       frequency: "once",
       category: "",
       estimatedDuration: 0,
-      status: "published",
+      statusId: defaultTemplateStatusId,
       isActive: true,
       dueTime: "",
       dueDayOfWeek: [],
@@ -478,7 +487,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       frequency: template.frequency || "once",
       category: template.category || "",
       estimatedDuration: template.estimatedDuration || 0,
-      status: (template.status === "active" ? "published" : template.status as "published" | "draft" | "archived") || "published",
+      statusId: (template as any).statusId || "",
       isActive: template.isActive,
       dueTime: template.dueTime || "",
       dueDayOfWeek: template.dueDayOfWeek ? (Array.isArray(template.dueDayOfWeek) ? template.dueDayOfWeek : JSON.parse(template.dueDayOfWeek as string)) : [],
@@ -544,6 +553,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       // Remove empty external links
       externalLinks: templateForm.externalLinks.filter(link => link.trim() !== ""),
       sopDocId: templateForm.sopDocId || null,
+      statusId: templateForm.statusId || undefined,
       // Include recurring fields if enabled
       isRecurringTemplate: templateForm.isRecurringTemplate,
       recurringSchedule: recurringScheduleData,
@@ -748,7 +758,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     const matchesRole = filterRole === "all" || template.defaultRoleId === filterRole;
     // The tab decides recurring vs one-off.
     const matchesFrequency = kind === "operational" ? !!template.isRecurringTemplate : !template.isRecurringTemplate;
-    const matchesStatus = filterStatus === "all" || template.status === filterStatus;
+    const matchesStatus = filterStatus === "all" || ((template as any).statusId || "") === filterStatus;
     const matchesActive = filterActive === "all" || 
       (filterActive === "active" && template.isActive) ||
       (filterActive === "inactive" && !template.isActive);
@@ -799,9 +809,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
           : (b.defaultRoleId ? getRoleName(b.defaultRoleId) : '-');
         return direction * assigneeA.localeCompare(assigneeB);
       case 'status':
-        const statusOrder: Record<string, number> = { 'published': 0, 'active': 0, 'draft': 1, 'archived': 2 };
-        const statusA = statusOrder[a.status || 'published'] ?? 0;
-        const statusB = statusOrder[b.status || 'published'] ?? 0;
+        const statusA = templateStatusById.get((a as any).statusId)?.displayOrder ?? 999;
+        const statusB = templateStatusById.get((b as any).statusId)?.displayOrder ?? 999;
         return direction * (statusA - statusB);
       case 'active':
         return direction * ((a.isActive ? 1 : 0) - (b.isActive ? 1 : 0));
@@ -901,9 +910,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 <SelectTrigger className="h-7 text-xs" data-testid="filter-status"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
+                  {templateStatuses.map((st) => (
+                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1109,21 +1118,20 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     )}
                   </div>
 
-                  {/* Status (Published/Draft/Archived) */}
+                  {/* Status — the company's own task-template statuses */}
                   <div>
-                    {(template.status === 'published' || template.status === 'active' || !template.status) ? (
-                      <Badge className="bg-status-info-bg text-status-info h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
-                        Published
-                      </Badge>
-                    ) : template.status === 'draft' ? (
-                      <Badge className="bg-status-warning-bg text-status-warning h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
-                        Draft
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-muted text-secondary dark:text-muted h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
-                        Archived
-                      </Badge>
-                    )}
+                    {(() => {
+                      const st = templateStatusById.get((template as any).statusId);
+                      if (!st) return <span className="text-muted-foreground/60 text-xs">—</span>;
+                      return (
+                        <Badge
+                          className="h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate"
+                          style={{ backgroundColor: `${st.color}22`, color: st.color }}
+                        >
+                          {st.name}
+                        </Badge>
+                      );
+                    })()}
                   </div>
 
                   {/* Active/Inactive */}
@@ -1305,16 +1313,19 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               <div>
                 <Label className="text-data text-muted-foreground">Status</Label>
                 <Select
-                  value={templateForm.status}
-                  onValueChange={(value: "published" | "draft" | "archived") => setTemplateForm({ ...templateForm, status: value })}
+                  value={templateForm.statusId || undefined}
+                  onValueChange={(value) => setTemplateForm({ ...templateForm, statusId: value })}
                 >
                   <SelectTrigger data-testid="select-template-status">
-                    <SelectValue />
+                    <SelectValue placeholder={templateStatuses.length ? "Select" : "Set up in Field Settings"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="published" className="text-table">Published</SelectItem>
-                    <SelectItem value="draft" className="text-table">Draft</SelectItem>
-                    <SelectItem value="archived" className="text-table">Archived</SelectItem>
+                    {templateStatuses.map((st) => (
+                      <SelectItem key={st.id} value={st.id} className="text-table">
+                        <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: st.color }} />
+                        {st.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

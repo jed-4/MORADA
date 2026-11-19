@@ -51,6 +51,7 @@ const Minutes = lazy(() => import("@/pages/Minutes"));
 const ClientSchedule = lazy(() => import("@/pages/client/ClientSchedule"));
 const ClientAllowances = lazy(() => import("@/pages/client/ClientAllowances"));
 const ClientSiteDiary = lazy(() => import("@/pages/client/ClientSiteDiary"));
+const ClientHandover = lazy(() => import("@/pages/client/ClientHandover"));
 const ClientSelections = lazy(() => import("@/pages/client/ClientSelections"));
 const ClientSelectionDetail = lazy(() => import("@/pages/client/ClientSelectionDetail"));
 const ClientVariations = lazy(() => import("@/pages/client/ClientVariations"));
@@ -1060,7 +1061,8 @@ export default function CustomizableProjectOverview() {
       case "allowances":
         return isClient ? <ClientAllowances /> : <Allowances />;
       case "defects":
-        return <Defects embedded />;
+        // Clients get the read-only handover list (Defects v2 stage 3).
+        return isClient ? <ClientHandover /> : <Defects embedded />;
       case "purchase-orders":
         return <PurchaseOrders embedded />;
       case "variations": {

@@ -90,6 +90,50 @@ export function ageColorClass(days: number): string {
   return "text-[hsl(var(--coral))] font-semibold";
 }
 
+/* ── Defects v2: stage colours (same palette as the old statuses) ── */
+
+export function stageBadgeClass(stage: string): string {
+  switch (stage) {
+    case "open":
+      return "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))]";
+    case "sent":
+    case "accepted":
+      return "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))]";
+    case "rejected":
+      return "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] ring-1 ring-inset ring-[hsl(var(--coral))]/40";
+    case "fixed":
+      return "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))]";
+    default:
+      return "bg-muted/40 text-muted-foreground";
+  }
+}
+
+export function stageAccentBg(stage: string): string {
+  switch (stage) {
+    case "open":
+    case "rejected":
+      return "bg-[hsl(var(--coral))]";
+    case "sent":
+    case "accepted":
+      return "bg-[hsl(var(--amber))]";
+    case "fixed":
+      return "bg-[hsl(var(--sage))]";
+    default:
+      return "bg-border";
+  }
+}
+
+/** Board/table column order: the way the work flows. */
+export const STAGE_ORDER = ["open", "sent", "accepted", "rejected", "fixed", "closed"] as const;
+
+/** Every defects query (project lists, legacy lists, details, locations). */
+export function invalidateDefectQueries(qc: { invalidateQueries: (f: any) => unknown }) {
+  qc.invalidateQueries({
+    predicate: (q: { queryKey: readonly unknown[] }) =>
+      q.queryKey.some((k) => typeof k === "string" && (k.startsWith("/api/defects") || k === "defects" || k === "locations")),
+  });
+}
+
 export function getInitials(name: string | null | undefined): string {
   if (!name) return "??";
   const parts = name.trim().split(/\s+/).slice(0, 2);
