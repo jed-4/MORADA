@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Budget, Project } from "@shared/schema";
+import type { Project } from "@shared/schema";
+import type { ProjectCostTotals } from "@shared/projectCost";
 import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
@@ -16,8 +17,6 @@ import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 
 type ChartStyle = "segments" | "bullet";
-
-type BudgetWithLabour = Budget & { labourActualAmount?: number };
 
 // Committed (promised, not spent) is hatched so it reads as "still to come"
 // rather than spend.
@@ -174,28 +173,17 @@ export default function ProjectBudgetVsActualWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfiguring]);
 
-  const { data, isLoading, isError, refetch } = useQuery<BudgetWithLabour>({
-    queryKey: ["/api/projects", currentProject?.id, "budget"],
+  // The same cost calculation the Budget page shows (shared/projectCost.ts),
+  // under the same query key, so the widget and the page always agree.
+  const { data, isLoading, isError, refetch } = useQuery<{ totals: ProjectCostTotals }>({
+    queryKey: ["/api/projects", currentProject?.id, "cost-summary"],
     queryFn: async () => {
       if (!currentProject?.id) throw new Error("no project");
-      const r = await fetch(`/api/projects/${currentProject.id}/budget`, { credentials: "include" });
+      const r = await fetch(`/api/projects/${currentProject.id}/cost-summary`, { credentials: "include" });
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
     },
     enabled: !!currentProject?.id && allowed,
-  });
-
-  // Open POs not yet billed + subbie hours waiting for a PO. If it can't be
-  // read (no budget_actuals permission) the widget just shows spend.
-  const { data: committedData } = useQuery<{ committedExGstCents: number }>({
-    queryKey: ["/api/projects", currentProject?.id, "committed-costs"],
-    queryFn: async () => {
-      const r = await fetch(`/api/projects/${currentProject!.id}/committed-costs`, { credentials: "include" });
-      if (!r.ok) throw new Error(`${r.status}`);
-      return r.json();
-    },
-    enabled: !!currentProject?.id && allowed,
-    retry: false,
   });
 
   // The title itself is the way through to the full page.
@@ -287,16 +275,18 @@ export default function ProjectBudgetVsActualWidget({
   if (isError) return <WidgetError onRetry={() => refetch()} />;
   if (!data) return <WidgetEmpty message="No budget set up for this project yet" />;
 
-  const budget = data.revisedAmount || 0;
-  const actual = data.actualAmount || 0;
-  const labour = Math.min(Math.max(0, data.labourActualAmount || 0), Math.max(0, actual));
-  const bills = actual - labour;
-
-  const committed = Math.max(0, committedData?.committedExGstCents ?? 0);
+  // Ex GST cents, cost only — the Budget page's totals.
+  const t = data.totals;
+  const budget = t.revisedBudgetCents;
+  const actual = t.spentCents;
+  // The bar can't draw a negative segment (a period of net credits).
+  const labour = Math.max(0, t.labourCents);
+  const bills = Math.max(0, t.billsCents);
+  const committed = Math.max(0, t.committedCents);
 
   const hasBudget = budget > 0;
-  // Same as the Budget page: what's left once promised money is counted too.
-  const remaining = budget - actual - committed;
+  // Same as the Budget page: revised budget − spent − committed.
+  const remaining = t.remainingCents;
   const pct = hasBudget ? Math.round((actual / budget) * 100) : 0;
   const overBudget = hasBudget && actual > budget;
   const nearLimit = hasBudget && !overBudget && pct >= 90;

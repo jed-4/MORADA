@@ -111,15 +111,30 @@ export function variationLineCostCents(item: { unitCostExTax: number | null; qua
   return Math.round(unitCost * qty * 100);
 }
 
-export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
-  const codeById = new Map(input.costCodes.map((c) => [c.id, c]));
-  // Older variation lines stored the code TEXT ("300") rather than its id.
-  // Only map text that identifies exactly one code.
+/**
+ * Which row a variation line belongs to: its cost code's id, or VARIATIONS_KEY.
+ * Variation lines store a cost code ID; older ones stored the code TEXT ("300"),
+ * which is matched only when it identifies exactly one code. Shared by the cost
+ * calculation and the Variations drill-down so the two always agree.
+ */
+export function variationRowKeyResolver(costCodes: { id: string; code: string }[]): (costCode: string | null | undefined) => string {
+  const ids = new Set(costCodes.map((c) => c.id));
   const codeIdByText = new Map<string, string | null>();
-  for (const c of input.costCodes) {
+  for (const c of costCodes) {
     const t = c.code.trim().toLowerCase();
     codeIdByText.set(t, codeIdByText.has(t) ? null : c.id);
   }
+  return (costCode) => {
+    const raw = costCode?.trim() || "";
+    if (!raw) return VARIATIONS_KEY;
+    if (ids.has(raw)) return raw;
+    return codeIdByText.get(raw.toLowerCase()) ?? VARIATIONS_KEY;
+  };
+}
+
+export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
+  const codeById = new Map(input.costCodes.map((c) => [c.id, c]));
+  const variationKey = variationRowKeyResolver(input.costCodes);
   const catById = new Map(input.categories.map((c) => [c.id, c]));
   const catLabel = (id: string | null | undefined) => {
     const cat = id ? catById.get(id) : undefined;
@@ -169,9 +184,8 @@ export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
   // Approved variations, on their own cost code where we can tell which.
   for (const item of input.variationItems) {
     const cents = variationLineCostCents(item);
-    const raw = item.costCode?.trim() || "";
-    const id = raw && codeById.has(raw) ? raw : (raw ? codeIdByText.get(raw.toLowerCase()) ?? null : null);
-    if (id) codeRow(id).variationsCents += cents;
+    const key = variationKey(item.costCode);
+    if (key !== VARIATIONS_KEY) codeRow(key).variationsCents += cents;
     else fixedRow(VARIATIONS_KEY, "variations", "Variations (no cost code)").variationsCents += cents;
   }
 

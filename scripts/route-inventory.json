@@ -521,6 +521,7 @@
     "server/routes.ts GET /api/projects/:projectId/takeoff/plans/:planId/pages",
     "server/routes.ts GET /api/projects/:projectId/team",
     "server/routes.ts GET /api/projects/:projectId/timesheets",
+    "server/routes.ts GET /api/projects/:projectId/variation-costs",
     "server/routes.ts GET /api/projects/:projectId/workflows",
     "server/routes.ts GET /api/projects/business",
     "server/routes.ts GET /api/proposal-numbers/next",

@@ -12,6 +12,7 @@ import {
   computeProjectCost,
   UNCATEGORISED_KEY,
   VARIATIONS_KEY,
+  variationRowKeyResolver,
   type ProjectCostInputs,
   type ProjectCostTotals,
 } from "@shared/projectCost";
@@ -200,6 +201,17 @@ check("rows carry server-built labels and category, by id", () => {
   assert.strictEqual(cat.kind, "category");
   assert.strictEqual(cat.categoryLabel, "4 - Services");
   assert.strictEqual(row(cost, "cc-unknown").label, "Unknown cost code");
+});
+
+check("variation drill-down key matches the row the cost landed in", () => {
+  const keyOf = variationRowKeyResolver(inputs().costCodes);
+  assert.strictEqual(keyOf(CARP), CARP);
+  assert.strictEqual(keyOf(" 300 "), CARP);
+  assert.strictEqual(keyOf("plumbing"), VARIATIONS_KEY);
+  assert.strictEqual(keyOf(null), VARIATIONS_KEY);
+  // Code text shared by two codes is ambiguous — never guessed.
+  const dupe = variationRowKeyResolver([{ id: "a", code: "500" }, { id: "b", code: "500" }]);
+  assert.strictEqual(dupe("500"), VARIATIONS_KEY);
 });
 
 check("empty project: no rows, zero totals", () => {

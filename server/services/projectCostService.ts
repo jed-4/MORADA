@@ -14,6 +14,8 @@ import * as schema from "@shared/schema";
 import {
   allocateLabourCents,
   computeProjectCost,
+  variationLineCostCents,
+  variationRowKeyResolver,
   type ProjectCost,
   type ProjectCostRow,
 } from "@shared/projectCost";
@@ -148,6 +150,39 @@ export async function loadProjectCost(
     committed,
   });
   return { ...cost, projectId, companyId };
+}
+
+/**
+ * The approved variation lines behind one cost row's Variations figure — the
+ * drill-down. `rowKey` is a ProjectCostRow.key (a cost code id, or "variations").
+ */
+export async function loadVariationLinesForRow(projectId: string, companyId: string, rowKey: string) {
+  const [costCodes, lines] = await Promise.all([
+    db.select({ id: schema.costCodes.id, code: schema.costCodes.code })
+      .from(schema.costCodes)
+      .where(eq(schema.costCodes.companyId, companyId)),
+    db.select({
+      id: schema.variationItems.id,
+      variationId: schema.variations.id,
+      variationNumber: schema.variations.variationNumber,
+      variationName: schema.variations.name,
+      name: schema.variationItems.name,
+      description: schema.variationItems.description,
+      quantity: schema.variationItems.quantity,
+      unitType: schema.variationItems.unitType,
+      unitCostExTax: schema.variationItems.unitCostExTax,
+      costCode: schema.variationItems.costCode,
+    })
+      .from(schema.variationItems)
+      .innerJoin(schema.variations, eq(schema.variationItems.variationId, schema.variations.id))
+      .where(and(eq(schema.variations.projectId, projectId), eq(schema.variations.status, "approved")))
+      .orderBy(schema.variations.variationNumber, schema.variationItems.sortOrder),
+  ]);
+  const keyOf = variationRowKeyResolver(costCodes);
+  const matched = lines
+    .filter((l) => keyOf(l.costCode) === rowKey)
+    .map(({ costCode: _c, ...l }) => ({ ...l, costCents: variationLineCostCents(l) }));
+  return { total: matched.reduce((s, l) => s + l.costCents, 0), lines: matched };
 }
 
 /** Open PO value not yet billed, plus subbie hours awaiting a PO — per cost code. */

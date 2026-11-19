@@ -2320,6 +2320,7 @@ export default function EstimateDetail() {
     try {
       await apiRequest(`/api/projects/${projectId}/budget/calculate`, "POST", {});
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "cost-summary"] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget-line-items`] });
       toast({ title: "Budget recalculated" });
     } catch (e: any) {
@@ -2361,6 +2362,7 @@ export default function EstimateDetail() {
       if (estimate?.projectId) {
         queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId, "cost-summary"] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget-line-items`] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/labour-hours-budget`] });
       }
@@ -2388,6 +2390,7 @@ export default function EstimateDetail() {
       if (estimate?.projectId) {
         queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId, "cost-summary"] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget-line-items`] });
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/labour-hours-budget`] });
       }
