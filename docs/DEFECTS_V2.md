@@ -155,3 +155,77 @@ The phone can rely on these. Rules live in `shared/defects.ts` (pure, tested in
 - **Walkthrough capture**: camera first → title (optional; defaults "Defect at {location}") → location / trade / job stage / owner stay sticky → Save & next. Optional markup (`usePhotoMarkup`). Works offline (queue type `create-defect` with `clientRequestId` + persisted photos).
 - Detail: photos (before/after), stage chip, actions for allowed transitions, history + comments, watch toggle.
 - Notification tap → defect detail.
+
+## Stage 2 — trades (as built, migration 0135)
+
+- **One link per trade per job:** `defect_trade_links(company_id, project_id,
+  contact_id, token, created_at, revoked_at, last_viewed_at, last_digest_at,
+  last_emailed_at)`. Token = 32 random bytes, base64url (43 chars); a partial
+  unique index allows one LIVE link per (project, contact). Revoked links are
+  kept. Rules: `shared/defectTrades.ts`; DB work: `server/services/defectTrades.ts`.
+- **Defect columns:** `sent_to_trade_at` (first send only), `trade_viewed_at`
+  (first time the trade opens their link), `trade_marked_fixed_at`,
+  `owner_overdue_reminded_at`. The defect object now carries
+  `sentToTradeAt`, `tradeViewedAt`, `tradeMarkedFixedAt`.
+- **Send:** `POST /api/defects/:id/send-to-trade {contactId?, emailNow?, message?}`
+  (`edit`). Sets/changes the trade contact, moves `open → sent` (other live
+  stages keep theirs), logs `transition` + `sent_to_trade`, notifies owner and
+  watchers, and with `emailNow` emails the trade their link (urgent). Without
+  it the trade hears in the 7am digest. Response `{contactId, contactName,
+  sent, emailed, emailError, linkUrl, defect}`.
+  `POST /api/projects/:projectId/defect-trades/:contactId/send {emailNow?}` =
+  "Send all open for this trade".
+- **Staff views:** `GET /api/defects/:id/trade-status`,
+  `GET /api/projects/:projectId/defect-trades` (per trade: counts by stage,
+  overdue, link; `backchargeCents` only with `financial.bills:view`),
+  `POST …/defect-trades/:contactId/link` (copy link; creates one if needed),
+  `POST …/defect-trades/:contactId/revoke`.
+- **Public page** `/portal/defects/:token` → `GET /api/portal/defects/:token`
+  (404 unknown, 410 revoked). Only that trade's defects on that job in
+  `sent / accepted / rejected / fixed`, with photos (served through
+  `/api/portal/defects/:token/photos/:defectId/:index`), location, due date,
+  priority and the "sent back" note. No money, no other trades.
+  `POST /api/portal/defects/:token/defects/:defectId/action {action: accept|fixed, note?, photo? (image data URL ≤10 MB)}`:
+  accept = sent/rejected → accepted; fixed = sent/accepted/rejected → fixed
+  (photo stored as kind `trade`, shown as "after"). Logged as `transition` with
+  actor = trade name and `data.via = "trade_link"`; owner + watchers notified.
+  Trades can never close, reject or reopen.
+- **Revoke:** automatically when none of the trade's defects on the job are in
+  sent/accepted/rejected/fixed (checked after every office transition and in
+  the daily sweep), or on demand. Logged as `link_revoked` on their defects.
+- **Digest:** hourly sweep (`startDefectDigestScheduler`, server/index.ts). Per
+  live link, once per local day at/after 07:00 in the company's time zone
+  (`system_configuration.timezone`, fallback Australia/Sydney): new (sent since
+  the last digest) + overdue. Nothing in either → no email. The day is claimed
+  before sending, so two instances can't double-send.
+- **Owner overdue reminders:** same sweep, one in-app/push notification per
+  overdue defect per local day (from 7am) to its owner.
+- **Emails** go through `sendGenericEmail` and the email delivery log as
+  `defect_trade` / `defect_digest`, from "<Company> via Morada
+  <noreply@moradaco.com.au>", reply-to the sender.
+
+## Stage 3 — handover + backcharges (as built, migration 0135)
+
+- **Handover list:** `GET /api/projects/:projectId/handover?jobStages=a,b`
+  (default `pre_handover,handover`) → project, branding, defects (ref, title,
+  location, stage, closed date, up to 2 before + 2 after photo URLs), counts,
+  sign-offs. Photos: `/api/projects/:projectId/handover/photos/:defectId/:index`.
+  PDF built in the browser with the shared @react-pdf kit
+  (`client/src/components/defects/pdf/HandoverPdfDocument.tsx`).
+- **Client:** new portal key `portal.handover` (view, approve). The client's
+  project "Defects" tab shows the read-only list + PDF, only when
+  `projects.share_handover_with_client` is on (`PATCH …/handover/settings
+  {shareWithClient}`, `edit`). Client copies have no trade names and no money.
+  On the boot that creates the key, client roles that can see variations get it.
+- **Sign-off:** `POST /api/projects/:projectId/handover/signoff {name, agree:true}`
+  — client logins only. Stored in `defect_handover_signoffs` (typed name, user,
+  time, IP, browser, counts and a snapshot of the list) — the same evidence a
+  portal-signed variation keeps. A `handover_signed` event goes on every listed
+  defect.
+- **Backcharges:** on the defect (`backcharge_cents` INC GST, `_reason`,
+  `_contact_id`, `_cost_code_id`, `backcharged_at/_by/_by_name`).
+  `GET|PUT|DELETE /api/defects/:id/backcharge` and
+  `GET /api/defect-backcharges?projectId=` (rows + totals per trade with the
+  GST split). Reading needs `financial.bills:view`; writing needs defects
+  `edit` + `financial.bills:edit`. The `backcharge` event never carries the
+  amount. No Xero document is created.

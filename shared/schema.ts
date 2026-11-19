@@ -1084,6 +1084,8 @@ export const projects = pgTable("projects", {
   companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   ownerId: varchar("owner_id").references(() => users.id),
   tradesPortalToken: varchar("trades_portal_token").unique(), // UUID for /portal/project/:token/trades, generated lazily
+  // Defects stage 3 (migration 0135): client logins see the handover list.
+  shareHandoverWithClient: boolean("share_handover_with_client").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -5154,7 +5156,22 @@ export const defects = pgTable("defects", {
   closedAt: timestamp("closed_at"),
   closedBy: varchar("closed_by").references(() => users.id, { onDelete: "set null" }),
   closedByName: text("closed_by_name"),
+
+  // ── Defects v2 stages 2–3 (migration 0135) ──
+  sentToTradeAt: timestamp("sent_to_trade_at"),
+  tradeViewedAt: timestamp("trade_viewed_at"),
+  tradeMarkedFixedAt: timestamp("trade_marked_fixed_at"),
+  ownerOverdueRemindedAt: timestamp("owner_overdue_reminded_at"),
+  // Backcharge to the trade: CENTS INC GST. Readable only with financial.bills.
+  backchargeCents: integer("backcharge_cents"),
+  backchargeReason: text("backcharge_reason"),
+  backchargedAt: timestamp("backcharged_at"),
+  backchargeContactId: varchar("backcharge_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  backchargeCostCodeId: varchar("backcharge_cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  backchargedBy: varchar("backcharged_by").references(() => users.id, { onDelete: "set null" }),
+  backchargedByName: text("backcharged_by_name"),
 }, (table) => ({
+  tradeContactIdx: index("defects_trade_contact_idx").on(table.projectId, table.assignedContactId, table.stage),
   companyProjectStageIdx: index("defects_company_project_stage_idx").on(table.companyId, table.projectId, table.stage),
   projectNumberUnique: uniqueIndex("defects_project_number_unique").on(table.projectId, table.number),
   projectClientRequestUnique: uniqueIndex("defects_project_client_request_unique").on(table.projectId, table.clientRequestId),
@@ -5198,6 +5215,43 @@ export const defectEvents = pgTable("defect_events", {
 }));
 export type DefectEvent = typeof defectEvents.$inferSelect;
 
+// One private link per trade (contact) per job — /portal/defects/:token.
+export const defectTradeLinks = pgTable("defect_trade_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  token: varchar("token").notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+  lastViewedAt: timestamp("last_viewed_at"),
+  lastDigestAt: timestamp("last_digest_at"),
+  lastEmailedAt: timestamp("last_emailed_at"),
+}, (table) => ({
+  liveUnique: uniqueIndex("defect_trade_links_live_unique").on(table.projectId, table.contactId).where(sql`revoked_at IS NULL`),
+  companyProjectIdx: index("defect_trade_links_company_project_idx").on(table.companyId, table.projectId),
+}));
+export type DefectTradeLink = typeof defectTradeLinks.$inferSelect;
+
+// A client's sign-off of the handover defects list (stage 3).
+export const defectHandoverSignoffs = pgTable("defect_handover_signoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  signerUserId: varchar("signer_user_id").references(() => users.id, { onDelete: "set null" }),
+  signerName: text("signer_name").notNull(),
+  jobStages: jsonb("job_stages").notNull().default([]),
+  defectCount: integer("defect_count").notNull().default(0),
+  openCount: integer("open_count").notNull().default(0),
+  snapshot: jsonb("snapshot").notNull().default([]),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("defect_handover_signoffs_project_idx").on(table.projectId, table.signedAt),
+}));
+export type DefectHandoverSignoff = typeof defectHandoverSignoffs.$inferSelect;
+
 export const defectPhotoSchema = z.object({
   url: z.string().min(1).max(2048),
   name: z.string().max(255).default(""),
@@ -5216,6 +5270,18 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   closedAt: true,
   closedBy: true,
   closedByName: true,
+  // Server-owned (stages 2–3): trade stamps and backcharge money.
+  sentToTradeAt: true,
+  tradeViewedAt: true,
+  tradeMarkedFixedAt: true,
+  ownerOverdueRemindedAt: true,
+  backchargeCents: true,
+  backchargeReason: true,
+  backchargedAt: true,
+  backchargeContactId: true,
+  backchargeCostCodeId: true,
+  backchargedBy: true,
+  backchargedByName: true,
 }).extend({
   // Type / priority / status come from the company's Field Settings, which can
   // add and rename options. These were hard-coded enums of the default keys,

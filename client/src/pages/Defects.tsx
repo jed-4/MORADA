@@ -39,6 +39,8 @@ import {
   Settings2,
   ChevronRight,
   AlertTriangle,
+  HardHat,
+  FileCheck2,
 } from "lucide-react";
 import {
   DEFECT_JOB_STAGES,
@@ -51,6 +53,8 @@ import {
 import { DefectFormDialog } from "@/components/defects/DefectFormDialog";
 import { DefectBoardView } from "@/components/defects/DefectBoardView";
 import { DefectDrawer } from "@/components/defects/DefectDrawer";
+import { DefectTradesSheet } from "@/components/defects/DefectTradesSheet";
+import { DefectHandoverDialog } from "@/components/defects/DefectHandoverDialog";
 import {
   stageBadgeClass,
   priorityBadgeClass,
@@ -104,6 +108,8 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [openDefect, setOpenDefect] = useState<DefectView | null>(null);
   const [deletingDefect, setDeletingDefect] = useState<DefectView | null>(null);
+  const [tradesOpen, setTradesOpen] = useState(false);
+  const [handoverOpen, setHandoverOpen] = useState(false);
 
   const { priorityOptions } = useDefectPriorityOptions();
   const tradeOptions = useDefectTradeOptions();
@@ -412,6 +418,28 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {projectId && (
+            <>
+              <button
+                className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                onClick={() => setTradesOpen(true)}
+                data-testid="button-defect-trades"
+                title="Trades: links, sending, backcharges"
+              >
+                <HardHat className="w-3 h-3" />
+                <span>Trades</span>
+              </button>
+              <button
+                className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                onClick={() => setHandoverOpen(true)}
+                data-testid="button-defect-handover"
+                title="Handover list PDF and client sign-off"
+              >
+                <FileCheck2 className="w-3 h-3" />
+                <span>Handover</span>
+              </button>
+            </>
+          )}
           {canAdd && (
             <button
               className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
@@ -537,6 +565,13 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
       />
 
       <DefectFormDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
+
+      {projectId && (
+        <>
+          <DefectTradesSheet projectId={projectId} open={tradesOpen} onOpenChange={setTradesOpen} canEdit={perms.edit} />
+          <DefectHandoverDialog projectId={projectId} open={handoverOpen} onOpenChange={setHandoverOpen} canEdit={perms.edit} />
+        </>
+      )}
 
       <AlertDialog open={!!deletingDefect} onOpenChange={(open) => !open && setDeletingDefect(null)}>
         <AlertDialogContent>

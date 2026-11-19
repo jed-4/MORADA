@@ -121,6 +121,10 @@ export function toDefectDto(
     dateIdentified: d.dateIdentified,
     closedAt: d.closedAt,
     closedByName: d.closedByName,
+    // Trade status (stage 2). Never money: backcharges have their own route.
+    sentToTradeAt: d.sentToTradeAt,
+    tradeViewedAt: d.tradeViewedAt,
+    tradeMarkedFixedAt: d.tradeMarkedFixedAt,
     attachments: attachments.map((a) => ({ url: a.url, name: a.name ?? "", type: a.type, kind: a.kind })),
     createdBy: d.createdBy,
     createdByName: d.createdByName,
@@ -447,13 +451,13 @@ async function addWatchers(defectId: string, userIds: (string | null | undefined
   await db.insert(defectWatchers).values(ids.map((userId) => ({ defectId, userId }))).onConflictDoNothing();
 }
 
-async function logEvent(companyId: string, defectId: string, type: string, actor: Actor, data: Record<string, unknown>) {
+export async function logEvent(companyId: string, defectId: string, type: string, actor: Actor, data: Record<string, unknown>) {
   await db.insert(defectEvents).values({
     companyId, defectId, type, actorUserId: actor.id, actorName: actor.name, data,
   });
 }
 
-async function watcherIds(defectId: string): Promise<string[]> {
+export async function watcherIds(defectId: string): Promise<string[]> {
   const rows = await db.select({ userId: defectWatchers.userId }).from(defectWatchers)
     .where(eq(defectWatchers.defectId, defectId));
   return rows.map((r) => r.userId);
@@ -556,7 +560,7 @@ export async function createDefect(params: {
 
 // ── update ──────────────────────────────────────────────────────────────────
 
-async function loadOwned(id: string, companyId: string): Promise<Defect> {
+export async function loadOwned(id: string, companyId: string): Promise<Defect> {
   const [row] = await db.select({ d: defects }).from(defects)
     .innerJoin(projects, eq(projects.id, defects.projectId))
     .where(and(eq(defects.id, id), eq(projects.companyId, companyId))).limit(1);

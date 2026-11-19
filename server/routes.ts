@@ -46,6 +46,34 @@ import {
   updateLocation,
   deleteLocation,
 } from "./services/defects";
+import {
+  sendToTradeSchema,
+  sendAllToTradeSchema,
+  tradeActionSchema,
+  sendDefectToTrade,
+  sendAllToTrade,
+  getDefectTradeStatus,
+  listProjectTrades,
+  tradeLinkFor,
+  revokeTradeLink,
+  afterDefectStageChange,
+  loadTradePortal,
+  tradePhotoPath,
+  tradeAct,
+} from "./services/defectTrades";
+import {
+  getHandoverList,
+  handoverPhotoPath,
+  handoverSettingsSchema,
+  setHandoverSharing,
+  signoffSchema,
+  signHandoverList,
+  backchargeSchema,
+  setBackcharge,
+  clearBackcharge,
+  getBackcharge,
+  listBackcharges,
+} from "./services/defectHandover";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -4615,7 +4643,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsed = transitionSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
       const actions = await resolveDefectActions(req.user);
-      res.json(await transitionDefect({ id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data }));
+      const detail = await transitionDefect({ id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data });
+      // Closing the trade's last open defect turns their link off.
+      await afterDefectStageChange(companyId, req.params.id);
+      res.json(detail);
     } catch (error) {
       defectFail(res, error, "Failed to move defect");
     }
@@ -4724,6 +4755,252 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       defectFail(res, error, "Failed to delete location");
+    }
+  });
+
+  // ── Defects v2 stage 2: trades (docs/DEFECTS_V2.md) ─────────────────────
+  // Sending moves open → sent, so it needs `edit`; the service re-checks the
+  // move with checkDefectTransition. Link management is `edit` too.
+  app.post("/api/defects/:id/send-to-trade", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = sendToTradeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      const result = await sendDefectToTrade({
+        id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data, baseUrl: publicBaseUrl(req),
+      });
+      res.json({ ...result, defect: await getDefectDetail(req.params.id, companyId, (req.user as any)?.id ?? null) });
+    } catch (error) {
+      defectFail(res, error, "Failed to send to the trade");
+    }
+  });
+
+  app.get("/api/defects/:id/trade-status", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getDefectTradeStatus(req.params.id, companyId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load trade status");
+    }
+  });
+
+  // Per-trade view: counts, overdue, link state; backcharge totals only for
+  // callers holding financial.bills:view.
+  app.get("/api/projects/:projectId/defect-trades", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const withMoney = await userHasPermission(req.user as any, "financial.bills", "view");
+      res.json(await listProjectTrades(companyId, req.params.projectId, withMoney));
+    } catch (error) {
+      defectFail(res, error, "Failed to load trades");
+    }
+  });
+
+  app.post("/api/projects/:projectId/defect-trades/:contactId/send", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = sendAllToTradeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      res.json(await sendAllToTrade({
+        companyId, projectId: req.params.projectId, contactId: req.params.contactId,
+        actor: actorFromReq(req), actions, body: parsed.data, baseUrl: publicBaseUrl(req),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to send to the trade");
+    }
+  });
+
+  // The trade's link (created if needed) — "Copy link".
+  app.post("/api/projects/:projectId/defect-trades/:contactId/link", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await tradeLinkFor(companyId, req.params.projectId, req.params.contactId, publicBaseUrl(req)));
+    } catch (error) {
+      defectFail(res, error, "Failed to get the link");
+    }
+  });
+
+  app.post("/api/projects/:projectId/defect-trades/:contactId/revoke", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const revoked = await revokeTradeLink({
+        companyId, projectId: req.params.projectId, contactId: req.params.contactId,
+        actor: actorFromReq(req), reason: "Turned off by the office",
+      });
+      res.json({ revoked });
+    } catch (error) {
+      defectFail(res, error, "Failed to turn the link off");
+    }
+  });
+
+  // Public trade page. No session: the token names ONE trade on ONE job, and
+  // the link row carries its own companyId — every lookup below is scoped by
+  // it (services/defectTrades.ts). Unknown token → 404, revoked → 410.
+  app.get("/api/portal/defects/:token", async (req, res) => {
+    try {
+      // Scoped by the link's own companyId + projectId + contactId.
+      res.json(await loadTradePortal(req.params.token));
+    } catch (error) {
+      defectFail(res, error, "Failed to load defects");
+    }
+  });
+
+  app.post("/api/portal/defects/:token/defects/:defectId/action", async (req, res) => {
+    try {
+      const parsed = tradeActionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const objectStorage = new ObjectStorageService();
+      // Uploaded under the LINK's companyId (never one from the request).
+      res.json(await tradeAct({
+        token: req.params.token,
+        defectId: req.params.defectId,
+        body: parsed.data,
+        uploadPhoto: (buffer, mime, companyId) => objectStorage.uploadObjectEntity(buffer, mime, companyId),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to update the defect");
+    }
+  });
+
+  app.get("/api/portal/defects/:token/photos/:defectId/:index", async (req, res) => {
+    try {
+      // tradePhotoPath only returns a path under the link's own companyId.
+      const path = await tradePhotoPath(req.params.token, req.params.defectId, Number.parseInt(req.params.index, 10));
+      if (!path) return res.status(404).json({ error: "Not found" });
+      const objectStorage = new ObjectStorageService();
+      const file = await objectStorage.getObjectEntityFile(path.replace(/^\/objects\/company\/[^/]+\//, "/objects/"));
+      await objectStorage.downloadObject(file, res, 300);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      if (!res.headersSent) defectFail(res, error, "Failed to load the photo");
+    }
+  });
+
+  // ── Defects v2 stage 3: handover list, client sign-off, backcharges ──────
+  // Team (projects.defects:view) and client logins share these. A client gets
+  // here only through clientAccessGate (portal.handover, project granted), and
+  // the service refuses unless the project shares the list.
+  const isClientSession = (req: Request) => (req.user as any)?.userCategory === "client";
+
+  app.get("/api/projects/:projectId/handover", requireAuth, requireTeamMemberOrClient, requireTeamPermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await getHandoverList({
+        companyId, projectId: req.params.projectId, jobStagesRaw: req.query.jobStages, forClient: isClientSession(req),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to load the handover list");
+    }
+  });
+
+  app.get("/api/projects/:projectId/handover/photos/:defectId/:index", requireAuth, requireTeamMemberOrClient, requireTeamPermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const path = await handoverPhotoPath({
+        companyId, projectId: req.params.projectId, defectId: req.params.defectId,
+        index: Number.parseInt(req.params.index, 10), forClient: isClientSession(req),
+      });
+      if (!path) return res.status(404).json({ error: "Not found" });
+      const objectStorage = new ObjectStorageService();
+      const file = await objectStorage.getObjectEntityFile(path.replace(/^\/objects\/company\/[^/]+\//, "/objects/"));
+      await objectStorage.downloadObject(file, res, 300);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      if (!res.headersSent) defectFail(res, error, "Failed to load the photo");
+    }
+  });
+
+  app.patch("/api/projects/:projectId/handover/settings", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = handoverSettingsSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.json(await setHandoverSharing(companyId, req.params.projectId, parsed.data.shareWithClient));
+    } catch (error) {
+      defectFail(res, error, "Failed to save");
+    }
+  });
+
+  // Clients only: the builder doesn't sign the client's acceptance.
+  app.post("/api/projects/:projectId/handover/signoff", requireAuth, requireTeamMemberOrClient, async (req, res) => {
+    try {
+      if (!isClientSession(req)) return res.status(403).json({ error: "Only the client can sign off the handover list" });
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = signoffSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Validation failed" });
+      res.status(201).json(await signHandoverList({
+        companyId, projectId: req.params.projectId, actor: actorFromReq(req), body: parsed.data,
+        ip: req.ip ?? null, userAgent: String(req.get("user-agent") || "") || null,
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to sign off");
+    }
+  });
+
+  // Backcharges: money, so financial.bills on top of the defect permission.
+  app.get("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), requirePermission("financial.bills", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getBackcharge(req.params.id, companyId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load the backcharge");
+    }
+  });
+
+  app.put("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = backchargeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Validation failed" });
+      res.json(await setBackcharge({ id: req.params.id, companyId, actor: actorFromReq(req), body: parsed.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to save the backcharge");
+    }
+  });
+
+  app.delete("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await clearBackcharge({ id: req.params.id, companyId, actor: actorFromReq(req) });
+      res.status(204).send();
+    } catch (error) {
+      defectFail(res, error, "Failed to clear the backcharge");
+    }
+  });
+
+  // The office's list to raise backcharges from (?projectId= for one job).
+  app.get("/api/defect-backcharges", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), requirePermission("financial.bills", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : undefined;
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      res.json(await listBackcharges(companyId, projectId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load backcharges");
     }
   });
 

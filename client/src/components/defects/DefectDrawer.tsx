@@ -42,6 +42,7 @@ import {
 } from "./defectStyles";
 import { useDefectPermissions, useTeamUsers, type TeamUserOption } from "./defectHooks";
 import { DefectLocationPicker } from "./DefectLocationPicker";
+import { DefectTradeSection, DefectBackchargeSection } from "./DefectTradeSection";
 
 interface DefectDrawerProps {
   defect: DefectView | null;
@@ -458,6 +459,10 @@ export function DefectDrawer({ defect: listDefect, open, onOpenChange, onDelete 
             )}
           </div>
 
+          {/* Trade (stage 2) and backcharge (stage 3, Bills permission only) */}
+          <DefectTradeSection defect={defect} canEdit={canEdit} />
+          <DefectBackchargeSection defect={defect} canEdit={canEdit} />
+
           {/* History + comments */}
           <HistorySection defectId={defect.id} events={detail?.events ?? []} users={teamUsers} />
         </div>
@@ -661,7 +666,8 @@ function describeEvent(e: DefectEventView): string {
       return "raised this defect";
     case "transition": {
       const to = DEFECT_STAGE_LABELS[d.to as DefectStage] ?? d.to;
-      return d.from === "closed" && d.to === "open" ? "reopened it" : `moved it to ${to}`;
+      if (d.from === "closed" && d.to === "open") return "reopened it";
+      return `moved it to ${to}${d.via === "trade_link" ? " from their link" : ""}`;
     }
     case "updated": {
       const names = Array.from(new Set(Object.keys(d.fields ?? {}).map((k) => FIELD_LABELS[k] ?? k)));
@@ -674,6 +680,16 @@ function describeEvent(e: DefectEventView): string {
       return "started watching";
     case "watcher_removed":
       return "stopped watching";
+    case "sent_to_trade":
+      return `sent it to ${d.contactName ?? "the trade"}${d.emailed ? " (emailed)" : ""}`;
+    case "trade_viewed":
+      return "opened their link";
+    case "link_revoked":
+      return "trade link turned off";
+    case "backcharge":
+      return d.action === "cleared" ? "removed the backcharge" : d.action === "updated" ? "changed the backcharge" : "recorded a backcharge";
+    case "handover_signed":
+      return "signed off the handover list";
     default:
       return e.type;
   }
