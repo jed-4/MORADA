@@ -200,7 +200,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     category: "",
     estimatedDuration: 0,
     // The template's status is one of the company's own task-template statuses
-    // (Task Settings). This used to be a fixed Published/Draft/Archived field
+    // (Field Settings → Template Statuses). This used to be a fixed Published/Draft/Archived field
     // the table doesn't have — nothing saved, and the filter hid everything.
     statusId: "" as string,
     isActive: true,
@@ -1317,7 +1317,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   onValueChange={(value) => setTemplateForm({ ...templateForm, statusId: value })}
                 >
                   <SelectTrigger data-testid="select-template-status">
-                    <SelectValue placeholder={templateStatuses.length ? "Select" : "Set up in Task Settings"} />
+                    <SelectValue placeholder={templateStatuses.length ? "Select" : "Set up in Field Settings"} />
                   </SelectTrigger>
                   <SelectContent>
                     {templateStatuses.map((st) => (
