@@ -293,3 +293,73 @@ export function allocateLabourCents(input: {
   }
   return out;
 }
+
+// ── Summary only ────────────────────────────────────────────────────────────
+// What a role with the Budget permission's "Summary Only" tick may see: how far
+// through its budget each category is, and a status. No dollar figures, no
+// margin, no line-level rows, no drill-downs. Built on the server so the
+// dollar figures never leave it.
+
+/**
+ * How much of a budget is used, banded:
+ *   <95% under · 95–99% near · 100–105% at limit · >105% over.
+ * Spend against no budget is "unbudgeted", not "over".
+ */
+export type BudgetTone = "under" | "near" | "at" | "over" | "unbudgeted" | "neutral";
+
+export function budgetTone(budgetedCents: number, usedCents: number): BudgetTone {
+  if (budgetedCents <= 0) return usedCents > 0 ? "unbudgeted" : "neutral";
+  const percent = (usedCents / budgetedCents) * 100;
+  if (percent < 95) return "under";
+  if (percent < 100) return "near";
+  if (percent <= 105) return "at";
+  return "over";
+}
+
+export interface ProjectCostSummaryLine {
+  /** Category id, or "other" for rows with no category. */
+  key: string;
+  label: string;
+  /** (spent + committed) ÷ revised budget, whole percent; null with no budget. */
+  usedPct: number | null;
+  tone: BudgetTone;
+}
+
+export interface ProjectCostSummaryOnly {
+  access: "summary";
+  categories: ProjectCostSummaryLine[];
+  total: { usedPct: number | null; tone: BudgetTone };
+}
+
+export const SUMMARY_OTHER_KEY = "other";
+
+function usedPct(budgetedCents: number, usedCents: number): number | null {
+  return budgetedCents > 0 ? Math.round((usedCents / budgetedCents) * 100) : null;
+}
+
+/** Reduce the full cost to the Summary Only view. Categories keep the row order; "Other" is last. */
+export function summariseProjectCost(cost: Pick<ProjectCost, "rows" | "totals">): ProjectCostSummaryOnly {
+  const groups = new Map<string, { label: string; revised: number; used: number }>();
+  for (const r of cost.rows) {
+    const key = r.categoryId ?? SUMMARY_OTHER_KEY;
+    const label = r.categoryId ? (r.categoryLabel || "Unknown category") : "Other";
+    const g = groups.get(key) ?? { label, revised: 0, used: 0 };
+    g.revised += r.revisedBudgetCents;
+    g.used += r.spentCents + r.committedCents;
+    groups.set(key, g);
+  }
+  const keys = Array.from(groups.keys()).filter((k) => k !== SUMMARY_OTHER_KEY);
+  if (groups.has(SUMMARY_OTHER_KEY)) keys.push(SUMMARY_OTHER_KEY);
+  const totalUsed = cost.totals.spentCents + cost.totals.committedCents;
+  return {
+    access: "summary",
+    categories: keys.map((key) => {
+      const g = groups.get(key)!;
+      return { key, label: g.label, usedPct: usedPct(g.revised, g.used), tone: budgetTone(g.revised, g.used) };
+    }),
+    total: {
+      usedPct: usedPct(cost.totals.revisedBudgetCents, totalUsed),
+      tone: budgetTone(cost.totals.revisedBudgetCents, totalUsed),
+    },
+  };
+}

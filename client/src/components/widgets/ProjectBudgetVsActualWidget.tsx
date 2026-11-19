@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@shared/schema";
-import type { ProjectCostTotals } from "@shared/projectCost";
+import type { ProjectCostTotals, ProjectCostSummaryOnly } from "@shared/projectCost";
 import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
@@ -175,7 +175,10 @@ export default function ProjectBudgetVsActualWidget({
 
   // The same cost calculation the Budget page shows (shared/projectCost.ts),
   // under the same query key, so the widget and the page always agree.
-  const { data, isLoading, isError, refetch } = useQuery<{ totals: ProjectCostTotals }>({
+  // A Summary Only role gets { access: "summary", total } with no dollar figures.
+  const { data, isLoading, isError, refetch } = useQuery<
+    { access?: "full"; totals: ProjectCostTotals } | ProjectCostSummaryOnly
+  >({
     queryKey: ["/api/projects", currentProject?.id, "cost-summary"],
     queryFn: async () => {
       if (!currentProject?.id) throw new Error("no project");
@@ -274,6 +277,21 @@ export default function ProjectBudgetVsActualWidget({
   if (isLoading) return <WidgetSkeleton />;
   if (isError) return <WidgetError onRetry={() => refetch()} />;
   if (!data) return <WidgetEmpty message="No budget set up for this project yet" />;
+
+  if (data.access === "summary") {
+    const used = data.total.usedPct;
+    const label: Record<string, string> = {
+      under: "Under budget", near: "Near budget", at: "At budget", over: "Over budget",
+      unbudgeted: "Unbudgeted spend", neutral: "No budget yet",
+    };
+    return (
+      <div className="flex-1 flex flex-col justify-center gap-1 p-2" data-testid="budget-widget-summary">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Budget used</span>
+        <span className="text-3xl font-bold tabular-nums leading-none">{used === null ? "—" : `${used}%`}</span>
+        <span className="text-xs text-muted-foreground">{label[data.total.tone]}</span>
+      </div>
+    );
+  }
 
   // Ex GST cents, cost only — the Budget page's totals.
   const t = data.totals;

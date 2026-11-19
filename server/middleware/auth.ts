@@ -245,6 +245,65 @@ export async function userHasPermission(
 }
 
 /**
+ * How much of the cost budget (financial.budget_actuals) a user may see.
+ *   full    — admin-like role, or View ticked without Summary Only
+ *   summary — Summary Only ticked (with or without View): % used and status
+ *             by category, no dollar figures, margin or drill-downs
+ *   none    — neither ticked
+ * Summary Only is a RESTRICTION: ticking it alongside View narrows the role.
+ * In development everyone is full, as with requirePermission; set
+ * DEV_BUDGET_ACCESS=summary to try the summary view locally.
+ */
+export type BudgetAccess = 'full' | 'summary' | 'none';
+
+export async function getBudgetAccess(
+  user: { roleId?: string | null; companyId?: string | null } | null | undefined,
+): Promise<BudgetAccess> {
+  if (process.env.NODE_ENV === 'development') {
+    return process.env.DEV_BUDGET_ACCESS === 'summary' ? 'summary' : 'full';
+  }
+  if (!user?.roleId || !user.companyId) return 'none';
+  const role = await storage.getUserRole(user.roleId, user.companyId);
+  if (role && isAdminRole(role)) return 'full';
+  const [rolePermissions, allPermissions] = await Promise.all([
+    storage.getRolePermissions(user.roleId),
+    storage.getPermissions(),
+  ]);
+  const permission = allPermissions.find((p) => p.key === 'financial.budget_actuals');
+  if (!permission) return 'none';
+  const rp = rolePermissions.find((r) => r.permissionId === permission.id);
+  const actions = Array.isArray(rp?.allowedActions) ? (rp!.allowedActions as string[]) : [];
+  if (actions.includes('summary_only')) return 'summary';
+  if (actions.includes('view')) return 'full';
+  return 'none';
+}
+
+/**
+ * Gate a cost-budget route. "full" routes (dollar figures, drill-downs, KPIs)
+ * refuse summary-only users; "summary" routes admit them and leave the level
+ * on req.budgetAccess so the handler can shape its response.
+ */
+export function requireBudgetAccess(min: 'full' | 'summary') {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const access = await getBudgetAccess(req.user as any);
+      if (access === 'full' || (min === 'summary' && access === 'summary')) {
+        (req as any).budgetAccess = access;
+        next();
+        return;
+      }
+      res.status(403).json({
+        error: access === 'summary'
+          ? 'Insufficient permissions: this role sees the budget summary only'
+          : 'Insufficient permissions: financial.budget_actuals:view required',
+      });
+    } catch {
+      res.status(500).json({ error: 'Permission check failed' });
+    }
+  };
+}
+
+/**
  * requirePermission for the builder's side of a route the client portal also
  * uses. A client login carries only portal.* keys, so the team key would 403
  * them; their access is already decided by clientAccessGate (deny-by-default,

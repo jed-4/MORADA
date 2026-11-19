@@ -54,3 +54,25 @@ export function useFinancialPermission(): boolean {
     return keys.some((k) => Array.isArray(perms[k]) && perms[k].includes("view"));
   }, [user]);
 }
+
+/**
+ * useBudgetAccess() — how much of the cost budget (financial.budget_actuals)
+ * the user may see, by the same rule as getBudgetAccess on the server:
+ *   full    — admin-like, or View without Summary Only
+ *   summary — Summary Only ticked (it narrows View, it doesn't add to it)
+ *   none    — neither
+ * Only a hint for what to fetch; the server enforces it, and the Budget page
+ * follows the `access` field on cost-summary.
+ */
+export function useBudgetAccess(): "full" | "summary" | "none" {
+  const { user } = useAuth();
+  return useMemo(() => {
+    const u = user as AuthUserWithPerms | null;
+    if (!u) return "none";
+    if (u.isAdminLike) return "full";
+    const allowed = u.effectivePermissions?.["financial.budget_actuals"] ?? [];
+    if (allowed.includes("summary_only")) return "summary";
+    if (allowed.includes("view")) return "full";
+    return "none";
+  }, [user]);
+}
