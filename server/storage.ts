@@ -23595,16 +23595,21 @@ export class DbStorage implements IStorage {
     return row?.companyId ?? null;
   }
 
-  async clockIn(projectId: string | null, userId: string, costCodeId?: string): Promise<Timesheet> {
+  /**
+   * `at` = when the clock-in button was pressed (resolved by server/clockTime);
+   * defaults to now for callers that don't send it.
+   */
+  async clockIn(projectId: string | null, userId: string, costCodeId?: string, at?: Date): Promise<Timesheet> {
     try {
-      // First, clock out any existing active timesheet
+      // First, clock out any existing active timesheet — at the same moment,
+      // so switching jobs leaves no gap and no overlap.
       const activeTimesheet = await this.getActiveTimesheet(userId);
       if (activeTimesheet) {
-        await this.clockOut(activeTimesheet.id, userId);
+        await this.clockOut(activeTimesheet.id, userId, 0, at);
       }
 
       // Create new active timesheet — record HH:mm and date in the company timezone
-      const now = new Date();
+      const now = at ?? new Date();
       const cfg = await this.getSystemConfiguration(await this.companyIdOfUser(userId));
       const tz = cfg?.timezone || "Australia/Sydney";
       const startTime = formatHHmmInTz(now, tz);
@@ -23636,7 +23641,8 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async clockOut(timesheetId: string, userId: string, breakDurationMinutes: number = 0): Promise<Timesheet | undefined> {
+  /** `at` = when the clock-out button was pressed; never before the clock-in. */
+  async clockOut(timesheetId: string, userId: string, breakDurationMinutes: number = 0, at?: Date): Promise<Timesheet | undefined> {
     try {
       const timesheet = await this.getTimesheet(timesheetId);
       if (!timesheet) {
@@ -23652,7 +23658,8 @@ export class DbStorage implements IStorage {
         return timesheet;
       }
 
-      const now = new Date();
+      const clockedInAt = timesheet.clockInTime ? new Date(timesheet.clockInTime) : null;
+      const now = at && clockedInAt && at < clockedInAt ? clockedInAt : (at ?? new Date());
       const cfg = await this.getSystemConfiguration(await this.companyIdOfUser(timesheet.userId));
       const tz = cfg?.timezone || "Australia/Sydney";
       const endTime = formatHHmmInTz(now, tz);

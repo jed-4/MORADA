@@ -8,6 +8,7 @@ import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
+import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
 import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
@@ -36043,9 +36044,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(schema.costCodes).where(eq(schema.costCodes.id, costCodeId)).limit(1);
         if (!cc || cc.companyId !== (req.user as any).companyId) return res.status(400).json({ error: "Invalid cost code" });
       }
-      const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId);
+      // When the button was pressed (the phone may send this later from its
+      // offline queue). See server/clockTime.ts.
+      const at = resolveClockTime(req.body?.clientTime);
+      const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId, at);
       res.status(201).json(timesheet);
     } catch (error) {
+      if (error instanceof StaleClientTimeError) return res.status(400).json({ error: error.message });
       console.error("Error clocking in:", error);
       res.status(500).json({ error: "Failed to clock in" });
     }
@@ -36065,12 +36070,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "timesheetId is required" });
       }
       const breakMins = typeof breakDuration === 'number' && breakDuration >= 0 ? breakDuration : 0;
-      const timesheet = await storage.clockOut(timesheetId, user.id, breakMins);
+      // When the button was pressed; storage keeps it at or after the clock-in.
+      const at = resolveClockTime(req.body?.clientTime);
+      const timesheet = await storage.clockOut(timesheetId, user.id, breakMins, at);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
       res.json(timesheet);
     } catch (error) {
+      if (error instanceof StaleClientTimeError) return res.status(400).json({ error: error.message });
       console.error("Error clocking out:", error);
       if (error instanceof Error && error.message.includes("Unauthorized")) {
         return res.status(403).json({ error: error.message });
