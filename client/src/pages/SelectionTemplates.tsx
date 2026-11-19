@@ -69,6 +69,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
 import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
@@ -151,6 +152,8 @@ export default function SelectionTemplates() {
 
   const { toast } = useToast();
   const { user } = useAuth();
+  // Template budgets are only sent to roles with selections pricing.
+  const canSeeSelectionPricing = usePermission("projects.selections.pricing");
 
   const [formData, setFormData] = useState({ ...initialFormData });
 
@@ -738,6 +741,7 @@ export default function SelectionTemplates() {
                   </SelectContent>
                 </Select>
               </div>
+              {canSeeSelectionPricing && (
               <div className="space-y-2">
                 <Label htmlFor="budget">Budget Amount ($)</Label>
                 <Input
@@ -750,6 +754,7 @@ export default function SelectionTemplates() {
                   placeholder="0.00"
                 />
               </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="deadline">Deadline</Label>
