@@ -1526,6 +1526,17 @@ export const companySettings = pgTable("company_settings", {
     layoutSettings?: Record<string, any>;
   }>>().default([]),
 
+  // ── Arriving on site (0136) ────────────────────────────────────────────
+  // The phone's geofence: "You're at 12 Smith St — clock in?". Notification
+  // only, never an automatic clock-in. Off by default; each person also opts
+  // in on their own phone. See siteVisits.
+  geofenceEnabled: boolean("geofence_enabled").notNull().default(false),
+  /** Keep the site sign-in register. Off = prompts only, nothing stored. */
+  geofenceStoreVisits: boolean("geofence_store_visits").notNull().default(true),
+  geofenceHoursStart: text("geofence_hours_start").notNull().default("05:00"), // HH:MM, company time
+  geofenceHoursEnd: text("geofence_hours_end").notNull().default("19:00"), // HH:MM, company time
+  geofenceWeekends: boolean("geofence_weekends").notNull().default(false),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1536,6 +1547,8 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings, {
   taxRate: z.coerce.string(),
   timesheetReminderThresholdHours: z.coerce.string(),
   timesheetDefaultBreak: z.coerce.string(),
+  geofenceHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+  geofenceHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
 }).omit({
   id: true,
   createdAt: true,
@@ -4275,6 +4288,31 @@ export const timesheets = pgTable("timesheets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Site visits (0136) — the "arriving on site" sign-in register.
+// One row per arrival at a job site, recorded by the phone's geofence. Kept
+// apart from timesheets on purpose: a visit NEVER changes a timesheet, and is
+// kept even if the person never clocks in. No coordinates are stored — only
+// who, which job, and when they arrived / left. Deleted after 12 months.
+export const siteVisits = pgTable("site_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  arrivedAt: timestamp("arrived_at").notNull(),
+  leftAt: timestamp("left_at"),
+  source: text("source").notNull().default("geofence"),
+  /** The phone's id for the arrive event — unique per user, so a replayed queue item is a no-op. */
+  clientRequestId: text("client_request_id"),
+  /** The phone's id for the leave event. */
+  leaveClientRequestId: text("leave_client_request_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  userRequestUq: uniqueIndex("site_visits_user_request_uq").on(t.userId, t.clientRequestId),
+  companyUserArrivedIdx: index("site_visits_company_user_arrived_idx").on(t.companyId, t.userId, t.arrivedAt),
+  arrivedIdx: index("site_visits_arrived_idx").on(t.arrivedAt),
+}));
+export type SiteVisit = typeof siteVisits.$inferSelect;
 
 // Timesheet Cost Codes (for split timesheets - distributing hours across multiple cost codes)
 export const timesheetCostCodes = pgTable("timesheet_cost_codes", {

@@ -7,7 +7,9 @@ import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
-import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
+import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz, formatHHmmInTz } from "./storage";
+import { geofenceSettingsOf, rankSiteFences, resolveSiteVisitTime, StaleSiteVisitTimeError, SITE_FENCE_RECENT_DAYS } from "@shared/siteVisits";
+import { recordSiteArrival, recordSiteLeave, listSiteVisits } from "./services/siteVisits";
 import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
@@ -7108,6 +7110,195 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const companyId = getSessionCompanyId(req);
     if (!companyId) return res.json({ apiKey: null });
     res.json({ apiKey: process.env.GOOGLE_MAPS_API_KEY?.trim() || null });
+  });
+
+  // ── Arriving on site (#46, 0136) ──────────────────────────────────────────
+  // The phone watches up to 20 job-site fences and, on arrival, offers a
+  // "clock in?" notification. Never an automatic clock-in. Arrive/leave are
+  // recorded separately as site visits (a sign-in register) and never change
+  // a timesheet. Rules: shared/siteVisits.ts. Storage: server/services/siteVisits.ts.
+  const siteVisitBodySchema = z.object({
+    projectId: z.string().min(1),
+    at: z.string().optional(),
+    clientRequestId: z.string().min(1).max(200).optional(),
+  });
+
+  const companyTimezone = async (companyId: string) =>
+    (await storage.getSystemConfiguration(companyId).catch(() => undefined))?.timezone || "Australia/Sydney";
+
+  // Ranked candidate fences + the company's geofence settings.
+  // Optional ?lat=&lng= (the phone's last known position) ranks by distance
+  // inside each group. The position is used for this response only — never stored.
+  app.get("/api/mobile/site-fences", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = getSessionCompanyId(req);
+      if (!user?.id || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const userId = String(user.id);
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      const timezone = await companyTimezone(companyId);
+      const activeTimesheet = await storage.getActiveTimesheet(userId).catch(() => null);
+      const active = activeTimesheet
+        ? { id: activeTimesheet.id, projectId: activeTimesheet.projectId ?? null, clockInTime: activeTimesheet.clockInTime ?? null }
+        : null;
+      if (!settings.enabled) {
+        return res.json({ settings, timezone, activeTimesheet: active, fences: [] });
+      }
+
+      const rows = await db.select({
+        id: projectsTable.id,
+        name: projectsTable.name,
+        location: projectsTable.location,
+        ownerId: projectsTable.ownerId,
+        lat: projectsTable.siteLatitude,
+        lng: projectsTable.siteLongitude,
+        radius: projectsTable.siteRadiusM,
+      }).from(projectsTable).where(and(
+        eq(projectsTable.companyId, companyId),
+        eq(projectsTable.currentSystemPhase, "construction"),
+        eq(projectsTable.isArchived, false),
+        eq(projectsTable.isBusiness, false),
+        isNotNull(projectsTable.siteLatitude),
+        isNotNull(projectsTable.siteLongitude),
+      ));
+
+      const roleName = String(user.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      let visible = rows;
+      if (!isAdminLike) {
+        const access = new Set((await storage.getUserProjectAccess(userId)).map((a) => a.projectId));
+        visible = rows.filter((p) => access.has(p.id) || p.ownerId === userId);
+      }
+      const ids = visible.map((p) => p.id);
+
+      let scheduledTodayIds: string[] = [];
+      let recentProjectIds: string[] = [];
+      if (ids.length > 0) {
+        const today = calendarDateMidnightUtcInTz(new Date(), timezone).toISOString().slice(0, 10);
+        const idSet = new Set(ids);
+        const items = await storage.getAllScheduleItems(companyId, { startDate: today, endDate: today }).catch(() => []);
+        scheduledTodayIds = Array.from(new Set((items as any[]).map((i) => i.projectId).filter((id: string) => idSet.has(id))));
+        const since = new Date(Date.now() - SITE_FENCE_RECENT_DAYS * 24 * 60 * 60 * 1000);
+        const recent = await db.selectDistinct({ projectId: schema.timesheets.projectId })
+          .from(schema.timesheets)
+          .where(and(
+            eq(schema.timesheets.userId, userId),
+            gte(schema.timesheets.date, since),
+            inArray(schema.timesheets.projectId, ids),
+          ));
+        recentProjectIds = recent.map((r) => r.projectId).filter((id): id is string => !!id);
+      }
+
+      const lat = Number(req.query.lat);
+      const lng = Number(req.query.lng);
+      const position = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+        ? { lat, lng } : null;
+
+      const fences = rankSiteFences(
+        visible.map((p) => ({
+          projectId: p.id, name: p.name, address: p.location ?? null,
+          latitude: p.lat as number, longitude: p.lng as number, radiusM: p.radius,
+        })),
+        { activeProjectId: active?.projectId, scheduledTodayIds, recentProjectIds, position },
+      );
+      res.json({ settings, timezone, activeTimesheet: active, fences });
+    } catch (error: any) {
+      console.error("[GET /api/mobile/site-fences]", error);
+      res.status(500).json({ error: "Failed to load site fences" });
+    }
+  });
+
+  const handleSiteVisit = async (kind: "arrive" | "leave", req: any, res: any, companyId: string | null | undefined) => {
+    try {
+      const userId = req.user?.id ? String(req.user.id) : null;
+      if (!userId || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = siteVisitBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid site visit", details: fromZodError(parsed.error).toString() });
+      const { projectId, at: rawAt, clientRequestId } = parsed.data;
+
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      // Feature off, or prompts-only: accept and drop, so the phone's queue clears.
+      if (!settings.enabled || !settings.storeVisits) return res.json({ stored: false, reason: "not_storing" });
+
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      let at: Date;
+      try {
+        at = resolveSiteVisitTime(rawAt);
+      } catch (e) {
+        if (e instanceof StaleSiteVisitTimeError) return res.status(400).json({ error: e.message, code: "stale" });
+        throw e;
+      }
+
+      const args = { companyId, userId, projectId, at, clientRequestId: clientRequestId ?? null };
+      if (kind === "arrive") {
+        const { visit, created } = await recordSiteArrival(args);
+        return res.status(created ? 201 : 200).json({ stored: true, created, visit });
+      }
+      const { visit, closed } = await recordSiteLeave(args);
+      return res.json({ stored: !!visit, closed, visit, ...(visit ? {} : { reason: "no_open_visit" }) });
+    } catch (error: any) {
+      console.error(`[POST /api/site-visits/${kind}]`, error);
+      res.status(500).json({ error: "Failed to record site visit" });
+    }
+  };
+  app.post("/api/site-visits/arrive", requireAuth, (req, res) => handleSiteVisit("arrive", req, res, getSessionCompanyId(req)));
+  app.post("/api/site-visits/leave", requireAuth, (req, res) => handleSiteVisit("leave", req, res, getSessionCompanyId(req)));
+
+  // Site visits for the timesheet views. Self always; anyone else's only for
+  // people who can approve timesheets (the same check as /approve).
+  //   ?userId=&projectId=&date=YYYY-MM-DD   one day, in company time (timesheet.date)
+  //   ?from=YYYY-MM-DD&to=YYYY-MM-DD        a range of days, inclusive
+  // Returns [] when the feature is switched off, so the web hides it.
+  app.get("/api/site-visits", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      const me = (req.user as any)?.id ? String((req.user as any).id) : null;
+      if (!me || !companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      if (!settings.enabled) return res.json([]);
+
+      const requestedUserId = typeof req.query.userId === "string" && req.query.userId ? req.query.userId : null;
+      const canApprove = await storage.canUserApproveTimesheets(me);
+      if (requestedUserId && requestedUserId !== me && !canApprove) {
+        return res.status(403).json({ error: "You can only see your own site visits" });
+      }
+      const userId = requestedUserId ?? (canApprove ? null : me);
+      const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : null;
+
+      const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const fromDay = isDay(req.query.date) ? req.query.date : isDay(req.query.from) ? req.query.from : null;
+      const toDay = isDay(req.query.date) ? req.query.date : isDay(req.query.to) ? req.query.to : null;
+      if (!fromDay || !toDay) return res.status(400).json({ error: "date, or from and to, are required (YYYY-MM-DD)" });
+      if (toDay < fromDay) return res.status(400).json({ error: "to is before from" });
+      const spanDays = (Date.parse(toDay) - Date.parse(fromDay)) / 86400000;
+      if (spanDays > 62) return res.status(400).json({ error: "At most 62 days at a time" });
+
+      const tz = await companyTimezone(companyId);
+      // Over-fetch a day each side in UTC, then keep the rows whose arrival
+      // falls on the requested calendar days in company time.
+      const from = new Date(Date.parse(fromDay) - 86400000);
+      const to = new Date(Date.parse(toDay) + 2 * 86400000);
+      const rows = await listSiteVisits({ companyId, userId, projectId, from, to });
+      const out = rows
+        .map((v) => ({
+          id: v.id,
+          userId: v.userId,
+          projectId: v.projectId,
+          arrivedAt: v.arrivedAt,
+          leftAt: v.leftAt,
+          source: v.source,
+          date: calendarDateMidnightUtcInTz(new Date(v.arrivedAt), tz).toISOString().slice(0, 10),
+          arrivedTime: formatHHmmInTz(new Date(v.arrivedAt), tz),
+          leftTime: v.leftAt ? formatHHmmInTz(new Date(v.leftAt), tz) : null,
+        }))
+        .filter((v) => v.date >= fromDay && v.date <= toDay);
+      res.json(out);
+    } catch (error: any) {
+      console.error("[GET /api/site-visits]", error);
+      res.status(500).json({ error: "Failed to load site visits" });
+    }
   });
 
   app.delete("/api/projects/:id", async (req, res) => {

@@ -3,6 +3,7 @@ import { LibraryPropertiesManager } from "@/components/library/LibraryProperties
 import { BookOpen } from "lucide-react";
 import { VariationRemindersSettings } from "@/components/variations/VariationRemindersSettings";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { ArrivingOnSiteSettings } from "@/components/settings/ArrivingOnSiteSettings";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,6 +150,13 @@ const SETTINGS_CATEGORIES = [
     label: "Timesheet Settings",
     icon: Clock,
     description: "Clock-in reminders, rounding, and default break durations",
+    group: "general"
+  },
+  {
+    id: "arriving-on-site",
+    label: "Arriving on Site",
+    icon: MapPin,
+    description: "Phone prompts to clock in when someone arrives at a job site",
     group: "general"
   },
   // Schedule section
@@ -2163,6 +2171,7 @@ export default function Settings() {
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
             {activeSection === "timesheet-settings" && <TimesheetSettingsSection />}
+            {activeSection === "arriving-on-site" && <ArrivingOnSiteSettings />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
             {activeSection === "integrations" && <IntegrationsSection />}
             {activeSection === "schedule-settings" && <ScheduleSettingsSection />}
@@ -2183,7 +2192,7 @@ export default function Settings() {
             {activeSection === "variation-reminders" && <VariationRemindersSettings />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing", "library", "variation-reminders"].includes(activeSection) && (
+            {!["branding", "timesheet-settings", "arriving-on-site", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing", "library", "variation-reminders"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
