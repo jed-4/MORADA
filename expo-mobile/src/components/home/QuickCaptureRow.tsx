@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRoute } from '@react-navigation/native';
 import { useTheme, radius } from '../../theme';
 import { Sheet, type SheetRef } from '../ui/Sheet';
 import { SectionHeader } from '../ui/SectionHeader';
@@ -123,6 +124,22 @@ export function QuickCaptureRow({
     // Let the sheet get out of the way before the camera / next screen.
     if (action) setTimeout(() => run(action, chosen), 300);
   };
+
+  // "Diary photo" Lock Screen widget (buildpro://capture/photo, see
+  // navigation/deepLinkRouting.ts) lands here with { quickCapture: 'diary',
+  // quickCaptureAt }: run the same Photo-to-diary flow as the button. A
+  // request older than a minute is a restored param from a relaunch — ignored.
+  const route = useRoute<any>();
+  const captureAt: number | undefined = route.params?.quickCapture === 'diary' ? route.params?.quickCaptureAt : undefined;
+  const handledCaptureAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!captureAt || !canDiary || handledCaptureAt.current === captureAt) return;
+    handledCaptureAt.current = captureAt;
+    if (Date.now() - captureAt > 60_000) return;
+    // Let the home screen settle before the camera / project picker opens.
+    setTimeout(() => start('diary'), 500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captureAt, canDiary]);
 
   const buttons: Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }> = [
     ...(canDiary ? [{ key: 'diary', icon: 'camera-outline' as const, label: 'Photo to diary', onPress: () => start('diary') }] : []),

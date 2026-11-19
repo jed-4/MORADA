@@ -18,7 +18,7 @@ module.exports = {
   expo: {
     name: "Morada",
     slug: "buildpro-mobile",
-    version: "1.3.0",
+    version: "1.4.0",
     scheme: "buildpro",
     // "default" so the iPhone Duo can turn sideways when unfolded. Phones are
     // still held in portrait: the expo-screen-orientation plugin below starts
@@ -39,6 +39,8 @@ module.exports = {
     // 1.2.0 = Expo SDK 58 / React Native 0.88: an update built on it must never
     // reach a 1.1.x (SDK 54) binary.
     // 1.3.0 = adds expo-screen-orientation (native module, iPhone Duo).
+    // 1.4.0 = adds expo-widgets + @expo/ui (Home Screen widgets, Lock Screen
+    //         clock-in Live Activity; a widget extension target + App Group).
     runtimeVersion: {
       policy: "appVersion",
     },
@@ -53,10 +55,12 @@ module.exports = {
       bundleIdentifier: IOS_BUNDLE_ID,
       // Sign in with Apple (App Store guideline 4.8 — we also offer Google).
       usesAppleSignIn: true,
-      buildNumber: "20",
+      buildNumber: "21",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSFaceIDUsageDescription: FACE_ID_PERMISSION,
+        // Clock-in timer on the Lock Screen / Dynamic Island (expo-widgets).
+        NSSupportsLiveActivities: true,
       },
     },
     android: {
@@ -65,7 +69,7 @@ module.exports = {
         backgroundColor: "#7C6B86",
       },
       package: "com.buildpro.mobile",
-      versionCode: 16,
+      versionCode: 17,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
@@ -121,6 +125,49 @@ module.exports = {
           iosShareExtensionName: "MoradaShareExtension",
           androidIntentFilters: ["image/*", "application/pdf"],
           androidMultiIntentFilters: ["image/*"],
+        },
+      ],
+      // Home Screen + Lock Screen widgets and the clock-in Live Activity
+      // (src/widgets/*, fed by src/services/widgetSnapshot.ts). Adds the
+      // ExpoWidgetsTarget extension and the App Group both targets share.
+      // iOS only (enableAndroid defaults to false). Live Activities are NOT
+      // listed here: an entry without supportedFamilies breaks the build.
+      [
+        "expo-widgets",
+        {
+          groupIdentifier: "group.com.buildpro.mobile",
+          bundleIdentifier: "com.buildpro.mobile.ExpoWidgetsTarget",
+          widgets: [
+            {
+              name: "TodayWidget",
+              displayName: "Today",
+              description: "Your clocked-in job and timer, hours today and what's next on the schedule.",
+              ios: {
+                supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular", "accessoryInline", "accessoryCircular"],
+                initialLayout: "./src/widgets/TodayWidget.tsx",
+              },
+            },
+            {
+              name: "TasksWidget",
+              displayName: "Tasks",
+              description: "Up to four tasks due today.",
+              ios: {
+                supportedFamilies: ["systemSmall", "systemMedium", "systemLarge"],
+                initialLayout: "./src/widgets/TasksWidget.tsx",
+              },
+            },
+            {
+              // #41 fallback: expo-widgets has no Control Center controls, so
+              // this is a one-tap Lock Screen shortcut to Photo to diary.
+              name: "DiaryPhotoWidget",
+              displayName: "Diary photo",
+              description: "Opens the camera for a site diary photo.",
+              ios: {
+                supportedFamilies: ["accessoryCircular", "accessoryInline"],
+                initialLayout: "./src/widgets/DiaryPhotoWidget.tsx",
+              },
+            },
+          ],
         },
       ],
       [

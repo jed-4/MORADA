@@ -29,6 +29,7 @@ import { useDirtyGuard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
+import { clockedInOnThisPhone, clockedOutOnThisPhone, shortJobName } from '../services/liveActivity';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackButton from '../components/ui/BackButton';
 
@@ -864,6 +865,12 @@ export default function TimesheetsScreen() {
     // from the offline queue (server/clockTime.ts).
     const clientTime = new Date().toISOString();
     const resolvedClockInProjectId = clockInProjectId === BUSINESS_ID ? null : clockInProjectId;
+    // Lock Screen timer + Home Screen widget (no-op without expo-widgets).
+    const markClockedIn = () => clockedInOnThisPhone({
+      jobName: shortJobName(projects.find(p => p.id === resolvedClockInProjectId)),
+      clockInTime: clientTime,
+      projectId: resolvedClockInProjectId,
+    });
     let networkError = false;
     try {
       const online = await isOnline();
@@ -872,6 +879,7 @@ export default function TimesheetsScreen() {
           type: 'clock-in',
           payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId, clientTime },
         });
+        markClockedIn();
         Alert.alert('Saved Offline', 'Your clock-in has been queued and will sync when you have a connection.');
         setClockInProjectId('');
         setClockInCostCodeId('');
@@ -893,6 +901,7 @@ export default function TimesheetsScreen() {
       }
       // Clocked in/out: confirm with a tap you can feel without looking.
       haptic.success();
+      markClockedIn();
 
       await fetchData();
       setClockInProjectId('');
@@ -904,6 +913,7 @@ export default function TimesheetsScreen() {
           type: 'clock-in',
           payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId, clientTime },
         });
+        markClockedIn();
         Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
         setClockInProjectId('');
         setClockInCostCodeId('');
@@ -928,6 +938,7 @@ export default function TimesheetsScreen() {
           type: 'clock-out',
           payload: { timesheetId: activeTimesheet.id, clientTime },
         });
+        clockedOutOnThisPhone();
         Alert.alert('Saved Offline', 'Your clock-out has been queued and will sync when you have a connection.');
         return;
       }
@@ -947,6 +958,7 @@ export default function TimesheetsScreen() {
       }
       // Clocked in/out: confirm with a tap you can feel without looking.
       haptic.success();
+      clockedOutOnThisPhone();
 
       await fetchData();
     } catch (e: unknown) {
@@ -956,6 +968,7 @@ export default function TimesheetsScreen() {
           type: 'clock-out',
           payload: { timesheetId: activeTimesheet.id, clientTime },
         });
+        clockedOutOnThisPhone();
         Alert.alert('Saved Offline', 'Clock-out saved and will sync when connection is restored.');
       } else {
         Alert.alert('Clock-out Failed', msg);
