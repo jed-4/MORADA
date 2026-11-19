@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { apiFetch } from '../services/api';
 import { useTheme, fontSize, fontWeight, radius } from '../theme';
 import { PressableScale } from '../components/ui/PressableScale';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 interface ProjectRow {
   id: string;
@@ -81,7 +82,8 @@ export default function SelectionsProjectsScreen({ navigation }: { navigation: N
         <FlatList
           data={projects}
           keyExtractor={(p) => p.id}
-          contentContainerStyle={{ padding: 14, gap: 8, paddingBottom: insets.bottom + 24 }}
+          // Capped so the rows don't stretch across the Duo unfolded; no-op on phones.
+          contentContainerStyle={[{ padding: 14, gap: 8, paddingBottom: insets.bottom + 24 }, readableFrame]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

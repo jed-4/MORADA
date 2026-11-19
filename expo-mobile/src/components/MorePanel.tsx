@@ -4,7 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
-import { useTheme, fontSize, fontWeight, radius, type Theme } from '../theme';
+import { useTheme, fontSize, fontWeight, radius, type Theme, MAX_FONT_SCALE } from '../theme';
 import { haptic } from '../lib/haptics';
 import { Sheet, SheetTextInput, type SheetRef } from './ui/Sheet';
 import { useToast } from './ui/Toast';
@@ -58,11 +58,11 @@ function Tile({
         <Ionicons name={tile.icon} size={24} color={fg} />
         {showBadge && (
           <View style={[styles.unreadPill, { backgroundColor: theme.primary }]}>
-            <Text style={styles.unreadText}>{unread! > 99 ? '99+' : unread}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.unreadText}>{unread! > 99 ? '99+' : unread}</Text>
           </View>
         )}
       </View>
-      <Text
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
         style={[
           styles.tileLabel,
           { color: tile.destructive ? theme.statusDanger : theme.textPrimary },
@@ -85,9 +85,11 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
   const { user } = useAuth();
   // The Selections tile is only offered to roles that can view selections.
   const canViewSelections = usePermission('projects.selections');
+  const canViewDefects = usePermission('projects.defects');
 
   const sheetRef = useRef<SheetRef>(null);
   const taskSheetRef = useRef<SheetRef>(null);
+  const descRef = useRef<any>(null);
 
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -175,15 +177,15 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
               style={[styles.profileRow, { borderBottomColor: theme.border }]}
             >
               <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
-                <Text style={styles.avatarText}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.avatarText}>
                   {(user.firstName?.[0] || user.email?.[0] || '?').toUpperCase()}
                 </Text>
               </View>
               <View style={styles.profileInfo}>
-                <Text style={[styles.profileName, { color: theme.textPrimary }]} numberOfLines={1}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.profileName, { color: theme.textPrimary }]} numberOfLines={1}>
                   {displayName}
                 </Text>
-                <Text
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                   style={[styles.profileEmail, { color: theme.textSecondary }]}
                   numberOfLines={1}
                 >
@@ -200,6 +202,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
           <View style={styles.grid}>
             {workspaceItems
               .filter((tile) => tile.id !== 'selections' || canViewSelections)
+              .filter((tile) => tile.id !== 'my-defects' || canViewDefects)
               .map((tile) => (
               <Tile
                 key={tile.id}
@@ -221,25 +224,12 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
         </Animated.View>
       </Sheet>
 
-      <Sheet ref={taskSheetRef} title="New Task" stackBehavior="push">
-        <View style={styles.form}>
-          <SheetTextInput
-            style={[styles.input, inputStyle]}
-            value={taskTitle}
-            onChangeText={setTaskTitle}
-            placeholder="Task title"
-            placeholderTextColor={theme.textMuted}
-            autoFocus
-          />
-          <SheetTextInput
-            style={[styles.textArea, inputStyle]}
-            value={taskDescription}
-            onChangeText={setTaskDescription}
-            placeholder="Description (optional)"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            textAlignVertical="top"
-          />
+      <Sheet
+        ref={taskSheetRef}
+        title="New Task"
+        stackBehavior="push"
+        // Create button pinned at the bottom, above the keyboard.
+        footer={
           <PressableScale
             haptics
             disabled={saving}
@@ -249,9 +239,35 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
             {saving ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.submitText}>Create Task</Text>
+              <Text style={styles.submitText} maxFontSizeMultiplier={1.4}>Create Task</Text>
             )}
           </PressableScale>
+        }
+      >
+        <View style={styles.form}>
+          <SheetTextInput
+            style={[styles.input, inputStyle]}
+            value={taskTitle}
+            onChangeText={setTaskTitle}
+            placeholder="Task title"
+            placeholderTextColor={theme.textMuted}
+            autoFocus
+            autoCapitalize="sentences"
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => descRef.current?.focus()}
+          />
+          <SheetTextInput
+            ref={descRef}
+            autoCapitalize="sentences"
+            style={[styles.textArea, inputStyle]}
+            value={taskDescription}
+            onChangeText={setTaskDescription}
+            placeholder="Description (optional)"
+            placeholderTextColor={theme.textMuted}
+            multiline
+            textAlignVertical="top"
+          />
         </View>
       </Sheet>
 
@@ -360,7 +376,8 @@ const styles = StyleSheet.create({
     height: 120,
   },
   submitBtn: {
-    marginTop: 16,
+    flex: 1,
+    minHeight: 50,
     borderRadius: radius.xl,
     paddingVertical: 14,
     alignItems: 'center',

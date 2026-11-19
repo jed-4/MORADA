@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { apiFetch } from '../../services/api';
@@ -16,6 +16,7 @@ import {
 } from '../../lib/clientPortal';
 import CroppedImage from '../../components/selections/CroppedImage';
 import { PressableScale } from '../../components/ui/PressableScale';
+import { useLayout } from '../../lib/useLayout';
 import { ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
 
 /**
@@ -40,7 +41,7 @@ const FILTERS: Array<{ key: SelectionFilter; label: string }> = [
 export default function ClientSelectionsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
-  const { width } = useWindowDimensions();
+  const { width, isWide } = useLayout();
   const { project } = useClientProject();
   const [selections, setSelections] = useState<ClientSelectionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +79,11 @@ export default function ClientSelectionsScreen() {
     [selections, filter, query, groupBy],
   );
   const toChoose = selections.filter((s) => selectionFilterOf(s) === 'to-choose').length;
-  const tile = Math.floor((width - 32 - 12) / 2);
+  // Two across on a phone; three or four on the Duo unfolded (four in
+  // landscape). A plain wrapped View, not a FlatList, so a column change on
+  // fold/unfold only resizes the tiles and never remounts the list.
+  const columns = isWide ? (width >= 900 ? 4 : 3) : 2;
+  const tile = Math.floor((width - 32 - 12 * (columns - 1)) / columns);
 
   const open = (s: ClientSelectionRow) => {
     haptic.select();

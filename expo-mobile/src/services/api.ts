@@ -1,5 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
-import { uploadAsync, FileSystemUploadType, downloadAsync, cacheDirectory, makeDirectoryAsync } from 'expo-file-system/legacy';
+import {
+  uploadAsync,
+  createUploadTask,
+  FileSystemUploadType,
+  downloadAsync,
+  cacheDirectory,
+  makeDirectoryAsync,
+  type FileSystemUploadOptions,
+  type FileSystemUploadResult,
+} from 'expo-file-system/legacy';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://buildpro4.replit.app';
 
@@ -146,26 +155,74 @@ export const getAuthedImageSource = (uri: string): { uri: string; headers?: Reco
   return { uri: absolute };
 };
 
+/**
+ * Upload progress callback: `fraction` runs 0 → 1. It is called with 0 when
+ * the upload starts and 1 once the server has accepted the file, so a caller
+ * can drive a progress ring straight from it.
+ */
+export type UploadProgressHandler = (fraction: number) => void;
+
+/**
+ * Send a local file. Without `onProgress` this is plain `uploadAsync`, exactly
+ * as before. With it, the same request runs as an upload task so the bytes
+ * sent can be reported. A task that ends with no result was cancelled.
+ */
+const sendFile = async (
+  url: string,
+  localUri: string,
+  options: FileSystemUploadOptions,
+  onProgress?: UploadProgressHandler,
+): Promise<FileSystemUploadResult> => {
+  if (!onProgress) return uploadAsync(url, localUri, options);
+
+  let last = -1;
+  const report = (fraction: number) => {
+    const clamped = Math.max(0, Math.min(1, fraction));
+    // The native callback fires many times a second; re-render only on a
+    // visible change.
+    if (clamped !== 1 && clamped - last < 0.02) return;
+    last = clamped;
+    onProgress(clamped);
+  };
+
+  // The last few percent is held back until the server answers, so the ring
+  // never sits on "100%" while the response is still on its way.
+  const task = createUploadTask(url, localUri, options, ({ totalBytesSent, totalBytesExpectedToSend }) => {
+    if (totalBytesExpectedToSend > 0) report((totalBytesSent / totalBytesExpectedToSend) * 0.95);
+  });
+  const result = await task.uploadAsync();
+  if (!result) throw new Error('Upload was cancelled.');
+  return result;
+};
+
 const uploadViaPresignedUrl = async (
   localUri: string,
   name: string,
   contentType: string,
+  onProgress?: UploadProgressHandler,
 ): Promise<{ uploadURL: string; objectPath: string }> => {
+  onProgress?.(0);
   const presignRes = await apiRequest('/api/uploads/request-url', 'POST', {
     name,
     contentType,
   });
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const uploadResult = await uploadAsync(uploadURL, localUri, {
-    httpMethod: 'PUT',
-    uploadType: FileSystemUploadType.BINARY_CONTENT,
-    headers: { 'Content-Type': contentType },
-  });
+  const uploadResult = await sendFile(
+    uploadURL,
+    localUri,
+    {
+      httpMethod: 'PUT',
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': contentType },
+    },
+    onProgress,
+  );
   if (uploadResult.status < 200 || uploadResult.status >= 300) {
     throw new Error(`Failed to upload file: ${uploadResult.status}`);
   }
 
+  onProgress?.(1);
   return { uploadURL, objectPath };
 };
 
@@ -175,20 +232,30 @@ const uploadViaPresignedUrl = async (
  * presigned /api/uploads/request-url is team-only — so client mode sends
  * message photos this way. Same { objectPath } result as the presigned flow.
  */
-export const uploadPhotoViaServer = async (localUri: string): Promise<{ objectPath: string }> => {
+export const uploadPhotoViaServer = async (
+  localUri: string,
+  onProgress?: UploadProgressHandler,
+): Promise<{ objectPath: string }> => {
   const headers: Record<string, string> = { 'X-Client': 'mobile' };
   if (sessionId) headers['X-Session-ID'] = sessionId;
-  const result = await uploadAsync(`${API_BASE_URL}/api/uploads/file`, localUri, {
-    httpMethod: 'POST',
-    uploadType: FileSystemUploadType.MULTIPART,
-    fieldName: 'file',
-    mimeType: 'image/jpeg',
-    headers,
-  });
+  onProgress?.(0);
+  const result = await sendFile(
+    `${API_BASE_URL}/api/uploads/file`,
+    localUri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystemUploadType.MULTIPART,
+      fieldName: 'file',
+      mimeType: 'image/jpeg',
+      headers,
+    },
+    onProgress,
+  );
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`Failed to upload photo: ${result.status}`);
   }
   const body = JSON.parse(result.body);
+  onProgress?.(1);
   return { objectPath: body.objectPath };
 };
 
@@ -229,8 +296,31 @@ export const downloadToCache = async (pathOrUrl: string, fileName: string): Prom
   return result.uri;
 };
 
-export const uploadPhoto = (localUri: string) =>
-  uploadViaPresignedUrl(localUri, `photo-${Date.now()}.jpg`, 'image/jpeg');
+export const uploadPhoto = (localUri: string, onProgress?: UploadProgressHandler) =>
+  uploadViaPresignedUrl(localUri, `photo-${Date.now()}.jpg`, 'image/jpeg', onProgress);
 
-export const uploadFileFromUri = (localUri: string, fileName: string, contentType: string) =>
-  uploadViaPresignedUrl(localUri, fileName, contentType);
+export const uploadFileFromUri = (
+  localUri: string,
+  fileName: string,
+  contentType: string,
+  onProgress?: UploadProgressHandler,
+) => uploadViaPresignedUrl(localUri, fileName, contentType, onProgress);
+
+/**
+ * Add an already-uploaded file to a bill's attachments (POST
+ * /api/bills/:id/attachments). Used for pages 2+ of a scanned receipt: the
+ * bill create call only takes one inline `objectPath`.
+ */
+export const attachFileToBill = async (
+  billId: string,
+  objectPath: string,
+  filename: string,
+  mimeType: string = 'image/jpeg',
+): Promise<void> => {
+  await apiRequest(`/api/bills/${billId}/attachments`, 'POST', {
+    objectPath,
+    filename,
+    mimeType,
+    source: 'manual',
+  });
+};

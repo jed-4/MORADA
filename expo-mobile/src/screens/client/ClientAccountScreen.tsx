@@ -8,6 +8,7 @@ import { API_BASE_URL } from '../../services/api';
 import { buildLabel } from '../../lib/sentry';
 import { useTheme, fontSize, fontWeight } from '../../theme';
 import { ClientCard } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * A client's account: who they're signed in as, the web portal for anything
@@ -64,7 +65,7 @@ export default function ClientAccountScreen() {
         <View style={{ width: 26 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, readableFrame]}>
         <ClientCard style={styles.who}>
           <View style={[styles.avatar, { backgroundColor: theme.primaryLight }]}>
             <Ionicons name="person-outline" size={22} color={theme.primary} />

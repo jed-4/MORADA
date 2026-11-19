@@ -11,7 +11,6 @@ import {
   FlatList,
   SectionList,
   Platform,
-  useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,32 +20,20 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
 import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } from '../lib/taskStatus';
-import TaskComments from '../components/TaskComments';
+import { TaskDetail, TaskDetailPane, stripHtml, getPriorityColor, PRIORITY_LABELS } from '../components/tasks/TaskDetail';
+import { useTaskPane, confirmDiscard } from '../components/tasks/useTaskPane';
+import { TwoPane } from '../components/ui/TwoPane';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
 import { haptic } from '../lib/haptics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, lightTheme } from '../theme';
+import { useTheme, currentTheme, MAX_FONT_SCALE } from '../theme';
+import { goBackOrHome } from '../navigation/back';
+import { SwipeRow } from '../components/ui/SwipeRow';
 const TASKS_PREFS_KEY = '@buildpro_tasks_prefs';
-
-function stripHtml(html?: string): string {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<li>/gi, '• ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
 
 interface Task {
   id: string;
@@ -89,33 +76,16 @@ const STATUS_LABELS: Record<string, string> = {
   'completed': 'Completed',
 };
 
-const PRIORITY_LABELS: Record<string, string> = {
-  'urgent': 'Urgent',
-  'high': 'High',
-  'medium': 'Medium',
-  'low': 'Low',
-};
-
 const STATUS_ORDER = ['todo', 'in-progress', 'done', 'completed'];
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
 
-function getPriorityColor(priority?: string): string {
-  switch (priority) {
-    case 'urgent': return lightTheme.statusDanger;
-    case 'high': return lightTheme.coral;
-    case 'medium': return lightTheme.statusWarning;
-    case 'low': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
-  }
-}
-
 function getStatusColorFallback(status?: string): string {
   switch (status) {
-    case 'todo': return lightTheme.textMuted;
-    case 'in-progress': return lightTheme.statusInfo;
+    case 'todo': return currentTheme().textMuted;
+    case 'in-progress': return currentTheme().statusInfo;
     case 'done':
-    case 'completed': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
+    case 'completed': return currentTheme().statusSuccess;
+    default: return currentTheme().textMuted;
   }
 }
 
@@ -156,11 +126,11 @@ const DUE_DATE_ORDER = ['Overdue', 'Today', 'This Week', 'Later', 'No Date'];
 
 function getDueDateColor(group: string): string {
   switch (group) {
-    case 'Overdue': return lightTheme.statusDanger;
-    case 'Today': return lightTheme.statusInfo;
-    case 'This Week': return lightTheme.statusWarning;
-    case 'Later': return lightTheme.statusSuccess;
-    default: return lightTheme.textMuted;
+    case 'Overdue': return currentTheme().statusDanger;
+    case 'Today': return currentTheme().statusInfo;
+    case 'This Week': return currentTheme().statusWarning;
+    case 'Later': return currentTheme().statusSuccess;
+    default: return currentTheme().textMuted;
   }
 }
 
@@ -185,6 +155,8 @@ export default function TasksScreen({ navigation, route }: Props) {
 
   const groupBySheetRef = useRef<SheetRef>(null);
   const taskSheetRef = useRef<SheetRef>(null);
+  // Edit form: Title → Next → Notes.
+  const editDescRef = useRef<any>(null);
   const statusSheetRef = useRef<SheetRef>(null);
   const prioritySheetRef = useRef<SheetRef>(null);
   const filterSheetRef = useRef<SheetRef>(null);
@@ -207,6 +179,9 @@ export default function TasksScreen({ navigation, route }: Props) {
 
   const toast = useToast();
   const theme = useTheme();
+  const { width: screenWidth, height: screenHeight } = useLayout();
+  // Big screen, list view: tasks on the left, the open task on the right.
+  const { isWide, paneTaskId, openInPane, close: closePane, paneProps } = useTaskPane();
 const colors = {
     bg: theme.background,
     card: theme.card,
@@ -272,15 +247,8 @@ const colors = {
     const task = tasks.find(t => t.id === openTaskId);
     if (task) {
       setSelectedTask(task);
-      setEditTitle(task.title || '');
-      setEditStatus(task.status || 'todo');
-      setEditPriority(task.priority || 'low');
-      setEditDueDate(task.dueDate ? dateStrOf(task.dueDate) : '');
-      const seeded = stripHtml(task.contentText || task.content);
-      seededDescriptionRef.current = seeded;
-      setEditDescription(seeded);
-      setShowEditDatePicker(false);
-      setIsEditing(true);
+      seedEdit(task);
+      editOnlyRef.current = false;
       taskSheetRef.current?.present();
       // Clear the param so a refetch doesn't reopen the sheet.
       navigation.setParams({ openTaskId: undefined });
@@ -300,9 +268,9 @@ const colors = {
   }, [projects]);
 
   const getProjectColor = useCallback((projectId?: string): string => {
-    if (!projectId) return lightTheme.textMuted;
+    if (!projectId) return currentTheme().textMuted;
     const p = projects.find(pr => pr.id === projectId);
-    return p?.color || lightTheme.textMuted;
+    return p?.color || currentTheme().textMuted;
   }, [projects]);
 
   const getStatusColor = useCallback((status?: string): string => {
@@ -400,28 +368,94 @@ const colors = {
   };
 
   const handleViewTask = (task: Task) => {
+    // Big screen, list view: open it in the right-hand panel. Phone, or the
+    // board (its columns already use the full width): the sheet, as before.
+    if (isWide && viewMode === 'list') {
+      openInPane(task.id);
+      return;
+    }
     setSelectedTask(task);
     setIsEditing(false);
     taskSheetRef.current?.present();
   };
 
-  const handleTaskSheetDismiss = useCallback(() => {
-    setIsEditing(false);
-    setSelectedTask(null);
-    setShowEditDatePicker(false);
-  }, []);
-
-  const handleEditTask = () => {
-    if (!selectedTask) return;
-    setEditTitle(selectedTask.title || '');
-    setEditStatus(selectedTask.status || 'todo');
-    setEditPriority(selectedTask.priority || 'low');
-    setEditDueDate(selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '');
-    const seeded = stripHtml(selectedTask.contentText || selectedTask.content);
+  // Fill the edit form from a task.
+  const seedEdit = (task: Task) => {
+    setEditTitle(task.title || '');
+    setEditStatus(task.status || 'todo');
+    setEditPriority(task.priority || 'low');
+    setEditDueDate(task.dueDate ? dateStrOf(task.dueDate) : '');
+    const seeded = stripHtml(task.contentText || task.content);
     seededDescriptionRef.current = seeded;
     setEditDescription(seeded);
     setShowEditDatePicker(false);
     setIsEditing(true);
+  };
+
+  // Unsaved edits in the task sheet's form?
+  const isDirty = !!selectedTask && isEditing && (
+    editTitle !== (selectedTask.title || '')
+    || editStatus !== (selectedTask.status || 'todo')
+    || editPriority !== (selectedTask.priority || 'low')
+    || editDueDate !== (selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '')
+    || editDescription !== seededDescriptionRef.current
+  );
+  // Read from the sheet's dismiss callback, which can fire after re-renders.
+  const dirtyRef = useRef(false);
+  dirtyRef.current = isDirty;
+  // Set just before a dismiss that must not ask (after a successful save).
+  const allowCloseRef = useRef(false);
+  // The sheet was opened straight into Edit from the right-hand panel, so
+  // Cancel closes it instead of showing the task's details again.
+  const editOnlyRef = useRef(false);
+
+  const resetTaskSheet = useCallback(() => {
+    setIsEditing(false);
+    setSelectedTask(null);
+    setShowEditDatePicker(false);
+    editOnlyRef.current = false;
+  }, []);
+
+  // Swipe-down, backdrop tap and programmatic dismiss all land here. The sheet
+  // primitive can't veto a close, so with unsaved edits we ask, and "Keep
+  // editing" brings the sheet straight back — the form's values live in this
+  // screen's state, so nothing typed is lost.
+  const handleTaskSheetDismiss = useCallback(() => {
+    const allowed = allowCloseRef.current;
+    allowCloseRef.current = false;
+    if (!allowed && dirtyRef.current) {
+      confirmDiscard(resetTaskSheet, () => taskSheetRef.current?.present());
+      return;
+    }
+    resetTaskSheet();
+  }, [resetTaskSheet]);
+
+  const handleEditTask = () => {
+    if (!selectedTask) return;
+    editOnlyRef.current = false;
+    seedEdit(selectedTask);
+  };
+
+  // Edit from the right-hand panel: the existing edit sheet, opened on the form.
+  const handlePaneEdit = (task: Task) => {
+    setSelectedTask(task);
+    seedEdit(task);
+    editOnlyRef.current = true;
+    taskSheetRef.current?.present();
+  };
+
+  const handleCancelEdit = () => {
+    const leave = () => {
+      if (editOnlyRef.current) {
+        allowCloseRef.current = true;
+        taskSheetRef.current?.dismiss();
+      } else {
+        setIsEditing(false);
+        setShowEditDatePicker(false);
+      }
+    };
+    if (isDirty) confirmDiscard(leave);
+    else leave();
   };
 
   const handleSaveTask = async () => {
@@ -444,6 +478,7 @@ const colors = {
         body.dueDate = null;
       }
       await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', body);
+      allowCloseRef.current = true;
       taskSheetRef.current?.dismiss();
       toast.success('Task saved');
       await fetchData();
@@ -482,10 +517,26 @@ const colors = {
 
   const renderTaskRow = (task: Task) => {
     const done = isTaskDone(task.status);
+    // Swipe right to complete / reopen — the same action (and permission:
+    // any signed-in user, PATCH /api/tasks/:id) as the row's checkbox.
     return (
-      <TouchableOpacity
+      <SwipeRow
         key={task.id}
-        style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+        containerStyle={styles.taskRowSwipe}
+        left={{
+          label: done ? 'Reopen' : 'Done',
+          icon: done ? 'arrow-undo' : 'checkmark',
+          color: done ? theme.textSecondary : theme.statusSuccessSolid,
+          haptic: 'none', // handleToggleDone already fires success/select
+          onAction: () => handleToggleDone(task),
+        }}
+      >
+      <TouchableOpacity
+        style={[
+          styles.taskRow,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          isWide && paneTaskId === task.id && { borderColor: colors.accent },
+        ]}
         onPress={() => handleViewTask(task)}
         activeOpacity={0.7}
       >
@@ -493,12 +544,15 @@ const colors = {
         <TouchableOpacity
           style={styles.checkbox}
           onPress={() => handleToggleDone(task)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: done }}
+          accessibilityLabel={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
         >
           <View style={[
             styles.checkCircle,
-            { borderColor: done ? lightTheme.statusSuccess : colors.muted },
-            done && { backgroundColor: lightTheme.statusSuccess },
+            { borderColor: done ? theme.statusSuccessSolid : colors.muted },
+            done && { backgroundColor: theme.statusSuccessSolid },
           ]}>
             {done && (
               <Ionicons name="checkmark" size={12} color="#ffffff" />
@@ -506,7 +560,7 @@ const colors = {
           </View>
         </TouchableOpacity>
         <View style={styles.taskContent}>
-          <Text
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
             style={[
               styles.taskTitle,
               { color: colors.text },
@@ -517,20 +571,21 @@ const colors = {
             {task.title}
           </Text>
           {getProjectName(task.projectId) ? (
-            <Text style={[styles.taskSubtext, { color: colors.secondary }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.taskSubtext, { color: colors.secondary }]} numberOfLines={1}>
               {getProjectName(task.projectId)}
             </Text>
           ) : null}
         </View>
         {task.dueDate && (
-          <Text style={[
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
             styles.taskDue,
-            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? lightTheme.statusDanger : colors.secondary },
+            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? currentTheme().statusDanger : colors.secondary },
           ]}>
             {getRelativeDate(task.dueDate)}
           </Text>
         )}
       </TouchableOpacity>
+      </SwipeRow>
     );
   };
 
@@ -541,35 +596,45 @@ const colors = {
       onPress={() => handleViewTask(task)}
       activeOpacity={0.7}
     >
-      <Text style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
         {task.title}
       </Text>
       <View style={styles.boardCardMeta}>
         <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) + '20' }]}>
           <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(task.priority) }]} />
-          <Text style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
             {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
           </Text>
         </View>
         {task.dueDate && (
-          <Text style={[
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
             styles.boardCardDate,
-            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? lightTheme.statusDanger : colors.secondary },
+            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? currentTheme().statusDanger : colors.secondary },
           ]}>
             {formatDate(task.dueDate)}
           </Text>
         )}
       </View>
       {getProjectName(task.projectId) ? (
-        <Text style={[styles.boardCardProject, { color: colors.secondary }]} numberOfLines={1}>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardProject, { color: colors.secondary }]} numberOfLines={1}>
           {getProjectName(task.projectId)}
         </Text>
       ) : null}
     </TouchableOpacity>
   );
 
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const columnWidth = Math.max(screenWidth * 0.7, 260);
+  // Phone: ~70% of the screen so the next column peeks in. Big screen (Duo
+  // unfolded): three columns side by side — width minus the 16pt content
+  // padding each side, minus each column's 12pt marginRight + the 12pt gap
+  // between columns, split three ways. Recomputed live on fold/unfold; only
+  // widths change, so the board's scroll views stay mounted.
+  const columnWidth = isWide
+    ? Math.floor((screenWidth - 32 - 3 * 12 - 2 * 12) / 3)
+    : Math.max(screenWidth * 0.7, 260);
+
+  // The task open in the right-hand panel, read live from the list so a
+  // tick or a save shows straight away. Gone (e.g. reassigned) → empty panel.
+  const paneTask = paneTaskId ? tasks.find(t => t.id === paneTaskId) ?? null : null;
 
   if (loading) {
     return (
@@ -586,22 +651,26 @@ const colors = {
       >
         <TouchableOpacity
           style={styles.headerBackBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() => goBackOrHome(navigation)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>My Tasks</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]}>My Tasks</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+            hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
             onPress={() => groupBySheetRef.current?.present()}
           >
             <Ionicons name="funnel-outline" size={16} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+            hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
             onPress={() => filterSheetRef.current?.present()}
           >
             <Ionicons name="options-outline" size={16} color={colors.text} />
@@ -622,9 +691,9 @@ const colors = {
       >
         {([
           { key: 'all', label: 'All' },
-          { key: 'overdue', label: 'Overdue', color: lightTheme.statusDanger },
-          { key: 'today', label: 'Today', color: lightTheme.statusInfo },
-          { key: 'this-week', label: 'This Week', color: lightTheme.statusWarning },
+          { key: 'overdue', label: 'Overdue', color: currentTheme().statusDanger },
+          { key: 'today', label: 'Today', color: currentTheme().statusInfo },
+          { key: 'this-week', label: 'This Week', color: currentTheme().statusWarning },
         ] as { key: DatePreset; label: string; color?: string }[]).map(preset => {
           const active = datePreset === preset.key;
           const chipColor = preset.color || colors.accent;
@@ -639,9 +708,10 @@ const colors = {
                 },
               ]}
               onPress={() => { haptic.select(); setDatePreset(preset.key); }}
+              hitSlop={{ top: 6, bottom: 6 }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.datePresetText, { color: active ? chipColor : colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.datePresetText, { color: active ? chipColor : colors.secondary }]}>
                 {preset.label}
               </Text>
             </TouchableOpacity>
@@ -650,9 +720,32 @@ const colors = {
       </ScrollView>
 
       {viewMode === 'list' ? (
+        // Always wrapped in TwoPane so the list keeps its place in the tree —
+        // folding/unfolding never remounts it. The board stays full width.
+        <TwoPane
+          {...paneProps}
+          emptyTitle="Select a task"
+          emptyIcon="checkbox-outline"
+          detail={paneTask ? (
+            <TaskDetailPane
+              key={paneTask.id}
+              task={paneTask}
+              statusLabel={getStatusLabel(paneTask.status)}
+              statusColor={getStatusColor(paneTask.status)}
+              projectName={getProjectName(paneTask.projectId)}
+              descriptionLabel="Notes"
+              colors={colors}
+              isDark={isDark}
+              currentUserId={user?.id}
+              onEdit={() => handlePaneEdit(paneTask)}
+            />
+          ) : null}
+          list={
         <SectionList
           style={styles.listScroll}
-          contentContainerStyle={styles.listContent}
+          // Big screen: keep task rows (title + notes preview) to a readable
+          // width instead of running edge to edge. Style only — no remount.
+          contentContainerStyle={[styles.listContent, isWide && readableFrame]}
           sections={groupedTasks.map(group => ({
             ...group,
             data: collapsedSections[group.key] ? [] : group.tasks,
@@ -667,9 +760,9 @@ const colors = {
             >
               <View style={styles.sectionHeaderLeft}>
                 <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
                 <View style={[styles.sectionCount, { backgroundColor: section.color + '20' }]}>
-                  <Text style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
                 </View>
               </View>
               <Ionicons
@@ -684,7 +777,7 @@ const colors = {
           ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="checkbox-outline" size={40} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>
                 {datePreset === 'today' ? 'No tasks due today'
                   : datePreset === 'this-week' ? 'No tasks due this week'
                   : datePreset === 'overdue' ? 'No overdue tasks'
@@ -695,6 +788,8 @@ const colors = {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           automaticallyAdjustContentInsets={false}
           contentInsetAdjustmentBehavior="never"
+        />
+          }
         />
       ) : (
         <ScrollView
@@ -710,9 +805,9 @@ const colors = {
             <View key={group.key} style={[styles.boardColumn, { width: columnWidth }]}>
               <View style={[styles.boardColumnHeader, { backgroundColor: group.color + '15', borderColor: group.color + '30' }]}>
                 <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                <Text style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
                 <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                  <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
                 </View>
               </View>
               <FlatList
@@ -723,7 +818,7 @@ const colors = {
                 nestedScrollEnabled
                 ListEmptyComponent={
                   <View style={[styles.boardEmptyCol, { borderColor: colors.border }]}>
-                    <Text style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
                   </View>
                 }
               />
@@ -732,7 +827,7 @@ const colors = {
           {groupedTasks.length === 0 && (
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border, width: screenWidth - 32 }]}>
               <Ionicons name="checkbox-outline" size={40} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No tasks found</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No tasks found</Text>
             </View>
           )}
         </ScrollView>
@@ -747,7 +842,7 @@ const colors = {
               onPress={() => { haptic.select(); setGroupBy(opt.key); groupBySheetRef.current?.dismiss(); }}
             >
               <Ionicons name={opt.icon} size={20} color={groupBy === opt.key ? colors.accent : colors.secondary} />
-              <Text style={[styles.groupByOptionText, { color: groupBy === opt.key ? colors.accent : colors.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupByOptionText, { color: groupBy === opt.key ? colors.accent : colors.text }]}>
                 {opt.label}
               </Text>
               {groupBy === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
@@ -761,172 +856,129 @@ const colors = {
         scrollable
         snapPoints={['70%', '92%']}
         onDismiss={handleTaskSheetDismiss}
+        // Editing: Cancel / Save pinned to the bottom of the sheet, above the
+        // keyboard (the header Save stays too).
+        footer={isEditing ? (
+          <>
+            <TouchableOpacity
+              style={[styles.editCancelBtn, { borderColor: colors.border }]}
+              onPress={handleCancelEdit}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.editCancelText, { color: colors.secondary }]} maxFontSizeMultiplier={1.4}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.editSaveBtn, { backgroundColor: colors.accent, opacity: saving ? 0.7 : 1 }]}
+              onPress={handleSaveTask}
+              disabled={saving}
+              accessibilityRole="button"
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.editSaveText} maxFontSizeMultiplier={1.4}>Save</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        ) : null}
       >
         <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.sheetHeaderTitle, { color: colors.text }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetHeaderTitle, { color: colors.text }]}>
             {isEditing ? 'Edit Task' : 'Task Details'}
           </Text>
-          {!isEditing && (
-            <TouchableOpacity onPress={handleEditTask} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
+          {!isEditing ? (
+            <TouchableOpacity onPress={handleEditTask} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
+            </TouchableOpacity>
+          ) : (
+            // Also up here: the sheet lifts with the keyboard, so this Save
+            // stays in view while typing in a field further down.
+            <TouchableOpacity
+              onPress={handleSaveTask}
+              disabled={saving}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Save task"
+            >
+              {saving
+                ? <ActivityIndicator size="small" color={colors.accent} />
+                : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Save</Text>}
             </TouchableOpacity>
           )}
         </View>
 
         <View style={styles.taskSheetBody}>
           {!isEditing && selectedTask && (
-            <>
-              <Text style={[styles.viewTitle, { color: colors.text }]}>{selectedTask.title}</Text>
-
-              <View style={styles.viewBadgeRow}>
-                <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
-                  <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
-                    {getStatusLabel(selectedTask.status)}
-                  </Text>
-                </View>
-                <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
-                  <Text style={[styles.viewBadgeText, { color: getPriorityColor(selectedTask.priority) }]}>
-                    {PRIORITY_LABELS[selectedTask.priority || 'low'] || 'Low'}
-                  </Text>
-                </View>
-              </View>
-
-              {selectedTask.dueDate && (
-                <View style={styles.viewField}>
-                  <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
-                  <Text style={[styles.viewFieldText, { color: colors.text }]}>
-                    {new Date(selectedTask.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                  </Text>
-                </View>
-              )}
-
-              {getProjectName(selectedTask.projectId) ? (
-                <View style={styles.viewField}>
-                  <Ionicons name="briefcase-outline" size={18} color={colors.secondary} />
-                  <Text style={[styles.viewFieldText, { color: colors.text }]}>
-                    {getProjectName(selectedTask.projectId)}
-                  </Text>
-                </View>
-              ) : null}
-
-              {stripHtml(selectedTask.contentText || selectedTask.content) ? (
-                <View style={styles.viewSection}>
-                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Notes</Text>
-                  <Text style={[styles.viewDescription, { color: colors.text }]}>
-                    {stripHtml(selectedTask.contentText || selectedTask.content)}
-                  </Text>
-                </View>
-              ) : null}
-
-              {(selectedTask.assigneeNames || []).length > 0 && (
-                <View style={styles.viewSection}>
-                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
-                  {(selectedTask.assigneeNames || []).map((name: string, idx: number) => (
-                    <View key={idx} style={styles.assigneeRow}>
-                      <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.assigneeAvatarText}>
-                          {(name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                        </Text>
-                      </View>
-                      <Text style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {(selectedTask.checklist || []).length > 0 && (
-                <View style={styles.viewSection}>
-                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
-                  {(selectedTask.checklist || []).map((item: any) => (
-                    <View key={item.id} style={styles.checklistRow}>
-                      <Ionicons
-                        name={item.completed ? 'checkbox' : 'square-outline'}
-                        size={20}
-                        color={item.completed ? '#22c55e' : colors.muted}
-                      />
-                      <Text style={[
-                        styles.checklistText,
-                        { color: colors.text },
-                        item.completed && { textDecorationLine: 'line-through', color: colors.muted },
-                      ]}>
-                        {item.text}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {(selectedTask.tags || []).length > 0 && (
-                <View style={styles.viewSection}>
-                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
-                  <View style={styles.tagsRow}>
-                    {(selectedTask.tags || []).map((tag: string, idx: number) => (
-                      <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
-                        <Text style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              <TaskComments
-                taskId={selectedTask.id}
-                currentUserId={user?.id}
-                colors={colors}
-                isDark={isDark}
-              />
-            </>
+            <TaskDetail
+              task={selectedTask}
+              statusLabel={getStatusLabel(selectedTask.status)}
+              statusColor={getStatusColor(selectedTask.status)}
+              projectName={getProjectName(selectedTask.projectId)}
+              descriptionLabel="Notes"
+              colors={colors}
+              isDark={isDark}
+              currentUserId={user?.id}
+              inSheet
+            />
           )}
 
           {isEditing && (
             <>
               <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
                 <SheetTextInput
-                  style={[styles.editInput, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
+                  style={[styles.editInput, { backgroundColor: theme.background, color: colors.text, borderColor: colors.border }]}
                   value={editTitle}
                   onChangeText={setEditTitle}
                   placeholder="Task title"
                   placeholderTextColor={colors.muted}
+                  autoCapitalize="sentences"
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => editDescRef.current?.focus()}
                 />
               </View>
 
-              <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
-                <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                  onPress={() => statusSheetRef.current?.present()}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                  <Text style={[styles.editSelectText, { color: colors.text }]}>
-                    {getStatusLabel(editStatus)}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                </TouchableOpacity>
+              {/* Big screen: status + priority side by side. The wrapper is always
+                  rendered (only its style changes) so folding never remounts the form. */}
+              <View style={isWide ? styles.fieldPair : undefined}>
+                <View style={[styles.editField, isWide && styles.fieldHalf]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: theme.background, borderColor: colors.border }]}
+                    onPress={() => statusSheetRef.current?.present()}
+                  >
+                    <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>
+                      {getStatusLabel(editStatus)}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.editField, isWide && styles.fieldHalf]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: theme.background, borderColor: colors.border }]}
+                    onPress={() => prioritySheetRef.current?.present()}
+                  >
+                    <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>
+                      {PRIORITY_LABELS[editPriority] || editPriority}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
                 <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                  onPress={() => prioritySheetRef.current?.present()}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
-                  <Text style={[styles.editSelectText, { color: colors.text }]}>
-                    {PRIORITY_LABELS[editPriority] || editPriority}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
-                <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: showEditDatePicker ? colors.accent : colors.border }]}
+                  style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showEditDatePicker ? colors.accent : colors.border }]}
                   onPress={() => setShowEditDatePicker(v => !v)}
                 >
                   <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                  <Text style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
                     {editDueDate ? fromLocalDateStr(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
                   </Text>
                   {editDueDate ? (
@@ -953,9 +1005,11 @@ const colors = {
               </View>
 
               <View style={styles.editField}>
-                <Text style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
                 <SheetTextInput
-                  style={[styles.editTextArea, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
+                  style={[styles.editTextArea, { backgroundColor: theme.background, color: colors.text, borderColor: colors.border }]}
+                  ref={editDescRef}
+                  autoCapitalize="sentences"
                   value={editDescription}
                   onChangeText={setEditDescription}
                   placeholder="Add a description..."
@@ -966,25 +1020,6 @@ const colors = {
                 />
               </View>
 
-              <View style={styles.editActions}>
-                <TouchableOpacity
-                  style={[styles.editCancelBtn, { borderColor: colors.border }]}
-                  onPress={() => setIsEditing(false)}
-                >
-                  <Text style={[styles.editCancelText, { color: colors.secondary }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.editSaveBtn, { backgroundColor: colors.accent }]}
-                  onPress={handleSaveTask}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Text style={styles.editSaveText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
             </>
           )}
         </View>
@@ -999,7 +1034,7 @@ const colors = {
               onPress={() => { haptic.select(); setEditStatus(opt.key); statusSheetRef.current?.dismiss(); }}
             >
               <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-              <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
                 {opt.name}
               </Text>
               {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
@@ -1017,7 +1052,7 @@ const colors = {
               onPress={() => { haptic.select(); setEditPriority(p); prioritySheetRef.current?.dismiss(); }}
             >
               <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-              <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
                 {PRIORITY_LABELS[p]}
               </Text>
               {editPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
@@ -1028,19 +1063,19 @@ const colors = {
 
       <Sheet ref={filterSheetRef} scrollable>
         <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.sheetHeaderTitle, { color: colors.text }]}>Filters</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetHeaderTitle, { color: colors.text }]}>Filters</Text>
           {hasActiveFilters && (
             <TouchableOpacity
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => { haptic.select(); setFilters({ statuses: [], priorities: [], projects: [] }); }}
             >
-              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <View style={styles.taskSheetBody}>
-          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
           <View style={styles.filterChips}>
             {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
               const excluded = filters.statuses.includes(opt.key);
@@ -1062,13 +1097,13 @@ const colors = {
                   }}
                 >
                   <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
           <View style={styles.filterChips}>
             {PRIORITY_ORDER.map(p => {
               const excluded = filters.priorities.includes(p);
@@ -1090,13 +1125,13 @@ const colors = {
                   }}
                 >
                   <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
           <View style={styles.filterChips}>
             {projects.map(proj => {
               const excluded = filters.projects.includes(proj.id);
@@ -1118,7 +1153,7 @@ const colors = {
                   }}
                 >
                   <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -1132,14 +1167,14 @@ const colors = {
           onPress={() => { haptic.select(); setViewMode('list'); }}
         >
           <Ionicons name="list-outline" size={18} color={viewMode === 'list' ? '#ffffff' : colors.secondary} />
-          <Text style={[styles.bottomBarBtnText, { color: viewMode === 'list' ? '#ffffff' : colors.secondary }]}>List</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.bottomBarBtnText, { color: viewMode === 'list' ? '#ffffff' : colors.secondary }]}>List</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.bottomBarBtn, viewMode === 'board' && { backgroundColor: colors.accent }]}
-          onPress={() => { haptic.select(); setViewMode('board'); }}
+          onPress={() => { haptic.select(); closePane(); setViewMode('board'); }}
         >
           <Ionicons name="grid-outline" size={18} color={viewMode === 'board' ? '#ffffff' : colors.secondary} />
-          <Text style={[styles.bottomBarBtnText, { color: viewMode === 'board' ? '#ffffff' : colors.secondary }]}>Board</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.bottomBarBtnText, { color: viewMode === 'board' ? '#ffffff' : colors.secondary }]}>Board</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1277,12 +1312,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  // The swipe container carries the spacing and clips the action panel to
+  // the row's rounded corners.
+  taskRowSwipe: {
+    borderRadius: 10,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
     borderWidth: 1,
-    marginBottom: 6,
     overflow: 'hidden',
     minHeight: 52,
   },
@@ -1293,8 +1334,12 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     alignSelf: 'center',
   },
+  // 44pt square tap target; the circle inside stays 22pt.
   checkbox: {
-    paddingHorizontal: 10,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   checkCircle: {
     width: 22,
@@ -1444,95 +1489,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  viewTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  viewBadgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  viewBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  viewBadgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  viewField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-  },
-  viewFieldText: {
-    fontSize: 14,
-  },
-  viewSection: {
-    marginTop: 16,
-  },
-  viewSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  viewDescription: {
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  assigneeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  assigneeAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  assigneeAvatarText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  assigneeName: {
-    fontSize: 14,
-  },
-  checklistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  checklistText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  tagBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
   editField: {
     marginBottom: 16,
+  },
+  fieldPair: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  fieldHalf: {
+    flex: 1,
   },
   editLabel: {
     fontSize: 13,
@@ -1581,8 +1547,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderRadius: 10,
-    paddingVertical: 14,
+    minHeight: 50,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   editCancelText: {
     fontSize: 15,
@@ -1591,8 +1558,9 @@ const styles = StyleSheet.create({
   editSaveBtn: {
     flex: 1,
     borderRadius: 10,
-    paddingVertical: 14,
+    minHeight: 50,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   editSaveText: {
     color: '#ffffff',

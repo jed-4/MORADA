@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,8 +15,8 @@ import {
   Text,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from 'react-native';
+import type { ScrollViewInstance } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +34,9 @@ import { useToast } from '../components/ui/Toast';
 import StatusPill from '../components/selections/StatusPill';
 import CroppedImage from '../components/selections/CroppedImage';
 import DocumentViewer, { type ViewableDocument } from '../components/DocumentViewer';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
+import { useReturnToTwoPane } from '../lib/twoPane';
 import {
   clientPriceCents,
   formatMoney,
@@ -52,6 +55,12 @@ import {
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
+  /**
+   * Rendered in the right panel of SelectionsScreen (Duo unfolded) rather
+   * than as its own stack screen: no back button, and documents open in the
+   * panel instead of over the whole screen.
+   */
+  embedded?: boolean;
 };
 
 interface SelectionComment {
@@ -77,7 +86,7 @@ interface ProjectChannel {
  * rejected options never render here; the client-facing choose screen is where
  * alternatives belong.
  */
-export default function SelectionDetailScreen({ navigation, route }: Props) {
+export default function SelectionDetailScreen({ navigation, route, embedded = false }: Props) {
   const { selectionId, projectId, projectName } = (route.params ?? {}) as {
     selectionId: string;
     projectId: string;
@@ -87,7 +96,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { user } = useAuth();
-  const { width, height } = useWindowDimensions();
+  const { width, height, isWide } = useLayout();
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [comments, setComments] = useState<SelectionComment[]>([]);
@@ -106,6 +115,29 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
   // Spec sheets for the chosen product — what a trade on site actually needs.
   const [openDoc, setOpenDoc] = useState<ViewableDocument | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Width of the photo carousel. Not the window width: embedded in the right
+  // panel it is narrower, and it changes when the phone folds or unfolds.
+  const [heroWidth, setHeroWidth] = useState(width);
+  const heroScroll = useRef<ScrollViewInstance>(null);
+
+  // Unfolding on this pushed screen pops back to the list with this item open
+  // on the right — unless something here would be lost by the switch (a
+  // photo or document open, a half-typed comment). Then it stays put,
+  // full width; nothing is thrown away.
+  useReturnToTwoPane({
+    navigation,
+    listRoute: 'Selections',
+    id: selectionId,
+    embedded: embedded || viewerIndex !== null || openDoc !== null || commentText.trim().length > 0,
+  });
+
+  // Keep the carousel on the same photo when its width changes (fold/unfold);
+  // the old pixel offset would otherwise leave it straddling two photos.
+  useEffect(() => {
+    heroScroll.current?.scrollTo({ x: photoIndex * heroWidth, animated: false });
+    // Only on a width change; swiping updates photoIndex itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heroWidth]);
 
   // What this person may DO here. The server enforces the same rules; these
   // only decide which controls are offered.
@@ -346,14 +378,17 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
         <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>
           It may have been removed, or you may not have access to it.
         </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Text style={[styles.backLinkText, { color: theme.primary }]}>Go back</Text>
-        </TouchableOpacity>
+        {!embedded && (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
+            <Text style={[styles.backLinkText, { color: theme.primary }]}>Go back</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
 
-  const heroHeight = 250;
+  // A taller hero on the big screen, where the photo is the point.
+  const heroHeight = isWide ? 380 : 250;
 
   return (
     <KeyboardAvoidingView
@@ -368,14 +403,18 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
         }
       >
         {/* Hero */}
-        <View style={[styles.hero, { height: heroHeight, backgroundColor: theme.subtle }]}>
+        <View
+          style={[styles.hero, { height: heroHeight, backgroundColor: theme.subtle }]}
+          onLayout={(e) => setHeroWidth(e.nativeEvent.layout.width)}
+        >
           {photos.length > 0 ? (
             <ScrollView
+              ref={heroScroll}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={(e) =>
-                setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))
+                setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / heroWidth))
               }
             >
               {photos.map((photo, i) => (
@@ -389,7 +428,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                     x={photo.thumbnailX}
                     y={photo.thumbnailY}
                     zoom={photo.thumbnailZoom}
-                    style={{ width, height: heroHeight }}
+                    style={{ width: heroWidth, height: heroHeight }}
                   />
                 </Pressable>
               ))}
@@ -400,13 +439,15 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            hitSlop={10}
-            style={[styles.backFloat, { top: insets.top + 6 }]}
-          >
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
+          {!embedded && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              hitSlop={10}
+              style={[styles.backFloat, { top: insets.top + 6 }]}
+            >
+              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
 
           {photos.length > 1 && (
             <View style={styles.dots}>
@@ -434,7 +475,9 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        <View style={styles.body}>
+        {/* Capped at a readable width: a no-op on phones, keeps the notes and
+            description from running 7 inches wide on the Duo unfolded. */}
+        <View style={[styles.body, readableFrame]}>
           {/* Nothing approved: say so plainly instead of showing a spec. */}
           {!settled && (
             <View style={[styles.notice, { backgroundColor: theme.statusWarningBg }]}>
@@ -503,7 +546,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
                   <View key={option.id} style={[styles.optionRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
                     <Pressable
                       onPress={() => optionPhotos.length > 0 && openViewer(optionPhotos, 0)}
-                      style={[styles.optionThumb, { backgroundColor: theme.subtle }]}
+                      style={[styles.optionThumb, isWide && styles.optionThumbWide, { backgroundColor: theme.subtle }]}
                       accessibilityLabel={`View ${option.name} photos`}
                     >
                       {img ? (
@@ -701,7 +744,7 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
           <TouchableOpacity
             onPress={postToChat}
             disabled={posting}
-            style={[styles.action, { backgroundColor: theme.primary, opacity: posting ? 0.6 : 1 }]}
+            style={[styles.action, readableFrame, { backgroundColor: theme.primary, opacity: posting ? 0.6 : 1 }]}
           >
             {posting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -768,7 +811,9 @@ export default function SelectionDetailScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} />
+      {/* Embedded, a spec sheet opens over this panel only, so the spec list
+          stays visible beside it; it can still be expanded to full screen. */}
+      <DocumentViewer document={openDoc} onClose={() => setOpenDoc(null)} inline={embedded} />
     </KeyboardAvoidingView>
   );
 }
@@ -926,6 +971,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  optionThumbWide: { width: 88, height: 88 },
   optionName: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   optionMeta: { fontSize: fontSize.xs, marginTop: 1 },
   optionApprove: {

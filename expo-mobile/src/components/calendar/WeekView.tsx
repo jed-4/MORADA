@@ -1,4 +1,4 @@
-import { memo, useState, type RefObject } from 'react';
+import { memo, useRef, useState, type RefObject } from 'react';
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -30,8 +30,16 @@ import type { ScrollViewInstance } from 'react-native';
 
 export const HOUR_HEIGHT = 56;
 export const TIME_LABEL_WIDTH = 50;
-/** How many day columns fit on screen at once. */
+/** How many day columns fit on screen at once on a phone. */
 export const WEEK_VISIBLE_DAYS = 3;
+/** On a wide screen (Duo unfolded) the whole Mon–Sun week fits. */
+export const WEEK_VISIBLE_DAYS_WIDE = 7;
+
+/** Day columns on screen right now — changes live on fold/unfold. */
+export function useWeekVisibleDays(): number {
+  const { isWide } = useLayout();
+  return isWide ? WEEK_VISIBLE_DAYS_WIDE : WEEK_VISIBLE_DAYS;
+}
 
 /**
  * Width of one day column. A hook (not a constant) because the screen can
@@ -40,7 +48,8 @@ export const WEEK_VISIBLE_DAYS = 3;
  */
 export function useWeekColWidth(): number {
   const { width } = useLayout();
-  return Math.floor((width - TIME_LABEL_WIDTH) / WEEK_VISIBLE_DAYS);
+  const visibleDays = useWeekVisibleDays();
+  return Math.floor((width - TIME_LABEL_WIDTH) / visibleDays);
 }
 export const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
 export const MIN_EVENT_HEIGHT = 24;
@@ -66,6 +75,8 @@ interface WeekViewProps {
   timeGridScrollRef: RefObject<ScrollViewInstance | null>;
   timeLabelScrollRef: RefObject<ScrollViewInstance | null>;
   onWeekScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** Wide screens snap the week scroll to these x offsets (Mondays). */
+  snapOffsets?: number[];
   onEventPress: (event: CalendarEvent) => void;
   /** Long-press on an empty time slot → create a task at that day + hour. */
   onSlotLongPress: (dateKey: string, hour: number) => void;
@@ -85,11 +96,19 @@ function WeekViewInner({
   timeGridScrollRef,
   timeLabelScrollRef,
   onWeekScroll,
+  snapOffsets,
   onEventPress,
   onSlotLongPress,
   isEmpty,
 }: WeekViewProps) {
   const [allDayRowHeight, setAllDayRowHeight] = useState(0);
+  // The time grid's onLayout scrolls to "now". It also fires when a fold or
+  // unfold resizes the grid; that must keep the user's vertical position, so a
+  // layout caused by a window-size change is skipped. (Other re-layouts, e.g.
+  // the all-day row expanding, behave as before.)
+  const { width: windowWidth, height: windowHeight } = useLayout();
+  const windowKey = `${windowWidth}x${windowHeight}`;
+  const lastLayoutWindow = useRef<string | null>(null);
   const GRID_COL_WIDTH = useWeekColWidth();
   const dayColsWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH;
 
@@ -152,6 +171,7 @@ function WeekViewInner({
         contentOffset={{ x: initialOffset, y: 0 }}
         onScroll={onWeekScroll}
         scrollEventThrottle={32}
+        snapToOffsets={snapOffsets}
         decelerationRate="normal"
         nestedScrollEnabled
       >
@@ -278,6 +298,9 @@ function WeekViewInner({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
             onLayout={() => {
+              const windowChanged = lastLayoutWindow.current !== null && lastLayoutWindow.current !== windowKey;
+              lastLayoutWindow.current = windowKey;
+              if (windowChanged) return;
               setTimeout(() => {
                 const n = new Date();
                 const mins = n.getHours() * 60 + n.getMinutes();

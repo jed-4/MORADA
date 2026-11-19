@@ -25,9 +25,12 @@ import {
 export default function SpecRow({
   selection,
   onPress,
+  selected = false,
 }: {
   selection: Selection;
   onPress: (selection: Selection) => void;
+  /** Open in the right panel (Duo unfolded only). */
+  selected?: boolean;
 }) {
   const theme = useTheme();
   const state = getSelectionState(selection);
@@ -49,7 +52,7 @@ export default function SpecRow({
         styles.row,
         {
           backgroundColor: settled ? theme.card : 'transparent',
-          borderColor: settled ? theme.border : theme.borderStrong,
+          borderColor: selected ? theme.primary : settled ? theme.border : theme.borderStrong,
           borderStyle: settled ? 'solid' : 'dashed',
         },
       ]}

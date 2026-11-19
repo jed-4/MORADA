@@ -8,6 +8,19 @@ export interface NotificationTargetData {
   link?: string | null;
   entityType?: string | null;
   entityId?: string | null;
+  /** Defect pushes carry these directly: type 'defect', { projectId, defectId }. */
+  projectId?: string | null;
+  defectId?: string | null;
+}
+
+// Pull project and defect ids out of a web link like
+// `/projects/<id>/defects/<defectId>` or `/projects/<id>/defects?defect=<id>`.
+function parseDefectLink(link?: string | null): { projectId: string; defectId: string | null } | null {
+  if (!link) return null;
+  const m = link.match(/\/projects\/([^/?#]+)\/defects(?:\/([^/?#]+))?/);
+  if (!m) return null;
+  const q = link.match(/[?&]defect(?:Id)?=([^&#]+)/);
+  return { projectId: m[1], defectId: m[2] || (q ? decodeURIComponent(q[1]) : null) };
 }
 
 export type NotificationTab =
@@ -93,6 +106,27 @@ export function resolveNotificationTarget(
     return { tab: 'More', screen: 'Tasks' };
   }
 
+  // Defects (transition, comment, @mention) -> that defect. Push payloads carry
+  // { projectId, defectId }; in-app rows may only have entityId and a link.
+  const defectLink = parseDefectLink(link);
+  if (type === 'defect' || type.startsWith('defect_') || entityType === 'defect' || defectLink) {
+    const defectId =
+      (typeof data?.defectId === 'string' && data.defectId) ||
+      (entityType === 'defect' ? entityId : null) ||
+      defectLink?.defectId ||
+      null;
+    const projectId =
+      (typeof data?.projectId === 'string' && data.projectId) || defectLink?.projectId || parseProjectId(link);
+    if (defectId) {
+      return {
+        tab: 'Projects',
+        screen: 'DefectDetail',
+        params: { defectId, ...(projectId ? { projectId } : {}) },
+      };
+    }
+    if (projectId) return { tab: 'Projects', screen: 'DefectsList', params: { projectId } };
+  }
+
   // Selections (a client's choice or comment, a builder comment) -> that
   // selection, not just its project. The screen loads by id; the project id
   // seeds its offline cache.
@@ -115,4 +149,25 @@ export function resolveNotificationTarget(
 
   // Fallback: the in-app notifications list.
   return { tab: 'Workspace', screen: 'Notifications' };
+}
+
+/**
+ * The params for `navigate(target.tab, ...)` — shared by push taps and the
+ * in-app list so both build the same stack.
+ *
+ * `initial: false` keeps the tab's own root under the target when that tab's
+ * stack hasn't been opened yet (cold start from a push): a project opened
+ * from a notification has the Projects list behind it, a chat thread has the
+ * Messages list, so Back goes somewhere sensible. The More stack has no
+ * meaningful root (its initial route is a Settings safety net), so its
+ * targets stay the first route and their back control returns to the tab you
+ * came from instead.
+ */
+export function tabNavigationParams(target: NotificationTarget): Record<string, any> | undefined {
+  if (!target.screen) return target.params;
+  return {
+    screen: target.screen,
+    params: target.params,
+    ...(target.tab === 'More' ? {} : { initial: false }),
+  };
 }

@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -11,8 +11,18 @@ import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
-import { useTheme } from '../theme';
+import { handleNotificationAction, registerNotificationCategories } from '../services/notificationActions';
+import { refreshSiteFences } from '../services/siteGeofence';
+import { useTheme, type Theme } from '../theme';
+import { goBackOrHome, isFirstRoute } from './back';
+import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
+import { useOrientationPolicy } from '../lib/orientation';
+import { useRestoredNavigationState } from './navigationPersistence';
+import { useShareIntentRouting } from './useShareIntentRouting';
+import type { NavigationState } from '@react-navigation/native';
+import { navigateFromDeepLink } from './deepLinks';
+import { startWidgetSync } from '../services/widgetSnapshot';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -43,9 +53,60 @@ import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 import LabourHoursScreen from '../screens/LabourHoursScreen';
+import DefectsListScreen from '../screens/DefectsListScreen';
+import DefectDetailScreen from '../screens/DefectDetailScreen';
+import DefectCaptureScreen from '../screens/DefectCaptureScreen';
+import DeliveriesListScreen from '../screens/DeliveriesListScreen';
+import DeliveryCheckInScreen from '../screens/DeliveryCheckInScreen';
+import ShareTargetScreen from '../screens/ShareTargetScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Share into Morada is a one-off modal over the files just shared: never
+// reopen it from the remembered navigation state after a relaunch.
+function withoutShareTarget(state: NavigationState | undefined): NavigationState | undefined {
+  if (!state || !state.routes.some(r => r.name === 'ShareTarget')) return state;
+  const routes = state.routes.filter(r => r.name !== 'ShareTarget');
+  return { ...state, routes, index: Math.min(state.index, routes.length - 1) } as NavigationState;
+}
+
+/**
+ * Shared options for every tab's stack.
+ *
+ * Back on a stack's FIRST route: screens are often opened across stacks — the
+ * More panel (navigate('More', { screen })), dashboard cards
+ * (navigate('Projects', { screen: 'ProjectDetail' })) and notification taps —
+ * which makes them the only route in their stack, so the native header has
+ * nothing to go back to and draws no back button. Whenever a header is shown
+ * on a first route we draw the chevron ourselves; goBackOrHome() then falls
+ * through to the tab you came from (backBehavior="history" below), or home.
+ * Tab roots (WorkspaceHome, ProjectsList, MessagesList) hide the header, so
+ * they never get one.
+ */
+function stackScreenOptions(theme: Theme, headerShown: boolean) {
+  return ({ navigation, route }: { navigation: any; route: { key: string } }) => ({
+    headerShown,
+    headerStyle: { backgroundColor: theme.card },
+    headerTintColor: theme.textPrimary,
+    headerTitleStyle: { fontWeight: '600' as const },
+    headerShadowVisible: false,
+    headerBackButtonDisplayMode: 'minimal' as const,
+    headerLeft: isFirstRoute(navigation, route.key)
+      ? ({ tintColor }: { tintColor?: string }) => (
+          <Pressable
+            onPress={() => goBackOrHome(navigation)}
+            hitSlop={10}
+            style={{ width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="chevron-back" size={26} color={tintColor} />
+          </Pressable>
+        )
+      : undefined,
+  });
+}
 
 // Re-pressing the focused tab pops its nested stack back to the root with the
 // native back (slide-right) animation, instead of re-navigating forward.
@@ -63,14 +124,7 @@ function WorkspaceStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
       <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
@@ -88,13 +142,7 @@ function ProjectsStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, true)}
     >
       <Stack.Screen name="ProjectsList" component={ProjectsScreen} options={{ headerShown: false }} />
       <Stack.Screen
@@ -134,6 +182,20 @@ function ProjectsStack() {
         component={LabourHoursScreen}
         options={{ headerShown: true, title: 'Labour Hours' }}
       />
+      <Stack.Screen name="DefectsList" component={DefectsListScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DefectCapture"
+        component={DefectCaptureScreen}
+        options={{ headerShown: true, title: 'Add defects' }}
+      />
+      {/* Deliveries: params { projectId, projectName? } / { projectId, poId, poNumber? } */}
+      <Stack.Screen name="DeliveriesList" component={DeliveriesListScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DeliveryCheckIn"
+        component={DeliveryCheckInScreen}
+        options={({ route }: any) => ({ headerShown: true, title: route.params?.poNumber || 'Check in delivery' })}
+      />
     </Stack.Navigator>
   );
 }
@@ -143,14 +205,7 @@ function MessagesStack() {
 
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="MessagesList" component={MessagesScreen} />
       <Stack.Screen name="MessageThread" component={MessageThreadScreen} />
@@ -159,30 +214,12 @@ function MessagesStack() {
 }
 
 /**
- * Header for a More-menu screen that uses the stack's own header.
- *
- * The More panel opens these with navigate('More', { screen }), which makes the
- * screen the ONLY route in this stack — so the native header has nothing to go
- * back to and draws no back button (Schedule, Checklists, Notes had none).
- * When the screen is the stack's first route we draw a back chevron ourselves;
- * goBack() then falls through to the tab navigator, the same place the
- * More screens with their own headers (Tasks, Timesheets...) already go.
+ * A More-menu screen that uses the stack's own header. The back chevron for
+ * these (they are usually the More stack's only route) comes from
+ * stackScreenOptions.
  */
 function moreHeader(title: string) {
-  return ({ navigation, route }: { navigation: any; route: { key: string } }) => {
-    const isFirst = navigation.getState()?.routes?.[0]?.key === route.key;
-    return {
-      headerShown: true,
-      title,
-      headerLeft: isFirst
-        ? ({ tintColor }: { tintColor?: string }) => (
-            <Pressable onPress={() => navigation.goBack()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
-              <Ionicons name="chevron-back" size={24} color={tintColor} />
-            </Pressable>
-          )
-        : undefined,
-    };
-  };
+  return { headerShown: true, title };
 }
 
 function MoreStack() {
@@ -193,14 +230,7 @@ function MoreStack() {
       // The More tab press is intercepted to toggle MorePanel, so this stack is
       // only entered via navigate('More', { screen }); Settings is a safety net.
       initialRouteName="Settings"
-      screenOptions={{
-        headerShown: false,
-        headerStyle: { backgroundColor: theme.card },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: { fontWeight: '600' },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}
+      screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={moreHeader('Schedule')} />
@@ -211,6 +241,14 @@ function MoreStack() {
       <Stack.Screen name="Notes" component={NotesListScreen} options={moreHeader('Notes')} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SelectionsProjects" component={SelectionsProjectsScreen} options={{ headerShown: false }} />
+      {/* My defects: the same list in cross-project mode (/api/defects/mine). */}
+      <Stack.Screen
+        name="MyDefects"
+        component={DefectsListScreen}
+        initialParams={{ mine: true }}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
@@ -244,25 +282,61 @@ function MainTabs() {
     const receivedSub = Notifications.addNotificationReceivedListener(() => {
       syncBadge().catch(() => {});
     });
+    // Action buttons (Clock in, Approve, Reply…) are handled first; a plain
+    // tap, or an action nothing claims, routes to the screen as before.
+    const navigate = (name: string, params?: any) => {
+      if (navigationRef.isReady()) (navigationRef.navigate as (n: string, p?: any) => void)(name, params);
+    };
+    const routeResponse = (response: Notifications.NotificationResponse) => {
+      handleNotificationAction(response, navigate)
+        .catch(() => false)
+        .then((handled) => {
+          if (!handled) navigateFromPush(response?.notification?.request?.content?.data as any);
+        });
+    };
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      navigateFromPush(response?.notification?.request?.content?.data as any);
+      routeResponse(response);
       syncBadge().catch(() => {});
     });
 
-    // Cold start: app launched by tapping a notification banner.
+    // Cold start: app launched by tapping a notification banner (or one of its buttons).
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response && !cancelled) {
-        setTimeout(
-          () => navigateFromPush(response.notification?.request?.content?.data as any),
-          400,
-        );
+        setTimeout(() => routeResponse(response), 400);
       }
+    });
+
+    // Arriving on site (#46): button categories, and the fence list on open.
+    registerNotificationCategories().catch(() => {});
+    refreshSiteFences().catch(() => {});
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshSiteFences().catch(() => {});
     });
 
     return () => {
       cancelled = true;
       receivedSub.remove();
       responseSub.remove();
+      appStateSub.remove();
+    };
+  }, []);
+
+  // buildpro:// links from the Home/Lock Screen widgets and the clock-in Live
+  // Activity (deepLinkRouting.ts), plus keeping the widgets fresh: now and on
+  // every return to the foreground.
+  useEffect(() => {
+    let cancelled = false;
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url && !cancelled) setTimeout(() => navigateFromDeepLink(url), 400);
+      })
+      .catch(() => {});
+    const urlSub = Linking.addEventListener('url', ({ url }) => navigateFromDeepLink(url));
+    const stopWidgetSync = startWidgetSync();
+    return () => {
+      cancelled = true;
+      urlSub.remove();
+      stopWidgetSync();
     };
   }, []);
 
@@ -277,6 +351,9 @@ function MainTabs() {
   return (
     <>
       <Tab.Navigator
+        // Back from a screen opened across tabs (More panel, dashboard card,
+        // notification) returns to the tab you came from, not always Home.
+        backBehavior="history"
         screenListeners={{
           tabPress: () => haptic.select(),
         }}
@@ -371,8 +448,15 @@ export default function AppNavigator() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useTheme();
+  // Phones stay portrait; the Duo unfolded may rotate.
+  useOrientationPolicy();
+  // Reopen where you were (same tab, project and screen) after a relaunch.
+  const nav = useRestoredNavigationState(isAuthenticated && !isClient ? user?.id : undefined, isLoading);
+  // Photos / PDFs shared from another app open ShareTarget (#44).
+  const [navReady, setNavReady] = useState(false);
+  useShareIntentRouting({ navReady, isAuthenticated, isClient });
 
-  if (isLoading) {
+  if (isLoading || !nav.ready) {
     // Match the app background while the stored session is validated,
     // instead of flashing a blank white frame.
     return (
@@ -383,10 +467,15 @@ export default function AppNavigator() {
   }
 
   return (
+    // Global offline bar (mounted once; pushes content, never remounts it).
+    <OfflineFrame>
     <NavigationContainer
       ref={navigationRef}
+      initialState={nav.initialState}
+      onStateChange={(state) => nav.save(withoutShareTarget(state))}
       onReady={() => {
         navigationIntegration.registerNavigationContainer(navigationRef);
+        setNavReady(true);
       }}
       theme={{
         dark: isDark,
@@ -410,7 +499,15 @@ export default function AppNavigator() {
         {isAuthenticated && isClient ? (
           <Stack.Screen name="Client" component={ClientNavigator} />
         ) : isAuthenticated ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            {/* Share into Morada: params { files: SharedFiles } (lib/shareIntake) */}
+            <Stack.Screen
+              name="ShareTarget"
+              component={ShareTargetScreen}
+              options={{ presentation: 'modal', headerShown: false }}
+            />
+          </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -419,5 +516,6 @@ export default function AppNavigator() {
         )}
       </Stack.Navigator>
     </NavigationContainer>
+    </OfflineFrame>
   );
 }
