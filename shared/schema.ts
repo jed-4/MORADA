@@ -1008,6 +1008,7 @@ export const projects = pgTable("projects", {
   color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
   icon: text("icon").default("Building2"), // Lucide icon name
   location: text("location"), // Project address/location (displayed as "Address")
+  projectArea: doublePrecision("project_area"), // Floor area in m² (0137) — drives price/cost per m²
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
   // New hierarchical status fields

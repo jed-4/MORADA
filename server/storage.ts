@@ -23000,13 +23000,12 @@ export class DbStorage implements IStorage {
         existing.budgetedHours += item.quantity || 0;
       }
 
-      // Get timesheets for this project. Subcontractor hours are left out:
-      // they're costed through their PO/bill, not tallied as job labour.
-      const projectTimesheets: Timesheet[] = await exec.select()
+      // Get timesheets for this project. Subcontractor HOURS count here (Jed,
+      // 11-19: they belong in the labour hours budget); only their COST is
+      // left out elsewhere, because it arrives through their bills.
+      const timesheets: Timesheet[] = await exec.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
-      const labourSubs = await this.subcontractorUserIds(projectTimesheets.map((t) => t.userId));
-      const timesheets = projectTimesheets.filter((t) => !labourSubs.has(t.userId));
 
       // Get timesheet cost code splits
       const timesheetIds = timesheets.map((t) => t.id);
