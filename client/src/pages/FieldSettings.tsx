@@ -1,3 +1,4 @@
+import { TemplateStatusesSection } from "@/pages/TaskSettings";
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag, Layers } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag, Layers, ListChecks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -198,6 +199,8 @@ export default function FieldSettings() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
 
   const [showSupplierLabels, setShowSupplierLabels] = useState(false);
+  // Task-template statuses (moved here from Task Settings, Jed 11-19).
+  const [showTemplateStatuses, setShowTemplateStatuses] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -235,6 +238,10 @@ export default function FieldSettings() {
     const section = params.get("section");
     if (section === "scope") {
       setShowScopeItemTypes(true);
+      setShowSupplierLabels(false);
+    }
+    if (section === "template-statuses") {
+      setShowTemplateStatuses(true);
       setShowSupplierLabels(false);
     }
   }, []);
@@ -879,7 +886,7 @@ export default function FieldSettings() {
           <PageHeader title="Field Settings" className="mb-6" />
           <nav className="space-y-1">
             {fieldCategories.map((category) => {
-              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showScopeItemTypes;
+              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showScopeItemTypes && !showTemplateStatuses;
               
               return (
                 <button
@@ -887,6 +894,7 @@ export default function FieldSettings() {
                   onClick={() => {
                     setSelectedCategoryId(category.id);
                     setShowSupplierLabels(false);
+                    setShowTemplateStatuses(false);
                         setShowScopeItemTypes(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -912,6 +920,7 @@ export default function FieldSettings() {
               onClick={() => {
                 setShowSupplierLabels(true);
                 setShowScopeItemTypes(false);
+                setShowTemplateStatuses(false);
                 setSelectedCategoryId("");
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -935,6 +944,7 @@ export default function FieldSettings() {
               onClick={() => {
                 setShowScopeItemTypes(true);
                 setShowSupplierLabels(false);
+                setShowTemplateStatuses(false);
                 setSelectedCategoryId("");
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -947,6 +957,30 @@ export default function FieldSettings() {
               <Layers className="h-4 w-4 flex-shrink-0" />
               <span className="text-sm font-medium">Item Types</span>
             </button>
+
+            <div className="pt-4 pb-2">
+              <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Tasks
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowTemplateStatuses(true);
+                setShowSupplierLabels(false);
+                setShowScopeItemTypes(false);
+                setSelectedCategoryId("");
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
+                showTemplateStatuses
+                  ? "bg-primary text-white"
+                  : "text-muted-foreground hover-elevate"
+              }`}
+              data-testid="category-template-statuses"
+            >
+              <ListChecks className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm font-medium">Template Statuses</span>
+            </button>
           </nav>
         </div>
       </div>
@@ -955,7 +989,9 @@ export default function FieldSettings() {
       <div className="flex-1 overflow-hidden">
         <div className="h-full overflow-y-auto">
           <div className="p-8">
-            {showSupplierLabels ? (
+            {showTemplateStatuses ? (
+              <TemplateStatusesSection />
+            ) : showSupplierLabels ? (
               <div className="space-y-6">
                 {/* Supplier Labels Header */}
                 <div>

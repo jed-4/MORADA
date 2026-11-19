@@ -139,7 +139,7 @@ function SortableStatusRow({ status, onEdit, onDelete }: SortableStatusRowProps)
   );
 }
 
-export default function TaskSettings() {
+function TaskSettingsView({ embeddedSection }: { embeddedSection?: "statuses" }) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("tags");
   
@@ -314,6 +314,117 @@ export default function TaskSettings() {
     reorderStatusesMutation.mutate(reordered);
   };
 
+  const statusesCard = (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle>Task Template Statuses</CardTitle>
+                          <CardDescription className="mt-2">
+                            Define custom statuses for task templates (e.g., Active, Draft, Archived)
+                          </CardDescription>
+                        </div>
+                        <Button onClick={() => setIsStatusDialogOpen(true)} data-testid="button-add-status">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Status
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStatusDragEnd}>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-8"></TableHead>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Preview</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {taskTemplateStatuses.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                                  No template statuses yet. Create your first status to get started.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              <SortableContext items={taskTemplateStatuses.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                                {taskTemplateStatuses.map((status) => (
+                                  <SortableStatusRow key={status.id} status={status} onEdit={handleEditStatus} onDelete={handleDeleteStatus} />
+                                ))}
+                              </SortableContext>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </DndContext>
+                    </CardContent>
+                  </Card>
+  );
+  const statusDialog = (
+      <Dialog open={isStatusDialogOpen} onOpenChange={(open) => {
+        setIsStatusDialogOpen(open);
+        if (!open) {
+          setEditingStatus(null);
+          setStatusFormData({ name: "", color: "#3b82f6" });
+        }
+      }}>
+        <DialogContent data-testid="dialog-status-form">
+          <DialogHeader>
+            <DialogTitle>{editingStatus ? "Edit Template Status" : "Create Template Status"}</DialogTitle>
+            <DialogDescription>{editingStatus ? "Update the status details below." : "Add a new status for task templates."}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="status-name">Status Name</Label>
+              <Input
+                id="status-name"
+                value={statusFormData.name}
+                onChange={(e) => setStatusFormData({ ...statusFormData, name: e.target.value })}
+                placeholder="e.g., Active, Draft, Archived"
+                data-testid="input-status-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status-color">Color</Label>
+              <Select value={statusFormData.color} onValueChange={(value) => setStatusFormData({ ...statusFormData, color: value })}>
+                <SelectTrigger id="status-color" data-testid="select-status-color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TAG_COLORS.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: color.value }} />
+                        {color.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)} data-testid="button-cancel-status">Cancel</Button>
+            <Button onClick={handleSubmitStatus} disabled={createStatusMutation.isPending || updateStatusMutation.isPending} data-testid="button-save-status">
+              {editingStatus ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+  );
+
+  // Field Settings shows the template statuses as their own section (Jed,
+  // 11-19) — same component, without the Task Settings page around it.
+  if (embeddedSection === "statuses") {
+    return (
+      <>
+        {statusesCard}
+        {statusDialog}
+      </>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background">
       <div className="flex-1 overflow-hidden">
@@ -389,48 +500,13 @@ export default function TaskSettings() {
 
                 <TabsContent value="statuses">
                   <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <CardTitle>Task Template Statuses</CardTitle>
-                          <CardDescription className="mt-2">
-                            Define custom statuses for task templates (e.g., Active, Draft, Archived)
-                          </CardDescription>
-                        </div>
-                        <Button onClick={() => setIsStatusDialogOpen(true)} data-testid="button-add-status">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Status
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStatusDragEnd}>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-8"></TableHead>
-                              <TableHead>Name</TableHead>
-                              <TableHead>Preview</TableHead>
-                              <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {taskTemplateStatuses.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                                  No template statuses yet. Create your first status to get started.
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              <SortableContext items={taskTemplateStatuses.map(s => s.id)} strategy={verticalListSortingStrategy}>
-                                {taskTemplateStatuses.map((status) => (
-                                  <SortableStatusRow key={status.id} status={status} onEdit={handleEditStatus} onDelete={handleDeleteStatus} />
-                                ))}
-                              </SortableContext>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </DndContext>
+                    <CardContent className="py-8 text-center space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Template statuses now live in Field Settings, with the other lists you set up.
+                      </p>
+                      <Button variant="outline" onClick={() => { window.location.href = "/field-settings?section=template-statuses"; }} data-testid="button-goto-field-settings-statuses">
+                        Open Field Settings → Template Statuses
+                      </Button>
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -491,56 +567,7 @@ export default function TaskSettings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isStatusDialogOpen} onOpenChange={(open) => {
-        setIsStatusDialogOpen(open);
-        if (!open) {
-          setEditingStatus(null);
-          setStatusFormData({ name: "", color: "#3b82f6" });
-        }
-      }}>
-        <DialogContent data-testid="dialog-status-form">
-          <DialogHeader>
-            <DialogTitle>{editingStatus ? "Edit Template Status" : "Create Template Status"}</DialogTitle>
-            <DialogDescription>{editingStatus ? "Update the status details below." : "Add a new status for task templates."}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="status-name">Status Name</Label>
-              <Input
-                id="status-name"
-                value={statusFormData.name}
-                onChange={(e) => setStatusFormData({ ...statusFormData, name: e.target.value })}
-                placeholder="e.g., Active, Draft, Archived"
-                data-testid="input-status-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="status-color">Color</Label>
-              <Select value={statusFormData.color} onValueChange={(value) => setStatusFormData({ ...statusFormData, color: value })}>
-                <SelectTrigger id="status-color" data-testid="select-status-color">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TAG_COLORS.map((color) => (
-                    <SelectItem key={color.value} value={color.value}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded" style={{ backgroundColor: color.value }} />
-                        {color.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)} data-testid="button-cancel-status">Cancel</Button>
-            <Button onClick={handleSubmitStatus} disabled={createStatusMutation.isPending || updateStatusMutation.isPending} data-testid="button-save-status">
-              {editingStatus ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {statusDialog}
 
       <ConfirmDialog
         open={!!confirmAction}
@@ -558,4 +585,13 @@ export default function TaskSettings() {
       />
     </div>
   );
+}
+
+export default function TaskSettings() {
+  return <TaskSettingsView />;
+}
+
+/** Template statuses on their own — shown in Field Settings. */
+export function TemplateStatusesSection() {
+  return <TaskSettingsView embeddedSection="statuses" />;
 }
