@@ -4,6 +4,7 @@ import { sentryEnabled } from "./instrument";
 import * as Sentry from "@sentry/node";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { registerDailyReportRoutes } from "./dailyReport";
 import { setupVite, serveStatic, log } from "./vite";
 import { startReminderProcessor } from "./utils/reminderProcessor";
 import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcessor";
@@ -249,6 +250,9 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  // After registerRoutes so these sit behind the same session, auth and
+  // client-access gate; before the error handler and the /api 404 below.
+  registerDailyReportRoutes(app);
 
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
