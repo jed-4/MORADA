@@ -8,6 +8,7 @@ import {
   type WorkflowTriggerConfig, type WorkflowAction, type WorkflowRunResult,
 } from "./workflows";
 import { JOB_MODES } from "./cashflow/types";
+import type { SiteSelectionFields, SiteSignLayout } from "./siteBoard";
 import { FREQUENCIES } from "./cashflow/recurrence";
 import {
   ASSET_TYPES,
@@ -1087,6 +1088,9 @@ export const projects = pgTable("projects", {
   tradesPortalToken: varchar("trades_portal_token").unique(), // UUID for /portal/project/:token/trades, generated lazily
   // Defects stage 3 (migration 0135): client logins see the handover list.
   shareHandoverWithClient: boolean("share_handover_with_client").notNull().default(false),
+  // Site board (migration 0138): which selection details the public site QR
+  // page shows. Null = the defaults in shared/siteBoard.ts.
+  siteSelectionFields: jsonb("site_selection_fields").$type<SiteSelectionFields>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1103,6 +1107,8 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   siteLocationSource: true,
   siteLocationSetAt: true,
   siteLocationSetBy: true,
+  // Site board settings have their own route (server/siteBoard.ts).
+  siteSelectionFields: true,
 }).extend({
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["active", "on_hold", "completed"]).default("active"),
@@ -1356,6 +1362,12 @@ export const companySettings = pgTable("company_settings", {
    *  See migrations/0076 for why this is not in object storage. */
   logoData: text("logo_data"),
   logoMime: text("logo_mime"),
+  // Branded site QR sign (migration 0138): an uploaded A4 PDF/PNG/JPG the QR
+  // is stamped onto, and where it goes. See shared/siteBoard.ts.
+  siteSignTemplatePath: text("site_sign_template_path"),
+  siteSignTemplateName: text("site_sign_template_name"),
+  siteSignTemplateMime: text("site_sign_template_mime"),
+  siteSignLayout: jsonb("site_sign_layout").$type<SiteSignLayout>(),
   
   // Social Media Links
   facebook: text("facebook"),
@@ -1554,6 +1566,12 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings, {
   id: true,
   createdAt: true,
   updatedAt: true,
+  // The sign template is saved through /api/company/site-sign, which checks
+  // the upload belongs to the company. Never through the generic settings PUT.
+  siteSignTemplatePath: true,
+  siteSignTemplateName: true,
+  siteSignTemplateMime: true,
+  siteSignLayout: true,
 });
 
 export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
@@ -1845,6 +1863,9 @@ export const selections = pgTable("selections", {
   portalToken: varchar("portal_token").unique(), // UUID used for /portal/selections/:token, generated lazily
   portalSentAt: timestamp("portal_sent_at"), // when portal link was last sent to client
   notes: text("notes"), // Trades-facing notes (instructions, warnings, etc.)
+  // On the project's public site QR page (migration 0138). On by default so
+  // codes already up on site keep showing what they showed.
+  showOnSite: boolean("show_on_site").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -10218,6 +10239,8 @@ export const projectFiles = pgTable("project_files", {
 export const createProjectFileSchema = z.object({
   name: z.string().trim().min(1).max(255),
   objectPath: z.string().startsWith("/objects/"),
+  /** The signed proof from /api/uploads/file that this company uploaded it. */
+  uploadGrant: z.string().min(1),
   folder: z.string().trim().min(1).max(80).optional(),
   mimeType: z.string().max(255).nullable().optional(),
   fileSize: z.number().int().nonnegative().nullable().optional(),
